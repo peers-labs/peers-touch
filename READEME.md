@@ -6,6 +6,12 @@ An implementation of the [W3C ActivityPub](https://www.w3.org/TR/activitypub/) p
 
 ## Design
 
+* Client
+
+* Server
+
+* Actor
+
 ## References
 
 [go-fed](github.com/go-fed/activity): 
