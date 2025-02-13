@@ -1,6 +1,33 @@
 package object
 
+type (
+	// ID provides the globally unique identifier
+	ID string
+	// Type provides the type of the ActivityPub object
+	Type string
+)
+
+// region LangRef is used for NaturalLanguage
+// see https://www.w3.org/TR/activitystreams-core/#naturalLanguageValues
+type (
+	// LangRef is the type for a language reference code, should be an ISO639-1 language specifier.
+	LangRef string
+	Content []byte
+
+	// LangRefValue is a type for storing per language values
+	LangRefValue struct {
+		Ref   LangRef
+		Value Content
+	}
+	// NaturalLanguageValues is a mapping for multiple language values
+	NaturalLanguageValues []LangRefValue
+)
+
+// endregion
+
 type Object interface {
-	ID() string
-	Type() string
+	ID() ID
+	Type() Type
 }
+
+type Item string
