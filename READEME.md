@@ -6,11 +6,11 @@ An implementation of the [W3C ActivityPub](https://www.w3.org/TR/activitypub/) p
 
 ## Design
 
-* Client
+### Structure Model
+> Here only representative modules are listed.
 
-* Server
-
-* Actor
+### MVP Flow
+> This is essentially a demo to confirm the feasibility of our solution.
 
 ## References
 Thanks for those friend projects:  <br />
