@@ -1,10 +1,12 @@
 package server
 
+import (
+	"net/http"
+)
+
 type Server interface {
 	Init(...Option) error
-	Options() Options
 	Handle(Handler) error
-	NewHandler(interface{}, ...HandlerOption) Handler
 	Start() error
 	Stop() error
 	Name() string
@@ -12,7 +14,6 @@ type Server interface {
 
 type Handler interface {
 	Name() string
-	Handler() interface{}
-	Endpoints() []*registry.Endpoint
-	Options() HandlerOptions
+	Path() string
+	Handler() http.Handler
 }

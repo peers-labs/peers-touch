@@ -20,4 +20,13 @@ type DeregisterOption func(*DeregisterOptions)
 type DeregisterOptions struct {
 }
 
+type GetOption func(*GetOptions)
+
+type GetOptions struct {
+}
+
+type WatchOption func(*WatchOptions)
+
+type WatchOptions struct{}
+
 // endregion

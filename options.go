@@ -19,3 +19,9 @@ func WithName(name string) Option {
 		o.Name = name
 	}
 }
+
+func WithServer(s server.Server) Option {
+	return func(o *Options) {
+		o.Server = s
+	}
+}

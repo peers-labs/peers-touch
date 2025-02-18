@@ -1,10 +1,11 @@
 package peers
 
 import (
+	"sync"
+
 	"github.com/dirty-bro-tech/peers-touch-go/client"
 	"github.com/dirty-bro-tech/peers-touch-go/object"
 	"github.com/dirty-bro-tech/peers-touch-go/server"
-	"sync"
 )
 
 type Peer interface {
@@ -23,7 +24,12 @@ func NewPeer(opts ...Option) Peer {
 // region localPeer
 
 func newPeer(opts ...Option) Peer {
-	return &localPeer{}
+	p := &localPeer{}
+	for _, opt := range opts {
+		opt(&p.opts)
+	}
+
+	return p
 }
 
 type localPeer struct {
@@ -33,18 +39,15 @@ type localPeer struct {
 }
 
 func (p *localPeer) Client() client.Client {
-	//TODO implement me
-	panic("implement me")
+	return p.opts.Client
 }
 
 func (p *localPeer) Server() server.Server {
-	//TODO implement me
-	panic("implement me")
+	return p.opts.Server
 }
 
 func (p *localPeer) Start() error {
-	//TODO implement me
-	panic("implement me")
+	return p.opts.Server.Start()
 }
 
 func (p *localPeer) ID() object.ID {
