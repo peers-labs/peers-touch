@@ -3,14 +3,14 @@ package registry
 type Registry interface {
 	Init(...Option) error
 	Options() Options
-	Register(*Service, ...RegisterOption) error
-	Deregister(*Service, ...DeregisterOption) error
-	GetService(string, ...GetOption) ([]*Service, error)
+	Register(*Peer, ...RegisterOption) error
+	Deregister(*Peer, ...DeregisterOption) error
+	GetPeer(string, ...GetOption) ([]*Peer, error)
 	Watch(...WatchOption) (Watcher, error)
 	String() string
 }
 
-type Service struct {
+type Peer struct {
 	Name      string            `json:"name"`
 	Version   string            `json:"version"`
 	Metadata  map[string]string `json:"metadata"`

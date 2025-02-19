@@ -9,7 +9,7 @@ type Watcher interface {
 // Result is what is returned from the watcher
 // it contains the service and the action that was performed, either create, update, delete
 type Result struct {
-	Service *Service
+	Service *Peer
 	Action  string
 }
 

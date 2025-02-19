@@ -4,6 +4,11 @@ An implementation of the [W3C ActivityPub](https://www.w3.org/TR/activitypub/) p
 
 ## Why This Project
 
+We all now are living in a world under the control of the huge companies. We have to submit our personal info to them.
+We want to build a world without AI, BigData. Human in this world respect each other's private info. No man analyze our data in the place we don't know.
+No one can pry into our personal life and trace any private things.
+
+
 ## Design
 
 ### Structure Model
@@ -11,6 +16,11 @@ An implementation of the [W3C ActivityPub](https://www.w3.org/TR/activitypub/) p
 
 ### MVP Flow
 > This is essentially a demo to confirm the feasibility of our solution.
+
+## Features
+
+* Registry: In addition to being able to register with discovery nodes, it can also operate as a discovery node. <br />
+* Config-Driven: The configuration file is used to configure the whole options.  <br />
 
 ## References
 Thanks for those friend projects:  <br />
