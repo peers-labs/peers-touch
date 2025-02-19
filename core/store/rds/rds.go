@@ -9,14 +9,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 )
 
-// region Errors
-
-// ErrDBNotFound is returned when the requested database is not found in the rdsMap.
-var ErrDBNotFound = errors.New("database not found")
-
-// endregion
-
-type NativeStore struct {
+type Store struct {
 	// injected by config-driven
 	// todo: see config
 	rdsMap map[string]*sql.DB
@@ -24,7 +17,7 @@ type NativeStore struct {
 	mu sync.Mutex // Add a mutex for concurrent safety
 }
 
-func (n *NativeStore) Init(ctx context.Context, opts ...store.Option) error {
+func (n *Store) Init(ctx context.Context, opts ...store.Option) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -39,12 +32,32 @@ func (n *NativeStore) Init(ctx context.Context, opts ...store.Option) error {
 		opt(&options)
 	}
 
-	// Process RDS options
+	// Process RDSMap options
+	for dbName, rds := range options.RDSMap {
+		if rds == nil {
+			return errors.New("RDSMap configuration is nil for database: " + dbName)
+		}
+
+		db, err := sql.Open(rds.DriverName, rds.SQLConnURL)
+		if err != nil {
+			return err
+		}
+
+		// Ping the database to check the connection
+		err = db.PingContext(ctx)
+		if err != nil {
+			db.Close()
+			return err
+		}
+
+		// Add the database instance to the rdsMap
+		n.rdsMap[dbName] = db
+	}
 
 	return nil
 }
 
-func (n *NativeStore) RDS(ctx context.Context, opts ...store.RDSQueryOption) (*sql.DB, error) {
+func (n *Store) RDS(ctx context.Context, opts ...store.RDSQueryOption) (*sql.DB, error) {
 	options := store.RDSQueryOptions{}
 	for _, opt := range opts {
 		opt(&options)

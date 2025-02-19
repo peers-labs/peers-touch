@@ -3,6 +3,7 @@ package peers
 import (
 	"github.com/dirty-bro-tech/peers-touch-go/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
+	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/server"
 )
 
@@ -14,6 +15,7 @@ type Options struct {
 	Client   client.Client
 	Server   server.Server
 	Registry registry.Registry
+	Store    store.Store
 }
 
 func WithName(name string) Option {
@@ -25,6 +27,12 @@ func WithName(name string) Option {
 func WithServer(s server.Server) Option {
 	return func(o *Options) {
 		o.Server = s
+	}
+}
+
+func WithStore(s store.Store) Option {
+	return func(o *Options) {
+		o.Store = s
 	}
 }
 
