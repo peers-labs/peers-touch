@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/cli"
+	"github.com/dirty-bro-tech/peers-touch-go/core/cli"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/cmd"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
 )

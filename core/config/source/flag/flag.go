@@ -3,10 +3,11 @@ package flag
 import (
 	"errors"
 	"flag"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
-	"github.com/imdario/mergo"
 	"strings"
 	"time"
+
+	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
+	"github.com/imdario/mergo"
 )
 
 type flagsrc struct {

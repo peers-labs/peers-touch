@@ -7,8 +7,9 @@ type Option func(*Options)
 
 // Options is the server options
 type Options struct {
-	Address string // Server address
-	Timeout int    // Server timeout
+	Address  string // Server address
+	Timeout  int    // Server timeout
+	Metadata map[string]string
 }
 
 // WithAddress sets the server address
@@ -22,6 +23,13 @@ func WithAddress(address string) Option {
 func WithTimeout(timeout int) Option {
 	return func(o *Options) {
 		o.Timeout = timeout
+	}
+}
+
+// WithMetadata associated with the server
+func WithMetadata(md map[string]string) Option {
+	return func(o *Options) {
+		o.Metadata = md
 	}
 }
 

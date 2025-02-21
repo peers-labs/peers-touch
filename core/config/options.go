@@ -26,3 +26,15 @@ func WithReader(r reader.Reader) Option {
 		o.Reader = r
 	}
 }
+
+func WithHierarchyMerge(h bool) Option {
+	return func(o *Options) {
+		o.HierarchyMerge = h
+	}
+}
+
+func WithStorage(s bool) Option {
+	return func(o *Options) {
+		o.Storage = s
+	}
+}

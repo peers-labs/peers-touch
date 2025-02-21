@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	log "github.com/dirty-bro-tech/peers-touch-go/core/config/logger"
+	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 )
 
 var (
