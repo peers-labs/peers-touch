@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	
+
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/cmd"

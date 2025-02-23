@@ -1,10 +1,11 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/dirty-bro-tech/peers-touch-go"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	ns "github.com/dirty-bro-tech/peers-touch-go/core/server/native"
-	"net/http"
 )
 
 func main() {

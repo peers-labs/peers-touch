@@ -1,3 +1,4 @@
+//go:build !windows && !nacl && !plan9
 // +build !windows,!nacl,!plan9
 
 package syslog
@@ -7,7 +8,7 @@ import (
 	"log/syslog"
 	"os"
 
-	"github.com/stack-labs/stack/plugin/logger/logrus/logrus"
+	"github.com/dirty-bro-tech/peers-touch-go/plugin/logger/logrus/logrus"
 )
 
 // SyslogHook to send logs via syslog.

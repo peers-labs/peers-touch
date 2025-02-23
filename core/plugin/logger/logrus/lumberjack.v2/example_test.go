@@ -3,7 +3,7 @@ package lumberjack_test
 import (
 	"log"
 
-	"github.com/stack-labs/stack/plugin/logger/logrus/lumberjack.v2"
+	"github.com/dirty-bro-tech/peers-touch-go/plugin/logger/logrus/lumberjack.v2"
 )
 
 // To use lumberjack with the standard library's log package, just pass it into

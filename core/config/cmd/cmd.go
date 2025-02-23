@@ -134,21 +134,12 @@ func init() {
 
 func newCmd(opts ...Option) Cmd {
 	options := Options{
-		Broker:    &broker.DefaultBroker,
-		Client:    &client.DefaultClient,
-		Registry:  &registry.DefaultRegistry,
 		Server:    &server.DefaultServer,
-		Selector:  &selector.DefaultSelector,
 		Transport: &transport.DefaultTransport,
-		Runtime:   &runtime.DefaultRuntime,
 
-		Brokers:    DefaultBrokers,
 		Clients:    DefaultClients,
 		Registries: DefaultRegistries,
-		Selectors:  DefaultSelectors,
 		Servers:    DefaultServers,
-		Transports: DefaultTransports,
-		Runtimes:   DefaultRuntimes,
 	}
 
 	for _, o := range opts {

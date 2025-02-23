@@ -4,11 +4,11 @@ import (
 	"errors"
 	"time"
 
+	"dario.cat/mergo"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/encoder"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/encoder/json"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/reader"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
-	"github.com/imdario/mergo"
 )
 
 type jsonReader struct {

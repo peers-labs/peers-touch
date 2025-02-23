@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package lumberjack_test
@@ -8,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/stack-labs/stack/plugin/logger/logrus/lumberjack.v2"
+	"github.com/dirty-bro-tech/peers-touch-go/plugin/logger/logrus/lumberjack.v2"
 )
 
 // Example of how to rotate in response to SIGHUP.

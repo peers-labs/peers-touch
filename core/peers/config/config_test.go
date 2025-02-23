@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/stack-labs/stack/cmd"
-	cfg "github.com/stack-labs/stack/config"
-	"github.com/stack-labs/stack/pkg/config/source"
-	cliSource "github.com/stack-labs/stack/pkg/config/source/cli"
-	"github.com/stack-labs/stack/pkg/config/source/file"
-	"github.com/stack-labs/stack/pkg/config/source/memory"
+	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/config/cmd"
+	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
+	cliSource "github.com/dirty-bro-tech/peers-touch-go/core/config/source/cli"
+	"github.com/dirty-bro-tech/peers-touch-go/core/config/source/file"
+	"github.com/dirty-bro-tech/peers-touch-go/core/config/source/memory"
 )
 
 var (
@@ -75,7 +75,7 @@ func TestStackConfig_File(t *testing.T) {
 		os.Remove(path)
 	}()
 
-	c := cfg.NewConfig(cfg.Source(file.NewSource(file.WithPath(path))))
+	c := cfg.NewConfig(cfg.WithSource(file.NewSource(file.WithPath(path))))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
@@ -131,7 +131,7 @@ func TestStackConfig_Config(t *testing.T) {
 		cliSource.NewSource(app, cliSource.Context(app.Context())),
 	}
 
-	c := cfg.NewConfig(cfg.Source(sources...))
+	c := cfg.NewConfig(cfg.WithSource(sources...))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
@@ -236,7 +236,7 @@ stack:
 		cliSource.NewSource(app, cliSource.Context(app.Context())),
 	}
 
-	c := cfg.NewConfig(cfg.Source(sources...))
+	c := cfg.NewConfig(cfg.WithSource(sources...))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
@@ -260,10 +260,6 @@ stack:
 	if conf.Peers.Server.Name != "default" {
 		t.Fatal(fmt.Errorf("broker name [%s] should be 'default'", conf.Peers.Server.Name))
 	}
-
-	if conf.Peers.Broker.Name != "kafka" {
-		t.Fatal(fmt.Errorf("broker name [%s] should be 'http'", conf.Peers.Broker.Name))
-	}
 }
 
 func TestConfigHierarchyMerge(t *testing.T) {
@@ -281,7 +277,7 @@ func TestConfigHierarchyMerge(t *testing.T) {
 		os.Remove(path)
 	}()
 
-	c := cfg.NewConfig(cfg.Source(file.NewSource(file.WithPath(path))), cfg.HierarchyMerge(true))
+	c := cfg.NewConfig(cfg.WithSource(file.NewSource(file.WithPath(path))), cfg.WithHierarchyMerge(true))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}

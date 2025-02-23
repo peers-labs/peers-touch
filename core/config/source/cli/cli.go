@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"dario.cat/mergo"
 	"github.com/dirty-bro-tech/peers-touch-go/core/cli"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/cmd"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
-	"github.com/imdario/mergo"
 )
 
 type cliSource struct {
