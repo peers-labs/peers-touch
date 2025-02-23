@@ -9,7 +9,6 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/dirty-bro-tech/peers-touch-go/core/cli"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/cmd"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
 )
 
@@ -96,7 +95,7 @@ func (c *cliSource) String() string {
 //	        "host": "localhost"
 //	    }
 //	}
-func NewSource(opts ...source.Option) source.Source {
+func NewSource(app *cli.App, opts ...source.Option) source.Source {
 	options := source.NewOptions(opts...)
 
 	var ctx *cli.Context
@@ -108,8 +107,6 @@ func NewSource(opts ...source.Option) source.Source {
 
 	// no context
 	if ctx == nil {
-		// get the default app/flags
-		app := cmd.App()
 		flags := app.Flags
 
 		// create flagset
@@ -122,10 +119,10 @@ func NewSource(opts ...source.Option) source.Source {
 
 		// parse flags
 		set.SetOutput(ioutil.Discard)
-		set.Parse(os.Args[1:])
+		_ = set.Parse(os.Args[1:])
 
 		// normalise flags
-		normalizeFlags(app.Flags, set)
+		_ = normalizeFlags(app.Flags, set)
 
 		// create context
 		ctx = cli.NewContext(app, set, nil)

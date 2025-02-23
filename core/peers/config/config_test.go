@@ -75,7 +75,7 @@ func TestStackConfig_File(t *testing.T) {
 		os.Remove(path)
 	}()
 
-	c := cfg.NewConfig(cfg.WithSource(file.NewSource(file.WithPath(path))))
+	c := cfg.NewConfig(cfg.WithSources(file.NewSource(file.WithPath(path))))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
@@ -131,7 +131,7 @@ func TestStackConfig_Config(t *testing.T) {
 		cliSource.NewSource(app, cliSource.Context(app.Context())),
 	}
 
-	c := cfg.NewConfig(cfg.WithSource(sources...))
+	c := cfg.NewConfig(cfg.WithSources(sources...))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
@@ -151,22 +151,12 @@ func TestStackConfig_Config(t *testing.T) {
 		t.Fatal(fmt.Errorf("server id should be [test-id] which is stackCmd value, not: [%s]", conf.Peers.Server.ID))
 	}
 
-	// test the config from stackCmd
-	if conf.Peers.Broker.Address != ":10086" {
-		t.Fatal(fmt.Errorf("broker address should be [:10086] which is stackCmd value, not: [%s]", conf.Peers.Broker.Address))
-	}
-
 	if conf.Peers.Client.Pool.TTL != 100 {
 		t.Fatal(fmt.Errorf("client pool ttl should be [100] which is stackCmd value, not: [%d]", conf.Peers.Client.Pool.TTL))
 	}
 
 	if conf.Peers.Server.Registry.TTL != 300 {
 		t.Fatal(fmt.Errorf("server registry ttl should be [300] which is stackCmd value, not: [%d]", conf.Peers.Server.Registry.TTL))
-	}
-
-	// test config root path
-	if conf.Peers.Profile != "_1" {
-		t.Fatal(fmt.Errorf("stack profile should be [\"_1\"], not: [%s]", conf.Peers.Profile))
 	}
 
 	// test map value: the extra values
@@ -236,7 +226,7 @@ stack:
 		cliSource.NewSource(app, cliSource.Context(app.Context())),
 	}
 
-	c := cfg.NewConfig(cfg.WithSource(sources...))
+	c := cfg.NewConfig(cfg.WithSources(sources...))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
@@ -277,7 +267,7 @@ func TestConfigHierarchyMerge(t *testing.T) {
 		os.Remove(path)
 	}()
 
-	c := cfg.NewConfig(cfg.WithSource(file.NewSource(file.WithPath(path))), cfg.WithHierarchyMerge(true))
+	c := cfg.NewConfig(cfg.WithSources(file.NewSource(file.WithPath(path))), cfg.WithHierarchyMerge(true))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}

@@ -17,6 +17,8 @@ import (
 type Config interface {
 	// provide the reader.Values interface
 	reader.Values
+
+	Init(opts ...Option) error
 	// Stop the config loader/watcher
 	Close() error
 	// Load config sources
@@ -34,9 +36,9 @@ type Watcher interface {
 }
 
 type Options struct {
-	Loader loader.Loader
-	Reader reader.Reader
-	Source []source.Source
+	Loader  loader.Loader
+	Reader  reader.Reader
+	Sources []source.Source
 
 	// for alternative data
 	Context context.Context

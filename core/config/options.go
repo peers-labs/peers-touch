@@ -13,10 +13,10 @@ func WithLoader(l loader.Loader) Option {
 	}
 }
 
-// WithSource appends a source to list of sources
-func WithSource(s source.Source) Option {
+// WithSources appends a source to list of sources
+func WithSources(ss ...source.Source) Option {
 	return func(o *Options) {
-		o.Source = append(o.Source, s)
+		o.Sources = append(o.Sources, ss...)
 	}
 }
 

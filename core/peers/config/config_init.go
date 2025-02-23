@@ -12,6 +12,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	uf "github.com/dirty-bro-tech/peers-touch-go/core/util/file"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
+	yaml "gopkg.in/yaml.v2"
 )
 
 func LoadConfig(sOpts *service.Options) (err error) {
@@ -28,7 +29,7 @@ func LoadConfig(sOpts *service.Options) (err error) {
 			return
 		}
 
-		sOpts.Conf = fmt.Sprintf("%s%s%s", wkDir, string(os.PathSeparator), stackStdConfigFile)
+		sOpts.Conf = fmt.Sprintf("%s%s%s", wkDir, string(os.PathSeparator), peersStdConfigFile)
 	}
 
 	var appendSource []source.Source
@@ -84,13 +85,13 @@ func LoadConfig(sOpts *service.Options) (err error) {
 			}
 
 			// config option
-			cfgOption = append(cfgOption, cfg.Storage(val.Stack.Config.Storage), cfg.HierarchyMerge(val.Stack.Config.HierarchyMerge))
+			cfgOption = append(cfgOption, cfg.WithStorage(val.Stack.Config.Storage), cfg.WithHierarchyMerge(val.Stack.Config.HierarchyMerge))
 		}
 	}
 
 	// the last two must be env & stackCmd line
 	appendSource = append(appendSource, cliSource.NewSource(sOpts.Cmd.App(), cliSource.Context(sOpts.Cmd.App().Context())))
-	cfgOption = append(cfgOption, cfg.Source(appendSource...))
+	cfgOption = append(cfgOption, cfg.WithSources(appendSource...))
 	err = sOpts.Config.Init(cfgOption...)
 	if err != nil {
 		err = fmt.Errorf("init config err: %s", err)
@@ -101,7 +102,7 @@ func LoadConfig(sOpts *service.Options) (err error) {
 }
 
 func SetOptions(sOpts *service.Options) (err error) {
-	conf := stackConfig.Peers
+	conf := peersConfig.Peers
 
 	// serviceOptions
 	for _, option := range conf.Service.Options() {
@@ -111,12 +112,8 @@ func SetOptions(sOpts *service.Options) (err error) {
 	sOpts.ServerOptions = append(sOpts.ServerOptions, conf.Server.Options()...)
 	sOpts.ClientOptions = append(sOpts.ClientOptions, conf.Client.Options()...)
 	sOpts.ConfigOptions = append(sOpts.ConfigOptions, conf.Config.Options()...)
-	sOpts.TransportOptions = append(sOpts.TransportOptions, conf.Transport.Options()...)
-	sOpts.SelectorOptions = append(sOpts.SelectorOptions, conf.Selector.Options()...)
 	sOpts.RegistryOptions = append(sOpts.RegistryOptions, conf.Registry.Options()...)
-	sOpts.BrokerOptions = append(sOpts.BrokerOptions, conf.Broker.Options()...)
 	sOpts.LoggerOptions = append(sOpts.LoggerOptions, conf.Logger.Options()...)
-	sOpts.AuthOptions = append(sOpts.AuthOptions, conf.Auth.Options()...)
 
 	return
 }

@@ -104,6 +104,12 @@ func (c LoggerOptions) Options() logger.Options {
 	return opts
 }
 
+func Name(c string) Option {
+	return func(o *Options) {
+		o.Name = c
+	}
+}
+
 func Cmd(c cmd.Cmd) Option {
 	return func(o *Options) {
 		o.Cmd = c

@@ -92,7 +92,12 @@ type App struct {
 	// render custom help text by setting this variable.
 	CustomAppHelpTemplate string
 
+	context  *Context
 	didSetup bool
+}
+
+func (a *App) Context() *Context {
+	return a.context
 }
 
 // Tries to find out when this binary was compiled.

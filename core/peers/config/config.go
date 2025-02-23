@@ -10,16 +10,17 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	reg "github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	ser "github.com/dirty-bro-tech/peers-touch-go/core/server"
+	pp "github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
 
 var (
-	stackStdConfigFile = "peers.yml"
-	stackConfig        = PeersConfig{}
+	peersStdConfigFile = "peers.yml"
+	peersConfig        = PeersConfig{}
 )
 
 func init() {
-	cfg.RegisterOptions(&stackConfig)
+	cfg.RegisterOptions(&peersConfig)
 }
 
 type Config struct {
@@ -81,6 +82,32 @@ func (m metadata) Value(k string) string {
 	}
 
 	return ""
+}
+
+type Service struct {
+	Name    string `json:"name" pconf:"name"`
+	Address string `json:"address" pconf:"address"`
+}
+
+func (s *Service) Options() serviceOpts {
+	var opts serviceOpts
+
+	if len(s.Name) > 0 {
+		opts = append(opts, pp.Name(s.Name))
+	}
+
+	return opts
+}
+
+type serviceOpts []pp.Option
+
+func (s serviceOpts) opts() pp.Options {
+	opts := pp.Options{}
+	for _, o := range s {
+		o(&opts)
+	}
+
+	return opts
 }
 
 type Server struct {
@@ -206,5 +233,6 @@ type PeersConfig struct {
 		Client   Client   `json:"client" pconf:"client"`
 		Server   Server   `json:"server" pconf:"server"`
 		Logger   Logger   `json:"logger" pconf:"logger"`
+		Service  Service  `json:"service" pconf:"service"`
 	} `json:"peers" pconf:"peers"`
 }
