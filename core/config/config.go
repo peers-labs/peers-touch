@@ -3,6 +3,9 @@ package config
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"runtime"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/loader"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/reader"
@@ -37,6 +40,13 @@ type Options struct {
 
 	// for alternative data
 	Context context.Context
+
+	// HierarchyMerge merges the query args to one
+	// eg. Get("a","b","c") can be used as Get("a.b.c")
+	// the default is false
+	HierarchyMerge bool
+
+	Storage bool
 }
 
 type Option func(o *Options)
@@ -44,6 +54,15 @@ type Option func(o *Options)
 var (
 	// Default Config Manager
 	DefaultConfig = NewConfig()
+
+	// Define the tag name for setting autowired value of Options
+	// sc equals stack-config :)
+	// todo support custom tagName
+	DefaultOptionsTagName     = "sc"
+	DefaultHierarchySeparator = "."
+
+	// holds all the Options
+	optionsPool = make(map[string]reflect.Value)
 )
 
 // NewConfig returns new config
@@ -51,12 +70,12 @@ func NewConfig(opts ...Option) Config {
 	return newConfig(opts...)
 }
 
-// Return config as raw json
+// Bytes Return config as raw json
 func Bytes() []byte {
 	return DefaultConfig.Bytes()
 }
 
-// Return config as a map
+// Map Return config as a map
 func Map() map[string]interface{} {
 	return DefaultConfig.Map()
 }
@@ -66,7 +85,7 @@ func Scan(v interface{}) error {
 	return DefaultConfig.Scan(v)
 }
 
-// Force a source changeset sync
+// Sync Force a source changeset sync
 func Sync() error {
 	return DefaultConfig.Sync()
 }
@@ -86,9 +105,25 @@ func Watch(path ...string) (Watcher, error) {
 	return DefaultConfig.Watch(path...)
 }
 
-// LoadFile is short hand for creating a file source and loading it
+// LoadFile is shorthand for creating a file source and loading it
 func LoadFile(path string) error {
 	return Load(file.NewSource(
 		file.WithPath(path),
 	))
+}
+
+func RegisterOptions(options ...interface{}) {
+	for _, option := range options {
+		val := reflect.ValueOf(option)
+		if val.Kind() != reflect.Ptr {
+			panic("option must be a pointer")
+			return
+		}
+
+		_, file, line, _ := runtime.Caller(1)
+
+		key := fmt.Sprintf("%s#L%d", file, line)
+
+		optionsPool[key] = val
+	}
 }

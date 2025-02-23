@@ -1,0 +1,75 @@
+stack:
+  # array. extra config files should be inited together, files that in the same dir with stack.yml.
+  includes:
+  service:
+    id:
+    name:
+    rpc: stack
+    web:
+      enable: false
+      address: 127.0.0.1:8090
+      root-path: /${stack.service.name}
+      static-dir: /webapp
+    stack:
+    grpc:
+  # registry center options
+  registry:
+    # string. registry middleware name. eg: mdns, etcd, consul...
+    name: mdns
+    # string. registry center address
+    address:
+    # int in seconds. register interval.
+    register-interval: 10
+    # int in seconds. register time to live.
+    register-ttl: 15
+    etcd:
+      # Auth allows you to specify username/password
+      auth-creds:
+        username:
+        password:
+    consul:
+      # specifies services should be registered as Consul Connect services
+      connect:
+      # sets whether any Consul server (non-leader) can service
+      allow-stale:
+      # will tell the service provider to check the service address
+      tcp-check:
+  # broker component options
+  broker:
+    #
+    name: http
+    address:
+  client:
+    protocol: mucp
+    pool:
+      size:
+      ttl:
+  server:
+    address:
+    advertise:
+    protocol:
+    version:
+    # metadata register to registry. array
+    metadata:
+  transport:
+    name: http
+    addrs:
+    secure: false
+    timeout:
+  selector:
+    name: cache
+  logger:
+    name: console
+    level: info
+    persistence:
+      enable: false
+      max-file-size: 10
+      max-backup-size: 500
+      max-backup-keep-days: 20
+      file-name-pattern:
+      backup-file-name-pattern:
+    slogrus:
+      split-level: true
+      report-caller: true
+  runtime:
+  profile:
