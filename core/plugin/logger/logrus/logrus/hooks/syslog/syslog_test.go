@@ -7,7 +7,7 @@ import (
 	"log/syslog"
 	"testing"
 
-	"github.com/dirty-bro-tech/peers-touch-go/plugin/logger/logrus/logrus"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
 )
 
 func TestLocalhostAddAndPrint(t *testing.T) {

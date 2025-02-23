@@ -46,9 +46,9 @@ type Options struct {
 	// HierarchyMerge merges the query args to one
 	// eg. Get("a","b","c") can be used as Get("a.b.c")
 	// the default is false
-	HierarchyMerge bool
-
-	Storage bool
+	HierarchyMerge      bool
+	WithWatcherDisabled bool
+	Storage             bool
 }
 
 type Option func(o *Options)

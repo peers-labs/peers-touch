@@ -21,10 +21,10 @@ func NewPeer(opts ...Option) Peer {
 	return newPeer(opts...)
 }
 
-// region localPeer
+// region nativePeer
 
 func newPeer(opts ...Option) Peer {
-	p := &localPeer{}
+	p := &nativePeer{}
 	for _, opt := range opts {
 		opt(&p.opts)
 	}
@@ -32,36 +32,53 @@ func newPeer(opts ...Option) Peer {
 	return p
 }
 
-type localPeer struct {
+type nativePeer struct {
 	opts Options
 
 	once sync.Once
+
+	client client.Client
+	server server.Server
 }
 
-func (p *localPeer) Client() client.Client {
-	return p.opts.Client
+func (p *nativePeer) Client() client.Client {
+	return p.client
 }
 
-func (p *localPeer) Server() server.Server {
-	return p.opts.Server
+func (p *nativePeer) Server() server.Server {
+	return p.server
 }
 
-func (p *localPeer) Start() error {
-	return p.opts.Server.Start()
+func (p *nativePeer) Start() error {
+	return p.opts.Service.Run()
 }
 
-func (p *localPeer) ID() object.ID {
+func (p *nativePeer) ID() object.ID {
 	return object.ID("")
 }
 
-func (p *localPeer) Name() string {
+func (p *nativePeer) Name() string {
 	return p.opts.Name
 }
 
-func (p *localPeer) Init(opts ...Option) error {
+func (p *nativePeer) Init(opts ...Option) error {
 	for _, o := range opts {
 		o(&p.opts)
 	}
+
+	err := p.opts.Service.Init()
+	if err != nil {
+		return err
+	}
+
+	// wrap the client and server
+	p.client = client.FromService(
+		p.opts.Service,
+	)
+
+	p.server = server.FromService(
+		p.opts.Service,
+	)
 
 	return nil
 }

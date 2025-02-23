@@ -51,7 +51,7 @@ func (c *configurator) init(ops Options) (err error) {
 
 	c.conf = NewConfig()
 	// 加载配置
-	err = c.conf.Load(ops.Source...)
+	err = c.conf.Load(ops.Sources...)
 	if err != nil {
 		log.Fatal(err)
 	}

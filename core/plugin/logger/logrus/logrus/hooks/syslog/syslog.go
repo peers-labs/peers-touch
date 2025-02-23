@@ -8,7 +8,7 @@ import (
 	"log/syslog"
 	"os"
 
-	"github.com/dirty-bro-tech/peers-touch-go/plugin/logger/logrus/logrus"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
 )
 
 // SyslogHook to send logs via syslog.

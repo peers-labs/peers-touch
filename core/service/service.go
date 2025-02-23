@@ -9,7 +9,7 @@ import (
 // within stack. Its a convenience method for building
 // and initialising services.
 type Service interface {
-	// The service name
+	// Name The service name
 	Name() string
 	// Init initialises options
 	Init(...Option) error

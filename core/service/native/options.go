@@ -2,11 +2,10 @@ package native
 
 import (
 	"context"
-
-	scmd "github.com/dirty-bro-tech/peers-touch-go/core/cli"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
+
+	"github.com/dirty-bro-tech/peers-touch-go/core/config/cmd"
+	"github.com/dirty-bro-tech/peers-touch-go/core/peers/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
@@ -14,7 +13,7 @@ import (
 func newOptions(opts ...service.Option) service.Options {
 	options := service.Options{
 		// todo support options
-		Cmd: scmd.NewCmd(),
+		Cmd: cmd.NewCmd(),
 	}
 
 	defaultOpts := []service.Option{
@@ -50,11 +49,11 @@ func newOptions(opts ...service.Option) service.Options {
 		}),
 
 		// set the default components
-		service.Client(plugin.ClientPlugins["mucp"].New()),
-		service.Server(plugin.ServerPlugins["mucp"].New()),
-		service.Logger(plugin.LoggerPlugins["console"].New()),
+		//service.Client(plugin.ClientPlugins["mucp"].New()),
+		//service.Server(plugin.ServerPlugins["mucp"].New()),
+		//service.Logger(plugin.LoggerPlugins["console"].New()),
 		service.Config(cfg.DefaultConfig),
-		service.HandleSignal(true),
+		//service.HandleSignal(true),
 	}
 
 	defaultOpts = append(defaultOpts, opts...)

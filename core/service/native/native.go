@@ -3,12 +3,10 @@ package native
 import (
 	"os"
 	"os/signal"
-	"runtime/pprof"
 	"sync"
 	"syscall"
 
-	"github.com/dirty-bro-tech/peers-touch-go/client"
-	"github.com/dirty-bro-tech/peers-touch-go/core/env"
+	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 )
@@ -86,33 +84,6 @@ func (s *native) Stop() error {
 }
 
 func (s *native) Run() error {
-	// register the debug handler
-	if s.opts.Server.Options().EnableDebug {
-		if err := s.opts.Server.Handle(
-			s.opts.Server.NewHandler(
-				handler.DefaultHandler,
-				server.InternalHandler(true),
-			),
-		); err != nil {
-			return err
-		}
-	}
-
-	// start the profiler
-	// TODO: set as an option to the service, don't just use pprof
-	if prof := os.Getenv(env.StackDebugProfile); len(prof) > 0 {
-		service := s.opts.Server.Options().Name
-		version := s.opts.Server.Options().Version
-		id := s.opts.Server.Options().Id
-		profiler := pprof.NewProfile(
-			profile.Name(service + "." + version + "." + id),
-		)
-		if err := profiler.Start(); err != nil {
-			return err
-		}
-		defer profiler.Stop()
-	}
-
 	if err := s.Start(); err != nil {
 		return err
 	}

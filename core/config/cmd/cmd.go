@@ -2,20 +2,13 @@
 package cmd
 
 import (
-	"fmt"
 	"io"
 	"math/rand"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/cli"
-	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
-
-	// registry
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 )
 
 type Cmd interface {
@@ -41,85 +34,85 @@ var (
 	DefaultFlags = []cli.Flag{
 		cli.StringFlag{
 			Name:   "client",
-			EnvVar: "MICRO_CLIENT",
+			EnvVar: "PEERS_CLIENT",
 			Usage:  "Client for stack-rpc; rpc",
 		},
 		cli.StringFlag{
 			Name:   "client_request_timeout",
-			EnvVar: "MICRO_CLIENT_REQUEST_TIMEOUT",
+			EnvVar: "PEERS_CLIENT_REQUEST_TIMEOUT",
 			Usage:  "Sets the client request timeout. e.g 500ms, 5s, 1m. Default: 5s",
 		},
 		cli.StringFlag{
 			Name:   "server",
-			EnvVar: "MICRO_SERVER",
+			EnvVar: "PEERS_SERVER",
 			Usage:  "Server for stack-rpc; rpc",
 		},
 		cli.StringFlag{
 			Name:   "server_name",
-			EnvVar: "MICRO_SERVER_NAME",
+			EnvVar: "PEERS_SERVER_NAME",
 			Usage:  "Name of the server. stack.rpc.srv.example",
 		},
 		cli.StringFlag{
 			Name:   "server_version",
-			EnvVar: "MICRO_SERVER_VERSION",
+			EnvVar: "PEERS_SERVER_VERSION",
 			Usage:  "Version of the server. 1.1.0",
 		},
 		cli.StringFlag{
 			Name:   "server_id",
-			EnvVar: "MICRO_SERVER_ID",
+			EnvVar: "PEERS_SERVER_ID",
 			Usage:  "Id of the server. Auto-generated if not specified",
 		},
 		cli.StringFlag{
 			Name:   "server_address",
-			EnvVar: "MICRO_SERVER_ADDRESS",
+			EnvVar: "PEERS_SERVER_ADDRESS",
 			Usage:  "Bind address for the server. 127.0.0.1:8080",
 		},
 		cli.StringFlag{
 			Name:   "server_advertise",
-			EnvVar: "MICRO_SERVER_ADVERTISE",
+			EnvVar: "PEERS_SERVER_ADVERTISE",
 			Usage:  "Used instead of the server_address when registering with discovery. 127.0.0.1:8080",
 		},
 		cli.StringSliceFlag{
 			Name:   "server_metadata",
-			EnvVar: "MICRO_SERVER_METADATA",
+			EnvVar: "PEERS_SERVER_METADATA",
 			Value:  &cli.StringSlice{},
 			Usage:  "A list of key-value pairs defining metadata. version=1.0.0",
 		},
 		cli.StringFlag{
 			Name:   "broker",
-			EnvVar: "MICRO_BROKER",
+			EnvVar: "PEERS_BROKER",
 			Usage:  "Broker for pub/sub. http, nats, rabbitmq",
 		},
 		cli.StringFlag{
 			Name:   "broker_address",
-			EnvVar: "MICRO_BROKER_ADDRESS",
+			EnvVar: "PEERS_BROKER_ADDRESS",
 			Usage:  "Comma-separated list of broker addresses",
 		},
 		cli.StringFlag{
 			Name:   "profile",
 			Usage:  "Debug profiler for cpu and memory stats",
-			EnvVar: "MICRO_DEBUG_PROFILE",
+			EnvVar: "PEERS_DEBUG_PROFILE",
 		},
 		cli.StringFlag{
 			Name:   "registry",
-			EnvVar: "MICRO_REGISTRY",
+			EnvVar: "PEERS_REGISTRY",
 			Usage:  "Registry for discovery. etcd, mdns",
 		},
 		cli.StringFlag{
 			Name:   "registry_address",
-			EnvVar: "MICRO_REGISTRY_ADDRESS",
+			EnvVar: "PEERS_REGISTRY_ADDRESS",
 			Usage:  "Comma-separated list of registry addresses",
 		},
 		cli.StringFlag{
 			Name:   "runtime",
 			Usage:  "Runtime for building and running services e.g local, kubernetes",
-			EnvVar: "MICRO_RUNTIME",
+			EnvVar: "PEERS_RUNTIME",
 			Value:  "local",
 		},
 	}
 
 	DefaultServers = map[string]func(...server.Option) server.Server{
-		"native": server.NewServer,
+		// "native": server.NewServer,
 	}
 )
 
@@ -134,12 +127,12 @@ func init() {
 
 func newCmd(opts ...Option) Cmd {
 	options := Options{
-		Server:    &server.DefaultServer,
-		Transport: &transport.DefaultTransport,
+		//	Server:    &server.DefaultServer,
+		//	Transport: &transport.DefaultTransport,
 
-		Clients:    DefaultClients,
-		Registries: DefaultRegistries,
-		Servers:    DefaultServers,
+		//	Clients:    DefaultClients,
+		//	Registries: DefaultRegistries,
+		Servers: DefaultServers,
 	}
 
 	for _, o := range opts {
@@ -176,19 +169,9 @@ func (c *cmd) Options() Options {
 }
 
 func (c *cmd) Before(ctx *cli.Context) error {
-	// If flags are set then use them otherwise do nothing
+	/*// If flags are set then use them otherwise do nothing
 	var serverOpts []server.Option
 	var clientOpts []client.Option
-
-	// Set the runtime
-	if name := ctx.String("runtime"); len(name) > 0 {
-		r, ok := c.opts.Runtimes[name]
-		if !ok {
-			return fmt.Errorf("Unsupported runtime: %s", name)
-		}
-
-		*c.opts.Runtime = r()
-	}
 
 	// Set the client
 	if name := ctx.String("client"); len(name) > 0 {
@@ -365,7 +348,7 @@ func (c *cmd) Before(ctx *cli.Context) error {
 		if err := (*c.opts.Client).Init(clientOpts...); err != nil {
 			log.Fatalf("Error configuring client: %v", err)
 		}
-	}
+	}*/
 
 	return nil
 }

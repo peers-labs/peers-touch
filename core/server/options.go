@@ -10,6 +10,7 @@ type Options struct {
 	Address  string // Server address
 	Timeout  int    // Server timeout
 	Metadata map[string]string
+	Handlers []Handler
 }
 
 // WithAddress sets the server address
@@ -30,6 +31,12 @@ func WithTimeout(timeout int) Option {
 func WithMetadata(md map[string]string) Option {
 	return func(o *Options) {
 		o.Metadata = md
+	}
+}
+
+func WithHandlers(handlers ...Handler) Option {
+	return func(o *Options) {
+		o.Handlers = handlers
 	}
 }
 

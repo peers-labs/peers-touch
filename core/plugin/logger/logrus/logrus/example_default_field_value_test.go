@@ -1,7 +1,7 @@
 package logrus_test
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/plugin/logger/logrus/logrus"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
 	"os"
 )
 

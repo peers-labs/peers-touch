@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
+	nativeServer "github.com/dirty-bro-tech/peers-touch-go/core/server/native"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
@@ -20,6 +21,11 @@ func (s *native) Init(opts ...service.Option) error {
 
 	if s.opts.Context == nil {
 		s.opts.Context = context.Background()
+	}
+
+	if s.opts.Server == nil {
+		// todo config、plugin、options
+		s.opts.Server = nativeServer.NewServer()
 	}
 
 	if len(s.opts.BeforeInit) > 0 {
@@ -51,6 +57,12 @@ func (s *native) initComponents() error {
 		}
 
 		s.opts.Logger = l.New()
+	}
+
+	// todo init server
+	if err := s.opts.Server.Init(s.opts.ServerOptions...); err != nil {
+		return err
+
 	}
 
 	return nil

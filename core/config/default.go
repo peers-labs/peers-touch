@@ -23,6 +23,43 @@ type config struct {
 	vals reader.Values
 }
 
+func (c *config) Init(opts ...Option) error {
+	c.opts = Options{
+		Reader: json.NewReader(),
+	}
+	c.exit = make(chan bool)
+	for _, o := range opts {
+		o(&c.opts)
+	}
+
+	// default loader uses the configured reader
+	if c.opts.Loader == nil {
+		loaderOpts := []loader.Option{memory.WithReader(c.opts.Reader)}
+		if c.opts.WithWatcherDisabled {
+			loaderOpts = append(loaderOpts, memory.WithWatcherDisabled())
+		}
+
+		c.opts.Loader = memory.NewLoader(loaderOpts...)
+	}
+
+	err := c.opts.Loader.Load(c.opts.Sources...)
+	if err != nil {
+		return err
+	}
+
+	c.snap, err = c.opts.Loader.Snapshot()
+	if err != nil {
+		return err
+	}
+
+	c.vals, err = c.opts.Reader.Values(c.snap.ChangeSet)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type watcher struct {
 	lw    loader.Watcher
 	rd    reader.Reader
@@ -40,7 +77,7 @@ func newConfig(opts ...Option) Config {
 		o(&options)
 	}
 
-	options.Loader.Load(options.Source...)
+	options.Loader.Load(options.Sources...)
 	snap, _ := options.Loader.Snapshot()
 	vals, _ := options.Reader.Values(snap.ChangeSet)
 

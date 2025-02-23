@@ -2,10 +2,7 @@ package reader
 
 import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/encoder"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/encoder/hcl"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/encoder/json"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/encoder/toml"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/encoder/xml"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/encoder/yaml"
 )
 
@@ -20,9 +17,6 @@ func NewOptions(opts ...Option) Options {
 		Encoding: map[string]encoder.Encoder{
 			"json": json.NewEncoder(),
 			"yaml": yaml.NewEncoder(),
-			"toml": toml.NewEncoder(),
-			"xml":  xml.NewEncoder(),
-			"hcl":  hcl.NewEncoder(),
 			"yml":  yaml.NewEncoder(),
 		},
 	}

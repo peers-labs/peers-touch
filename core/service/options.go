@@ -218,3 +218,10 @@ func AfterStop(fn func() error) Option {
 		o.AfterStop = append(o.AfterStop, fn)
 	}
 }
+
+// WithHandlers adds handlers to the service's server
+func WithHandlers(handlers ...server.Handler) Option {
+	return func(o *Options) {
+		o.ServerOptions = append(o.ServerOptions, server.WithHandlers(handlers...))
+	}
+}

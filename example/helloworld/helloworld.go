@@ -5,22 +5,18 @@ import (
 
 	"github.com/dirty-bro-tech/peers-touch-go"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	ns "github.com/dirty-bro-tech/peers-touch-go/core/server/native"
+	"github.com/dirty-bro-tech/peers-touch-go/core/service"
+	ns "github.com/dirty-bro-tech/peers-touch-go/core/service/native"
 )
 
 func main() {
-	s := ns.NewServer()
+	s := ns.NewService()
 	err := s.Init(
-		server.WithAddress(":8080"),
-		server.WithTimeout(100),
+		service.WithHandlers(
+			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte("hello world"))
+			}))),
 	)
-	if err != nil {
-		panic(err)
-	}
-
-	err = s.Handle(ns.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("hello world"))
-	})))
 	if err != nil {
 		panic(err)
 	}
@@ -28,7 +24,7 @@ func main() {
 	p := peers.NewPeer()
 	err = p.Init(
 		peers.WithName("hello-world"),
-		peers.WithServer(s),
+		peers.WithCore(s),
 	)
 	if err != nil {
 		panic(err)

@@ -9,10 +9,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dirty-bro-tech/peers-touch-go/core/debug/log"
 )
 
 func init() {
-	lvl, err := GetLevel(os.Getenv("MICRO_LOG_LEVEL"))
+	lvl, err := GetLevel(os.Getenv("PEERS_LOG_LEVEL"))
 	if err != nil {
 		lvl = InfoLevel
 	}
@@ -121,7 +123,8 @@ func (l *defaultLogger) Log(level Level, v ...interface{}) {
 		fields["file"] = fmt.Sprintf("%s:%d", logCallerfilePath(file), line)
 	}
 
-	rec := Record{
+	// todo migrate the tow records in debug and logger packages
+	rec := log.Record{
 		Timestamp: time.Now(),
 		Message:   fmt.Sprint(v...),
 		Metadata:  make(map[string]string, len(fields)),
@@ -141,7 +144,7 @@ func (l *defaultLogger) Log(level Level, v ...interface{}) {
 		metadata += fmt.Sprintf(" %s=%v", k, fields[k])
 	}
 
-	dlog.DefaultLog.Write(rec)
+	log.DefaultLog.Write(rec)
 
 	t := rec.Timestamp.Format("2006-01-02 15:04:05")
 	fmt.Printf("%s %s %v\n", t, metadata, rec.Message)
@@ -183,7 +186,7 @@ func (l *defaultLogger) Logf(level Level, format string, v ...interface{}) {
 		metadata += fmt.Sprintf(" %s=%v", k, fields[k])
 	}
 
-	dlog.DefaultLog.Write(rec)
+	log.DefaultLog.Write(rec)
 
 	t := rec.Timestamp.Format("2006-01-02 15:04:05")
 	fmt.Printf("%s %s %v\n", t, metadata, rec.Message)
