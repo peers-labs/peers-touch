@@ -61,8 +61,14 @@ func (s *Server) Name() string {
 	return "Native-HTTP-Server"
 }
 
-func NewServer() server.Server {
-	return &Server{}
+func NewServer(opts ...server.Option) server.Server {
+	s := &Server{
+		opts: server.Options{},
+	}
+	for _, opt := range opts {
+		opt(&s.opts)
+	}
+	return s
 }
 
 func (s *Server) init(option ...server.Option) error {

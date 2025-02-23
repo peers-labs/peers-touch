@@ -165,7 +165,7 @@ func (l *logrusLogger) Options() logger.Options {
 	return l.opts.Options
 }
 
-// New builds a new logger based on options
+// NewLogger builds a new logger based on options
 func NewLogger(opts ...logger.Option) logger.Logger {
 	formatter := new(logrus.TextFormatter)
 

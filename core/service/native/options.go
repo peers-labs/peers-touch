@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/config/cmd"
 	"github.com/dirty-bro-tech/peers-touch-go/core/peers/config"
@@ -50,7 +51,7 @@ func newOptions(opts ...service.Option) service.Options {
 
 		// set the default components
 		//service.Client(plugin.ClientPlugins["mucp"].New()),
-		//service.Server(plugin.ServerPlugins["mucp"].New()),
+		service.Server(plugin.ServerPlugins["native"].New()),
 		//service.Logger(plugin.LoggerPlugins["console"].New()),
 		service.Config(cfg.DefaultConfig),
 		//service.HandleSignal(true),

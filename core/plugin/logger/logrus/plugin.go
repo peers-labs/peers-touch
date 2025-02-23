@@ -2,14 +2,14 @@ package logrus
 
 import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
-	scfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	scfg "github.com/dirty-bro-tech/peers-touch-go/core/peers/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
 )
 
 var options struct {
-	Stack struct {
+	Peers struct {
 		Logger struct {
 			scfg.Logger
 			Logrus struct {
@@ -21,7 +21,7 @@ var options struct {
 				TimestampFormat string `pconf:"timestamp-format"`
 			} `pconf:"slogrus"`
 		} `pconf:"logger"`
-	} `pconf:"stack"`
+	} `pconf:"peers"`
 }
 
 type logrusLogPlugin struct{}
@@ -32,7 +32,7 @@ func (l *logrusLogPlugin) Name() string {
 
 func (l *logrusLogPlugin) Options() []logger.Option {
 	var opts []logger.Option
-	lc := options.Stack.Logger.Logrus
+	lc := options.Peers.Logger.Logrus
 	opts = append(opts, SplitLevel(lc.SplitLevel))
 	opts = append(opts, ReportCaller(lc.ReportCaller))
 	opts = append(opts, WithoutKey(lc.WithoutKey))

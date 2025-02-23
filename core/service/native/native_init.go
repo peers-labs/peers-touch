@@ -3,9 +3,9 @@ package native
 import (
 	"context"
 	"fmt"
+	nativeServer "github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/native"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	nativeServer "github.com/dirty-bro-tech/peers-touch-go/core/server/native"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
