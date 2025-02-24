@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/cmd"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
-	cliSource "github.com/dirty-bro-tech/peers-touch-go/core/config/source/cli"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/source/file"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/source/memory"
+	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
+	cliSource "github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/cli"
+	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
+	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/memory"
 )
 
 var (

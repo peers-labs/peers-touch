@@ -1,4 +1,3 @@
-// Package config is an interface for dynamic configuration.
 package config
 
 import (
@@ -6,57 +5,14 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"strings"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/loader"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/reader"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/source/file"
+	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/reader"
+	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
 
-// Config is an interface abstraction for dynamic configuration
-type Config interface {
-	// provide the reader.Values interface
-	reader.Values
-
-	Init(opts ...Option) error
-	// Stop the config loader/watcher
-	Close() error
-	// Load config sources
-	Load(source ...source.Source) error
-	// Force a source changeset sync
-	Sync() error
-	// Watch a value for changes
-	Watch(path ...string) (Watcher, error)
-}
-
-// Watcher is the config watcher
-type Watcher interface {
-	Next() (reader.Value, error)
-	Stop() error
-}
-
-type Options struct {
-	Loader  loader.Loader
-	Reader  reader.Reader
-	Sources []source.Source
-
-	// for alternative data
-	Context context.Context
-
-	// HierarchyMerge merges the query args to one
-	// eg. Get("a","b","c") can be used as Get("a.b.c")
-	// the default is false
-	HierarchyMerge      bool
-	WithWatcherDisabled bool
-	Storage             bool
-}
-
-type Option func(o *Options)
-
 var (
-	// Default Config Manager
-	DefaultConfig = NewConfig()
-
 	// Define the tag name for setting autowired value of Options
 	// pconf equals peers-config :)
 	// todo support custom tagName
@@ -67,58 +23,101 @@ var (
 	optionsPool = make(map[string]reflect.Value)
 )
 
-// NewConfig returns new config
+type Config interface {
+	reader.Values
+	Init(opts ...Option) error
+	Close() error
+}
+
+type stackConfig struct {
+	config config.Config
+	opts   Options
+}
+
+func (c *stackConfig) Init(opts ...Option) (err error) {
+	for _, opt := range opts {
+		opt(&c.opts)
+	}
+
+	if c.opts.Context == nil {
+		c.opts.Context = context.Background()
+	}
+
+	defer func() {
+		if err != nil {
+			log.Errorf("config init error: %s", err)
+		}
+	}()
+
+	cfg, err := config.NewConfig(
+		config.Storage(c.opts.Storage),
+		config.Watch(c.opts.Watch),
+	)
+	if err != nil {
+		err = fmt.Errorf("create new config error: %s", err)
+		return
+	}
+
+	if err = cfg.Load(c.opts.Sources...); err != nil {
+		err = fmt.Errorf("load sources error: %s", err)
+		return
+	}
+
+	c.config = cfg
+
+	// cache c as sugar
+	_sugar = c
+	// set the autowired values
+	injectAutowired(c.opts.Context)
+
+	return nil
+}
+
+func (c *stackConfig) Get(path ...string) reader.Value {
+	tempPath := path
+	if len(path) == 1 {
+		if strings.Contains(path[0], DefaultHierarchySeparator) {
+			tempPath = strings.Split(path[0], DefaultHierarchySeparator)
+		}
+	}
+
+	return c.config.Get(tempPath...)
+}
+
+func (c *stackConfig) Bytes() []byte {
+	return c.config.Bytes()
+}
+
+func (c *stackConfig) Map() map[string]interface{} {
+	return c.config.Map()
+}
+
+func (c *stackConfig) Scan(v interface{}) error {
+	return c.config.Scan(v)
+}
+
+func (c *stackConfig) Close() error {
+	return c.config.Close()
+}
+
+// Init Stack's Config component
+// Any developer Don't use this Func anywhere. NewConfig works for Stack Framework only
 func NewConfig(opts ...Option) Config {
-	return newConfig(opts...)
-}
+	var o = Options{
+		Watch: true,
+	}
+	for _, opt := range opts {
+		opt(&o)
+	}
 
-// Bytes Return config as raw json
-func Bytes() []byte {
-	return DefaultConfig.Bytes()
-}
-
-// Map Return config as a map
-func Map() map[string]interface{} {
-	return DefaultConfig.Map()
-}
-
-// Scan values to a go type
-func Scan(v interface{}) error {
-	return DefaultConfig.Scan(v)
-}
-
-// Sync Force a source changeset sync
-func Sync() error {
-	return DefaultConfig.Sync()
-}
-
-// Get a value from the config
-func Get(path ...string) reader.Value {
-	return DefaultConfig.Get(path...)
-}
-
-// Load config sources
-func Load(source ...source.Source) error {
-	return DefaultConfig.Load(source...)
-}
-
-// Watch a value for changes
-func Watch(path ...string) (Watcher, error) {
-	return DefaultConfig.Watch(path...)
-}
-
-// LoadFile is shorthand for creating a file source and loading it
-func LoadFile(path string) error {
-	return Load(file.NewSource(
-		file.WithPath(path),
-	))
+	return &stackConfig{opts: o}
 }
 
 func RegisterOptions(options ...interface{}) {
 	for _, option := range options {
 		val := reflect.ValueOf(option)
 		if val.Kind() != reflect.Ptr {
-			panic("option must be a pointer")
+			log.Error("options must be a pointer")
 			return
 		}
 

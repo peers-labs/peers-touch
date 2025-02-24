@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
-	cliSource "github.com/dirty-bro-tech/peers-touch-go/core/config/source/cli"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/source/file"
+	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
+	cliSource "github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/cli"
+	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	uf "github.com/dirty-bro-tech/peers-touch-go/core/util/file"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
@@ -29,7 +29,7 @@ func LoadConfig(sOpts *service.Options) (err error) {
 			return
 		}
 
-		sOpts.Conf = fmt.Sprintf("%s%s%s", wkDir, string(os.PathSeparator), peersStdConfigDir, string(os.PathSeparator), peersStdConfigFile)
+		sOpts.Conf = fmt.Sprintf("%s%s%s%s%s", wkDir, string(os.PathSeparator), peersStdConfigDir, string(os.PathSeparator), peersStdConfigFile)
 	}
 
 	var appendSource []source.Source

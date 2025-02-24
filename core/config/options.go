@@ -1,29 +1,40 @@
 package config
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/loader"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/reader"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config/source"
+	"context"
+
+	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 )
 
-// WithLoader sets the loader for manager config
-func WithLoader(l loader.Loader) Option {
+type Options struct {
+	Sources []source.Source
+	Storage bool
+	Watch   bool
+	// HierarchyMerge merges the query args to one
+	// eg. Get("a","b","c") can be used as Get("a.b.c")
+	// the default is false
+	HierarchyMerge bool
+
+	Context context.Context
+}
+
+type Option func(o *Options)
+
+func WithSources(s ...source.Source) Option {
 	return func(o *Options) {
-		o.Loader = l
+		o.Sources = append(o.Sources, s...)
 	}
 }
 
-// WithSources appends a source to list of sources
-func WithSources(ss ...source.Source) Option {
+func WithStorage(s bool) Option {
 	return func(o *Options) {
-		o.Sources = append(o.Sources, ss...)
+		o.Storage = s
 	}
 }
 
-// WithReader sets the config reader
-func WithReader(r reader.Reader) Option {
+func WithWatch(w bool) Option {
 	return func(o *Options) {
-		o.Reader = r
+		o.Watch = w
 	}
 }
 
@@ -33,8 +44,8 @@ func WithHierarchyMerge(h bool) Option {
 	}
 }
 
-func WithStorage(s bool) Option {
+func WithContext(ctx context.Context) Option {
 	return func(o *Options) {
-		o.Storage = s
+		o.Context = ctx
 	}
 }

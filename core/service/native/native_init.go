@@ -3,11 +3,13 @@ package native
 import (
 	"context"
 	"fmt"
-	nativeServer "github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/native"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
+
+	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus"
+	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/native"
 )
 
 // Init initialises options. Additionally it calls cmd.Init
@@ -19,15 +21,6 @@ func (s *native) Init(opts ...service.Option) error {
 		o(&s.opts)
 	}
 
-	if s.opts.Context == nil {
-		s.opts.Context = context.Background()
-	}
-
-	if s.opts.Server == nil {
-		// todo config、plugin、options
-		s.opts.Server = nativeServer.NewServer()
-	}
-
 	if len(s.opts.BeforeInit) > 0 {
 		for _, f := range s.opts.BeforeInit {
 			err := f(&s.opts)
@@ -35,6 +28,15 @@ func (s *native) Init(opts ...service.Option) error {
 				log.Fatalf("init service err: %s", err)
 			}
 		}
+	}
+
+	if s.opts.Context == nil {
+		s.opts.Context = context.Background()
+	}
+
+	if s.opts.Server == nil {
+		// todo config、plugin、options
+		s.opts.Server = plugin.ServerPlugins["native"].New()
 	}
 
 	// begin init
