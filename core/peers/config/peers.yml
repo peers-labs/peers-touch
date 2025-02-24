@@ -1,17 +1,23 @@
-stack:
-  # array. extra config files should be inited together, files that in the same dir with stack.yml.
+peers:
+  # array. extra config files should be inited together, files that in the same dir with peers.yml.
   includes:
   service:
     id:
     name:
-    rpc: stack
-    web:
-      enable: false
-      address: 127.0.0.1:8090
-      root-path: /${stack.service.name}
-      static-dir: /webapp
-    stack:
-    grpc:
+    client:
+      protocol: http
+      pool:
+        size:
+        ttl:
+    server:
+      name: native
+      address:
+      advertise:
+      protocol:
+      version:
+      # metadata register to registry. array
+      metadata:
+      native:
   # registry center options
   registry:
     # string. registry middleware name. eg: mdns, etcd, consul...
@@ -34,23 +40,6 @@ stack:
       allow-stale:
       # will tell the service provider to check the service address
       tcp-check:
-  # broker component options
-  broker:
-    #
-    name: http
-    address:
-  client:
-    protocol: mucp
-    pool:
-      size:
-      ttl:
-  server:
-    address:
-    advertise:
-    protocol:
-    version:
-    # metadata register to registry. array
-    metadata:
   transport:
     name: http
     addrs:

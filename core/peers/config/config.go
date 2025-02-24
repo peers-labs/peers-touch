@@ -15,6 +15,7 @@ import (
 )
 
 var (
+	peersStdConfigDir  = "conf"
 	peersStdConfigFile = "peers.yml"
 	peersConfig        = PeersConfig{}
 )

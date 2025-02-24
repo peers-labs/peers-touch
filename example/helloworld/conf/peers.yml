@@ -1,4 +1,4 @@
 peers:
   service:
     server:
-      address: :8080
+      address: :8081

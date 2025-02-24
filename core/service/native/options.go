@@ -20,7 +20,7 @@ func newOptions(opts ...service.Option) service.Options {
 	defaultOpts := []service.Option{
 		service.Context(context.Background()),
 		// default use stack rpc
-		service.RPC("stack"),
+		service.RPC("peers"),
 		// load config
 		service.BeforeInit(func(sOpts *service.Options) error {
 			// cmd helps stack parse command options and reset the options that should work.

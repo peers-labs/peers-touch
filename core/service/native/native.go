@@ -34,7 +34,7 @@ func (s *native) Server() server.Server {
 }
 
 func (s *native) String() string {
-	return "stack"
+	return "peers"
 }
 
 func (s *native) Start() error {

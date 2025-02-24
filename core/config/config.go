@@ -58,9 +58,9 @@ var (
 	DefaultConfig = NewConfig()
 
 	// Define the tag name for setting autowired value of Options
-	// sc equals stack-config :)
+	// pconf equals peers-config :)
 	// todo support custom tagName
-	DefaultOptionsTagName     = "sc"
+	DefaultOptionsTagName     = "pconf"
 	DefaultHierarchySeparator = "."
 
 	// holds all the Options

@@ -140,7 +140,7 @@ func newCmd(opts ...Option) Cmd {
 	}
 
 	if len(options.Description) == 0 {
-		options.Description = "a stack-rpc service"
+		options.Description = "a peers-touch-go node"
 	}
 
 	cmd := new(cmd)

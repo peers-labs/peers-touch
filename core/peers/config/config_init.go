@@ -29,7 +29,7 @@ func LoadConfig(sOpts *service.Options) (err error) {
 			return
 		}
 
-		sOpts.Conf = fmt.Sprintf("%s%s%s", wkDir, string(os.PathSeparator), peersStdConfigFile)
+		sOpts.Conf = fmt.Sprintf("%s%s%s", wkDir, string(os.PathSeparator), peersStdConfigDir, string(os.PathSeparator), peersStdConfigFile)
 	}
 
 	var appendSource []source.Source
@@ -44,10 +44,10 @@ func LoadConfig(sOpts *service.Options) (err error) {
 		if exists {
 			// todo support more types
 			val := struct {
-				Stack struct {
+				Peers struct {
 					Includes string `yaml:"includes"`
 					Config   Config `yaml:"config"`
-				} `yaml:"stack"`
+				} `yaml:"peers"`
 			}{}
 			stdFileSource := file.NewSource(file.WithPath(sOpts.Conf))
 			appendSource = append(appendSource, stdFileSource)
@@ -60,13 +60,13 @@ func LoadConfig(sOpts *service.Options) (err error) {
 
 			errN = yaml.Unmarshal(set.Data, &val)
 			if errN != nil {
-				err = fmt.Errorf("unmarshal stack.yml err: %s", errN)
+				err = fmt.Errorf("unmarshal peers.yml err: %s", errN)
 				return err
 			}
 
-			if len(val.Stack.Includes) > 0 {
+			if len(val.Peers.Includes) > 0 {
 				filePath := sOpts.Conf[:strings.LastIndex(sOpts.Conf, string(os.PathSeparator))+1]
-				for _, f := range strings.Split(val.Stack.Includes, ",") {
+				for _, f := range strings.Split(val.Peers.Includes, ",") {
 					log.Infof("load extra config file: %s%s", filePath, f)
 					f = strings.TrimSpace(f)
 					extraFile := fmt.Sprintf("%s%s", filePath, f)
@@ -85,11 +85,11 @@ func LoadConfig(sOpts *service.Options) (err error) {
 			}
 
 			// config option
-			cfgOption = append(cfgOption, cfg.WithStorage(val.Stack.Config.Storage), cfg.WithHierarchyMerge(val.Stack.Config.HierarchyMerge))
+			cfgOption = append(cfgOption, cfg.WithStorage(val.Peers.Config.Storage), cfg.WithHierarchyMerge(val.Peers.Config.HierarchyMerge))
 		}
 	}
 
-	// the last two must be env & stackCmd line
+	// the last two must be env & Cmd line
 	appendSource = append(appendSource, cliSource.NewSource(sOpts.Cmd.App(), cliSource.Context(sOpts.Cmd.App().Context())))
 	cfgOption = append(cfgOption, cfg.WithSources(appendSource...))
 	err = sOpts.Config.Init(cfgOption...)
