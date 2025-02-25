@@ -21,6 +21,10 @@ func (s *native) Init(opts ...service.Option) error {
 		o(&s.opts)
 	}
 
+	if s.opts.Context == nil {
+		s.opts.Context = context.Background()
+	}
+
 	if len(s.opts.BeforeInit) > 0 {
 		for _, f := range s.opts.BeforeInit {
 			err := f(&s.opts)
@@ -28,10 +32,6 @@ func (s *native) Init(opts ...service.Option) error {
 				log.Fatalf("init service err: %s", err)
 			}
 		}
-	}
-
-	if s.opts.Context == nil {
-		s.opts.Context = context.Background()
 	}
 
 	if s.opts.Server == nil {

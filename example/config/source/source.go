@@ -1,9 +1,6 @@
 package main
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
-	ns "github.com/dirty-bro-tech/peers-touch-go/core/service/native"
 	"net/http"
 	"time"
 
@@ -11,6 +8,9 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
+	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/dirty-bro-tech/peers-touch-go/core/service"
+	ns "github.com/dirty-bro-tech/peers-touch-go/core/service/native"
 )
 
 type source struct {
@@ -32,17 +32,18 @@ func init() {
 }
 
 func main() {
-	s := ns.NewService(service.WithHandlers(
-		server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("hello world"))
-		}))))
+	s := ns.NewService(
+		service.Config(config.NewConfig(
+			config.WithSources(
+				file.NewSource(
+					file.WithPath("./source.yml"))))),
+		service.WithHandlers(
+			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte("hello world"))
+			}))))
+
 	service := peers.NewPeer(
 		peers.WithCore(s),
-		peers.WithConfig(
-			config.NewConfig(
-				config.WithSources(
-					file.NewSource(
-						file.WithPath("./source.yml"))))),
 	)
 	service.Init()
 
