@@ -2,3 +2,9 @@ peers:
   service:
     server:
       address: :8082
+      metadata:
+        name: "foo"
+        value: "qux"
+      native:
+        enabled: true
+        some-key: "some-value"

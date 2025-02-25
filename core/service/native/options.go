@@ -18,7 +18,7 @@ func newOptions(opts ...service.Option) service.Options {
 
 	defaultOpts := []service.Option{
 		service.Context(context.Background()),
-		// default use stack rpc
+		// todo remove non-peers' code
 		service.RPC("peers"),
 		// load config
 		service.BeforeInit(func(sOpts *service.Options) error {

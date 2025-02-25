@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 )
@@ -44,10 +45,13 @@ func (s *native) Start() error {
 		}
 	}
 
+	logger.Infof("server started at %s", s.opts.Server.Options().Address)
 	if err := s.opts.Server.Start(); err != nil {
 		return err
 	}
 
+	// todo start achievement, but now it's blocked by Start
+	// so will never be called. it should be pass a exit signal
 	for _, fn := range s.opts.AfterStart {
 		if err := fn(); err != nil {
 			return err
@@ -87,6 +91,8 @@ func (s *native) Run() error {
 	if err := s.Start(); err != nil {
 		return err
 	}
+
+	logger.Infof("[%s] server started", s.Name())
 
 	ch := make(chan os.Signal, 1)
 	if s.opts.Signal {

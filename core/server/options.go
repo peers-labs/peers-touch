@@ -7,9 +7,9 @@ type Option func(*Options)
 
 // Options is the server options
 type Options struct {
-	Address  string // Server address
-	Timeout  int    // Server timeout
-	Metadata map[string]string
+	Address  string            `pconf:"address"` // Server address
+	Timeout  int               `pconf:"timout"`  // Server timeout
+	Metadata map[string]string `pconf:"metadata"`
 	Handlers []Handler
 }
 

@@ -35,6 +35,8 @@ type stackConfig struct {
 }
 
 func (c *stackConfig) Init(opts ...Option) (err error) {
+	log.Infof("peers' config init begin")
+
 	for _, opt := range opts {
 		opt(&c.opts)
 	}
@@ -70,6 +72,7 @@ func (c *stackConfig) Init(opts ...Option) (err error) {
 	// set the autowired values
 	injectAutowired(c.opts.Context)
 
+	log.Infof("peers' config init done")
 	return nil
 }
 

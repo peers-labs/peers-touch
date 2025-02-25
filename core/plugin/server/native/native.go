@@ -72,10 +72,6 @@ func NewServer(opts ...server.Option) server.Server {
 }
 
 func (s *Server) init(option ...server.Option) error {
-	s.opts = server.Options{
-		Address: ":8080", // Default address
-		Timeout: 0,       // Default timeout, 0 means no timeout
-	}
 	for _, opt := range option {
 		opt(&s.opts)
 	}

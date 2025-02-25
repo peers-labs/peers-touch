@@ -18,7 +18,7 @@ func injectAutowired(ctx context.Context) {
 	refresh := func() {
 		var wg sync.WaitGroup
 		for s, value := range optionsPool {
-			log.Infof("setting values for %s", s)
+			log.Debugf("setting values for %s", s)
 			bindAutowiredValue(value)
 		}
 		wg.Wait()
@@ -107,6 +107,10 @@ func bindAutowiredValue(obj reflect.Value, path ...string) {
 			newPath := append(path, tag)
 			bindAutowiredValue(nextValue, newPath...)
 		}
+	case reflect.Map:
+		// 初始化 map
+		var tempMap map[string]string
+		v.Set(reflect.ValueOf(value.StringMap(tempMap)))
 	default:
 		log.Warnf("unsupported type: %s of %s", v.Kind().String(), v.String())
 	}

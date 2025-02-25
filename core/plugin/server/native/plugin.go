@@ -20,10 +20,15 @@ peers:
 var options struct {
 	Peers struct {
 		Service struct {
-			Name    string `pconf:"name"`
-			Address string `pconf:"address"`
-			Timeout int    `pconf:"timeout"`
-			Server  struct {
+			Name string `pconf:"name"`
+			// todo move the common config to peers-touch-go/core/server
+			Server struct {
+				Address  string            `pconf:"address"` // Server address
+				Timeout  int               `pconf:"timout"`  // Server timeout
+				Metadata map[string]string `pconf:"metadata"`
+				Native   struct {
+					Enabled bool `pconf:"enabled"`
+				} `pconf:"native"`
 			} `pconf:"server"`
 		} `pconf:"service"`
 	} `pconf:"peers"`
@@ -37,8 +42,14 @@ func (n *nativeServerPlugin) Name() string {
 }
 
 func (n *nativeServerPlugin) Options() []server.Option {
-	// todo real options
-	return []server.Option{}
+	var opts []server.Option
+	if options.Peers.Service.Server.Native.Enabled {
+		opts = append(opts,
+			server.WithAddress(options.Peers.Service.Server.Address),
+			server.WithTimeout(options.Peers.Service.Server.Timeout))
+	}
+
+	return opts
 }
 
 func (n *nativeServerPlugin) New(opts ...server.Option) server.Server {

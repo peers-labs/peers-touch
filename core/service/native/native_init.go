@@ -12,7 +12,7 @@ import (
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/native"
 )
 
-// Init initialises options. Additionally it calls cmd.Init
+// Init initialises options. Additionally, it calls cmd.Init
 // which parses command line flags. cmd.Init is only called
 // on first Init.
 func (s *native) Init(opts ...service.Option) error {
@@ -64,7 +64,6 @@ func (s *native) initComponents() error {
 	// todo init server
 	if err := s.opts.Server.Init(s.opts.ServerOptions...); err != nil {
 		return err
-
 	}
 
 	return nil
