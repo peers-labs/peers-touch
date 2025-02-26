@@ -7,6 +7,7 @@ import (
 type Server interface {
 	Init(...Option) error
 	Options() Options
+	// Handle use to add new handler dynamically
 	Handle(Handler) error
 	Start() error
 	Stop() error

@@ -3,12 +3,15 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus"
+	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/hertz"
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/native"
 )
 
@@ -34,11 +37,6 @@ func (s *native) Init(opts ...service.Option) error {
 		}
 	}
 
-	if s.opts.Server == nil {
-		// todo config、plugin、options
-		s.opts.Server = plugin.ServerPlugins["native"].New()
-	}
-
 	// begin init
 	if err := s.initComponents(); err != nil {
 		log.Fatalf("init service's components err: %s", err)
@@ -62,6 +60,17 @@ func (s *native) initComponents() error {
 	}
 
 	// todo init server
+	if s.opts.Server == nil {
+		serverName := config.Get("peers.service.server.name").String("")
+		if len(serverName) > 0 {
+			if plugin.ServerPlugins[serverName] == nil {
+				logger.Errorf("server %s not found, use native by default", serverName)
+				serverName = "native"
+			}
+		}
+
+		s.opts.Server = plugin.ServerPlugins[serverName].New()
+	}
 	if err := s.opts.Server.Init(s.opts.ServerOptions...); err != nil {
 		return err
 	}

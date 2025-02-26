@@ -1,10 +1,16 @@
 peers:
+  config:
+    hierarchy-merge: true
   service:
     server:
+      name: "hertz"
       address: :8082
       metadata:
         name: "foo"
         value: "qux"
       native:
+        enabled: true
+        some-key: "some-value"
+      hertz:
         enabled: true
         some-key: "some-value"

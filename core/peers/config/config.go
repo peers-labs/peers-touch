@@ -25,8 +25,8 @@ func init() {
 }
 
 type Config struct {
-	HierarchyMerge bool `json:"hierarchyMerge" pconf:"hierarchy-merge"`
-	Storage        bool `json:"storage" pconf:"storage"`
+	HierarchyMerge bool `yaml:"hierarchy-merge" json:"hierarchy-merge" pconf:"hierarchy-merge"`
+	Storage        bool `yaml:"storage" json:"storage" pconf:"storage"`
 }
 
 func (c *Config) Options() []cfg.Option {
@@ -86,8 +86,8 @@ func (m metadata) Value(k string) string {
 }
 
 type Service struct {
-	Name    string `json:"name" pconf:"name"`
-	Address string `json:"address" pconf:"address"`
+	Name   string `json:"name" pconf:"name"`
+	Server Server `json:"server" pconf:"server"`
 }
 
 func (s *Service) Options() serviceOpts {
@@ -232,7 +232,6 @@ type PeersConfig struct {
 		Config   Config   `json:"config" pconf:"config"`
 		Registry Registry `json:"registry" pconf:"registry"`
 		Client   Client   `json:"client" pconf:"client"`
-		Server   Server   `json:"server" pconf:"server"`
 		Logger   Logger   `json:"logger" pconf:"logger"`
 		Service  Service  `json:"service" pconf:"service"`
 	} `json:"peers" pconf:"peers"`

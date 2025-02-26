@@ -12,6 +12,10 @@ type Options struct {
 	Address  string            `pconf:"address"` // Server address
 	Timeout  int               `pconf:"timout"`  // Server timeout
 	Metadata map[string]string `pconf:"metadata"`
+	// Handlers is a list of handlers that injected to the server
+	// usually, it's used for the initialization of the server
+	// if you want to add handlers after the server is initialized,
+	// you can use the server.Handler interface
 	Handlers []Handler
 
 	Context context.Context

@@ -2,6 +2,7 @@ package native
 
 import (
 	"fmt"
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"net/http"
 	"sync"
 	"time"
@@ -36,13 +37,6 @@ func (s *Server) Handle(handler server.Handler) error {
 	s.warmupLk.Lock()
 	defer s.warmupLk.Unlock()
 
-	// Check if handler is already registered
-	for _, h := range s.opts.Handlers {
-		if h.Name() == handler.Name() {
-			return fmt.Errorf("handler for %s already exists", handler.Name())
-		}
-	}
-
 	// Convert handler to appropriate type
 	switch h := handler.Handler().(type) {
 	case http.Handler:
@@ -67,14 +61,19 @@ func (s *Server) Handle(handler server.Handler) error {
 		s.mux = currHandler
 	}
 
+	s.opts.Handlers = append(s.opts.Handlers, handler)
+
 	return nil
 }
 
 func (s *Server) Start() error {
-	// add all handlers to http.DefaultServeMux
-	for _, handler := range s.opts.Handlers {
-		http.Handle(handler.Path(), handler.Handler().(http.Handler))
+	for _, h := range s.opts.Handlers {
+		if err := s.Handle(h); err != nil {
+			logger.Errorf("[native] handle %s error: %v", h.Path(), err)
+			return err
+		}
 	}
+
 	return s.httpServer.ListenAndServe()
 }
 
@@ -83,7 +82,7 @@ func (s *Server) Stop() error {
 }
 
 func (s *Server) Name() string {
-	return "Native-HTTP-Server"
+	return "native"
 }
 
 func NewServer(opts ...server.Option) server.Server {
@@ -105,6 +104,8 @@ func (s *Server) init(option ...server.Option) error {
 		Addr:    s.opts.Address,
 		Handler: http.DefaultServeMux,
 	}
+
+	s.mux = http.NewServeMux()
 
 	if s.opts.Timeout > 0 {
 		s.httpServer.ReadTimeout = time.Duration(s.opts.Timeout) * time.Second

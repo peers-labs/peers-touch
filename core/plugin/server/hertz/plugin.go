@@ -1,4 +1,4 @@
-package native
+package hertz
 
 import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
@@ -10,7 +10,7 @@ var options struct {
 	Peers struct {
 		Service struct {
 			Server struct {
-				Native struct {
+				Hertz struct {
 					Enabled bool `pconf:"enabled"`
 				} `pconf:"native"`
 			} `pconf:"server"`
@@ -18,28 +18,29 @@ var options struct {
 	} `pconf:"peers"`
 }
 
-type nativeServerPlugin struct {
+type hertzServerPlugin struct {
 }
 
-func (n *nativeServerPlugin) Name() string {
-	return "native"
+func (n *hertzServerPlugin) Name() string {
+	return "hertz"
 }
 
-func (n *nativeServerPlugin) Options() []server.Option {
+func (n *hertzServerPlugin) Options() []server.Option {
 	var opts []server.Option
-	if options.Peers.Service.Server.Native.Enabled {
+	if options.Peers.Service.Server.Hertz.Enabled {
 		// todo append opts
 	}
 
 	return opts
 }
 
-func (n *nativeServerPlugin) New(opts ...server.Option) server.Server {
+func (n *hertzServerPlugin) New(opts ...server.Option) server.Server {
 	opts = append(opts, n.Options()...)
 	return NewServer(opts...)
 }
 
 func init() {
 	config.RegisterOptions(&options)
-	plugin.ServerPlugins["native"] = &nativeServerPlugin{}
+	pl := &hertzServerPlugin{}
+	plugin.ServerPlugins[pl.Name()] = &hertzServerPlugin{}
 }
