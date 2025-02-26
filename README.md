@@ -25,9 +25,10 @@ No one can pry into our personal life and trace any private things.
 ## References
 Thanks for those friend projects:  <br />
 * [go-fed](https://github.com/go-fed/activity): I learn some implementation ideas from this project. <br />
-  * [apcore](https://github.com/go-fed/activity) 
+  * [apcore](https://github.com/go-fed/apcore) 
 * [go-ap](https://github.com/go-ap/activitypub): This has truly inspired me to design innovative models and has significantly streamlined my workflow, saving me an immense amount of time. <br />
 * [go-micro](https://github.com/micro/go-micro): An excellent framework with powerful design. And earlier years, I was a maintainer of it. Reference to this design saves us a lot of time on How I Should Design The Network Interface. Actually, distributed terminals that running in cloud are also parts of a Cloud-Microservice system.  <br />
+* [hertz](https://github.com/cloudwego/hertz) : A high-performance HTTP framework serves as our default federation HTTP server, optimized for efficient and robust handling of network traffic. <br />
 
 ## Acknowledgements
 

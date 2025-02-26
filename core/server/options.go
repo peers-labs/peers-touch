@@ -1,5 +1,7 @@
 package server
 
+import "context"
+
 // region server options
 
 // Option is a function that can be used to configure a server
@@ -11,6 +13,8 @@ type Options struct {
 	Timeout  int               `pconf:"timout"`  // Server timeout
 	Metadata map[string]string `pconf:"metadata"`
 	Handlers []Handler
+
+	Context context.Context
 }
 
 // WithAddress sets the server address
@@ -39,5 +43,14 @@ func WithHandlers(handlers ...Handler) Option {
 		o.Handlers = handlers
 	}
 }
+
+// endregion
+
+// region handler options
+
+// HandlerOption is a function that can be used to configure a handler
+type HandlerOption func(*HandlerOptions)
+
+type HandlerOptions struct{}
 
 // endregion

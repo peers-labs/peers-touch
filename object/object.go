@@ -1,10 +1,16 @@
 package object
 
+import (
+	ap "github.com/dirty-bro-tech/peers-touch-go/vendors/activitypub"
+)
+
 type (
 	// ID provides the globally unique identifier
-	ID string
+	ID ap.ID
 	// Type provides the type of the ActivityPub object
 	Type string
+
+	ActivityVocabularyType ap.ActivityVocabularyType
 )
 
 // region LangRef is used for NaturalLanguage
@@ -29,5 +35,3 @@ type Object interface {
 	ID() ID
 	Type() Type
 }
-
-type Item string

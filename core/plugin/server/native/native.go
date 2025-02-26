@@ -14,8 +14,8 @@ type Server struct {
 	warmupLk   sync.RWMutex
 	opts       server.Options
 	httpServer *http.Server
-
-	once sync.Once
+	mux        *http.ServeMux
+	once       sync.Once
 }
 
 func (s *Server) Options() server.Options {
@@ -35,11 +35,36 @@ func (s *Server) Init(option ...server.Option) (err error) {
 func (s *Server) Handle(handler server.Handler) error {
 	s.warmupLk.Lock()
 	defer s.warmupLk.Unlock()
-	// check if handler is already registered
+
+	// Check if handler is already registered
 	for _, h := range s.opts.Handlers {
 		if h.Name() == handler.Name() {
-			return fmt.Errorf("handler for %s already exists", handler.Handler())
+			return fmt.Errorf("handler for %s already exists", handler.Name())
 		}
+	}
+
+	// Convert handler to appropriate type
+	switch h := handler.Handler().(type) {
+	case http.Handler:
+		s.mux.Handle(handler.Path(), h)
+	case server.HandlerFunc:
+		s.mux.HandleFunc(handler.Path(), h)
+	case server.ContextHandlerFunc:
+		s.mux.HandleFunc(handler.Path(), func(w http.ResponseWriter, r *http.Request) {
+			h(r.Context(), w, r)
+		})
+	default:
+		return fmt.Errorf("unsupported handler type: %T", h)
+	}
+
+	// Apply middlewares
+	if len(handler.Wrappers()) > 0 {
+		currHandler := s.mux
+		for _, mw := range handler.Wrappers() {
+			currHandler = http.NewServeMux()
+			mw(currHandler)
+		}
+		s.mux = currHandler
 	}
 
 	return nil
@@ -48,7 +73,7 @@ func (s *Server) Handle(handler server.Handler) error {
 func (s *Server) Start() error {
 	// add all handlers to http.DefaultServeMux
 	for _, handler := range s.opts.Handlers {
-		http.Handle(handler.Path(), handler.Handler())
+		http.Handle(handler.Path(), handler.Handler().(http.Handler))
 	}
 	return s.httpServer.ListenAndServe()
 }

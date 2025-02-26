@@ -14,6 +14,7 @@ var (
 	nullString = "null"
 )
 
+// todo autowired should only be working immediately after the config is really changed.
 func injectAutowired(ctx context.Context) {
 	refresh := func() {
 		var wg sync.WaitGroup

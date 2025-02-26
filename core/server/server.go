@@ -16,13 +16,23 @@ type Server interface {
 type Handler interface {
 	Name() string
 	Path() string
-	Handler() http.Handler
+	// Handler returns a function that can handle different types of contexts
+	Handler() interface{}
+	Wrappers() []Wrapper
 }
 
+// Wrapper defines a function type for Wrapper
+type Wrapper func(next http.Handler) http.Handler
+
 type httpHandler struct {
-	name    string
-	path    string
-	handler http.Handler
+	name     string
+	path     string
+	handler  interface{}
+	wrappers []Wrapper
+}
+
+func (h *httpHandler) Wrappers() []Wrapper {
+	return h.wrappers
 }
 
 func (h *httpHandler) Name() string {
@@ -33,14 +43,20 @@ func (h *httpHandler) Path() string {
 	return h.path
 }
 
-func (h *httpHandler) Handler() http.Handler {
+func (h *httpHandler) Handler() interface{} {
 	return h.handler
 }
 
-func NewHandler(name, path string, handler http.Handler) Handler {
+func NewHandler(name, path string, handler interface{}, opts ...HandlerOption) Handler {
+	config := &HandlerOptions{}
+	for _, opt := range opts {
+		opt(config)
+	}
+
 	return &httpHandler{
 		name:    name,
 		path:    path,
 		handler: handler,
+		// wrapper: config.middlewares,
 	}
 }
