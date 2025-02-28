@@ -40,11 +40,27 @@ func (s *Server) Handle(handler server.Handler) error {
 	// Convert handler to appropriate type
 	switch h := handler.Handler().(type) {
 	case http.Handler:
-		s.mux.Handle(handler.Path(), h)
+		s.mux.Handle(handler.Path(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != handler.Method().Me() {
+				http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			h.ServeHTTP(w, r)
+		}))
 	case server.HandlerFunc:
-		s.mux.HandleFunc(handler.Path(), h)
+		s.mux.HandleFunc(handler.Path(), func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != handler.Method().Me() {
+				http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			h(w, r)
+		})
 	case server.ContextHandlerFunc:
 		s.mux.HandleFunc(handler.Path(), func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != handler.Method().Me() {
+				http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+				return
+			}
 			h(r.Context(), w, r)
 		})
 	default:

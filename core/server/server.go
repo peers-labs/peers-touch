@@ -4,6 +4,25 @@ import (
 	"net/http"
 )
 
+type Method string
+
+func (m Method) Me() string {
+	return string(m)
+}
+
+const (
+	GET     Method = "GET"
+	POST    Method = "POST"
+	PUT     Method = "PUT"
+	DELETE  Method = "DELETE"
+	PATCH   Method = "PATCH"
+	HEAD    Method = "HEAD"
+	OPTIONS Method = "OPTIONS"
+	TRACE   Method = "TRACE"
+	CONNECT Method = "CONNECT"
+	ANY     Method = "ANY"
+)
+
 type Server interface {
 	Init(...Option) error
 	Options() Options
@@ -17,6 +36,7 @@ type Server interface {
 type Handler interface {
 	Name() string
 	Path() string
+	Method() Method
 	// Handler returns a function that can handle different types of contexts
 	Handler() interface{}
 	Wrappers() []Wrapper
@@ -27,6 +47,7 @@ type Wrapper func(next http.Handler) http.Handler
 
 type httpHandler struct {
 	name     string
+	method   Method
 	path     string
 	handler  interface{}
 	wrappers []Wrapper
@@ -46,6 +67,10 @@ func (h *httpHandler) Path() string {
 
 func (h *httpHandler) Handler() interface{} {
 	return h.handler
+}
+
+func (h *httpHandler) Method() Method {
+	return h.method
 }
 
 func NewHandler(name, path string, handler interface{}, opts ...HandlerOption) Handler {
