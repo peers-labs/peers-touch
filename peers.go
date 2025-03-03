@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/client"
+	ns "github.com/dirty-bro-tech/peers-touch-go/core/service/native"
 	"github.com/dirty-bro-tech/peers-touch-go/object"
 	"github.com/dirty-bro-tech/peers-touch-go/server"
 )
@@ -64,6 +65,11 @@ func (p *nativePeer) Name() string {
 func (p *nativePeer) Init(opts ...Option) error {
 	for _, o := range opts {
 		o(&p.opts)
+	}
+
+	// if service is nil, use the default service
+	if p.opts.Service == nil {
+		p.opts.Service = ns.NewService()
 	}
 
 	err := p.opts.Service.Init()

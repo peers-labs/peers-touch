@@ -8,21 +8,18 @@ import (
 // Peers defines a router protocol that can be used to register handlers with a server.
 // also supplies standard handlers which follow activityPub protocol.
 // if you what to register a handler with Peers server, you can implement this interface, then call server.Handle() to register it.
-type Router interface {
-	server.Handler
-}
+type Router server.Handler
 
 type Routers interface {
 	Routers() []Router
 }
 
-type ActivityPubRouterURL string
+type RouterURL string
 
-const (
-	ActivityPubRouterURLInbox    ActivityPubRouterURL = "/inbox"
-	ActivityPubRouterURLOutbox   ActivityPubRouterURL = "/outbox"
-	ActivityPubRouterURLFollow   ActivityPubRouterURL = "/follow"
-	ActivityPubRouterURLUnfollow ActivityPubRouterURL = "/unfollow"
-	ActivityPubRouterURLLike     ActivityPubRouterURL = "/like"
-	ActivityPubRouterURLUndo     ActivityPubRouterURL = "/undo"
-)
+func (apr RouterURL) Name() string {
+	return string(apr)
+}
+
+func (apr RouterURL) URL() string {
+	return string(apr)
+}

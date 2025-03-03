@@ -6,10 +6,14 @@ import (
 )
 
 // Server 定义 Server 接口
-type Server server.Server
+type Server interface {
+	Init(...server.Option) error
+}
 
 // nativeServer 定义 nativeServer 结构体
 type nativeServer struct {
+	routers []Routers
+
 	server server.Server
 }
 
@@ -17,13 +21,9 @@ func (n *nativeServer) Options() server.Options {
 	return n.server.Options()
 }
 
-func (n *nativeServer) Handle(handler server.Handler) error {
-	return n.server.Handle(handler)
-}
-
 // Init 初始化 server
-func (n *nativeServer) Init(option ...server.Option) error {
-	return n.server.Init(option...)
+func (n *nativeServer) Init(opts ...server.Option) error {
+	return n.server.Init(opts...)
 }
 
 // Start the server
@@ -41,9 +41,10 @@ func (n *nativeServer) Name() string {
 	return n.server.Name()
 }
 
-// FromService creates a new Server from a service.Service
 func FromService(s service.Service) Server {
-	return &nativeServer{
-		server: s.Server(), // 假设这里有一个 NewServer 函数来创建 server 实例
+	ss := &nativeServer{
+		server: s.Server(),
 	}
+
+	return ss
 }
