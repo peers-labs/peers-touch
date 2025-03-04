@@ -1,6 +1,7 @@
 package peers
 
 import (
+	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/client"
@@ -67,17 +68,29 @@ func (p *nativePeer) Init(opts ...Option) error {
 		o(&p.opts)
 	}
 
-	// if service is nil, use the default service
-	if p.opts.Service == nil {
-		p.opts.Service = ns.NewService()
+	// create activitypub server
+	if p.opts.Server == nil {
+		p.opts.Server = server.NewServer()
 	}
 
-	err := p.opts.Service.Init()
+	// if service is nil, use the default service
+	if p.opts.Service == nil {
+		p.opts.Service = ns.NewService(service.Server(p.opts.Server))
+	}
+
+	// region prepare the service options
+	// region prepare server routers of activitypub protocol and management
+
+	// endregion
+	// endregion
+
+	err := p.opts.Service.Init(p.opts.ServiceOptions()...)
 	if err != nil {
 		return err
 	}
 
 	// wrap the client and server
+	// TODO: it isn't good to initial the client and server here, but just keep it here for now
 	p.client = client.FromService(
 		p.opts.Service,
 	)

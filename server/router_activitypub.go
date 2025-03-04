@@ -50,6 +50,10 @@ func (apr *ActivityPubRouters) Routers() []Router {
 	}
 }
 
+func (apr *ActivityPubRouters) Name() string {
+	return RoutersNameActivityPub
+}
+
 // implements Router interface
 
 // NewActivityPubRouter creates a new router with ActivityPub endpoints

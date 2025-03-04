@@ -5,6 +5,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
+	"github.com/dirty-bro-tech/peers-touch-go/server"
 )
 
 type Option func(*Options)
@@ -13,9 +14,20 @@ type Options struct {
 	Name string
 
 	Service  service.Service
+	Server   server.Server
 	Registry registry.Registry
 	Store    store.Store
 	Config   config.Config
+}
+
+// ServiceOptions helps to convert the options of service
+// calling this should confirm the Init aready done.
+func (o *Options) ServiceOptions() (ret []service.Option) {
+	if len(o.Name) > 0 {
+		ret = append(ret, service.Name(o.Name))
+	}
+
+	return
 }
 
 func WithName(name string) Option {
@@ -39,6 +51,12 @@ func WithStore(s store.Store) Option {
 func WithConfig(c config.Config) Option {
 	return func(o *Options) {
 		o.Config = c
+	}
+}
+
+func WithServer(s server.Server) Option {
+	return func(o *Options) {
+		o.Server = s
 	}
 }
 

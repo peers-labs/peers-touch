@@ -24,6 +24,10 @@ func (mr *ManageRouters) Routers() []Router {
 	}
 }
 
+func (mr *ManageRouters) Name() string {
+	return RoutersNameManagement
+}
+
 // NewManageRouter creates a new router with management endpoints
 func NewManageRouter() *ManageRouters {
 	return &ManageRouters{}
