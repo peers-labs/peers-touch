@@ -1,4 +1,4 @@
-package server
+package touch
 
 import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
@@ -33,6 +33,23 @@ func (apr RouterURL) Name() string {
 
 func (apr RouterURL) URL() string {
 	return string(apr)
+}
+
+func Handlers() []server.Handler {
+	m := NewManageRouter()
+	a := NewActivityPubRouter()
+
+	handlers := make([]server.Handler, 0)
+
+	for _, r := range m.Routers() {
+		handlers = append(handlers, convertRouterToServerHandler(r))
+	}
+
+	for _, r := range a.Routers() {
+		handlers = append(handlers, convertRouterToServerHandler(r))
+	}
+
+	return handlers
 }
 
 func convertRouterToServerHandler(r Router) server.Handler {
