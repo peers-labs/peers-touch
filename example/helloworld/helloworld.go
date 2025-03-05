@@ -13,9 +13,10 @@ func main() {
 	p := peers.NewPeer()
 	err := p.Init(
 		peers.WithName("hello-world"),
-		peers.WithAppendHandlers(server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("hello world, from native handler"))
-		})),
+		peers.WithAppendHandlers(
+			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte("hello world, from native handler"))
+			})),
 			server.NewHandler("hello-world-hertz", "/hello-hz",
 				func(c context.Context, ctx *app.RequestContext) {
 					ctx.String(http.StatusOK, "hello world, from hertz handler")
