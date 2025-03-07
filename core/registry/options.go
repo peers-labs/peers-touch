@@ -7,7 +7,8 @@ import "time"
 // Option is a function that can be used to configure a Registry
 type Option func(*Options)
 
-type Options struct{}
+type Options struct {
+}
 
 type RegisterOption func(*RegisterOptions)
 
