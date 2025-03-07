@@ -30,5 +30,7 @@ Thanks for those friend projects:  <br />
 * [go-micro](https://github.com/micro/go-micro): An excellent framework with powerful design. And earlier years, I was a maintainer of it. Reference to this design saves us a lot of time on How I Should Design The Network Interface. Actually, distributed terminals that running in cloud are also parts of a Cloud-Microservice system.  <br />
 * [hertz](https://github.com/cloudwego/hertz) : A high-performance HTTP framework serves as our default federation HTTP server, optimized for efficient and robust handling of network traffic. <br />
 * [taipei-torrent](https://github.com/jackpal/Taipei-Torrent): A Torrent client in golang. <br />
+* [libp2p](https://github.com/libp2p/go-libp2p): A famous peer-to-peer networking stack. <br />
+* [some-papers-docs](https://xorro-p2p.github.io/resources/): Some papers and docs. <br />
 ## Acknowledgements
 
