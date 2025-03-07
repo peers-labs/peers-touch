@@ -1,12 +1,14 @@
 package registry
 
+import "context"
+
 type Registry interface {
-	Init(...Option) error
+	Init(ctx context.Context, opts ...Option) error
 	Options() Options
-	Register(*Peer, ...RegisterOption) error
-	Deregister(*Peer, ...DeregisterOption) error
-	GetPeer(string, ...GetOption) ([]*Peer, error)
-	Watch(...WatchOption) (Watcher, error)
+	Register(ctx context.Context, peer *Peer, opts ...RegisterOption) error
+	Deregister(ctx context.Context, peer *Peer, opts ...DeregisterOption) error
+	GetPeer(ctx context.Context, name string, opts ...GetOption) ([]*Peer, error)
+	Watch(ctx context.Context, opts ...WatchOption) (Watcher, error)
 	String() string
 }
 
