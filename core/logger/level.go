@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"fmt"
 	"os"
 )
@@ -66,52 +67,52 @@ func GetLevel(levelStr string) (Level, error) {
 	return InfoLevel, fmt.Errorf("Unknown Level String: '%s', defaulting to InfoLevel", levelStr)
 }
 
-func Info(args ...interface{}) {
+func Info(ctx context.Context, args ...interface{}) {
 	DefaultLogger.Log(InfoLevel, args...)
 }
 
-func Infof(template string, args ...interface{}) {
+func Infof(ctx context.Context, template string, args ...interface{}) {
 	DefaultLogger.Logf(InfoLevel, template, args...)
 }
 
-func Trace(args ...interface{}) {
+func Trace(ctx context.Context, args ...interface{}) {
 	DefaultLogger.Log(TraceLevel, args...)
 }
 
-func Tracef(template string, args ...interface{}) {
+func Tracef(ctx context.Context, template string, args ...interface{}) {
 	DefaultLogger.Logf(TraceLevel, template, args...)
 }
 
-func Debug(args ...interface{}) {
+func Debug(ctx context.Context, args ...interface{}) {
 	DefaultLogger.Log(DebugLevel, args...)
 }
 
-func Debugf(template string, args ...interface{}) {
+func Debugf(ctx context.Context, template string, args ...interface{}) {
 	DefaultLogger.Logf(DebugLevel, template, args...)
 }
 
-func Warn(args ...interface{}) {
+func Warn(ctx context.Context, args ...interface{}) {
 	DefaultLogger.Log(WarnLevel, args...)
 }
 
-func Warnf(template string, args ...interface{}) {
+func Warnf(ctx context.Context, template string, args ...interface{}) {
 	DefaultLogger.Logf(WarnLevel, template, args...)
 }
 
-func Error(args ...interface{}) {
+func Error(ctx context.Context, args ...interface{}) {
 	DefaultLogger.Log(ErrorLevel, args...)
 }
 
-func Errorf(template string, args ...interface{}) {
+func Errorf(ctx context.Context, template string, args ...interface{}) {
 	DefaultLogger.Logf(ErrorLevel, template, args...)
 }
 
-func Fatal(args ...interface{}) {
+func Fatal(ctx context.Context, args ...interface{}) {
 	DefaultLogger.Log(FatalLevel, args...)
 	os.Exit(1)
 }
 
-func Fatalf(template string, args ...interface{}) {
+func Fatalf(ctx context.Context, template string, args ...interface{}) {
 	DefaultLogger.Logf(FatalLevel, template, args...)
 	os.Exit(1)
 }

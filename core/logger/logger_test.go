@@ -29,6 +29,6 @@ func TestExtract(t *testing.T) {
 
 	ctx := NewContext(context.Background(), l)
 
-	Info("info message without request ID")
+	Info(ctx, "info message without request ID")
 	Extract(ctx).Info("info message with request ID")
 }

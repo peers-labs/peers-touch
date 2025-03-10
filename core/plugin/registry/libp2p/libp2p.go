@@ -1,4 +1,4 @@
-package dht
+package libp2p
 
 import (
 	"context"
@@ -141,7 +141,7 @@ func (r *Registry) Watch(opts ...registry.WatchOption) (registry.Watcher, error)
 }
 
 func (r *Registry) String() string {
-	return "dht-registry"
+	return "libp2p-registry"
 }
 
 func (r *Registry) bootstrap() error {

@@ -1,20 +1,21 @@
 package peers
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/service/native"
-	"github.com/dirty-bro-tech/peers-touch-go/touch"
+	"context"
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
+	"github.com/dirty-bro-tech/peers-touch-go/core/service/native"
 	"github.com/dirty-bro-tech/peers-touch-go/object"
+	"github.com/dirty-bro-tech/peers-touch-go/touch"
 )
 
 type Peer interface {
 	ID() object.ID
 	Name() string
 	Init(...Option) error
-	Start() error
+	Start(ctx context.Context) error
 }
 
 func NewPeer(opts ...Option) Peer {
