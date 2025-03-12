@@ -16,8 +16,10 @@ type Options struct {
 	// usually, it's used for the initialization of the server
 	// if you want to add handlers after the server is initialized,
 	// you can use the server.Handler interface
-	Handlers []Handler
+	Handlers   []Handler
+	SubServers map[string]SubServer // Add subServers map
 
+	// Context is the context of the server, it should be the runtime context from main
 	Context context.Context
 }
 
@@ -45,6 +47,16 @@ func WithMetadata(md map[string]string) Option {
 func WithHandlers(handlers ...Handler) Option {
 	return func(o *Options) {
 		o.Handlers = handlers
+	}
+}
+
+// WithSubServer adds a subserver to the server
+func WithSubServer(name string, subServer SubServer) Option {
+	return func(o *Options) {
+		if o.SubServers == nil {
+			o.SubServers = make(map[string]SubServer)
+		}
+		o.SubServers[name] = subServer
 	}
 }
 

@@ -1,17 +1,19 @@
 package native
 
 import (
+	"context"
 	"fmt"
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 )
 
 // Server is a golang native web server based on net/http.
 type Server struct {
+	*server.BaseServer
 	warmupLk   sync.RWMutex
 	opts       server.Options
 	httpServer *http.Server
@@ -82,10 +84,10 @@ func (s *Server) Handle(handler server.Handler) error {
 	return nil
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start(ctx context.Context) error {
 	for _, h := range s.opts.Handlers {
 		if err := s.Handle(h); err != nil {
-			logger.Errorf("[native] handle %s error: %v", h.Path(), err)
+			logger.Errorf(ctx, "[native] handle %s error: %v", h.Path(), err)
 			return err
 		}
 	}

@@ -3,10 +3,11 @@ package hertz
 import (
 	"context"
 	"fmt"
+	"net/http"
+
 	"github.com/cloudwego/hertz/pkg/app"
 	hz "github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"net/http"
 )
 
 type Server struct {
