@@ -5,17 +5,15 @@ import (
 	"crypto/rand"
 	"flag"
 	"fmt"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p/core/discovery"
-	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
-	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"log"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	ma "github.com/multiformats/go-multiaddr"
 )
 
@@ -60,25 +58,59 @@ func main() {
 		fmt.Printf(" - Address: %s/p2p/%s\n", addr, host.ID())
 	}
 
+	// Initialize DHT
 	kdht, err := dht.New(context.Background(), host)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Initialize peer discovery
-	disco := routing.NewRoutingDiscovery(kdht)
-	util.Advertise(context.Background(), disco, "peers-network", discovery.TTL(60*time.Second))
 
-	time.Sleep(70 * time.Second)
+	// Initialize discovery
+	discovery := routing.NewRoutingDiscovery(kdht)
+	ctx := context.Background()
+
+	// Periodically refresh DHT connections
+	go func() {
+		for {
+			if err := kdht.Bootstrap(ctx); err != nil {
+				log.Printf("Error refreshing DHT: %v", err)
+			}
+			time.Sleep(1 * time.Minute)
+		}
+	}()
+
+	// Track discovered peers
+	peerCache := make(map[peer.ID]time.Time)
+	go func() {
+		for {
+			peerChan, err := discovery.FindPeers(ctx, "peers-network")
+			if err != nil {
+				log.Printf("Error finding peers: %v", err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+
+			for p := range peerChan {
+				if p.ID == host.ID() {
+					continue
+				}
+
+				peerCache[p.ID] = time.Now()
+				log.Printf("Found peer: %s", p.ID)
+			}
+
+			for id, lastSeen := range peerCache {
+				if time.Since(lastSeen) > 30*time.Second {
+					delete(peerCache, id)
+					log.Printf("Peer %s expired", id)
+				}
+			}
+
+			time.Sleep(5 * time.Second)
+		}
+	}()
+
 	// Keep the node running
-	// Remove all DHT records
-	if err := kdht.Close(); err != nil {
-		log.Printf("Error closing DHT: %v", err)
-	}
-
-	// Close host
-	if err := host.Close(); err != nil {
-		log.Printf("Error closing host: %v", err)
-	}
+	select {}
 }
 
 func connectToPeer(h host.Host, addr string) error {
