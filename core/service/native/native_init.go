@@ -18,7 +18,7 @@ import (
 // Init initialises options. Additionally, it calls cmd.Init
 // which parses command line flags. cmd.Init is only called
 // on first Init.
-func (s *native) Init(opts ...service.Option) error {
+func (s *native) Init(ctx context.Context, opts ...service.Option) error {
 	// process options
 	for _, o := range opts {
 		o(&s.opts)
@@ -38,14 +38,14 @@ func (s *native) Init(opts ...service.Option) error {
 	}
 
 	// begin init
-	if err := s.initComponents(); err != nil {
+	if err := s.initComponents(ctx); err != nil {
 		log.Fatalf("init service's components err: %s", err)
 	}
 
 	return nil
 }
 
-func (s *native) initComponents() error {
+func (s *native) initComponents(ctx context.Context) error {
 	logOpts := s.opts.LoggerOptions.Options()
 
 	// set Logger
@@ -64,14 +64,14 @@ func (s *native) initComponents() error {
 		serverName := config.Get("peers.service.server.name").String("")
 		if len(serverName) > 0 {
 			if plugin.ServerPlugins[serverName] == nil {
-				logger.Errorf("server %s not found, use native by default", serverName)
+				logger.Errorf(ctx, "server %s not found, use native by default", serverName)
 				serverName = "native"
 			}
 		}
 
 		s.opts.Server = plugin.ServerPlugins[serverName].New()
 	}
-	if err := s.opts.Server.Init(s.opts.ServerOptions...); err != nil {
+	if err := s.opts.Server.Init(ctx, s.opts.ServerOptions...); err != nil {
 		return err
 	}
 

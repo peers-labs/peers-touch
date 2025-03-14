@@ -11,31 +11,32 @@ import (
 )
 
 type Server struct {
-	hertz   *hz.Hertz
-	options server.Options
+	*server.BaseServer
+
+	hertz *hz.Hertz
 }
 
 func NewServer(opts ...server.Option) *Server {
-	s := &Server{}
-	for _, opt := range opts {
-		opt(&s.options)
+	s := &Server{
+		BaseServer: &server.BaseServer{},
+	}
+
+	err := s.Init(context.Background(), opts...)
+	if err != nil {
+		panic(err)
 	}
 
 	return s
 }
 
-func (s *Server) Init(opts ...server.Option) error {
-	// First apply base server options
-	for _, opt := range opts {
-		opt(&s.options)
+func (s *Server) Init(ctx context.Context, opts ...server.Option) error {
+	err := s.BaseServer.Init(ctx, opts...)
+	if err != nil {
+		return err
 	}
 
-	s.hertz = hz.New(hz.WithHostPorts(s.options.Address))
+	s.hertz = hz.New(hz.WithHostPorts(s.Options().Address))
 	return nil
-}
-
-func (s *Server) Options() server.Options {
-	return s.options
 }
 
 func (s *Server) Handle(h server.Handler) error {
@@ -46,8 +47,8 @@ func (s *Server) Handle(h server.Handler) error {
 	return nil
 }
 
-func (s *Server) Start() error {
-	for _, handler := range s.options.Handlers {
+func (s *Server) Start(ctx context.Context) error {
+	for _, handler := range s.Options().Handlers {
 		switch h := handler.Handler().(type) {
 		case func(context.Context, *app.RequestContext):
 			s.hertz.GET(handler.Path(), h)
@@ -81,7 +82,7 @@ func (s *Server) Start() error {
 	return nil
 }
 
-func (s *Server) Stop() error {
+func (s *Server) Stop(ctx context.Context) error {
 	return s.hertz.Close()
 }
 

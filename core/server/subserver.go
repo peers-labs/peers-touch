@@ -4,9 +4,19 @@ import (
 	"context"
 )
 
+// SubServer is used to define subcomponent of the main server, which should be run with a port like a normal server.
+// We define a subserver interface to make it easier to manage the lifecycle of the subservers with the main server.
+// When you want to add some component and make it run with the main server, you can implement this interface and
+// add it to the main server.
 type SubServer interface {
+	// Init initializes the subserver with context
+	Init(ctx context.Context, opts ...SubServerOption) error
+
 	// Start begins the subserver with context for lifecycle management
-	Start(ctx context.Context) error
+	// Actually, SubServer would be started before the main server, due to the simplicity of the implementation.
+	// And BaseServer will help to start subservers in method BaseServer.Start.
+	// Every subserver should be start self asynchronously.
+	Start(ctx context.Context, opts ...SubServerOption) error
 
 	// Stop gracefully shuts down the subserver with context
 	Stop(ctx context.Context) error
@@ -31,28 +41,8 @@ const (
 	StatusError    ServerStatus = "error"
 )
 
-type BaseSubServer struct {
-	name   string
-	port   int
-	status ServerStatus
+type SubServerOptions struct {
+	ctx context.Context
 }
 
-func (s *BaseSubServer) Name() string {
-	return s.name
-}
-
-func (s *BaseSubServer) Port() int {
-	return s.port
-}
-
-func (s *BaseSubServer) Status() ServerStatus {
-	return s.status
-}
-
-func NewBaseSubServer(name string, port int) *BaseSubServer {
-	return &BaseSubServer{
-		name:   name,
-		port:   port,
-		status: StatusStopped,
-	}
-}
+type SubServerOption func(s *SubServerOptions)

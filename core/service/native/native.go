@@ -1,6 +1,7 @@
 package native
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"sync"
@@ -38,15 +39,15 @@ func (s *native) String() string {
 	return "peers"
 }
 
-func (s *native) Start() error {
+func (s *native) Start(ctx context.Context) error {
 	for _, fn := range s.opts.BeforeStart {
 		if err := fn(); err != nil {
 			return err
 		}
 	}
 
-	logger.Infof("server started at %s", s.opts.Server.Options().Address)
-	if err := s.opts.Server.Start(); err != nil {
+	logger.Infof(ctx, "server started at %s", s.opts.Server.Options().Address)
+	if err := s.opts.Server.Start(ctx); err != nil {
 		return err
 	}
 
@@ -61,7 +62,7 @@ func (s *native) Start() error {
 	return nil
 }
 
-func (s *native) Stop() error {
+func (s *native) Stop(ctx context.Context) error {
 	var gerr error
 
 	for _, fn := range s.opts.BeforeStop {
@@ -70,7 +71,7 @@ func (s *native) Stop() error {
 		}
 	}
 
-	if err := s.opts.Server.Stop(); err != nil {
+	if err := s.opts.Server.Stop(ctx); err != nil {
 		return err
 	}
 
@@ -87,12 +88,12 @@ func (s *native) Stop() error {
 	return gerr
 }
 
-func (s *native) Run() error {
-	if err := s.Start(); err != nil {
+func (s *native) Run(ctx context.Context) error {
+	if err := s.Start(ctx); err != nil {
 		return err
 	}
 
-	logger.Infof("[%s] server started", s.Name())
+	logger.Infof(ctx, "[%s] server started", s.Name())
 
 	ch := make(chan os.Signal, 1)
 	if s.opts.Signal {
@@ -106,7 +107,7 @@ func (s *native) Run() error {
 	case <-s.opts.Context.Done():
 	}
 
-	return s.Stop()
+	return s.Stop(ctx)
 }
 
 func NewService(opts ...service.Option) service.Service {

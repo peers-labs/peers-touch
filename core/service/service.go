@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 )
@@ -12,7 +14,7 @@ type Service interface {
 	// Name The service name
 	Name() string
 	// Init initialises options
-	Init(...Option) error
+	Init(context.Context, ...Option) error
 	// Options returns the current options
 	Options() Options
 	// Client is used to call services
@@ -20,5 +22,5 @@ type Service interface {
 	// Server is for handling requests and events
 	Server() server.Server
 	// Run the service
-	Run() error
+	Run(ctx context.Context) error
 }

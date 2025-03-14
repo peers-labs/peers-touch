@@ -14,7 +14,7 @@ import (
 type Peer interface {
 	ID() object.ID
 	Name() string
-	Init(...Option) error
+	Init(context.Context, ...Option) error
 	Start(ctx context.Context) error
 }
 
@@ -49,7 +49,7 @@ func (n *nativePeer) Name() string {
 	return n.opts.Name
 }
 
-func (n *nativePeer) Init(opts ...Option) error {
+func (n *nativePeer) Init(ctx context.Context, opts ...Option) error {
 	for _, o := range opts {
 		o(&n.opts)
 	}
@@ -59,7 +59,7 @@ func (n *nativePeer) Init(opts ...Option) error {
 	// create service. we now only support native service
 	n.service = native.NewService()
 
-	err := n.service.Init(n.opts.ServiceOptions()...)
+	err := n.service.Init(ctx, n.opts.ServiceOptions()...)
 	if err != nil {
 		return err
 	}
@@ -68,6 +68,6 @@ func (n *nativePeer) Init(opts ...Option) error {
 	return nil
 }
 
-func (n *nativePeer) Start() error {
-	return n.service.Run()
+func (n *nativePeer) Start(ctx context.Context) error {
+	return n.service.Run(ctx)
 }

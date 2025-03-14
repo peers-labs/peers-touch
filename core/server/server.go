@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 )
 
@@ -24,12 +25,12 @@ const (
 )
 
 type Server interface {
-	Init(...Option) error
-	Options() Options
+	Init(context.Context, ...Option) error
+	Options() *Options
 	// Handle use to add new handler dynamically
 	Handle(Handler) error
-	Start() error
-	Stop() error
+	Start(context.Context) error
+	Stop(context.Context) error
 	Name() string
 }
 

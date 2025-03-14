@@ -14,23 +14,18 @@ import (
 // Server is a golang native web server based on net/http.
 type Server struct {
 	*server.BaseServer
+
 	warmupLk   sync.RWMutex
-	opts       server.Options
 	httpServer *http.Server
 	mux        *http.ServeMux
 	once       sync.Once
 }
 
-func (s *Server) Options() server.Options {
-	return s.opts
-}
-
-func (s *Server) Init(option ...server.Option) (err error) {
-	s.once.Do(func() {
-		if err = s.init(option...); err != nil {
-			// todo log
-		}
-	})
+func (s *Server) Init(ctx context.Context, option ...server.Option) (err error) {
+	err = s.BaseServer.Init(ctx, option...)
+	if err != nil {
+		return err
+	}
 
 	return err
 }
@@ -79,13 +74,13 @@ func (s *Server) Handle(handler server.Handler) error {
 		s.mux = currHandler
 	}
 
-	s.opts.Handlers = append(s.opts.Handlers, handler)
+	s.Options().Handlers = append(s.Options().Handlers, handler)
 
 	return nil
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	for _, h := range s.opts.Handlers {
+	for _, h := range s.Options().Handlers {
 		if err := s.Handle(h); err != nil {
 			logger.Errorf(ctx, "[native] handle %s error: %v", h.Path(), err)
 			return err
@@ -95,7 +90,7 @@ func (s *Server) Start(ctx context.Context) error {
 	return s.httpServer.ListenAndServe()
 }
 
-func (s *Server) Stop() error {
+func (s *Server) Stop(ctx context.Context) error {
 	return s.httpServer.Close()
 }
 
@@ -105,29 +100,23 @@ func (s *Server) Name() string {
 
 func NewServer(opts ...server.Option) server.Server {
 	s := &Server{
-		opts: server.Options{},
+		BaseServer: &server.BaseServer{},
 	}
-	for _, opt := range opts {
-		opt(&s.opts)
-	}
+
 	return s
 }
 
 func (s *Server) init(option ...server.Option) error {
-	for _, opt := range option {
-		opt(&s.opts)
-	}
-
 	s.httpServer = &http.Server{
-		Addr:    s.opts.Address,
+		Addr:    s.Options().Address,
 		Handler: http.DefaultServeMux,
 	}
 
 	s.mux = http.NewServeMux()
 
-	if s.opts.Timeout > 0 {
-		s.httpServer.ReadTimeout = time.Duration(s.opts.Timeout) * time.Second
-		s.httpServer.WriteTimeout = time.Duration(s.opts.Timeout) * time.Second
+	if s.Options().Timeout > 0 {
+		s.httpServer.ReadTimeout = time.Duration(s.Options().Timeout) * time.Second
+		s.httpServer.WriteTimeout = time.Duration(s.Options().Timeout) * time.Second
 	}
 
 	return nil
