@@ -35,18 +35,18 @@ func (apr RouterURL) URL() string {
 	return string(apr)
 }
 
-func Handlers() []server.Handler {
+func Handlers() []server.Option {
 	m := NewManageRouter()
 	a := NewActivityPubRouter()
 
-	handlers := make([]server.Handler, 0)
+	handlers := make([]server.Option, 0)
 
 	for _, r := range m.Routers() {
-		handlers = append(handlers, convertRouterToServerHandler(r))
+		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
 	}
 
 	for _, r := range a.Routers() {
-		handlers = append(handlers, convertRouterToServerHandler(r))
+		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
 	}
 
 	return handlers

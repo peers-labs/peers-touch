@@ -79,7 +79,7 @@ func (s *Server) Handle(handler server.Handler) error {
 	return nil
 }
 
-func (s *Server) Start(ctx context.Context) error {
+func (s *Server) Start(ctx context.Context, opts ...server.Option) error {
 	for _, h := range s.Options().Handlers {
 		if err := s.Handle(h); err != nil {
 			logger.Errorf(ctx, "[native] handle %s error: %v", h.Path(), err)

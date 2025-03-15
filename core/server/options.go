@@ -19,8 +19,19 @@ type Options struct {
 	Handlers         []Handler
 	SubServers       map[string]SubServer // Add subServers map
 	SubServerOptions map[string][]SubServerOption
+
+	// ReadyChan is a channel that will be closed when the server is ready
+	// it's used to signal the main process that the server is ready
+	ReadyChan chan interface{}
+
 	// Context is the context of the server, it should be the runtime context from main
 	Context context.Context
+}
+
+func (o Options) Apply(opts ...Option) {
+	for _, opt := range opts {
+		opt(&o)
+	}
 }
 
 // WithAddress sets the server address
@@ -64,6 +75,12 @@ func WithSubServer(subServer SubServer, opts ...SubServerOption) Option {
 		for _, opt := range opts {
 			o.SubServerOptions[subServer.Name()] = append(o.SubServerOptions[subServer.Name()], opt)
 		}
+	}
+}
+
+func WithReadyChan(chan interface{}) Option {
+	return func(o *Options) {
+		o.ReadyChan = make(chan interface{})
 	}
 }
 

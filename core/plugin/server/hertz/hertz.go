@@ -3,7 +3,10 @@ package hertz
 import (
 	"context"
 	"fmt"
+	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	hz "github.com/cloudwego/hertz/pkg/app/server"
@@ -14,6 +17,9 @@ type Server struct {
 	*server.BaseServer
 
 	hertz *hz.Hertz
+
+	lock    sync.RWMutex
+	started bool
 }
 
 func NewServer(opts ...server.Option) *Server {
@@ -35,6 +41,8 @@ func (s *Server) Init(ctx context.Context, opts ...server.Option) error {
 		return err
 	}
 
+	s.Options().Apply(opts...)
+
 	s.hertz = hz.New(hz.WithHostPorts(s.Options().Address))
 	return nil
 }
@@ -47,7 +55,22 @@ func (s *Server) Handle(h server.Handler) error {
 	return nil
 }
 
-func (s *Server) Start(ctx context.Context) error {
+func (s *Server) Start(ctx context.Context, opts ...server.Option) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.started {
+		log.Errorf(ctx, "server already started!")
+		return nil
+	}
+
+	s.Options().Apply(opts...)
+
+	err := s.BaseServer.Start(ctx)
+	if err != nil {
+		log.Errorf(ctx, "warmup baseServer error: %v", err)
+		return err
+	}
+
 	for _, handler := range s.Options().Handlers {
 		switch h := handler.Handler().(type) {
 		case func(context.Context, *app.RequestContext):
@@ -78,7 +101,21 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}
 
-	s.hertz.Spin()
+	go s.hertz.Spin()
+	select {
+	// wait for server to start
+	// TODO maybe need a better way to wait for server to start
+	case <-time.After(time.Second * 3):
+	}
+	if s.Options().ReadyChan != nil {
+		s.Options().ReadyChan <- struct {
+			Msg string
+		}{
+			Msg: "ready",
+		}
+	}
+
+	s.started = true
 	return nil
 }
 
@@ -87,7 +124,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return s.hertz.Close()
 }
 

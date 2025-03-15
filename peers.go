@@ -54,8 +54,7 @@ func (n *nativePeer) Init(ctx context.Context, opts ...Option) error {
 		o(&n.opts)
 	}
 	// prepare all fundamental handlers
-	n.opts.appendHandlers = append(n.opts.appendHandlers, touch.Handlers()...)
-
+	n.opts.serviceOpts.ServerOptions = append(n.opts.serviceOpts.ServerOptions, touch.Handlers()...)
 	// create service. we now only support native service
 	n.service = native.NewService()
 

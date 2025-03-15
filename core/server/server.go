@@ -29,7 +29,7 @@ type Server interface {
 	Options() *Options
 	// Handle use to add new handler dynamically
 	Handle(Handler) error
-	Start(context.Context) error
+	Start(context.Context, ...Option) error
 	Stop(context.Context) error
 	Name() string
 }

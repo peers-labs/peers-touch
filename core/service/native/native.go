@@ -46,9 +46,21 @@ func (s *native) Start(ctx context.Context) error {
 		}
 	}
 
-	logger.Infof(ctx, "server started at %s", s.opts.Server.Options().Address)
-	if err := s.opts.Server.Start(ctx); err != nil {
-		return err
+	ready := make(chan interface{})
+	// Start server in a goroutine
+	go func() {
+		if err := s.opts.Server.Start(ctx, server.WithReadyChan(ready)); err != nil {
+			logger.Errorf(ctx, "server start failed: %v", err)
+			return
+		}
+	}()
+
+	// Wait for server to be ready
+	select {
+	case info := <-ready:
+		logger.Infof(ctx, "server started: %v", info)
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	// todo start achievement, but now it's blocked by Start
@@ -59,6 +71,7 @@ func (s *native) Start(ctx context.Context) error {
 		}
 	}
 
+	logger.Infof(ctx, "peers' service started at %s", s.opts.Server.Options().Address)
 	return nil
 }
 
