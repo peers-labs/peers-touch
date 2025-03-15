@@ -103,7 +103,7 @@ func (s *native) Run(ctx context.Context) error {
 	select {
 	// wait on kill signal
 	case <-ch:
-	// wait on context cancel
+		logger.Warnf(ctx, "received signal, stopping")
 	case <-s.opts.Context.Done():
 	}
 

@@ -42,7 +42,7 @@ const (
 )
 
 type SubServerOptions struct {
-	ctx context.Context
+	Ctx context.Context
 }
 
 type SubServerOption func(s *SubServerOptions)

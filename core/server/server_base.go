@@ -55,6 +55,17 @@ func (b *BaseServer) Start(ctx context.Context, opts ...Option) error {
 	return nil
 }
 
+func (b *BaseServer) Stop(ctx context.Context) error {
+	// stop the subservers
+	for _, sub := range b.subServers {
+		if err := sub.Stop(ctx); err != nil {
+			panic(err)
+		}
+	}
+
+	return nil
+}
+
 func (b *BaseServer) init(ctx context.Context, opts ...Option) error {
 	if b.opts == nil {
 		b.opts = &Options{}

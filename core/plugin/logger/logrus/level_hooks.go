@@ -1,6 +1,7 @@
 package logrus
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -9,13 +10,13 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/lumberjack.v2"
 )
 
-func prepareLevelHooks(opts logger.PersistenceOptions, l ls.Level) ls.LevelHooks {
+func prepareLevelHooks(ctx context.Context, opts logger.PersistenceOptions, l ls.Level) ls.LevelHooks {
 	hooks := make(ls.LevelHooks)
 
 	for _, level := range ls.AllLevels {
 		if level <= l {
 			fileName := fmt.Sprintf("%s%s%s.log", opts.Dir, pathSeparator, level.String())
-			logger.Infof("level %s logs to file: %s", level.String(), fileName)
+			logger.Infof(ctx, "level %s logs to file: %s", level.String(), fileName)
 			// todo default options?
 			maxBackups := 14
 			if opts.MaxFileSize != 0 {

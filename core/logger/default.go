@@ -13,13 +13,14 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/debug/log"
 )
 
+// TODO no explicitly
 func init() {
 	lvl, err := GetLevel(os.Getenv("PEERS_LOG_LEVEL"))
 	if err != nil {
 		lvl = InfoLevel
 	}
 
-	DefaultLogger = NewLogger(WithLevel(lvl))
+	DefaultLogger = NewLogger(context.Background(), WithLevel(lvl))
 }
 
 type Record struct {
@@ -37,7 +38,7 @@ type defaultLogger struct {
 }
 
 // Init (opts...) should only overwrite provided options.
-func (l *defaultLogger) Init(opts ...Option) error {
+func (l *defaultLogger) Init(ctx context.Context, opts ...Option) error {
 	for _, o := range opts {
 		o(&l.opts)
 	}
@@ -204,7 +205,7 @@ func (l *defaultLogger) Options() Options {
 }
 
 // NewLogger builds a new logger based on options.
-func NewLogger(opts ...Option) Logger {
+func NewLogger(ctx context.Context, opts ...Option) Logger {
 	// Default options
 	options := Options{
 		Level:           InfoLevel,
@@ -215,7 +216,7 @@ func NewLogger(opts ...Option) Logger {
 	}
 
 	l := &defaultLogger{opts: options}
-	if err := l.Init(opts...); err != nil {
+	if err := l.Init(ctx, opts...); err != nil {
 		l.Log(FatalLevel, err)
 	}
 

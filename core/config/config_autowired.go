@@ -19,8 +19,8 @@ func injectAutowired(ctx context.Context) {
 	refresh := func() {
 		var wg sync.WaitGroup
 		for s, value := range optionsPool {
-			log.Debugf("setting values for %s", s)
-			bindAutowiredValue(value)
+			log.Debugf(ctx, "setting values for %s", s)
+			bindAutowiredValue(ctx, value)
 		}
 		wg.Wait()
 	}
@@ -35,26 +35,26 @@ func injectAutowired(ctx context.Context) {
 			case <-time.After(3 * time.Second):
 				refresh()
 			case data := <-ctx.Done():
-				log.Infof("config autowired action stopped because of %v", data)
+				log.Infof(ctx, "config autowired action stopped because of %v", data)
 			}
 		}
 	}()
 }
 
-func bindAutowiredValue(obj reflect.Value, path ...string) {
+func bindAutowiredValue(ctx context.Context, obj reflect.Value, path ...string) {
 	value := _sugar.Get(path...)
 	v := reflect.Indirect(obj)
 	switch v.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		n := int64(value.Int(0))
 		if v.OverflowInt(n) {
-			log.Errorf("bindAutowiredValue can't assign value due to %s-overflow", v.Kind())
+			log.Errorf(ctx, "bindAutowiredValue can't assign value due to %s-overflow", v.Kind())
 		}
 		v.SetInt(n)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		n := uint64(value.Int(0))
 		if v.OverflowInt(int64(n)) {
-			log.Errorf("bindAutowiredValue can't assign value due to %s-overflow", v.Kind())
+			log.Errorf(ctx, "bindAutowiredValue can't assign value due to %s-overflow", v.Kind())
 		}
 		v.SetUint(n)
 	case reflect.String:
@@ -89,7 +89,7 @@ func bindAutowiredValue(obj reflect.Value, path ...string) {
 			if len(valTmp) > 0 {
 				t, err := time.Parse(time.RFC3339, valTmp)
 				if err != nil {
-					log.Warnf("%s is not standard RFC3339 format", valTmp)
+					log.Warnf(ctx, "%s is not standard RFC3339 format", valTmp)
 					break
 				}
 				v.Set(reflect.ValueOf(t))
@@ -106,13 +106,13 @@ func bindAutowiredValue(obj reflect.Value, path ...string) {
 
 			nextValue := v.Field(i)
 			newPath := append(path, tag)
-			bindAutowiredValue(nextValue, newPath...)
+			bindAutowiredValue(ctx, nextValue, newPath...)
 		}
 	case reflect.Map:
 		// 初始化 map
 		var tempMap map[string]string
 		v.Set(reflect.ValueOf(value.StringMap(tempMap)))
 	default:
-		log.Warnf("unsupported type: %s of %s", v.Kind().String(), v.String())
+		log.Warnf(ctx, "unsupported type: %s of %s", v.Kind().String(), v.String())
 	}
 }

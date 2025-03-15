@@ -29,7 +29,7 @@ type logrusLogger struct {
 	opts   Options
 }
 
-func (l *logrusLogger) Init(opts ...logger.Option) error {
+func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 	for _, o := range opts {
 		o(&l.opts.Options)
 	}
@@ -87,7 +87,7 @@ func (l *logrusLogger) Init(opts ...logger.Option) error {
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			err = os.MkdirAll(dir, os.ModePerm)
 			if err != nil {
-				sLog.Errorf("create logs dir err: %s", err)
+				sLog.Errorf(ctx, "create logs dir err: %s", err)
 			}
 		}
 
@@ -98,7 +98,7 @@ func (l *logrusLogger) Init(opts ...logger.Option) error {
 			if _, err := os.Stat(l.opts.Persistence.BackupDir); os.IsNotExist(err) {
 				err = os.MkdirAll(l.opts.Persistence.BackupDir, os.ModePerm)
 				if err != nil {
-					sLog.Errorf("create backup dir err: %s", err)
+					sLog.Errorf(ctx, "create backup dir err: %s", err)
 				}
 			}
 		}
@@ -131,9 +131,9 @@ func (l *logrusLogger) Init(opts ...logger.Option) error {
 	log.ExitFunc = l.opts.ExitFunc
 	if l.opts.SplitLevel {
 		// Send all logs to nowhere by default
-		sLog.Infof("split log into different level files")
+		sLog.Infof(ctx, "split log into different level files")
 		log.SetOutput(ioutil.Discard)
-		log.ReplaceHooks(prepareLevelHooks(*l.opts.Persistence, log.Level))
+		log.ReplaceHooks(prepareLevelHooks(ctx, *l.opts.Persistence, log.Level))
 	}
 
 	l.Logger = log

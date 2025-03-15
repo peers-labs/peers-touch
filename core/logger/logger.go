@@ -1,9 +1,12 @@
 // Package log provides a log interface
 package logger
 
+import "context"
+
 var (
 	// Default logger.
-	DefaultLogger Logger = NewLogger()
+	// todo no default like so
+	DefaultLogger Logger = NewLogger(context.Background())
 
 	// Default logger helper.
 	DefaultHelper *Helper = NewHelper(DefaultLogger)
@@ -12,7 +15,7 @@ var (
 // Logger is a generic logging interface.
 type Logger interface {
 	// Init initializes options
-	Init(options ...Option) error
+	Init(ctx context.Context, options ...Option) error
 	// The Logger options
 	Options() Options
 	// Fields set fields to always be logged
@@ -25,8 +28,8 @@ type Logger interface {
 	String() string
 }
 
-func Init(opts ...Option) error {
-	return DefaultLogger.Init(opts...)
+func Init(ctx context.Context, opts ...Option) error {
+	return DefaultLogger.Init(ctx, opts...)
 }
 
 func Fields(fields map[string]interface{}) Logger {

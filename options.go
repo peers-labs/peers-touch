@@ -10,7 +10,7 @@ type Option func(*Options)
 type Options struct {
 	Name string
 
-	serOpts        server.Options
+	serOpts        []server.Option
 	appendHandlers []server.Handler
 }
 
@@ -34,13 +34,12 @@ func WithName(name string) Option {
 
 func WithAppendHandlers(handlers ...server.Handler) Option {
 	return func(o *Options) {
-		o.serOpts.Handlers = append(o.serOpts.Handlers, handlers...)
+		o.serOpts = append(o.serOpts, server.WithHandlers(handlers...))
 	}
 }
 
 func WithSubServer(srv server.SubServer, opts ...server.SubServerOption) Option {
 	return func(o *Options) {
-		o.serOpts.SubServers[srv.Name()] = srv
-		o.serOpts.SubServerOptions[srv.Name()] = opts
+		o.serOpts = append(o.serOpts, server.WithSubServer(srv, opts...))
 	}
 }
