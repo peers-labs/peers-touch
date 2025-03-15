@@ -4,11 +4,11 @@ An implementation of the [W3C ActivityPub](https://www.w3.org/TR/activitypub/) p
 
 ## Why This Project
 
-We currently inhabit a world dominated by vast corporations, where our personal information is often a compulsory submission. Our vision is for a world devoid of AI and Big Data—a place where human dignity and privacy are paramount. In this envisioned world, everyone respects each other's personal information. No hidden entities analyze our data, and no one invades our personal lives or traces our private activities. This is a call for a return to privacy, where personal boundaries are honored and safeguarded.
+We currently inhabit a world dominated by vast corporations, where our personal information is often a compulsory submission. Our vision is for a world devoid of coercive, hegemonic AI and Big Data—a place where human dignity and privacy are paramount. In this envisioned world, everyone respects each other's personal information. No hidden entities analyze our data, and no one invades our personal lives or traces our private activities. This is a call for a return to privacy, where personal boundaries are honored and safeguarded, emphasizing the use of AI in a voluntary, non-coercive manner.
 
 ## Vision
 
-In building a world free from AI and Big Data, our primary goal is to meet the fundamental human needs, particularly in terms of privacy and personal freedom. This world will be dedicated to upholding the following core values: <br />
+In building a world free from intrusive, pervasive AI and Big Data, our primary goal is to meet the fundamental human needs, particularly in terms of privacy and personal freedom. This world will be dedicated to upholding the following core values: <br />
 
 * **Freedom**: Ensuring that everyone can express themselves and act freely without being monitored or analyzed. <br />
 * **Respect**: In this network, everyone’s personal information is respected and not accessed or used without permission. <br /> 
