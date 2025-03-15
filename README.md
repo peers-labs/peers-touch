@@ -4,10 +4,20 @@ An implementation of the [W3C ActivityPub](https://www.w3.org/TR/activitypub/) p
 
 ## Why This Project
 
-We all now are living in a world under the control of the huge companies. We have to submit our personal info to them.
-We want to build a world without AI, BigData. Human in this world respect each other's private info. No man analyze our data in the place we don't know.
-No one can pry into our personal life and trace any private things.
+We currently inhabit a world dominated by vast corporations, where our personal information is often a compulsory submission. Our vision is for a world devoid of AI and Big Data—a place where human dignity and privacy are paramount. In this envisioned world, everyone respects each other's personal information. No hidden entities analyze our data, and no one invades our personal lives or traces our private activities. This is a call for a return to privacy, where personal boundaries are honored and safeguarded.
 
+## Vision
+
+In building a world free from AI and Big Data, our primary goal is to meet the fundamental human needs, particularly in terms of privacy and personal freedom. This world will be dedicated to upholding the following core values: <br />
+
+* **Freedom**: Ensuring that everyone can express themselves and act freely without being monitored or analyzed. <br />
+* **Respect**: In this network, everyone’s personal information is respected and not accessed or used without permission. <br /> 
+* **Security**: Protecting individuals from threats of data breaches and privacy invasions, ensuring the safety of personal information. <br />
+* **Belonging**: By safeguarding individual privacy and encouraging respect, we promote healthier and more cohesive social relationships. <br />
+* **Purpose**: Allowing every individual to freely pursue their personal meaning and goals in an environment free from external surveillance constraints. <br />
+* **Achievement**: Supporting individuals in their pursuit of achievements and realization of potential in an environment that guarantees privacy and freedom. <br />
+
+Through such a privacy-focused network, we aim to create a society that respects and protects individual rights, where everyone can safely realize their potential without unnecessary external interference. This is a direct response to the current technological infringements on privacy and a pursuit of a more humane society.
 
 ## Design
 
