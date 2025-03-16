@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus"
@@ -18,19 +18,15 @@ import (
 // Init initialises options. Additionally, it calls cmd.Init
 // which parses command line flags. cmd.Init is only called
 // on first Init.
-func (s *native) Init(ctx context.Context, opts ...service.Option) error {
+func (s *native) Init(ctx context.Context, opts ...option.Option) error {
 	// process options
 	for _, o := range opts {
-		o(&s.opts)
-	}
-
-	if s.opts.Context == nil {
-		s.opts.Context = context.Background()
+		s.opts.Apply(o)
 	}
 
 	if len(s.opts.BeforeInit) > 0 {
 		for _, f := range s.opts.BeforeInit {
-			err := f(&s.opts)
+			err := f(s.opts)
 			if err != nil {
 				log.Fatalf("init service err: %s", err)
 			}

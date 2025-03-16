@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/client"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service/native"
 	"github.com/dirty-bro-tech/peers-touch-go/object"
@@ -14,19 +15,23 @@ import (
 type Peer interface {
 	ID() object.ID
 	Name() string
-	Init(context.Context, ...Option) error
-	Start(ctx context.Context) error
+	Init(context.Context, ...option.Option) error
+	Start() error
 }
 
-func NewPeer(opts ...Option) Peer {
+func NewPeer(opts ...option.Option) Peer {
 	return newPeer(opts...)
 }
 
 // region nativePeer
-func newPeer(opts ...Option) Peer {
-	p := &nativePeer{}
+func newPeer(opts ...option.Option) Peer {
+	p := &nativePeer{
+		opts: Options{
+			Options: &option.Options{},
+		},
+	}
 	for _, opt := range opts {
-		opt(&p.opts)
+		p.opts.Apply(opt)
 	}
 
 	return p
@@ -49,16 +54,18 @@ func (n *nativePeer) Name() string {
 	return n.opts.Name
 }
 
-func (n *nativePeer) Init(ctx context.Context, opts ...Option) error {
+func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 	for _, o := range opts {
-		o(&n.opts)
+		n.opts.Apply(o)
 	}
+
 	// prepare all fundamental handlers
+	// todo transfer handlers' option to option.option
 	n.opts.serviceOpts.ServerOptions = append(n.opts.serviceOpts.ServerOptions, touch.Handlers()...)
 	// create service. we now only support native service
-	n.service = native.NewService()
+	n.service = native.NewService(n.opts.serviceOpts, opts...)
 
-	err := n.service.Init(ctx, n.opts.ServiceOptions()...)
+	err := n.service.Init(n.opts.Ctx, n.opts.ServiceOptions()...)
 	if err != nil {
 		return err
 	}
@@ -67,6 +74,6 @@ func (n *nativePeer) Init(ctx context.Context, opts ...Option) error {
 	return nil
 }
 
-func (n *nativePeer) Start(ctx context.Context) error {
-	return n.service.Run(ctx)
+func (n *nativePeer) Start() error {
+	return n.service.Run()
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"dario.cat/mergo"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 )
 
@@ -123,16 +124,16 @@ func (e *env) String() string {
 //	        }
 //	    }
 //	}
-func NewSource(opts ...source.Option) source.Source {
+func NewSource(opts ...option.Option) source.Source {
 	options := source.NewOptions(opts...)
 
 	var sp []string
 	var pre []string
-	if p, ok := options.Context.Value(strippedPrefixKey{}).([]string); ok {
+	if p, ok := options.Ctx.Value(strippedPrefixKey{}).([]string); ok {
 		sp = p
 	}
 
-	if p, ok := options.Context.Value(prefixKey{}).([]string); ok {
+	if p, ok := options.Ctx.Value(prefixKey{}).([]string); ok {
 		pre = p
 	}
 

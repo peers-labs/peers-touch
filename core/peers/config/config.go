@@ -7,6 +7,7 @@ import (
 	cl "github.com/dirty-bro-tech/peers-touch-go/core/client"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
 	lg "github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	reg "github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	ser "github.com/dirty-bro-tech/peers-touch-go/core/server"
@@ -100,12 +101,12 @@ func (s *Service) Options() serviceOpts {
 	return opts
 }
 
-type serviceOpts []pp.Option
+type serviceOpts []option.Option
 
 func (s serviceOpts) opts() pp.Options {
 	opts := pp.Options{}
 	for _, o := range s {
-		o(&opts)
+		opts.Apply(o)
 	}
 
 	return opts

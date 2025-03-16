@@ -106,7 +106,7 @@ func SetOptions(sOpts *service.Options) (err error) {
 
 	// serviceOptions
 	for _, option := range conf.Service.Options() {
-		option(sOpts)
+		sOpts.Apply(option)
 	}
 
 	sOpts.ServerOptions = append(sOpts.ServerOptions, conf.Service.Server.Options()...)

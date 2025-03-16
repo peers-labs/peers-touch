@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/cli"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 )
@@ -127,12 +128,12 @@ func (c *cliSource) setValue(input map[string]interface{}, v interface{}, keys .
 //	        "host": "localhost"
 //	    }
 //	}
-func NewSource(app *cli.App, opts ...source.Option) source.Source {
+func NewSource(app *cli.App, opts ...option.Option) source.Source {
 	options := source.NewOptions(opts...)
 
 	var ctx *cli.Context
 
-	c, ok := options.Context.Value(contextKey{}).(*cli.Context)
+	c, ok := options.Ctx.Value(contextKey{}).(*cli.Context)
 	if ok {
 		ctx = c
 	}
@@ -168,7 +169,7 @@ func NewSource(app *cli.App, opts ...source.Option) source.Source {
 
 // WithContext returns a new source with the context specified.
 // The assumption is that Context is retrieved within an app.Action function.
-func WithContext(ctx *cli.Context, opts ...source.Option) source.Source {
+func WithContext(ctx *cli.Context, opts ...option.Option) source.Source {
 	return &cliSource{
 		ctx:  ctx,
 		opts: source.NewOptions(opts...),

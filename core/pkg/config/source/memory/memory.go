@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 	"github.com/google/uuid"
 )
@@ -73,18 +74,18 @@ func (s *memory) String() string {
 	return "memory"
 }
 
-func NewSource(opts ...source.Option) source.Source {
+func NewSource(opts ...option.Option) source.Source {
 	var options source.Options
 	for _, o := range opts {
-		o(&options)
+		options.Apply(o)
 	}
 
 	s := &memory{
 		Watchers: make(map[string]*watcher),
 	}
 
-	if options.Context != nil {
-		c, ok := options.Context.Value(changeSetKey{}).(*source.ChangeSet)
+	if options.Ctx != nil {
+		c, ok := options.Ctx.Value(changeSetKey{}).(*source.ChangeSet)
 		if ok {
 			s.Update(c)
 		}

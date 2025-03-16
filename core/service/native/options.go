@@ -1,23 +1,19 @@
 package native
 
 import (
-	"context"
-
 	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/peers/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
 
-func newOptions(opts ...service.Option) service.Options {
-	options := service.Options{
-		// todo support options
-		Cmd: cmd.NewCmd(),
-	}
+func updateOptions(rootOption *service.Options, opts ...option.Option) {
+	// todo override directly is not good
+	rootOption.Cmd = cmd.NewCmd()
 
-	defaultOpts := []service.Option{
-		service.Context(context.Background()),
+	defaultOpts := []option.Option{
 		// todo remove non-peers' code
 		service.RPC("peers"),
 		// load config
@@ -56,11 +52,11 @@ func newOptions(opts ...service.Option) service.Options {
 		//service.HandleSignal(true),
 	}
 
+	// make sure the custom options are applied last
+	// so that they can override the default options
 	defaultOpts = append(defaultOpts, opts...)
 
 	for _, o := range defaultOpts {
-		o(&options)
+		rootOption.Apply(o)
 	}
-
-	return options
 }

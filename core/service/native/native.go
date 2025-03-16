@@ -9,12 +9,13 @@ import (
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 )
 
 type native struct {
-	opts service.Options
+	opts *service.Options
 
 	once sync.Once
 }
@@ -23,7 +24,7 @@ func (s *native) Name() string {
 	return s.opts.Name
 }
 
-func (s *native) Options() service.Options {
+func (s *native) Options() *service.Options {
 	return s.opts
 }
 
@@ -101,12 +102,12 @@ func (s *native) Stop(ctx context.Context) error {
 	return gerr
 }
 
-func (s *native) Run(ctx context.Context) error {
-	if err := s.Start(ctx); err != nil {
+func (s *native) Run() error {
+	if err := s.Start(s.opts.Ctx); err != nil {
 		return err
 	}
 
-	logger.Infof(ctx, "[%s] server started", s.Name())
+	logger.Infof(s.opts.Ctx, "[%s] server started", s.Name())
 
 	ch := make(chan os.Signal, 1)
 	if s.opts.Signal {
@@ -116,20 +117,20 @@ func (s *native) Run(ctx context.Context) error {
 	select {
 	// wait on kill signal
 	case <-ch:
-		logger.Warnf(ctx, "received signal, stopping")
-	case <-s.opts.Context.Done():
+		logger.Warnf(s.opts.Ctx, "received signal, stopping")
+	case <-s.opts.Ctx.Done():
+		// todo, try to store canceled context data for logger
+		logger.Infof(context.Background(), "[%s] server stopped", s.Name())
 	}
 
-	return s.Stop(ctx)
+	return s.Stop(s.opts.Ctx)
 }
 
-func NewService(opts ...service.Option) service.Service {
-	options := newOptions(opts...)
-	for _, o := range opts {
-		o(&options)
-	}
-
+// NewService
+// todo remove rootOptions, not graceful
+func NewService(serviceOptions *service.Options, opts ...option.Option) service.Service {
+	updateOptions(serviceOptions, opts...)
 	return &native{
-		opts: options,
+		opts: serviceOptions,
 	}
 }

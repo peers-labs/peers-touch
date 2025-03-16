@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
-	ns "github.com/dirty-bro-tech/peers-touch-go/core/service/native"
 )
 
 type source struct {
@@ -32,7 +32,8 @@ func init() {
 }
 
 func main() {
-	s := ns.NewService(
+	ctx := context.Background()
+	service := peers.NewPeer(
 		service.Config(config.NewConfig(
 			config.WithSources(
 				file.NewSource(
@@ -40,16 +41,13 @@ func main() {
 		service.WithHandlers(
 			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("hello world"))
-			}))))
-
-	service := peers.NewPeer(
-		peers.WithCore(s),
+			}))),
 	)
-	service.Init()
+	service.Init(ctx)
 
-	log.Infof("demoA: %s", value.Source.DemoA)
-	log.Infof("NumberString: %s", value.Source.NumberString)
-	log.Infof("RFC3339Time: %s", value.Source.RFC3339Time.String())
+	log.Infof(ctx, "demoA: %s", value.Source.DemoA)
+	log.Infof(ctx, "NumberString: %s", value.Source.NumberString)
+	log.Infof(ctx, "RFC3339Time: %s", value.Source.RFC3339Time.String())
 
 	go func() {
 		for {
@@ -57,7 +55,7 @@ func main() {
 			case <-time.After(2 * time.Second):
 				// try to change DemoA value in source.yml
 				// there will log the new value
-				log.Infof("demoA: %s", value.Source.DemoA)
+				log.Infof(ctx, "demoA: %s", value.Source.DemoA)
 			}
 		}
 	}()
