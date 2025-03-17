@@ -254,8 +254,18 @@ func GetOptions(o *option.Options) *Options {
 func optionWrap(o *option.Options, f func(*Options)) {
 	var opts *Options
 	if o.Ctx().Value(serviceOptionsKey{}) == nil {
-		opts = &Options{}
+		opts = &Options{
+			Options: o,
+		}
+
 		o.AppendCtx(serviceOptionsKey{}, opts)
+		temp := o.Ctx().Value(serviceOptionsKey{})
+		if temp != nil {
+			_ = temp.(*Options)
+		}
+		o.Apply(option.AppendCtx(serviceOptionsKey{}, opts))
+		temp = o.Ctx().Value(serviceOptionsKey{})
+		_ = temp.(*Options)
 	} else {
 		opts = o.Ctx().Value(serviceOptionsKey{}).(*Options)
 	}

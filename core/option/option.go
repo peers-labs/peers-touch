@@ -33,13 +33,13 @@ func (o *Options) Ctx() context.Context {
 	return o.ctx
 }
 
-func (o *Options) AppendCtx(key struct{}, value interface{}) context.Context {
+func (o *Options) AppendCtx(key interface{}, value interface{}) {
 	if o.ctx == nil {
 		panic("option ctx is nil")
 	}
 
 	o.ctx = context.WithValue(o.ctx, key, value)
-	return o.ctx
+	return
 }
 
 type Option func(o *Options)

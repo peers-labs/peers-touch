@@ -11,6 +11,17 @@ type memSourceKey struct{}
 
 type changeSetKey struct{}
 
+var (
+	msKey = &memSourceKey{}
+	csKey = &changeSetKey{}
+)
+
+type Options struct {
+	*option.Options
+
+	cs *source.ChangeSet
+}
+
 func withData(d []byte, f string) option.Option {
 	return func(o *option.Options) {
 		optionWrap(o, func(opts *source.Options) {
@@ -42,10 +53,6 @@ func WithYAML(d []byte) option.Option {
 }
 
 func optionWrap(o *option.Options, f func(*source.Options)) {
-	if o.Ctx == nil {
-		o.Ctx = context.Background()
-	}
-
 	var opts *source.Options
 	if o.Ctx().Value(memSourceKey{}) == nil {
 		opts = &source.Options{}

@@ -9,7 +9,7 @@ import (
 )
 
 // Service is an interface that wraps the lower level libraries
-// within stack. Its a convenience method for building
+// within stack. It's a convenience method for building
 // and initialising services.
 type Service interface {
 	// Name The service name
