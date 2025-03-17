@@ -133,7 +133,7 @@ func NewSource(app *cli.App, opts ...option.Option) source.Source {
 
 	var ctx *cli.Context
 
-	c, ok := options.Ctx.Value(contextKey{}).(*cli.Context)
+	c, ok := options.Ctx().Value(contextKey{}).(*cli.Context)
 	if ok {
 		ctx = c
 	}

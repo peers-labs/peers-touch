@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"context"
-
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/cli"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
@@ -14,25 +12,18 @@ type contextKey struct{}
 func Context(c *cli.Context) option.Option {
 	return func(o *option.Options) {
 		optionWrap(o, func(o *source.Options) {
-			if o.Ctx == nil {
-				o.Ctx = context.Background()
-			}
-			o.Ctx = context.WithValue(o.Ctx, contextKey{}, c)
+			o.AppendCtx(contextKey{}, c)
 		})
 	}
 }
 
 func optionWrap(o *option.Options, f func(*source.Options)) {
-	if o.Ctx == nil {
-		o.Ctx = context.Background()
-	}
-
 	var opts *source.Options
-	if o.Ctx.Value(contextKey{}) == nil {
+	if o.Ctx().Value(contextKey{}) == nil {
 		opts = &source.Options{}
-		o.Ctx = context.WithValue(o.Ctx, contextKey{}, opts)
+		o.AppendCtx(contextKey{}, opts)
 	} else {
-		opts = o.Ctx.Value(contextKey{}).(*source.Options)
+		opts = o.Ctx().Value(contextKey{}).(*source.Options)
 	}
 
 	f(opts)

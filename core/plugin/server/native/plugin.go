@@ -2,6 +2,7 @@ package native
 
 import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 )
@@ -25,8 +26,8 @@ func (n *nativeServerPlugin) Name() string {
 	return "native"
 }
 
-func (n *nativeServerPlugin) Options() []server.Option {
-	var opts []server.Option
+func (n *nativeServerPlugin) Options() []option.Option {
+	var opts []option.Option
 	if options.Peers.Service.Server.Native.Enabled {
 		// todo append opts
 	}
@@ -34,7 +35,7 @@ func (n *nativeServerPlugin) Options() []server.Option {
 	return opts
 }
 
-func (n *nativeServerPlugin) New(opts ...server.Option) server.Server {
+func (n *nativeServerPlugin) New(opts ...option.Option) server.Server {
 	opts = append(opts, n.Options()...)
 	return NewServer(opts...)
 }

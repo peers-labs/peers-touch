@@ -3,13 +3,14 @@ package hertz
 import (
 	"context"
 	"fmt"
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	hz "github.com/cloudwego/hertz/pkg/app/server"
+	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 )
 
@@ -22,7 +23,7 @@ type Server struct {
 	started bool
 }
 
-func NewServer(opts ...server.Option) *Server {
+func NewServer(opts ...option.Option) *Server {
 	s := &Server{
 		BaseServer: &server.BaseServer{},
 	}
@@ -35,7 +36,7 @@ func NewServer(opts ...server.Option) *Server {
 	return s
 }
 
-func (s *Server) Init(ctx context.Context, opts ...server.Option) error {
+func (s *Server) Init(ctx context.Context, opts ...option.Option) error {
 	err := s.BaseServer.Init(ctx, opts...)
 	if err != nil {
 		return err
@@ -55,7 +56,7 @@ func (s *Server) Handle(h server.Handler) error {
 	return nil
 }
 
-func (s *Server) Start(ctx context.Context, opts ...server.Option) error {
+func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	if s.started {

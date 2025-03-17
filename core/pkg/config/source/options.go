@@ -1,8 +1,6 @@
 package source
 
 import (
-	"context"
-
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/cli"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder"
@@ -19,14 +17,8 @@ type Options struct {
 	Encoder encoder.Encoder
 }
 
-func (o *Options) Apply(opt option.Option) {
-	if o.Ctx.Value(sourceOptionsKey{}) == nil {
-		o.Ctx = context.WithValue(o.Ctx, sourceOptionsKey{}, o)
-	}
-	opt(o.Options)
-}
-
 func NewOptions(opts ...option.Option) Options {
+	// todo check existed or set by more appropriate way
 	options := Options{
 		Encoder: json.NewEncoder(),
 	}
@@ -51,25 +43,18 @@ func WithEncoder(e encoder.Encoder) option.Option {
 func Context(c *cli.Context) option.Option {
 	return func(o *option.Options) {
 		optionWrap(o, func(opts *Options) {
-			if opts.Ctx == nil {
-				opts.Ctx = context.Background()
-			}
-			o.Ctx = context.WithValue(o.Ctx, contextKey{}, c)
+			o.AppendCtx(contextKey{}, c)
 		})
 	}
 }
 
 func optionWrap(o *option.Options, f func(*Options)) {
-	if o.Ctx == nil {
-		o.Ctx = context.Background()
-	}
-
 	var opts *Options
-	if o.Ctx.Value(sourceOptionsKey{}) == nil {
+	if o.Ctx().Value(sourceOptionsKey{}) == nil {
 		opts = &Options{}
-		o.Ctx = context.WithValue(o.Ctx, sourceOptionsKey{}, opts)
+		o.AppendCtx(sourceOptionsKey{}, opts)
 	} else {
-		opts = o.Ctx.Value(sourceOptionsKey{}).(*Options)
+		opts = o.Ctx().Value(sourceOptionsKey{}).(*Options)
 	}
 
 	f(opts)

@@ -4,6 +4,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 )
 
@@ -25,8 +26,8 @@ type ClientPlugin interface {
 
 type ServerPlugin interface {
 	Plugin
-	Options() []server.Option
-	New(...server.Option) server.Server
+	Options() []option.Option
+	New(...option.Option) server.Server
 }
 
 type ConfigPlugin interface {

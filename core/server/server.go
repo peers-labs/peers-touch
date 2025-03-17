@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"net/http"
+
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
 type Method string
@@ -25,11 +27,11 @@ const (
 )
 
 type Server interface {
-	Init(context.Context, ...Option) error
+	Init(context.Context, ...option.Option) error
 	Options() *Options
 	// Handle use to add new handler dynamically
 	Handle(Handler) error
-	Start(context.Context, ...Option) error
+	Start(context.Context, ...option.Option) error
 	Stop(context.Context) error
 	Name() string
 }

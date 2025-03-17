@@ -2,14 +2,14 @@ package peers
 
 import (
 	"context"
+	"github.com/dirty-bro-tech/peers-touch-go/core/service/native"
+	"github.com/dirty-bro-tech/peers-touch-go/touch"
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service/native"
 	"github.com/dirty-bro-tech/peers-touch-go/object"
-	"github.com/dirty-bro-tech/peers-touch-go/touch"
 )
 
 type Peer interface {
@@ -26,7 +26,7 @@ func NewPeer(opts ...option.Option) Peer {
 // region nativePeer
 func newPeer(opts ...option.Option) Peer {
 	p := &nativePeer{
-		opts: Options{
+		opts: &Options{
 			Options: &option.Options{},
 		},
 	}
@@ -38,7 +38,7 @@ func newPeer(opts ...option.Option) Peer {
 }
 
 type nativePeer struct {
-	opts Options
+	opts *Options
 
 	once sync.Once
 
@@ -55,23 +55,27 @@ func (n *nativePeer) Name() string {
 }
 
 func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
-	for _, o := range opts {
-		n.opts.Apply(o)
-	}
+	var err error
+	n.once.Do(func() {
+		// set context should be the first step
+		n.opts.Apply(option.WithCtx(ctx))
 
-	// prepare all fundamental handlers
-	// todo transfer handlers' option to option.option
-	n.opts.serviceOpts.ServerOptions = append(n.opts.serviceOpts.ServerOptions, touch.Handlers()...)
-	// create service. we now only support native service
-	n.service = native.NewService(n.opts.serviceOpts, opts...)
+		// prepare all fundamental handlers
+		// todo transfer handlers' option to option.option
+		opts = append(opts, touch.Handlers()...)
 
-	err := n.service.Init(n.opts.Ctx, n.opts.ServiceOptions()...)
-	if err != nil {
-		return err
-	}
+		for _, o := range opts {
+			n.opts.Apply(o)
+		}
+
+		// create service. we now only support native service
+		n.service = native.NewService(n.opts.Options, opts...)
+
+		err = n.service.Init(n.opts.Ctx())
+	})
 
 	// wrap the client and server
-	return nil
+	return err
 }
 
 func (n *nativePeer) Start() error {

@@ -58,7 +58,7 @@ func (f *file) Watch() (source.Watcher, error) {
 func NewSource(opts ...option.Option) source.Source {
 	options := source.NewOptions(opts...)
 	path := DefaultPath
-	f, ok := options.Ctx.Value(filePathKey{}).(string)
+	f, ok := options.Ctx().Value(filePathKey{}).(string)
 	if ok {
 		path = f
 	}

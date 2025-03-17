@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"sync"
+	
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
 // BaseServer is the base server for all servers.
@@ -23,7 +25,7 @@ func (b *BaseServer) Options() *Options {
 	return b.opts
 }
 
-func (b *BaseServer) Init(ctx context.Context, opts ...Option) error {
+func (b *BaseServer) Init(ctx context.Context, opts ...option.Option) error {
 	b.once.Do(func() {
 		if err := b.init(ctx, opts...); err != nil {
 			// todo log
@@ -35,7 +37,7 @@ func (b *BaseServer) Init(ctx context.Context, opts ...Option) error {
 }
 
 // Start : current job is helping to start the subservers.
-func (b *BaseServer) Start(ctx context.Context, opts ...Option) error {
+func (b *BaseServer) Start(ctx context.Context, opts ...option.Option) error {
 	if b.subServerStarted {
 		return errors.New("server is already started")
 	}
@@ -66,13 +68,13 @@ func (b *BaseServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (b *BaseServer) init(ctx context.Context, opts ...Option) error {
+func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 	if b.opts == nil {
 		b.opts = &Options{}
 	}
 
 	for _, opt := range opts {
-		opt(b.opts)
+		b.opts.Apply(opt)
 	}
 
 	// then init the sub servers

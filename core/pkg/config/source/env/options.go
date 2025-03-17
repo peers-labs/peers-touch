@@ -53,11 +53,11 @@ func optionWrap(o *option.Options, f func(*source.Options)) {
 	}
 
 	var opts *source.Options
-	if o.Ctx.Value(envSourceKey{}) == nil {
+	if o.Ctx().Value(envSourceKey{}) == nil {
 		opts = &source.Options{}
-		o.Ctx = context.WithValue(o.Ctx, envSourceKey{}, opts)
+		o.AppendCtx(envSourceKey{}, opts)
 	} else {
-		opts = o.Ctx.Value(envSourceKey{}).(*source.Options)
+		opts = o.Ctx().Value(envSourceKey{}).(*source.Options)
 	}
 
 	f(opts)

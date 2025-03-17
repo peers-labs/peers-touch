@@ -47,11 +47,11 @@ func optionWrap(o *option.Options, f func(*source.Options)) {
 	}
 
 	var opts *source.Options
-	if o.Ctx.Value(memSourceKey{}) == nil {
+	if o.Ctx().Value(memSourceKey{}) == nil {
 		opts = &source.Options{}
-		o.Ctx = context.WithValue(o.Ctx, memSourceKey{}, opts)
+		o.AppendCtx(memSourceKey{}, opts)
 	} else {
-		opts = o.Ctx.Value(memSourceKey{}).(*source.Options)
+		opts = o.Ctx().Value(memSourceKey{}).(*source.Options)
 	}
 
 	f(opts)

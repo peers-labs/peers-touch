@@ -1,14 +1,18 @@
 package server
 
-import "context"
+import (
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+)
 
 // region server options
+type serverOptionsKey struct{}
 
 // Option is a function that can be used to configure a server
-type Option func(*Options)
 
 // Options is the server options
 type Options struct {
+	*option.Options
+
 	Address  string            `pconf:"address"` // Server address
 	Timeout  int               `pconf:"timout"`  // Server timeout
 	Metadata map[string]string `pconf:"metadata"`
@@ -23,64 +27,67 @@ type Options struct {
 	// ReadyChan is a channel that will be closed when the server is ready
 	// it's used to signal the main process that the server is ready
 	ReadyChan chan interface{}
-
-	// Context is the context of the server, it should be the runtime context from main
-	Context context.Context
-}
-
-func (o Options) Apply(opts ...Option) {
-	for _, opt := range opts {
-		opt(&o)
-	}
 }
 
 // WithAddress sets the server address
-func WithAddress(address string) Option {
-	return func(o *Options) {
-		o.Address = address
+func WithAddress(address string) option.Option {
+	return func(o *option.Options) {
+		optionWrap(o, func(opts *Options) {
+			opts.Address = address
+		})
 	}
 }
 
 // WithTimeout sets the server timeout
-func WithTimeout(timeout int) Option {
-	return func(o *Options) {
-		o.Timeout = timeout
+func WithTimeout(timeout int) option.Option {
+	return func(o *option.Options) {
+		optionWrap(o, func(opts *Options) {
+			opts.Timeout = timeout
+		})
 	}
 }
 
 // WithMetadata associated with the server
-func WithMetadata(md map[string]string) Option {
-	return func(o *Options) {
-		o.Metadata = md
+func WithMetadata(md map[string]string) option.Option {
+	return func(o *option.Options) {
+		optionWrap(o, func(opts *Options) {
+			opts.Metadata = md
+		})
 	}
 }
 
-func WithHandlers(handlers ...Handler) Option {
-	return func(o *Options) {
-		o.Handlers = handlers
+func WithHandlers(handlers ...Handler) option.Option {
+	return func(o *option.Options) {
+		optionWrap(o, func(opts *Options) {
+			opts.Handlers = handlers
+		})
 	}
 }
 
 // WithSubServer adds a subserver to the server
-func WithSubServer(subServer SubServer, opts ...SubServerOption) Option {
-	return func(o *Options) {
-		if o.SubServers == nil {
-			o.SubServers = make(map[string]SubServer)
-		}
-		o.SubServers[subServer.Name()] = subServer
+func WithSubServer(subServer SubServer, subOpts ...SubServerOption) option.Option {
+	return func(o *option.Options) {
+		optionWrap(o, func(opts *Options) {
+			if opts.SubServers == nil {
+				opts.SubServers = make(map[string]SubServer)
+			}
+			opts.SubServers[subServer.Name()] = subServer
 
-		if o.SubServerOptions == nil {
-			o.SubServerOptions = make(map[string][]SubServerOption)
-		}
-		for _, opt := range opts {
-			o.SubServerOptions[subServer.Name()] = append(o.SubServerOptions[subServer.Name()], opt)
-		}
+			if opts.SubServerOptions == nil {
+				opts.SubServerOptions = make(map[string][]SubServerOption)
+			}
+			for _, opt := range subOpts {
+				opts.SubServerOptions[subServer.Name()] = append(opts.SubServerOptions[subServer.Name()], opt)
+			}
+		})
 	}
 }
 
-func WithReadyChan(chan interface{}) Option {
-	return func(o *Options) {
-		o.ReadyChan = make(chan interface{})
+func WithReadyChan(chan interface{}) option.Option {
+	return func(o *option.Options) {
+		optionWrap(o, func(opts *Options) {
+			opts.ReadyChan = make(chan interface{})
+		})
 	}
 }
 
@@ -94,3 +101,17 @@ type HandlerOption func(*HandlerOptions)
 type HandlerOptions struct{}
 
 // endregion
+
+func optionWrap(o *option.Options, f func(*Options)) {
+	var opts *Options
+	if o.Ctx().Value(serverOptionsKey{}) == nil {
+		opts = &Options{}
+		o.AppendCtx(serverOptionsKey{}, opts)
+	} else {
+		opts = o.Ctx().Value(serverOptionsKey{}).(*Options)
+	}
+
+	// todo, check duplicated of setting option
+
+	f(opts)
+}

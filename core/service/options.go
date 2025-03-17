@@ -1,8 +1,6 @@
 package service
 
 import (
-	"context"
-
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
@@ -59,12 +57,12 @@ func (c ClientOptions) Options() client.Options {
 	return opts
 }
 
-type ServerOptions []server.Option
+type ServerOptions []option.Option
 
 func (c ServerOptions) Options() server.Options {
 	opts := server.Options{}
 	for _, o := range c {
-		o(&opts)
+		opts.Apply(o)
 	}
 
 	return opts
@@ -249,13 +247,17 @@ func WithHandlers(handlers ...server.Handler) option.Option {
 	}
 }
 
+func GetOptions(o *option.Options) *Options {
+	return o.Ctx().Value(serviceOptionsKey{}).(*Options)
+}
+
 func optionWrap(o *option.Options, f func(*Options)) {
 	var opts *Options
-	if o.Ctx.Value(serviceOptionsKey{}) == nil {
+	if o.Ctx().Value(serviceOptionsKey{}) == nil {
 		opts = &Options{}
-		o.Ctx = context.WithValue(o.Ctx, serviceOptionsKey{}, opts)
+		o.AppendCtx(serviceOptionsKey{}, opts)
 	} else {
-		opts = o.Ctx.Value(serviceOptionsKey{}).(*Options)
+		opts = o.Ctx().Value(serviceOptionsKey{}).(*Options)
 	}
 
 	// todo, check duplicated of setting option

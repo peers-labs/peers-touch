@@ -84,8 +84,8 @@ func NewSource(opts ...option.Option) source.Source {
 		Watchers: make(map[string]*watcher),
 	}
 
-	if options.Ctx != nil {
-		c, ok := options.Ctx.Value(changeSetKey{}).(*source.ChangeSet)
+	if options.Ctx() != nil {
+		c, ok := options.Ctx().Value(changeSetKey{}).(*source.ChangeSet)
 		if ok {
 			s.Update(c)
 		}

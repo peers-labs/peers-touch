@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 )
 
@@ -21,7 +22,7 @@ type Server struct {
 	once       sync.Once
 }
 
-func (s *Server) Init(ctx context.Context, option ...server.Option) (err error) {
+func (s *Server) Init(ctx context.Context, option ...option.Option) (err error) {
 	err = s.BaseServer.Init(ctx, option...)
 	if err != nil {
 		return err
@@ -79,7 +80,7 @@ func (s *Server) Handle(handler server.Handler) error {
 	return nil
 }
 
-func (s *Server) Start(ctx context.Context, opts ...server.Option) error {
+func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	for _, h := range s.Options().Handlers {
 		if err := s.Handle(h); err != nil {
 			logger.Errorf(ctx, "[native] handle %s error: %v", h.Path(), err)
@@ -103,7 +104,7 @@ func (s *Server) Name() string {
 	return "native"
 }
 
-func NewServer(opts ...server.Option) server.Server {
+func NewServer(opts ...option.Option) server.Server {
 	s := &Server{
 		BaseServer: &server.BaseServer{},
 	}
@@ -111,7 +112,7 @@ func NewServer(opts ...server.Option) server.Server {
 	return s
 }
 
-func (s *Server) init(option ...server.Option) error {
+func (s *Server) init(option ...option.Option) error {
 	s.httpServer = &http.Server{
 		Addr:    s.Options().Address,
 		Handler: http.DefaultServeMux,

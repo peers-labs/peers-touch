@@ -129,8 +129,8 @@ type serverRegistry struct {
 	Interval int `json:"interval" pconf:"interval"`
 }
 
-func (s *Server) Options() []ser.Option {
-	var serverOpts []ser.Option
+func (s *Server) Options() []option.Option {
+	var serverOpts []option.Option
 
 	// Parse the server options
 	metadata := make(map[string]string)
