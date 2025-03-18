@@ -25,12 +25,7 @@ type Server struct {
 
 func NewServer(opts ...option.Option) *Server {
 	s := &Server{
-		BaseServer: &server.BaseServer{},
-	}
-
-	err := s.Init(context.Background(), opts...)
-	if err != nil {
-		panic(err)
+		BaseServer: server.NewServer(opts...),
 	}
 
 	return s

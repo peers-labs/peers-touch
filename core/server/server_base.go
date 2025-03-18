@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
-	
+
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
@@ -69,10 +69,6 @@ func (b *BaseServer) Stop(ctx context.Context) error {
 }
 
 func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
-	if b.opts == nil {
-		b.opts = &Options{}
-	}
-
 	for _, opt := range opts {
 		b.opts.Apply(opt)
 	}
@@ -87,4 +83,12 @@ func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 	}
 
 	return nil
+}
+
+func NewServer(opts ...option.Option) *BaseServer {
+	s := &BaseServer{
+		opts: GetOptions(),
+	}
+	s.Options().Apply(opts...)
+	return s
 }

@@ -60,7 +60,7 @@ func WithRootCtx(ctx context.Context) Option {
 	return func(o *Options) {
 		lock.Lock()
 		defer lock.Unlock()
-		
+
 		if o.ctx != nil {
 			logger.Errorf("context already set")
 			return
@@ -73,18 +73,19 @@ func WithRootCtx(ctx context.Context) Option {
 }
 
 type Wrapper[T any] struct {
-	key interface{}
+	key     interface{}
+	NewFunc func(*Options) *T
 }
 
-func NewWrapper[T any](key interface{}) *Wrapper[T] {
-	return &Wrapper[T]{key: key}
+func NewWrapper[T any](key interface{}, NewFunc func(*Options) *T) *Wrapper[T] {
+	return &Wrapper[T]{key: key, NewFunc: NewFunc}
 }
 
 func (w *Wrapper[T]) Wrap(f func(*T)) Option {
 	return func(o *Options) {
 		var opts *T
 		if o.Ctx().Value(w.key) == nil {
-			opts = new(T)
+			opts = w.NewFunc(o)
 			o.AppendCtx(w.key, opts)
 		} else {
 			opts = o.Ctx().Value(w.key).(*T)

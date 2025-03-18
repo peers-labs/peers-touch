@@ -10,7 +10,11 @@ import (
 type sourceOptionsKey struct{}
 type contextKey struct{}
 
-var wrapper = option.NewWrapper[Options](sourceOptionsKey{})
+var wrapper = option.NewWrapper[Options](sourceOptionsKey{}, func(options *option.Options) *Options {
+	return &Options{
+		Options: options,
+	}
+})
 
 type Options struct {
 	*option.Options

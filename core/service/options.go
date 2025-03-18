@@ -1,6 +1,8 @@
 package service
 
 import (
+	"sync"
+
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
@@ -13,7 +15,14 @@ import (
 
 type serviceOptionsKey struct{}
 
-var wrapper = option.NewWrapper[Options](serviceOptionsKey{})
+var (
+	wrapper = option.NewWrapper[Options](serviceOptionsKey{}, func(options *option.Options) *Options {
+		return &Options{
+			Options: options,
+		}
+	})
+	optionsAccessLock sync.RWMutex
+)
 
 type Options struct {
 	*option.Options
@@ -217,5 +226,13 @@ func WithHandlers(handlers ...server.Handler) option.Option {
 }
 
 func GetOptions(o *option.Options) *Options {
-	return o.Ctx().Value(serviceOptionsKey{}).(*Options)
+	optionsAccessLock.Lock()
+	defer optionsAccessLock.Unlock()
+
+	opts := o.Ctx().Value(serviceOptionsKey{}).(*Options)
+	if opts.Options == nil {
+		opts.Options = o
+	}
+
+	return opts
 }
