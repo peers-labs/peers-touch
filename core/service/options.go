@@ -13,6 +13,8 @@ import (
 
 type serviceOptionsKey struct{}
 
+var wrapper = option.NewWrapper[Options](serviceOptionsKey{})
+
 type Options struct {
 	*option.Options
 
@@ -102,175 +104,118 @@ func (c LoggerOptions) Options() logger.Options {
 }
 
 func Name(c string) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Name = c
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Name = c
+	})
 }
 
 func Cmd(c cmd.Cmd) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Cmd = c
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Cmd = c
+	})
 }
 
 // RPC sets the type of service, eg. stack, grpc
 // but this func will be deprecated
 func RPC(r string) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.RPC = r
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.RPC = r
+	})
+
 }
 
 func Logger(l logger.Logger) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Logger = l
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Logger = l
+	})
 }
 
 func Client(c client.Client) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Client = c
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Client = c
+	})
 }
 
 func Config(c config.Config) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Config = c
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Config = c
+	})
 }
 
 // HandleSignal toggles automatic installation of the signal handler that
 // traps TERM, INT, and QUIT.  Users of this feature to disable the signal
 // handler, should control liveness of the service through the context.
 func HandleSignal(b bool) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Signal = b
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Signal = b
+	})
 }
 
 func Server(s server.Server) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Server = s
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Server = s
+	})
 }
 
 // Registry sets the registry for the service
 // and the underlying components
 func Registry(r registry.Registry) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Registry = r
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Registry = r
+	})
 }
 
 // Transport sets the transport for the service
 // and the underlying components
 func Transport(t transport.Transport) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Transport = t
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Transport = t
+	})
 }
 
 // Address sets the address of the server
 func Address(addr string) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.ServerOptions = append(opts.ServerOptions, server.WithAddress(addr))
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.ServerOptions = append(opts.ServerOptions, server.WithAddress(addr))
+	})
 }
 
 func BeforeInit(fn func(sOpts *Options) error) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.BeforeInit = append(opts.BeforeInit, fn)
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.BeforeInit = append(opts.BeforeInit, fn)
+	})
 }
 func BeforeStart(fn func() error) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.BeforeStart = append(opts.BeforeStart, fn)
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.BeforeStart = append(opts.BeforeStart, fn)
+	})
 }
 
 func BeforeStop(fn func() error) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.BeforeStop = append(opts.BeforeStop, fn)
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.BeforeStop = append(opts.BeforeStop, fn)
+	})
 }
 
 func AfterStart(fn func() error) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.AfterStart = append(opts.AfterStart, fn)
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.AfterStart = append(opts.AfterStart, fn)
+	})
 }
 
 func AfterStop(fn func() error) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.AfterStop = append(opts.AfterStop, fn)
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.AfterStop = append(opts.AfterStop, fn)
+	})
 }
 
 // WithHandlers adds handlers to the service's server
 func WithHandlers(handlers ...server.Handler) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.ServerOptions = append(opts.ServerOptions, server.WithHandlers(handlers...))
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.ServerOptions = append(opts.ServerOptions, server.WithHandlers(handlers...))
+	})
 }
 
 func GetOptions(o *option.Options) *Options {
 	return o.Ctx().Value(serviceOptionsKey{}).(*Options)
-}
-
-func optionWrap(o *option.Options, f func(*Options)) {
-	var opts *Options
-	if o.Ctx().Value(serviceOptionsKey{}) == nil {
-		opts = &Options{
-			Options: o,
-		}
-
-		o.AppendCtx(serviceOptionsKey{}, opts)
-		temp := o.Ctx().Value(serviceOptionsKey{})
-		if temp != nil {
-			_ = temp.(*Options)
-		}
-		o.Apply(option.AppendCtx(serviceOptionsKey{}, opts))
-		temp = o.Ctx().Value(serviceOptionsKey{})
-		_ = temp.(*Options)
-	} else {
-		opts = o.Ctx().Value(serviceOptionsKey{}).(*Options)
-	}
-
-	// todo, check duplicated of setting option
-
-	f(opts)
 }

@@ -13,7 +13,7 @@ import (
 )
 
 type cliSource struct {
-	opts source.Options
+	opts *source.Options
 	ctx  *cli.Context
 }
 
@@ -129,8 +129,7 @@ func (c *cliSource) setValue(input map[string]interface{}, v interface{}, keys .
 //	    }
 //	}
 func NewSource(app *cli.App, opts ...option.Option) source.Source {
-	options := source.NewOptions(opts...)
-
+	options := source.GetOptions(option.GetOptions(opts...))
 	var ctx *cli.Context
 
 	c, ok := options.Ctx().Value(contextKey{}).(*cli.Context)
@@ -172,6 +171,6 @@ func NewSource(app *cli.App, opts ...option.Option) source.Source {
 func WithContext(ctx *cli.Context, opts ...option.Option) source.Source {
 	return &cliSource{
 		ctx:  ctx,
-		opts: source.NewOptions(opts...),
+		opts: source.GetOptions(option.GetOptions(opts...)),
 	}
 }

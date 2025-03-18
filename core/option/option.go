@@ -13,6 +13,10 @@ var (
 	rootOpts *Options
 
 	lock sync.RWMutex
+
+	// runtimeCtx is the context of runtime from init & run
+	// don't use it to set a request context or something else like.
+	runtimeCtx context.Context
 )
 
 type Options struct {
@@ -49,16 +53,45 @@ func (o Option) BRun() bool {
 	return false
 }
 
-// WithCtx sets the context
+// WithRootCtx sets the context
 // It will be used as the root context for all other contexts. so don't use it to set a context for a subcomponent.
 // If you want to use a custom peer service, please refer to peers.NewPeer's init function.
-func WithCtx(ctx context.Context) Option {
+func WithRootCtx(ctx context.Context) Option {
 	return func(o *Options) {
+		lock.Lock()
+		defer lock.Unlock()
+		
 		if o.ctx != nil {
 			logger.Errorf("context already set")
 			return
 		}
+
 		o.ctx = ctx
+		rootOpts = o
+		runtimeCtx = ctx
+	}
+}
+
+type Wrapper[T any] struct {
+	key interface{}
+}
+
+func NewWrapper[T any](key interface{}) *Wrapper[T] {
+	return &Wrapper[T]{key: key}
+}
+
+func (w *Wrapper[T]) Wrap(f func(*T)) Option {
+	return func(o *Options) {
+		var opts *T
+		if o.Ctx().Value(w.key) == nil {
+			opts = new(T)
+			o.AppendCtx(w.key, opts)
+		} else {
+			opts = o.Ctx().Value(w.key).(*T)
+		}
+
+		// Add any additional common logic here
+		f(opts)
 	}
 }
 
@@ -66,16 +99,18 @@ func GetOptions(opts ...Option) *Options {
 	lock.Lock()
 	defer lock.Unlock()
 
+	var ret *Options
 	if rootOpts != nil {
-		return rootOpts
+		ret = rootOpts
+	} else {
+		ret = &Options{}
 	}
 
-	newOpts := &Options{}
-	newOpts.Apply(opts...)
-	if newOpts.ctx == nil {
-		panic("WithCtx should be conveyed within.")
+	ret.Apply(opts...)
+	if ret.ctx == nil {
+		panic("WithRootCtx should be conveyed within.")
 	}
 
-	rootOpts = newOpts
-	return rootOpts
+	rootOpts = ret
+	return ret
 }

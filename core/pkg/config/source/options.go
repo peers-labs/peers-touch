@@ -10,6 +10,8 @@ import (
 type sourceOptionsKey struct{}
 type contextKey struct{}
 
+var wrapper = option.NewWrapper[Options](sourceOptionsKey{})
+
 type Options struct {
 	*option.Options
 
@@ -17,45 +19,34 @@ type Options struct {
 	Encoder encoder.Encoder
 }
 
-func NewOptions(opts ...option.Option) Options {
-	// todo check existed or set by more appropriate way
-	options := Options{
-		Encoder: json.NewEncoder(),
+func GetOptions(root *option.Options) *Options {
+	if root == nil || root.Ctx().Value(sourceOptionsKey{}) == nil {
+		panic("rootOpts or sourceOptions is nil")
 	}
 
-	for _, o := range opts {
-		options.Apply(o)
+	opts := root.Ctx().Value(sourceOptionsKey{}).(*Options)
+	if opts.Encoder == nil {
+		// todo check existed or set by more appropriate way
+		opts.Encoder = json.NewEncoder()
 	}
 
-	return options
+	return opts
 }
 
 // WithEncoder sets the source encoder
 func WithEncoder(e encoder.Encoder) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Encoder = e
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Encoder = e
+	})
 }
 
 // Context sets the cli context
 func Context(c *cli.Context) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			o.AppendCtx(contextKey{}, c)
-		})
-	}
+	return wrapper.Wrap(func(opts *Options) {
+		opts.AppendCtx(contextKey{}, c)
+	})
 }
 
-func optionWrap(o *option.Options, f func(*Options)) {
-	var opts *Options
-	if o.Ctx().Value(sourceOptionsKey{}) == nil {
-		opts = &Options{}
-		o.AppendCtx(sourceOptionsKey{}, opts)
-	} else {
-		opts = o.Ctx().Value(sourceOptionsKey{}).(*Options)
-	}
-
-	f(opts)
+func WrapOption(f func(*Options)) option.Option {
+	return wrapper.Wrap(f)
 }

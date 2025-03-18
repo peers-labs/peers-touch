@@ -58,7 +58,7 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 	var err error
 	n.once.Do(func() {
 		// set context should be the first step
-		n.opts.Apply(option.WithCtx(ctx))
+		n.opts.Apply(option.WithRootCtx(ctx))
 
 		// prepare all fundamental handlers
 		// todo transfer handlers' option to option.option

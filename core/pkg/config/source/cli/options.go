@@ -14,21 +14,7 @@ var (
 
 // Context sets the cli context
 func Context(c *cli.Context) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(o *source.Options) {
-			o.AppendCtx(ctxKey, c)
-		})
-	}
-}
-
-func optionWrap(o *option.Options, f func(*source.Options)) {
-	var opts *source.Options
-	if o.Ctx().Value(ctxKey) == nil {
-		opts = &source.Options{}
-		o.AppendCtx(ctxKey, opts)
-	} else {
-		opts = o.Ctx().Value(ctxKey).(*source.Options)
-	}
-
-	f(opts)
+	return source.WrapOption(func(o *source.Options) {
+		o.AppendCtx(ctxKey, c)
+	})
 }

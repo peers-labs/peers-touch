@@ -11,7 +11,7 @@ import (
 
 type file struct {
 	path string
-	opts source.Options
+	opts *source.Options
 }
 
 var (
@@ -56,11 +56,11 @@ func (f *file) Watch() (source.Watcher, error) {
 }
 
 func NewSource(opts ...option.Option) source.Source {
-	options := source.NewOptions(opts...)
+	options := option.GetOptions(opts...)
 	path := DefaultPath
 	f, ok := options.Ctx().Value(filePathKey{}).(string)
 	if ok {
 		path = f
 	}
-	return &file{opts: options, path: path}
+	return &file{opts: source.GetOptions(options), path: path}
 }
