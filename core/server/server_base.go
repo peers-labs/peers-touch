@@ -14,9 +14,8 @@ import (
 type BaseServer struct {
 	opts *Options
 
-	once       sync.Once
-	subServers map[string]SubServer
-	subMutex   sync.RWMutex
+	once     sync.Once
+	subMutex sync.RWMutex
 
 	subServerStarted bool
 }
@@ -46,7 +45,7 @@ func (b *BaseServer) Start(ctx context.Context, opts ...option.Option) error {
 	defer b.subMutex.RUnlock()
 
 	// Start all subservers sequentially with shared context
-	for _, sub := range b.subServers {
+	for _, sub := range b.opts.SubServers {
 		// Ensure all subservers are started
 		if err := sub.Start(ctx); err != nil {
 			panic(err)
@@ -59,7 +58,7 @@ func (b *BaseServer) Start(ctx context.Context, opts ...option.Option) error {
 
 func (b *BaseServer) Stop(ctx context.Context) error {
 	// stop the subservers
-	for _, sub := range b.subServers {
+	for _, sub := range b.opts.SubServers {
 		if err := sub.Stop(ctx); err != nil {
 			panic(err)
 		}
@@ -74,7 +73,7 @@ func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 	}
 
 	// then init the sub servers
-	for _, sub := range b.subServers {
+	for _, sub := range b.opts.SubServers {
 		subOpts := b.opts.SubServerOptions[sub.Name()]
 		if err := sub.Init(ctx, subOpts...); err != nil {
 			// todo log
