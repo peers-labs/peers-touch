@@ -1,22 +1,35 @@
 package store
 
-type Option func(*Options)
+import (
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+)
+
+type rdsOptionsKey struct{}
+
+var (
+	wrapper = option.NewWrapper[Options](rdsOptionsKey{}, func(options *option.Options) *Options {
+		return &Options{
+			Options: options,
+		}
+	})
+)
 
 type Options struct {
+	*option.Options
 
 	// region RDSMap
 	RDSMap map[string]*RDSInit
 	// endregion
 }
 
-func WithRDS(rds *RDSInit) Option {
-	return func(o *Options) {
-		if o.RDSMap == nil {
-			o.RDSMap = make(map[string]*RDSInit)
+func WithRDS(rds *RDSInit) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		if opts.RDSMap == nil {
+			opts.RDSMap = make(map[string]*RDSInit)
 		}
 
-		o.RDSMap[rds.Name] = rds
-	}
+		opts.RDSMap[rds.Name] = rds
+	})
 }
 
 // region rds init options
@@ -33,13 +46,13 @@ type RDSInit struct {
 
 // region rds query options
 
-type RDSQueryOption func(*RDSQueryOptions)
+type RDSDMLOption func(*RDSQueryOptions)
 type RDSQueryOptions struct {
 	DBName string
 }
 
 // WithRDSDBName sets the database name for the RDSMap query.
-func WithRDSDBName(name string) RDSQueryOption {
+func WithRDSDBName(name string) RDSDMLOption {
 	return func(o *RDSQueryOptions) {
 		o.DBName = name
 	}

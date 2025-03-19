@@ -57,7 +57,7 @@ func (n *Store) Init(ctx context.Context, opts ...store.Option) error {
 	return nil
 }
 
-func (n *Store) RDS(ctx context.Context, opts ...store.RDSQueryOption) (*sql.DB, error) {
+func (n *Store) RDS(ctx context.Context, opts ...store.RDSDMLOption) (*sql.DB, error) {
 	options := store.RDSQueryOptions{}
 	for _, opt := range opts {
 		opt(&options)

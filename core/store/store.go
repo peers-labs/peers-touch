@@ -2,8 +2,9 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+
+	"gorm.io/gorm"
 )
 
 // region Errors
@@ -15,5 +16,9 @@ var ErrDBNotFound = errors.New("database not found")
 
 type Store interface {
 	Init(ctx context.Context, opts ...Option) error
-	RDS(ctx context.Context, opts ...RDSQueryOption) (*sql.DB, error)
+	RDS(ctx context.Context, opts ...RDSDMLOption) (*gorm.DB, error)
+}
+
+func GetRDS(ctx context.Context, opts ...RDSDMLOption) (*gorm.DB, error) {
+	return getRDS(ctx, opts...)
 }
