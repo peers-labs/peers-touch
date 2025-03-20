@@ -6,10 +6,13 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 )
 
 type Store struct {
+	opts *store.Options
+
 	// injected by config-driven
 	// todo: see config
 	rdsMap map[string]*sql.DB
@@ -17,7 +20,7 @@ type Store struct {
 	mu sync.Mutex // Add a mutex for concurrent safety
 }
 
-func (n *Store) Init(ctx context.Context, opts ...store.Option) error {
+func (n *Store) Init(ctx context.Context, opts ...option.Option) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -27,13 +30,12 @@ func (n *Store) Init(ctx context.Context, opts ...store.Option) error {
 	}
 
 	// Apply global options
-	var options store.Options
 	for _, opt := range opts {
-		opt(&options)
+		n.opts.Apply(opt)
 	}
 
 	// Process RDSMap options
-	for dbName, rds := range options.RDSMap {
+	for dbName, rds := range n.opts.RDSMap {
 		if rds == nil {
 			return errors.New("RDSMap configuration is nil for database: " + dbName)
 		}

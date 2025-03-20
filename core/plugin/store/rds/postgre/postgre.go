@@ -1,11 +1,11 @@
-package sqlite
+package postgre
 
 import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 )
 
 func init() {
 	// register sqlite driver
-	store.RegisterDriver("sqlite", sqlite.Open)
+	store.RegisterDriver("postgres", postgres.Open)
 }

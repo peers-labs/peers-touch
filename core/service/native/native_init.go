@@ -55,6 +55,22 @@ func (s *native) initComponents(ctx context.Context) error {
 		s.opts.Logger = l.New()
 	}
 
+	// init store
+	if s.opts.Store == nil {
+		storeName := config.Get("peers.service.store.name").String("")
+		if len(storeName) > 0 {
+			if plugin.StorePlugins[storeName] == nil {
+				logger.Errorf(ctx, "store %s not found, use native by default", storeName)
+				storeName = "native"
+			}
+		}
+
+		s.opts.Store = plugin.StorePlugins[storeName].New()
+	}
+	if err := s.opts.Store.Init(ctx, s.opts.StoreOptions...); err != nil {
+		return err
+	}
+
 	// todo init server
 	if s.opts.Server == nil {
 		serverName := config.Get("peers.service.server.name").String("")

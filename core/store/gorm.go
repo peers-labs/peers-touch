@@ -1,8 +1,9 @@
 package store
 
 import (
-	"gorm.io/gorm"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -11,19 +12,19 @@ var (
 	lock sync.Mutex
 )
 
-func RegisterDriver(driverName string, open func(dsn string) gorm.Dialector) {
+func RegisterDriver(name string, open func(dsn string) gorm.Dialector) {
 	lock.Lock()
 	defer lock.Unlock()
 
-	if _, ok := drivers[driverName]; ok {
-		panic("duplicate driver " + driverName)
+	if _, ok := drivers[name]; ok {
+		panic("duplicate driver " + name)
 	}
-	drivers[driverName] = open
+	drivers[name] = open
 }
 
-func GetDialector(driverName string) func(name string) gorm.Dialector {
+func GetDialector(name string) func(name string) gorm.Dialector {
 	lock.Lock()
 	defer lock.Unlock()
 
-	return drivers[driverName]
+	return drivers[name]
 }

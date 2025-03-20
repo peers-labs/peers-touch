@@ -68,8 +68,15 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 			n.opts.Apply(o)
 		}
 
-		// create service. we now only support native service
-		n.service = native.NewService(n.opts.Options, opts...)
+		var newServiceFunc NewService
+		if n.opts.NewService != nil {
+			newServiceFunc = n.opts.NewService
+		} else {
+			// create service. we now only support native service
+			newServiceFunc = native.NewService
+		}
+
+		n.service = newServiceFunc(n.opts.Options, opts...)
 
 		err = n.service.Init(n.opts.Ctx())
 	})

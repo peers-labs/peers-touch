@@ -6,6 +6,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 )
 
 type Plugin interface {
@@ -34,4 +35,10 @@ type ConfigPlugin interface {
 	Plugin
 	Options() []config.Option
 	New(...config.Option) config.Config
+}
+
+type StorePlugin interface {
+	Plugin
+	Options() []option.Option
+	New(...option.Option) store.Store
 }

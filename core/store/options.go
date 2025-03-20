@@ -48,7 +48,16 @@ type RDSInit struct {
 
 type RDSDMLOption func(*RDSQueryOptions)
 type RDSQueryOptions struct {
+	Name   string
 	DBName string
+}
+
+// WithRDSName sets the rds name for the RDSMap query.
+// not same as WithRDSDBName which is used to set the database name.
+func WithRDSName(name string) RDSDMLOption {
+	return func(o *RDSQueryOptions) {
+		o.Name = name
+	}
 }
 
 // WithRDSDBName sets the database name for the RDSMap query.

@@ -10,6 +10,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/core/transport"
 )
 
@@ -36,6 +37,7 @@ type Options struct {
 
 	ClientOptions   ClientOptions
 	ServerOptions   ServerOptions
+	StoreOptions    StoreOptions
 	RegistryOptions RegistryOptions
 	ConfigOptions   ConfigOptions
 	LoggerOptions   LoggerOptions
@@ -45,6 +47,7 @@ type Options struct {
 	Registry  registry.Registry
 	Transport transport.Transport
 	Config    config.Config
+	Store     store.Store
 	Logger    logger.Logger
 
 	// Before and After funcs
@@ -78,6 +81,8 @@ func (c ServerOptions) Options() server.Options {
 
 	return opts
 }
+
+type StoreOptions []option.Option
 
 type RegistryOptions []registry.Option
 
@@ -148,6 +153,12 @@ func Client(c client.Client) option.Option {
 func Config(c config.Config) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Config = c
+	})
+}
+
+func Store(c store.Store) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Store = c
 	})
 }
 

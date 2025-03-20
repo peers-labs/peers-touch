@@ -2,13 +2,13 @@ package native
 
 import (
 	"context"
-	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
+	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
@@ -165,7 +165,8 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 		}),
 
 		// set the default components
-		// service.Client(plugin.ClientPlugins["mucp"].New()),
+		// see initComponents
+		// service.Store(plugin.StorePlugins["native"].New()),
 		// service.Server(plugin.ServerPlugins["native"].New()),
 		// service.Logger(plugin.LoggerPlugins["console"].New()),
 		service.Config(cfg.DefaultConfig),

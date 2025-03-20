@@ -5,4 +5,5 @@ var (
 	ClientPlugins = map[string]ClientPlugin{}
 	ServerPlugins = map[string]ServerPlugin{}
 	LoggerPlugins = map[string]LoggerPlugin{}
+	StorePlugins  = map[string]StorePlugin{}
 )
