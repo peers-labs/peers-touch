@@ -18,6 +18,7 @@ type BaseServer struct {
 	subMutex sync.RWMutex
 
 	subServerStarted bool
+	subServers       map[string]SubServer
 }
 
 func (b *BaseServer) Options() *Options {
@@ -45,7 +46,7 @@ func (b *BaseServer) Start(ctx context.Context, opts ...option.Option) error {
 	defer b.subMutex.RUnlock()
 
 	// Start all subservers sequentially with shared context
-	for _, sub := range b.opts.SubServers {
+	for _, sub := range b.subServers {
 		// Ensure all subservers are started
 		if err := sub.Start(ctx); err != nil {
 			panic(err)
@@ -58,7 +59,7 @@ func (b *BaseServer) Start(ctx context.Context, opts ...option.Option) error {
 
 func (b *BaseServer) Stop(ctx context.Context) error {
 	// stop the subservers
-	for _, sub := range b.opts.SubServers {
+	for _, sub := range b.subServers {
 		if err := sub.Stop(ctx); err != nil {
 			panic(err)
 		}
@@ -73,11 +74,23 @@ func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 	}
 
 	// then init the sub servers
-	for _, sub := range b.opts.SubServers {
-		subOpts := b.opts.SubServerOptions[sub.Name()]
-		if err := sub.Init(ctx, subOpts...); err != nil {
+	for _, subFuc := range b.opts.SubServerOptions.subServerNewFunctions {
+		// create the sub server
+		sub := subFuc.exec(subFuc.options...)
+		// init the sub server
+		if err := sub.Init(ctx); err != nil {
 			// todo log
 			panic(err)
+		}
+
+		// append the sub server to the map
+		b.subServers[sub.Name()] = sub
+
+		// then append the sub server's handlers to the main server
+		for _, handler := range sub.Handlers() {
+			wrapper.Wrap(func(o *Options) {
+				o.Handlers = append(o.Handlers, handler)
+			})
 		}
 	}
 

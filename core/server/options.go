@@ -29,8 +29,7 @@ type Options struct {
 	// if you want to add handlers after the server is initialized,
 	// you can use the server.Handler interface
 	Handlers         []Handler
-	SubServers       map[string]SubServer // Add subServers map
-	SubServerOptions map[string][]SubServerOption
+	SubServerOptions *SubServerOptions
 
 	// ReadyChan is a channel that will be closed when the server is ready
 	// it's used to signal the main process that the server is ready
@@ -65,18 +64,11 @@ func WithHandlers(handlers ...Handler) option.Option {
 }
 
 // WithSubServer adds a subserver to the server
-func WithSubServer(subServer SubServer, subOpts ...SubServerOption) option.Option {
+func WithSubServer(name string, newFunc func(opts ...option.Option) SubServer, subServerOptions ...option.Option) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
-		if opts.SubServers == nil {
-			opts.SubServers = make(map[string]SubServer)
-		}
-		opts.SubServers[subServer.Name()] = subServer
-
-		if opts.SubServerOptions == nil {
-			opts.SubServerOptions = make(map[string][]SubServerOption)
-		}
-		for _, opt := range subOpts {
-			opts.SubServerOptions[subServer.Name()] = append(opts.SubServerOptions[subServer.Name()], opt)
+		opts.SubServerOptions.subServerNewFunctions[name] = subServerNewFunctions{
+			exec:    newFunc,
+			options: subServerOptions,
 		}
 	})
 }

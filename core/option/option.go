@@ -48,7 +48,7 @@ func (o *Options) AppendCtx(key interface{}, value interface{}) {
 
 type Option func(o *Options)
 
-// BRun returns true if the Option Func is already run
+// BRun returns true if the Option Func is already executed
 func (o Option) BRun() bool {
 	return false
 }
