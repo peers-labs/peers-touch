@@ -33,3 +33,6 @@ func GetRDS(ctx context.Context, opts ...RDSDMLOption) (*gorm.DB, error) {
 	options.DBName = "default"
 	return nativeErots.RDS(ctx, opts...)
 }
+
+func InjectStore(setFunc func(ctx context.Context, opts ...option.Option) error) {
+}
