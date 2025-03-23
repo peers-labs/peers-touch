@@ -32,6 +32,21 @@ func WithRDS(rds *RDSInit) option.Option {
 	})
 }
 
+// region store get options
+
+type GetOptions struct {
+	StoreName string
+}
+type GetOption func(*GetOptions)
+
+func WithStoreName(name string) GetOption {
+	return func(o *GetOptions) {
+		o.StoreName = name
+	}
+}
+
+// endregion
+
 // region rds init options
 
 type RDSInit struct {
@@ -48,12 +63,20 @@ type RDSInit struct {
 
 type RDSDMLOption func(*RDSQueryOptions)
 type RDSQueryOptions struct {
-	Name   string
-	DBName string
+	StoreName string
+	Name      string
+	DBName    string
+}
+
+func WithQueryStore(name string) RDSDMLOption {
+	return func(o *RDSQueryOptions) {
+		o.StoreName = name
+	}
 }
 
 // WithRDSName sets the rds name for the RDSMap query.
-// not same as WithRDSDBName which is used to set the database name.
+// not same as WithRDSDBName which is used to set the database name, cause a system probably connects multiple rds and
+// a rds maybe has multiple databases.
 func WithRDSName(name string) RDSDMLOption {
 	return func(o *RDSQueryOptions) {
 		o.Name = name
