@@ -2,7 +2,7 @@ module github.com/dirty-bro-tech/peers-touch-go/core/store/rds/sqlite
 
 go 1.23.0
 
-replace github.com/dirty-bro-tech/peers-touch-go => ../../../..
+replace github.com/dirty-bro-tech/peers-touch-go => ./../../../../..
 
 require (
 	github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250319154115-dcf7e4a01b62

@@ -19,6 +19,10 @@ type nativeStore struct {
 	db map[string]*gorm.DB
 }
 
+func (n *nativeStore) Name() string {
+	return "native"
+}
+
 func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err error) {
 	for _, opt := range opts {
 		n.opts.Apply(opt)
@@ -35,6 +39,10 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 
 			n.db[rds.Name], err = gorm.Open(dialector(rds.Address), &gorm.Config{})
 		}
+	}
+
+	if err = store.InjectStore(ctx, n); err != nil {
+		return err
 	}
 
 	return nil

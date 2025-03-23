@@ -11,6 +11,9 @@ var (
 	wrapper = option.NewWrapper[Options](serverOptionsKey{}, func(options *option.Options) *Options {
 		return &Options{
 			Options: options,
+			SubServerOptions: &SubServerOptions{
+				subServerNewFunctions: make(map[string]subServerNewFunctions),
+			},
 		}
 	})
 )
