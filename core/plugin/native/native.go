@@ -1,7 +1,8 @@
 package native
 
-import "github.com/dirty-bro-tech/peers-touch-go/core/plugin"
+import (
+	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native"
+)
 
 func init() {
-	plugin.StorePlugins["native"] = &nativeStorePlugin{}
 }

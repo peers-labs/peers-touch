@@ -14,4 +14,6 @@ import (
 
 ## Features[TODO]
 
-### Store
+* Logger: [Logrus](/peers-touch-go/core/plugin/logger/logrus) <br />
+* Server: [Hertz Server](/peers-touch-go/core/plugin/server/hertz) <br />
+* Store: [SQLite3+...](/peers-touch-go/core/plugin/store/native)  <br />
