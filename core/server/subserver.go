@@ -75,9 +75,3 @@ func NewSubServerOptionsFromRoot() *SubServerOptions {
 		subServerNewFunctions: make(map[string]subServerNewFunctions),
 	}
 }
-
-func GetSubServerOptions(opts ...option.Option) *SubServerOptions {
-	parent := option.GetOptions().Ctx().Value(serverOptionsKey{}).(*Options)
-	parent.Apply(opts...)
-	return parent.SubServerOptions
-}

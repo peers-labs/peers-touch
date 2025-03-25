@@ -27,6 +27,7 @@ func (b *BaseServer) Options() *Options {
 
 func (b *BaseServer) Init(ctx context.Context, opts ...option.Option) error {
 	b.once.Do(func() {
+		b.subServers = make(map[string]SubServer)
 		if err := b.init(ctx, opts...); err != nil {
 			// todo log
 			panic(err)
