@@ -60,12 +60,16 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	}
 
 	s.Options().Apply(opts...)
-
 	err := s.BaseServer.Start(ctx)
 	if err != nil {
 		log.Errorf(ctx, "warmup baseServer error: %v", err)
 		return err
 	}
+
+	s.hertz.OnShutdown = append(s.hertz.OnShutdown, func(hertzCtx context.Context) {
+		log.Infof(hertzCtx, "shutdown hertz")
+		ctx.Done()
+	})
 
 	for _, handler := range s.Options().Handlers {
 		switch h := handler.Handler().(type) {
@@ -121,7 +125,18 @@ func (s *Server) Stop(ctx context.Context) error {
 		return err
 	}
 
-	return s.hertz.Close()
+	// Then stop Hertz server
+	if err = s.hertz.Close(); err != nil {
+		return fmt.Errorf("hertz server shutdown error: %w", err)
+	}
+
+	// Wait for server to actually stop
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("server shutdown timed out")
+	}
 }
 
 func (s *Server) Name() string {
