@@ -2,6 +2,7 @@ package hertz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -59,6 +60,8 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 		return nil
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+
 	s.Options().Apply(opts...)
 	err := s.BaseServer.Start(ctx)
 	if err != nil {
@@ -68,7 +71,7 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 
 	s.hertz.OnShutdown = append(s.hertz.OnShutdown, func(hertzCtx context.Context) {
 		log.Infof(hertzCtx, "shutdown hertz")
-		ctx.Done()
+		cancel()
 	})
 
 	for _, handler := range s.Options().Handlers {
@@ -120,22 +123,27 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 }
 
 func (s *Server) Stop(ctx context.Context) error {
-	err := s.BaseServer.Stop(ctx)
-	if err != nil {
+	// Add fresh shutdown context with longer timeout
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// First stop base server components
+	if err := s.BaseServer.Stop(shutdownCtx); err != nil {
 		return err
 	}
 
-	// Then stop Hertz server
-	if err = s.hertz.Close(); err != nil {
-		return fmt.Errorf("hertz server shutdown error: %w", err)
+	// Then stop Hertz server with proper error handling
+	if err := s.hertz.Engine.Close(); err != nil {
+		return fmt.Errorf("hertz engine close error: %w", err)
 	}
 
-	// Wait for server to actually stop
+	// Wait for server to actually stop with new context
 	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("server shutdown timed out")
+	case <-shutdownCtx.Done():
+		if errors.Is(shutdownCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("server shutdown timed out after 15s")
+		}
+		return nil
 	}
 }
 

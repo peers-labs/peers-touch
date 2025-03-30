@@ -83,35 +83,44 @@ func (s *native) Start(ctx context.Context) error {
 func (s *native) Stop(ctx context.Context) error {
 	var gerr error
 
+	logger.Infof(ctx, "stop native peers' service. begin to execute before stop hooks")
+
 	for _, fn := range s.opts.BeforeStop {
 		if err := fn(); err != nil {
 			gerr = err
 		}
 	}
 
+	logger.Infof(ctx, "stop native peers' service. begin to execute stop hooks")
+
 	if err := s.opts.Server.Stop(ctx); err != nil {
 		return err
 	}
 
+	logger.Infof(ctx, "stop native peers' service. begin to execute config close")
 	if err := s.opts.Config.Close(); err != nil {
 		return err
 	}
 
+	logger.Infof(ctx, "stop native peers' service. begin to execute after stop hooks")
 	for _, fn := range s.opts.AfterStop {
 		if err := fn(); err != nil {
 			gerr = err
 		}
 	}
 
+	logger.Warnf(ctx, "stop native peers' native service stopped with error: %v", gerr)
 	return gerr
 }
 
 func (s *native) Run() error {
-	if err := s.Start(s.opts.Ctx()); err != nil {
+	ctx, cancel := context.WithCancel(s.opts.Ctx())
+	defer cancel()
+	if err := s.Start(ctx); err != nil {
 		return err
 	}
 
-	logger.Infof(s.opts.Ctx(), "[%s] server started", s.Name())
+	logger.Infof(ctx, "[%s] server started", s.Name())
 
 	ch := make(chan os.Signal, 1)
 	if s.opts.Signal {
@@ -121,13 +130,13 @@ func (s *native) Run() error {
 	select {
 	// wait on kill signal
 	case <-ch:
-		logger.Warnf(s.opts.Ctx(), "received signal, stopping")
-	case <-s.opts.Ctx().Done():
+		logger.Warnf(ctx, "received signal, stopping")
+	case <-ctx.Done():
 		// todo, try to store canceled context data for logger
 		logger.Infof(context.Background(), "[%s] server stopped", s.Name())
 	}
 
-	return s.Stop(s.opts.Ctx())
+	return s.Stop(ctx)
 }
 
 // NewService
@@ -136,6 +145,7 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 	defaultOpts := []option.Option{
 		// todo remove non-peers' code
 		service.RPC("peers"),
+		service.HandleSignal(true),
 		// load config
 		service.BeforeInit(func(sOpts *service.Options) error {
 			// cmd helps peers parse command options and reset the options that should work.
