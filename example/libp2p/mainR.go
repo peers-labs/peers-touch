@@ -20,8 +20,8 @@ import (
 )
 
 func main() {
-	bootstrapAddr := flag.String("b", "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r", "Bootstrap node address")
-	relayAddr := flag.String("r", "/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r", "Relay node address")
+	bootstrapAddr := flag.String("b", "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWCmk8fNzcDeKb9VKr74PioaCM9mgKE1hd3m8QbbiqKv6X", "Bootstrap node address")
+	relayAddr := flag.String("r", "/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWCmk8fNzcDeKb9VKr74PioaCM9mgKE1hd3m8QbbiqKv6X", "Relay node address")
 	port := flag.Int("p", 0, "Network port (0 for random)")
 	flag.Parse()
 
@@ -67,18 +67,10 @@ func main() {
 	// Initialize peer discovery
 	disco := routing.NewRoutingDiscovery(kdht)
 	util.Advertise(context.Background(), disco, "peers-network", discovery.TTL(60*time.Second))
-
-	time.Sleep(70 * time.Second)
 	// Keep the node running
 	// Remove all DHT records
-	if err := kdht.Close(); err != nil {
-		log.Printf("Error closing DHT: %v", err)
-	}
 
-	// Close host
-	if err := host.Close(); err != nil {
-		log.Printf("Error closing host: %v", err)
-	}
+	select {}
 }
 
 func connectToPeer(h host.Host, addr string) error {

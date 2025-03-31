@@ -124,7 +124,7 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 
 func (s *Server) Stop(ctx context.Context) error {
 	// Add fresh shutdown context with longer timeout
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// First stop base server components
@@ -141,7 +141,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	select {
 	case <-shutdownCtx.Done():
 		if errors.Is(shutdownCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("server shutdown timed out after 15s")
+			return fmt.Errorf("server shutdown timed out after 5s")
 		}
 		return nil
 	}
