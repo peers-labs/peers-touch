@@ -18,8 +18,7 @@ import (
 )
 
 var (
-	ymlFile = []byte(`
-stack:
+	ymlFile = []byte(`peers:
   broker:
     name: http
     address: :8081
@@ -34,18 +33,18 @@ stack:
     name: mdns
     address: 127.0.0.1:6500
   service:
-  	server:
-  	  name:
-  	  address: :8090
-  	  advertise: no-test
-  	  id: test-id
-  	  metadata:
-  	    - A=a
-  	    - B=b
-  	  version: 1.0.0
-  	  registry:
-  	    interval: 200
-  	    ttl: 300
+    name: test-service
+    server:
+      address: :8090
+      advertise: no-test
+      id: test-id
+      metadata:
+        - A=a
+        - B=b
+      version: 1.0.0
+      registry:
+        interval: 200
+        ttl: 300
   selector:
     name: robin
   transport:
@@ -54,8 +53,7 @@ stack:
   profile: _1
   runtime:
 ext:
-  date-time: 2021-03-10 23:10:23.999
-`)
+  date-time: 2021-03-10 23:10:23.999`)
 	conf = PeersConfig{}
 )
 
@@ -63,7 +61,7 @@ func init() {
 	cfg.RegisterOptions(&conf)
 }
 
-func TestStackConfig_File(t *testing.T) {
+func TestPeersConfig_File(t *testing.T) {
 	path := filepath.Join(os.TempDir(), "file.yaml")
 	fh, err := os.Create(path)
 	if err != nil {
@@ -79,7 +77,8 @@ func TestStackConfig_File(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	c := cfg.NewConfig(option.WithRootCtx(ctx), cfg.WithSources(file.NewSource(file.WithPath(path))))
+	src := file.NewSource(option.WithRootCtx(ctx), file.WithPath(path))
+	c := cfg.NewConfig(cfg.WithSources(src))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
@@ -95,7 +94,7 @@ func TestStackConfig_File(t *testing.T) {
 	}
 }
 
-func TestStackConfig_Config(t *testing.T) {
+func TestPeersConfig_Config(t *testing.T) {
 	path := filepath.Join(os.TempDir(), "file.yaml")
 	fh, err := os.Create(path)
 	if err != nil {
@@ -129,10 +128,13 @@ func TestStackConfig_Config(t *testing.T) {
 	defaultBytes, _ := json.Marshal(conf)
 	t.Log(string(defaultBytes))
 
+	ctx := context.Background()
+	srcMemory := memory.NewSource(option.WithRootCtx(ctx), memory.WithJSON(defaultBytes))
+	srcFile := file.NewSource(file.WithPath(path))
+	srcCli := cliSource.NewSource(app, cliSource.Context(app.Context()))
+
 	sources := []source.Source{
-		memory.NewSource(memory.WithJSON(defaultBytes)),
-		file.NewSource(file.WithPath(path)),
-		cliSource.NewSource(app, cliSource.Context(app.Context())),
+		srcMemory, srcFile, srcCli,
 	}
 
 	c := cfg.NewConfig(cfg.WithSources(sources...))
@@ -147,35 +149,31 @@ func TestStackConfig_Config(t *testing.T) {
 	if conf.Peers.Service.Server.Name != "default-srv-name" {
 		t.Fatal(fmt.Errorf("server name should be [default-srv-name], not: [%s]", conf.Peers.Service.Server.Name))
 	}
-	if c.Get("stack", "server", "name").String("") != "default-srv-name" {
-		t.Fatal(fmt.Errorf("server name in [c] should be [default-srv-name], not: [%s]", c.Get("stack", "server", "name").String("")))
+	if c.Get("peers", "service", "server", "name").String("") != "default-srv-name" {
+		t.Fatal(fmt.Errorf("server name in [c] should be [default-srv-name], not: [%s]", c.Get("peers", "service", "server", "name").String("")))
 	}
 
 	if conf.Peers.Service.Server.ID != "test-id" {
-		t.Fatal(fmt.Errorf("server id should be [test-id] which is stackCmd value, not: [%s]", conf.Peers.Service.Server.ID))
+		t.Fatal(fmt.Errorf("server id should be [test-id] which is peersCmd value, not: [%s]", conf.Peers.Service.Server.ID))
 	}
 
 	if conf.Peers.Client.Pool.TTL != 100 {
-		t.Fatal(fmt.Errorf("client pool ttl should be [100] which is stackCmd value, not: [%d]", conf.Peers.Client.Pool.TTL))
-	}
-
-	if conf.Peers.Service.Server.Registry.TTL != 300 {
-		t.Fatal(fmt.Errorf("server registry ttl should be [300] which is stackCmd value, not: [%d]", conf.Peers.Service.Server.Registry.TTL))
+		t.Fatal(fmt.Errorf("client pool ttl should be [100] which is peersCmd value, not: [%d]", conf.Peers.Client.Pool.TTL))
 	}
 
 	// test map value: the extra values
 	if conf.Peers.Service.Server.Metadata.Value("C") != "c" {
-		t.Fatal(fmt.Errorf("stack metadata should have [C-c], not: [%s]", conf.Peers.Service.Server.Metadata.Value("C")))
+		t.Fatal(fmt.Errorf("peers metadata should have [C-c], not: [%s]", conf.Peers.Service.Server.Metadata.Value("C")))
 	}
-	// test map value: the stackCmd value
+	// test map value: the peersCmd value
 	if conf.Peers.Service.Server.Metadata.Value("D") != "d" {
-		t.Fatal(fmt.Errorf("stack metadata should have [D-d], not: [%s]", conf.Peers.Service.Server.Metadata.Value("D")))
+		t.Fatal(fmt.Errorf("peers metadata should have [D-d], not: [%s]", conf.Peers.Service.Server.Metadata.Value("D")))
 	}
 }
 
 func TestStackConfig_MultiConfig(t *testing.T) {
 	ymlData := []byte(`
-stack:
+peers:
   broker:
     name: http
     address: :8081
@@ -224,10 +222,15 @@ stack:
 	os.Args = []string{"run"}
 	os.Args = append(os.Args, "--broker", "kafka")
 
+	ctx := context.Background()
+	srcFileYML := file.NewSource(option.WithRootCtx(ctx), file.WithPath(ymlPath))
+	srcFileJSON := file.NewSource(file.WithPath(jsonPath))
+	srcCli := cliSource.NewSource(app, cliSource.Context(app.Context()))
+
 	sources := []source.Source{
-		file.NewSource(file.WithPath(ymlPath)),
-		file.NewSource(file.WithPath(jsonPath)),
-		cliSource.NewSource(app, cliSource.Context(app.Context())),
+		srcFileYML,
+		srcFileJSON,
+		srcCli,
 	}
 
 	c := cfg.NewConfig(cfg.WithSources(sources...))
@@ -271,23 +274,23 @@ func TestConfigHierarchyMerge(t *testing.T) {
 		os.Remove(path)
 	}()
 
-	c := cfg.NewConfig(cfg.WithSources(file.NewSource(file.WithPath(path))), cfg.WithHierarchyMerge(true))
+	c := cfg.NewConfig(cfg.WithSources(file.NewSource(option.WithRootCtx(context.Background()), file.WithPath(path))), cfg.WithHierarchyMerge(true))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
 
-	if c.Get("stack.broker.name").String("") != "http" {
-		t.Fatal(fmt.Errorf("stack.broker.name should be [http], not: [%s]", c.Get("stack.broker.name").String("")))
+	if c.Get("peers.broker.name").String("") != "http" {
+		t.Fatal(fmt.Errorf("peers.broker.name should be [http], not: [%s]", c.Get("peers.broker.name").String("")))
 	}
 
-	if c.Get("stack", "broker", "name").String("") != "http" {
-		t.Fatal(fmt.Errorf("stack broker name should be [http], not: [%s]", c.Get("stack", "broker", "name").String("")))
+	if c.Get("peers", "broker", "name").String("") != "http" {
+		t.Fatal(fmt.Errorf("peers broker name should be [http], not: [%s]", c.Get("peers", "broker", "name").String("")))
 	}
 }
 
 func TestConfigIncludes(t *testing.T) {
 	mainYml := []byte(`
-stack:
+peers:
   includes: testA.yml
 `)
 	includedYml := []byte(`

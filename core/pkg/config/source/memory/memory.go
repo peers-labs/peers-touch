@@ -11,6 +11,8 @@ import (
 )
 
 type memory struct {
+	opts *source.Options
+
 	sync.RWMutex
 	ChangeSet *source.ChangeSet
 	Watchers  map[string]*watcher
@@ -75,17 +77,13 @@ func (s *memory) String() string {
 }
 
 func NewSource(opts ...option.Option) source.Source {
-	var options source.Options
-	for _, o := range opts {
-		options.Apply(o)
-	}
-
 	s := &memory{
+		opts:     source.GetOptions(option.GetOptions(opts...)),
 		Watchers: make(map[string]*watcher),
 	}
 
-	if options.Ctx() != nil {
-		c, ok := options.Ctx().Value(changeSetKey{}).(*source.ChangeSet)
+	if s.opts.Ctx() != nil {
+		c, ok := s.opts.Ctx().Value(changeSetKey{}).(*source.ChangeSet)
 		if ok {
 			s.Update(c)
 		}

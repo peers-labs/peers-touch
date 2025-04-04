@@ -113,20 +113,14 @@ func (s serviceOpts) opts() pp.Options {
 }
 
 type Server struct {
-	Address     string         `json:"address" pconf:"address"`
-	Advertise   string         `json:"advertise" pconf:"advertise"`
-	ID          string         `json:"id" pconf:"id"`
-	Metadata    metadata       `json:"metadata" pconf:"metadata"`
-	Name        string         `json:"name" pconf:"name"`
-	Protocol    string         `json:"protocol" pconf:"protocol"`
-	Version     string         `json:"version" pconf:"version"`
-	Registry    serverRegistry `json:"Registry" pconf:"Registry"`
-	EnableDebug bool           `json:"enableDebug" pconf:"enable-debug"`
-}
-
-type serverRegistry struct {
-	TTL      int `json:"ttl" pconf:"ttl"`
-	Interval int `json:"interval" pconf:"interval"`
+	Address     string   `json:"address" pconf:"address"`
+	Advertise   string   `json:"advertise" pconf:"advertise"`
+	ID          string   `json:"id" pconf:"id"`
+	Metadata    metadata `json:"metadata" pconf:"metadata"`
+	Name        string   `json:"name" pconf:"name"`
+	Protocol    string   `json:"protocol" pconf:"protocol"`
+	Version     string   `json:"version" pconf:"version"`
+	EnableDebug bool     `json:"enableDebug" pconf:"enable-debug"`
 }
 
 func (s *Server) Options() []option.Option {

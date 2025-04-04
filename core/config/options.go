@@ -11,6 +11,7 @@ var (
 	wrapper = option.NewWrapper[Options](configOptionsKey{}, func(options *option.Options) *Options {
 		return &Options{
 			Options: options,
+			Watch:   true,
 		}
 	})
 )

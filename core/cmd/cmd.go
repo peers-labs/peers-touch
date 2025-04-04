@@ -20,7 +20,7 @@ type Cmd interface {
 	Options() Options
 }
 
-type stackCmd struct {
+type peersCmd struct {
 	opts Options
 	app  *cli.App
 	conf string
@@ -30,194 +30,195 @@ var (
 	DefaultFlags = []cli.Flag{
 		cli.StringFlag{
 			Name:   "client",
-			EnvVar: "STACK_CLIENT",
-			Usage:  "Client for stack; rpc",
-			Alias:  "stack_client_protocol",
+			EnvVar: "PEERS_CLIENT",
+			Usage:  "Client for peer; native",
+			Alias:  "peers_client_protocol",
 		},
 		cli.StringFlag{
 			Name:   "client_request_timeout",
-			EnvVar: "STACK_CLIENT_REQUEST_TIMEOUT",
+			EnvVar: "PEERS_CLIENT_REQUEST_TIMEOUT",
 			Usage:  "Sets the client request timeout. e.g 500ms, 5s, 1m. Default: 5s",
-			Alias:  "stack_client_request_timeout",
+			Alias:  "peers_client_request_timeout",
 		},
 		cli.IntFlag{
 			Name:   "client_request_retries",
-			EnvVar: "STACK_CLIENT_REQUEST_RETRIES",
+			EnvVar: "PEERS_CLIENT_REQUEST_RETRIES",
 			Value:  1,
 			Usage:  "Sets the client retries. Default: 1",
-			Alias:  "stack_client_request_retries",
+			Alias:  "peers_client_request_retries",
 		},
 		cli.IntFlag{
 			Name:   "client_pool_size",
-			EnvVar: "STACK_CLIENT_POOL_SIZE",
+			EnvVar: "PEERS_CLIENT_POOL_SIZE",
 			Usage:  "Sets the client connection pool size. Default: 1",
-			Alias:  "stack_client_pool_size",
+			Alias:  "peers_client_pool_size",
 		},
 		cli.StringFlag{
 			Name:   "client_pool_ttl",
-			EnvVar: "STACK_CLIENT_POOL_TTL",
+			EnvVar: "PEERS_CLIENT_POOL_TTL",
 			Usage:  "Sets the client connection pool ttl in seconds.",
-			Alias:  "stack_client_pool_ttl",
+			Alias:  "peers_client_pool_ttl",
 		},
 		cli.IntFlag{
 			Name:   "server_registry_ttl",
-			EnvVar: "STACK_SERVER_REGISTRY_TTL",
+			EnvVar: "PEERS_SERVICE_SERVER_REGISTRY_TTL",
 			Value:  60,
 			Usage:  "Register TTL in seconds",
-			Alias:  "stack_server_registry_ttl",
+			Alias:  "peers_service_server_registry_ttl",
 		},
 		cli.IntFlag{
 			Name:   "server_registry_interval",
-			EnvVar: "STACK_SERVER_REGISTRY_INTERVAL",
+			EnvVar: "PEERS_SERVICE_SERVER_REGISTRY_INTERVAL",
 			Value:  30,
 			Usage:  "Register interval in seconds",
-			Alias:  "stack_server_registry_interval",
+			Alias:  "peers_service_server_registry_interval",
 		},
 		cli.StringFlag{
 			Name:   "server",
-			EnvVar: "STACK_SERVER",
-			Usage:  "Server for stack; rpc",
-			Alias:  "stack_server_protocol",
+			EnvVar: "PEERS_SERVICE_SERVER",
+			Usage:  "Server for peers; native",
+			Alias:  "peers_service_server_protocol",
 		},
 		cli.StringFlag{
 			Name:   "server_name",
-			EnvVar: "STACK_SERVER_NAME",
-			Usage:  "Name of the server. stack.rpc.srv.example",
-			Alias:  "stack_server_name",
+			EnvVar: "PEERS_SERVICE_SERVER_NAME",
+			// todo: it's expired, need to update it
+			Usage: "Name of the server. native.rpc.srv.example ?? todo",
+			Alias: "peers_service_server_name",
 		},
 		cli.StringFlag{
 			Name:   "server_version",
-			EnvVar: "STACK_SERVER_VERSION",
+			EnvVar: "PEERS_SERVICE_SERVER_VERSION",
 			Usage:  "Version of the server. 1.1.0",
-			Alias:  "stack_server_version",
+			Alias:  "peers_service_server_version",
 		},
 		cli.StringFlag{
 			Name:   "server_id",
-			EnvVar: "STACK_SERVER_ID",
+			EnvVar: "PEERS_SERVICE_SERVER_ID",
 			Usage:  "Id of the server. Auto-generated if not specified",
-			Alias:  "stack_server_id",
+			Alias:  "peers_service_server_id",
 		},
 		cli.StringFlag{
 			Name:   "server_address",
-			EnvVar: "STACK_SERVER_ADDRESS",
+			EnvVar: "PEERS_SERVICE_SERVER_ADDRESS",
 			Usage:  "Bind address for the server. 127.0.0.1:8080",
-			Alias:  "stack_server_address",
+			Alias:  "peers_service_server_address",
 		},
 		cli.StringFlag{
 			Name:   "server_advertise",
-			EnvVar: "STACK_SERVER_ADVERTISE",
+			EnvVar: "PEERS_SERVICE_SERVER_ADVERTISE",
 			Usage:  "Used instead of the server_address when registering with discovery. 127.0.0.1:8080",
-			Alias:  "stack_server_advertise",
+			Alias:  "peers_service_server_advertise",
 		},
 		cli.StringSliceFlag{
 			Name:   "server_metadata",
-			EnvVar: "STACK_SERVER_METADATA",
+			EnvVar: "PEERS_SERVICE_SERVER_METADATA",
 			Value:  &cli.StringSlice{},
 			Usage:  "A list of key-value pairs defining metadata. version=1.0.0",
-			Alias:  "stack_server_metadata",
+			Alias:  "peers_service_server_metadata",
 		},
 		cli.StringFlag{
 			Name:   "broker",
-			EnvVar: "STACK_BROKER",
+			EnvVar: "PEERS_BROKER",
 			Usage:  "Broker for pub/sub. http, nats, rabbitmq",
-			Alias:  "stack_broker_name",
+			Alias:  "peers_broker_name",
 		},
 		cli.StringFlag{
 			Name:   "broker_address",
-			EnvVar: "STACK_BROKER_ADDRESS",
+			EnvVar: "PEERS_BROKER_ADDRESS",
 			Usage:  "Comma-separated list of broker addresses",
-			Alias:  "stack_broker_address",
+			Alias:  "peers_broker_address",
 		},
 		cli.StringFlag{
 			Name:   "profile",
 			Usage:  "Debug profiler for cpu and memory stats",
-			EnvVar: "STACK_DEBUG_PROFILE",
-			Alias:  "stack_profile",
+			EnvVar: "PEERS_DEBUG_PROFILE",
+			Alias:  "peers_profile",
 		},
 		cli.StringFlag{
 			Name:   "registry",
-			EnvVar: "STACK_REGISTRY",
+			EnvVar: "PEERS_REGISTRY",
 			Usage:  "Registry for discovery. mdns",
-			Alias:  "stack_registry_name",
+			Alias:  "peers_registry_name",
 		},
 		cli.StringFlag{
 			Name:   "registry_address",
-			EnvVar: "STACK_REGISTRY_ADDRESS",
+			EnvVar: "PEERS_REGISTRY_ADDRESS",
 			Usage:  "Comma-separated list of registry addresses",
-			Alias:  "stack_registry_address",
+			Alias:  "peers_registry_address",
 		},
 		cli.StringFlag{
 			Name:   "selector",
-			EnvVar: "STACK_SELECTOR",
+			EnvVar: "PEERS_SELECTOR",
 			Usage:  "Selector used to pick nodes for querying",
-			Alias:  "stack_selector_name",
+			Alias:  "peers_selector_name",
 		},
 		cli.StringFlag{
 			Name:   "transport",
-			EnvVar: "STACK_TRANSPORT",
+			EnvVar: "PEERS_TRANSPORT",
 			Usage:  "Transport mechanism used; http",
-			Alias:  "stack_transport_name",
+			Alias:  "peers_transport_name",
 		},
 		cli.StringFlag{
 			Name:   "transport_address",
-			EnvVar: "STACK_TRANSPORT_ADDRESS",
+			EnvVar: "PEERS_TRANSPORT_ADDRESS",
 			Usage:  "Comma-separated list of transport addresses",
-			Alias:  "stack_transport_address",
+			Alias:  "peers_transport_address",
 		},
 		cli.StringFlag{
 			Name:   "logger_level",
-			EnvVar: "STACK_LOGGER_LEVEL",
+			EnvVar: "PEERS_LOGGER_LEVEL",
 			Usage:  "Logger Level; INFO",
-			Alias:  "stack_logger_level",
+			Alias:  "peers_logger_level",
 		},
 		&cli.StringFlag{
 			Name:   "auth",
-			EnvVar: "STACK_AUTH",
+			EnvVar: "PEERS_AUTH",
 			Usage:  "Auth for role based access control, e.g. service",
-			Alias:  "stack_auth_name",
+			Alias:  "peers_auth_name",
 		},
 		&cli.StringFlag{
 			Name:   "auth_enable",
-			EnvVar: "STACK_AUTH_ENABLE",
+			EnvVar: "PEERS_AUTH_ENABLE",
 			Usage:  "enable auth for role based access control, false",
-			Alias:  "stack_auth_enable",
+			Alias:  "peers_auth_enable",
 		},
 		&cli.StringFlag{
 			Name:   "auth_id",
-			EnvVar: "STACK_AUTH_CREDENTIALS_ID",
+			EnvVar: "PEERS_AUTH_CREDENTIALS_ID",
 			Usage:  "Account ID used for client authentication",
-			Alias:  "stack_auth_credentials_id",
+			Alias:  "peers_auth_credentials_id",
 		},
 		&cli.StringFlag{
 			Name:   "auth_secret",
-			EnvVar: "STACK_AUTH_CREDENTIALS_SECRET",
+			EnvVar: "PEERS_AUTH_CREDENTIALS_SECRET",
 			Usage:  "Account secret used for client authentication",
-			Alias:  "stack_auth_credentials_secret",
+			Alias:  "peers_auth_credentials_secret",
 		},
 		&cli.StringFlag{
 			Name:   "auth_namespace",
-			EnvVar: "STACK_AUTH_NAMESPACE",
+			EnvVar: "PEERS_AUTH_NAMESPACE",
 			Usage:  "Namespace for the services auth account",
-			Value:  "stack.rpc",
-			Alias:  "stack_auth_namespace",
+			Value:  "peers.rpc",
+			Alias:  "peers_auth_namespace",
 		},
 		&cli.StringFlag{
 			Name:   "auth_public_key",
-			EnvVar: "STACK_AUTH_PUBLIC_KEY",
+			EnvVar: "PEERS_AUTH_PUBLIC_KEY",
 			Usage:  "Public key for JWT auth (base64 encoded PEM)",
-			Alias:  "stack_auth_publicKey",
+			Alias:  "peers_auth_publicKey",
 		},
 		&cli.StringFlag{
 			Name:   "auth_private_key",
-			EnvVar: "STACK_AUTH_PRIVATE_KEY",
+			EnvVar: "PEERS_AUTH_PRIVATE_KEY",
 			Usage:  "Private key for JWT auth (base64 encoded PEM)",
-			Alias:  "stack_auth_privateKey",
+			Alias:  "peers_auth_privateKey",
 		},
 		cli.StringFlag{
 			Name:   "config",
-			EnvVar: "STACK_CONFIG",
+			EnvVar: "PEERS_CONFIG",
 			Usage:  "config file",
-			Alias:  "stack_config",
+			Alias:  "peers_config",
 		},
 	}
 )
@@ -239,10 +240,10 @@ func newCmd(opts ...Option) Cmd {
 	}
 
 	if len(options.Description) == 0 {
-		options.Description = "a stack service"
+		options.Description = "a peers service"
 	}
 
-	cmd := new(stackCmd)
+	cmd := new(peersCmd)
 	cmd.opts = options
 	cmd.app = cli.NewApp()
 	cmd.app.Name = cmd.opts.Name
@@ -258,11 +259,11 @@ func newCmd(opts ...Option) Cmd {
 	return cmd
 }
 
-func (c *stackCmd) ConfigFile() string {
+func (c *peersCmd) ConfigFile() string {
 	return c.conf
 }
 
-func (c *stackCmd) before(ctx *cli.Context) (err error) {
+func (c *peersCmd) before(ctx *cli.Context) (err error) {
 	// set the config file path
 	if filePath := ctx.String("config"); len(filePath) > 0 {
 		c.conf = filePath
@@ -271,15 +272,15 @@ func (c *stackCmd) before(ctx *cli.Context) (err error) {
 	return nil
 }
 
-func (c *stackCmd) App() *cli.App {
+func (c *peersCmd) App() *cli.App {
 	return c.app
 }
 
-func (c *stackCmd) Options() Options {
+func (c *peersCmd) Options() Options {
 	return c.opts
 }
 
-func (c *stackCmd) Init(opts ...Option) error {
+func (c *peersCmd) Init(opts ...Option) error {
 	for _, o := range opts {
 		o(&c.opts)
 	}

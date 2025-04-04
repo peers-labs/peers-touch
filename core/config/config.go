@@ -31,7 +31,7 @@ type Config interface {
 
 type stackConfig struct {
 	config config.Config
-	opts   Options
+	opts   *Options
 }
 
 func (c *stackConfig) Init(opts ...option.Option) (err error) {
@@ -102,12 +102,7 @@ func (c *stackConfig) Close() error {
 // Init Stack's Config component
 // Any developer Don't use this Func anywhere. NewConfig works for Stack Framework only
 func NewConfig(opts ...option.Option) Config {
-	var o = Options{
-		Options: option.GetOptions(opts...),
-		Watch:   true,
-	}
-
-	return &stackConfig{opts: o}
+	return &stackConfig{opts: option.GetOptions(opts...).Ctx().Value(configOptionsKey{}).(*Options)}
 }
 
 func RegisterOptions(options ...interface{}) {
