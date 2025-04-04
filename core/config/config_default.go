@@ -1,5 +1,5 @@
 package config
 
 var (
-	DefaultConfig = stackConfig{}
+	DefaultConfig = &stackConfig{}
 )

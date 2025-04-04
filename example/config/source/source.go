@@ -2,16 +2,12 @@ package main
 
 import (
 	"context"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"net/http"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 )
 
 type source struct {
@@ -34,19 +30,11 @@ func init() {
 
 func main() {
 	ctx := context.Background()
-	service := peers.NewPeer(
-		service.Config(config.NewConfig(
-			option.WithRootCtx(ctx),
-			config.WithSources(
-				file.NewSource(
-					file.WithPath("./source.yml"))))),
-		service.WithHandlers(
-			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte("hello world"))
-			}))),
-	)
-	service.Init(ctx)
-
+	config.NewConfig(
+		config.WithSources(
+			file.NewSource(
+				option.WithRootCtx(ctx),
+				file.WithPath("./source.yml")))).Init()
 	log.Infof(ctx, "demoA: %s", value.Source.DemoA)
 	log.Infof(ctx, "NumberString: %s", value.Source.NumberString)
 	log.Infof(ctx, "RFC3339Time: %s", value.Source.RFC3339Time.String())
@@ -61,5 +49,4 @@ func main() {
 			}
 		}
 	}()
-	service.Start()
 }
