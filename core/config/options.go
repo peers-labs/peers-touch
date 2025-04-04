@@ -1,12 +1,23 @@
 package config
 
 import (
-	"context"
-
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 )
 
+type configOptionsKey struct{}
+
+var (
+	wrapper = option.NewWrapper[Options](configOptionsKey{}, func(options *option.Options) *Options {
+		return &Options{
+			Options: options,
+		}
+	})
+)
+
 type Options struct {
+	*option.Options
+
 	Sources []source.Source
 	Storage bool
 	Watch   bool
@@ -14,38 +25,28 @@ type Options struct {
 	// eg. Get("a","b","c") can be used as Get("a.b.c")
 	// the default is false
 	HierarchyMerge bool
-
-	Context context.Context
 }
 
-type Option func(o *Options)
-
-func WithSources(s ...source.Source) Option {
-	return func(o *Options) {
-		o.Sources = append(o.Sources, s...)
-	}
+func WithSources(s ...source.Source) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Sources = append(opts.Sources, s...)
+	})
 }
 
-func WithStorage(s bool) Option {
-	return func(o *Options) {
-		o.Storage = s
-	}
+func WithStorage(s bool) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Storage = s
+	})
 }
 
-func WithWatch(w bool) Option {
-	return func(o *Options) {
-		o.Watch = w
-	}
+func WithWatch(w bool) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Watch = w
+	})
 }
 
-func WithHierarchyMerge(h bool) Option {
-	return func(o *Options) {
-		o.HierarchyMerge = h
-	}
-}
-
-func WithContext(ctx context.Context) Option {
-	return func(o *Options) {
-		o.Context = ctx
-	}
+func WithHierarchyMerge(h bool) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		opts.HierarchyMerge = h
+	})
 }

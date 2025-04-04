@@ -33,8 +33,8 @@ type ServerPlugin interface {
 
 type ConfigPlugin interface {
 	Plugin
-	Options() []config.Option
-	New(...config.Option) config.Config
+	Options() []option.Option
+	New(...option.Option) config.Config
 }
 
 type StorePlugin interface {

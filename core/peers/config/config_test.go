@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 	cliSource "github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/cli"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
@@ -31,18 +33,19 @@ stack:
   registry:
     name: mdns
     address: 127.0.0.1:6500
-  server:
-    name:
-    address: :8090
-    advertise: no-test
-    id: test-id
-    metadata:
-      - A=a
-      - B=b
-    version: 1.0.0
-    registry:
-      interval: 200
-      ttl: 300
+  service:
+  	server:
+  	  name:
+  	  address: :8090
+  	  advertise: no-test
+  	  id: test-id
+  	  metadata:
+  	    - A=a
+  	    - B=b
+  	  version: 1.0.0
+  	  registry:
+  	    interval: 200
+  	    ttl: 300
   selector:
     name: robin
   transport:
@@ -75,7 +78,8 @@ func TestStackConfig_File(t *testing.T) {
 		os.Remove(path)
 	}()
 
-	c := cfg.NewConfig(cfg.WithSources(file.NewSource(file.WithPath(path))))
+	ctx := context.Background()
+	c := cfg.NewConfig(option.WithRootCtx(ctx), cfg.WithSources(file.NewSource(file.WithPath(path))))
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
@@ -86,8 +90,8 @@ func TestStackConfig_File(t *testing.T) {
 	t.Log(string(c.Bytes()))
 	t.Log(conf)
 
-	if conf.Peers.Server.Address != ":8090" {
-		t.Fatal(fmt.Errorf("server address should be [:8090], not: [%s]", conf.Peers.Server.Address))
+	if conf.Peers.Service.Server.Address != ":8090" {
+		t.Fatal(fmt.Errorf("server address should be [:8090], not: [%s]", conf.Peers.Service.Server.Address))
 	}
 }
 
@@ -121,7 +125,7 @@ func TestStackConfig_Config(t *testing.T) {
 	os.Args = append(os.Args, "--server_metadata", "C=c")
 	os.Args = append(os.Args, "--server_metadata", "D=d")
 
-	conf.Peers.Server.Name = "default-srv-name"
+	conf.Peers.Service.Server.Name = "default-srv-name"
 	defaultBytes, _ := json.Marshal(conf)
 	t.Log(string(defaultBytes))
 
@@ -140,32 +144,32 @@ func TestStackConfig_Config(t *testing.T) {
 	t.Log(conf)
 
 	// test default
-	if conf.Peers.Server.Name != "default-srv-name" {
-		t.Fatal(fmt.Errorf("server name should be [default-srv-name], not: [%s]", conf.Peers.Server.Name))
+	if conf.Peers.Service.Server.Name != "default-srv-name" {
+		t.Fatal(fmt.Errorf("server name should be [default-srv-name], not: [%s]", conf.Peers.Service.Server.Name))
 	}
 	if c.Get("stack", "server", "name").String("") != "default-srv-name" {
 		t.Fatal(fmt.Errorf("server name in [c] should be [default-srv-name], not: [%s]", c.Get("stack", "server", "name").String("")))
 	}
 
-	if conf.Peers.Server.ID != "test-id" {
-		t.Fatal(fmt.Errorf("server id should be [test-id] which is stackCmd value, not: [%s]", conf.Peers.Server.ID))
+	if conf.Peers.Service.Server.ID != "test-id" {
+		t.Fatal(fmt.Errorf("server id should be [test-id] which is stackCmd value, not: [%s]", conf.Peers.Service.Server.ID))
 	}
 
 	if conf.Peers.Client.Pool.TTL != 100 {
 		t.Fatal(fmt.Errorf("client pool ttl should be [100] which is stackCmd value, not: [%d]", conf.Peers.Client.Pool.TTL))
 	}
 
-	if conf.Peers.Server.Registry.TTL != 300 {
-		t.Fatal(fmt.Errorf("server registry ttl should be [300] which is stackCmd value, not: [%d]", conf.Peers.Server.Registry.TTL))
+	if conf.Peers.Service.Server.Registry.TTL != 300 {
+		t.Fatal(fmt.Errorf("server registry ttl should be [300] which is stackCmd value, not: [%d]", conf.Peers.Service.Server.Registry.TTL))
 	}
 
 	// test map value: the extra values
-	if conf.Peers.Server.Metadata.Value("C") != "c" {
-		t.Fatal(fmt.Errorf("stack metadata should have [C-c], not: [%s]", conf.Peers.Server.Metadata.Value("C")))
+	if conf.Peers.Service.Server.Metadata.Value("C") != "c" {
+		t.Fatal(fmt.Errorf("stack metadata should have [C-c], not: [%s]", conf.Peers.Service.Server.Metadata.Value("C")))
 	}
 	// test map value: the stackCmd value
-	if conf.Peers.Server.Metadata.Value("D") != "d" {
-		t.Fatal(fmt.Errorf("stack metadata should have [D-d], not: [%s]", conf.Peers.Server.Metadata.Value("D")))
+	if conf.Peers.Service.Server.Metadata.Value("D") != "d" {
+		t.Fatal(fmt.Errorf("stack metadata should have [D-d], not: [%s]", conf.Peers.Service.Server.Metadata.Value("D")))
 	}
 }
 
@@ -241,14 +245,14 @@ stack:
 
 	var conf = PeersConfig{}
 
-	conf.Peers.Server.Name = "default"
+	conf.Peers.Service.Server.Name = "default"
 
 	if err := c.Scan(&conf); err != nil {
 		t.Fatal(fmt.Errorf("MultiConfig scan conf error %s", err))
 	}
 
-	if conf.Peers.Server.Name != "default" {
-		t.Fatal(fmt.Errorf("broker name [%s] should be 'default'", conf.Peers.Server.Name))
+	if conf.Peers.Service.Server.Name != "default" {
+		t.Fatal(fmt.Errorf("broker name [%s] should be 'default'", conf.Peers.Service.Server.Name))
 	}
 }
 

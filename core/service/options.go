@@ -95,12 +95,12 @@ func (c RegistryOptions) Options() registry.Options {
 	return opts
 }
 
-type ConfigOptions []config.Option
+type ConfigOptions []option.Option
 
 func (c ConfigOptions) Options() config.Options {
 	opts := config.Options{}
 	for _, o := range c {
-		o(&opts)
+		opts.Apply(o)
 	}
 
 	return opts

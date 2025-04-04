@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 	cliSource "github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/cli"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
@@ -33,7 +34,7 @@ func LoadConfig(sOpts *service.Options) (err error) {
 	}
 
 	var appendSource []source.Source
-	var cfgOption []cfg.Option
+	var cfgOption []option.Option
 	if len(sOpts.Conf) > 0 {
 		// check file exists
 		exists, err := uf.Exists(sOpts.Conf)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"net/http"
 	"time"
 
@@ -35,6 +36,7 @@ func main() {
 	ctx := context.Background()
 	service := peers.NewPeer(
 		service.Config(config.NewConfig(
+			option.WithRootCtx(ctx),
 			config.WithSources(
 				file.NewSource(
 					file.WithPath("./source.yml"))))),

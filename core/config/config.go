@@ -1,12 +1,12 @@
 package config
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/reader"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
@@ -25,7 +25,7 @@ var (
 
 type Config interface {
 	reader.Values
-	Init(opts ...Option) error
+	Init(opts ...option.Option) error
 	Close() error
 }
 
@@ -34,15 +34,11 @@ type stackConfig struct {
 	opts   Options
 }
 
-func (c *stackConfig) Init(opts ...Option) (err error) {
+func (c *stackConfig) Init(opts ...option.Option) (err error) {
 	log.Infof("peers' config init begin")
 
 	for _, opt := range opts {
-		opt(&c.opts)
-	}
-
-	if c.opts.Context == nil {
-		c.opts.Context = context.Background()
+		c.opts.Apply(opt)
 	}
 
 	defer func() {
@@ -70,7 +66,7 @@ func (c *stackConfig) Init(opts ...Option) (err error) {
 	// cache c as sugar
 	_sugar = c
 	// set the autowired values
-	injectAutowired(c.opts.Context)
+	injectAutowired(c.opts.Ctx())
 
 	log.Infof("peers' config init done")
 	return nil
@@ -105,12 +101,10 @@ func (c *stackConfig) Close() error {
 
 // Init Stack's Config component
 // Any developer Don't use this Func anywhere. NewConfig works for Stack Framework only
-func NewConfig(opts ...Option) Config {
+func NewConfig(opts ...option.Option) Config {
 	var o = Options{
-		Watch: true,
-	}
-	for _, opt := range opts {
-		opt(&o)
+		Options: option.GetOptions(opts...),
+		Watch:   true,
 	}
 
 	return &stackConfig{opts: o}

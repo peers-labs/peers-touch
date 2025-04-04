@@ -30,8 +30,8 @@ type Config struct {
 	Storage        bool `yaml:"storage" json:"storage" pconf:"storage"`
 }
 
-func (c *Config) Options() []cfg.Option {
-	var cfgOptions []cfg.Option
+func (c *Config) Options() []option.Option {
+	var cfgOptions []option.Option
 
 	cfgOptions = append(cfgOptions, cfg.WithHierarchyMerge(c.HierarchyMerge))
 	cfgOptions = append(cfgOptions, cfg.WithStorage(c.Storage))
