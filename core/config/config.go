@@ -96,6 +96,9 @@ func (c *stackConfig) Scan(v interface{}) error {
 }
 
 func (c *stackConfig) Close() error {
+	// clean all sources to make reinit be clear, maybe extra caches also should be cleared too.
+	// but now, it's safe.
+	c.opts.Sources = nil
 	return c.config.Close()
 }
 

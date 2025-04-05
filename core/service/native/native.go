@@ -9,7 +9,6 @@ import (
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
-	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/peers/config"
@@ -173,13 +172,11 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 
 			return nil
 		}),
-
 		// set the default components
 		// see initComponents
 		// service.Store(plugin.StorePlugins["native"].New()),
 		// service.Server(plugin.ServerPlugins["native"].New()),
 		// service.Logger(plugin.LoggerPlugins["console"].New()),
-		service.Config(cfg.DefaultConfig),
 		//service.HandleSignal(true),
 	}
 

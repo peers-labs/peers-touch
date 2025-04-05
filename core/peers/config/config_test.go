@@ -82,6 +82,7 @@ func TestPeersConfig_File(t *testing.T) {
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
+	defer c.Close()
 
 	if err := c.Scan(&conf); err != nil {
 		t.Error(fmt.Errorf("Config scan confi error: %s ", err))
@@ -95,7 +96,7 @@ func TestPeersConfig_File(t *testing.T) {
 }
 
 func TestPeersConfig_Config(t *testing.T) {
-	path := filepath.Join(os.TempDir(), "file.yaml")
+	path := filepath.Join(os.TempDir(), "file_config.yaml")
 	fh, err := os.Create(path)
 	if err != nil {
 		t.Error(fmt.Errorf("Config create tmp yml error: %s ", err))
@@ -141,6 +142,7 @@ func TestPeersConfig_Config(t *testing.T) {
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
+	defer c.Close()
 
 	t.Log(string(c.Bytes()))
 	t.Log(conf)
@@ -181,7 +183,7 @@ peers:
     name: gRPC
     address: :7788
 `)
-	ymlPath := filepath.Join(os.TempDir(), "file.yaml")
+	ymlPath := filepath.Join(os.TempDir(), "file_MultiConfig.yaml")
 	ymlFile, err := os.Create(ymlPath)
 	if err != nil {
 		t.Error(fmt.Errorf("MultiConfig create tmp yml error: %s", err))
@@ -237,10 +239,7 @@ peers:
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
-
-	if err = c.Init(); err != nil {
-		t.Fatal(fmt.Errorf("Config init error: %s ", err))
-	}
+	defer c.Close()
 
 	if c.Get("db").String("default") != "mysql" {
 		t.Fatal(fmt.Errorf("db setting should be 'mysql', not %s", c.Get("db").String("default")))
@@ -260,7 +259,11 @@ peers:
 }
 
 func TestConfigHierarchyMerge(t *testing.T) {
-	path := filepath.Join(os.TempDir(), "file.yaml")
+	defer func() {
+		conf = PeersConfig{}
+	}()
+
+	path := filepath.Join(os.TempDir(), "file_hierarchy_merge.yaml")
 	fh, err := os.Create(path)
 	if err != nil {
 		t.Error(fmt.Errorf("Config create tmp yml error: %s ", err))
@@ -278,6 +281,7 @@ func TestConfigHierarchyMerge(t *testing.T) {
 	if err = c.Init(); err != nil {
 		t.Error(fmt.Errorf("Config init error: %s ", err))
 	}
+	defer c.Close()
 
 	if c.Get("peers.broker.name").String("") != "http" {
 		t.Fatal(fmt.Errorf("peers.broker.name should be [http], not: [%s]", c.Get("peers.broker.name").String("")))
@@ -289,6 +293,10 @@ func TestConfigHierarchyMerge(t *testing.T) {
 }
 
 func TestConfigIncludes(t *testing.T) {
+	defer func() {
+		conf = PeersConfig{}
+	}()
+
 	mainYml := []byte(`
 peers:
   includes: testA.yml

@@ -93,7 +93,9 @@ func LoadConfig(sOpts *service.Options) (err error) {
 	// the last two must be env & Cmd line
 	appendSource = append(appendSource, cliSource.NewSource(sOpts.Cmd.App(), cliSource.Context(sOpts.Cmd.App().Context())))
 	cfgOption = append(cfgOption, cfg.WithSources(appendSource...))
-	err = sOpts.Config.Init(cfgOption...)
+
+	sOpts.Config = cfg.NewConfig(cfgOption...)
+	err = sOpts.Config.Init()
 	if err != nil {
 		err = fmt.Errorf("init config err: %s", err)
 		return

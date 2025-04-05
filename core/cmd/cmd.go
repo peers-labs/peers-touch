@@ -53,7 +53,7 @@ var (
 			Usage:  "Sets the client connection pool size. Default: 1",
 			Alias:  "peers_client_pool_size",
 		},
-		cli.StringFlag{
+		cli.IntFlag{
 			Name:   "client_pool_ttl",
 			EnvVar: "PEERS_CLIENT_POOL_TTL",
 			Usage:  "Sets the client connection pool ttl in seconds.",
