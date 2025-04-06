@@ -9,6 +9,10 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 )
 
+const (
+	NativePluginName = "native"
+)
+
 type Plugin interface {
 	Name() string
 }

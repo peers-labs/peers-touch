@@ -32,12 +32,12 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 		logger.Infof(ctx, "init rds map")
 		n.db = make(map[string]*gorm.DB)
 		for _, rds := range n.opts.RDSMap {
-			dialector := store.GetDialector(rds.DriverName)
+			dialector := store.GetDialector(rds.Name)
 			if dialector == nil {
 				panic("dialector not found")
 			}
 
-			n.db[rds.Name], err = gorm.Open(dialector(rds.Address), &gorm.Config{})
+			n.db[rds.Name], err = gorm.Open(dialector(rds.DSN), &gorm.Config{})
 		}
 	}
 
@@ -73,12 +73,8 @@ func (n *nativeStore) RDS(ctx context.Context, opts ...store.RDSDMLOption) (*gor
 func NewStore(opts ...option.Option) store.Store {
 	if nativeErots == nil {
 		nativeErots = &nativeStore{
-			opts: &store.Options{
-				Options: &option.Options{},
-			},
+			opts: store.GetOptions(opts...),
 		}
-
-		nativeErots.opts.Apply(opts...)
 	}
 
 	return nativeErots

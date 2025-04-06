@@ -71,12 +71,22 @@ func bindAutowiredValue(ctx context.Context, obj reflect.Value, path ...string) 
 		v.SetBool(value.Bool(false))
 		// supports string only now
 	case reflect.Slice, reflect.Array:
-		values := value.StringSlice([]string{})
-		v.Set(reflect.MakeSlice(reflect.SliceOf(v.Type().Elem()), len(values), len(values)))
-		for idx, val := range values {
-			nvalue := reflect.Indirect(reflect.New(v.Type().Elem()))
-			nvalue.SetString(val)
-			v.Index(idx).Set(nvalue)
+		// Handle struct arrays using JSON scanning
+		if v.Type().Elem().Kind() == reflect.Struct {
+			target := reflect.New(v.Type()).Interface()
+			if err := value.Scan(target); err == nil {
+				v.Set(reflect.ValueOf(target).Elem())
+			} else {
+				log.Errorf(ctx, "failed to scan struct array: %v", err)
+			}
+		} else {
+			values := value.StringSlice([]string{})
+			v.Set(reflect.MakeSlice(reflect.SliceOf(v.Type().Elem()), len(values), len(values)))
+			for idx, val := range values {
+				nvalue := reflect.Indirect(reflect.New(v.Type().Elem()))
+				nvalue.SetString(val)
+				v.Index(idx).Set(nvalue)
+			}
 		}
 	case reflect.Struct:
 		// Iterate over the struct fields
@@ -109,9 +119,20 @@ func bindAutowiredValue(ctx context.Context, obj reflect.Value, path ...string) 
 			bindAutowiredValue(ctx, nextValue, newPath...)
 		}
 	case reflect.Map:
-		// 初始化 map
-		var tempMap map[string]string
-		v.Set(reflect.ValueOf(value.StringMap(tempMap)))
+		// Handle map[string]struct{} type
+		if v.Type().Key().Kind() == reflect.String && v.Type().Elem().Kind() == reflect.Struct {
+			// Handle all map types with JSON unmarshal
+			target := reflect.New(v.Type()).Interface()
+			if err := value.Scan(target); err == nil {
+				v.Set(reflect.ValueOf(target).Elem())
+			} else {
+				log.Errorf(ctx, "failed to bind map: %v", err)
+			}
+		} else {
+			// Fallback to string map handling
+			var tempMap map[string]string
+			v.Set(reflect.ValueOf(value.StringMap(tempMap)))
+		}
 	default:
 		log.Warnf(ctx, "unsupported type: %s of %s", v.Kind().String(), v.String())
 	}

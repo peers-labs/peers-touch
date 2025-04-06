@@ -9,13 +9,17 @@ import (
 
 var options struct {
 	Peers struct {
-		Service struct {
-			Store struct {
-				Native struct {
-					Enabled bool `pconf:"enabled"`
-				} `pconf:"native"`
-			} `pconf:"store"`
-		} `pconf:"service"`
+		Store struct {
+			Name   string `pconf:"name"`
+			Native struct {
+				RDS struct {
+					GORM []struct {
+						Name string `pconf:"name"`
+						DSN  string `pconf:"dsn"`
+					} `pconf:"gorm"`
+				} `pconf:"rds"`
+			} `pconf:"native"`
+		} `pconf:"store"`
 	} `pconf:"peers"`
 }
 
@@ -23,13 +27,15 @@ type nativeStorePlugin struct {
 }
 
 func (n *nativeStorePlugin) Name() string {
-	return "native"
+	return plugin.NativePluginName
 }
 
 func (n *nativeStorePlugin) Options() []option.Option {
 	var opts []option.Option
-	if options.Peers.Service.Store.Native.Enabled {
-		// todo append opts
+	if len(options.Peers.Store.Native.RDS.GORM) > 0 {
+		for _, g := range options.Peers.Store.Native.RDS.GORM {
+			opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, DSN: g.DSN}))
+		}
 	}
 
 	return opts
@@ -42,5 +48,6 @@ func (n *nativeStorePlugin) New(opts ...option.Option) store.Store {
 
 func init() {
 	config.RegisterOptions(&options)
-	plugin.StorePlugins["native"] = &nativeStorePlugin{}
+	p := &nativeStorePlugin{}
+	plugin.StorePlugins[p.Name()] = p
 }

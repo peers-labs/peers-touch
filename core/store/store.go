@@ -46,7 +46,8 @@ func GetRDS(ctx context.Context, opts ...RDSDMLOption) (*gorm.DB, error) {
 	}
 
 	if options.DBName == "" {
-		options.DBName = "default"
+		// todo based on different db engine, eg. for postgresql, it is 'public'.
+		options.DBName = "public"
 	}
 
 	st, err := GetStore(ctx, WithStoreName(options.StoreName))

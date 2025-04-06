@@ -7,7 +7,6 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 
@@ -58,13 +57,15 @@ func (s *native) initComponents(ctx context.Context) error {
 
 	// init store
 	if s.opts.Store == nil {
-		storeName := config.Get("peers.service.store.name").String("")
+		storeName := config.Get("peers.store.name").String(plugin.NativePluginName)
 		if len(storeName) > 0 {
 			if plugin.StorePlugins[storeName] == nil {
 				logger.Errorf(ctx, "store %s not found, use native by default", storeName)
-				storeName = "native"
+				storeName = plugin.NativePluginName
 			}
 		}
+
+		logger.Infof(ctx, "initial store's name is: %s", storeName)
 
 		s.opts.Store = plugin.StorePlugins[storeName].New()
 	}
@@ -74,14 +75,15 @@ func (s *native) initComponents(ctx context.Context) error {
 
 	// todo init server
 	if s.opts.Server == nil {
-		serverName := config.Get("peers.service.server.name").String("")
+		serverName := config.Get("peers.service.server.name").String(plugin.NativePluginName)
 		if len(serverName) > 0 {
 			if plugin.ServerPlugins[serverName] == nil {
 				logger.Errorf(ctx, "server %s not found, use native by default", serverName)
-				serverName = "native"
+				serverName = plugin.NativePluginName
 			}
 		}
 
+		logger.Infof(ctx, "initial server's name is: %s", serverName)
 		s.opts.Server = plugin.ServerPlugins[serverName].New()
 	}
 	if err := s.opts.Server.Init(ctx, s.opts.ServerOptions...); err != nil {

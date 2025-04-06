@@ -1,4 +1,4 @@
-module github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/postgre
+module github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/postgres
 
 go 1.23.6
 

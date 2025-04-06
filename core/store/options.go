@@ -4,10 +4,10 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
-type rdsOptionsKey struct{}
+type storeOptionsKey struct{}
 
 var (
-	wrapper = option.NewWrapper[Options](rdsOptionsKey{}, func(options *option.Options) *Options {
+	wrapper = option.NewWrapper[Options](storeOptionsKey{}, func(options *option.Options) *Options {
 		return &Options{
 			Options: options,
 		}
@@ -34,13 +34,13 @@ func WithRDS(rds *RDSInit) option.Option {
 
 // region store get options
 
-type GetOptions struct {
+type GetStoreOptions struct {
 	StoreName string
 }
-type GetOption func(*GetOptions)
+type GetOption func(*GetStoreOptions)
 
 func WithStoreName(name string) GetOption {
-	return func(o *GetOptions) {
+	return func(o *GetStoreOptions) {
 		o.StoreName = name
 	}
 }
@@ -50,11 +50,8 @@ func WithStoreName(name string) GetOption {
 // region rds init options
 
 type RDSInit struct {
-	Name       string // use to identify the RDSMap instance
-	DriverName string // use to identify the RDSMap instance
-	Address    string // Server address
-	Timeout    int    // Server timeout
-	SQLConnURL string // Standard SQL connection URL
+	Name string // use to identify the RDSMap instance
+	DSN  string // use to connect to the database, gorm protocol
 }
 
 // endregion
@@ -91,3 +88,7 @@ func WithRDSDBName(name string) RDSDMLOption {
 }
 
 // endregion
+
+func GetOptions(opts ...option.Option) *Options {
+	return option.GetOptions(opts...).Ctx().Value(storeOptionsKey{}).(*Options)
+}
