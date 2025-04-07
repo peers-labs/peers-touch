@@ -33,7 +33,6 @@ func NewRegistry(opts ...registry.Option) (*Registry, error) {
 	}
 
 	return r, nil
-
 }
 
 func (r *Registry) Init(ctx context.Context, opts ...registry.Option) error {

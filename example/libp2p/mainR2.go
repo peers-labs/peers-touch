@@ -18,7 +18,6 @@ import (
 )
 
 func main() {
-	bootstrapAddr := flag.String("b", "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r", "Bootstrap node address")
 	relayAddr := flag.String("r", "/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r", "Relay node address")
 	port := flag.Int("p", 0, "Network port (0 for random)")
 	flag.Parse()
@@ -38,12 +37,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// Connect to bootstrap
-	if err := connectToPeer(host, *bootstrapAddr); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Connected to bootstrap node")
 
 	// Connect to relay
 	if err := connectToPeer(host, *relayAddr); err != nil {
