@@ -50,8 +50,9 @@ func WithStoreName(name string) GetOption {
 // region rds init options
 
 type RDSInit struct {
-	Name string // use to identify the RDSMap instance
-	DSN  string // use to connect to the database, gorm protocol
+	Name   string // use to identify the RDSMap instance
+	Enable bool
+	DSN    string // use to connect to the database, gorm protocol
 }
 
 // endregion

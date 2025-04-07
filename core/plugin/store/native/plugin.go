@@ -14,8 +14,9 @@ var options struct {
 			Native struct {
 				RDS struct {
 					GORM []struct {
-						Name string `pconf:"name"`
-						DSN  string `pconf:"dsn"`
+						Name   string `pconf:"name"`
+						Enable bool   `pconf:"enable"`
+						DSN    string `pconf:"dsn"`
 					} `pconf:"gorm"`
 				} `pconf:"rds"`
 			} `pconf:"native"`
@@ -34,7 +35,7 @@ func (n *nativeStorePlugin) Options() []option.Option {
 	var opts []option.Option
 	if len(options.Peers.Store.Native.RDS.GORM) > 0 {
 		for _, g := range options.Peers.Store.Native.RDS.GORM {
-			opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, DSN: g.DSN}))
+			opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, Enable: g.Enable, DSN: g.DSN}))
 		}
 	}
 

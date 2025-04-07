@@ -32,12 +32,16 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 		logger.Infof(ctx, "init rds map")
 		n.db = make(map[string]*gorm.DB)
 		for _, rds := range n.opts.RDSMap {
-			dialector := store.GetDialector(rds.Name)
-			if dialector == nil {
-				panic("dialector not found")
-			}
+			if rds.Enable {
+				dialector := store.GetDialector(rds.Name)
+				if dialector == nil {
+					panic("dialector not found")
+				}
 
-			n.db[rds.Name], err = gorm.Open(dialector(rds.DSN), &gorm.Config{})
+				n.db[rds.Name], err = gorm.Open(dialector(rds.DSN), &gorm.Config{})
+			} else {
+				logger.Warnf(ctx, "rds[%s] is disabled, skip init", rds.Name)
+			}
 		}
 	}
 
@@ -64,7 +68,7 @@ func (n *nativeStore) RDS(ctx context.Context, opts ...store.RDSDMLOption) (*gor
 		return nil, store.ErrDBNotFound
 	}
 
-	return n.db[qOpts.DBName], nil
+	return n.db[qOpts.Name], nil
 }
 
 // NewStore returns a new native store
