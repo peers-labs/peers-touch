@@ -1,4 +1,4 @@
-package libp2p
+package native
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-type Registry struct {
+type nativeRegistry struct {
 	options registry.Options
 	peers   map[string]*registry.Peer
 	mu      sync.RWMutex
@@ -23,8 +23,8 @@ type Registry struct {
 	dht  *dht.IpfsDHT
 }
 
-func NewRegistry(opts ...registry.Option) (*Registry, error) {
-	r := &Registry{
+func NewRegistry(opts ...registry.Option) (*registry.Registry, error) {
+	r := &nativeRegistry{
 		peers: make(map[string]*registry.Peer),
 	}
 
@@ -35,7 +35,7 @@ func NewRegistry(opts ...registry.Option) (*Registry, error) {
 	return r, nil
 }
 
-func (r *Registry) Init(ctx context.Context, opts ...registry.Option) error {
+func (r *nativeRegistry) Init(ctx context.Context, opts ...registry.Option) error {
 	for _, opt := range opts {
 		opt(&r.options)
 	}
@@ -66,11 +66,11 @@ func (r *Registry) Init(ctx context.Context, opts ...registry.Option) error {
 	return nil
 }
 
-func (r *Registry) Options() registry.Options {
+func (r *nativeRegistry) Options() registry.Options {
 	return r.options
 }
 
-func (r *Registry) Register(ctx context.Context, peer *registry.Peer, opts ...registry.RegisterOption) error {
+func (r *nativeRegistry) Register(ctx context.Context, peer *registry.Peer, opts ...registry.RegisterOption) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -94,7 +94,7 @@ func (r *Registry) Register(ctx context.Context, peer *registry.Peer, opts ...re
 
 // Deregister removes a peer from the registry
 // but DHT doesn't support delete operation, so we just remove it from the map
-func (r *Registry) Deregister(ctx context.Context, peer *registry.Peer, opts ...registry.DeregisterOption) error {
+func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, opts ...registry.DeregisterOption) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -114,7 +114,7 @@ func (r *Registry) Deregister(ctx context.Context, peer *registry.Peer, opts ...
 	return r.dht.PutValue(ctx, key, []byte{})
 }
 
-func (r *Registry) GetPeer(ctx context.Context, name string, opts ...registry.GetOption) ([]*registry.Peer, error) {
+func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...registry.GetOption) ([]*registry.Peer, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -134,16 +134,16 @@ func (r *Registry) GetPeer(ctx context.Context, name string, opts ...registry.Ge
 	return []*registry.Peer{&p}, nil
 }
 
-func (r *Registry) Watch(opts ...registry.WatchOption) (registry.Watcher, error) {
+func (r *nativeRegistry) Watch(opts ...registry.WatchOption) (registry.Watcher, error) {
 	// Implement DHT-based watch functionality
 	return nil, errors.New("not implemented")
 }
 
-func (r *Registry) String() string {
+func (r *nativeRegistry) String() string {
 	return "libp2p-registry"
 }
 
-func (r *Registry) bootstrap() error {
+func (r *nativeRegistry) bootstrap() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

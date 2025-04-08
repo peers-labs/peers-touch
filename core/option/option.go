@@ -12,7 +12,8 @@ var (
 	// rootOpts is the key component of Peers' lifecycle. it manages entire options info for peers' service.
 	rootOpts *Options
 
-	ctxLock sync.RWMutex
+	ctxLock       sync.RWMutex
+	appendCtxLock sync.RWMutex
 
 	// runtimeCtx is the context of runtime from init & run
 	// don't use it to set a request context or something else like.
@@ -38,6 +39,9 @@ func (o *Options) Ctx() context.Context {
 }
 
 func (o *Options) AppendCtx(key interface{}, value interface{}) {
+	appendCtxLock.Lock()
+	defer appendCtxLock.Unlock()
+
 	if o.ctx == nil {
 		panic("option ctx is nil")
 	}
@@ -51,6 +55,10 @@ type Option func(o *Options)
 // BRun returns true if the Option Func is already executed
 func (o Option) BRun() bool {
 	return false
+}
+
+type ExtendOptions[T any] struct {
+	Options T
 }
 
 // WithRootCtx sets the context
@@ -68,6 +76,8 @@ func WithRootCtx(ctx context.Context) Option {
 			return
 		}
 
+		// todo, there are too many ways to set ctx, see AppendCtx
+		// these two ways are not safe
 		o.ctx = ctx
 		rootOpts = o
 		runtimeCtx = ctx
