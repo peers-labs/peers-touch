@@ -57,10 +57,6 @@ func (o Option) BRun() bool {
 	return false
 }
 
-type ExtendOptions[T any] struct {
-	Options T
-}
-
 // WithRootCtx sets the context
 // It will be used as the root context for all other contexts. so don't use it to set a context for a subcomponent if you use
 // components together. but when you want to use only one component like config as a lib, you can convey WithRootCtx as the first

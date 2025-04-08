@@ -6,13 +6,22 @@ import (
 )
 
 type options struct {
-	registry.Options
+	*registry.Options
 
 	BootstrapNodes []string
 }
 
 func WithBootstrapNodes(bootstraps []string) option.Option {
 	return registry.OptionWrapper.Wrap(func(o *registry.Options) {
-		o.
+		if o.Extends == nil {
+			o.Extends = &options{
+				Options:        o,
+				BootstrapNodes: bootstraps,
+			}
+		} else {
+			if _, ok := o.Extends.(*options); !ok {
+				o.Extends.(*options).BootstrapNodes = bootstraps
+			}
+		}
 	})
 }

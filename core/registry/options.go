@@ -25,7 +25,8 @@ type Option func(*Options)
 
 type Options struct {
 	*option.Options
-	*option.ExtendOptions
+
+	Extends any
 }
 
 type RegisterOption func(*RegisterOptions)
