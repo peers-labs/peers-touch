@@ -9,19 +9,33 @@ type options struct {
 	*registry.Options
 
 	BootstrapNodes []string
+	RelayNodes     []string
+
+	// public nodes are used for public network, such as the bootstrap nodes, relay nodes, etc.
+	// Init will help to set the public nodes for the registry plugin.
+	publicBootstrapNodes []string
+	publicRelayNodes     []string
 }
 
 func WithBootstrapNodes(bootstraps []string) option.Option {
+	return wrapOptions(func(o *options) {
+		o.BootstrapNodes = bootstraps
+	})
+}
+
+func WithRelayNodes(relayNodes []string) option.Option {
+	return wrapOptions(func(o *options) {
+		o.RelayNodes = relayNodes
+	})
+}
+
+func wrapOptions(f func(o *options)) option.Option {
 	return registry.OptionWrapper.Wrap(func(o *registry.Options) {
-		if o.Extends == nil {
-			o.Extends = &options{
-				Options:        o,
-				BootstrapNodes: bootstraps,
-			}
-		} else {
-			if _, ok := o.Extends.(*options); !ok {
-				o.Extends.(*options).BootstrapNodes = bootstraps
+		if o.ExtOptions == nil {
+			o.ExtOptions = &options{
+				Options: o,
 			}
 		}
+		f(o.ExtOptions.(*options))
 	})
 }

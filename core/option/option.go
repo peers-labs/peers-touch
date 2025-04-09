@@ -22,6 +22,8 @@ var (
 
 type Options struct {
 	ctx context.Context
+
+	ExtOptions any
 }
 
 func (o *Options) Apply(opts ...Option) {

@@ -6,10 +6,6 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
-var (
-	opts *Options
-)
-
 type registryOptionsKey struct{}
 
 var OptionWrapper = option.NewWrapper[Options](registryOptionsKey{}, func(options *option.Options) *Options {
@@ -20,19 +16,16 @@ var OptionWrapper = option.NewWrapper[Options](registryOptionsKey{}, func(option
 
 // region Options
 
-// Option is a function that can be used to configure a Registry
-type Option func(*Options)
-
+// Options is the options for the registry plugin.
 type Options struct {
 	*option.Options
-
-	Extends any
 }
 
 type RegisterOption func(*RegisterOptions)
 
 type RegisterOptions struct {
-	TTL time.Duration
+	Namespace string
+	TTL       time.Duration
 }
 
 type DeregisterOption func(*DeregisterOptions)
@@ -50,3 +43,7 @@ type WatchOption func(*WatchOptions)
 type WatchOptions struct{}
 
 // endregion
+
+func GetPluginRegions(opts ...option.Option) *Options {
+	return option.GetOptions(opts...).Ctx().Value(registryOptionsKey{}).(*Options)
+}

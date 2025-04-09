@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -14,35 +15,40 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+var (
+	// keep be a singleton
+	regInstance registry.Registry
+	regOnce     sync.RWMutex
+)
+
 type nativeRegistry struct {
-	options registry.Options
-	peers   map[string]*registry.Peer
-	mu      sync.RWMutex
+	options *registry.Options
+
+	peers map[string]*registry.Peer
+	mu    sync.RWMutex
 
 	host host.Host
 	dht  *dht.IpfsDHT
 }
 
-func NewRegistry(opts ...registry.Option) (*registry.Registry, error) {
-	r := &nativeRegistry{
-		peers: make(map[string]*registry.Peer),
+func NewRegistry(opts ...option.Option) (registry.Registry, error) {
+	regOnce.Lock()
+	defer regOnce.Unlock()
+
+	if regInstance != nil {
+		return regInstance, nil
 	}
 
-	for _, opt := range opts {
-		opt(&r.options)
+	regInstance = &nativeRegistry{
+		peers:   make(map[string]*registry.Peer),
+		options: registry.GetPluginRegions(opts...),
 	}
 
-	return r, nil
+	return regInstance, nil
 }
 
-func (r *nativeRegistry) Init(ctx context.Context, opts ...registry.Option) error {
-	for _, opt := range opts {
-		opt(&r.options)
-	}
-
-	if r.host == nil {
-		r.options
-	}
+func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error {
+	r.options.Apply(opts...)
 
 	// Initialize libp2p host
 	h, err := libp2p.New()
@@ -62,6 +68,8 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...registry.Option) erro
 	if err != nil {
 		return err
 	}
+
+	// find all available bootstrap & relay nodes
 
 	return nil
 }
@@ -134,7 +142,7 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...regis
 	return []*registry.Peer{&p}, nil
 }
 
-func (r *nativeRegistry) Watch(opts ...registry.WatchOption) (registry.Watcher, error) {
+func (r *nativeRegistry) Watch(ctx context.Context, opts ...registry.WatchOption) (registry.Watcher, error) {
 	// Implement DHT-based watch functionality
 	return nil, errors.New("not implemented")
 }

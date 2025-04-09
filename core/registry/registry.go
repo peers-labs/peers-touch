@@ -1,9 +1,13 @@
 package registry
 
-import "context"
+import (
+	"context"
+
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+)
 
 type Registry interface {
-	Init(ctx context.Context, opts ...Option) error
+	Init(ctx context.Context, opts ...option.Option) error
 	Options() Options
 	Register(ctx context.Context, peer *Peer, opts ...RegisterOption) error
 	Deregister(ctx context.Context, peer *Peer, opts ...DeregisterOption) error
