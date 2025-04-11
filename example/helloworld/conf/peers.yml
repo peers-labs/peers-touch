@@ -1,4 +1,5 @@
 peers:
+  run-model: 1
   config:
     hierarchy-merge: true
   service:
@@ -14,3 +15,7 @@ peers:
       hertz:
         enabled: true
         some-key: "some-value"
+    registry:
+      bootstrap-nodes:
+        - /ip4/127.0.0.1/tcp/4001/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r
+    

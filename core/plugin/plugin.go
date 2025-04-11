@@ -5,6 +5,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 )
@@ -45,4 +46,10 @@ type StorePlugin interface {
 	Plugin
 	Options() []option.Option
 	New(...option.Option) store.Store
+}
+
+type RegistryPlugin interface {
+	Plugin
+	Options() []option.Option
+	New(...option.Option) registry.Registry
 }

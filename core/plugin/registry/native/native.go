@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 )
 
 var (
@@ -21,8 +24,12 @@ var (
 	regOnce     sync.RWMutex
 )
 
+// native registry is based on libp2p kad-dht
+// it works as a peer discovery service which serves entrance for peers to find each other
 type nativeRegistry struct {
 	options *registry.Options
+	// for convenience
+	extOpts *options
 
 	peers map[string]*registry.Peer
 	mu    sync.RWMutex
@@ -31,12 +38,12 @@ type nativeRegistry struct {
 	dht  *dht.IpfsDHT
 }
 
-func NewRegistry(opts ...option.Option) (registry.Registry, error) {
+func NewRegistry(opts ...option.Option) registry.Registry {
 	regOnce.Lock()
 	defer regOnce.Unlock()
 
 	if regInstance != nil {
-		return regInstance, nil
+		return regInstance
 	}
 
 	regInstance = &nativeRegistry{
@@ -44,11 +51,12 @@ func NewRegistry(opts ...option.Option) (registry.Registry, error) {
 		options: registry.GetPluginRegions(opts...),
 	}
 
-	return regInstance, nil
+	return regInstance
 }
 
 func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error {
 	r.options.Apply(opts...)
+	r.extOpts = r.options.ExtOptions.(*options)
 
 	// Initialize libp2p host
 	h, err := libp2p.New()
@@ -58,24 +66,26 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	r.host = h
 
 	// Create DHT instance in server mode
-	r.dht, err = dht.New(context.Background(), h, dht.Mode(dht.ModeServer))
+	r.dht, err = dht.New(ctx, h, dht.Mode(r.extOpts.runMode))
 	if err != nil {
 		return err
 	}
 
+	// merge bootstrap nodes
+	bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
 	// Bootstrap the DHT
-	err = r.bootstrap()
+	err = r.bootstrap(ctx, bootstrapNodes)
 	if err != nil {
 		return err
 	}
 
-	// find all available bootstrap & relay nodes
+	// todo init relay nodes
 
 	return nil
 }
 
 func (r *nativeRegistry) Options() registry.Options {
-	return r.options
+	return *r.options
 }
 
 func (r *nativeRegistry) Register(ctx context.Context, peer *registry.Peer, opts ...registry.RegisterOption) error {
@@ -151,16 +161,30 @@ func (r *nativeRegistry) String() string {
 	return "libp2p-registry"
 }
 
-func (r *nativeRegistry) bootstrap() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.Multiaddr) error {
+	wg := sync.WaitGroup{}
 
+	errMap := map[string]error{}
 	// Connect to public bootstrap nodes
-	for _, addr := range dht.DefaultBootstrapPeers {
-		pi, _ := peer.AddrInfoFromP2pAddr(addr)
-		if err := r.host.Connect(ctx, *pi); err != nil {
-			continue
-		}
+	for _, addr := range bootstraps {
+		wg.Add(1)
+		go func(addr multiaddr.Multiaddr) {
+			ctxTimout, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			pi, _ := peer.AddrInfoFromP2pAddr(addr)
+			if err := r.host.Connect(ctxTimout, *pi); err != nil {
+				logger.Errorf(ctx, "failed to connect to public bootstrap node %s: %v", addr, err)
+				errMap[addr.String()] = err
+				return // ignore error
+			}
+		}(addr)
 	}
+	wg.Wait()
+
+	if len(errMap) > 0 {
+		return fmt.Errorf("bootstrap met err: %v", errMap)
+	}
+
 	return r.dht.Bootstrap(ctx)
 }

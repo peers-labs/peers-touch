@@ -7,6 +7,8 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+
+	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/registry/native"
 )
 
 func main() {
@@ -15,7 +17,7 @@ func main() {
 	err := p.Init(
 		ctx,
 		peers.WithName("hello-world"),
-		peers.WithAppendHandlers(
+		server.WithHandlers(
 			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("hello world, from native handler"))
 			})),
@@ -30,7 +32,7 @@ func main() {
 		panic(err)
 	}
 
-	err = p.Start(ctx)
+	err = p.Start()
 	if err != nil {
 		panic(err)
 	}
