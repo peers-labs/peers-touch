@@ -62,60 +62,15 @@ type Options struct {
 
 type ClientOptions []client.Option
 
-func (c ClientOptions) Options() client.Options {
-	opts := client.Options{}
-	for _, o := range c {
-		o(&opts)
-	}
-
-	return opts
-}
-
 type ServerOptions []option.Option
-
-func (c ServerOptions) Options() server.Options {
-	opts := server.Options{}
-	for _, o := range c {
-		opts.Apply(o)
-	}
-
-	return opts
-}
 
 type StoreOptions []option.Option
 
-type RegistryOptions []registry.Option
-
-func (c RegistryOptions) Options() registry.Options {
-	opts := registry.Options{}
-	for _, o := range c {
-		o(&opts)
-	}
-
-	return opts
-}
+type RegistryOptions []option.Option
 
 type ConfigOptions []option.Option
 
-func (c ConfigOptions) Options() config.Options {
-	opts := config.Options{}
-	for _, o := range c {
-		opts.Apply(o)
-	}
-
-	return opts
-}
-
 type LoggerOptions []logger.Option
-
-func (c LoggerOptions) Options() logger.Options {
-	opts := logger.Options{}
-	for _, o := range c {
-		o(&opts)
-	}
-
-	return opts
-}
 
 func Name(c string) option.Option {
 	return wrapper.Wrap(func(opts *Options) {

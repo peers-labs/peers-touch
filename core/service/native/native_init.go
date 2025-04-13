@@ -42,17 +42,20 @@ func (s *native) Init(ctx context.Context, opts ...option.Option) error {
 }
 
 func (s *native) initComponents(ctx context.Context) error {
-	logOpts := s.opts.LoggerOptions.Options()
-
 	// set Logger
 	// only change if we have the logger and type differs
-	if len(logOpts.Name) > 0 && s.opts.Logger.String() != logOpts.Name {
-		l, ok := plugin.LoggerPlugins[logOpts.Name]
+	if s.opts.Logger == nil {
+		// use slogs as default logger
+		loggerName := config.Get("peers.logger.name").String("slogrus")
+		l, ok := plugin.LoggerPlugins[loggerName]
 		if !ok {
-			return fmt.Errorf("logger [%s] not found", logOpts.Name)
+			return fmt.Errorf("logger [%s] not found", loggerName)
 		}
 
 		s.opts.Logger = l.New()
+	}
+	if err := s.opts.Logger.Init(ctx, s.opts.LoggerOptions...); err != nil {
+		return err
 	}
 
 	// init store
@@ -70,6 +73,24 @@ func (s *native) initComponents(ctx context.Context) error {
 		s.opts.Store = plugin.StorePlugins[storeName].New()
 	}
 	if err := s.opts.Store.Init(ctx, s.opts.StoreOptions...); err != nil {
+		return err
+	}
+
+	// init registry
+	if s.opts.Registry == nil {
+		registryName := config.Get("peers.registry.name").String(plugin.NativePluginName)
+		if len(registryName) > 0 {
+			if plugin.RegistryPlugins[registryName] == nil {
+				logger.Errorf(ctx, "registry %s not found, use native by default", registryName)
+				registryName = plugin.NativePluginName
+			}
+		}
+
+		logger.Infof(ctx, "initial registry's name is: %s", registryName)
+
+		s.opts.Registry = plugin.RegistryPlugins[registryName].New()
+	}
+	if err := s.opts.Registry.Init(ctx, s.opts.RegistryOptions...); err != nil {
 		return err
 	}
 

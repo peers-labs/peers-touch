@@ -1,4 +1,5 @@
 peers:
+  includes: store.yml
   run-model: 1
   config:
     hierarchy-merge: true

@@ -9,7 +9,6 @@ import (
 	lg "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	reg "github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	ser "github.com/dirty-bro-tech/peers-touch-go/core/server"
 	pp "github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
@@ -67,8 +66,8 @@ type Registry struct {
 	Name    string `json:"name" pconf:"name"`
 }
 
-func (r *Registry) Options() []reg.Option {
-	var regOptions []reg.Option
+func (r *Registry) Options() []option.Option {
+	var regOptions []option.Option
 
 	return regOptions
 }
