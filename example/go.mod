@@ -4,14 +4,18 @@ go 1.23.6
 
 replace (
 	github.com/dirty-bro-tech/peers-touch-go => ../
+	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native => ../core/plugin/native
+	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native => ../core/plugin/store/native
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite => ../core/plugin/store/rds/sqlite
+	github.com/dirty-bro-tech/peers-touch-go/core/plugin/registry/native => ../core/plugin/registry/native
 )
 
 require (
 	github.com/cloudwego/hertz v0.9.5
 	github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250324164259-952df2add43c
+	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native v0.0.0-00010101000000-000000000000
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/registry/native v0.0.0-20250411155725-63fa257c36f2
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native v0.0.0-20250411155725-63fa257c36f2
+	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native v0.0.0
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
 	github.com/libp2p/go-libp2p v0.41.1
 	github.com/libp2p/go-libp2p-kad-dht v0.31.0

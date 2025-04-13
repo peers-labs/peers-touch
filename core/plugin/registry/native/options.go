@@ -5,6 +5,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
+	"time"
 )
 
 type ModeOpt = dht.ModeOpt
@@ -26,6 +27,8 @@ type options struct {
 
 	runMode ModeOpt
 
+	bootstrapNodeRetryTimes  int
+	bootstrapRefreshInterval time.Duration
 	// bootstrap nodes are used for bootstrap the network,
 	// not same as the public nodes, the nodes are used for custom network, such as the private network.
 	bootstrapNodes []multiaddr.Multiaddr
@@ -68,6 +71,18 @@ func WithRelayNodes(relayNodes []string) option.Option {
 func WithDHTMode(mod ModeOpt) option.Option {
 	return wrapOptions(func(o *options) {
 		o.runMode = mod
+	})
+}
+
+func WithBootstrapNodeRetryTimes(times int) option.Option {
+	return wrapOptions(func(o *options) {
+		o.bootstrapNodeRetryTimes = times
+	})
+}
+
+func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
+	return wrapOptions(func(o *options) {
+		o.bootstrapRefreshInterval = interval
 	})
 }
 

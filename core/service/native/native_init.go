@@ -28,14 +28,14 @@ func (s *native) Init(ctx context.Context, opts ...option.Option) error {
 		for _, f := range s.opts.BeforeInit {
 			err := f(s.opts)
 			if err != nil {
-				log.Fatalf("init service err: %s", err)
+				log.Fatalf("init peers err: %s", err)
 			}
 		}
 	}
 
 	// begin init
 	if err := s.initComponents(ctx); err != nil {
-		log.Fatalf("init service's components err: %s", err)
+		log.Fatalf("init peers' components err: %s", err)
 	}
 
 	return nil

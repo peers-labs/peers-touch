@@ -19,6 +19,21 @@ var OptionWrapper = option.NewWrapper[Options](registryOptionsKey{}, func(option
 // Options is the options for the registry plugin.
 type Options struct {
 	*option.Options
+
+	RetryInterval  time.Duration
+	ConnectTimeout time.Duration
+}
+
+func WithRetryInterval(dur time.Duration) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.RetryInterval = dur
+	})
+}
+
+func WithConnectTimeout(dur time.Duration) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.ConnectTimeout = dur
+	})
 }
 
 type RegisterOption func(*RegisterOptions)

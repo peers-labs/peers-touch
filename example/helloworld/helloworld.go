@@ -8,6 +8,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 
+	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/registry/native"
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native"
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite"

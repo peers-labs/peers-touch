@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"sync"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -23,6 +23,12 @@ var (
 	regInstance registry.Registry
 	regOnce     sync.RWMutex
 )
+
+type bootstrapState struct {
+	Connected bool
+	UpdatedAt time.Time
+	Logs      []string
+}
 
 // native registry is based on libp2p kad-dht
 // it works as a peer discovery service which serves entrance for peers to find each other
@@ -36,6 +42,10 @@ type nativeRegistry struct {
 
 	host host.Host
 	dht  *dht.IpfsDHT
+
+	// bootstrap nodes status
+	bootstrapStateLock   sync.RWMutex
+	bootstrapNodesStatus map[string]*bootstrapState
 }
 
 func NewRegistry(opts ...option.Option) registry.Registry {
@@ -47,8 +57,9 @@ func NewRegistry(opts ...option.Option) registry.Registry {
 	}
 
 	regInstance = &nativeRegistry{
-		peers:   make(map[string]*registry.Peer),
-		options: registry.GetPluginRegions(opts...),
+		peers:                make(map[string]*registry.Peer),
+		options:              registry.GetPluginRegions(opts...),
+		bootstrapNodesStatus: make(map[string]*bootstrapState),
 	}
 
 	return regInstance
@@ -74,10 +85,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	// merge bootstrap nodes
 	bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
 	// Bootstrap the DHT
-	err = r.bootstrap(ctx, bootstrapNodes)
-	if err != nil {
-		return err
-	}
+	go r.bootstrap(ctx, bootstrapNodes)
 
 	// todo init relay nodes
 
@@ -161,30 +169,65 @@ func (r *nativeRegistry) String() string {
 	return "libp2p-registry"
 }
 
-func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.Multiaddr) error {
-	wg := sync.WaitGroup{}
+func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.Multiaddr) {
+	for {
+		select {
+		case <-time.After(r.extOpts.bootstrapRefreshInterval):
+			wg := sync.WaitGroup{}
+			// Connect to public bootstrap nodes
+			for _, addr := range bootstraps {
+				wg.Add(1)
+				go func(addr multiaddr.Multiaddr) {
+					defer wg.Done()
 
-	errMap := map[string]error{}
-	// Connect to public bootstrap nodes
-	for _, addr := range bootstraps {
-		wg.Add(1)
-		go func(addr multiaddr.Multiaddr) {
-			ctxTimout, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
+					ctxTimout, cancel := context.WithTimeout(ctx, r.options.ConnectTimeout)
+					defer cancel()
 
-			pi, _ := peer.AddrInfoFromP2pAddr(addr)
-			if err := r.host.Connect(ctxTimout, *pi); err != nil {
-				logger.Errorf(ctx, "failed to connect to public bootstrap node %s: %v", addr, err)
-				errMap[addr.String()] = err
-				return // ignore error
+					pi, _ := peer.AddrInfoFromP2pAddr(addr)
+					if err := r.host.Connect(ctxTimout, *pi); err != nil {
+						logger.Errorf(ctx, "failed to connect to public bootstrap node %s: %v", addr, err)
+						r.updateBootstrapStatus(ctx, addr.String(), false)
+						return // ignore error
+					}
+
+					logger.Infof(ctx, "successfully connected to public bootstrap node %s", addr)
+
+				}(addr)
 			}
-		}(addr)
-	}
-	wg.Wait()
+			wg.Wait()
 
-	if len(errMap) > 0 {
-		return fmt.Errorf("bootstrap met err: %v", errMap)
+			if err := r.dht.Bootstrap(ctx); err != nil {
+				logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
+			}
+		case <-ctx.Done():
+			logger.Warnf(ctx, "bootstrap stopped %+v", ctx.Err())
+			return
+		}
+	}
+}
+
+func (r *nativeRegistry) updateBootstrapStatus(ctx context.Context, addr string, successful bool) {
+	r.bootstrapStateLock.Lock()
+	defer r.bootstrapStateLock.Unlock()
+
+	t := time.Now()
+	log := fmt.Sprintf("%+v:%t", t, successful)
+	if status, ok := r.bootstrapNodesStatus[addr]; !ok {
+		r.bootstrapNodesStatus[addr] = &bootstrapState{
+			Connected: successful,
+			UpdatedAt: t,
+			Logs:      []string{log},
+		}
+	} else {
+		status.Connected = successful
+		status.UpdatedAt = t
+		if len(status.Logs) == 10 {
+			// remove the first element, we only keep the last 10 logs
+			status.Logs = status.Logs[1:]
+		}
+
+		status.Logs = append(status.Logs, log)
 	}
 
-	return r.dht.Bootstrap(ctx)
+	return
 }
