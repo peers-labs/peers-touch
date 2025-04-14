@@ -33,6 +33,7 @@ Through such a privacy-focused network, we aim to create a society that respects
 * Config-Driven: The configuration file is used to configure the whole options.  <br />
 
 ## References
+
 Thanks for those friend projects:  <br />
 * [go-fed](https://github.com/go-fed/activity): I learn some implementation ideas from this project. <br />
   * [apcore](https://github.com/go-fed/apcore) 
@@ -42,5 +43,6 @@ Thanks for those friend projects:  <br />
 * [taipei-torrent](https://github.com/jackpal/Taipei-Torrent): A Torrent client in golang. <br />
 * [libp2p](https://github.com/libp2p/go-libp2p): A famous peer-to-peer networking stack. <br />
 * [some-papers-docs](https://xorro-p2p.github.io/resources/): Some papers and docs. <br />
+
 ## Acknowledgements
 

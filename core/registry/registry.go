@@ -6,6 +6,10 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
+var (
+	DefaultPeersNetworkNamespace = "peers_touch_go"
+)
+
 type Registry interface {
 	Init(ctx context.Context, opts ...option.Option) error
 	Options() Options

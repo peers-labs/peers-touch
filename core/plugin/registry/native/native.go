@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"sync"
 	"time"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -22,6 +22,8 @@ var (
 	// keep be a singleton
 	regInstance registry.Registry
 	regOnce     sync.RWMutex
+
+	networkNamespace = "/" + registry.DefaultPeersNetworkNamespace
 )
 
 type bootstrapState struct {
@@ -114,7 +116,7 @@ func (r *nativeRegistry) Register(ctx context.Context, peer *registry.Peer, opts
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	key := "/peers/" + peer.Name
+	key := fmt.Sprintf("%s/%s", networkNamespace, peer.Name)
 	return r.dht.PutValue(ctx, key, data)
 }
 
@@ -135,7 +137,7 @@ func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, op
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	key := "/peers/" + peer.Name
+	key := fmt.Sprintf("%s/%s", networkNamespace, peer.Name)
 	// Set empty value with short TTL
 	return r.dht.PutValue(ctx, key, []byte{})
 }
@@ -147,7 +149,7 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...regis
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	key := "/peers/" + name
+	key := fmt.Sprintf("%s/%s", networkNamespace, name)
 	data, err := r.dht.GetValue(ctx, key)
 	if err != nil {
 		return nil, err
