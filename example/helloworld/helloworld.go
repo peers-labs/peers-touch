@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/dirty-bro-tech/peers-touch-go/core/debug/actuator"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -20,6 +21,7 @@ func main() {
 	err := p.Init(
 		ctx,
 		peers.WithName("hello-world"),
+		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("")),
 		server.WithHandlers(
 			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("hello world, from native handler"))

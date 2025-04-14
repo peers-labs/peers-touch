@@ -6,7 +6,7 @@ peers:
   service:
     server:
       name: "hertz"
-      address: :8082
+      address: :8081
       metadata:
         name: "foo"
         value: "qux"

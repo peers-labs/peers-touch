@@ -12,7 +12,8 @@ var options struct {
 		Service struct {
 			Server struct {
 				Native struct {
-					Enabled bool `pconf:"enabled"`
+					Enabled     bool `pconf:"enabled"`
+					EnableDebug bool `pconf:"enable-debug"`
 				} `pconf:"native"`
 			} `pconf:"server"`
 		} `pconf:"service"`
@@ -29,6 +30,10 @@ func (n *nativeServerPlugin) Name() string {
 func (n *nativeServerPlugin) Options() []option.Option {
 	var opts []option.Option
 	if options.Peers.Service.Server.Native.Enabled {
+		// todo append opts
+	}
+
+	if options.Peers.Service.Server.Native.EnableDebug {
 		// todo append opts
 	}
 

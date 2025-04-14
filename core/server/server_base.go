@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
@@ -27,7 +28,6 @@ func (b *BaseServer) Options() *Options {
 
 func (b *BaseServer) Init(ctx context.Context, opts ...option.Option) error {
 	b.once.Do(func() {
-		b.subServers = make(map[string]SubServer)
 		if err := b.init(ctx, opts...); err != nil {
 			// todo log
 			panic(err)
@@ -84,6 +84,8 @@ func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 			panic(err)
 		}
 
+		logger.Infof(ctx, "init sub server: %s", sub.Name())
+
 		// append the sub server to the map
 		b.subServers[sub.Name()] = sub
 
@@ -100,7 +102,8 @@ func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 
 func NewServer(opts ...option.Option) *BaseServer {
 	s := &BaseServer{
-		opts: GetOptions(),
+		subServers: make(map[string]SubServer),
+		opts:       GetOptions(),
 	}
 	s.Options().Apply(opts...)
 	return s
