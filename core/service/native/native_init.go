@@ -33,6 +33,10 @@ func (s *native) Init(ctx context.Context, opts ...option.Option) error {
 		}
 	}
 
+	if s.opts.Name == "" {
+		panic("name is required,")
+	}
+
 	// begin init
 	if err := s.initComponents(ctx); err != nil {
 		log.Fatalf("init peers' components err: %s", err)

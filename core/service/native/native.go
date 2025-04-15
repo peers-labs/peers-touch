@@ -12,6 +12,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/peers/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
@@ -65,6 +66,11 @@ func (s *native) Start(ctx context.Context) error {
 		logger.Infof(ctx, "server started: %v", info)
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+
+	// register service
+	if err := s.opts.Registry.Register(ctx, s.toPeer()); err != nil {
+		return err
 	}
 
 	// todo start achievement, but now it's blocked by Start
@@ -136,6 +142,19 @@ func (s *native) Run() error {
 	}
 
 	return s.Stop(ctx)
+}
+
+func (s *native) toPeer() *registry.Peer {
+	p := &registry.Peer{
+		Name:    s.opts.Name,
+		Version: "1.0",
+		Metadata: map[string]string{
+			"demo": "hello-world",
+		},
+		Endpoints: nil,
+	}
+
+	return p
 }
 
 // NewService

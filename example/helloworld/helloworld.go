@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"github.com/dirty-bro-tech/peers-touch-go/core/debug/actuator"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go"
+	"github.com/dirty-bro-tech/peers-touch-go/core/debug/actuator"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/registry/native"
@@ -20,7 +21,7 @@ func main() {
 	p := peers.NewPeer()
 	err := p.Init(
 		ctx,
-		peers.WithName("hello-world"),
+		service.Name("peers-touch-helloworld"),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("")),
 		server.WithHandlers(
 			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

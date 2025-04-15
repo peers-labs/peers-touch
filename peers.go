@@ -51,7 +51,7 @@ func (n *nativePeer) ID() object.ID {
 }
 
 func (n *nativePeer) Name() string {
-	return n.opts.Name
+	return n.service.Name()
 }
 
 func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {

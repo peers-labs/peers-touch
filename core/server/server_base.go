@@ -91,9 +91,9 @@ func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 
 		// then append the sub server's handlers to the main server
 		for _, handler := range sub.Handlers() {
-			wrapper.Wrap(func(o *Options) {
+			b.opts.Apply(wrapper.Wrap(func(o *Options) {
 				o.Handlers = append(o.Handlers, handler)
-			})
+			}))
 		}
 	}
 

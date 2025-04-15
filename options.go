@@ -11,17 +11,7 @@ type peersOptionsKey struct{}
 type Options struct {
 	*option.Options
 
-	Name string
-
 	NewService NewService
-}
-
-func WithName(name string) option.Option {
-	return func(o *option.Options) {
-		optionWrap(o, func(opts *Options) {
-			opts.Name = name
-		})
-	}
 }
 
 func WithNewService(newService NewService) option.Option {

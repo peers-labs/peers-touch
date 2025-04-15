@@ -112,7 +112,7 @@ func (r *nativeRegistry) Register(ctx context.Context, peer *registry.Peer, opts
 		return err
 	}
 
-	// Store in DHT with 24h TTL
+	// Store in DHT with 5min TTL
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -145,9 +145,6 @@ func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, op
 func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...registry.GetOption) ([]*registry.Peer, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
 
 	key := fmt.Sprintf("%s/%s", networkNamespace, name)
 	data, err := r.dht.GetValue(ctx, key)
