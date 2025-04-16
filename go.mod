@@ -18,6 +18,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/hcl v1.0.0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.3
+	github.com/libp2p/go-libp2p v0.41.1
 	github.com/modern-go/reflect2 v1.0.2
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
@@ -35,6 +36,7 @@ require (
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/cloudwego/netpoll v0.6.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20190430165422-3e4dfb77656c // indirect

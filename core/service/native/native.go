@@ -181,6 +181,10 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 
 			return nil
 		}),
+		// Load Private Key & Public Key
+		service.BeforeInit(func(sOpts *service.Options) error {
+			return initKeys(sOpts)
+		}),
 		// parse config to options for components
 		service.BeforeInit(func(sOpts *service.Options) error {
 			err := config.SetOptions(sOpts)

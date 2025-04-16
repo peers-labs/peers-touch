@@ -34,6 +34,9 @@ type Options struct {
 	RPC  string
 	Cmd  cmd.Cmd
 	Conf string
+	// todo, putting private key here is not a good idea
+	PrivateKey string
+	PublicKey  string
 
 	ClientOptions   ClientOptions
 	ServerOptions   ServerOptions
@@ -181,6 +184,12 @@ func AfterStart(fn func() error) option.Option {
 func AfterStop(fn func() error) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.AfterStop = append(opts.AfterStop, fn)
+	})
+}
+
+func WithPrivateKey(key string) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		opts.PrivateKey = key
 	})
 }
 
