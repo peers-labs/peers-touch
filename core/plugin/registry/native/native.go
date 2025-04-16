@@ -98,26 +98,34 @@ func (r *nativeRegistry) Options() registry.Options {
 	return *r.options
 }
 
-func (r *nativeRegistry) Register(ctx context.Context, peer *registry.Peer, opts ...registry.RegisterOption) error {
+func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, opts ...registry.RegisterOption) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if peer == nil {
-		return errors.New("peer cannot be nil")
+	if peerReg == nil {
+		return errors.New("peerReg cannot be nil")
 	}
 
-	// Serialize peer data
-	data, err := json.Marshal(peer)
+	// Serialize peerReg data
+	data, err := json.Marshal(peerReg)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal peerReg: %w", err)
 	}
 
 	// Store in DHT with 5min TTL
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	key := fmt.Sprintf("%s/%s", networkNamespace, peer.Name)
-	return r.dht.PutValue(ctx, key, data)
+	key := fmt.Sprintf("%s:%s", networkNamespace, peerReg.Name)
+
+	err = r.dht.PutValue(ctx, key, data)
+	if err != nil {
+		err = fmt.Errorf("failed to put value to dht: %w", err)
+		logger.Errorf(ctx, "%s", err)
+		return err
+	}
+
+	return nil
 }
 
 // Deregister removes a peer from the registry
