@@ -2,7 +2,13 @@ package native
 
 import (
 	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"sync"
@@ -32,7 +38,7 @@ type bootstrapState struct {
 	Logs      []string
 }
 
-// native registry is based on libp2p kad-dht
+// native registry is based on telibp2p kad-dht
 // it works as a peer discovery service which serves entrance for peers to find each other
 type nativeRegistry struct {
 	options *registry.Options
@@ -71,6 +77,10 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	r.options.Apply(opts...)
 	r.extOpts = r.options.ExtOptions.(*options)
 
+	if r.options.PrivateKey == "" {
+		return errors.New("private key for Registry is required")
+	}
+
 	// Initialize libp2p host
 	h, err := libp2p.New()
 	if err != nil {
@@ -106,6 +116,28 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 		return errors.New("peerReg cannot be nil")
 	}
 
+	// Add security metadata
+	peerReg.Version = "1.0"
+	peerReg.Timestamp = time.Now()
+
+	// Sign the payload
+	dataToSign, err := json.Marshal(struct {
+		Name      string
+		Version   string
+		Timestamp time.Time
+	}{
+		Name:      peerReg.Name,
+		Version:   peerReg.Version,
+		Timestamp: peerReg.Timestamp,
+	})
+
+	// Sign the payload using your service's private key
+	signData, err := r.signPayload(r.options.PrivateKey, dataToSign) // Implement signing logic
+	if err != nil {
+		return fmt.Errorf("native Registry failed to sign payload: %w", err)
+	}
+	peerReg.Signature = signData
+
 	// Serialize peerReg data
 	data, err := json.Marshal(peerReg)
 	if err != nil {
@@ -116,8 +148,7 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	key := fmt.Sprintf("%s:%s", networkNamespace, peerReg.Name)
-
+	key := fmt.Sprintf("/%s/%s", networkNamespace, peerReg.Name)
 	err = r.dht.PutValue(ctx, key, data)
 	if err != nil {
 		err = fmt.Errorf("failed to put value to dht: %w", err)
@@ -237,4 +268,20 @@ func (r *nativeRegistry) updateBootstrapStatus(ctx context.Context, addr string,
 	}
 
 	return
+}
+
+// Add this new method
+func (r *nativeRegistry) signPayload(privateKey string, data []byte) ([]byte, error) {
+	block, _ := pem.Decode([]byte(privateKey))
+	if block == nil {
+		return nil, errors.New("failed to parse PEM block")
+	}
+
+	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	hashed := sha256.Sum256(data)
+	return rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, hashed[:])
 }

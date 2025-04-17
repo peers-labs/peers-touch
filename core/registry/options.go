@@ -22,6 +22,7 @@ type Options struct {
 
 	RetryInterval  time.Duration
 	ConnectTimeout time.Duration
+	PrivateKey     string
 }
 
 func WithRetryInterval(dur time.Duration) option.Option {
@@ -33,6 +34,12 @@ func WithRetryInterval(dur time.Duration) option.Option {
 func WithConnectTimeout(dur time.Duration) option.Option {
 	return OptionWrapper.Wrap(func(o *Options) {
 		o.ConnectTimeout = dur
+	})
+}
+
+func WithPrivateKey(privateKey string) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.PrivateKey = privateKey
 	})
 }
 

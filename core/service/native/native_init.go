@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
@@ -94,7 +95,9 @@ func (s *native) initComponents(ctx context.Context) error {
 
 		s.opts.Registry = plugin.RegistryPlugins[registryName].New()
 	}
-	if err := s.opts.Registry.Init(ctx, s.opts.RegistryOptions...); err != nil {
+
+	// todo, set private key in advance.
+	if err := s.opts.Registry.Init(ctx, append(s.opts.RegistryOptions, registry.WithPrivateKey(s.opts.PrivateKey))...); err != nil {
 		return err
 	}
 

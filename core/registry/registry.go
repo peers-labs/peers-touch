@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"time"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
@@ -29,6 +30,8 @@ type Peer struct {
 	Metadata  map[string]string `json:"metadata"`
 	Endpoints []*Endpoint       `json:"endpoints"`
 	Nodes     []*Node           `json:"nodes"`
+	Timestamp time.Time         `json:"timestamp"`
+	Signature []byte            `json:"signature"`
 }
 
 type Node struct {
