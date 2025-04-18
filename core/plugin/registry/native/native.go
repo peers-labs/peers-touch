@@ -17,8 +17,12 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
+	"github.com/golang/protobuf/proto"
+	"github.com/ipfs/boxo/ipns"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	record "github.com/libp2p/go-libp2p-record"
+	"github.com/libp2p/go-libp2p/core/crypto/pb"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -28,8 +32,6 @@ var (
 	// keep be a singleton
 	regInstance registry.Registry
 	regOnce     sync.RWMutex
-
-	networkNamespace = "/" + registry.DefaultPeersNetworkNamespace
 )
 
 type bootstrapState struct {
@@ -89,9 +91,20 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	r.host = h
 
 	// Create DHT instance in server mode
-	r.dht, err = dht.New(ctx, h, dht.Mode(r.extOpts.runMode))
+	r.dht, err = dht.New(ctx, h,
+		dht.Mode(r.extOpts.runMode),
+		dht.Validator(
+			record.NamespacedValidator{
+				// actually, these validators are the defaults in libp2p[see github.com/libp2p/go-libp2p-kad-dht/internal/config/config.go#ApplyFallbacks]
+				// but we need to set them here to learn how are they working,
+				// so we can customize them according to our needs in the future.
+				"pk":   record.PublicKeyValidator{},
+				"ipns": ipns.Validator{KeyBook: h.Peerstore()},
+			},
+		),
+	)
 	if err != nil {
-		return err
+		return fmt.Errorf("create libp2p host: %w", err)
 	}
 
 	// merge bootstrap nodes
@@ -108,6 +121,11 @@ func (r *nativeRegistry) Options() registry.Options {
 	return *r.options
 }
 
+// The Register function adds a new peer to the registry.
+// Currently, we only store peers in the Distributed Hash Table (DHT) because the DHT
+// only accepts IDs generated from public keys. We do not support individual IDs for peers.
+// All peers use the same public key belonging to the host to generate their IDs.
+// Consequently, we can only support registering one peer at present.
 func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, opts ...registry.RegisterOption) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -148,8 +166,17 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	key := fmt.Sprintf("/%s/%s", networkNamespace, peerReg.Name)
-	err = r.dht.PutValue(ctx, key, data)
+	pk := &pb.PublicKey{
+		Type: pb.KeyType_RSA.Enum(),
+		Data: data,
+	}
+
+	dataPk, err := proto.Marshal(pk)
+	if err != nil {
+		return fmt.Errorf("marshal pk: %w", err)
+	}
+
+	err = r.dht.PutValue(ctx, "/pk/"+r.host.ID().String(), dataPk)
 	if err != nil {
 		err = fmt.Errorf("failed to put value to dht: %w", err)
 		logger.Errorf(ctx, "%s", err)
@@ -176,7 +203,7 @@ func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, op
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	key := fmt.Sprintf("%s/%s", networkNamespace, peer.Name)
+	key := fmt.Sprintf(peerKeyFormat, networkNamespace, peer.Name)
 	// Set empty value with short TTL
 	return r.dht.PutValue(ctx, key, []byte{})
 }
@@ -185,7 +212,7 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...regis
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	key := fmt.Sprintf("%s/%s", networkNamespace, name)
+	key := fmt.Sprintf(peerKeyFormat, networkNamespace, name)
 	data, err := r.dht.GetValue(ctx, key)
 	if err != nil {
 		return nil, err
