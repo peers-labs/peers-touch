@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	DefaultPeersNetworkNamespace = "peers_touch_go"
+	DefaultPeersNetworkNamespace = "peers-touch"
 )
 
 type Registry interface {

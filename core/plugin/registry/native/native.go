@@ -93,13 +93,16 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	// Create DHT instance in server mode
 	r.dht, err = dht.New(ctx, h,
 		dht.Mode(r.extOpts.runMode),
+		// Isolate network namespace via /peers-touch
+		dht.ProtocolPrefix(networkId),
 		dht.Validator(
 			record.NamespacedValidator{
 				// actually, these validators are the defaults in libp2p[see github.com/libp2p/go-libp2p-kad-dht/internal/config/config.go#ApplyFallbacks]
 				// but we need to set them here to learn how they work,
 				// so we can customize them according to our needs in the future.
-				"pk":   record.PublicKeyValidator{},
-				"ipns": ipns.Validator{KeyBook: h.Peerstore()},
+				"pk":                                  record.PublicKeyValidator{},
+				"ipns":                                ipns.Validator{KeyBook: h.Peerstore()},
+				registry.DefaultPeersNetworkNamespace: &NamespaceValidator{},
 			},
 		),
 	)
@@ -171,17 +174,12 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 		Data: data,
 	}
 
-	pk.Data, err = x509.MarshalPKIXPublicKey(pk)
-	if err != nil {
-		return fmt.Errorf("x509 marshal pk: %w", err)
-	}
-
 	dataPk, err := proto.Marshal(pk)
 	if err != nil {
 		return fmt.Errorf("marshal pk: %w", err)
 	}
 
-	err = r.dht.PutValue(ctx, "/pk/"+r.host.ID().String(), dataPk)
+	err = r.dht.PutValue(ctx, networkNamespace+"/"+r.host.ID().String(), dataPk)
 	if err != nil {
 		err = fmt.Errorf("failed to put value to dht: %w", err)
 		logger.Errorf(ctx, "%s", err)
