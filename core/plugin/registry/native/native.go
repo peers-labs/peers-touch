@@ -96,7 +96,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		dht.Validator(
 			record.NamespacedValidator{
 				// actually, these validators are the defaults in libp2p[see github.com/libp2p/go-libp2p-kad-dht/internal/config/config.go#ApplyFallbacks]
-				// but we need to set them here to learn how are they working,
+				// but we need to set them here to learn how they work,
 				// so we can customize them according to our needs in the future.
 				"pk":   record.PublicKeyValidator{},
 				"ipns": ipns.Validator{KeyBook: h.Peerstore()},
@@ -169,6 +169,11 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 	pk := &pb.PublicKey{
 		Type: pb.KeyType_RSA.Enum(),
 		Data: data,
+	}
+
+	pk.Data, err = x509.MarshalPKIXPublicKey(pk)
+	if err != nil {
+		return fmt.Errorf("x509 marshal pk: %w", err)
 	}
 
 	dataPk, err := proto.Marshal(pk)
