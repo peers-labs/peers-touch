@@ -59,7 +59,7 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	}
 	opts = append(opts, registry.WithRetryInterval(retryInterval))
 
-	bootstrapRefreshInterval := time.Second * 10
+	bootstrapRefreshInterval := time.Second * 2
 	if len(configOptions.Peers.Service.Registry.BootstrapRefreshInterval) > 0 {
 		dur, err := time.ParseDuration(configOptions.Peers.Service.Registry.BootstrapRefreshInterval)
 		if err != nil {

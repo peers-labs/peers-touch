@@ -130,11 +130,95 @@ func (r *nativeRegistry) Options() registry.Options {
 // All peers use the same public key belonging to the host to generate their IDs.
 // Consequently, we can only support registering one peer at present.
 func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, opts ...registry.RegisterOption) error {
+	regOpts := &registry.RegisterOptions{}
+	for _, opt := range opts {
+		opt(regOpts)
+	}
+
+	if regOpts.Interval == 0 {
+		regOpts.Interval = 5 * time.Second
+	}
+
+	go func() {
+		ticker := time.NewTicker(regOpts.Interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := r.register(ctx, peerReg, regOpts); err != nil {
+					logger.Errorf(ctx, "native Registry failed to register peer: %s", err)
+				} else {
+					logger.Infof(ctx, "native Registry registered peer")
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return nil
+}
+
+// Deregister removes a peer from the registry
+// but DHT doesn't support delete operation, so we just remove it from the map
+func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, opts ...registry.DeregisterOption) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if peer == nil {
+		return errors.New("peer cannot be nil")
+	}
+
+	// Remove from local cache
+	delete(r.peers, peer.Name)
+
+	// Remove from DHT network
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	key := fmt.Sprintf(peerKeyFormat, networkNamespace, peer.Name)
+	// Set empty value with short TTL
+	return r.dht.PutValue(ctx, key, []byte{})
+}
+
+func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...registry.GetOption) ([]*registry.Peer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	key := fmt.Sprintf(peerKeyFormat, networkNamespace, name)
+	data, err := r.dht.GetValue(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	var p registry.Peer
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, err
+	}
+	return []*registry.Peer{&p}, nil
+}
+
+func (r *nativeRegistry) Watch(ctx context.Context, opts ...registry.WatchOption) (registry.Watcher, error) {
+	// Implement DHT-based watch functionality
+	return nil, errors.New("not implemented")
+}
+
+func (r *nativeRegistry) String() string {
+	return "libp2p-registry"
+}
+
+func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, opts *registry.RegisterOptions) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if peerReg == nil {
 		return errors.New("peerReg cannot be nil")
+	}
+
+	_, ok := r.bootstrapSuccessful()
+	if !ok {
+		return errors.New("bootstrap not ready")
 	}
 
 	// Add security metadata
@@ -189,54 +273,6 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 	return nil
 }
 
-// Deregister removes a peer from the registry
-// but DHT doesn't support delete operation, so we just remove it from the map
-func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, opts ...registry.DeregisterOption) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if peer == nil {
-		return errors.New("peer cannot be nil")
-	}
-
-	// Remove from local cache
-	delete(r.peers, peer.Name)
-
-	// Remove from DHT network
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	key := fmt.Sprintf(peerKeyFormat, networkNamespace, peer.Name)
-	// Set empty value with short TTL
-	return r.dht.PutValue(ctx, key, []byte{})
-}
-
-func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...registry.GetOption) ([]*registry.Peer, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	key := fmt.Sprintf(peerKeyFormat, networkNamespace, name)
-	data, err := r.dht.GetValue(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-
-	var p registry.Peer
-	if err := json.Unmarshal(data, &p); err != nil {
-		return nil, err
-	}
-	return []*registry.Peer{&p}, nil
-}
-
-func (r *nativeRegistry) Watch(ctx context.Context, opts ...registry.WatchOption) (registry.Watcher, error) {
-	// Implement DHT-based watch functionality
-	return nil, errors.New("not implemented")
-}
-
-func (r *nativeRegistry) String() string {
-	return "libp2p-registry"
-}
-
 func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.Multiaddr) {
 	for {
 		select {
@@ -257,6 +293,7 @@ func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.M
 						r.updateBootstrapStatus(ctx, addr.String(), false)
 						return // ignore error
 					}
+					r.updateBootstrapStatus(ctx, addr.String(), true)
 
 					logger.Infof(ctx, "successfully connected to public bootstrap node %s", addr)
 
@@ -314,4 +351,18 @@ func (r *nativeRegistry) signPayload(privateKey string, data []byte) ([]byte, er
 
 	hashed := sha256.Sum256(data)
 	return rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, hashed[:])
+}
+
+func (r *nativeRegistry) bootstrapSuccessful() (workingBootNodes []string, ok bool) {
+	r.bootstrapStateLock.RLock()
+	defer r.bootstrapStateLock.RUnlock()
+
+	for addr, status := range r.bootstrapNodesStatus {
+		// todo, only checking Connected is not healthy.
+		if status.Connected {
+			workingBootNodes = append(workingBootNodes, addr)
+		}
+	}
+
+	return workingBootNodes, len(workingBootNodes) > 0
 }

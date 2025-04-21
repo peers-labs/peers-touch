@@ -47,6 +47,7 @@ type RegisterOption func(*RegisterOptions)
 
 type RegisterOptions struct {
 	Namespace string
+	Interval  time.Duration
 	TTL       time.Duration
 }
 
