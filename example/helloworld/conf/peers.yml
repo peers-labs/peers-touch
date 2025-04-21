@@ -1,6 +1,6 @@
 peers:
   includes: store.yml
-  run-model: 1
+  run-mode: 2
   config:
     hierarchy-merge: true
   service:
