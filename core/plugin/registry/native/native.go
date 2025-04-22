@@ -127,6 +127,16 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	// Bootstrap the DHT
 	// go r.bootstrap(ctx, bootstrapNodes)
 
+	if r.extOpts.tryAddPeerManually {
+		// Manually add self to routing table.
+		// For now, I don't know why local nodes are not automatically added to the routing table.
+		existed, err := r.dht.RoutingTable().TryAddPeer(r.host.ID(), true, true)
+		if err != nil {
+			logger.Errorf(ctx, "failed to add peer to routing table: %v", err)
+		}
+		logger.Infof(ctx, "added peer to routing table: %v", existed || existed == false && err == nil)
+	}
+	
 	// todo init relay nodes
 
 	return nil
@@ -228,10 +238,10 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 		return errors.New("peerReg cannot be nil")
 	}
 
-	_, ok := r.bootstrapSuccessful()
-	if !ok {
-		return errors.New("bootstrap not ready")
-	}
+	/*	_, ok := r.bootstrapSuccessful()
+		if !ok {
+			return errors.New("bootstrap not ready")
+		}*/
 
 	// Add security metadata
 	peerReg.Version = "1.0"
@@ -338,15 +348,15 @@ func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.M
 				logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
 			}
 
-			// Manually add self to routing table.
-			// For now, I don't know why local nodes are not automatically added to the routing table.
-			existed, err := r.dht.RoutingTable().TryAddPeer(r.host.ID(), true, true)
-			if err != nil {
-				logger.Errorf(ctx, "failed to add peer to routing table: %v", err)
+			if r.extOpts.tryAddPeerManually {
+				// Manually add self to routing table.
+				// For now, I don't know why local nodes are not automatically added to the routing table.
+				existed, err := r.dht.RoutingTable().TryAddPeer(r.host.ID(), true, true)
+				if err != nil {
+					logger.Errorf(ctx, "failed to add peer to routing table: %v", err)
+				}
+				logger.Infof(ctx, "added peer to routing table: %v", existed || existed == false && err == nil)
 			}
-
-			logger.Infof(ctx, "added peer to routing table: %v", existed || existed == false && err == nil)
-
 		case <-ctx.Done():
 			logger.Warnf(ctx, "bootstrap stopped %+v", ctx.Err())
 			return

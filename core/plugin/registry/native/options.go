@@ -41,6 +41,9 @@ type options struct {
 	// Init will help to set the public nodes for the registry plugin.
 	publicBootstrapNodes []multiaddr.Multiaddr
 	publicRelayNodes     []multiaddr.Multiaddr
+
+	// tryAddPeerManually is used to try to add the peer manually among the process of dht bootstrap
+	tryAddPeerManually bool
 }
 
 // WithBootstrapNodes set the private bootstrap nodes for the registry plugin.
@@ -84,6 +87,14 @@ func WithBootstrapNodeRetryTimes(times int) option.Option {
 func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
 	return wrapOptions(func(o *options) {
 		o.bootstrapRefreshInterval = interval
+	})
+}
+
+func WithTryAddPeerManually(tryAddPeerManually bool) option.Option {
+	return wrapOptions(func(o *options) {
+		if tryAddPeerManually {
+			o.tryAddPeerManually = tryAddPeerManually
+		}
 	})
 }
 

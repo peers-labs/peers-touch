@@ -17,6 +17,7 @@ var configOptions struct {
 				ConnectTimeout           string   `pconf:"connect-timeout"`
 				RetryInterval            string   `pconf:"retry-interval"`
 				BootstrapNodes           []string `pconf:"bootstrap-nodes"`
+				TryAddPeerManually       bool     `pconf:"try-add-peer-manually"`
 				BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
 				BootstrapNodeRetryTimes  int      `json:"bootstrap-node-retry-times"`
 			} `pconf:"registry"`
@@ -80,6 +81,8 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 		connectTimeout = dur
 	}
 	opts = append(opts, registry.WithConnectTimeout(connectTimeout))
+
+	opts = append(opts, WithTryAddPeerManually(configOptions.Peers.Service.Registry.TryAddPeerManually))
 
 	return opts
 }
