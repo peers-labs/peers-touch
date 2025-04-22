@@ -24,6 +24,7 @@ import (
 	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/crypto/pb"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -35,9 +36,10 @@ var (
 )
 
 type bootstrapState struct {
-	Connected bool
-	UpdatedAt time.Time
-	Logs      []string
+	Connected   bool
+	UpdatedAt   time.Time
+	failedTimes int
+	Logs        []string
 }
 
 // native registry is based on telibp2p kad-dht
@@ -102,10 +104,9 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 
 	// Create DHT instance in server mode
 	r.dht, err = dht.New(ctx, h,
-		// dht.Mode(r.extOpts.runMode),
-		dht.Mode(dht.ModeServer),
+		dht.Mode(r.extOpts.runMode),
 		// Isolate network namespace via /peers-touch
-		dht.ProtocolPrefix("/peers-touch"),
+		dht.ProtocolPrefix(networkId),
 		dht.Validator(
 			record.NamespacedValidator{
 				// actually, these validators are the defaults in libp2p[see github.com/libp2p/go-libp2p-kad-dht/internal/config/config.go#ApplyFallbacks]
@@ -274,7 +275,8 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 		return fmt.Errorf("marshal pk: %w", err)
 	}
 
-	err = r.dht.PutValue(ctx, networkNamespace+"/"+r.host.ID().String(), dataPk)
+	id := r.host.ID().String()
+	err = r.dht.PutValue(ctx, networkNamespace+"/"+id, dataPk)
 	if err != nil {
 		err = fmt.Errorf("failed to put value to dht: %w", err)
 		logger.Errorf(ctx, "%s", err)
@@ -295,22 +297,39 @@ func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.M
 			// Connect to public bootstrap nodes
 			for _, addr := range bootstraps {
 				wg.Add(1)
-				go func(addr multiaddr.Multiaddr) {
+				go func(addr multiaddr.Multiaddr) (ok bool) {
 					defer wg.Done()
 
 					ctxTimout, cancel := context.WithTimeout(ctx, r.options.ConnectTimeout)
 					defer cancel()
 
+					defer func() {
+						r.updateBootstrapStatus(ctx, addr.String(), ok)
+					}()
+
+					if r.bootstrapNodesStatus[addr.String()] != nil && r.bootstrapNodesStatus[addr.String()].failedTimes > 5 {
+						logger.Warnf(ctx, "bootstrap node %s is offline. skipped", addr.String())
+						ok = false
+						return
+					}
+
 					pi, _ := peer.AddrInfoFromP2pAddr(addr)
+					if r.host.Network().Connectedness(pi.ID) == network.Connected {
+						logger.Infof(ctx, "bootstrap node %s is online", addr.String())
+						ok = true
+						return
+					}
+
 					if err := r.host.Connect(ctxTimout, *pi); err != nil {
 						logger.Errorf(ctx, "failed to connect to public bootstrap node %s: %v", addr, err)
-						r.updateBootstrapStatus(ctx, addr.String(), false)
-						return // ignore error
+						ok = false
+						return
 					}
-					r.updateBootstrapStatus(ctx, addr.String(), true)
+
+					ok = true
 
 					logger.Infof(ctx, "successfully connected to public bootstrap node %s", addr)
-
+					return ok
 				}(addr)
 			}
 			wg.Wait()
@@ -318,6 +337,15 @@ func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.M
 			if err := r.dht.Bootstrap(ctx); err != nil {
 				logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
 			}
+
+			// Manually add self to routing table.
+			// For now, I don't know why local nodes are not automatically added to the routing table.
+			existed, err := r.dht.RoutingTable().TryAddPeer(r.host.ID(), true, true)
+			if err != nil {
+				logger.Errorf(ctx, "failed to add peer to routing table: %v", err)
+			}
+
+			logger.Infof(ctx, "added peer to routing table: %v", existed || existed == false && err == nil)
 
 		case <-ctx.Done():
 			logger.Warnf(ctx, "bootstrap stopped %+v", ctx.Err())
@@ -359,6 +387,12 @@ func (r *nativeRegistry) updateBootstrapStatus(ctx context.Context, addr string,
 		}
 
 		status.Logs = append(status.Logs, log)
+	}
+
+	if !successful {
+		r.bootstrapNodesStatus[addr].failedTimes++
+	} else {
+		r.bootstrapNodesStatus[addr].failedTimes = 0
 	}
 
 	return
