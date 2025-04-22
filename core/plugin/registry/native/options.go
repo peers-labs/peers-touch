@@ -1,11 +1,12 @@
 package native
 
 import (
+	"time"
+
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
-	"time"
 )
 
 type ModeOpt = dht.ModeOpt

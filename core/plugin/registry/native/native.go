@@ -90,11 +90,22 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	}
 	r.host = h
 
+	bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
+	var peerBootstrapNodes []peer.AddrInfo
+	for _, addr := range bootstrapNodes {
+		pi, err := peer.AddrInfoFromP2pAddr(addr)
+		if err != nil {
+			return fmt.Errorf("failed to parse bootstrap node address: %s", err)
+		}
+		peerBootstrapNodes = append(peerBootstrapNodes, *pi)
+	}
+
 	// Create DHT instance in server mode
 	r.dht, err = dht.New(ctx, h,
-		dht.Mode(r.extOpts.runMode),
+		// dht.Mode(r.extOpts.runMode),
+		dht.Mode(dht.ModeServer),
 		// Isolate network namespace via /peers-touch
-		dht.ProtocolPrefix(networkId),
+		dht.ProtocolPrefix("/peers-touch"),
 		dht.Validator(
 			record.NamespacedValidator{
 				// actually, these validators are the defaults in libp2p[see github.com/libp2p/go-libp2p-kad-dht/internal/config/config.go#ApplyFallbacks]
@@ -105,15 +116,15 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 				registry.DefaultPeersNetworkNamespace: &NamespaceValidator{},
 			},
 		),
+		dht.BootstrapPeers(peerBootstrapNodes...),
 	)
 	if err != nil {
 		return fmt.Errorf("create libp2p host: %w", err)
 	}
 
 	// merge bootstrap nodes
-	bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
 	// Bootstrap the DHT
-	go r.bootstrap(ctx, bootstrapNodes)
+	// go r.bootstrap(ctx, bootstrapNodes)
 
 	// todo init relay nodes
 
@@ -274,9 +285,12 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 }
 
 func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.Multiaddr) {
+	ticker := time.NewTicker(r.extOpts.bootstrapRefreshInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case <-time.After(r.extOpts.bootstrapRefreshInterval):
+		case <-ticker.C:
 			wg := sync.WaitGroup{}
 			// Connect to public bootstrap nodes
 			for _, addr := range bootstraps {
@@ -304,10 +318,23 @@ func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.M
 			if err := r.dht.Bootstrap(ctx); err != nil {
 				logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
 			}
+
 		case <-ctx.Done():
 			logger.Warnf(ctx, "bootstrap stopped %+v", ctx.Err())
 			return
 		}
+	}
+}
+
+// Add new helper method
+func (r *nativeRegistry) refreshRoutingTable(ctx context.Context) {
+	select {
+	case err := <-r.dht.RefreshRoutingTable():
+		if err != nil {
+			logger.Debugf(ctx, "Routing table refresh error: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		logger.Warnf(ctx, "Routing table refresh timed out")
 	}
 }
 
