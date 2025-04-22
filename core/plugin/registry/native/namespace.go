@@ -3,18 +3,18 @@ package native
 import (
 	"context"
 	"fmt"
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 var (
-	networkId = protocol.ID(registry.DefaultPeersNetworkNamespace)
-
 	networkNamespace = "/" + registry.DefaultPeersNetworkNamespace
-	peerKeyFormat    = "/%s/%s"
+	networkId        = protocol.ID(networkNamespace)
+
+	peerKeyFormat = "/%s/%s"
 )
 
 type NamespaceValidator struct {
