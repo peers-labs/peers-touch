@@ -9,12 +9,12 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-type ModeOpt = dht.ModeOpt
+type modeOpt = dht.ModeOpt
 
 const (
 	// ModeAuto utilizes EvtLocalReachabilityChanged events sent over the event bus to dynamically switch the DHT
 	// between Client and Server modes based on network conditions
-	ModeAuto ModeOpt = dht.ModeAuto
+	ModeAuto modeOpt = dht.ModeAuto
 	// ModeClient operates the DHT as a client only, it cannot respond to incoming queries
 	ModeClient = dht.ModeClient
 	// ModeServer operates the DHT as a server, it can both send and respond to queries
@@ -26,8 +26,10 @@ const (
 type options struct {
 	*registry.Options
 
-	runMode ModeOpt
+	runMode modeOpt
 
+	privKeyPath              string
+	libp2pIdentityKeyFile    string
 	bootstrapNodeRetryTimes  int
 	bootstrapRefreshInterval time.Duration
 	// bootstrap nodes are used for bootstrap the network,
@@ -44,6 +46,10 @@ type options struct {
 
 	// tryAddPeerManually is used to try to add the peer manually among the process of dht bootstrap
 	tryAddPeerManually bool
+
+	// enableMDNS is used to enable the mdns discovery for the registry plugin.
+	// default is false.
+	enableMDNS bool
 }
 
 // WithBootstrapNodes set the private bootstrap nodes for the registry plugin.
@@ -72,7 +78,13 @@ func WithRelayNodes(relayNodes []string) option.Option {
 	})
 }
 
-func WithDHTMode(mod ModeOpt) option.Option {
+func WithEnableMDNS(enableMDNS bool) option.Option {
+	return wrapOptions(func(o *options) {
+		o.enableMDNS = enableMDNS
+	})
+}
+
+func WithRunningMode(mod modeOpt) option.Option {
 	return wrapOptions(func(o *options) {
 		o.runMode = mod
 	})
@@ -95,6 +107,12 @@ func WithTryAddPeerManually(tryAddPeerManually bool) option.Option {
 		if tryAddPeerManually {
 			o.tryAddPeerManually = tryAddPeerManually
 		}
+	})
+}
+
+func WithLibp2pIdentityKeyFile(keyFile string) option.Option {
+	return wrapOptions(func(o *options) {
+		o.libp2pIdentityKeyFile = keyFile
 	})
 }
 

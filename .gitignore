@@ -1,3 +1,4 @@
 /example/libp2p/relay/node.key
 private.pem
 public.pem
+libp2pIdentity.key

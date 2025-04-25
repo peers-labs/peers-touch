@@ -14,15 +14,19 @@ var configOptions struct {
 	Peers struct {
 		Service struct {
 			Registry struct {
-				ConnectTimeout           string   `pconf:"connect-timeout"`
-				RetryInterval            string   `pconf:"retry-interval"`
-				BootstrapNodes           []string `pconf:"bootstrap-nodes"`
-				TryAddPeerManually       bool     `pconf:"try-add-peer-manually"`
-				BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
-				BootstrapNodeRetryTimes  int      `json:"bootstrap-node-retry-times"`
+				Native struct {
+					BootstrapNodes           []string `pconf:"bootstrap-nodes"`
+					TryAddPeerManually       bool     `pconf:"try-add-peer-manually"`
+					BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
+					BootstrapNodeRetryTimes  int      `pconf:"bootstrap-node-retry-times"`
+					EnableMDNS               bool     `pconf:"endable-mdns"`
+					Libp2pIdentityKeyFile    string   `pconf:"libp2p-identity-key-file"`
+				} `pconf:"native"`
+				ConnectTimeout string `pconf:"connect-timeout"`
+				RetryInterval  string `pconf:"retry-interval"`
 			} `pconf:"registry"`
 		} `pconf:"service"`
-		RunMode ModeOpt `pconf:"run-mode"`
+		RunMode modeOpt `pconf:"run-mode"`
 	} `pconf:"peers"`
 }
 
@@ -36,7 +40,7 @@ func (n *nativeRegistryPlugin) Name() string {
 func (n *nativeRegistryPlugin) Options() []option.Option {
 	var opts []option.Option
 	if configOptions.Peers.RunMode != ModeAuto {
-		opts = append(opts, WithDHTMode(configOptions.Peers.RunMode))
+		opts = append(opts, WithRunningMode(configOptions.Peers.RunMode))
 	}
 
 	if len(configOptions.Peers.Service.Registry.BootstrapNodes) > 0 {
@@ -83,6 +87,13 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	opts = append(opts, registry.WithConnectTimeout(connectTimeout))
 
 	opts = append(opts, WithTryAddPeerManually(configOptions.Peers.Service.Registry.TryAddPeerManually))
+	opts = append(opts, WithEnableMDNS(configOptions.Peers.Service.Registry.EnableMDNS))
+
+	if len(configOptions.Peers.Service.Registry.Libp2pIdentityKeyFile) > 0 {
+		opts = append(opts, WithLibp2pIdentityKeyFile(configOptions.Peers.Service.Registry.Libp2pIdentityKeyFile))
+	} else {
+		opts = append(opts, WithLibp2pIdentityKeyFile("libp2pIdentity.key"))
+	}
 
 	return opts
 }

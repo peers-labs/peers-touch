@@ -26,6 +26,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -52,8 +53,9 @@ type nativeRegistry struct {
 	peers map[string]*registry.Peer
 	mu    sync.RWMutex
 
-	host host.Host
-	dht  *dht.IpfsDHT
+	host  host.Host
+	dht   *dht.IpfsDHT
+	mdnsS mdns.Service
 
 	// bootstrap nodes status
 	bootstrapStateLock   sync.RWMutex
@@ -85,8 +87,16 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return errors.New("private key for Registry is required")
 	}
 
+	// Load or generate private key
+	identityKey, err := loadOrGenerateKey(r.extOpts.libp2pIdentityKeyFile)
+	if err != nil {
+		return fmt.Errorf("failed to load private key[%s]: %v", r.options.PrivateKey, err)
+	}
+
 	// Initialize libp2p host
-	h, err := libp2p.New()
+	h, err := libp2p.New(
+		libp2p.Identity(identityKey),
+	)
 	if err != nil {
 		return err
 	}
@@ -118,6 +128,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 			},
 		),
 		dht.BootstrapPeers(peerBootstrapNodes...),
+		dht.OnRequestHook(dhtRequestHooksWrap),
 	)
 	if err != nil {
 		return fmt.Errorf("create libp2p host: %w", err)
@@ -136,8 +147,17 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		}
 		logger.Infof(ctx, "added peer to routing table: %v", existed || existed == false && err == nil)
 	}
-	
+
 	// todo init relay nodes
+
+	// Init MDNS
+	if r.extOpts.enableMDNS {
+		r.mdnsS = mdns.NewMdnsService(r.host, "peers-touch.mdns", &mdnsNotifee{})
+		err = r.mdnsS.Start()
+		if err != nil {
+			return fmt.Errorf("start mdns service: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -436,4 +456,12 @@ func (r *nativeRegistry) bootstrapSuccessful() (workingBootNodes []string, ok bo
 	}
 
 	return workingBootNodes, len(workingBootNodes) > 0
+}
+
+// GetLibp2pHost returns the libp2p host
+// todo, remove this method. temporarily use.
+func GetLibp2pHost() (h host.Host, dht *dht.IpfsDHT) {
+	reg := regInstance.(*nativeRegistry)
+
+	return reg.host, reg.dht
 }

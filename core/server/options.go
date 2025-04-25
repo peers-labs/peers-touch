@@ -18,8 +18,6 @@ var (
 	})
 )
 
-// Option is a function that can be used to configure a server
-
 // Options is the server options
 type Options struct {
 	*option.Options

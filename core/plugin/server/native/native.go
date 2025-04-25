@@ -10,6 +10,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/libp2p/go-libp2p/core/host"
 )
 
 // Server is a golang native web server based on net/http.
@@ -19,6 +20,7 @@ type Server struct {
 	warmupLk   sync.RWMutex
 	httpServer *http.Server
 	mux        *http.ServeMux
+	libp2pHost host.Host
 	once       sync.Once
 }
 
