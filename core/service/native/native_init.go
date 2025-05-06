@@ -11,9 +11,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/hertz"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/native"
+	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
 )
 
 // Init initialises options. Additionally, it calls cmd.Init
