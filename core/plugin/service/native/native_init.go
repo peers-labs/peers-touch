@@ -10,8 +10,6 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
-
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
 )
 
 // Init initialises options. Additionally, it calls cmd.Init

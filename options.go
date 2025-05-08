@@ -6,6 +6,7 @@ import (
 )
 
 type NewService func(rootOpts *option.Options, opts ...option.Option) service.Service
+
 type peersOptionsKey struct{}
 
 type Options struct {

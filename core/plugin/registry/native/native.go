@@ -31,6 +31,10 @@ import (
 )
 
 var (
+	_ registry.Registry = &nativeRegistry{}
+)
+
+var (
 	// keep be a singleton
 	regInstance registry.Registry
 	regOnce     sync.RWMutex
@@ -134,9 +138,10 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return fmt.Errorf("create libp2p host: %w", err)
 	}
 
-	// merge bootstrap nodes
 	// Bootstrap the DHT
-	// go r.bootstrap(ctx, bootstrapNodes)
+	if err = r.dht.Bootstrap(ctx); err != nil {
+		logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
+	}
 
 	if r.extOpts.tryAddPeerManually {
 		// Manually add self to routing table.

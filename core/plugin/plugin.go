@@ -7,6 +7,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 )
 
@@ -52,4 +53,10 @@ type RegistryPlugin interface {
 	Plugin
 	Options() []option.Option
 	New(...option.Option) registry.Registry
+}
+
+type ServicePlugin interface {
+	Plugin
+	Options() []option.Option
+	New(*option.Options, ...option.Option) service.Service
 }

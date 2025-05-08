@@ -22,5 +22,5 @@ peers:
         enable-mdns: true
         try-add-peer-manually: true
         bootstrap-nodes:
-          - /ip4/127.0.0.1/tcp/4001/p2p/12D3KooWD6CnUSBCEQ17xjrkyS43TWCMK3tFDGFmChDfimRcicYz
+          - /ip4/127.0.0.1/tcp/4001/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r
     

@@ -2,12 +2,12 @@ package peers
 
 import (
 	"context"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service/native"
 	"github.com/dirty-bro-tech/peers-touch-go/object"
 	"github.com/dirty-bro-tech/peers-touch-go/touch"
 )
@@ -72,8 +72,12 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 		if n.opts.NewService != nil {
 			newServiceFunc = n.opts.NewService
 		} else {
-			// create service. we now only support native service
-			newServiceFunc = native.NewService
+			// todo add default service
+			if plugin.ServicePlugins[plugin.NativePluginName] == nil {
+				panic("new service failed, try to use default service by importing peers-touch-go/core/plugin/service/native")
+			}
+
+			newServiceFunc = plugin.ServicePlugins[plugin.NativePluginName].New
 		}
 
 		n.service = newServiceFunc(n.opts.Options, opts...)

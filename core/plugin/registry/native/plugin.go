@@ -43,13 +43,13 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 		opts = append(opts, WithRunningMode(configOptions.Peers.RunMode))
 	}
 
-	if len(configOptions.Peers.Service.Registry.BootstrapNodes) > 0 {
-		opts = append(opts, WithBootstrapNodes(configOptions.Peers.Service.Registry.BootstrapNodes))
+	if len(configOptions.Peers.Service.Registry.Native.BootstrapNodes) > 0 {
+		opts = append(opts, WithBootstrapNodes(configOptions.Peers.Service.Registry.Native.BootstrapNodes))
 	}
 
 	bootstrapNodeRetryTimes := 5
-	if configOptions.Peers.Service.Registry.BootstrapNodeRetryTimes > 0 {
-		bootstrapNodeRetryTimes = configOptions.Peers.Service.Registry.BootstrapNodeRetryTimes
+	if configOptions.Peers.Service.Registry.Native.BootstrapNodeRetryTimes > 0 {
+		bootstrapNodeRetryTimes = configOptions.Peers.Service.Registry.Native.BootstrapNodeRetryTimes
 	}
 	opts = append(opts, WithBootstrapNodeRetryTimes(bootstrapNodeRetryTimes))
 
@@ -65,8 +65,8 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	opts = append(opts, registry.WithRetryInterval(retryInterval))
 
 	bootstrapRefreshInterval := time.Second * 2
-	if len(configOptions.Peers.Service.Registry.BootstrapRefreshInterval) > 0 {
-		dur, err := time.ParseDuration(configOptions.Peers.Service.Registry.BootstrapRefreshInterval)
+	if len(configOptions.Peers.Service.Registry.Native.BootstrapRefreshInterval) > 0 {
+		dur, err := time.ParseDuration(configOptions.Peers.Service.Registry.Native.BootstrapRefreshInterval)
 		if err != nil {
 			panic(fmt.Errorf("parse retry interval error: %s", err))
 		}
@@ -86,11 +86,11 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	}
 	opts = append(opts, registry.WithConnectTimeout(connectTimeout))
 
-	opts = append(opts, WithTryAddPeerManually(configOptions.Peers.Service.Registry.TryAddPeerManually))
-	opts = append(opts, WithEnableMDNS(configOptions.Peers.Service.Registry.EnableMDNS))
+	opts = append(opts, WithTryAddPeerManually(configOptions.Peers.Service.Registry.Native.TryAddPeerManually))
+	opts = append(opts, WithEnableMDNS(configOptions.Peers.Service.Registry.Native.EnableMDNS))
 
-	if len(configOptions.Peers.Service.Registry.Libp2pIdentityKeyFile) > 0 {
-		opts = append(opts, WithLibp2pIdentityKeyFile(configOptions.Peers.Service.Registry.Libp2pIdentityKeyFile))
+	if len(configOptions.Peers.Service.Registry.Native.Libp2pIdentityKeyFile) > 0 {
+		opts = append(opts, WithLibp2pIdentityKeyFile(configOptions.Peers.Service.Registry.Native.Libp2pIdentityKeyFile))
 	} else {
 		opts = append(opts, WithLibp2pIdentityKeyFile("libp2pIdentity.key"))
 	}
