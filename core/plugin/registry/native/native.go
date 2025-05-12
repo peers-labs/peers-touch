@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,6 +66,38 @@ type nativeRegistry struct {
 	// bootstrap nodes status
 	bootstrapStateLock   sync.RWMutex
 	bootstrapNodesStatus map[string]*bootstrapState
+}
+
+func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOption) ([]*registry.Peer, error) {
+	var connectedPeers []*registry.Peer
+
+	// Get the list of connected peer IDs
+	peerIDs := r.host.Network().Peers()
+
+	for _, peerID := range peerIDs {
+		// Here you need to get more information about the peer to create a registry.Peer struct.
+		// For simplicity, we assume you can get the peer's name from the peer ID (this may need adjustment in a real - world scenario).
+		peerName := peerID.String()
+		var addrs []string
+		for _, addr := range r.host.Peerstore().Addrs(peerID) {
+			addrs = append(addrs, addr.String())
+		}
+
+		// Create a new registry.Peer struct
+		peer := &registry.Peer{
+			Name: peerName,
+			// You may need to fill in other fields according to your actual requirements.
+			// For example, you can get the peer's addresses from the peerstore.
+			Metadata: map[string]string{
+				"registerType": MetaRegisterTypeConnected,
+				"address":      strings.Join(addrs, ","),
+			},
+		}
+
+		connectedPeers = append(connectedPeers, peer)
+	}
+
+	return connectedPeers, nil
 }
 
 func NewRegistry(opts ...option.Option) registry.Registry {

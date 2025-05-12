@@ -68,12 +68,13 @@ func (d *debugSubServer) Handlers() []server.Handler {
 			"debugListRegisteredPeers",
 			"/debug/registered_peers",
 			func(c context.Context, ctx *app.RequestContext) {
-				peers, err := d.opts.registry.GetPeer(c, ctx.GetString("name"))
+				peers, err := d.opts.registry.ListPeers(c)
 				if err != nil {
 					ctx.String(http.StatusInternalServerError, fmt.Sprintf("Error getting registered peers: %v", err))
 					return
 				}
-				ctx.String(http.StatusOK, fmt.Sprintf("Registered peers: %v", peers))
+
+				ctx.JSON(http.StatusOK, peers)
 			},
 		),
 	}
