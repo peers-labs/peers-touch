@@ -20,6 +20,7 @@ var configOptions struct {
 					BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
 					BootstrapNodeRetryTimes  int      `pconf:"bootstrap-node-retry-times"`
 					EnableMDNS               bool     `pconf:"endable-mdns"`
+					EnableBootstrap          bool     `pconf:"enable-bootstrap"`
 					Libp2pIdentityKeyFile    string   `pconf:"libp2p-identity-key-file"`
 				} `pconf:"native"`
 				ConnectTimeout string `pconf:"connect-timeout"`
@@ -85,6 +86,7 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 		connectTimeout = dur
 	}
 	opts = append(opts, registry.WithConnectTimeout(connectTimeout))
+	opts = append(opts, WithEnableBootstrap(configOptions.Peers.Service.Registry.Native.EnableBootstrap))
 
 	opts = append(opts, WithTryAddPeerManually(configOptions.Peers.Service.Registry.Native.TryAddPeerManually))
 	opts = append(opts, WithEnableMDNS(configOptions.Peers.Service.Registry.Native.EnableMDNS))

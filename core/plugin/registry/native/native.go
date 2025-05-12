@@ -19,6 +19,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/golang/protobuf/proto"
 	"github.com/ipfs/boxo/ipns"
+	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	record "github.com/libp2p/go-libp2p-record"
@@ -87,9 +88,17 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	r.options.Apply(opts...)
 	r.extOpts = r.options.ExtOptions.(*options)
 
+	// Set the logging level to Warn
+	err := log.SetLogLevel("dht", "debug")
+	if err != nil {
+		panic(err)
+	}
+
 	if r.options.PrivateKey == "" {
 		return errors.New("private key for Registry is required")
 	}
+
+	hostOptions := []libp2p.Option{}
 
 	// Load or generate private key
 	identityKey, err := loadOrGenerateKey(r.extOpts.libp2pIdentityKeyFile)
@@ -97,24 +106,26 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return fmt.Errorf("failed to load private key[%s]: %v", r.options.PrivateKey, err)
 	}
 
+	hostOptions = append(hostOptions, libp2p.Identity(identityKey))
+
+	if r.extOpts.enableBootstrap {
+		// Define the listen address
+		// todo, port user-defined
+		listenAddr, err := multiaddr.NewMultiaddr("/ip4/0.0.0.0/tcp/4001")
+		if err != nil {
+			panic(err)
+		}
+		hostOptions = append(hostOptions, libp2p.ListenAddrs(listenAddr))
+	}
+
 	// Initialize libp2p host
 	h, err := libp2p.New(
-		libp2p.Identity(identityKey),
+		hostOptions...,
 	)
 	if err != nil {
 		return err
 	}
 	r.host = h
-
-	bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
-	var peerBootstrapNodes []peer.AddrInfo
-	for _, addr := range bootstrapNodes {
-		pi, err := peer.AddrInfoFromP2pAddr(addr)
-		if err != nil {
-			return fmt.Errorf("failed to parse bootstrap node address: %s", err)
-		}
-		peerBootstrapNodes = append(peerBootstrapNodes, *pi)
-	}
 
 	// Create DHT instance in server mode
 	r.dht, err = dht.New(ctx, h,
@@ -131,7 +142,20 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 				registry.DefaultPeersNetworkNamespace: &NamespaceValidator{},
 			},
 		),
-		dht.BootstrapPeers(peerBootstrapNodes...),
+		dht.BootstrapPeersFunc(func() []peer.AddrInfo {
+			bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
+			var peerBootstrapNodes []peer.AddrInfo
+			for _, addr := range bootstrapNodes {
+				pi, errIn := peer.AddrInfoFromP2pAddr(addr)
+				if errIn != nil {
+					logger.Errorf(ctx, "failed to parse bootstrap node address: %s", errIn)
+					continue
+				}
+				peerBootstrapNodes = append(peerBootstrapNodes, *pi)
+			}
+
+			return peerBootstrapNodes
+		}),
 		dht.OnRequestHook(dhtRequestHooksWrap),
 	)
 	if err != nil {

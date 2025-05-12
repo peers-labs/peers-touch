@@ -50,6 +50,9 @@ type options struct {
 	// enableMDNS is used to enable the mdns discovery for the registry plugin.
 	// default is false.
 	enableMDNS bool
+
+	// enableBootstrap is used to enable the node to run as a bootstrap server in libp2p network.
+	enableBootstrap bool
 }
 
 // WithBootstrapNodes set the private bootstrap nodes for the registry plugin.
@@ -81,6 +84,12 @@ func WithRelayNodes(relayNodes []string) option.Option {
 func WithEnableMDNS(enableMDNS bool) option.Option {
 	return wrapOptions(func(o *options) {
 		o.enableMDNS = enableMDNS
+	})
+}
+
+func WithEnableBootstrap(enableBootstrap bool) option.Option {
+	return wrapOptions(func(o *options) {
+		o.enableBootstrap = enableBootstrap
 	})
 }
 
