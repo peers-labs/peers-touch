@@ -2,9 +2,10 @@ package option
 
 import (
 	"context"
+	"reflect"
 	"sync"
 
-	"github.com/bytedance/gopkg/util/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
 
 var (
@@ -18,6 +19,14 @@ var (
 	// runtimeCtx is the context of runtime from init & run
 	// don't use it to set a request context or something else like.
 	runtimeCtx context.Context
+
+	applyLock sync.Mutex
+
+	// Map to track executed functions
+	// absolutely, to figure out where the duplicate options are defined is important, but it will cost too more time.
+	// so, we use this simple way to trace the duplicate options, make them be run only once.
+	executedFunctions = make(map[uintptr]bool)
+	executedLock      sync.Mutex
 )
 
 type Options struct {
@@ -27,7 +36,14 @@ type Options struct {
 }
 
 func (o *Options) Apply(opts ...Option) {
+	applyLock.Lock()
+	defer applyLock.Unlock()
+
 	for _, opt := range opts {
+		if opt.BRun() {
+			log.Debugf("option %v already executed", &opt)
+			continue
+		}
 		opt(o)
 	}
 }
@@ -56,6 +72,16 @@ type Option func(o *Options)
 
 // BRun returns true if the Option Func is already executed
 func (o Option) BRun() bool {
+	executedLock.Lock()
+	defer executedLock.Unlock()
+
+	// Get the pointer of the function
+	funcPtr := reflect.ValueOf(o).Pointer()
+	if executedFunctions[funcPtr] {
+		return true
+	}
+
+	executedFunctions[funcPtr] = true
 	return false
 }
 
@@ -70,7 +96,7 @@ func WithRootCtx(ctx context.Context) Option {
 		defer ctxLock.Unlock()
 
 		if o.ctx != nil {
-			logger.Errorf("context already set")
+			log.Errorf("context already set")
 			return
 		}
 

@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
@@ -31,7 +32,16 @@ func (s *native) Init(ctx context.Context, opts ...option.Option) error {
 	}
 
 	if s.opts.Name == "" {
-		panic("name is required,")
+		hostName, err := os.Hostname()
+		if err != nil {
+			logger.Errorf(ctx, "get hostname failed: %v", err)
+			hostName = "unknown"
+		}
+		s.opts.Name = "peers-touch-go:s:name:" + hostName
+	}
+
+	if s.opts.Id == "" {
+		s.opts.Id = "peers-touch-go:s:id:" + s.opts.Name
 	}
 
 	// begin init

@@ -60,7 +60,7 @@ func (s *native) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Wait for server to be ready
+	// Wait for the server to be ready
 	select {
 	case info := <-ready:
 		logger.Infof(ctx, "server started: %v", info)
@@ -144,11 +144,14 @@ func (s *native) Run() error {
 	return s.Stop(ctx)
 }
 
+// todo, update to one service supports multiple peers
+// now there is a service for one peer, it's not graceful.
 func (s *native) toPeer() *registry.Peer {
 	p := &registry.Peer{
 		Name:    s.opts.Name,
+		ID:      s.opts.Id,
 		Version: "1.0",
-		Metadata: map[string]string{
+		Metadata: map[string]interface{}{
 			"demo": "hello-world",
 		},
 		Endpoints: nil,
@@ -164,6 +167,18 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 		// todo remove non-peers' code
 		service.RPC("peers"),
 		service.HandleSignal(true),
+		// print runtime info
+		service.BeforeInit(func(sOpts *service.Options) error {
+			// current working directory
+			wd, err := os.Getwd()
+			if err != nil {
+				log.Infof("failed to get working directory: %+v", err)
+			}
+			if wd != "" {
+				log.Infof("peers-touch-go's working directory is %s", wd)
+			}
+			return nil
+		}),
 		// load config
 		service.BeforeInit(func(sOpts *service.Options) error {
 			// cmd helps peers parse command options and reset the options that should work.

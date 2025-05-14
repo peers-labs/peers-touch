@@ -60,7 +60,7 @@ func WithMetadata(md map[string]string) option.Option {
 
 func WithHandlers(handlers ...Handler) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
-		opts.Handlers = handlers
+		opts.Handlers = append(opts.Handlers, handlers...)
 	})
 }
 

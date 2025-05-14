@@ -25,14 +25,14 @@ type Registry interface {
 type Peer struct {
 	// ID is the unique identifier of the peer.
 	// for libp2p, it's the peer ID encrypted with the public key of the peer.
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Version   string            `json:"version"`
-	Metadata  map[string]string `json:"metadata"`
-	Endpoints []*Endpoint       `json:"endpoints"`
-	Nodes     []*Node           `json:"nodes"`
-	Timestamp time.Time         `json:"timestamp"`
-	Signature []byte            `json:"signature"`
+	ID        string                 `json:"id"`
+	Name      string                 `json:"name"`
+	Version   string                 `json:"version"`
+	Metadata  map[string]interface{} `json:"metadata"`
+	Endpoints []*Endpoint            `json:"endpoints"`
+	Nodes     []*Node                `json:"nodes"`
+	Timestamp time.Time              `json:"timestamp"`
+	Signature []byte                 `json:"signature"`
 }
 
 type Node struct {

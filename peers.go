@@ -2,11 +2,11 @@ package peers
 
 import (
 	"context"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/object"
 	"github.com/dirty-bro-tech/peers-touch-go/touch"

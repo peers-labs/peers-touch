@@ -1,0 +1,27 @@
+peers:
+  includes: store.yml
+  run-mode: 2
+  config:
+    hierarchy-merge: true
+  service:
+    server:
+      name: "hertz"
+      address: :9081
+      metadata:
+        name: "foo"
+        value: "qux"
+      native:
+        enabled: true
+        some-key: "some-value"
+      hertz:
+        enabled: true
+        some-key: "some-value"
+    registry:
+      retry-interval: 10s
+      native:
+        enable-mdns: true
+        enable-bootstrap: false
+        try-add-peer-manually: false
+        bootstrap-nodes:
+          - /ip4/127.0.0.1/tcp/4001/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r
+    

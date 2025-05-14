@@ -66,7 +66,7 @@ func (d *debugSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
 			"debugListRegisteredPeers",
-			"/debug/registered_peers",
+			"/debug/registered-peers",
 			func(c context.Context, ctx *app.RequestContext) {
 				peers, err := d.opts.registry.ListPeers(c)
 				if err != nil {
@@ -74,7 +74,36 @@ func (d *debugSubServer) Handlers() []server.Handler {
 					return
 				}
 
-				ctx.JSON(http.StatusOK, peers)
+				ctx.JSON(http.StatusOK, map[string]interface{}{
+					"count": len(peers),
+					"peers": peers,
+				})
+			},
+		),
+		server.NewHandler(
+			"debugListAllHandlers",
+			"/debug/list-all-handlers",
+			func(c context.Context, ctx *app.RequestContext) {
+				handlers := server.GetOptions().Handlers
+				type handlerStruct struct {
+					Name   string
+					Path   string
+					Method string
+				}
+				handlersList := make([]handlerStruct, 0)
+				for _, h := range handlers {
+					handlersList = append(handlersList, handlerStruct{
+						Name:   h.Name(),
+						Path:   h.Path(),
+						Method: string(h.Method()),
+						// todo params
+					})
+				}
+
+				ctx.JSON(http.StatusOK, map[string]interface{}{
+					"count":    len(handlers),
+					"handlers": handlersList,
+				})
 			},
 		),
 	}

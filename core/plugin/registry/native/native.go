@@ -11,7 +11,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -26,7 +25,6 @@ import (
 	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/crypto/pb"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/multiformats/go-multiaddr"
@@ -66,38 +64,6 @@ type nativeRegistry struct {
 	// bootstrap nodes status
 	bootstrapStateLock   sync.RWMutex
 	bootstrapNodesStatus map[string]*bootstrapState
-}
-
-func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOption) ([]*registry.Peer, error) {
-	var connectedPeers []*registry.Peer
-
-	// Get the list of connected peer IDs
-	peerIDs := r.host.Network().Peers()
-
-	for _, peerID := range peerIDs {
-		// Here you need to get more information about the peer to create a registry.Peer struct.
-		// For simplicity, we assume you can get the peer's name from the peer ID (this may need adjustment in a real - world scenario).
-		peerName := peerID.String()
-		var addrs []string
-		for _, addr := range r.host.Peerstore().Addrs(peerID) {
-			addrs = append(addrs, addr.String())
-		}
-
-		// Create a new registry.Peer struct
-		peer := &registry.Peer{
-			Name: peerName,
-			// You may need to fill in other fields according to your actual requirements.
-			// For example, you can get the peer's addresses from the peerstore.
-			Metadata: map[string]string{
-				"registerType": MetaRegisterTypeConnected,
-				"address":      strings.Join(addrs, ","),
-			},
-		}
-
-		connectedPeers = append(connectedPeers, peer)
-	}
-
-	return connectedPeers, nil
 }
 
 func NewRegistry(opts ...option.Option) registry.Registry {
@@ -196,19 +162,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	}
 
 	// Bootstrap the DHT
-	if err = r.dht.Bootstrap(ctx); err != nil {
-		logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
-	}
-
-	if r.extOpts.tryAddPeerManually {
-		// Manually add self to routing table.
-		// For now, I don't know why local nodes are not automatically added to the routing table.
-		existed, err := r.dht.RoutingTable().TryAddPeer(r.host.ID(), true, true)
-		if err != nil {
-			logger.Errorf(ctx, "failed to add peer to routing table: %v", err)
-		}
-		logger.Infof(ctx, "added peer to routing table: %v", existed || existed == false && err == nil)
-	}
+	go r.bootstrap(ctx)
 
 	// todo init relay nodes
 
@@ -237,6 +191,11 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 	regOpts := &registry.RegisterOptions{}
 	for _, opt := range opts {
 		opt(regOpts)
+	}
+
+	err := r.beforeRegister(ctx, peerReg, regOpts)
+	if err != nil {
+		return fmt.Errorf("register peer: %w", err)
 	}
 
 	if regOpts.Interval == 0 {
@@ -308,6 +267,66 @@ func (r *nativeRegistry) Watch(ctx context.Context, opts ...registry.WatchOption
 	return nil, errors.New("not implemented")
 }
 
+func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOption) ([]*registry.Peer, error) {
+	var connectedPeers []*registry.Peer
+
+	// Get the list of connected peer IDs
+	peerIDs := r.host.Network().Peers()
+
+	for _, peerID := range peerIDs {
+		// Here you need to get more information about the peer to create a registry.Peer struct.
+		// For simplicity, we assume you can get the peer's name from the peer ID (this may need adjustment in a real - world scenario).
+		peerName := peerID.String()
+		var addrs []string
+		for _, addr := range r.host.Peerstore().Addrs(peerID) {
+			addrs = append(addrs, addr.String())
+		}
+
+		// Create a new registry.Peer struct
+		peer := &registry.Peer{
+			Name: peerName,
+			// You may need to fill in other fields according to your actual requirements.
+			// For example, you can get the peer's addresses from the peerstore.
+			Metadata: map[string]interface{}{
+				MetaConstantKeyRegisterType: MetaRegisterTypeConnected,
+				MetaConstantKeyAddress:      addrs,
+			},
+		}
+		connectedPeers = append(connectedPeers, peer)
+
+		dhtValue, err := r.dht.GetValue(ctx, networkNamespace+"/"+peerName)
+		if err != nil {
+			logger.Errorf(ctx, "failed to get dht value: %s", err)
+			continue
+		}
+
+		if dhtValue != nil {
+			var dhtPk pb.PublicKey
+			err = proto.Unmarshal(dhtValue, &dhtPk)
+			if err != nil {
+				logger.Errorf(ctx, "failed to unmarshal dht pk value: %s", err)
+				continue
+			}
+
+			var dhtPeer registry.Peer
+			err = json.Unmarshal(dhtPk.Data, &dhtPeer)
+			if err != nil {
+				logger.Errorf(ctx, "failed to unmarshal dht value: %s", err)
+				continue
+			}
+
+			if dhtPeer.Metadata == nil {
+				dhtPeer.Metadata = map[string]interface{}{}
+			}
+			dhtPeer.Metadata[MetaConstantKeyRegisterType] = MetaRegisterTypeDHT
+
+			connectedPeers = append(connectedPeers, &dhtPeer)
+		}
+	}
+
+	return connectedPeers, nil
+}
+
 func (r *nativeRegistry) String() string {
 	return "libp2p-registry"
 }
@@ -319,11 +338,6 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 	if peerReg == nil {
 		return errors.New("peerReg cannot be nil")
 	}
-
-	/*	_, ok := r.bootstrapSuccessful()
-		if !ok {
-			return errors.New("bootstrap not ready")
-		}*/
 
 	// Add security metadata
 	peerReg.Version = "1.0"
@@ -378,54 +392,36 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 	return nil
 }
 
-func (r *nativeRegistry) bootstrap(ctx context.Context, bootstraps []multiaddr.Multiaddr) {
+func (r *nativeRegistry) beforeRegister(ctx context.Context, peerReg *registry.Peer, opts *registry.RegisterOptions) error {
+	if peerReg.Metadata == nil {
+		peerReg.Metadata = map[string]interface{}{}
+	}
+
+	if peerReg.ID == "" {
+		return errors.New("peer ID cannot be nil")
+	}
+
+	if peerReg.Version == "" {
+		return errors.New("peer Version cannot be nil")
+	}
+
+	if peerReg.Name == "" {
+		return errors.New("peer Name cannot be nil")
+	}
+
+	peerReg.Metadata[MetaConstantKeyPeerID] = r.host.ID().String()
+
+	// todo any other hooks?
+	return nil
+}
+
+func (r *nativeRegistry) bootstrap(ctx context.Context) {
 	ticker := time.NewTicker(r.extOpts.bootstrapRefreshInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			wg := sync.WaitGroup{}
-			// Connect to public bootstrap nodes
-			for _, addr := range bootstraps {
-				wg.Add(1)
-				go func(addr multiaddr.Multiaddr) (ok bool) {
-					defer wg.Done()
-
-					ctxTimout, cancel := context.WithTimeout(ctx, r.options.ConnectTimeout)
-					defer cancel()
-
-					defer func() {
-						r.updateBootstrapStatus(ctx, addr.String(), ok)
-					}()
-
-					if r.bootstrapNodesStatus[addr.String()] != nil && r.bootstrapNodesStatus[addr.String()].failedTimes > 5 {
-						logger.Warnf(ctx, "bootstrap node %s is offline. skipped", addr.String())
-						ok = false
-						return
-					}
-
-					pi, _ := peer.AddrInfoFromP2pAddr(addr)
-					if r.host.Network().Connectedness(pi.ID) == network.Connected {
-						logger.Infof(ctx, "bootstrap node %s is online", addr.String())
-						ok = true
-						return
-					}
-
-					if err := r.host.Connect(ctxTimout, *pi); err != nil {
-						logger.Errorf(ctx, "failed to connect to public bootstrap node %s: %v", addr, err)
-						ok = false
-						return
-					}
-
-					ok = true
-
-					logger.Infof(ctx, "successfully connected to public bootstrap node %s", addr)
-					return ok
-				}(addr)
-			}
-			wg.Wait()
-
 			if err := r.dht.Bootstrap(ctx); err != nil {
 				logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
 			}
