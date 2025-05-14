@@ -87,8 +87,8 @@ func (o *Option) bRun() bool {
 // components together. but when you want to use only one component like config as a lib, you can convey WithRootCtx as the first
 // Option to the component's init.
 // If you want to use a custom peer service, please refer to peers.NewPeer's init function.
-func WithRootCtx(ctx context.Context) Option {
-	return Option{Option: func(o *Options) {
+func WithRootCtx(ctx context.Context) *Option {
+	return &Option{Option: func(o *Options) {
 		ctxLock.Lock()
 		defer ctxLock.Unlock()
 
