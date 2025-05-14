@@ -16,11 +16,11 @@ type Options struct {
 }
 
 func WithNewService(newService NewService) *option.Option {
-	return func(o *option.Options) {
+	return &option.Option{Option: func(o *option.Options) {
 		optionWrap(o, func(opts *Options) {
 			opts.NewService = newService
 		})
-	}
+	}}
 }
 
 func optionWrap(o *option.Options, f func(*Options)) {
