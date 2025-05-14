@@ -24,7 +24,7 @@ type Server struct {
 	started bool
 }
 
-func NewServer(opts ...option.Option) *Server {
+func NewServer(opts ...*option.Option) *Server {
 	s := &Server{
 		BaseServer: server.NewServer(opts...),
 	}
@@ -32,7 +32,7 @@ func NewServer(opts ...option.Option) *Server {
 	return s
 }
 
-func (s *Server) Init(ctx context.Context, opts ...option.Option) error {
+func (s *Server) Init(ctx context.Context, opts ...*option.Option) error {
 	err := s.BaseServer.Init(ctx, opts...)
 	if err != nil {
 		return err
@@ -52,7 +52,7 @@ func (s *Server) Handle(h server.Handler) error {
 	return nil
 }
 
-func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
+func (s *Server) Start(ctx context.Context, opts ...*option.Option) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	if s.started {

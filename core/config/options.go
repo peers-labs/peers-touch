@@ -28,25 +28,25 @@ type Options struct {
 	HierarchyMerge bool
 }
 
-func WithSources(s ...source.Source) option.Option {
+func WithSources(s ...source.Source) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Sources = append(opts.Sources, s...)
 	})
 }
 
-func WithStorage(s bool) option.Option {
+func WithStorage(s bool) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Storage = s
 	})
 }
 
-func WithWatch(w bool) option.Option {
+func WithWatch(w bool) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Watch = w
 	})
 }
 
-func WithHierarchyMerge(h bool) option.Option {
+func WithHierarchyMerge(h bool) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.HierarchyMerge = h
 	})

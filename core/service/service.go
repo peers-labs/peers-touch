@@ -15,7 +15,7 @@ type Service interface {
 	// Name The service name
 	Name() string
 	// Init initialises options
-	Init(context.Context, ...option.Option) error
+	Init(context.Context, ...*option.Option) error
 	// Options returns the current options
 	Options() *Options
 	// Client is used to call services

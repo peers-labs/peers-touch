@@ -20,14 +20,14 @@ type debugSubServer struct {
 	opts *DebugServerOptions
 }
 
-func NewDebugSubServer(opts ...option.Option) server.SubServer {
+func NewDebugSubServer(opts ...*option.Option) server.SubServer {
 	s := &debugSubServer{
 		opts: option.GetOptions(opts...).Ctx().Value(debugServerOptionsKey{}).(*DebugServerOptions),
 	}
 	return s
 }
 
-func (d *debugSubServer) Init(ctx context.Context, opts ...option.Option) error {
+func (d *debugSubServer) Init(ctx context.Context, opts ...*option.Option) error {
 	for _, o := range opts {
 		d.opts.Apply(o)
 	}
@@ -40,7 +40,7 @@ func (d *debugSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	return nil
 }
 
-func (d *debugSubServer) Start(ctx context.Context, opts ...option.Option) error {
+func (d *debugSubServer) Start(ctx context.Context, opts ...*option.Option) error {
 	return nil
 }
 

@@ -25,19 +25,19 @@ type Options struct {
 	PrivateKey     string
 }
 
-func WithRetryInterval(dur time.Duration) option.Option {
+func WithRetryInterval(dur time.Duration) *option.Option {
 	return OptionWrapper.Wrap(func(o *Options) {
 		o.RetryInterval = dur
 	})
 }
 
-func WithConnectTimeout(dur time.Duration) option.Option {
+func WithConnectTimeout(dur time.Duration) *option.Option {
 	return OptionWrapper.Wrap(func(o *Options) {
 		o.ConnectTimeout = dur
 	})
 }
 
-func WithPrivateKey(privateKey string) option.Option {
+func WithPrivateKey(privateKey string) *option.Option {
 	return OptionWrapper.Wrap(func(o *Options) {
 		o.PrivateKey = privateKey
 	})
@@ -67,6 +67,6 @@ type WatchOptions struct{}
 
 // endregion
 
-func GetPluginRegions(opts ...option.Option) *Options {
+func GetPluginRegions(opts ...*option.Option) *Options {
 	return option.GetOptions(opts...).Ctx().Value(registryOptionsKey{}).(*Options)
 }

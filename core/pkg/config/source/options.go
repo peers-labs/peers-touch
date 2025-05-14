@@ -38,19 +38,19 @@ func GetOptions(root *option.Options) *Options {
 }
 
 // WithEncoder sets the source encoder
-func WithEncoder(e encoder.Encoder) option.Option {
+func WithEncoder(e encoder.Encoder) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Encoder = e
 	})
 }
 
 // Context sets the cli context
-func Context(c *cli.Context) option.Option {
+func Context(c *cli.Context) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.AppendCtx(contextKey{}, c)
 	})
 }
 
-func WrapOption(f func(*Options)) option.Option {
+func WrapOption(f func(*Options)) *option.Option {
 	return wrapper.Wrap(f)
 }

@@ -23,8 +23,10 @@ func TestOption_Duplicate(t *testing.T) {
 	o := &Options{}
 	o.ctx = context.Background()
 	count := 0
-	opt1 := func(o *Options) {
-		count++
+	opt1 := &Option{
+		Option: func(o *Options) {
+			count++
+		},
 	}
 
 	{
@@ -40,8 +42,10 @@ func TestOption_Duplicate(t *testing.T) {
 	}
 
 	{
-		opt2 := func(o *Options) {
-			count++
+		opt2 := &Option{
+			Option: func(o *Options) {
+				count++
+			},
 		}
 		o.Apply(opt2)
 

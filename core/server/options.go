@@ -38,34 +38,34 @@ type Options struct {
 }
 
 // WithAddress sets the server address
-func WithAddress(address string) option.Option {
+func WithAddress(address string) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Address = address
 	})
 }
 
 // WithTimeout sets the server timeout
-func WithTimeout(timeout int) option.Option {
+func WithTimeout(timeout int) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Timeout = timeout
 	})
 }
 
 // WithMetadata associated with the server
-func WithMetadata(md map[string]string) option.Option {
+func WithMetadata(md map[string]string) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Metadata = md
 	})
 }
 
-func WithHandlers(handlers ...Handler) option.Option {
+func WithHandlers(handlers ...Handler) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Handlers = append(opts.Handlers, handlers...)
 	})
 }
 
 // WithSubServer adds a subserver to the server
-func WithSubServer(name string, newFunc func(opts ...option.Option) SubServer, subServerOptions ...option.Option) option.Option {
+func WithSubServer(name string, newFunc func(opts ...*option.Option) SubServer, subServerOptions ...*option.Option) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.SubServerOptions.subServerNewFunctions[name] = subServerNewFunctions{
 			exec:    newFunc,
@@ -74,7 +74,7 @@ func WithSubServer(name string, newFunc func(opts ...option.Option) SubServer, s
 	})
 }
 
-func WithReadyChan(c chan interface{}) option.Option {
+func WithReadyChan(c chan interface{}) *option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.ReadyChan = c
 	})

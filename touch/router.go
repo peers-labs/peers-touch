@@ -36,11 +36,11 @@ func (apr RouterURL) URL() string {
 	return string(apr)
 }
 
-func Handlers() []option.Option {
+func Handlers() []*option.Option {
 	m := NewManageRouter()
 	a := NewActivityPubRouter()
 
-	handlers := make([]option.Option, 0)
+	handlers := make([]*option.Option, 0)
 
 	for _, r := range m.Routers() {
 		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))

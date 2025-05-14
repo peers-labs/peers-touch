@@ -124,7 +124,7 @@ func (e *env) String() string {
 //	        }
 //	    }
 //	}
-func NewSource(opts ...option.Option) source.Source {
+func NewSource(opts ...*option.Option) source.Source {
 	options := source.NewOptions(opts...)
 
 	var sp []string

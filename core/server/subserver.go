@@ -12,13 +12,13 @@ import (
 // add it to the main server.
 type SubServer interface {
 	// Init initializes the subserver with context
-	Init(ctx context.Context, opts ...option.Option) error
+	Init(ctx context.Context, opts ...*option.Option) error
 
 	// Start begins the subserver with context for lifecycle management
 	// Actually, SubServer would be started before the main server, due to the simplicity of the implementation.
 	// And BaseServer will help to start subservers in method BaseServer.Start.
 	// Every subserver should be start self asynchronously.
-	Start(ctx context.Context, opts ...option.Option) error
+	Start(ctx context.Context, opts ...*option.Option) error
 
 	// Stop gracefully shuts down the subserver with context
 	Stop(ctx context.Context) error
@@ -48,8 +48,8 @@ const (
 )
 
 type subServerNewFunctions struct {
-	exec    func(...option.Option) SubServer
-	options []option.Option
+	exec    func(...*option.Option) SubServer
+	options []*option.Option
 }
 
 type SubServerOptions struct {
@@ -62,7 +62,7 @@ type SubServerOptions struct {
 	subServerNewFunctions map[string]subServerNewFunctions
 }
 
-func (o *SubServerOptions) Apply(opts ...option.Option) {
+func (o *SubServerOptions) Apply(opts ...*option.Option) {
 	o.parentOpts.Apply(opts...)
 }
 

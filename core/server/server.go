@@ -27,11 +27,11 @@ const (
 )
 
 type Server interface {
-	Init(context.Context, ...option.Option) error
+	Init(context.Context, ...*option.Option) error
 	Options() *Options
 	// Handle use to add new handler dynamically
 	Handle(Handler) error
-	Start(context.Context, ...option.Option) error
+	Start(context.Context, ...*option.Option) error
 	Stop(context.Context) error
 	Name() string
 }

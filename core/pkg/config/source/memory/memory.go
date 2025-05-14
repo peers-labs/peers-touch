@@ -76,7 +76,7 @@ func (s *memory) String() string {
 	return "memory"
 }
 
-func NewSource(opts ...option.Option) source.Source {
+func NewSource(opts ...*option.Option) source.Source {
 	s := &memory{
 		opts:     source.GetOptions(option.GetOptions(opts...)),
 		Watchers: make(map[string]*watcher),

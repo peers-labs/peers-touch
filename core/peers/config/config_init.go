@@ -34,7 +34,7 @@ func LoadConfig(sOpts *service.Options) (err error) {
 	}
 
 	var appendSource []source.Source
-	var cfgOption []option.Option
+	var cfgOption []*option.Option
 	if len(sOpts.Conf) > 0 {
 		// check file exists
 		exists, err := uf.Exists(sOpts.Conf)
@@ -71,9 +71,9 @@ func LoadConfig(sOpts *service.Options) (err error) {
 					log.Infof("load extra config file: %s%s", filePath, f)
 					f = strings.TrimSpace(f)
 					extraFile := fmt.Sprintf("%s%s", filePath, f)
-					extraExists, err := uf.Exists(extraFile)
-					if err != nil {
-						log.Error(fmt.Errorf("config file is not existed %s", err))
+					extraExists, errIn := uf.Exists(extraFile)
+					if errIn != nil {
+						log.Error(fmt.Errorf("config file is not existed %s", errIn))
 						continue
 					} else if !extraExists {
 						log.Error(fmt.Errorf("config file [%s] is not existed", extraFile))
@@ -108,8 +108,8 @@ func SetOptions(sOpts *service.Options) (err error) {
 	conf := peersConfig.Peers
 
 	// serviceOptions
-	for _, option := range conf.Service.Options() {
-		sOpts.Apply(option)
+	for _, o := range conf.Service.Options() {
+		sOpts.Apply(o)
 	}
 
 	sOpts.ServerOptions = append(sOpts.ServerOptions, conf.Service.Server.Options()...)

@@ -56,7 +56,7 @@ type options struct {
 }
 
 // WithBootstrapNodes set the private bootstrap nodes for the registry plugin.
-func WithBootstrapNodes(bootstraps []string) option.Option {
+func WithBootstrapNodes(bootstraps []string) *option.Option {
 	return wrapOptions(func(o *options) {
 		for _, bootstrap := range bootstraps {
 			addr, err := multiaddr.NewMultiaddr(bootstrap)
@@ -69,7 +69,7 @@ func WithBootstrapNodes(bootstraps []string) option.Option {
 }
 
 // WithRelayNodes set the private relay nodes for the registry plugin.
-func WithRelayNodes(relayNodes []string) option.Option {
+func WithRelayNodes(relayNodes []string) *option.Option {
 	return wrapOptions(func(o *options) {
 		for _, bootstrap := range relayNodes {
 			addr, err := multiaddr.NewMultiaddr(bootstrap)
@@ -81,37 +81,37 @@ func WithRelayNodes(relayNodes []string) option.Option {
 	})
 }
 
-func WithEnableMDNS(enableMDNS bool) option.Option {
+func WithEnableMDNS(enableMDNS bool) *option.Option {
 	return wrapOptions(func(o *options) {
 		o.enableMDNS = enableMDNS
 	})
 }
 
-func WithEnableBootstrap(enableBootstrap bool) option.Option {
+func WithEnableBootstrap(enableBootstrap bool) *option.Option {
 	return wrapOptions(func(o *options) {
 		o.enableBootstrap = enableBootstrap
 	})
 }
 
-func WithRunningMode(mod modeOpt) option.Option {
+func WithRunningMode(mod modeOpt) *option.Option {
 	return wrapOptions(func(o *options) {
 		o.runMode = mod
 	})
 }
 
-func WithBootstrapNodeRetryTimes(times int) option.Option {
+func WithBootstrapNodeRetryTimes(times int) *option.Option {
 	return wrapOptions(func(o *options) {
 		o.bootstrapNodeRetryTimes = times
 	})
 }
 
-func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
+func WithBootstrapRefreshInterval(interval time.Duration) *option.Option {
 	return wrapOptions(func(o *options) {
 		o.bootstrapRefreshInterval = interval
 	})
 }
 
-func WithTryAddPeerManually(tryAddPeerManually bool) option.Option {
+func WithTryAddPeerManually(tryAddPeerManually bool) *option.Option {
 	return wrapOptions(func(o *options) {
 		if tryAddPeerManually {
 			o.tryAddPeerManually = tryAddPeerManually
@@ -119,13 +119,13 @@ func WithTryAddPeerManually(tryAddPeerManually bool) option.Option {
 	})
 }
 
-func WithLibp2pIdentityKeyFile(keyFile string) option.Option {
+func WithLibp2pIdentityKeyFile(keyFile string) *option.Option {
 	return wrapOptions(func(o *options) {
 		o.libp2pIdentityKeyFile = keyFile
 	})
 }
 
-func wrapOptions(f func(o *options)) option.Option {
+func wrapOptions(f func(o *options)) *option.Option {
 	return registry.OptionWrapper.Wrap(func(o *registry.Options) {
 		if o.ExtOptions == nil {
 			o.ExtOptions = &options{

@@ -12,7 +12,7 @@ type prefixKey struct{}
 
 // WithStrippedPrefix sets the environment variable prefixes to scope to.
 // These prefixes will be removed from the actual config entries.
-func WithStrippedPrefix(p ...string) option.Option {
+func WithStrippedPrefix(p ...string) *option.Option {
 	return source.WrapOption(func(o *source.Options) {
 		o.AppendCtx(strippedPrefixKey{}, appendUnderscore(p))
 	})
@@ -20,7 +20,7 @@ func WithStrippedPrefix(p ...string) option.Option {
 
 // WithPrefix sets the environment variable prefixes to scope to.
 // These prefixes will not be removed. Each prefix will be considered a top level config entry.
-func WithPrefix(p ...string) option.Option {
+func WithPrefix(p ...string) *option.Option {
 	return source.WrapOption(func(o *source.Options) {
 		o.AppendCtx(prefixKey{}, appendUnderscore(p))
 	})

@@ -13,7 +13,7 @@ type Options struct {
 	cs *source.ChangeSet
 }
 
-func withData(d []byte, f string) option.Option {
+func withData(d []byte, f string) *option.Option {
 	return source.WrapOption(func(o *source.Options) {
 		o.AppendCtx(changeSetKey{}, &source.ChangeSet{
 			Data:   d,
@@ -23,18 +23,18 @@ func withData(d []byte, f string) option.Option {
 }
 
 // WithChangeSet allows a changeset to be set
-func WithChangeSet(cs *source.ChangeSet) option.Option {
+func WithChangeSet(cs *source.ChangeSet) *option.Option {
 	return source.WrapOption(func(o *source.Options) {
 		o.AppendCtx(changeSetKey{}, cs)
 	})
 }
 
 // WithJSON allows the source data to be set to json
-func WithJSON(d []byte) option.Option {
+func WithJSON(d []byte) *option.Option {
 	return withData(d, "json")
 }
 
 // WithYAML allows the source data to be set to yaml
-func WithYAML(d []byte) option.Option {
+func WithYAML(d []byte) *option.Option {
 	return withData(d, "yaml")
 }

@@ -38,8 +38,8 @@ func (n *nativeRegistryPlugin) Name() string {
 	return plugin.NativePluginName
 }
 
-func (n *nativeRegistryPlugin) Options() []option.Option {
-	var opts []option.Option
+func (n *nativeRegistryPlugin) Options() []*option.Option {
+	var opts []*option.Option
 	if configOptions.Peers.RunMode != ModeAuto {
 		opts = append(opts, WithRunningMode(configOptions.Peers.RunMode))
 	}
@@ -100,7 +100,7 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	return opts
 }
 
-func (n *nativeRegistryPlugin) New(opts ...option.Option) registry.Registry {
+func (n *nativeRegistryPlugin) New(opts ...*option.Option) registry.Registry {
 	opts = append(opts, n.Options()...)
 	return NewRegistry(opts...)
 }
