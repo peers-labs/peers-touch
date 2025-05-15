@@ -2,7 +2,6 @@ package option
 
 import (
 	"context"
-	"reflect"
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
@@ -35,15 +34,14 @@ type Options struct {
 	ExtOptions any
 }
 
+// Apply applies the option logic to Options.
+// For the customized Option, which is not wrapped,
+// we don't promise it will be run only once. so keep being wrapped to make it safe.
 func (o *Options) Apply(opts ...Option) {
 	applyLock.Lock()
 	defer applyLock.Unlock()
 
 	for _, opt := range opts {
-		if opt.BRun() {
-			log.Debugf("option %v already executed", &opt)
-			continue
-		}
 		opt(o)
 	}
 }
@@ -69,21 +67,6 @@ func (o *Options) AppendCtx(key interface{}, value interface{}) {
 }
 
 type Option func(o *Options)
-
-// BRun returns true if the Option Func is already executed
-func (o Option) BRun() bool {
-	executedLock.Lock()
-	defer executedLock.Unlock()
-
-	// Get the pointer of the function
-	funcPtr := reflect.ValueOf(o).Pointer()
-	if executedFunctions[funcPtr] {
-		return true
-	}
-
-	executedFunctions[funcPtr] = true
-	return false
-}
 
 // WithRootCtx sets the context
 // It will be used as the root context for all other contexts. so don't use it to set a context for a subcomponent if you use
@@ -117,8 +100,29 @@ func NewWrapper[T any](key interface{}, NewFunc func(*Options) *T) *Wrapper[T] {
 	return &Wrapper[T]{key: key, NewFunc: NewFunc}
 }
 
+type wrappedOption = Option
+
+func (wrappedOption) IsWrapped(f func() bool) bool {
+	return f()
+}
+
 func (w *Wrapper[T]) Wrap(f func(*T)) Option {
+	executed := false
+	localExecutedLock := sync.Mutex{}
+
 	return func(o *Options) {
+		localExecutedLock.Lock()
+		defer localExecutedLock.Unlock()
+
+		defer func() {
+			executed = true
+		}()
+
+		if executed {
+			log.Warnf("option already executed")
+			return
+		}
+
 		var opts *T
 		if o.Ctx().Value(w.key) == nil {
 			opts = w.NewFunc(o)
