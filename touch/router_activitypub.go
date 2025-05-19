@@ -9,13 +9,12 @@ import (
 )
 
 const (
-	ActivityPubRouterURLInbox     RouterURL = "/inbox"
-	ActivityPubRouterURLOutbox    RouterURL = "/outbox"
-	ActivityPubRouterURLFollow    RouterURL = "/follow"
-	ActivityPubRouterURLUnfollow  RouterURL = "/unfollow"
-	ActivityPubRouterURLLike      RouterURL = "/like"
-	ActivityPubRouterURLUndo      RouterURL = "/undo"
-	ActivityPubRouterURLWellKnown RouterURL = "/.well-known"
+	ActivityPubRouterURLInbox    RouterURL = "/inbox"
+	ActivityPubRouterURLOutbox   RouterURL = "/outbox"
+	ActivityPubRouterURLFollow   RouterURL = "/follow"
+	ActivityPubRouterURLUnfollow RouterURL = "/unfollow"
+	ActivityPubRouterURLLike     RouterURL = "/like"
+	ActivityPubRouterURLUndo     RouterURL = "/undo"
 
 	// ActivityPubRouterURLChat
 	// There is no chat-activity in ActivityPub official document. we implement it for chatting.
@@ -49,10 +48,6 @@ func (apr *ActivityPubRouters) Routers() []Router {
 				ctx.String(http.StatusOK, "hello world, like")
 			}),
 		server.NewHandler(ActivityPubRouterURLUndo.Name(), ActivityPubRouterURLUndo.URL(),
-			func(c context.Context, ctx *app.RequestContext) {
-				ctx.String(http.StatusOK, "hello world, undo")
-			}),
-		server.NewHandler(ActivityPubRouterURLWellKnown.Name(), ActivityPubRouterURLWellKnown.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world, undo")
 			}),

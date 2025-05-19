@@ -12,7 +12,7 @@ func init() {
 var ymlOptions struct {
 	Peers struct {
 		Actor struct {
-			Person struct {
+			Person []struct {
 				Name  string `pconf:"name"`
 				Email string `pconf:"email"`
 			} `pconf:"person"`
