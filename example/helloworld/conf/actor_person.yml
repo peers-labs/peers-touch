@@ -1,0 +1,9 @@
+peers:
+  actor:
+    person:
+      -
+        name: printfcoder
+        email: printfcoder@peers-touch-go.com
+      -
+        name: dirtybro
+        email: dirtybro@peers-touch-go.com

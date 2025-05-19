@@ -13,10 +13,10 @@ type (
 	// Application describes a software application.
 	Application = activitypub.Actor
 
-	// Group represents a formal or informal collective of Actors.
+	// The Group represents a formal or informal collective of Actors.
 	Group = activitypub.Actor
 
-	// Organization represents an organization.
+	// The Organization represents an organization.
 	Organization = activitypub.Actor
 
 	// Person represents an individual person.
@@ -69,3 +69,6 @@ type DeliveryFacade interface {
 	ReceiveActivity(activity *o.Activity) error
 	ForwardActivity(activity *o.Activity, targetId o.ID) error
 }
+
+// ChatFacade handles chatting message
+type ChatFacade interface{}
