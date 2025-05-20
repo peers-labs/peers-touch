@@ -7,7 +7,6 @@ require (
 	git.sr.ht/~mariusor/go-xsd-duration v0.0.0-20220703122237-02e73435a078
 	github.com/BurntSushi/toml v1.4.0
 	github.com/bitly/go-simplejson v0.5.1
-	github.com/bytedance/gopkg v0.1.0
 	github.com/cloudwego/hertz v0.9.5
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/ghodss/yaml v1.0.0
