@@ -12,7 +12,7 @@ import (
 func Webfinger(c context.Context, ctx *app.RequestContext) {
 	var params model.WebFingerParams
 
-	if err := ctx.Bind(&params); err != nil {
+	if err := ctx.BindQuery(&params); err != nil {
 		log.Warnf(c, "bind params failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, err.Error())
 		return

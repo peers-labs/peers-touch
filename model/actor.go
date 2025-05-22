@@ -27,6 +27,6 @@ func (r WebFingerResource) Check() error {
 }
 
 type WebFingerParams struct {
-	Resource           WebFingerResource `json:"resource"`
-	ActivityPubVersion string            `json:"activity_pub_version"`
+	Resource           WebFingerResource `query:"resource"`
+	ActivityPubVersion string            `query:"activity_pub_version"`
 }
