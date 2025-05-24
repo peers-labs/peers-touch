@@ -17,7 +17,7 @@ var options struct {
 type nativeServicePlugin struct {
 }
 
-func (n *nativeServicePlugin) New(opts *option.Options, o ...*option.Option) service.Service {
+func (n *nativeServicePlugin) New(opts *option.Options, o ...option.Option) service.Service {
 	return NewService(opts, o...)
 }
 
@@ -25,8 +25,8 @@ func (n *nativeServicePlugin) Name() string {
 	return "native"
 }
 
-func (n *nativeServicePlugin) Options() []*option.Option {
-	var opts []*option.Option
+func (n *nativeServicePlugin) Options() []option.Option {
+	var opts []option.Option
 
 	return opts
 }

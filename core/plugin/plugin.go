@@ -33,30 +33,30 @@ type ClientPlugin interface {
 
 type ServerPlugin interface {
 	Plugin
-	Options() []*option.Option
-	New(...*option.Option) server.Server
+	Options() []option.Option
+	New(...option.Option) server.Server
 }
 
 type ConfigPlugin interface {
 	Plugin
-	Options() []*option.Option
-	New(...*option.Option) config.Config
+	Options() []option.Option
+	New(...option.Option) config.Config
 }
 
 type StorePlugin interface {
 	Plugin
-	Options() []*option.Option
-	New(...*option.Option) store.Store
+	Options() []option.Option
+	New(...option.Option) store.Store
 }
 
 type RegistryPlugin interface {
 	Plugin
-	Options() []*option.Option
-	New(...*option.Option) registry.Registry
+	Options() []option.Option
+	New(...option.Option) registry.Registry
 }
 
 type ServicePlugin interface {
 	Plugin
-	Options() []*option.Option
-	New(*option.Options, ...*option.Option) service.Service
+	Options() []option.Option
+	New(*option.Options, ...option.Option) service.Service
 }

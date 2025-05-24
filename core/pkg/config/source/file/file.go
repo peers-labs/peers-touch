@@ -55,7 +55,7 @@ func (f *file) Watch() (source.Watcher, error) {
 	return newWatcher(f)
 }
 
-func NewSource(opts ...*option.Option) source.Source {
+func NewSource(opts ...option.Option) source.Source {
 	options := source.GetOptions(option.GetOptions(opts...))
 	path := DefaultPath
 	f, ok := options.Ctx().Value(filePathKey{}).(string)

@@ -14,19 +14,20 @@ func (r WebFingerResource) Value() string {
 	return strings.Split(string(r), ":")[1]
 }
 
-func (r WebFingerResource) Check() error {
-	if strings.TrimSpace(string(r)) == "" || strings.Contains(string(r), ":") == false {
+type WebFingerParams struct {
+	Params
+	Resource           WebFingerResource `query:"resource"`
+	ActivityPubVersion string            `query:"activity_pub_version"`
+}
+
+func (r WebFingerParams) Check() error {
+	if strings.TrimSpace(string(r.Resource)) == "" || strings.Contains(string(r.Resource), ":") == false {
 		return ErrWellKnownInvalidResourceFormat
 	}
 
-	if r.Prefix() != "acct" {
+	if r.Resource.Prefix() != "acct" {
 		return ErrWellKnownUnsupportedPrefixType
 	}
 
 	return nil
-}
-
-type WebFingerParams struct {
-	Resource           WebFingerResource `query:"resource"`
-	ActivityPubVersion string            `query:"activity_pub_version"`
 }

@@ -26,8 +26,8 @@ func (n *hertzServerPlugin) Name() string {
 	return "hertz"
 }
 
-func (n *hertzServerPlugin) Options() []*option.Option {
-	var opts []*option.Option
+func (n *hertzServerPlugin) Options() []option.Option {
+	var opts []option.Option
 	if options.Peers.Service.Server.Hertz.Enabled {
 		// todo append opts
 	}
@@ -35,7 +35,7 @@ func (n *hertzServerPlugin) Options() []*option.Option {
 	return opts
 }
 
-func (n *hertzServerPlugin) New(opts ...*option.Option) server.Server {
+func (n *hertzServerPlugin) New(opts ...option.Option) server.Server {
 	opts = append(opts, n.Options()...)
 	return NewServer(opts...)
 }

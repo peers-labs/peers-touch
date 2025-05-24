@@ -128,7 +128,7 @@ func (c *cliSource) setValue(input map[string]interface{}, v interface{}, keys .
 //	        "host": "localhost"
 //	    }
 //	}
-func NewSource(app *cli.App, opts ...*option.Option) source.Source {
+func NewSource(app *cli.App, opts ...option.Option) source.Source {
 	options := source.GetOptions(option.GetOptions(opts...))
 	var ctx *cli.Context
 
@@ -168,7 +168,7 @@ func NewSource(app *cli.App, opts ...*option.Option) source.Source {
 
 // WithContext returns a new source with the context specified.
 // The assumption is that Context is retrieved within an app.Action function.
-func WithContext(ctx *cli.Context, opts ...*option.Option) source.Source {
+func WithContext(ctx *cli.Context, opts ...option.Option) source.Source {
 	return &cliSource{
 		ctx:  ctx,
 		opts: source.GetOptions(option.GetOptions(opts...)),

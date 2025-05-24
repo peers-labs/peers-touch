@@ -23,7 +23,7 @@ func (n *nativeStore) Name() string {
 	return "native"
 }
 
-func (n *nativeStore) Init(ctx context.Context, opts ...*option.Option) (err error) {
+func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err error) {
 	for _, opt := range opts {
 		n.opts.Apply(opt)
 	}
@@ -74,7 +74,7 @@ func (n *nativeStore) RDS(ctx context.Context, opts ...store.RDSDMLOption) (*gor
 // NewStore returns a new native store
 // if you don't want to use the global store, you can follow store.Store to create a new one.
 // and actually, the native store is good enough for most cases
-func NewStore(opts ...*option.Option) store.Store {
+func NewStore(opts ...option.Option) store.Store {
 	if nativeErots == nil {
 		nativeErots = &nativeStore{
 			opts: store.GetOptions(opts...),

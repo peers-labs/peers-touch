@@ -15,16 +15,16 @@ import (
 type Peer interface {
 	ID() object.ID
 	Name() string
-	Init(context.Context, ...*option.Option) error
+	Init(context.Context, ...option.Option) error
 	Start() error
 }
 
-func NewPeer(opts ...*option.Option) Peer {
+func NewPeer(opts ...option.Option) Peer {
 	return newPeer(opts...)
 }
 
 // region nativePeer
-func newPeer(opts ...*option.Option) Peer {
+func newPeer(opts ...option.Option) Peer {
 	p := &nativePeer{
 		opts: &Options{
 			Options: &option.Options{},
@@ -54,7 +54,7 @@ func (n *nativePeer) Name() string {
 	return n.service.Name()
 }
 
-func (n *nativePeer) Init(ctx context.Context, opts ...*option.Option) error {
+func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 	var err error
 	n.once.Do(func() {
 		// set context should be the first step

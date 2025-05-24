@@ -27,8 +27,8 @@ func (n *nativeServerPlugin) Name() string {
 	return "native"
 }
 
-func (n *nativeServerPlugin) Options() []*option.Option {
-	var opts []*option.Option
+func (n *nativeServerPlugin) Options() []option.Option {
+	var opts []option.Option
 	if options.Peers.Service.Server.Native.Enabled {
 		// todo append opts
 	}
@@ -40,7 +40,7 @@ func (n *nativeServerPlugin) Options() []*option.Option {
 	return opts
 }
 
-func (n *nativeServerPlugin) New(opts ...*option.Option) server.Server {
+func (n *nativeServerPlugin) New(opts ...option.Option) server.Server {
 	opts = append(opts, n.Options()...)
 	return NewServer(opts...)
 }

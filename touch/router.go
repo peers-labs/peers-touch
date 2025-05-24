@@ -1,8 +1,12 @@
 package touch
 
 import (
+	"errors"
+	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
+	"net/http"
 )
 
 const (
@@ -36,12 +40,12 @@ func (apr RouterURL) URL() string {
 	return string(apr)
 }
 
-func Handlers() []*option.Option {
+func Handlers() []option.Option {
 	m := NewManageRouter()
 	a := NewActivityPubRouter()
 	w := NewWellKnownRouter()
 
-	handlers := make([]*option.Option, 0)
+	handlers := make([]option.Option, 0)
 
 	for _, r := range m.Routers() {
 		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
@@ -60,4 +64,27 @@ func Handlers() []*option.Option {
 
 func convertRouterToServerHandler(r Router) server.Handler {
 	return server.Handler(r)
+}
+
+func successResponse(ctx *app.RequestContext, msg string, data interface{}) {
+	if msg == "" {
+		msg = "success"
+	}
+
+	ctx.JSON(http.StatusOK, model.NewSuccessResponse(msg, data))
+}
+
+func failedResponse(ctx *app.RequestContext, err error) {
+	if err != nil {
+		var e *model.Error
+		if errors.As(err, &e) {
+			ctx.JSON(http.StatusBadRequest, e)
+			return
+		}
+
+		ctx.JSON(http.StatusBadRequest, model.UndefinedError(err))
+		return
+	}
+
+	ctx.JSON(http.StatusBadRequest, model.ErrUndefined)
 }

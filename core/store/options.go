@@ -22,7 +22,7 @@ type Options struct {
 	// endregion
 }
 
-func WithRDS(rds *RDSInit) *option.Option {
+func WithRDS(rds *RDSInit) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		if opts.RDSMap == nil {
 			opts.RDSMap = make(map[string]*RDSInit)
@@ -90,6 +90,6 @@ func WithRDSDBName(name string) RDSDMLOption {
 
 // endregion
 
-func GetOptions(opts ...*option.Option) *Options {
+func GetOptions(opts ...option.Option) *Options {
 	return option.GetOptions(opts...).Ctx().Value(storeOptionsKey{}).(*Options)
 }

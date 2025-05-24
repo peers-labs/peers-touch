@@ -31,8 +31,8 @@ func (n *nativeStorePlugin) Name() string {
 	return plugin.NativePluginName
 }
 
-func (n *nativeStorePlugin) Options() []*option.Option {
-	var opts []*option.Option
+func (n *nativeStorePlugin) Options() []option.Option {
+	var opts []option.Option
 	if len(options.Peers.Store.Native.RDS.GORM) > 0 {
 		for _, g := range options.Peers.Store.Native.RDS.GORM {
 			opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, Enable: g.Enable, DSN: g.DSN}))
@@ -42,7 +42,7 @@ func (n *nativeStorePlugin) Options() []*option.Option {
 	return opts
 }
 
-func (n *nativeStorePlugin) New(opts ...*option.Option) store.Store {
+func (n *nativeStorePlugin) New(opts ...option.Option) store.Store {
 	opts = append(opts, n.Options()...)
 	return NewStore(opts...)
 }

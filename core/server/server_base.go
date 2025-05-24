@@ -26,7 +26,7 @@ func (b *BaseServer) Options() *Options {
 	return b.opts
 }
 
-func (b *BaseServer) Init(ctx context.Context, opts ...*option.Option) error {
+func (b *BaseServer) Init(ctx context.Context, opts ...option.Option) error {
 	b.once.Do(func() {
 		if err := b.init(ctx, opts...); err != nil {
 			// todo log
@@ -38,7 +38,7 @@ func (b *BaseServer) Init(ctx context.Context, opts ...*option.Option) error {
 }
 
 // Start : current job is helping to start the subservers.
-func (b *BaseServer) Start(ctx context.Context, opts ...*option.Option) error {
+func (b *BaseServer) Start(ctx context.Context, opts ...option.Option) error {
 	if b.subServerStarted {
 		return errors.New("server is already started")
 	}
@@ -69,7 +69,7 @@ func (b *BaseServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (b *BaseServer) init(ctx context.Context, opts ...*option.Option) error {
+func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 	for _, opt := range opts {
 		b.opts.Apply(opt)
 	}
@@ -100,7 +100,7 @@ func (b *BaseServer) init(ctx context.Context, opts ...*option.Option) error {
 	return nil
 }
 
-func NewServer(opts ...*option.Option) *BaseServer {
+func NewServer(opts ...option.Option) *BaseServer {
 	s := &BaseServer{
 		subServers: make(map[string]SubServer),
 		opts:       GetOptions(),

@@ -34,7 +34,7 @@ func LoadConfig(sOpts *service.Options) (err error) {
 	}
 
 	var appendSource []source.Source
-	var cfgOption []*option.Option
+	var cfgOption []option.Option
 	if len(sOpts.Conf) > 0 {
 		// check file exists
 		exists, err := uf.Exists(sOpts.Conf)

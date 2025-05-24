@@ -6,7 +6,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/model"
+	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
 )
 
 func Webfinger(c context.Context, ctx *app.RequestContext) {
@@ -18,7 +18,7 @@ func Webfinger(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	if err := params.Resource.Check(); err != nil {
+	if err := params.Check(); err != nil {
 		log.Warnf(c, "check resource failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, err.Error())
 		return

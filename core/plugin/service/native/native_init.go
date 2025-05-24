@@ -16,7 +16,7 @@ import (
 // Init initialises options. Additionally, it calls cmd.Init
 // which parses command line flags. cmd.Init is only called
 // on first Init.
-func (s *native) Init(ctx context.Context, opts ...*option.Option) error {
+func (s *native) Init(ctx context.Context, opts ...option.Option) error {
 	// process options
 	for _, o := range opts {
 		s.opts.Apply(o)

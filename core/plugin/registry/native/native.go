@@ -66,7 +66,7 @@ type nativeRegistry struct {
 	bootstrapNodesStatus map[string]*bootstrapState
 }
 
-func NewRegistry(opts ...*option.Option) registry.Registry {
+func NewRegistry(opts ...option.Option) registry.Registry {
 	regOnce.Lock()
 	defer regOnce.Unlock()
 
@@ -83,7 +83,7 @@ func NewRegistry(opts ...*option.Option) registry.Registry {
 	return regInstance
 }
 
-func (r *nativeRegistry) Init(ctx context.Context, opts ...*option.Option) error {
+func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error {
 	r.options.Apply(opts...)
 	r.extOpts = r.options.ExtOptions.(*options)
 

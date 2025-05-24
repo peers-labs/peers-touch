@@ -13,7 +13,7 @@ var (
 )
 
 // Context sets the cli context
-func Context(c *cli.Context) *option.Option {
+func Context(c *cli.Context) option.Option {
 	return source.WrapOption(func(o *source.Options) {
 		o.AppendCtx(ctxKey, c)
 	})

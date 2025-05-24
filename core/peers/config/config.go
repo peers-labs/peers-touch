@@ -29,8 +29,8 @@ type Config struct {
 	Storage        bool `yaml:"storage" json:"storage" pconf:"storage"`
 }
 
-func (c *Config) Options() []*option.Option {
-	var cfgOptions []*option.Option
+func (c *Config) Options() []option.Option {
+	var cfgOptions []option.Option
 
 	cfgOptions = append(cfgOptions, cfg.WithHierarchyMerge(c.HierarchyMerge))
 	cfgOptions = append(cfgOptions, cfg.WithStorage(c.Storage))
@@ -66,8 +66,8 @@ type Registry struct {
 	Name    string `json:"name" pconf:"name"`
 }
 
-func (r *Registry) Options() []*option.Option {
-	var regOptions []*option.Option
+func (r *Registry) Options() []option.Option {
+	var regOptions []option.Option
 
 	return regOptions
 }
@@ -90,7 +90,7 @@ type Service struct {
 	Server Server `json:"server" pconf:"server"`
 }
 
-func (s *Service) Options() []*option.Option {
+func (s *Service) Options() []option.Option {
 	var opts serviceOpts
 
 	if len(s.Name) > 0 {
@@ -100,7 +100,7 @@ func (s *Service) Options() []*option.Option {
 	return opts
 }
 
-type serviceOpts []*option.Option
+type serviceOpts []option.Option
 
 func (s serviceOpts) opts() pp.Options {
 	opts := pp.Options{}
@@ -122,8 +122,8 @@ type Server struct {
 	EnableDebug bool     `json:"enableDebug" pconf:"enable-debug"`
 }
 
-func (s *Server) Options() []*option.Option {
-	var serverOpts []*option.Option
+func (s *Server) Options() []option.Option {
+	var serverOpts []option.Option
 
 	// Parse the server options
 	metadata := make(map[string]string)

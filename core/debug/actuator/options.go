@@ -20,13 +20,13 @@ type DebugServerOptions struct {
 	registry registry.Registry
 }
 
-func WithDebugServerRegistry(reg registry.Registry) *option.Option {
+func WithDebugServerRegistry(reg registry.Registry) option.Option {
 	return debugOptionWrapper.Wrap(func(opts *DebugServerOptions) {
 		opts.registry = reg
 	})
 }
 
-func WithDebugServerPath(path string) *option.Option {
+func WithDebugServerPath(path string) option.Option {
 	return debugOptionWrapper.Wrap(func(opts *DebugServerOptions) {
 		opts.path = path
 	})

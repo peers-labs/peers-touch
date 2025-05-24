@@ -25,7 +25,7 @@ var (
 
 type Config interface {
 	reader.Values
-	Init(opts ...*option.Option) error
+	Init(opts ...option.Option) error
 	Close() error
 }
 
@@ -34,7 +34,7 @@ type stackConfig struct {
 	opts   *Options
 }
 
-func (c *stackConfig) Init(opts ...*option.Option) (err error) {
+func (c *stackConfig) Init(opts ...option.Option) (err error) {
 	log.Infof("peers' config init begin")
 
 	for _, opt := range opts {
@@ -104,7 +104,7 @@ func (c *stackConfig) Close() error {
 
 // Init Stack's Config component
 // Any developer Don't use this Func anywhere. NewConfig works for Stack Framework only
-func NewConfig(opts ...*option.Option) Config {
+func NewConfig(opts ...option.Option) Config {
 	return &stackConfig{opts: option.GetOptions(opts...).Ctx().Value(configOptionsKey{}).(*Options)}
 }
 

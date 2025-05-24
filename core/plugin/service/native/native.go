@@ -162,8 +162,8 @@ func (s *native) toPeer() *registry.Peer {
 
 // NewService
 // todo remove rootOptions, not graceful
-func NewService(rootOpts *option.Options, opts ...*option.Option) service.Service {
-	defaultOpts := []*option.Option{
+func NewService(rootOpts *option.Options, opts ...option.Option) service.Service {
+	defaultOpts := []option.Option{
 		// todo remove non-peers' code
 		service.RPC("peers"),
 		service.HandleSignal(true),

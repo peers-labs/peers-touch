@@ -26,7 +26,7 @@ var (
 )
 
 type Store interface {
-	Init(ctx context.Context, opts ...*option.Option) error
+	Init(ctx context.Context, opts ...option.Option) error
 	RDS(ctx context.Context, opts ...RDSDMLOption) (*gorm.DB, error)
 	Name() string
 }
