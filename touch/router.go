@@ -39,6 +39,7 @@ func (apr RouterURL) URL() string {
 func Handlers() []*option.Option {
 	m := NewManageRouter()
 	a := NewActivityPubRouter()
+	w := NewWellKnownRouter()
 
 	handlers := make([]*option.Option, 0)
 
@@ -47,6 +48,10 @@ func Handlers() []*option.Option {
 	}
 
 	for _, r := range a.Routers() {
+		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+	}
+
+	for _, r := range w.Routers() {
 		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
 	}
 

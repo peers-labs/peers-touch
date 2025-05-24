@@ -155,6 +155,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...*option.Option) error
 
 			return peerBootstrapNodes
 		}),
+		dht.BucketSize(2),
 		dht.OnRequestHook(dhtRequestHooksWrap),
 	)
 	if err != nil {

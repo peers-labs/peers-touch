@@ -21,7 +21,11 @@ var (
 
 	applyLock sync.Mutex
 
-	executedLock sync.Mutex
+	// Map to track executed functions
+	// absolutely, to figure out where the duplicate options are defined is important, but it will cost too more time.
+	// so, we use this simple way to trace the duplicate options, make them be run only once.
+	executedFunctions = make(map[uintptr]bool)
+	executedLock      sync.Mutex
 )
 
 type Options struct {
@@ -30,16 +34,15 @@ type Options struct {
 	ExtOptions any
 }
 
-func (o *Options) Apply(opts ...*Option) {
+// Apply applies the option logic to Options.
+// For the customized Option, which is not wrapped,
+// we don't promise it will be run only once. so keep being wrapped to make it safe.
+func (o *Options) Apply(opts ...Option) {
 	applyLock.Lock()
 	defer applyLock.Unlock()
 
-	for i := 0; i < len(opts); i++ {
-		if ok := opts[i].bRun(); ok {
-			log.Debugf("option %v already executed.", &opts[i])
-			continue
-		}
-		opts[i].Option(o)
+	for _, opt := range opts {
+		opt(o)
 	}
 }
 
@@ -63,32 +66,15 @@ func (o *Options) AppendCtx(key interface{}, value interface{}) {
 	return
 }
 
-type Option struct {
-	Option func(o *Options)
-
-	executed bool
-}
-
-// bRun returns true if the Option Func is already executed
-func (o *Option) bRun() bool {
-	executedLock.Lock()
-	defer executedLock.Unlock()
-
-	if !o.executed {
-		o.executed = true
-		return false
-	}
-
-	return true
-}
+type Option func(o *Options)
 
 // WithRootCtx sets the context
 // It will be used as the root context for all other contexts. so don't use it to set a context for a subcomponent if you use
 // components together. but when you want to use only one component like config as a lib, you can convey WithRootCtx as the first
 // Option to the component's init.
 // If you want to use a custom peer service, please refer to peers.NewPeer's init function.
-func WithRootCtx(ctx context.Context) *Option {
-	return &Option{Option: func(o *Options) {
+func WithRootCtx(ctx context.Context) Option {
+	return func(o *Options) {
 		ctxLock.Lock()
 		defer ctxLock.Unlock()
 
@@ -102,7 +88,7 @@ func WithRootCtx(ctx context.Context) *Option {
 		o.ctx = ctx
 		rootOpts = o
 		runtimeCtx = ctx
-	}}
+	}
 }
 
 type Wrapper[T any] struct {
@@ -114,8 +100,29 @@ func NewWrapper[T any](key interface{}, NewFunc func(*Options) *T) *Wrapper[T] {
 	return &Wrapper[T]{key: key, NewFunc: NewFunc}
 }
 
-func (w *Wrapper[T]) Wrap(f func(*T)) *Option {
-	return &Option{Option: func(o *Options) {
+type wrappedOption = Option
+
+func (wrappedOption) IsWrapped(f func() bool) bool {
+	return f()
+}
+
+func (w *Wrapper[T]) Wrap(f func(*T)) Option {
+	executed := false
+	localExecutedLock := sync.Mutex{}
+
+	return func(o *Options) {
+		localExecutedLock.Lock()
+		defer localExecutedLock.Unlock()
+
+		defer func() {
+			executed = true
+		}()
+
+		if executed {
+			log.Warnf("option already executed")
+			return
+		}
+
 		var opts *T
 		if o.Ctx().Value(w.key) == nil {
 			opts = w.NewFunc(o)
@@ -126,10 +133,10 @@ func (w *Wrapper[T]) Wrap(f func(*T)) *Option {
 
 		// Add any additional common logic here
 		f(opts)
-	}}
+	}
 }
 
-func GetOptions(opts ...*Option) *Options {
+func GetOptions(opts ...Option) *Options {
 	var ret *Options
 	if rootOpts != nil {
 		ret = rootOpts
