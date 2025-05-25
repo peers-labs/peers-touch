@@ -87,7 +87,15 @@ func WithReadyChan(c chan interface{}) option.Option {
 // HandlerOption is a function that can be used to configure a handler
 type HandlerOption func(*HandlerOptions)
 
-type HandlerOptions struct{}
+func WithMethod(method Method) HandlerOption {
+	return func(opts *HandlerOptions) {
+		opts.Method = method
+	}
+}
+
+type HandlerOptions struct {
+	Method Method
+}
 
 // endregion
 

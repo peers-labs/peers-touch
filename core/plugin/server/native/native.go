@@ -108,7 +108,8 @@ func (s *Server) Name() string {
 
 func NewServer(opts ...option.Option) server.Server {
 	s := &Server{
-		BaseServer: &server.BaseServer{},
+		BaseServer: server.NewServer(opts...),
+		mux:        http.NewServeMux(),
 	}
 
 	return s

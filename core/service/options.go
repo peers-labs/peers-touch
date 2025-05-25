@@ -200,7 +200,7 @@ func WithHandlers(handlers ...server.Handler) option.Option {
 	})
 }
 
-func GetOptions(o option.Options) *Options {
+func GetOptions(o *option.Options) *Options {
 	optionsAccessLock.Lock()
 	defer optionsAccessLock.Unlock()
 

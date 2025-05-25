@@ -28,7 +28,7 @@ func (mr *WellKnownRouters) Routers() []Router {
 }
 
 func (mr *WellKnownRouters) Name() string {
-	return RoutersNameManagement
+	return RoutersNameWellKnown
 }
 
 // NewWellKnownRouter creates WellKnownRouters

@@ -45,8 +45,15 @@ func (s *Server) Init(ctx context.Context, opts ...option.Option) error {
 }
 
 func (s *Server) Handle(h server.Handler) error {
-	if hdl, ok := h.Handler().(app.HandlerFunc); ok {
-		s.hertz.Any(h.Path(), hdl)
+	if hdl, ok := h.Handler().(func(context.Context, *app.RequestContext)); ok {
+		switch h.Method() {
+		case server.POST:
+			s.hertz.POST(h.Path(), hdl)
+		case server.GET:
+			s.hertz.GET(h.Path(), hdl)
+		default:
+			s.hertz.Any(h.Path(), hdl)
+		}
 	}
 
 	return nil
@@ -61,11 +68,11 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-
 	s.Options().Apply(opts...)
 	err := s.BaseServer.Start(ctx)
 	if err != nil {
 		log.Errorf(ctx, "warmup baseServer error: %v", err)
+		cancel()
 		return err
 	}
 
@@ -77,7 +84,10 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	for _, handler := range s.Options().Handlers {
 		switch h := handler.Handler().(type) {
 		case func(context.Context, *app.RequestContext):
-			s.hertz.GET(handler.Path(), h)
+			err = s.Handle(handler)
+			if err != nil {
+				return err
+			}
 		case http.Handler:
 			// Convert http.Handler to Hertz handler
 			hertzHandler := func(c context.Context, ctx *app.RequestContext) {
@@ -98,7 +108,12 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 				// Call the original handler
 				h.ServeHTTP(rw, req)
 			}
-			s.hertz.GET(handler.Path(), hertzHandler)
+
+			err = s.Handle(server.NewHandler(handler.Name(), handler.Path(),
+				hertzHandler, server.WithMethod(handler.Method())))
+			if err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unsupported handler type: %T", h)
 		}

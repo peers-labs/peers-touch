@@ -86,6 +86,7 @@ func NewHandler(name, path string, handler interface{}, opts ...HandlerOption) H
 		name:    name,
 		path:    path,
 		handler: handler,
+		method:  config.Method,
 		// wrapper: config.middlewares,
 	}
 }
