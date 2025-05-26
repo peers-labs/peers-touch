@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"sync"
 
 	"gorm.io/gorm"
@@ -27,4 +28,8 @@ func GetDialector(name string) func(name string) gorm.Dialector {
 	defer lock.Unlock()
 
 	return drivers[name]
+}
+
+func GetAfterInitHooks() []func(ctx context.Context, rds *gorm.DB) {
+	return afterInitHooks
 }

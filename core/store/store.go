@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"gorm.io/gorm"
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+	"gorm.io/gorm"
 )
 
 // region Errors

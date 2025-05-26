@@ -1,6 +1,11 @@
 package db
 
-import "time"
+import (
+	"time"
+
+	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
+	"gorm.io/gorm"
+)
 
 type User struct {
 	ID           uint64 `gorm:"primary_key;autoIncrement:false"` // Snowflake ID
@@ -12,6 +17,13 @@ type User struct {
 	UpdatedAt time.Time `gorm:"updated_at"`
 }
 
-func (User) TableName() string {
+func (*User) TableName() string {
 	return "users"
+}
+
+func (u *User) BeforeCreate(tx *gorm.DB) error {
+	if u.ID == 0 {
+		u.ID = id.NextID()
+	}
+	return nil
 }

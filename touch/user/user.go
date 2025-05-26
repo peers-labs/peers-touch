@@ -22,6 +22,18 @@ func SignUp(c context.Context, userParams *model.UserSignParams) error {
 		return err
 	}
 
+	// query the exists user by name or email
+	var existsUsers []db.User
+	if err = rds.Where("name = ? OR email = ?", userParams.Name, userParams.Email).Find(&existsUsers).Error; err != nil {
+		log.Warnf(c, "[SignUp] Check existing user err: %v", err)
+		return err
+	}
+
+	// If any users found, return duplicate error
+	if len(existsUsers) > 0 {
+		return model.ErrUserUserExists
+	}
+
 	u := db.User{
 		Name:  userParams.Name,
 		Email: userParams.Email,
@@ -39,6 +51,21 @@ func SignUp(c context.Context, userParams *model.UserSignParams) error {
 	}
 
 	return err
+}
+
+func GetUserByName(c context.Context, name string) (*db.User, error) {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		log.Warnf(c, "[GetUserByName] Get db err: %v", err)
+		return nil, err
+	}
+
+	presentUser := db.User{}
+	if err = rds.Where("name = ?", name).Select(&db.User{}).Scan(&presentUser).Error; err != nil {
+		return nil, err
+	}
+
+	return &presentUser, nil
 }
 
 func generateHash(password string) (string, error) {

@@ -11,6 +11,8 @@ var (
 	ErrWellKnownUnsupportedPrefixType = NewError("t10002", "unsupported type, only acct is supported")
 	ErrUserInvalidName                = NewError("t10003", "signup with an invalid name")
 	ErrUserInvalidEmail               = NewError("t10004", "signup with an invalid email")
+	ErrUserInvalidPassword            = NewError("t10005", "signup with an invalid password")
+	ErrUserUserExists                 = NewError("t10006", "signup with an existing user")
 )
 
 type Error struct {

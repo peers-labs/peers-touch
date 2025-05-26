@@ -54,6 +54,10 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 		return err
 	}
 
+	for _, afterInit := range store.GetAfterInitHooks() {
+		afterInit(ctx, n.db[n.defaultRDS])
+	}
+
 	return nil
 }
 

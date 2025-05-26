@@ -54,5 +54,5 @@ func UserSignup(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	successResponse(ctx, "signup success", params)
+	successResponse(ctx, "signup success", nil)
 }
