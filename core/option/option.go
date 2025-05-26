@@ -100,12 +100,6 @@ func NewWrapper[T any](key interface{}, NewFunc func(*Options) *T) *Wrapper[T] {
 	return &Wrapper[T]{key: key, NewFunc: NewFunc}
 }
 
-type wrappedOption = Option
-
-func (wrappedOption) IsWrapped(f func() bool) bool {
-	return f()
-}
-
 func (w *Wrapper[T]) Wrap(f func(*T)) Option {
 	executed := false
 	localExecutedLock := sync.Mutex{}

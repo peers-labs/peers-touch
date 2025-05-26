@@ -10,16 +10,14 @@ import (
 var options struct {
 	Peers struct {
 		Store struct {
-			Name   string `pconf:"name"`
-			Native struct {
-				RDS struct {
-					GORM []struct {
-						Name   string `pconf:"name"`
-						Enable bool   `pconf:"enable"`
-						DSN    string `pconf:"dsn"`
-					} `pconf:"gorm"`
-				} `pconf:"rds"`
-			} `pconf:"native"`
+			RDS struct {
+				GORM []struct {
+					Name    string `pconf:"name"`
+					Default bool   `pconf:"default"`
+					Enable  bool   `pconf:"enable"`
+					DSN     string `pconf:"dsn"`
+				} `pconf:"gorm"`
+			} `pconf:"rds"`
 		} `pconf:"store"`
 	} `pconf:"peers"`
 }
@@ -33,10 +31,18 @@ func (n *nativeStorePlugin) Name() string {
 
 func (n *nativeStorePlugin) Options() []option.Option {
 	var opts []option.Option
-	if len(options.Peers.Store.Native.RDS.GORM) > 0 {
-		for _, g := range options.Peers.Store.Native.RDS.GORM {
-			opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, Enable: g.Enable, DSN: g.DSN}))
+
+	defaultDeclared := false
+	for _, g := range options.Peers.Store.RDS.GORM {
+		if g.Default && !defaultDeclared {
+			defaultDeclared = true
 		}
+
+		opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, Default: g.Default, Enable: g.Enable, DSN: g.DSN}))
+	}
+
+	if !defaultDeclared {
+		panic("no default rds")
 	}
 
 	return opts

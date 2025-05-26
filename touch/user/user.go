@@ -34,7 +34,7 @@ func SignUp(c context.Context, userParams *model.UserSignParams) error {
 		return err
 	}
 
-	if err = rds.Create(&userParams).Error; err != nil {
+	if err = rds.Create(&u).Error; err != nil {
 		log.Warnf(c, "[SignUp] Create user err: %v", err)
 	}
 

@@ -16,7 +16,8 @@ var (
 type nativeStore struct {
 	opts *store.Options
 
-	db map[string]*gorm.DB
+	defaultRDS string
+	db         map[string]*gorm.DB
 }
 
 func (n *nativeStore) Name() string {
@@ -38,6 +39,10 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 					panic("dialector not found")
 				}
 
+				if rds.Default {
+					n.defaultRDS = rds.Name
+				}
+
 				n.db[rds.Name], err = gorm.Open(dialector(rds.DSN), &gorm.Config{})
 			} else {
 				logger.Warnf(ctx, "rds[%s] is disabled, skip init", rds.Name)
@@ -53,22 +58,22 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 }
 
 func (n *nativeStore) RDS(ctx context.Context, opts ...store.RDSDMLOption) (*gorm.DB, error) {
-	qOpts := &store.RDSQueryOptions{}
+	qOpts := &store.RDSDMLOptions{}
 	for _, opt := range opts {
 		opt(qOpts)
 	}
 
-	if qOpts.Name == "" {
-		logger.Errorf(ctx, "db name is empty")
+	rdsName := qOpts.Name
+	if rdsName == "" {
+		rdsName = n.defaultRDS
+	}
+
+	if n.db == nil || n.db[rdsName] == nil {
+		logger.Errorf(ctx, "db[%s] not found", rdsName)
 		return nil, store.ErrDBNotFound
 	}
 
-	if n.db == nil || n.db[qOpts.Name] == nil {
-		logger.Errorf(ctx, "db[%s] not found", qOpts.DBName)
-		return nil, store.ErrDBNotFound
-	}
-
-	return n.db[qOpts.Name], nil
+	return n.db[rdsName], nil
 }
 
 // NewStore returns a new native store

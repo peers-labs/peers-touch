@@ -32,20 +32,7 @@ type Store interface {
 }
 
 func GetRDS(ctx context.Context, opts ...RDSDMLOption) (*gorm.DB, error) {
-	options := &RDSQueryOptions{}
-	for _, opt := range opts {
-		opt(options)
-	}
-
-	if options.StoreName == "" {
-		return nil, ErrStoreNotDefined
-	}
-
-	if options.Name == "" {
-		return nil, ErrDBNotFound
-	}
-
-	st, err := GetStore(ctx, WithStoreName(options.StoreName))
+	st, err := GetStore(ctx)
 	if err != nil {
 		return nil, err
 	}

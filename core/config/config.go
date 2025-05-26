@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config"
@@ -21,6 +22,7 @@ var (
 
 	// holds all the Options
 	optionsPool = make(map[string]reflect.Value)
+	poolSync    sync.Mutex
 )
 
 type Config interface {
@@ -109,6 +111,9 @@ func NewConfig(opts ...option.Option) Config {
 }
 
 func RegisterOptions(options ...interface{}) {
+	poolSync.Lock()
+	defer poolSync.Unlock()
+	
 	for _, o := range options {
 		val := reflect.ValueOf(o)
 		if val.Kind() != reflect.Ptr {
