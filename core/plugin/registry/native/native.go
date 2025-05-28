@@ -107,14 +107,21 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 
 	hostOptions = append(hostOptions, libp2p.Identity(identityKey))
 
-	if r.extOpts.enableBootstrap {
+	if r.extOpts.bootstrapEnable {
 		// Define the listen address
 		// todo, port user-defined
-		listenAddr, err := multiaddr.NewMultiaddr("/ip4/0.0.0.0/tcp/4001")
-		if err != nil {
-			panic(err)
+		addrs := r.extOpts.bootstrapListenAddrs
+		if len(addrs) == 0 {
+			addrs = append(addrs, "/ip4/0.0.0.0/tcp/4001")
 		}
-		hostOptions = append(hostOptions, libp2p.ListenAddrs(listenAddr))
+
+		for _, addr := range addrs {
+			listenAddr, err := multiaddr.NewMultiaddr(addr)
+			if err != nil {
+				panic(err)
+			}
+			hostOptions = append(hostOptions, libp2p.ListenAddrs(listenAddr))
+		}
 	}
 
 	// Initialize libp2p host
@@ -168,7 +175,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	// todo init relay nodes
 
 	// Init MDNS
-	if r.extOpts.enableMDNS {
+	if r.extOpts.mdnsEnable {
 		r.mdnsS = mdns.NewMdnsService(r.host, "peers-touch.mdns", &mdnsNotifee{})
 		err = r.mdnsS.Start()
 		if err != nil {
@@ -338,6 +345,11 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 
 	if peerReg == nil {
 		return errors.New("peerReg cannot be nil")
+	}
+
+	if r.dht.RoutingTable().Size() == 0 {
+		logger.Infof(ctx, "routing table still empty, no need to register")
+		return nil
 	}
 
 	// Add security metadata

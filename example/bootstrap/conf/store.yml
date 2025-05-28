@@ -1,0 +1,9 @@
+peers:
+  store:
+    rds:
+      gorm:
+        # see github.com/dirty-bro-tech/peers-touch-go/core/store/rds/sqlite
+        - name: sqlite
+          enable: true
+          default: true
+          dsn: file:peers.db?cache=shared&_fk=1

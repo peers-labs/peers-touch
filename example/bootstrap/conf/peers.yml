@@ -1,12 +1,12 @@
 peers:
-  includes: store.yml, actor_user.yml
+  includes: store.yml
   run-mode: 2
   config:
     hierarchy-merge: true
   service:
     server:
       name: "hertz"
-      address: :8081
+      address: :9081
       metadata:
         name: "foo"
         value: "qux"
@@ -20,10 +20,10 @@ peers:
       retry-interval: 10s
       native:
         mdns-enable: true
-        bootstrap-enable: false
-        bootstrap-listen-addr:
-          -
+        bootstrap-enable: true
+        bootstrap-listen-addrs:
+          - /ip4/0.0.0.0/tcp/5001
         try-add-peer-manually: false
         bootstrap-nodes:
-          - /ip4/127.0.0.1/tcp/4001/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r
+          -
     

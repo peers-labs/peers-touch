@@ -33,12 +33,13 @@ func (n *nativeStorePlugin) Options() []option.Option {
 	var opts []option.Option
 
 	defaultDeclared := false
+	only1Rds := len(options.Peers.Store.RDS.GORM) == 1
 	for _, g := range options.Peers.Store.RDS.GORM {
-		if g.Default && !defaultDeclared {
+		if g.Default && !defaultDeclared || only1Rds {
 			defaultDeclared = true
 		}
 
-		opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, Default: g.Default, Enable: g.Enable, DSN: g.DSN}))
+		opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, Default: g.Default || only1Rds, Enable: g.Enable, DSN: g.DSN}))
 	}
 
 	if !defaultDeclared {

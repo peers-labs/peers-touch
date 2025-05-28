@@ -1,6 +1,8 @@
 package native
 
 import (
+	"context"
+	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"time"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
@@ -47,18 +49,25 @@ type options struct {
 	// tryAddPeerManually is used to try to add the peer manually among the process of dht bootstrap
 	tryAddPeerManually bool
 
-	// enableMDNS is used to enable the mdns discovery for the registry plugin.
+	// mdnsEnable is used to enable the mdns discovery for the registry plugin.
 	// default is false.
-	enableMDNS bool
+	mdnsEnable bool
 
-	// enableBootstrap is used to enable the node to run as a bootstrap server in libp2p network.
-	enableBootstrap bool
+	// bootstrapEnable is used to enable the node to run as a bootstrap server in libp2p network.
+	bootstrapEnable      bool
+	bootstrapListenAddrs []string
 }
 
 // WithBootstrapNodes set the private bootstrap nodes for the registry plugin.
 func WithBootstrapNodes(bootstraps []string) option.Option {
 	return wrapOptions(func(o *options) {
 		for _, bootstrap := range bootstraps {
+			// some short strings are used for placeholder or just is an empty dash(-).
+			if len(bootstrap) < 10 {
+				log.Infof(context.Background(), "bootstrap node[%s] is too short, ignoring bootstrap node", bootstrap)
+				continue
+			}
+
 			addr, err := multiaddr.NewMultiaddr(bootstrap)
 			if err != nil {
 				panic(err)
@@ -81,15 +90,23 @@ func WithRelayNodes(relayNodes []string) option.Option {
 	})
 }
 
-func WithEnableMDNS(enableMDNS bool) option.Option {
+func WithMDNSEnable(enableMDNS bool) option.Option {
 	return wrapOptions(func(o *options) {
-		o.enableMDNS = enableMDNS
+		o.mdnsEnable = enableMDNS
 	})
 }
 
-func WithEnableBootstrap(enableBootstrap bool) option.Option {
+func WithBootstrapEnable(enableBootstrap bool) option.Option {
 	return wrapOptions(func(o *options) {
-		o.enableBootstrap = enableBootstrap
+		o.bootstrapEnable = enableBootstrap
+	})
+}
+
+// WithBootstrapListenAddrs set the bootstrap listen address for the registry plugin.
+// default is "/ip4/0.0.0.0/tcp/4001", if bootstrapEnable is true.
+func WithBootstrapListenAddrs(bootstrapListenAddrs ...string) option.Option {
+	return wrapOptions(func(o *options) {
+		o.bootstrapListenAddrs = append(o.bootstrapListenAddrs, bootstrapListenAddrs...)
 	})
 }
 

@@ -19,8 +19,10 @@ peers:
     registry:
       retry-interval: 10s
       native:
-        enable-mdns: true
-        enable-bootstrap: false
+        mdns-enable: true
+        bootstrap-enable: false
+        bootstrap-listen-addr:
+          -
         try-add-peer-manually: false
         bootstrap-nodes:
           - /ip4/127.0.0.1/tcp/4001/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r

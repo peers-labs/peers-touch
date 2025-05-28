@@ -19,8 +19,9 @@ var configOptions struct {
 					TryAddPeerManually       bool     `pconf:"try-add-peer-manually"`
 					BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
 					BootstrapNodeRetryTimes  int      `pconf:"bootstrap-node-retry-times"`
-					EnableMDNS               bool     `pconf:"endable-mdns"`
-					EnableBootstrap          bool     `pconf:"enable-bootstrap"`
+					MDNSEnable               bool     `pconf:"mdns-endable"`
+					BootstrapEnable          bool     `pconf:"bootstrap-enable"`
+					BootstrapListenAddrs     []string `pconf:"bootstrap-listen-addrs"`
 					Libp2pIdentityKeyFile    string   `pconf:"libp2p-identity-key-file"`
 				} `pconf:"native"`
 				ConnectTimeout string `pconf:"connect-timeout"`
@@ -86,10 +87,11 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 		connectTimeout = dur
 	}
 	opts = append(opts, registry.WithConnectTimeout(connectTimeout))
-	opts = append(opts, WithEnableBootstrap(configOptions.Peers.Service.Registry.Native.EnableBootstrap))
+	opts = append(opts, WithBootstrapEnable(configOptions.Peers.Service.Registry.Native.BootstrapEnable))
+	opts = append(opts, WithBootstrapListenAddrs(configOptions.Peers.Service.Registry.Native.BootstrapListenAddrs...))
 
 	opts = append(opts, WithTryAddPeerManually(configOptions.Peers.Service.Registry.Native.TryAddPeerManually))
-	opts = append(opts, WithEnableMDNS(configOptions.Peers.Service.Registry.Native.EnableMDNS))
+	opts = append(opts, WithMDNSEnable(configOptions.Peers.Service.Registry.Native.MDNSEnable))
 
 	if len(configOptions.Peers.Service.Registry.Native.Libp2pIdentityKeyFile) > 0 {
 		opts = append(opts, WithLibp2pIdentityKeyFile(configOptions.Peers.Service.Registry.Native.Libp2pIdentityKeyFile))
