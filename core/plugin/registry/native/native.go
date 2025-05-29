@@ -257,6 +257,23 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...regis
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	getOpts := &registry.GetOptions{}
+	for _, o := range opts {
+		o(getOpts)
+	}
+
+	targetID, err := peer.Decode(name)
+	if err != nil {
+		return nil, fmt.Errorf("[GetPeer] registry failed to decode peer ID: %w", err)
+	}
+
+	peerAddrs, err := r.dht.FindPeer(ctx, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("[GetPeer] registry failed to find peer: %w", err)
+	}
+
+	logger.Infof(ctx, "[GetPeer] registry found peers: %+v", peerAddrs)
+
 	key := fmt.Sprintf(peerKeyFormat, networkNamespace, name)
 	data, err := r.dht.GetValue(ctx, key)
 	if err != nil {

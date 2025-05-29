@@ -59,6 +59,13 @@ type DeregisterOptions struct {
 type GetOption func(*GetOptions)
 
 type GetOptions struct {
+	NameIsPeerID bool
+}
+
+func WithNameIsPeerID() GetOption {
+	return func(o *GetOptions) {
+		o.NameIsPeerID = true
+	}
 }
 
 type WatchOption func(*WatchOptions)

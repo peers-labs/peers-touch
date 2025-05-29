@@ -106,5 +106,27 @@ func (d *debugSubServer) Handlers() []server.Handler {
 				})
 			},
 		),
+		server.NewHandler(
+			"debugGetPeerByID",
+			"/debug/get-peer-by-id",
+			func(c context.Context, ctx *app.RequestContext) {
+				id := ctx.Query("id")
+				if id == "" {
+					ctx.String(http.StatusBadRequest, "id is required")
+					return
+				}
+
+				peers, err := d.opts.registry.GetPeer(c, id)
+				if err != nil {
+					ctx.String(http.StatusInternalServerError, fmt.Sprintf("Error getting peer: %v", err))
+					return
+				}
+
+				ctx.JSON(http.StatusOK, map[string]interface{}{
+					"data": peers,
+				})
+			},
+			server.WithMethod(server.GET),
+		),
 	}
 }
