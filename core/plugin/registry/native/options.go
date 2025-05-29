@@ -46,9 +46,6 @@ type options struct {
 	publicBootstrapNodes []multiaddr.Multiaddr
 	publicRelayNodes     []multiaddr.Multiaddr
 
-	// tryAddPeerManually is used to try to add the peer manually among the process of dht bootstrap
-	tryAddPeerManually bool
-
 	// mdnsEnable is used to enable the mdns discovery for the registry plugin.
 	// default is false.
 	mdnsEnable bool
@@ -125,14 +122,6 @@ func WithBootstrapNodeRetryTimes(times int) option.Option {
 func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
 	return wrapOptions(func(o *options) {
 		o.bootstrapRefreshInterval = interval
-	})
-}
-
-func WithTryAddPeerManually(tryAddPeerManually bool) option.Option {
-	return wrapOptions(func(o *options) {
-		if tryAddPeerManually {
-			o.tryAddPeerManually = tryAddPeerManually
-		}
 	})
 }
 

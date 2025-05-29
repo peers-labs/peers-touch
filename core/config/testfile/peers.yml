@@ -21,4 +21,3 @@ peers:
       native:
         enable-mdns: true
         enable-bootstrap: true
-        try-add-peer-manually: true

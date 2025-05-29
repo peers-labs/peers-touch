@@ -16,7 +16,6 @@ var configOptions struct {
 			Registry struct {
 				Native struct {
 					BootstrapNodes           []string `pconf:"bootstrap-nodes"`
-					TryAddPeerManually       bool     `pconf:"try-add-peer-manually"`
 					BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
 					BootstrapNodeRetryTimes  int      `pconf:"bootstrap-node-retry-times"`
 					MDNSEnable               bool     `pconf:"mdns-endable"`
@@ -90,7 +89,6 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	opts = append(opts, WithBootstrapEnable(configOptions.Peers.Service.Registry.Native.BootstrapEnable))
 	opts = append(opts, WithBootstrapListenAddrs(configOptions.Peers.Service.Registry.Native.BootstrapListenAddrs...))
 
-	opts = append(opts, WithTryAddPeerManually(configOptions.Peers.Service.Registry.Native.TryAddPeerManually))
 	opts = append(opts, WithMDNSEnable(configOptions.Peers.Service.Registry.Native.MDNSEnable))
 
 	if len(configOptions.Peers.Service.Registry.Native.Libp2pIdentityKeyFile) > 0 {

@@ -438,16 +438,6 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 			if err := r.dht.Bootstrap(ctx); err != nil {
 				logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
 			}
-
-			if r.extOpts.tryAddPeerManually {
-				// Manually add self to routing table.
-				// For now, I don't know why local nodes are not automatically added to the routing table.
-				existed, err := r.dht.RoutingTable().TryAddPeer(r.host.ID(), true, true)
-				if err != nil {
-					logger.Errorf(ctx, "failed to add peer to routing table: %v", err)
-				}
-				logger.Infof(ctx, "added peer to routing table: %v", existed || existed == false && err == nil)
-			}
 		case <-ctx.Done():
 			logger.Warnf(ctx, "bootstrap stopped %+v", ctx.Err())
 			return

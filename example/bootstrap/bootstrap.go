@@ -47,6 +47,6 @@ func main() {
 
 func hookBootstrap() {
 	native.AppendDhtRequestHook(func(ctx context.Context, s network.Stream, req *dht_pb.Message) {
-		log.Infof(ctx, "got a dht request from %s", s.Conn().RemotePeer().String())
+		log.Infof(ctx, "got a dht request from: %s; type: %s; msg: %+v", s.Conn().RemotePeer().String(), req.Type, req)
 	})
 }

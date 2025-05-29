@@ -23,7 +23,6 @@ peers:
         bootstrap-enable: true
         bootstrap-listen-addrs:
           - /ip4/0.0.0.0/tcp/5001
-        try-add-peer-manually: false
         bootstrap-nodes:
           -
     
