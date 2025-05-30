@@ -162,7 +162,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 
 			return peerBootstrapNodes
 		}),
-		dht.BucketSize(2),
+		dht.BucketSize(20),
 		dht.OnRequestHook(dhtRequestHooksWrap),
 	)
 	if err != nil {
@@ -217,8 +217,8 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 		for {
 			select {
 			case <-ticker.C:
-				if err := r.register(ctx, peerReg, regOpts); err != nil {
-					logger.Errorf(ctx, "native Registry failed to register peer: %s", err)
+				if errIn := r.register(ctx, peerReg, regOpts); errIn != nil {
+					logger.Errorf(ctx, "native Registry failed to register peer: %s", errIn)
 				} else {
 					logger.Infof(ctx, "native Registry registered peer")
 				}
@@ -280,11 +280,11 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...regis
 		return nil, err
 	}
 
-	var p registry.Peer
-	if err := json.Unmarshal(data, &p); err != nil {
+	var p *registry.Peer
+	if p, err = r.unmarshalPeer(data); err != nil {
 		return nil, err
 	}
-	return []*registry.Peer{&p}, nil
+	return []*registry.Peer{p}, nil
 }
 
 func (r *nativeRegistry) Watch(ctx context.Context, opts ...registry.WatchOption) (registry.Watcher, error) {
@@ -361,58 +361,22 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 	defer r.mu.Unlock()
 
 	if peerReg == nil {
-		return errors.New("peerReg cannot be nil")
+		return errors.New("[register] peerReg cannot be nil")
 	}
 
 	if r.dht.RoutingTable().Size() == 0 {
-		logger.Infof(ctx, "routing table still empty, no need to register")
+		logger.Infof(ctx, "[register] routing table still empty, no need to register")
 		return nil
 	}
 
-	// Add security metadata
-	peerReg.Version = "1.0"
-	peerReg.Timestamp = time.Now()
-
-	// Sign the payload
-	dataToSign, err := json.Marshal(struct {
-		Name      string
-		Version   string
-		Timestamp time.Time
-	}{
-		Name:      peerReg.Name,
-		Version:   peerReg.Version,
-		Timestamp: peerReg.Timestamp,
-	})
-
-	// Sign the payload using your service's private key
-	signData, err := r.signPayload(r.options.PrivateKey, dataToSign) // Implement signing logic
+	dataPk, err := r.marshalPeer(ctx, peerReg)
 	if err != nil {
-		return fmt.Errorf("native Registry failed to sign payload: %w", err)
+		return fmt.Errorf("[register] failed to marshal peerReg: %w", err)
 	}
-	peerReg.Signature = signData
-
-	// Serialize peerReg data
-	data, err := json.Marshal(peerReg)
-	if err != nil {
-		return fmt.Errorf("marshal peerReg: %w", err)
-	}
-
-	// Store in DHT with 5min TTL
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	pk := &pb.PublicKey{
-		Type: pb.KeyType_RSA.Enum(),
-		Data: data,
-	}
-
-	dataPk, err := proto.Marshal(pk)
-	if err != nil {
-		return fmt.Errorf("marshal pk: %w", err)
-	}
-
 	id := r.host.ID().String()
-	err = r.dht.PutValue(ctx, networkNamespace+"/"+id, dataPk)
+	key := fmt.Sprintf(peerKeyFormat, networkNamespace, id)
+
+	err = r.dht.PutValue(ctx, key, dataPk)
 	if err != nil {
 		err = fmt.Errorf("failed to put value to dht: %w", err)
 		logger.Errorf(ctx, "%s", err)
@@ -448,10 +412,18 @@ func (r *nativeRegistry) beforeRegister(ctx context.Context, peerReg *registry.P
 func (r *nativeRegistry) bootstrap(ctx context.Context) {
 	ticker := time.NewTicker(r.extOpts.bootstrapRefreshInterval)
 	defer ticker.Stop()
+	if err := r.dht.Bootstrap(ctx); err != nil {
+		logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
+	}
+
+	if true {
+		return
+	}
 
 	for {
 		select {
 		case <-ticker.C:
+			logger.Infof(ctx, "bootstrap peer: %s", r.host.ID().String())
 			if err := r.dht.Bootstrap(ctx); err != nil {
 				logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
 			}
@@ -534,6 +506,67 @@ func (r *nativeRegistry) bootstrapSuccessful() (workingBootNodes []string, ok bo
 	}
 
 	return workingBootNodes, len(workingBootNodes) > 0
+}
+
+func (r *nativeRegistry) unmarshalPeer(data []byte) (peerReg *registry.Peer, err error) {
+	pk := &pb.PublicKey{}
+	if err = proto.Unmarshal(data, pk); err != nil {
+		return nil, fmt.Errorf("[unmarshalPeer] failed to unmarshal public key: %w", err)
+	}
+
+	peerReg = &registry.Peer{}
+	err = json.Unmarshal(pk.Data, peerReg)
+	if err != nil {
+		return nil, fmt.Errorf("[unmarshalPeer] failed to unmarshal peerReg: %w", err)
+	}
+
+	return peerReg, nil
+}
+
+func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *registry.Peer) ([]byte, error) {
+	// Add security metadata
+	peerReg.Version = "1.0"
+	peerReg.Timestamp = time.Now()
+
+	// Sign the payload
+	dataToSign, err := json.Marshal(struct {
+		Name      string
+		Version   string
+		Timestamp time.Time
+	}{
+		Name:      peerReg.Name,
+		Version:   peerReg.Version,
+		Timestamp: peerReg.Timestamp,
+	})
+
+	// Sign the payload using your service's private key
+	signData, err := r.signPayload(r.options.PrivateKey, dataToSign) // Implement signing logic
+	if err != nil {
+		return nil, fmt.Errorf("[marshal] native Registry failed to sign payload: %w", err)
+	}
+	peerReg.Signature = signData
+
+	// Serialize peerReg data
+	data, err := json.Marshal(peerReg)
+	if err != nil {
+		return nil, fmt.Errorf("[marshal] marshal peerReg: %w", err)
+	}
+
+	// Store in DHT with 5min TTL
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	pk := &pb.PublicKey{
+		Type: pb.KeyType_RSA.Enum(),
+		Data: data,
+	}
+
+	dataPk, err := proto.Marshal(pk)
+	if err != nil {
+		return nil, fmt.Errorf("[marshal] marshal pk: %w", err)
+	}
+
+	return dataPk, nil
 }
 
 // GetLibp2pHost returns the libp2p host

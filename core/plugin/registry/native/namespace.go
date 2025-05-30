@@ -14,7 +14,7 @@ var (
 	networkNamespace = "/" + registry.DefaultPeersNetworkNamespace
 	networkId        = protocol.ID(networkNamespace)
 
-	peerKeyFormat = "/%s/%s"
+	peerKeyFormat = "%s/%s"
 )
 
 type NamespaceValidator struct {
