@@ -206,12 +206,8 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 		return fmt.Errorf("register peer: %w", err)
 	}
 
-	if regOpts.Interval == 0 {
-		regOpts.Interval = 5 * time.Second
-	}
-
 	go func() {
-		ticker := time.NewTicker(regOpts.Interval)
+		ticker := time.NewTicker(r.options.RetryInterval)
 		defer ticker.Stop()
 
 		for {
@@ -297,8 +293,10 @@ func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOpti
 
 	// Get the list of connected peer IDs
 	peerIDs := r.host.Network().Peers()
-
 	for _, peerID := range peerIDs {
+		added := r.dht.RoutingTable().UsefulNewPeer(peerID)
+		logger.Infof(ctx, "[ListPeers] peer %s added to routing table result: %+v", peerID, added)
+
 		// Here you need to get more information about the peer to create a registry.Peer struct.
 		// For simplicity, we assume you can get the peer's name from the peer ID (this may need adjustment in a real - world scenario).
 		peerName := peerID.String()
