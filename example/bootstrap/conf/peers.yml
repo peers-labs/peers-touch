@@ -17,7 +17,7 @@ peers:
         enabled: true
         some-key: "some-value"
     registry:
-      retry-interval: 10s
+      interval: 180s
       native:
         mdns-enable: true
         bootstrap-enable: true

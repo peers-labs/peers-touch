@@ -8,7 +8,9 @@ import (
 )
 
 var (
-	DefaultPeersNetworkNamespace = "peers-touch"
+	// DefaultPeersNetworkNamespace is the default namespace for peers-touch network.
+	// pst equals to peers-touch
+	DefaultPeersNetworkNamespace = "pst"
 )
 
 type Registry interface {

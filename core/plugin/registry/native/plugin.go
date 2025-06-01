@@ -24,7 +24,7 @@ var configOptions struct {
 					Libp2pIdentityKeyFile    string   `pconf:"libp2p-identity-key-file"`
 				} `pconf:"native"`
 				ConnectTimeout string `pconf:"connect-timeout"`
-				RetryInterval  string `pconf:"retry-interval"`
+				Interval       string `pconf:"interval"`
 			} `pconf:"registry"`
 		} `pconf:"service"`
 		RunMode modeOpt `pconf:"run-mode"`
@@ -54,16 +54,16 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	}
 	opts = append(opts, WithBootstrapNodeRetryTimes(bootstrapNodeRetryTimes))
 
-	retryInterval := time.Second * 3
-	if len(configOptions.Peers.Service.Registry.RetryInterval) > 0 {
-		dur, err := time.ParseDuration(configOptions.Peers.Service.Registry.RetryInterval)
+	interval := time.Minute * 3
+	if len(configOptions.Peers.Service.Registry.Interval) > 0 {
+		dur, err := time.ParseDuration(configOptions.Peers.Service.Registry.Interval)
 		if err != nil {
 			panic(fmt.Errorf("parse retry interval error: %s", err))
 		}
 
-		retryInterval = dur
+		interval = dur
 	}
-	opts = append(opts, registry.WithRetryInterval(retryInterval))
+	opts = append(opts, registry.WithInterval(interval))
 
 	bootstrapRefreshInterval := time.Second * 2
 	if len(configOptions.Peers.Service.Registry.Native.BootstrapRefreshInterval) > 0 {

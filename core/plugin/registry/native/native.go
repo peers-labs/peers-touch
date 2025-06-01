@@ -11,6 +11,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/ipfs/go-cid"
+	"github.com/multiformats/go-multihash"
 	"sync"
 	"time"
 
@@ -206,24 +208,32 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 		return fmt.Errorf("register peer: %w", err)
 	}
 
+	doNow := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(r.options.RetryInterval)
+		ticker := time.NewTicker(r.options.Interval)
 		defer ticker.Stop()
+
+		re := func() {
+			if errIn := r.register(ctx, peerReg, regOpts); errIn != nil {
+				logger.Errorf(ctx, "native Registry failed to register peer: %s", errIn)
+			} else {
+				logger.Infof(ctx, "native Registry registered peer")
+			}
+		}
 
 		for {
 			select {
+			case <-doNow:
+				re()
 			case <-ticker.C:
-				if errIn := r.register(ctx, peerReg, regOpts); errIn != nil {
-					logger.Errorf(ctx, "native Registry failed to register peer: %s", errIn)
-				} else {
-					logger.Infof(ctx, "native Registry registered peer")
-				}
+				re()
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
 
+	doNow <- struct{}{}
 	return nil
 }
 
@@ -289,52 +299,137 @@ func (r *nativeRegistry) Watch(ctx context.Context, opts ...registry.WatchOption
 }
 
 func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOption) ([]*registry.Peer, error) {
+	// Create CID for provider lookup
+	prefix := cid.Prefix{
+		Version:  1,
+		Codec:    cid.Raw,
+		MhType:   multihash.SHA2_256,
+		MhLength: -1,
+	}
+	serviceCID, err := prefix.Sum([]byte(networkNamespace + ":peers-service"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service CID: %w", err)
+	}
+
+	// Query DHT for all providers
+	providerChan := r.dht.FindProvidersAsync(ctx, serviceCID, 0)
+
+	var peers []*registry.Peer
+	seen := make(map[peer.ID]bool)
+
+	// Process discovered providers
+	for pi := range providerChan {
+		// Skip self and bootstrap nodes
+		if pi.ID == r.host.ID() || r.isBootstrapNode(pi.ID) {
+			continue
+		}
+
+		// Get peer record from DHT
+		key := fmt.Sprintf(peerKeyFormat, networkNamespace, pi.ID.String())
+		data, err := r.dht.GetValue(ctx, key)
+		if err != nil || seen[pi.ID] {
+			continue
+		}
+
+		// Decode and add to results
+		if peerReg, err := r.unmarshalPeer(data); err == nil {
+			if peerReg.Metadata == nil {
+				peerReg.Metadata = make(map[string]interface{})
+			}
+			peerReg.Metadata[MetaConstantKeyRegisterType] = MetaRegisterTypeDHT
+			peers = append(peers, peerReg)
+			seen[pi.ID] = true
+		}
+	}
+
+	// Add direct connections
+	for _, pid := range r.host.Network().Peers() {
+		if !seen[pid] {
+			addrs := r.host.Peerstore().Addrs(pid)
+			addrStrings := make([]string, len(addrs))
+			for i, addr := range addrs {
+				addrStrings[i] = addr.String()
+			}
+
+			peers = append(peers, &registry.Peer{
+				Name: pid.String(),
+				Metadata: map[string]interface{}{
+					MetaConstantKeyRegisterType: MetaRegisterTypeConnected,
+					MetaConstantKeyAddress:      addrStrings,
+				},
+			})
+		}
+	}
+
+	return peers, nil
+}
+
+func (r *nativeRegistry) ListPeers_old(ctx context.Context, opts ...registry.GetOption) ([]*registry.Peer, error) {
 	var connectedPeers []*registry.Peer
 
 	// Get the list of connected peer IDs
 	peerIDs := r.host.Network().Peers()
 	for _, peerID := range peerIDs {
-		added := r.dht.RoutingTable().UsefulNewPeer(peerID)
-		logger.Infof(ctx, "[ListPeers] peer %s added to routing table result: %+v", peerID, added)
+		canBeAdded := r.dht.RoutingTable().UsefulNewPeer(peerID)
+		if canBeAdded {
+			added, err := r.dht.RoutingTable().TryAddPeer(peerID, true, true)
+			if err != nil {
+				logger.Errorf(ctx, "[ListPeers] failed to add peer %s to routing table: %s", peerID, err)
+			}
+
+			logger.Infof(ctx, "[ListPeers] peer %s canBeAdded to routing table result: %+v, added: %t. ", peerID, canBeAdded, added)
+
+			addrInfo, err := r.dht.FindPeer(ctx, peerID)
+			if err != nil {
+				logger.Errorf(ctx, "[ListPeers] failed to find peer after Tray %s: %s", peerID, err)
+			}
+
+			logger.Infof(ctx, "[ListPeers] peer %s find in routing table result: %+v", peerID, addrInfo)
+		}
 
 		// Here you need to get more information about the peer to create a registry.Peer struct.
 		// For simplicity, we assume you can get the peer's name from the peer ID (this may need adjustment in a real - world scenario).
 		peerName := peerID.String()
 		var addrs []string
-		for _, addr := range r.host.Peerstore().Addrs(peerID) {
-			addrs = append(addrs, addr.String())
-		}
+		addrInfo, err := r.dht.FindPeer(ctx, peerID)
+		if err != nil {
+			logger.Errorf(ctx, "[ListPeers] failed to find peer %s: %s", peerID, err)
+		} else {
+			addrs = make([]string, len(addrInfo.Addrs))
+			for i, addr := range addrInfo.Addrs {
+				addrs[i] = addr.String()
+			}
 
-		// Create a new registry.Peer struct
-		peer := &registry.Peer{
-			Name: peerName,
-			// You may need to fill in other fields according to your actual requirements.
-			// For example, you can get the peer's addresses from the peerstore.
-			Metadata: map[string]interface{}{
-				MetaConstantKeyRegisterType: MetaRegisterTypeConnected,
-				MetaConstantKeyAddress:      addrs,
-			},
+			// Create a new registry.Peer struct
+			peerConnected := &registry.Peer{
+				Name: peerName,
+				// You may need to fill in other fields according to your actual requirements.
+				// For example, you can get the peer's addresses from the peerstore.
+				Metadata: map[string]interface{}{
+					MetaConstantKeyRegisterType: MetaRegisterTypeConnected,
+					MetaConstantKeyAddress:      addrs,
+				},
+			}
+			connectedPeers = append(connectedPeers, peerConnected)
 		}
-		connectedPeers = append(connectedPeers, peer)
 
 		dhtValue, err := r.dht.GetValue(ctx, networkNamespace+"/"+peerName)
 		if err != nil {
-			logger.Errorf(ctx, "failed to get dht value: %s", err)
+			logger.Errorf(ctx, "[ListPeers] failed to get dht value: %s", err)
 			continue
 		}
 
 		if dhtValue != nil {
-			var dhtPk pb.PublicKey
-			err = proto.Unmarshal(dhtValue, &dhtPk)
-			if err != nil {
-				logger.Errorf(ctx, "failed to unmarshal dht pk value: %s", err)
+			var dhtPeer *registry.Peer
+			if dhtPeer, err = r.unmarshalPeer(dhtValue); err != nil {
+				logger.Errorf(ctx, "[ListPeers] failed to unmarshal dht value: %s", err)
 				continue
 			}
 
-			var dhtPeer registry.Peer
-			err = json.Unmarshal(dhtPk.Data, &dhtPeer)
+			var dhtPk pb.PublicKey
+			err = proto.Unmarshal(dhtValue, &dhtPk)
 			if err != nil {
-				logger.Errorf(ctx, "failed to unmarshal dht value: %s", err)
+				logger.Errorf(ctx, "[ListPeers] failed to unmarshal dht pk value: %s", err)
 				continue
 			}
 
@@ -343,7 +438,7 @@ func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOpti
 			}
 			dhtPeer.Metadata[MetaConstantKeyRegisterType] = MetaRegisterTypeDHT
 
-			connectedPeers = append(connectedPeers, &dhtPeer)
+			connectedPeers = append(connectedPeers, dhtPeer)
 		}
 	}
 
@@ -362,24 +457,44 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 		return errors.New("[register] peerReg cannot be nil")
 	}
 
-	if r.dht.RoutingTable().Size() == 0 {
-		logger.Infof(ctx, "[register] routing table still empty, no need to register")
-		return nil
+	// Add provider announcement to DHT
+	// Create CID for provider announcement
+	prefix := cid.Prefix{
+		Version:  1,
+		Codec:    cid.Raw,
+		MhType:   multihash.SHA2_256,
+		MhLength: -1,
+	}
+	data := networkBootstrapNamespace + ":" + peerReg.ID
+	serviceCID, err := prefix.Sum([]byte(data))
+	if err != nil {
+		return fmt.Errorf("failed to create service CID: %w", err)
+	}
+	err = r.dht.Provide(ctx, serviceCID, true)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to announce as DHT provider: %v", err)
 	}
 
-	dataPk, err := r.marshalPeer(ctx, peerReg)
-	if err != nil {
-		return fmt.Errorf("[register] failed to marshal peerReg: %w", err)
-	}
-	id := r.host.ID().String()
-	key := fmt.Sprintf(peerKeyFormat, networkNamespace, id)
+	r.dht.ProviderStore().GetProviders(ctx, serviceCID.Bytes())
 
-	err = r.dht.PutValue(ctx, key, dataPk)
-	if err != nil {
-		err = fmt.Errorf("failed to put value to dht: %w", err)
-		logger.Errorf(ctx, "%s", err)
-		return err
-	}
+	/*	if r.dht.RoutingTable().Size() == 0 {
+			logger.Infof(ctx, "[register] routing table still empty, no need to register")
+			return nil
+		}
+
+		dataPk, err := r.marshalPeer(ctx, peerReg)
+		if err != nil {
+			return fmt.Errorf("[register] failed to marshal peerReg: %w", err)
+		}
+		id := r.host.ID().String()
+		key := fmt.Sprintf(peerKeyFormat, networkNamespace, id)
+
+		err = r.dht.PutValue(ctx, key, dataPk)
+		if err != nil {
+			err = fmt.Errorf("failed to put value to dht: %w", err)
+			logger.Errorf(ctx, "%s", err)
+			return err
+		}*/
 
 	return nil
 }
@@ -573,4 +688,19 @@ func GetLibp2pHost() (h host.Host, dht *dht.IpfsDHT) {
 	reg := regInstance.(*nativeRegistry)
 
 	return reg.host, reg.dht
+}
+
+func (r *nativeRegistry) isBootstrapNode(id peer.ID) bool {
+	// Check both custom and default bootstrap nodes
+	allNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
+	for _, addr := range allNodes {
+		pi, err := peer.AddrInfoFromP2pAddr(addr)
+		if err != nil {
+			continue // Skip invalid entries (shouldn't happen if nodes were properly configured)
+		}
+		if pi.ID == id {
+			return true
+		}
+	}
+	return false
 }

@@ -20,14 +20,14 @@ var OptionWrapper = option.NewWrapper[Options](registryOptionsKey{}, func(option
 type Options struct {
 	*option.Options
 
-	RetryInterval  time.Duration
+	Interval       time.Duration
 	ConnectTimeout time.Duration
 	PrivateKey     string
 }
 
-func WithRetryInterval(dur time.Duration) option.Option {
+func WithInterval(dur time.Duration) option.Option {
 	return OptionWrapper.Wrap(func(o *Options) {
-		o.RetryInterval = dur
+		o.Interval = dur
 	})
 }
 

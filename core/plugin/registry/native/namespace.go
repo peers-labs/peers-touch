@@ -14,6 +14,10 @@ var (
 	networkNamespace = "/" + registry.DefaultPeersNetworkNamespace
 	networkId        = protocol.ID(networkNamespace)
 
+	// networkBootstrapNamespace is the namespace for bootstrap peers.
+	// pb equals to peers-bootstrap
+	networkBootstrapNamespace = networkNamespace + ":pb"
+
 	peerKeyFormat = "%s/%s"
 )
 
