@@ -11,8 +11,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/ipfs/go-cid"
-	"github.com/multiformats/go-multihash"
 	"sync"
 	"time"
 
@@ -21,6 +19,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/golang/protobuf/proto"
 	"github.com/ipfs/boxo/ipns"
+	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -30,6 +29,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multihash"
 )
 
 var (
@@ -99,7 +99,9 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return errors.New("private key for Registry is required")
 	}
 
-	hostOptions := []libp2p.Option{}
+	hostOptions := []libp2p.Option{
+		libp2p.DefaultTransports,
+	}
 
 	// Load or generate private key
 	identityKey, err := loadOrGenerateKey(r.extOpts.libp2pIdentityKeyFile)
@@ -525,6 +527,8 @@ func (r *nativeRegistry) beforeRegister(ctx context.Context, peerReg *registry.P
 func (r *nativeRegistry) bootstrap(ctx context.Context) {
 	ticker := time.NewTicker(r.extOpts.bootstrapRefreshInterval)
 	defer ticker.Stop()
+
+	logger.Infof(ctx, "bootstrap peer: %s", r.host.ID().String())
 	if err := r.dht.Bootstrap(ctx); err != nil {
 		logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
 	}
