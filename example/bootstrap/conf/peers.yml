@@ -22,7 +22,7 @@ peers:
         mdns-enable: true
         bootstrap-enable: true
         bootstrap-listen-addrs:
-          - /ip4/0.0.0.0/tcp/5001
+          - /ip4/0.0.0.0/tcp/33333
         bootstrap-nodes:
           -
     
