@@ -104,7 +104,7 @@ func (s *native) initComponents(ctx context.Context) error {
 
 	// todo, set private key in advance.
 	if err := s.opts.Registry.Init(ctx, append(s.opts.RegistryOptions, registry.WithPrivateKey(s.opts.PrivateKey))...); err != nil {
-		return err
+		return fmt.Errorf("init registry err: %v", err)
 	}
 
 	// todo init server

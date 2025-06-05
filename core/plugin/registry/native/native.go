@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -28,6 +29,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
+	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
+	webrtc "github.com/libp2p/go-libp2p/p2p/transport/webrtc"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 )
@@ -99,9 +102,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return errors.New("private key for Registry is required")
 	}
 
-	hostOptions := []libp2p.Option{
-		libp2p.DefaultTransports,
-	}
+	hostOptions := []libp2p.Option{}
 
 	// Load or generate private key
 	identityKey, err := loadOrGenerateKey(r.extOpts.libp2pIdentityKeyFile)
@@ -109,7 +110,10 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return fmt.Errorf("failed to load private key[%s]: %v", r.options.PrivateKey, err)
 	}
 
-	hostOptions = append(hostOptions, libp2p.Identity(identityKey))
+	hostOptions = append(hostOptions,
+		libp2p.Transport(webrtc.New),
+		libp2p.Transport(quic.NewTransport),
+		libp2p.Identity(identityKey))
 
 	if r.extOpts.bootstrapEnable {
 		// Define the listen address
@@ -133,7 +137,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		hostOptions...,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create libp2p host: %v", err)
 	}
 	r.host = h
 
@@ -239,7 +243,7 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 	return nil
 }
 
-// Deregister removes a peer from the registry
+// Deregister removes a peer from the registry,
 // but DHT doesn't support delete operation, so we just remove it from the map
 func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, opts ...registry.DeregisterOption) error {
 	r.mu.Lock()
@@ -353,6 +357,7 @@ func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOpti
 				addrStrings[i] = addr.String()
 			}
 
+			sort.Strings(addrStrings)
 			peers = append(peers, &registry.Peer{
 				Name: pid.String(),
 				Metadata: map[string]interface{}{
@@ -529,6 +534,7 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 	defer ticker.Stop()
 
 	logger.Infof(ctx, "bootstrap peer: %s", r.host.ID().String())
+
 	if err := r.dht.Bootstrap(ctx); err != nil {
 		logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
 	}
