@@ -6,16 +6,16 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
-// SubServer is used to define subcomponent of the main server, which should be run with a port like a normal server.
+// Subserver is used to define subcomponent of the main server, which should be run with a port like a normal server.
 // We define a subserver interface to make it easier to manage the lifecycle of the subservers with the main server.
 // When you want to add some component and make it run with the main server, you can implement this interface and
 // add it to the main server.
-type SubServer interface {
+type Subserver interface {
 	// Init initializes the subserver with context
 	Init(ctx context.Context, opts ...option.Option) error
 
 	// Start begins the subserver with context for lifecycle management
-	// Actually, SubServer would be started before the main server, due to the simplicity of the implementation.
+	// Actually, Subserver would be started before the main server, due to the simplicity of the implementation.
 	// And BaseServer will help to start subservers in method BaseServer.Start.
 	// Every subserver should be start self asynchronously.
 	Start(ctx context.Context, opts ...option.Option) error
@@ -48,7 +48,7 @@ const (
 )
 
 type subServerNewFunctions struct {
-	exec    func(...option.Option) SubServer
+	exec    func(...option.Option) Subserver
 	options []option.Option
 }
 

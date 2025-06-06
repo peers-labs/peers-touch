@@ -60,3 +60,12 @@ type ServicePlugin interface {
 	Options() []option.Option
 	New(*option.Options, ...option.Option) service.Service
 }
+
+type SubserverPlugin interface {
+	Plugin
+	Options() []option.Option
+	// New helps create the subserver for Server
+	// *option.Options is not necessary here, the Server that subserver hooks on already has it.
+	// The Server component will help to inject the root Options.
+	New(...option.Option) server.Subserver
+}

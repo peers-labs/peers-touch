@@ -13,14 +13,14 @@ import (
 )
 
 var (
-	_ server.SubServer = (*debugSubServer)(nil)
+	_ server.Subserver = (*debugSubServer)(nil)
 )
 
 type debugSubServer struct {
 	opts *DebugServerOptions
 }
 
-func NewDebugSubServer(opts ...option.Option) server.SubServer {
+func NewDebugSubServer(opts ...option.Option) server.Subserver {
 	s := &debugSubServer{
 		opts: option.GetOptions(opts...).Ctx().Value(debugServerOptionsKey{}).(*DebugServerOptions),
 	}

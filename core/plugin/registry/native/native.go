@@ -29,8 +29,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
-	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
-	webrtc "github.com/libp2p/go-libp2p/p2p/transport/webrtc"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 )
@@ -111,8 +109,8 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	}
 
 	hostOptions = append(hostOptions,
-		libp2p.Transport(webrtc.New),
-		libp2p.Transport(quic.NewTransport),
+		/*		libp2p.Transport(webrtc.New),
+				libp2p.Transport(quic.NewTransport),*/
 		libp2p.Identity(identityKey))
 
 	if r.extOpts.bootstrapEnable {

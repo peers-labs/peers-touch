@@ -65,7 +65,7 @@ func WithHandlers(handlers ...Handler) option.Option {
 }
 
 // WithSubServer adds a subserver to the server
-func WithSubServer(name string, newFunc func(opts ...option.Option) SubServer, subServerOptions ...option.Option) option.Option {
+func WithSubServer(name string, newFunc func(opts ...option.Option) Subserver, subServerOptions ...option.Option) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.SubServerOptions.subServerNewFunctions[name] = subServerNewFunctions{
 			exec:    newFunc,

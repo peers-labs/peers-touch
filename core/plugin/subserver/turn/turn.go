@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/pion/turn/v4"
 )
@@ -17,11 +18,8 @@ import (
 )
 
 type SubServer struct {
-	opts    *server.SubServerOptions
-	extOpts *Options
+	opts *Options
 
-	name    string
-	port    int
 	status  server.ServerStatus
 	server  *turn.Server
 	udpConn net.PacketConn
@@ -29,17 +27,17 @@ type SubServer struct {
 }
 
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
-	// Configuration would typically come from options
-	publicIP := "127.0.0.1"
-	realm := "peers-touch"
+	for _, opt := range opts {
+		s.opts.Apply(opt)
+	}
 
 	// Initialize network listeners
-	udpConn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", s.port))
+	udpConn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", s.opts.Port))
 	if err != nil {
 		return fmt.Errorf("UDP listen error: %w", err)
 	}
 
-	tcpLis, err := net.ListenTCP("tcp4", &net.TCPAddr{Port: s.port})
+	tcpLis, err := net.ListenTCP("tcp4", &net.TCPAddr{Port: s.opts.Port})
 	if err != nil {
 		udpConn.Close()
 		return fmt.Errorf("TCP listen error: %w", err)
@@ -51,21 +49,22 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 
 	// Create TURN server
 	s.server, err = turn.NewServer(turn.ServerConfig{
-		Realm: realm,
+		Realm:         s.opts.Realm,
+		LoggerFactory: NewLoggerFactory(),
 		AuthHandler: func(username, realm string, srcAddr net.Addr) ([]byte, bool) {
 			return turn.GenerateAuthKey("shared-secret", username, realm), true
 		},
 		ListenerConfigs: []turn.ListenerConfig{{
 			Listener: tcpLis,
 			RelayAddressGenerator: &turn.RelayAddressGeneratorStatic{
-				RelayAddress: net.ParseIP(publicIP),
+				RelayAddress: net.ParseIP(s.opts.PublicIP),
 				Address:      "0.0.0.0",
 			},
 		}},
 		PacketConnConfigs: []turn.PacketConnConfig{{
 			PacketConn: udpConn,
 			RelayAddressGenerator: &turn.RelayAddressGeneratorStatic{
-				RelayAddress: net.ParseIP(publicIP),
+				RelayAddress: net.ParseIP(s.opts.PublicIP),
 				Address:      "0.0.0.0",
 			},
 		}},
@@ -98,14 +97,11 @@ func (s *SubServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-// Interface implementations
-func (s *SubServer) Name() string                { return s.name }
-func (s *SubServer) Port() int                   { return s.port }
+func (s *SubServer) Name() string                { return "turn" }
+func (s *SubServer) Port() int                   { return s.opts.Port }
 func (s *SubServer) Status() server.ServerStatus { return s.status }
 func (s *SubServer) Handlers() []server.Handler  { return nil }
 
-func NewTurnSubServer(opts ...option.Option) server.SubServer {
-	rs := &SubServer{}
-	rs.opts.Apply(opts...)
-	return rs
+func NewTurnSubServer(opts ...option.Option) server.Subserver {
+	return plugin.SubserverPlugins["turn"].New(opts...)
 }

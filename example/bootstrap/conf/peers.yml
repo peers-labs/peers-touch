@@ -1,5 +1,5 @@
 peers:
-  includes: store.yml
+  includes: store.yml, turn.yml
   run-mode: 2
   config:
     hierarchy-merge: true

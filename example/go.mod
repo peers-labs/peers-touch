@@ -10,15 +10,17 @@ replace (
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/service/native => ../core/plugin/service/native
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native => ../core/plugin/store/native
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite => ../core/plugin/store/rds/sqlite
+	github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/turn => ../core/plugin/subserver/turn
 )
 
 require (
 	github.com/cloudwego/hertz v0.9.5
-	github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250324164259-952df2add43c
+	github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250605154355-4ca9f6d7089d
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native v0.0.0-00010101000000-000000000000
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/registry/native v0.0.0
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native v0.0.0
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
+	github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/turn v0.0.0-00010101000000-000000000000
 	github.com/libp2p/go-libp2p v0.41.1
 	github.com/libp2p/go-libp2p-core v0.20.1
 	github.com/libp2p/go-libp2p-kad-dht v0.31.0
@@ -134,7 +136,7 @@ require (
 	github.com/pion/stun/v3 v3.0.0 // indirect
 	github.com/pion/transport/v2 v2.2.10 // indirect
 	github.com/pion/transport/v3 v3.0.7 // indirect
-	github.com/pion/turn/v4 v4.0.0 // indirect
+	github.com/pion/turn/v4 v4.0.2 // indirect
 	github.com/pion/webrtc/v4 v4.0.10 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect

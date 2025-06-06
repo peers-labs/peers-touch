@@ -19,7 +19,7 @@ type BaseServer struct {
 	subMutex sync.RWMutex
 
 	subServerStarted bool
-	subServers       map[string]SubServer
+	subServers       map[string]Subserver
 }
 
 func (b *BaseServer) Options() *Options {
@@ -102,7 +102,7 @@ func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 
 func NewServer(opts ...option.Option) *BaseServer {
 	s := &BaseServer{
-		subServers: make(map[string]SubServer),
+		subServers: make(map[string]Subserver),
 		opts:       GetOptions(),
 	}
 	s.Options().Apply(opts...)
