@@ -18,6 +18,7 @@ require (
 	github.com/hashicorp/hcl v1.0.0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.3
 	github.com/modern-go/reflect2 v1.0.2
+	github.com/sasha-s/go-deadlock v0.3.5
 	github.com/sirupsen/logrus v1.9.3
 	github.com/sony/sonyflake v1.2.1
 	github.com/stretchr/testify v1.10.0
@@ -45,6 +46,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
+	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/smartystreets/goconvey v1.7.2 // indirect

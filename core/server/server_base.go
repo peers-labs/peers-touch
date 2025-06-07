@@ -37,7 +37,7 @@ func (b *BaseServer) Init(ctx context.Context, opts ...option.Option) error {
 	return nil
 }
 
-// Start : current job is helping to start the subservers.
+// Start : current job helps to start the subservers.
 func (b *BaseServer) Start(ctx context.Context, opts ...option.Option) error {
 	if b.subServerStarted {
 		return errors.New("server is already started")
@@ -74,8 +74,8 @@ func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 		b.opts.Apply(opt)
 	}
 
-	// then init the sub servers
-	for _, subFuc := range b.opts.SubServerOptions.subServerNewFunctions {
+	// then init the sub servers from the ones injected by Option server.WithSubServer
+	for _, subFuc := range b.opts.SubServers {
 		// create the sub server
 		sub := subFuc.exec(subFuc.options...)
 		// init the sub server

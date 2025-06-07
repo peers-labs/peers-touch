@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
+	dk "github.com/sasha-s/go-deadlock"
 )
 
 var (
@@ -19,7 +20,7 @@ var (
 	// don't use it to set a request context or something else like.
 	runtimeCtx context.Context
 
-	applyLock sync.Mutex
+	applyLock dk.Mutex
 
 	// Map to track executed functions
 	// absolutely, to figure out where the duplicate options are defined is important, but it will cost too more time.
@@ -32,6 +33,8 @@ type Options struct {
 	ctx context.Context
 
 	ExtOptions any
+
+	options []Option
 }
 
 // Apply applies the option logic to Options.
@@ -40,6 +43,9 @@ type Options struct {
 func (o *Options) Apply(opts ...Option) {
 	applyLock.Lock()
 	defer applyLock.Unlock()
+
+	// for cache
+	o.options = append(o.options, opts...)
 
 	for _, opt := range opts {
 		opt(o)

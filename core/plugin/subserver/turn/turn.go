@@ -2,12 +2,12 @@ package turn
 
 import (
 	"fmt"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/pion/turn/v4"
@@ -84,6 +84,9 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 		s.Stop(ctx)
 	}()
 
+	// logs debug information
+	logger.Infof(ctx, "Starting TURN server\nPort: %d\nRealm: %s\nPublic IP: %s\nAuth Secret: [%t]",
+		s.opts.Port, s.opts.Realm, s.opts.PublicIP, s.opts.AuthSecret != "")
 	return nil
 }
 
@@ -106,16 +109,7 @@ func (s *SubServer) Handlers() []server.Handler  { return nil }
 // Call it after root Ctx is initialized, which is initialized in BeforeInit of predominate process.
 func NewTurnSubServer(opts ...option.Option) server.Subserver {
 	turnS := &SubServer{
-		opts: &Options{
-			SubServerOptions: server.NewSubServerOptionsFromRoot(),
-		},
-	}
-
-	// append opts from config if there are any
-	opts = append(plugin.SubserverPlugins["turn"].Options(), opts...)
-
-	for _, opt := range opts {
-		turnS.opts.Apply(opt)
+		opts: option.GetOptions(opts...).Ctx().Value(optionsKey{}).(*Options),
 	}
 
 	return turnS

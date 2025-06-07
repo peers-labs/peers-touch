@@ -51,27 +51,3 @@ type subServerNewFunctions struct {
 	exec    func(...option.Option) Subserver
 	options []option.Option
 }
-
-type SubServerOptions struct {
-	// for easy to use
-	parentOpts *Options
-
-	// store the new function for each subserver
-	// key: subserver name
-	// value: new function for the subserver
-	subServerNewFunctions map[string]subServerNewFunctions
-}
-
-func (o *SubServerOptions) Apply(opts ...option.Option) {
-	o.parentOpts.Apply(opts...)
-}
-
-// NewSubServerOptionsFromRoot helps to create a new subserver options from root options.
-// due to the initialization of the subserver is a sub-process of main server, the rootOptions has been already prepared before now
-// so we don't need to convey the rootOptions to this function.
-func NewSubServerOptionsFromRoot() *SubServerOptions {
-	return &SubServerOptions{
-		parentOpts:            GetOptions(),
-		subServerNewFunctions: make(map[string]subServerNewFunctions),
-	}
-}

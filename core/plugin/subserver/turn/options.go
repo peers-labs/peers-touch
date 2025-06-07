@@ -2,19 +2,18 @@ package turn
 
 import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 )
 
 type optionsKey struct{}
 
 var wrapper = option.NewWrapper[Options](optionsKey{}, func(options *option.Options) *Options {
 	return &Options{
-		SubServerOptions: server.NewSubServerOptionsFromRoot(),
+		Options: options,
 	}
 })
 
 type Options struct {
-	*server.SubServerOptions
+	*option.Options
 
 	Enabled    bool
 	Port       int

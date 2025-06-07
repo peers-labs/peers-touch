@@ -2,9 +2,9 @@ package native
 
 import (
 	"context"
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"time"
 
+	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	dht "github.com/libp2p/go-libp2p-kad-dht"

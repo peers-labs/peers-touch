@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"os"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
@@ -119,6 +120,11 @@ func (s *native) initComponents(ctx context.Context) error {
 
 		logger.Infof(ctx, "initial server's name is: %s", serverName)
 		s.opts.Server = plugin.ServerPlugins[serverName].New()
+
+		// Inject plugin subservers into subServerNewFunctions
+		for name, p := range plugin.SubserverPlugins {
+			s.opts.ServerOptions = append(s.opts.ServerOptions, server.WithSubServer(name, p.New))
+		}
 	}
 	if err := s.opts.Server.Init(ctx, s.opts.ServerOptions...); err != nil {
 		return err

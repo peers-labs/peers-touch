@@ -9,12 +9,12 @@ type serverOptionsKey struct{}
 
 var (
 	wrapper = option.NewWrapper[Options](serverOptionsKey{}, func(options *option.Options) *Options {
-		return &Options{
-			Options: options,
-			SubServerOptions: &SubServerOptions{
-				subServerNewFunctions: make(map[string]subServerNewFunctions),
-			},
+		o := &Options{
+			Options:    options,
+			SubServers: map[string]subServerNewFunctions{},
 		}
+
+		return o
 	})
 )
 
@@ -29,8 +29,11 @@ type Options struct {
 	// usually, it's used for the initialization of the server
 	// if you want to add handlers after the server is initialized,
 	// you can use the server.Handler interface
-	Handlers         []Handler
-	SubServerOptions *SubServerOptions
+	Handlers []Handler
+	// store the new function for each subserver
+	// key: subserver name
+	// value: new function for the subserver
+	SubServers map[string]subServerNewFunctions
 
 	// ReadyChan is a channel that will be closed when the server is ready
 	// it's used to signal the main process that the server is ready
@@ -67,7 +70,7 @@ func WithHandlers(handlers ...Handler) option.Option {
 // WithSubServer adds a subserver to the server
 func WithSubServer(name string, newFunc func(opts ...option.Option) Subserver, subServerOptions ...option.Option) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
-		opts.SubServerOptions.subServerNewFunctions[name] = subServerNewFunctions{
+		opts.SubServers[name] = subServerNewFunctions{
 			exec:    newFunc,
 			options: subServerOptions,
 		}
