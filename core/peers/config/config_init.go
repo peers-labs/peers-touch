@@ -68,8 +68,8 @@ func LoadConfig(sOpts *service.Options) (err error) {
 			if len(val.Peers.Includes) > 0 {
 				filePath := sOpts.Conf[:strings.LastIndex(sOpts.Conf, string(os.PathSeparator))+1]
 				for _, f := range strings.Split(val.Peers.Includes, ",") {
-					log.Infof("load extra config file: %s%s", filePath, f)
 					f = strings.TrimSpace(f)
+					log.Infof("load extra config file: %s%s", filePath, f)
 					extraFile := fmt.Sprintf("%s%s", filePath, f)
 					extraExists, errIn := uf.Exists(extraFile)
 					if errIn != nil {

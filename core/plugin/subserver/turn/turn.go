@@ -2,13 +2,13 @@ package turn
 
 import (
 	"fmt"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/pion/turn/v4"
 )
@@ -102,6 +102,21 @@ func (s *SubServer) Port() int                   { return s.opts.Port }
 func (s *SubServer) Status() server.ServerStatus { return s.status }
 func (s *SubServer) Handlers() []server.Handler  { return nil }
 
+// NewTurnSubServer creates a new TURN subserver with the provided options.
+// Call it after root Ctx is initialized, which is initialized in BeforeInit of predominate process.
 func NewTurnSubServer(opts ...option.Option) server.Subserver {
-	return plugin.SubserverPlugins["turn"].New(opts...)
+	turnS := &SubServer{
+		opts: &Options{
+			SubServerOptions: server.NewSubServerOptionsFromRoot(),
+		},
+	}
+
+	// append opts from config if there are any
+	opts = append(plugin.SubserverPlugins["turn"].Options(), opts...)
+
+	for _, opt := range opts {
+		turnS.opts.Apply(opt)
+	}
+
+	return turnS
 }
