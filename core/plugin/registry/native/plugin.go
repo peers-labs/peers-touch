@@ -14,7 +14,10 @@ var configOptions struct {
 	Peers struct {
 		Service struct {
 			Registry struct {
-				Native struct {
+				ConnectTimeout string                   `pconf:"connect-timeout"`
+				Interval       string                   `pconf:"interval"`
+				Turn           *registry.TURNAuthConfig `pconf:"turn"`
+				Native         struct {
 					BootstrapNodes           []string `pconf:"bootstrap-nodes"`
 					BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
 					BootstrapNodeRetryTimes  int      `pconf:"bootstrap-node-retry-times"`
@@ -23,8 +26,6 @@ var configOptions struct {
 					BootstrapListenAddrs     []string `pconf:"bootstrap-listen-addrs"`
 					Libp2pIdentityKeyFile    string   `pconf:"libp2p-identity-key-file"`
 				} `pconf:"native"`
-				ConnectTimeout string `pconf:"connect-timeout"`
-				Interval       string `pconf:"interval"`
 			} `pconf:"registry"`
 		} `pconf:"service"`
 		RunMode modeOpt `pconf:"run-mode"`

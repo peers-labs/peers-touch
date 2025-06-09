@@ -52,7 +52,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 		Realm:         s.opts.Realm,
 		LoggerFactory: NewLoggerFactory(),
 		AuthHandler: func(username, realm string, srcAddr net.Addr) ([]byte, bool) {
-			return turn.GenerateAuthKey("shared-secret", username, realm), true
+			return turn.GenerateAuthKey(username, realm, username), true
 		},
 		ListenerConfigs: []turn.ListenerConfig{{
 			Listener: tcpLis,

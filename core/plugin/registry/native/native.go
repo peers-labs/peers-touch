@@ -31,6 +31,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
+	"github.com/pion/turn/v4"
 )
 
 var (
@@ -63,6 +64,7 @@ type nativeRegistry struct {
 	host  host.Host
 	dht   *dht.IpfsDHT
 	mdnsS mdns.Service
+	turn  *turn.Client
 
 	// bootstrap nodes status
 	bootstrapStateLock   sync.RWMutex
