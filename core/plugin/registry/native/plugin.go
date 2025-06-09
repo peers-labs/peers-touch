@@ -14,9 +14,9 @@ var configOptions struct {
 	Peers struct {
 		Service struct {
 			Registry struct {
-				ConnectTimeout string                   `pconf:"connect-timeout"`
-				Interval       string                   `pconf:"interval"`
-				Turn           *registry.TURNAuthConfig `pconf:"turn"`
+				ConnectTimeout string                  `pconf:"connect-timeout"`
+				Interval       string                  `pconf:"interval"`
+				Turn           registry.TURNAuthConfig `pconf:"turn"`
 				Native         struct {
 					BootstrapNodes           []string `pconf:"bootstrap-nodes"`
 					BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
@@ -65,6 +65,8 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 		interval = dur
 	}
 	opts = append(opts, registry.WithInterval(interval))
+
+	opts = append(opts, registry.WithTurnConfig(configOptions.Peers.Service.Registry.Turn))
 
 	bootstrapRefreshInterval := time.Second * 2
 	if len(configOptions.Peers.Service.Registry.Native.BootstrapRefreshInterval) > 0 {

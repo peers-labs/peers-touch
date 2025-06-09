@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -189,6 +190,53 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		if err != nil {
 			return fmt.Errorf("start mdns service: %w", err)
 		}
+	}
+
+	// Init TURN
+	if r.options.TurnConfig.Enabled {
+		addr := r.options.TurnConfig.ServerAddresses[0]
+		conn, errIn := net.Dial("tcp", addr)
+		if errIn != nil {
+			return fmt.Errorf("connect to TURN server: %w", errIn)
+		}
+
+		cfg := &turn.ClientConfig{
+			STUNServerAddr: addr,
+			TURNServerAddr: addr,
+			Conn:           turn.NewSTUNConn(conn),
+			Username:       r.options.TurnConfig.ShortTerm.Username,
+			Password:       r.options.TurnConfig.ShortTerm.Password,
+			Realm:          "peers-touch",
+			LoggerFactory:  NewLoggerFactory(),
+		}
+
+		r.turn, errIn = turn.NewClient(cfg)
+		if errIn != nil {
+			return fmt.Errorf("create turn client: %w", errIn)
+		}
+
+		go func() {
+			// Start listening on the conn provided.
+			err = r.turn.Listen()
+			if err != nil {
+				logger.Errorf(ctx, "turn failed to listen: %s", err)
+			}
+
+			for {
+				select {
+				case <-time.After(10 * time.Second):
+					md, errLoop := r.turn.SendBindingRequest()
+					if errLoop != nil {
+						logger.Errorf(ctx, "turn failed to send binding request: %s", errLoop)
+						continue
+					}
+
+					logger.Infof(ctx, "turn binding request: %+v", md.String())
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 	}
 
 	return nil

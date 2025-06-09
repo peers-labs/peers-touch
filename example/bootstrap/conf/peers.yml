@@ -19,16 +19,17 @@ peers:
     registry:
       interval: 180s
       turn:
+        enabled: true
         server-addresses:
-          - IP_ADDRESS:3478
+          - freestun.net:3478
         method: long-term
         long-term:
-          username: peers-touch
-          password: your_auth_secret
+          username: free
+          password: free
           realm: peers-touch
         short-term:
-          username: peers-touch
-          password: your_auth_secret
+          username: free
+          password: free
       native:
         mdns-enable: true
         bootstrap-enable: true

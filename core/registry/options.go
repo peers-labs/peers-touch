@@ -26,11 +26,12 @@ const (
 
 // TURNAuthConfig is an abstract struct to hold authentication configurations
 type TURNAuthConfig struct {
+	Enabled         bool           `json:"enabled" pconf:"enabled"`
 	ServerAddresses []string       `json:"server_addresses" pconf:"server-addresses"`
 	Method          TURNAuthMethod `json:"method" pconf:"method"`         // Determines which nested config to use
-	LongTerm        *LongTermAuth  `json:"long_term" pconf:"long-term"`   // For TURNAuthLongTerm
-	ShortTerm       *ShortTermAuth `json:"short_term" pconf:"short-term"` // For TURNAuthShortTerm
-	OAuth           *OAuthAuth     `json:"oauth" pconf:"oauth"`           // For TURNAuthOAuth, todo implement
+	LongTerm        LongTermAuth   `json:"long_term" pconf:"long-term"`   // For TURNAuthLongTerm
+	ShortTerm       ShortTermAuth  `json:"short_term" pconf:"short-term"` // For TURNAuthShortTerm
+	OAuth           OAuthAuth      `json:"oauth" pconf:"oauth"`           // For TURNAuthOAuth, todo implement
 }
 
 // LongTermAuth holds config for long-term credential auth
@@ -84,9 +85,9 @@ func WithPrivateKey(privateKey string) option.Option {
 	})
 }
 
-func WithTurnConfig(turnConfig *TURNAuthConfig) option.Option {
+func WithTurnConfig(turnConfig TURNAuthConfig) option.Option {
 	return OptionWrapper.Wrap(func(o *Options) {
-		o.TurnConfig = turnConfig
+		o.TurnConfig = &turnConfig
 	})
 }
 
