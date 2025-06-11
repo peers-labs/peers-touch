@@ -123,7 +123,11 @@ func (s *native) initComponents(ctx context.Context) error {
 
 		// Inject plugin subservers into subServerNewFunctions
 		for name, p := range plugin.SubserverPlugins {
-			s.opts.ServerOptions = append(s.opts.ServerOptions, server.WithSubServer(name, p.New))
+			if p.Enabled() {
+				s.opts.ServerOptions = append(s.opts.ServerOptions, server.WithSubServer(name, p.New))
+			} else {
+				logger.Infof(ctx, "subserver [%s] is disabled", name)
+			}
 		}
 	}
 	if err := s.opts.Server.Init(ctx, s.opts.ServerOptions...); err != nil {

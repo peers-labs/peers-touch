@@ -63,6 +63,8 @@ type ServicePlugin interface {
 
 type SubserverPlugin interface {
 	Plugin
+	Enabled() bool
+
 	Options() []option.Option
 	// New helps create the subserver for Server
 	// *option.Options is not necessary here, the Server that subserver hooks on already has it.

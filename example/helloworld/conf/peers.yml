@@ -18,6 +18,18 @@ peers:
         some-key: "some-value"
     registry:
       retry-interval: 10s
+      turn:
+        enabled: true
+        server-addresses:
+          - freestun.net:3478
+        method: long-term
+        long-term:
+          username: free
+          password: free
+          realm: peers-touch
+        short-term:
+          username: free
+          password: free
       native:
         mdns-enable: true
         bootstrap-enable: false

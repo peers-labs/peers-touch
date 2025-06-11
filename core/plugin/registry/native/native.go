@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,7 +66,12 @@ type nativeRegistry struct {
 	host  host.Host
 	dht   *dht.IpfsDHT
 	mdnsS mdns.Service
-	turn  *turn.Client
+
+	turn               *turnClient
+	turnUpdateLock     sync.Mutex
+	turnUpdateTime     time.Time
+	turnStunAddresses  []string
+	turnRelayAddresses []string
 
 	// bootstrap nodes status
 	bootstrapStateLock   sync.RWMutex
@@ -92,6 +98,10 @@ func NewRegistry(opts ...option.Option) registry.Registry {
 func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error {
 	r.options.Apply(opts...)
 	r.extOpts = r.options.ExtOptions.(*options)
+
+	if r.extOpts.store == nil {
+		return errors.New("store is required for native registry. ")
+	}
 
 	// Set the logging level to Warn
 	err := log.SetLogLevel("dht", "debug")
@@ -210,28 +220,17 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 			LoggerFactory:  NewLoggerFactory(),
 		}
 
-		r.turn, errIn = turn.NewClient(cfg)
-		if errIn != nil {
-			return fmt.Errorf("create turn client: %w", errIn)
-		}
-
+		// Create self-healing client manager
+		r.turn = newTurnClient(ctx, cfg)
+		// Start periodic health checks
 		go func() {
-			// Start listening on the conn provided.
-			err = r.turn.Listen()
-			if err != nil {
-				logger.Errorf(ctx, "turn failed to listen: %s", err)
-			}
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
 
 			for {
 				select {
-				case <-time.After(10 * time.Second):
-					md, errLoop := r.turn.SendBindingRequest()
-					if errLoop != nil {
-						logger.Errorf(ctx, "turn failed to send binding request: %s", errLoop)
-						continue
-					}
-
-					logger.Infof(ctx, "turn binding request: %+v", md.String())
+				case <-ticker.C:
+					r.refreshTurn(ctx)
 				case <-ctx.Done():
 					return
 				}
@@ -313,7 +312,7 @@ func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, op
 	return r.dht.PutValue(ctx, key, []byte{})
 }
 
-func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...registry.GetOption) ([]*registry.Peer, error) {
+func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...registry.GetOption) (*registry.Peer, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -344,7 +343,34 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...regis
 	if p, err = r.unmarshalPeer(data); err != nil {
 		return nil, err
 	}
-	return []*registry.Peer{p}, nil
+
+	// append accessible networks
+	// todo configure
+	if time.Now().Sub(r.turnUpdateTime) > 8*time.Second {
+		r.refreshTurn(ctx)
+	}
+
+	p.EndStation = map[string]*registry.EndStation{}
+	if len(r.turnRelayAddresses) > 0 {
+		p.EndStation = map[string]*registry.EndStation{
+			registry.StationTypeTurnRelay: {
+				Name:       registry.StationTypeTurnRelay,
+				Typ:        registry.StationTypeTurnRelay,
+				NetAddress: r.turnRelayAddresses[0],
+			},
+		}
+	}
+	if len(r.turnStunAddresses) > 0 {
+		p.EndStation = map[string]*registry.EndStation{
+			registry.StationTypeStun: {
+				Name:       registry.StationTypeStun,
+				Typ:        registry.StationTypeStun,
+				NetAddress: r.turnStunAddresses[0],
+			},
+		}
+	}
+
+	return p, nil
 }
 
 func (r *nativeRegistry) Watch(ctx context.Context, opts ...registry.WatchOption) (registry.Watcher, error) {
@@ -501,7 +527,7 @@ func (r *nativeRegistry) ListPeers_old(ctx context.Context, opts ...registry.Get
 }
 
 func (r *nativeRegistry) String() string {
-	return "libp2p-registry"
+	return "native-registry"
 }
 
 func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, opts *registry.RegisterOptions) error {
@@ -512,26 +538,27 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 		return errors.New("[register] peerReg cannot be nil")
 	}
 
-	// Add provider announcement to DHT
-	// Create CID for provider announcement
-	prefix := cid.Prefix{
-		Version:  1,
-		Codec:    cid.Raw,
-		MhType:   multihash.SHA2_256,
-		MhLength: -1,
-	}
-	data := networkBootstrapNamespace + ":" + peerReg.ID
-	serviceCID, err := prefix.Sum([]byte(data))
-	if err != nil {
-		return fmt.Errorf("failed to create service CID: %w", err)
-	}
-	err = r.dht.Provide(ctx, serviceCID, true)
-	if err != nil {
-		logger.Warnf(ctx, "Failed to announce as DHT provider: %v", err)
-	}
+	// register to DHT
+	{
+		// Add provider announcement to DHT
+		// Create CID for provider announcement
+		prefix := cid.Prefix{
+			Version:  1,
+			Codec:    cid.Raw,
+			MhType:   multihash.SHA2_256,
+			MhLength: -1,
+		}
+		data := networkBootstrapNamespace + ":" + peerReg.ID
+		serviceCID, err := prefix.Sum([]byte(data))
+		if err != nil {
+			return fmt.Errorf("failed to create service CID: %w", err)
+		}
 
-	r.dht.ProviderStore().GetProviders(ctx, serviceCID.Bytes())
-
+		err = r.dht.Provide(ctx, serviceCID, true)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to announce as DHT provider: %v", err)
+		}
+	}
 	/*	if r.dht.RoutingTable().Size() == 0 {
 			logger.Infof(ctx, "[register] routing table still empty, no need to register")
 			return nil
@@ -550,7 +577,6 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 			logger.Errorf(ctx, "%s", err)
 			return err
 		}*/
-
 	return nil
 }
 
@@ -605,7 +631,6 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 	}
 }
 
-// Add new helper method
 func (r *nativeRegistry) refreshRoutingTable(ctx context.Context) {
 	select {
 	case err := <-r.dht.RefreshRoutingTable():
@@ -615,6 +640,45 @@ func (r *nativeRegistry) refreshRoutingTable(ctx context.Context) {
 	case <-time.After(30 * time.Second):
 		logger.Warnf(ctx, "Routing table refresh timed out")
 	}
+}
+
+func (r *nativeRegistry) refreshTurn(ctx context.Context) {
+	r.bootstrapStateLock.RLock()
+	defer r.bootstrapStateLock.RUnlock()
+
+	cl, errClient := r.turn.Get()
+	if errClient != nil {
+		logger.Errorf(ctx, "get native turn client failed: %v", errClient)
+		return
+	}
+
+	// Allocate a relay socket on the TURN server. On success, it
+	// will return a net.PacketConn which represents the remote
+	// socket.
+	relayConn, err := cl.Allocate()
+	if err != nil && !strings.HasPrefix(err.Error(), "already allocated") {
+		logger.Errorf(ctx, "Failed to allocate: %s", err)
+		return
+	} else if err == nil {
+		// The relayConn's local address is actually the transport
+		// address assigned on the TURN server.
+		logger.Infof(ctx, "relayed-address=%s", relayConn.LocalAddr().String())
+		r.turnRelayAddresses = append(r.turnRelayAddresses, relayConn.LocalAddr().String())
+	}
+
+	// Send BindingRequest to learn our external IP
+	mappedAddr, err := cl.SendBindingRequest()
+	if err != nil {
+		logger.Errorf(ctx, "Failed to send binding request: %s", err)
+		return
+	} else {
+		logger.Infof(ctx, "STUN traversal address=%s", mappedAddr.String())
+		r.turnStunAddresses = append(r.turnStunAddresses, mappedAddr.String())
+	}
+
+	r.turnUpdateTime = time.Now()
+
+	return
 }
 
 func (r *nativeRegistry) updateBootstrapStatus(ctx context.Context, addr string, successful bool) {
@@ -649,7 +713,6 @@ func (r *nativeRegistry) updateBootstrapStatus(ctx context.Context, addr string,
 	return
 }
 
-// Add this new method
 func (r *nativeRegistry) signPayload(privateKey string, data []byte) ([]byte, error) {
 	block, _ := pem.Decode([]byte(privateKey))
 	if block == nil {
@@ -740,14 +803,6 @@ func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *registry.Peer
 	return dataPk, nil
 }
 
-// GetLibp2pHost returns the libp2p host
-// todo, remove this method. temporarily use.
-func GetLibp2pHost() (h host.Host, dht *dht.IpfsDHT) {
-	reg := regInstance.(*nativeRegistry)
-
-	return reg.host, reg.dht
-}
-
 func (r *nativeRegistry) isBootstrapNode(id peer.ID) bool {
 	// Check both custom and default bootstrap nodes
 	allNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
@@ -761,4 +816,12 @@ func (r *nativeRegistry) isBootstrapNode(id peer.ID) bool {
 		}
 	}
 	return false
+}
+
+// GetLibp2pHost returns the libp2p host
+// todo, remove this method. temporarily use.
+func GetLibp2pHost() (h host.Host, dht *dht.IpfsDHT) {
+	reg := regInstance.(*nativeRegistry)
+
+	return reg.host, reg.dht
 }

@@ -13,6 +13,14 @@ var (
 	DefaultPeersNetworkNamespace = "pst"
 )
 
+type StationType = string
+
+const (
+	StationTypeStun      StationType = "stun"
+	StationTypeTurnRelay StationType = "turnRelay"
+	StationTypeHttp      StationType = "http"
+)
+
 type Registry interface {
 	Init(ctx context.Context, opts ...option.Option) error
 	Options() Options
@@ -27,20 +35,27 @@ type Registry interface {
 type Peer struct {
 	// ID is the unique identifier of the peer.
 	// for libp2p, it's the peer ID encrypted with the public key of the peer.
-	ID        string                 `json:"id"`
-	Name      string                 `json:"name"`
-	Version   string                 `json:"version"`
-	Metadata  map[string]interface{} `json:"metadata"`
-	Endpoints []*Endpoint            `json:"endpoints"`
-	Nodes     []*Node                `json:"nodes"`
-	Timestamp time.Time              `json:"timestamp"`
-	Signature []byte                 `json:"signature"`
+	ID       string                 `json:"id"`
+	Name     string                 `json:"name"`
+	Version  string                 `json:"version"`
+	Metadata map[string]interface{} `json:"metadata"`
+
+	// EndStation maintains the available connect-to information of the peer.
+	// Registry should help set the value after registering to various networks like turn/bootstrap/mdns/http/tcp, etc.
+	// The clients can use the value to connect to the peer's endpoints declared in stations.
+	// These stations can be stored in memory only. Because networks change frequently. we can get those addresses info
+	// through a superstructure http interface of 'peers-touch' by an activitypub like interface.
+	EndStation map[string]*EndStation `json:"endstation"`
+	Timestamp  time.Time              `json:"timestamp"`
+	Signature  []byte                 `json:"signature"`
 }
 
-type Node struct {
-	Metadata map[string]string `json:"metadata"`
-	Id       string            `json:"id"`
-	Address  string            `json:"address"`
+type EndStation struct {
+	Name       string
+	Typ        StationType
+	NetAddress string
+
+	Endpoints []*Endpoint `json:"endpoints"`
 }
 
 type Endpoint struct {

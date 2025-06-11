@@ -7,6 +7,7 @@ import (
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
+	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -16,7 +17,7 @@ type modeOpt = dht.ModeOpt
 const (
 	// ModeAuto utilizes EvtLocalReachabilityChanged events sent over the event bus to dynamically switch the DHT
 	// between Client and Server modes based on network conditions
-	ModeAuto modeOpt = dht.ModeAuto
+	ModeAuto = dht.ModeAuto
 	// ModeClient operates the DHT as a client only, it cannot respond to incoming queries
 	ModeClient = dht.ModeClient
 	// ModeServer operates the DHT as a server, it can both send and respond to queries
@@ -27,6 +28,8 @@ const (
 
 type options struct {
 	*registry.Options
+
+	store store.Store
 
 	runMode modeOpt
 
@@ -128,6 +131,12 @@ func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
 func WithLibp2pIdentityKeyFile(keyFile string) option.Option {
 	return wrapOptions(func(o *options) {
 		o.libp2pIdentityKeyFile = keyFile
+	})
+}
+
+func WithStore(store store.Store) option.Option {
+	return wrapOptions(func(o *options) {
+		o.store = store
 	})
 }
 

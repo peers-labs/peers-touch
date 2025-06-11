@@ -154,7 +154,6 @@ func (s *native) toPeer() *registry.Peer {
 		Metadata: map[string]interface{}{
 			"demo": "hello-world",
 		},
-		Endpoints: nil,
 	}
 
 	return p

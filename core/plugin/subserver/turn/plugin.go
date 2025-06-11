@@ -55,6 +55,10 @@ func (p *turnPlugin) Options() []option.Option {
 	return opts
 }
 
+func (p *turnPlugin) Enabled() bool {
+	return turnOptions.Peers.Service.Server.Subserver.TURN.Enabled
+}
+
 func (p *turnPlugin) New(opts ...option.Option) server.Subserver {
 	opts = append(opts, p.Options()...)
 
