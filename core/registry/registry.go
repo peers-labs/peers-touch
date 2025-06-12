@@ -26,7 +26,7 @@ type Registry interface {
 	Options() Options
 	Register(ctx context.Context, peer *Peer, opts ...RegisterOption) error
 	Deregister(ctx context.Context, peer *Peer, opts ...DeregisterOption) error
-	GetPeer(ctx context.Context, name string, opts ...GetOption) ([]*Peer, error)
+	GetPeer(ctx context.Context, name string, opts ...GetOption) (*Peer, error)
 	ListPeers(ctx context.Context, opts ...GetOption) ([]*Peer, error)
 	Watch(ctx context.Context, opts ...WatchOption) (Watcher, error)
 	String() string

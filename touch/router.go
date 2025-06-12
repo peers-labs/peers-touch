@@ -3,7 +3,7 @@ package touch
 import (
 	"errors"
 	"net/http"
-	
+
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
@@ -15,6 +15,7 @@ const (
 	RoutersNameActivityPub = "activitypub"
 	RoutersNameWellKnown   = ".well-known"
 	RoutersNameUser        = "user"
+	RoutersNamePeer        = "peer"
 )
 
 // Router is a server handler that can be registered with a server.
@@ -48,6 +49,7 @@ func Handlers() []option.Option {
 	a := NewActivityPubRouter()
 	w := NewWellKnownRouter()
 	u := NewUserRouter()
+	p := NewPeerRouter()
 
 	handlers := make([]option.Option, 0)
 
@@ -64,6 +66,10 @@ func Handlers() []option.Option {
 	}
 
 	for _, r := range u.Routers() {
+		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+	}
+
+	for _, r := range p.Routers() {
 		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
 	}
 

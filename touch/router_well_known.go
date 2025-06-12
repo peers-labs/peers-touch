@@ -22,8 +22,8 @@ func (mr *WellKnownRouters) Routers() []Router {
 		server.NewHandler(RouterURLWellKnown.Name(), RouterURLWellKnown.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world，well-known")
-			}),
-		server.NewHandler(RouterURLWellKnownWebFinger.Name(), RouterURLWellKnownWebFinger.URL(), Webfinger),
+			}, server.WithMethod(server.POST)),
+		server.NewHandler(RouterURLWellKnownWebFinger.Name(), RouterURLWellKnownWebFinger.URL(), Webfinger, server.WithMethod(server.GET)),
 	}
 }
 

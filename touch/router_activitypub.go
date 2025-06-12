@@ -30,31 +30,31 @@ func (apr *ActivityPubRouters) Routers() []Router {
 		server.NewHandler(ActivityPubRouterURLInbox.Name(), ActivityPubRouterURLInbox.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world, inbox")
-			}),
+			}, server.WithMethod(server.POST)),
 		server.NewHandler(ActivityPubRouterURLOutbox.Name(), ActivityPubRouterURLOutbox.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world, outbox")
-			}),
+			}, server.WithMethod(server.POST)),
 		server.NewHandler(ActivityPubRouterURLFollow.Name(), ActivityPubRouterURLFollow.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world, follow")
-			}),
+			}, server.WithMethod(server.POST)),
 		server.NewHandler(ActivityPubRouterURLUnfollow.Name(), ActivityPubRouterURLUnfollow.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world, unfollow")
-			}),
+			}, server.WithMethod(server.POST)),
 		server.NewHandler(ActivityPubRouterURLLike.Name(), ActivityPubRouterURLLike.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world, like")
-			}),
+			}, server.WithMethod(server.POST)),
 		server.NewHandler(ActivityPubRouterURLUndo.Name(), ActivityPubRouterURLUndo.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world, undo")
-			}),
+			}, server.WithMethod(server.POST)),
 		server.NewHandler(ActivityPubRouterURLChat.Name(), ActivityPubRouterURLChat.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world, undo")
-			}),
+			}, server.WithMethod(server.POST)),
 	}
 }
 

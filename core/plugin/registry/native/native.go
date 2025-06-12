@@ -99,7 +99,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	r.options.Apply(opts...)
 	r.extOpts = r.options.ExtOptions.(*options)
 
-	if r.extOpts.store == nil {
+	if r.options.Store == nil {
 		return errors.New("store is required for native registry. ")
 	}
 
@@ -113,7 +113,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return errors.New("private key for Registry is required")
 	}
 
-	hostOptions := []libp2p.Option{}
+	var hostOptions []libp2p.Option
 
 	// Load or generate private key
 	identityKey, err := loadOrGenerateKey(r.extOpts.libp2pIdentityKeyFile)
@@ -557,6 +557,21 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 		err = r.dht.Provide(ctx, serviceCID, true)
 		if err != nil {
 			logger.Warnf(ctx, "Failed to announce as DHT provider: %v", err)
+		}
+	}
+	// register to db
+	{
+		rd := &RegisterRecord{
+			Version:    "0.0.1",
+			ID:         peerReg.ID,
+			PeerId:     peerReg.ID,
+			PeerName:   peerReg.Name,
+			EndStation: "",
+		}
+
+		err := r.setRegisterRecord(ctx, rd)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to register as DHT provider: %v", err)
 		}
 	}
 	/*	if r.dht.RoutingTable().Size() == 0 {

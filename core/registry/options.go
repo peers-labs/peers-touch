@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 )
 
 type registryOptionsKey struct{}
@@ -65,6 +66,7 @@ type Options struct {
 	Interval       time.Duration
 	ConnectTimeout time.Duration
 	TurnConfig     *TURNAuthConfig
+	Store          store.Store
 }
 
 func WithInterval(dur time.Duration) option.Option {
@@ -88,6 +90,12 @@ func WithPrivateKey(privateKey string) option.Option {
 func WithTurnConfig(turnConfig TURNAuthConfig) option.Option {
 	return OptionWrapper.Wrap(func(o *Options) {
 		o.TurnConfig = &turnConfig
+	})
+}
+
+func WithStore(store store.Store) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.Store = store
 	})
 }
 

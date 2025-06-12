@@ -7,7 +7,6 @@ import (
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -28,8 +27,6 @@ const (
 
 type options struct {
 	*registry.Options
-
-	store store.Store
 
 	runMode modeOpt
 
@@ -131,12 +128,6 @@ func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
 func WithLibp2pIdentityKeyFile(keyFile string) option.Option {
 	return wrapOptions(func(o *options) {
 		o.libp2pIdentityKeyFile = keyFile
-	})
-}
-
-func WithStore(store store.Store) option.Option {
-	return wrapOptions(func(o *options) {
-		o.store = store
 	})
 }
 

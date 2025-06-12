@@ -13,6 +13,8 @@ var (
 	ErrUserInvalidEmail               = NewError("t10004", "signup with an invalid email")
 	ErrUserInvalidPassword            = NewError("t10005", "signup with an invalid password")
 	ErrUserUserExists                 = NewError("t10006", "signup with an existing user")
+
+	ErrPeerAddrExists = NewError("t10007", "peer address already exists")
 )
 
 type Error struct {

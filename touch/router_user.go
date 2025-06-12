@@ -25,7 +25,7 @@ func (mr *UserRouters) Routers() []Router {
 }
 
 func (mr *UserRouters) Name() string {
-	return RoutersNameManagement
+	return RoutersNameUser
 }
 
 // NewUserRouter creates UserRouters

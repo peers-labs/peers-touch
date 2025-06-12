@@ -79,6 +79,7 @@ func (d *debugSubServer) Handlers() []server.Handler {
 					"peers": peers,
 				})
 			},
+			server.WithMethod(server.GET),
 		),
 		server.NewHandler(
 			"debugListAllHandlers",
@@ -104,7 +105,7 @@ func (d *debugSubServer) Handlers() []server.Handler {
 					"count":    len(handlers),
 					"handlers": handlersList,
 				})
-			},
+			}, server.WithMethod(server.GET),
 		),
 		server.NewHandler(
 			"debugGetPeerByID",

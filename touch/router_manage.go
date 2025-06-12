@@ -20,7 +20,7 @@ func (mr *ManageRouters) Routers() []Router {
 		server.NewHandler(ManageRouterURLHealth.Name(), ManageRouterURLHealth.URL(),
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world，health")
-			}),
+			}, server.WithMethod(server.GET)),
 	}
 }
 
