@@ -156,6 +156,18 @@ func (s *native) toPeer() *registry.Peer {
 		},
 	}
 
+	// the root of http entrance
+	if s.opts.Server != nil {
+		p.EndStation = make(map[string]*registry.EndStation)
+
+		p.EndStation[registry.StationTypeHttp] = &registry.EndStation{
+			Name:       "activitypub",
+			Typ:        registry.StationTypeHttp,
+			NetAddress: s.opts.Server.Options().Address,
+			Endpoints:  []*registry.Endpoint{},
+		}
+	}
+
 	return p
 }
 

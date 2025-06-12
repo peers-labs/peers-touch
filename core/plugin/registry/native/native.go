@@ -113,6 +113,10 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return errors.New("private key for Registry is required")
 	}
 
+	if err = r.autoMigrate(ctx); err != nil {
+		return errors.New("auto migrate table error: " + err.Error())
+	}
+
 	var hostOptions []libp2p.Option
 
 	// Load or generate private key
@@ -562,11 +566,10 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 	// register to db
 	{
 		rd := &RegisterRecord{
-			Version:    "0.0.1",
-			ID:         peerReg.ID,
-			PeerId:     peerReg.ID,
-			PeerName:   peerReg.Name,
-			EndStation: "",
+			Version:       "0.0.1",
+			PeerId:        peerReg.ID,
+			PeerName:      peerReg.Name,
+			EndStationMap: peerReg.EndStation,
 		}
 
 		err := r.setRegisterRecord(ctx, rd)

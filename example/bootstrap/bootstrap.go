@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/dirty-bro-tech/peers-touch-go"
 	"github.com/dirty-bro-tech/peers-touch-go/core/debug/actuator"
@@ -29,11 +28,6 @@ func main() {
 		ctx,
 		service.Name("peers-touch-bootstrap-demo"),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("")),
-		server.WithHandlers(
-			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte("hello world, from a bootstrap handler"))
-			})),
-		),
 	)
 	if err != nil {
 		panic(err)

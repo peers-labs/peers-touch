@@ -33,12 +33,21 @@ func (r *nativeRegistry) setRegisterRecord(ctx context.Context, record *Register
 		return err
 	}
 
+	existingRecord.PeerName = record.PeerName
+	existingRecord.EndStationMap = record.EndStationMap
+	existingRecord.Version = record.Version
+	existingRecord.Signature = record.Signature
+
 	// Record exists, update it
-	return rds.WithContext(ctx).Model(&existingRecord).Updates(map[string]interface{}{
-		"peer_id":     record.PeerId,
-		"peer_name":   record.PeerName,
-		"version":     record.Version,
-		"end_station": record.EndStation,
-		"signature":   record.Signature,
-	}).Error
+	return rds.WithContext(ctx).Updates(&existingRecord).Error
+}
+
+func (r *nativeRegistry) autoMigrate(ctx context.Context) error {
+	rds, err := r.options.Store.RDS(ctx)
+	if err != nil {
+		log.Warnf(ctx, "[GetUserByName] Get db err: %v", err)
+		return err
+	}
+
+	return rds.AutoMigrate(&RegisterRecord{})
 }

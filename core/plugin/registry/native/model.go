@@ -1,6 +1,14 @@
 package native
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
+	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
+	"gorm.io/gorm"
+)
 
 // RegisterRecord represents a record of peer registration.
 type RegisterRecord struct {
@@ -14,6 +22,8 @@ type RegisterRecord struct {
 	Version string `gorm:"size:50"`
 	// EndStation represents the end - station information of the peer, stored as text without length limit.
 	EndStation string `gorm:"type:text"`
+	// EndStation represents the end - station information of the peer, stored as text without length limit.
+	EndStationMap map[string]*registry.EndStation `gorm:"-"`
 	// UpdatedAt records the time when the record was last updated.
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 	// CreatedAt records the time when the record was created.
@@ -24,4 +34,22 @@ type RegisterRecord struct {
 
 func (r *RegisterRecord) TableName() string {
 	return "core_register_record"
+}
+
+func (r *RegisterRecord) BeforeCreate(tx *gorm.DB) error {
+	if r.ID == 0 {
+		r.ID = id.NextID()
+	}
+	return nil
+}
+
+func (r *RegisterRecord) BeforeSave(tx *gorm.DB) error {
+	stationBytes, err := json.Marshal(r.EndStationMap)
+	if err != nil {
+		return fmt.Errorf("invalid end station: %s", err)
+	}
+
+	r.EndStation = string(stationBytes)
+
+	return nil
 }
