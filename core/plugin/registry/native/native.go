@@ -20,6 +20,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
+	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/golang/protobuf/proto"
 	"github.com/ipfs/boxo/ipns"
 	"github.com/ipfs/go-cid"
@@ -60,6 +61,7 @@ type nativeRegistry struct {
 	// for convenience
 	extOpts *options
 
+	store store.Store
 	peers map[string]*registry.Peer
 	mu    sync.RWMutex
 
@@ -102,6 +104,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	if r.options.Store == nil {
 		return errors.New("store is required for native registry. ")
 	}
+	r.store = r.options.Store
 
 	// Set the logging level to Warn
 	err := log.SetLogLevel("dht", "debug")
@@ -173,6 +176,11 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		),
 		dht.BootstrapPeersFunc(func() []peer.AddrInfo {
 			bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
+
+			if r.extOpts.bootstrapToSelf {
+				// todo bootstrap self to current node if this node is a bootstrap one.
+			}
+
 			var peerBootstrapNodes []peer.AddrInfo
 			for _, addr := range bootstrapNodes {
 				pi, errIn := peer.AddrInfoFromP2pAddr(addr)

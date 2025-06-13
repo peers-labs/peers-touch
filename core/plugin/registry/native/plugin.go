@@ -23,6 +23,7 @@ var configOptions struct {
 					BootstrapNodeRetryTimes  int      `pconf:"bootstrap-node-retry-times"`
 					MDNSEnable               bool     `pconf:"mdns-endable"`
 					BootstrapEnable          bool     `pconf:"bootstrap-enable"`
+					BootstrapToSelf          bool     `pconf:"bootstrap-to-self"`
 					BootstrapListenAddrs     []string `pconf:"bootstrap-listen-addrs"`
 					Libp2pIdentityKeyFile    string   `pconf:"libp2p-identity-key-file"`
 				} `pconf:"native"`
@@ -90,6 +91,7 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	}
 	opts = append(opts, registry.WithConnectTimeout(connectTimeout))
 	opts = append(opts, WithBootstrapEnable(configOptions.Peers.Service.Registry.Native.BootstrapEnable))
+	opts = append(opts, WithBootstrapEnable(configOptions.Peers.Service.Registry.Native.BootstrapToSelf))
 	opts = append(opts, WithBootstrapListenAddrs(configOptions.Peers.Service.Registry.Native.BootstrapListenAddrs...))
 
 	opts = append(opts, WithMDNSEnable(configOptions.Peers.Service.Registry.Native.MDNSEnable))

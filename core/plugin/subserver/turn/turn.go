@@ -20,10 +20,12 @@ import (
 type SubServer struct {
 	opts *Options
 
-	status  server.ServerStatus
+	status  server.Status
 	server  *turn.Server
 	udpConn net.PacketConn
 	tcpLis  *net.TCPListener
+
+	address string
 }
 
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -31,8 +33,10 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 		s.opts.Apply(opt)
 	}
 
+	s.address = fmt.Sprintf(":%d", s.opts.Port)
+
 	// Initialize network listeners
-	udpConn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", s.opts.Port))
+	udpConn, err := net.ListenPacket("udp4", s.address)
 	if err != nil {
 		return fmt.Errorf("UDP listen error: %w", err)
 	}
@@ -100,10 +104,15 @@ func (s *SubServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (s *SubServer) Name() string                { return "turn" }
-func (s *SubServer) Port() int                   { return s.opts.Port }
-func (s *SubServer) Status() server.ServerStatus { return s.status }
-func (s *SubServer) Handlers() []server.Handler  { return nil }
+func (s *SubServer) Name() string { return "turn" }
+func (s *SubServer) Address() server.SubserverAddress {
+	return server.SubserverAddress{
+		Address: []string{s.address},
+	}
+}
+
+func (s *SubServer) Status() server.Status      { return s.status }
+func (s *SubServer) Handlers() []server.Handler { return nil }
 
 // NewTurnSubServer creates a new TURN subserver with the provided options.
 // Call it after root Ctx is initialized, which is initialized in BeforeInit of predominate process.

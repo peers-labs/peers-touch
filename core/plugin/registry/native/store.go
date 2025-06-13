@@ -16,7 +16,7 @@ func (r *nativeRegistry) setRegisterRecord(ctx context.Context, record *Register
 		return errors.New("register record cannot be nil")
 	}
 
-	rds, err := r.options.Store.RDS(ctx)
+	rds, err := r.store.RDS(ctx)
 	if err != nil {
 		log.Warnf(ctx, "[GetUserByName] Get db err: %v", err)
 		return err

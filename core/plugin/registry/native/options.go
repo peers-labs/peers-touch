@@ -51,7 +51,9 @@ type options struct {
 	mdnsEnable bool
 
 	// bootstrapEnable is used to enable the node to run as a bootstrap server in libp2p network.
-	bootstrapEnable      bool
+	bootstrapEnable bool
+	// if the current node is also a bootstrap one, enable this option can help to bootstrap to self.
+	bootstrapToSelf      bool
 	bootstrapListenAddrs []string
 }
 
@@ -96,6 +98,12 @@ func WithMDNSEnable(enableMDNS bool) option.Option {
 func WithBootstrapEnable(enableBootstrap bool) option.Option {
 	return wrapOptions(func(o *options) {
 		o.bootstrapEnable = enableBootstrap
+	})
+}
+
+func WithBootstrapToSelf(b bool) option.Option {
+	return wrapOptions(func(o *options) {
+		o.bootstrapToSelf = b
 	})
 }
 

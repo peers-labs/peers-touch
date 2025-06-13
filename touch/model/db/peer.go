@@ -13,5 +13,5 @@ type Peer struct {
 }
 
 func (*Peer) TableName() string {
-	return "peers"
+	return "touch_peer"
 }

@@ -52,12 +52,12 @@ func (d *debugSubServer) Name() string {
 	return "peers-debug-server"
 }
 
-func (d *debugSubServer) Port() int {
+func (d *debugSubServer) Address() server.SubserverAddress {
 	// todo implement me
-	return 0
+	return server.SubserverAddress{}
 }
 
-func (d *debugSubServer) Status() server.ServerStatus {
+func (d *debugSubServer) Status() server.Status {
 	//TODO implement me
 	panic("implement me")
 }
