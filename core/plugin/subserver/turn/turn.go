@@ -114,6 +114,10 @@ func (s *SubServer) Address() server.SubserverAddress {
 func (s *SubServer) Status() server.Status      { return s.status }
 func (s *SubServer) Handlers() []server.Handler { return nil }
 
+func (s *SubServer) Type() server.SubserverType {
+	return server.SubserverTypeTurn
+}
+
 // NewTurnSubServer creates a new TURN subserver with the provided options.
 // Call it after root Ctx is initialized, which is initialized in BeforeInit of predominate process.
 func NewTurnSubServer(opts ...option.Option) server.Subserver {

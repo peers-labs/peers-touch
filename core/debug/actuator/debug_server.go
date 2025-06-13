@@ -131,3 +131,7 @@ func (d *debugSubServer) Handlers() []server.Handler {
 		),
 	}
 }
+
+func (d *debugSubServer) Type() server.SubserverType {
+	return server.SubserverTypeDebug
+}

@@ -204,12 +204,17 @@ func (s *SubServer) Address() server.SubserverAddress {
 		Address: s.addrs,
 	}
 }
+
 func (s *SubServer) Status() server.Status {
 	return s.status
 }
 
 func (s *SubServer) Handlers() []server.Handler {
 	return nil
+}
+
+func (d *SubServer) Type() server.SubserverType {
+	return server.SubserverTypeBootstrap
 }
 
 // NewBootstrapServer creates a new bootstrap subserver with the provided options.
