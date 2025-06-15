@@ -213,7 +213,7 @@ func (s *SubServer) Handlers() []server.Handler {
 	return nil
 }
 
-func (d *SubServer) Type() server.SubserverType {
+func (s *SubServer) Type() server.SubserverType {
 	return server.SubserverTypeBootstrap
 }
 

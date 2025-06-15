@@ -158,6 +158,10 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return fmt.Errorf("failed to create libp2p host: %v", err)
 	}
 	r.host = h
+	notifee := &libp2pHostNotifee{
+		nativeRegistry: r,
+	}
+	r.host.Network().Notify(notifee)
 
 	// Create DHT instance in server mode
 	r.dht, err = dht.New(ctx, h,
