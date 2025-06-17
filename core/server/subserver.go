@@ -32,7 +32,7 @@ type Subserver interface {
 	// Every subserver should be start self asynchronously.
 	Start(ctx context.Context, opts ...option.Option) error
 
-	// Stop gracefully shuts down the subserver with context
+	// Stop gracefully shuts down the sub server with context
 	Stop(ctx context.Context) error
 
 	// Name returns the unique identifier for this subserver
