@@ -590,24 +590,25 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 			logger.Warnf(ctx, "Failed to register as DHT provider: %v", err)
 		}
 	}
-	/*	if r.dht.RoutingTable().Size() == 0 {
-			logger.Infof(ctx, "[register] routing table still empty, no need to register")
-			return nil
-		}
 
-		dataPk, err := r.marshalPeer(ctx, peerReg)
-		if err != nil {
-			return fmt.Errorf("[register] failed to marshal peerReg: %w", err)
-		}
-		id := r.host.ID().String()
-		key := fmt.Sprintf(peerKeyFormat, networkNamespace, id)
+	if r.dht.RoutingTable().Size() == 0 {
+		logger.Infof(ctx, "[register] routing table still empty, no need to register")
+		return nil
+	}
 
-		err = r.dht.PutValue(ctx, key, dataPk)
-		if err != nil {
-			err = fmt.Errorf("failed to put value to dht: %w", err)
-			logger.Errorf(ctx, "%s", err)
-			return err
-		}*/
+	dataPk, err := r.marshalPeer(ctx, peerReg)
+	if err != nil {
+		return fmt.Errorf("[register] failed to marshal peerReg: %w", err)
+	}
+	id := r.host.ID().String()
+	key := fmt.Sprintf(peerKeyFormat, networkNamespace, id)
+
+	err = r.dht.PutValue(ctx, key, dataPk)
+	if err != nil {
+		err = fmt.Errorf("failed to put value to dht: %w", err)
+		logger.Errorf(ctx, "%s", err)
+		return err
+	}
 	return nil
 }
 

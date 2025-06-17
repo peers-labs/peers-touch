@@ -87,10 +87,10 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		return
 	}
 
-	notifee := &libp2pHostNotifee{
-		SubServer: s,
-	}
-	s.host.Network().Notify(notifee)
+	//	notifee := &libp2pHostNotifee{
+	//		SubServer: s,
+	//	}
+	//	s.host.Network().Notify(notifee)
 
 	// Create DHT instance in server mode
 	s.dht, err = dht.New(ctx, s.host,
