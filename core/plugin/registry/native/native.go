@@ -581,6 +581,7 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 			Version:       "0.0.1",
 			PeerId:        peerReg.ID,
 			PeerName:      peerReg.Name,
+			Libp2pId:      r.host.ID().String(),
 			EndStationMap: peerReg.EndStation,
 		}
 

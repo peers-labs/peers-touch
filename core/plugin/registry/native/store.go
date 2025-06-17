@@ -37,6 +37,7 @@ func (r *nativeRegistry) setRegisterRecord(ctx context.Context, record *Register
 	existingRecord.EndStationMap = record.EndStationMap
 	existingRecord.Version = record.Version
 	existingRecord.Signature = record.Signature
+	existingRecord.Libp2pId = record.Libp2pId
 
 	// Record exists, update it
 	return rds.WithContext(ctx).Updates(&existingRecord).Error
