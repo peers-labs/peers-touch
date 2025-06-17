@@ -6,8 +6,8 @@ peers:
           enabled: true                     # Matches pconf:"enabled"
           identity-key: libp2pIdentity.key  # Matches pconf:"identity-key"
           listen-addrs:                     # Matches pconf:"listen-addrs"
-            - /ip4/0.0.0.0/tcp/4001
-            - /ip4/0.0.0.0/udp/4001/quic-v1
-            - /ip4/0.0.0.0/udp/4001/webrtc-direct
+            - /ip4/0.0.0.0/tcp/5001
+            - /ip4/0.0.0.0/tcp/5001/quic-v1
+            - /ip4/0.0.0.0/tcp/5001/webrtc-direct
           bootstrap-nodes:                  # Matches pconf:"bootstrap-nodes"
           dht-refresh-interval: 30       # Matches pconf:"dht-refresh-interval"

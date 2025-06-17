@@ -87,6 +87,11 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		return
 	}
 
+	notifee := &libp2pHostNotifee{
+		SubServer: s,
+	}
+	s.host.Network().Notify(notifee)
+
 	// Create DHT instance in server mode
 	s.dht, err = dht.New(ctx, s.host,
 		// Isolate network namespace via /peers-touch
@@ -134,18 +139,20 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) (err error
 		return errors.New("bootstrap server is already running")
 	}
 
-	ticker := time.NewTicker(s.opts.DHTRefreshInterval)
-	defer ticker.Stop()
-
 	doNow := make(chan struct{})
-
 	boot := func() {
 		logger.Infof(ctx, "bootstrap peer: %s", s.host.ID().String())
+		logger.Infof(ctx, `bootstrap addr: 
+			%s`, joinForPrintLineByLine("----", s.host.Addrs()))
 		if errIn := s.dht.Bootstrap(ctx); errIn != nil {
 			logger.Errorf(ctx, "failed to bootstrap peers: %v", errIn)
 		}
 	}
+
 	go func() {
+		ticker := time.NewTicker(s.opts.DHTRefreshInterval)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case <-doNow:
