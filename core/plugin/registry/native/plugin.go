@@ -21,7 +21,7 @@ var configOptions struct {
 					BootstrapNodes           []string `pconf:"bootstrap-nodes"`
 					BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
 					BootstrapNodeRetryTimes  int      `pconf:"bootstrap-node-retry-times"`
-					MDNSEnable               bool     `pconf:"mdns-endable"`
+					MDNSEnable               bool     `pconf:"mdns-enable"`
 					BootstrapEnable          bool     `pconf:"bootstrap-enable"`
 					BootstrapToSelf          bool     `pconf:"bootstrap-to-self"`
 					BootstrapListenAddrs     []string `pconf:"bootstrap-listen-addrs"`

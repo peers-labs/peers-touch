@@ -158,10 +158,10 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return fmt.Errorf("failed to create libp2p host: %v", err)
 	}
 	r.host = h
-	notifee := &libp2pHostNotifee{
-		nativeRegistry: r,
-	}
-	r.host.Network().Notify(notifee)
+	// notifee := &libp2pHostNotifee{
+	// 	nativeRegistry: r,
+	// }
+	// r.host.Network().Notify(notifee)
 
 	// Create DHT instance in server mode
 	r.dht, err = dht.New(ctx, h,
@@ -198,7 +198,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 			return peerBootstrapNodes
 		}),
 		dht.BucketSize(20),
-		dht.OnRequestHook(dhtRequestHooksWrap),
+		// dht.OnRequestHook(dhtRequestHooksWrap),
 	)
 	if err != nil {
 		return fmt.Errorf("create libp2p host: %w", err)

@@ -87,11 +87,6 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		return
 	}
 
-	//	notifee := &libp2pHostNotifee{
-	//		SubServer: s,
-	//	}
-	//	s.host.Network().Notify(notifee)
-
 	// Create DHT instance in server mode
 	s.dht, err = dht.New(ctx, s.host,
 		// Isolate network namespace via /peers-touch
@@ -139,10 +134,12 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) (err error
 		return errors.New("bootstrap server is already running")
 	}
 
+	logger.Info(ctx, "peers-touch bootstrap server starting")
+
 	doNow := make(chan struct{})
 	boot := func() {
-		logger.Infof(ctx, "bootstrap peer: %s", s.host.ID().String())
-		logger.Infof(ctx, `bootstrap addr: 
+		logger.Infof(ctx, "peers-touch bootstrap server's id: %s", s.host.ID().String())
+		logger.Infof(ctx, `peers-touch bootstrap server is listening on : 
 			%s`, joinForPrintLineByLine("----", s.host.Addrs()))
 		if errIn := s.dht.Bootstrap(ctx); errIn != nil {
 			logger.Errorf(ctx, "failed to bootstrap peers: %v", errIn)
@@ -160,7 +157,7 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) (err error
 			case <-ticker.C:
 				boot()
 			case <-ctx.Done():
-				logger.Warnf(ctx, "bootstrap stopped %+v", ctx.Err())
+				logger.Warnf(ctx, "peers-touch bootstrap server stopped %+v", ctx.Err())
 				return
 			}
 		}
@@ -171,6 +168,8 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) (err error
 	}()
 
 	s.status = server.StatusRunning
+
+	logger.Infof(ctx, "peers-touch bootstrap starts to serve at %s", s.host.ID().String())
 	return nil
 }
 
