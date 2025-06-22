@@ -8,6 +8,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+var ()
+
 type mdnsNotifee struct {
 	host host.Host
 }

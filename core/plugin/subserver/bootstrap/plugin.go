@@ -17,6 +17,7 @@ var bootstrapOptions struct {
 				Subserver struct {
 					Bootstrap struct {
 						Enabled            bool          `pconf:"enabled"`
+						EnableMDNS         bool          `pconf:"enable-mdns"`
 						IdentityKey        string        `pconf:"identity-key"`
 						ListenAddrs        []string      `pconf:"listen-addrs"`
 						BootstrapNodes     []string      `pconf:"bootstrap-nodes"`
@@ -39,6 +40,7 @@ func (p *bootstrap) Options() []option.Option {
 
 	opts = append(opts, WithEnabled(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.Enabled))
 	opts = append(opts, WithListenAddrs(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.ListenAddrs))
+	opts = append(opts, WithMDNS(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.EnableMDNS))
 
 	if len(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.BootstrapNodes) != 0 {
 		nodes := bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.BootstrapNodes

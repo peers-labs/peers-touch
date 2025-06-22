@@ -2,7 +2,7 @@ package bootstrap
 
 import (
 	"time"
-	
+
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
@@ -20,6 +20,7 @@ type Options struct {
 	*option.Options
 
 	Enabled            bool
+	EnableMDNS         bool
 	IdentityKey        crypto.PrivKey
 	ListenAddrs        []string
 	BootstrapNodes     []multiaddr.Multiaddr
@@ -35,6 +36,12 @@ func WithIdentityKey(keyFile crypto.PrivKey) option.Option {
 func WithListenAddrs(addrs []string) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.ListenAddrs = append(o.ListenAddrs, addrs...)
+	})
+}
+
+func WithMDNS(enable bool) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.EnableMDNS = enable
 	})
 }
 

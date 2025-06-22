@@ -18,6 +18,7 @@ import (
 	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -36,6 +37,8 @@ type SubServer struct {
 	runningLock sync.Mutex
 	status      server.Status
 	addrs       []string
+	mdns        mdns.Service
+	mdnsNotifee *mdnsNotifee
 }
 
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error) {
@@ -86,6 +89,20 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		err = fmt.Errorf("failed to create libp2p host: %v", err)
 		return
 	}
+	notifee := &libp2pHostNotifee{
+		SubServer: s,
+	}
+	s.host.Network().Notify(notifee)
+
+	// Init MDNS
+	if s.opts.EnableMDNS {
+		s.mdnsNotifee = newMDNSNotifee(s.host, s.opts.DHTRefreshInterval)
+		s.mdns = mdns.NewMdnsService(s.host, "peers-touch.mdns."+s.host.ID().String(), s.mdnsNotifee)
+		err = s.mdns.Start()
+		if err != nil {
+			return fmt.Errorf("start mdns service: %w", err)
+		}
+	}
 
 	// Create DHT instance in server mode
 	s.dht, err = dht.New(ctx, s.host,
@@ -102,7 +119,10 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 			},
 		),
 		dht.BootstrapPeersFunc(func() []peer.AddrInfo {
+			logger.Infof(ctx, "libp2p is fetching bootstrap nodes.")
 			bootstrapNodes := append(s.opts.BootstrapNodes, dht.DefaultBootstrapPeers...)
+			bootstrapNodes = append(bootstrapNodes, s.mdnsNotifee.listAlivePeerAddrs()...)
+
 			var peerBootstrapNodes []peer.AddrInfo
 			for _, addr := range bootstrapNodes {
 				pi, errIn := peer.AddrInfoFromP2pAddr(addr)

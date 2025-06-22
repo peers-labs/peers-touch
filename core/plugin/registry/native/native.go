@@ -158,10 +158,10 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return fmt.Errorf("failed to create libp2p host: %v", err)
 	}
 	r.host = h
-	// notifee := &libp2pHostNotifee{
-	// 	nativeRegistry: r,
-	// }
-	// r.host.Network().Notify(notifee)
+	notifee := &libp2pHostNotifee{
+		nativeRegistry: r,
+	}
+	r.host.Network().Notify(notifee)
 
 	// Create DHT instance in server mode
 	r.dht, err = dht.New(ctx, h,
@@ -180,10 +180,6 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		),
 		dht.BootstrapPeersFunc(func() []peer.AddrInfo {
 			bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
-
-			if r.extOpts.bootstrapToSelf {
-				// todo bootstrap self to current node if this node is a bootstrap one.
-			}
 
 			var peerBootstrapNodes []peer.AddrInfo
 			for _, addr := range bootstrapNodes {
@@ -211,7 +207,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 
 	// Init MDNS
 	if r.extOpts.mdnsEnable {
-		r.mdnsS = mdns.NewMdnsService(r.host, "peers-touch.mdns", &mdnsNotifee{})
+		r.mdnsS = mdns.NewMdnsService(r.host, "peers-touch.mdns."+r.host.ID().String(), &mdnsNotifee{})
 		err = r.mdnsS.Start()
 		if err != nil {
 			return fmt.Errorf("start mdns service: %w", err)
