@@ -44,7 +44,7 @@ type SubServer struct {
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error) {
 	defer func() {
 		if err != nil {
-			logger.Errorf(ctx, "failed to init bootstrap subserver: %v", err)
+			logger.Errorf(ctx, "[Init] failed to init bootstrap subserver: %v", err)
 			return
 		}
 	}()
@@ -53,11 +53,22 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		s.opts.Apply(opt)
 	}
 
+	s.store, err = store.GetStore(ctx)
+	if err != nil {
+		err = fmt.Errorf("[Init] bootstrap server get store error: %w", err)
+		return
+	}
+	err = s.autoMigrate(ctx)
+	if err != nil {
+		err = fmt.Errorf("[Init] bootstrap server create table error: %w", err)
+		return
+	}
+
 	var hostOptions []libp2p.Option
 
 	// Load or generate private key
 	if s.opts.IdentityKey == nil {
-		err = errors.New("identity key for bootstrap server is required")
+		err = errors.New("[Init] identity key for bootstrap server is required")
 		return
 	}
 
