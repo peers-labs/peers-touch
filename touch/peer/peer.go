@@ -25,7 +25,7 @@ func SetPeerAddr(c context.Context, param *model.PeerAddressParam) error {
 		// If no error, a duplicate entry was found
 		return model.ErrPeerAddrExists
 	} else if err.Error() != "record not found" {
-		// Handle other database errors
+		// listPeers other database errors
 		log.Warnf(c, "[SetPeerAddr] Check existing peer address err: %v", err)
 		return err
 	}

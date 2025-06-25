@@ -24,7 +24,6 @@ require (
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native v0.0.0
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
 	github.com/libp2p/go-libp2p v0.41.1
-	github.com/libp2p/go-libp2p-core v0.20.1
 	github.com/libp2p/go-libp2p-kad-dht v0.33.1
 	github.com/libp2p/go-libp2p-record v0.3.1
 	github.com/multiformats/go-multiaddr v0.15.0
@@ -40,6 +39,7 @@ require (
 	github.com/bytedance/gopkg v0.1.0 // indirect
 	github.com/bytedance/sonic v1.12.0 // indirect
 	github.com/bytedance/sonic/loader v0.2.0 // indirect
+	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
@@ -48,11 +48,15 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
+	github.com/dgraph-io/badger/v2 v2.2007.4 // indirect
+	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
+	github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2 // indirect
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/native v0.0.0 // indirect
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/service/native v0.0.0 // indirect
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap v0.0.0-00010101000000-000000000000 // indirect
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/turn v0.0.0-00010101000000-000000000000 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/elastic/gosigar v0.14.3 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
@@ -67,16 +71,20 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/golang/snappy v0.0.3 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/pprof v0.0.0-20250208200701-d0013a598941 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
+	github.com/hashicorp/golang-lru/arc/v2 v2.0.7 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/ipfs/boxo v0.30.0 // indirect
 	github.com/ipfs/go-cid v0.5.0 // indirect
 	github.com/ipfs/go-datastore v0.8.2 // indirect
+	github.com/ipfs/go-ds-badger2 v0.1.5 // indirect
 	github.com/ipfs/go-log/v2 v2.6.0 // indirect
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect

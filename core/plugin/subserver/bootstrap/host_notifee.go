@@ -79,12 +79,14 @@ func (l libp2pHostNotifee) GetPeerAndConnectionInfo(conn network.Conn, isActive 
 	ipv4, ipv6 := l.getIpv4AndIpv6(remoteAddr)
 
 	// Get connection direction as string
-	direction := "unknown"
+	direction := ""
 	switch conn.Stat().Direction {
 	case network.DirInbound:
 		direction = "inbound"
 	case network.DirOutbound:
 		direction = "outbound"
+	default:
+		direction = "unknown"
 	}
 
 	// Populate PeerInfo
@@ -101,8 +103,13 @@ func (l libp2pHostNotifee) GetPeerAndConnectionInfo(conn network.Conn, isActive 
 		Direction:       direction,
 		LocalMultiAddr:  localAddr.String(),
 		RemoteMultiAddr: remoteAddr.String(),
-		ConnectedAt:     time.Now(),
 		IsActive:        isActive,
+	}
+
+	if isActive {
+		connectionInfo.ConnectedAt = time.Now()
+	} else {
+		connectionInfo.DisconnectedAt = time.Now()
 	}
 
 	return peerInfo, connectionInfo

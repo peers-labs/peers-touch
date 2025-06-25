@@ -80,7 +80,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusRunning
 
-	// Handle graceful shutdown
+	// listPeers graceful shutdown
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

@@ -13,12 +13,15 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/ipfs/boxo/ipns"
+	badger "github.com/ipfs/go-ds-badger2"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoreds"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -39,6 +42,7 @@ type SubServer struct {
 	addrs       []string
 	mdns        mdns.Service
 	mdnsNotifee *mdnsNotifee
+	peerStore   peerstore.Peerstore
 }
 
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error) {
@@ -64,6 +68,22 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		return
 	}
 
+	// --- Create a persistent peerStore with BadgerDB ---
+	dbPath := "./peerStore-bootstrap"
+	datastore, err := badger.NewDatastore(dbPath, nil)
+	if err != nil {
+		err = fmt.Errorf("failed to create badger datastore at %s: %w", dbPath, err)
+		return
+	}
+
+	ps, err := pstoreds.NewPeerstore(ctx, datastore, pstoreds.DefaultOpts())
+	if err != nil {
+		datastore.Close() // clean up on failure
+		err = fmt.Errorf("failed to create pstoreds peerStore: %w", err)
+		return
+	}
+	s.peerStore = ps // Store for later use and closing.
+
 	var hostOptions []libp2p.Option
 
 	// Load or generate private key
@@ -75,7 +95,9 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 	hostOptions = append(hostOptions,
 		/*		libp2p.Transport(webrtc.New),
 				libp2p.Transport(quic.NewTransport),*/
-		libp2p.Identity(s.opts.IdentityKey))
+		libp2p.Identity(s.opts.IdentityKey),
+		libp2p.Peerstore(s.peerStore), // Inject the persistent peerStore
+	)
 
 	addrs := s.opts.ListenAddrs
 	if len(addrs) == 0 {
@@ -227,6 +249,15 @@ func (s *SubServer) Stop(ctx context.Context) (err error) {
 		return err
 	}
 
+	// Close the persistent peerStore (which also closes the datastore).
+	if s.peerStore != nil {
+		err = s.peerStore.Close()
+		if err != nil {
+			err = fmt.Errorf("failed to close peerStore: %w", err)
+			return err
+		}
+	}
+
 	s.status = server.StatusStopped
 
 	return nil
@@ -247,7 +278,13 @@ func (s *SubServer) Status() server.Status {
 }
 
 func (s *SubServer) Handlers() []server.Handler {
-	return nil
+	return []server.Handler{
+		server.NewHandler(
+			"list-peers",
+			"/sub-bootstrap/list-peers",
+			s.listPeerInfos,
+		),
+	}
 }
 
 func (s *SubServer) Type() server.SubserverType {

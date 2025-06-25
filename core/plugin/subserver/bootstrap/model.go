@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
+	"github.com/libp2p/go-libp2p/core/network"
 	"gorm.io/gorm"
 )
 
@@ -31,16 +32,20 @@ func (p *PeerInfo) BeforeCreate(tx *gorm.DB) error {
 
 // ConnectionInfo stores details about individual peer connections
 type ConnectionInfo struct {
-	ID              uint64     `gorm:"primaryKey;type:bigint;comment:snowflake id"` // Snowflake 64-bit ID
-	PeerID          string     `gorm:"index;size:255"`                              // Foreign key to PeerInfo.PeerID
-	IPv4            string     `gorm:"size:15"`                                     // IPv4/IPv6 address
-	IPv6            string     `gorm:"size:39"`                                     // IPv4/IPv6 address
-	Direction       string     `gorm:"size:10;check:direction IN ('inbound','outbound','unknown')"`
-	LocalMultiAddr  string     `gorm:"size:512"` // Local multiaddress
-	RemoteMultiAddr string     `gorm:"size:512"` // Remote multiaddress
-	ConnectedAt     time.Time  // Connection start time
-	DisconnectedAt  *time.Time `gorm:"default:null"` // Connection end time (null if active)
-	IsActive        bool       `gorm:""`             // Connection status flag
+	ID              uint64    `gorm:"primaryKey;type:bigint;comment:snowflake id"` // Snowflake 64-bit ID
+	PeerID          string    `gorm:"index;size:255"`                              // Foreign key to PeerInfo.PeerID
+	IPv4            string    `gorm:"size:15"`                                     // IPv4/IPv6 address
+	IPv6            string    `gorm:"size:39"`                                     // IPv4/IPv6 address
+	Direction       string    `gorm:"size:10;check:direction IN ('inbound','outbound','unknown')"`
+	LocalMultiAddr  string    `gorm:"size:512"` // Local multiaddress
+	RemoteMultiAddr string    `gorm:"size:512"` // Remote multiaddress
+	ConnectedAt     time.Time // Connection start time
+	DisconnectedAt  time.Time `gorm:"default:null"` // Connection end time (null if active)
+	IsActive        bool      `gorm:""`             // Connection status flag
+
+	Stats        network.ConnStats `gorm:"-"`
+	ConnectionID string            `gorm:"-"`
+	Latency      time.Duration     `gorm:"-"`
 }
 
 func (*ConnectionInfo) TableName() string {

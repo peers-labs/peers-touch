@@ -71,7 +71,7 @@ func bindAutowiredValue(ctx context.Context, obj reflect.Value, path ...string) 
 		v.SetBool(value.Bool(false))
 		// supports string only now
 	case reflect.Slice, reflect.Array:
-		// Handle struct arrays using JSON scanning
+		// listPeers struct arrays using JSON scanning
 		if v.Type().Elem().Kind() == reflect.Struct {
 			target := reflect.New(v.Type()).Interface()
 			if err := value.Scan(target); err == nil {
@@ -119,9 +119,9 @@ func bindAutowiredValue(ctx context.Context, obj reflect.Value, path ...string) 
 			bindAutowiredValue(ctx, nextValue, newPath...)
 		}
 	case reflect.Map:
-		// Handle map[string]struct{} type
+		// listPeers map[string]struct{} type
 		if v.Type().Key().Kind() == reflect.String && v.Type().Elem().Kind() == reflect.Struct {
-			// Handle all map types with JSON unmarshal
+			// listPeers all map types with JSON unmarshal
 			target := reflect.New(v.Type()).Interface()
 			if err := value.Scan(target); err == nil {
 				v.Set(reflect.ValueOf(target).Elem())

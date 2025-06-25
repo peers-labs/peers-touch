@@ -27,7 +27,7 @@ func (s *SubServer) savePeerInfo(ctx context.Context, pi PeerInfo, conn Connecti
 	db, err := s.store.RDS(ctx)
 
 	// ------------------------------
-	// 1. Handle PeerInfo (upsert)
+	// 1. listPeers PeerInfo (upsert)
 	// ------------------------------
 	var existingPeer PeerInfo
 	err = db.WithContext(ctx).Where("peer_id = ?", pi.PeerID).First(&existingPeer).Error
@@ -50,9 +50,6 @@ func (s *SubServer) savePeerInfo(ctx context.Context, pi PeerInfo, conn Connecti
 		}
 	}
 
-	// ------------------------------
-	// 2. Handle ConnectionInfo (upsert by peerId + direction)
-	// ------------------------------
 	// ------------------------------
 	// 2. Delete old ConnectionInfo records for this peer
 	// ------------------------------
