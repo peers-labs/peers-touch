@@ -7,6 +7,7 @@ import (
 	"time"
 
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap/model"
 	"gorm.io/gorm"
 )
 
@@ -17,19 +18,19 @@ func (s *SubServer) autoMigrate(ctx context.Context) error {
 		return err
 	}
 
-	return rds.AutoMigrate(&PeerInfo{}, &ConnectionInfo{})
+	return rds.AutoMigrate(&model.PeerInfo{}, &model.ConnectionInfo{})
 }
 
 // savePeerInfo saves both PeerInfo and ConnectionInfo, checking for existing records first
 // - Updates existing PeerInfo if needed
 // - Creates or updates ConnectionInfo based on peerId + direction uniqueness
-func (s *SubServer) savePeerInfo(ctx context.Context, pi PeerInfo, conn ConnectionInfo) (err error) {
+func (s *SubServer) savePeerInfo(ctx context.Context, pi model.PeerInfo, conn model.ConnectionInfo) (err error) {
 	db, err := s.store.RDS(ctx)
 
 	// ------------------------------
 	// 1. listPeers PeerInfo (upsert)
 	// ------------------------------
-	var existingPeer PeerInfo
+	var existingPeer model.PeerInfo
 	err = db.WithContext(ctx).Where("peer_id = ?", pi.PeerID).First(&existingPeer).Error
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -55,7 +56,7 @@ func (s *SubServer) savePeerInfo(ctx context.Context, pi PeerInfo, conn Connecti
 	// ------------------------------
 	err = db.WithContext(ctx).
 		Where("peer_id = ?", conn.PeerID).
-		Delete(&ConnectionInfo{}).Error
+		Delete(&model.ConnectionInfo{}).Error
 	if err != nil {
 		return fmt.Errorf("[savePeerInfo] Failed to delete old records, err: %s", err) // Failed to delete old records
 	}

@@ -36,5 +36,5 @@ peers:
         bootstrap-listen-addr:
           -
         bootstrap-nodes:
-          - /ip4/127.0.0.1/tcp/5001/p2p/12D3KooWCj4oxondHMeyeCUqSDfQf7h55KU41Ba2qTH426Pk1Dvk
+          - /ip4/127.0.0.1/tcp/5001/p2p/12D3KooWJG5JVRkcJy1Zqw4ZnTKpJrVFrQFPL4k5doXoEP5h416H
     

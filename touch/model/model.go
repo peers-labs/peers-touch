@@ -23,3 +23,9 @@ func NewSuccessResponse(msg string, data interface{}) *SuccessResponse {
 		Data: data,
 	}
 }
+
+type PageData[T any] struct {
+	Total int `json:"total"`
+	Num   int `json:"num"`
+	List  []T `json:"list"`
+}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	hz "github.com/cloudwego/hertz/pkg/app/server"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
@@ -76,6 +77,9 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 		return err
 	}
 
+	// recovery middleware
+	s.hertz.Use(recovery.Recovery())
+
 	s.hertz.OnShutdown = append(s.hertz.OnShutdown, func(hertzCtx context.Context) {
 		log.Infof(hertzCtx, "shutdown hertz")
 		cancel()
@@ -115,7 +119,7 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 				return err
 			}
 		default:
-			return fmt.Errorf("unsupported handler type: %T", h)
+			return fmt.Errorf("unsupported handler type: %T of %s. ", h, handler.Name())
 		}
 	}
 

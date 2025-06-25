@@ -1,14 +1,17 @@
 package bootstrap
 
 import (
-	"encoding/json"
-	"net/http"
+	"context"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap/model"
+	"github.com/dirty-bro-tech/peers-touch-go/touch"
+	pm "github.com/dirty-bro-tech/peers-touch-go/touch/model"
 )
 
 // listPeerInfos processes the HTTP request and returns peer info
-func (s *SubServer) listPeerInfos(w http.ResponseWriter, r *http.Request) {
+func (s *SubServer) listPeerInfos(c context.Context, ctx *app.RequestContext) {
 	peers := s.host.Network().Peers()
-	results := make([]ConnectionInfo, 0, len(peers))
+	var results []model.ConnectionInfoPO
 
 	for _, p := range peers {
 		// Get peer addresses from peerStore
@@ -26,17 +29,23 @@ func (s *SubServer) listPeerInfos(w http.ResponseWriter, r *http.Request) {
 		conn := conns[0]
 		latency := s.host.Peerstore().LatencyEWMA(p)
 
-		results = append(results, ConnectionInfo{
+		results = append(results, model.ConnectionInfoPO{
 			PeerID:       p.String(),
 			ConnectionID: conn.ID(),
-			Stats:        conn.Stat(),
-			Latency:      latency,
+			Stats: model.ConnectionStats{
+				Direction:  conn.Stat().Direction.String(),
+				Opened:     conn.Stat().Opened,
+				NumStreams: conn.Stat().NumStreams,
+			},
+			Latency: latency.Microseconds(),
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"count": len(results),
-		"peers": results,
-	})
+	page := pm.PageData[model.ConnectionInfoPO]{
+		Total: len(results),
+		List:  results,
+		Num:   1,
+	}
+
+	touch.SuccessResponse(ctx, "query peers infos success", page)
 }

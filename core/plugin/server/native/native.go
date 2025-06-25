@@ -64,7 +64,7 @@ func (s *Server) Handle(handler server.Handler) error {
 			h(r.Context(), w, r)
 		})
 	default:
-		return fmt.Errorf("unsupported handler type: %T", h)
+		return fmt.Errorf("unsupported handler type: %T of %s. ", h, handler.Name())
 	}
 
 	// Apply middlewares

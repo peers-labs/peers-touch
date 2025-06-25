@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap/model"
 	"time"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
@@ -70,7 +71,7 @@ func (l libp2pHostNotifee) getIpv4AndIpv6(addr multiaddr.Multiaddr) (ipv4, ipv6 
 }
 
 // GetPeerAndConnectionInfo extracts PeerInfo and ConnectionInfo from a libp2p connection
-func (l libp2pHostNotifee) GetPeerAndConnectionInfo(conn network.Conn, isActive bool) (PeerInfo, ConnectionInfo) {
+func (l libp2pHostNotifee) GetPeerAndConnectionInfo(conn network.Conn, isActive bool) (model.PeerInfo, model.ConnectionInfo) {
 	pid := conn.RemotePeer()
 	remoteAddr := conn.RemoteMultiaddr()
 	localAddr := conn.LocalMultiaddr()
@@ -90,13 +91,13 @@ func (l libp2pHostNotifee) GetPeerAndConnectionInfo(conn network.Conn, isActive 
 	}
 
 	// Populate PeerInfo
-	peerInfo := PeerInfo{
+	peerInfo := model.PeerInfo{
 		PeerID:      pid.String(),
 		FirstSeenAt: time.Now(), // Use current time as first seen (adjust if tracking existing peers)
 	}
 
 	// Populate ConnectionInfo
-	connectionInfo := ConnectionInfo{
+	connectionInfo := model.ConnectionInfo{
 		PeerID:          pid.String(),
 		IPv4:            ipv4,
 		IPv6:            ipv6,

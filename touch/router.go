@@ -80,7 +80,7 @@ func convertRouterToServerHandler(r Router) server.Handler {
 	return server.Handler(r)
 }
 
-func successResponse(ctx *app.RequestContext, msg string, data interface{}) {
+func SuccessResponse(ctx *app.RequestContext, msg string, data interface{}) {
 	if msg == "" {
 		msg = "success"
 	}

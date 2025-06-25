@@ -1,4 +1,4 @@
-package bootstrap
+package model
 
 import (
 	"time"

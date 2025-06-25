@@ -3,13 +3,13 @@ package touch
 import (
 	"context"
 	"errors"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/peer"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
+	"github.com/dirty-bro-tech/peers-touch-go/touch/peer"
 )
 
 const (
@@ -66,5 +66,5 @@ func SetPeerAddrHandler(c context.Context, ctx *app.RequestContext) {
 	}
 
 	// If everything is successful, return a success response
-	successResponse(ctx, "Peer address saved successfully", nil)
+	SuccessResponse(ctx, "Peer address saved successfully", nil)
 }
