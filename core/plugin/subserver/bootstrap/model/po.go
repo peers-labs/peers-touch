@@ -21,4 +21,5 @@ type ConnectionInfoPO struct {
 	ConnectionID string
 	Stats        ConnectionStats
 	Latency      int64
+	Addrs        []string
 }

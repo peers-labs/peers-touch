@@ -154,6 +154,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	h, err := libp2p.New(
 		hostOptions...,
 	)
+
 	if err != nil {
 		return fmt.Errorf("failed to create libp2p host: %v", err)
 	}
@@ -387,7 +388,7 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...regis
 
 func (r *nativeRegistry) Watch(ctx context.Context, opts ...registry.WatchOption) (registry.Watcher, error) {
 	// Implement DHT-based watch functionality
-	return nil, errors.New("not implemented")
+	return nil, errors.New("[Watch] not implemented")
 }
 
 func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOption) ([]*registry.Peer, error) {
@@ -400,7 +401,7 @@ func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOpti
 	}
 	serviceCID, err := prefix.Sum([]byte(networkNamespace + ":peers-service"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create service CID: %w", err)
+		return nil, fmt.Errorf("[ListPeers] failed to create service CID: %w", err)
 	}
 
 	// Query DHT for all providers
@@ -563,12 +564,12 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 		data := networkBootstrapNamespace + ":" + peerReg.ID
 		serviceCID, err := prefix.Sum([]byte(data))
 		if err != nil {
-			return fmt.Errorf("failed to create service CID: %w", err)
+			return fmt.Errorf("[register] failed to create service CID: %w", err)
 		}
 
 		err = r.dht.Provide(ctx, serviceCID, true)
 		if err != nil {
-			logger.Warnf(ctx, "Failed to announce as DHT provider: %v", err)
+			logger.Warnf(ctx, "[register] Failed to announce as DHT provider: %v", err)
 		}
 	}
 	// register to db
@@ -583,7 +584,7 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 
 		err := r.setRegisterRecord(ctx, rd)
 		if err != nil {
-			logger.Warnf(ctx, "Failed to register as DHT provider: %v", err)
+			logger.Warnf(ctx, "[register] Failed to register as DHT provider: %v", err)
 		}
 	}
 
@@ -601,7 +602,7 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 
 	err = r.dht.PutValue(ctx, key, dataPk)
 	if err != nil {
-		err = fmt.Errorf("failed to put value to dht: %w", err)
+		err = fmt.Errorf("[register] failed to put value to dht: %w", err)
 		logger.Errorf(ctx, "%s", err)
 		return err
 	}
@@ -614,15 +615,15 @@ func (r *nativeRegistry) beforeRegister(ctx context.Context, peerReg *registry.P
 	}
 
 	if peerReg.ID == "" {
-		return errors.New("peer ID cannot be nil")
+		return errors.New("[beforeRegister] peer ID cannot be nil")
 	}
 
 	if peerReg.Version == "" {
-		return errors.New("peer Version cannot be nil")
+		return errors.New("[beforeRegister] peer Version cannot be nil")
 	}
 
 	if peerReg.Name == "" {
-		return errors.New("peer Name cannot be nil")
+		return errors.New("[beforeRegister] peer Name cannot be nil")
 	}
 
 	peerReg.Metadata[MetaConstantKeyPeerID] = r.host.ID().String()
@@ -638,7 +639,7 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 	logger.Infof(ctx, "bootstrap peer: %s", r.host.ID().String())
 
 	if err := r.dht.Bootstrap(ctx); err != nil {
-		logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
+		logger.Errorf(ctx, "[bootstrap] failed to bootstrap peers: %v", err)
 	}
 
 	if true {
@@ -650,10 +651,10 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 		case <-ticker.C:
 			logger.Infof(ctx, "bootstrap peer: %s", r.host.ID().String())
 			if err := r.dht.Bootstrap(ctx); err != nil {
-				logger.Errorf(ctx, "failed to bootstrap peers: %v", err)
+				logger.Errorf(ctx, "[bootstrap] failed to bootstrap peers: %v", err)
 			}
 		case <-ctx.Done():
-			logger.Warnf(ctx, "bootstrap stopped %+v", ctx.Err())
+			logger.Warnf(ctx, "[bootstrap] bootstrap stopped %+v", ctx.Err())
 			return
 		}
 	}
@@ -663,10 +664,10 @@ func (r *nativeRegistry) refreshRoutingTable(ctx context.Context) {
 	select {
 	case err := <-r.dht.RefreshRoutingTable():
 		if err != nil {
-			logger.Debugf(ctx, "Routing table refresh error: %v", err)
+			logger.Debugf(ctx, "[refreshRoutingTable] Routing table refresh error: %v", err)
 		}
 	case <-time.After(30 * time.Second):
-		logger.Warnf(ctx, "Routing table refresh timed out")
+		logger.Warnf(ctx, "[refreshRoutingTable] Routing table refresh timed out")
 	}
 }
 
@@ -676,7 +677,7 @@ func (r *nativeRegistry) refreshTurn(ctx context.Context) {
 
 	cl, errClient := r.turn.Get()
 	if errClient != nil {
-		logger.Errorf(ctx, "get native turn client failed: %v", errClient)
+		logger.Errorf(ctx, "[refreshTurn] get native turn client failed: %v", errClient)
 		return
 	}
 
@@ -685,23 +686,32 @@ func (r *nativeRegistry) refreshTurn(ctx context.Context) {
 	// socket.
 	relayConn, err := cl.Allocate()
 	if err != nil && !strings.HasPrefix(err.Error(), "already allocated") {
-		logger.Errorf(ctx, "Failed to allocate: %s", err)
+		logger.Errorf(ctx, "[refreshTurn] Failed to allocate: %s", err)
 		return
 	} else if err == nil {
 		// The relayConn's local address is actually the transport
 		// address assigned on the TURN server.
-		logger.Infof(ctx, "relayed-address=%s", relayConn.LocalAddr().String())
-		r.turnRelayAddresses = append(r.turnRelayAddresses, relayConn.LocalAddr().String())
+		addr := relayConn.LocalAddr().String()
+		logger.Infof(ctx, "relayed-address=%s", addr)
+		r.turnRelayAddresses = append(r.turnRelayAddresses, addr)
+		errAdd := r.addListenAddr(ctx, addr)
+		if errAdd != nil {
+			logger.Errorf(ctx, "[refreshTurn] Failed to add listen relay-address: %v", errAdd)
+		}
 	}
 
 	// Send BindingRequest to learn our external IP
 	mappedAddr, err := cl.SendBindingRequest()
 	if err != nil {
-		logger.Errorf(ctx, "Failed to send binding request: %s", err)
+		logger.Errorf(ctx, "[refreshTurn] Failed to send binding request: %s", err)
 		return
 	} else {
 		logger.Infof(ctx, "STUN traversal address=%s", mappedAddr.String())
 		r.turnStunAddresses = append(r.turnStunAddresses, mappedAddr.String())
+		errAdd := r.addListenAddr(ctx, mappedAddr.String())
+		if errAdd != nil {
+			logger.Errorf(ctx, "[refreshTurn] Failed to add listen stun-address: %v", errAdd)
+		}
 	}
 
 	r.turnUpdateTime = time.Now()
@@ -714,12 +724,12 @@ func (r *nativeRegistry) updateBootstrapStatus(ctx context.Context, addr string,
 	defer r.bootstrapStateLock.Unlock()
 
 	t := time.Now()
-	log := fmt.Sprintf("%+v:%t", t, successful)
+	l := fmt.Sprintf("%+v:%t", t, successful)
 	if status, ok := r.bootstrapNodesStatus[addr]; !ok {
 		r.bootstrapNodesStatus[addr] = &bootstrapState{
 			Connected: successful,
 			UpdatedAt: t,
-			Logs:      []string{log},
+			Logs:      []string{l},
 		}
 	} else {
 		status.Connected = successful
@@ -729,7 +739,7 @@ func (r *nativeRegistry) updateBootstrapStatus(ctx context.Context, addr string,
 			status.Logs = status.Logs[1:]
 		}
 
-		status.Logs = append(status.Logs, log)
+		status.Logs = append(status.Logs, l)
 	}
 
 	if !successful {
@@ -744,12 +754,12 @@ func (r *nativeRegistry) updateBootstrapStatus(ctx context.Context, addr string,
 func (r *nativeRegistry) signPayload(privateKey string, data []byte) ([]byte, error) {
 	block, _ := pem.Decode([]byte(privateKey))
 	if block == nil {
-		return nil, errors.New("failed to parse PEM block")
+		return nil, errors.New("[signPayload] failed to parse PEM block")
 	}
 
 	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
+		return nil, fmt.Errorf("[signPayload] failed to parse private key: %w", err)
 	}
 
 	hashed := sha256.Sum256(data)
@@ -768,6 +778,32 @@ func (r *nativeRegistry) bootstrapSuccessful() (workingBootNodes []string, ok bo
 	}
 
 	return workingBootNodes, len(workingBootNodes) > 0
+}
+
+// addListenAddr adds a new listen address to the running libp2p host.
+func (r *nativeRegistry) addListenAddr(ctx context.Context, addr string) error {
+	var ma string
+	h, port, err := net.SplitHostPort(addr)
+	if err == nil {
+		ip := net.ParseIP(h)
+		if ip.To4() != nil {
+			ma = fmt.Sprintf("/ip4/%s/udp/%s", h, port)
+		} else {
+			ma = fmt.Sprintf("/ip6/%s/udp/%s", h, port)
+		}
+	}
+
+	listenAddr, err := multiaddr.NewMultiaddr(ma)
+	if err != nil {
+		return fmt.Errorf("[addListenAddr] failed to create multiaddr from string '%s': %w", addr, err)
+	}
+
+	if err := r.host.Network().Listen(listenAddr); err != nil {
+		return fmt.Errorf("[addListenAddr] failed to listen on new address: %w", err)
+	}
+
+	logger.Infof(ctx, "Host started listening on new address: %s", listenAddr)
+	return nil
 }
 
 func (r *nativeRegistry) unmarshalPeer(data []byte) (peerReg *registry.Peer, err error) {

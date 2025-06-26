@@ -26,6 +26,6 @@ func NewSuccessResponse(msg string, data interface{}) *SuccessResponse {
 
 type PageData[T any] struct {
 	Total int `json:"total"`
-	Num   int `json:"num"`
+	No    int `json:"no"`
 	List  []T `json:"list"`
 }

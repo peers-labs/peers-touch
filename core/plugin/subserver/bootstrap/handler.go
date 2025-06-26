@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap/model"
 	"github.com/dirty-bro-tech/peers-touch-go/touch"
@@ -37,6 +38,7 @@ func (s *SubServer) listPeerInfos(c context.Context, ctx *app.RequestContext) {
 				Opened:     conn.Stat().Opened,
 				NumStreams: conn.Stat().NumStreams,
 			},
+			Addrs:   addrStrs,
 			Latency: latency.Microseconds(),
 		})
 	}
@@ -44,7 +46,7 @@ func (s *SubServer) listPeerInfos(c context.Context, ctx *app.RequestContext) {
 	page := pm.PageData[model.ConnectionInfoPO]{
 		Total: len(results),
 		List:  results,
-		Num:   1,
+		No:    1,
 	}
 
 	touch.SuccessResponse(ctx, "query peers infos success", page)

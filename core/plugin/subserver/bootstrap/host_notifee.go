@@ -33,6 +33,7 @@ func (l libp2pHostNotifee) ListenClose(n network.Network, multiaddr multiaddr.Mu
 // Connected listens to the connected event that the peer connects to,
 // which means that it works for the active outgoing connection, not the ones passive incoming.
 func (l libp2pHostNotifee) Connected(n network.Network, conn network.Conn) {
+	logger.Infof(l.ctx, "Connected to peer: %s, direction: %s. ", conn.RemotePeer().String(), conn.Stat().Direction)
 	l.saveConnInfo(n, conn, true)
 }
 
