@@ -18,8 +18,13 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
 
+var (
+	_ service.Service = (*native)(nil)
+)
+
 type native struct {
 	opts *service.Options
+	service.AbstractService
 
 	once sync.Once
 }
@@ -82,6 +87,8 @@ func (s *native) Start(ctx context.Context) error {
 	}
 
 	logger.Infof(ctx, "peers' service started at %s", s.opts.Server.Options().Address)
+
+	s.Finish()
 	return nil
 }
 
@@ -115,6 +122,7 @@ func (s *native) Stop(ctx context.Context) error {
 	}
 
 	logger.Warnf(ctx, "stop native peers' native service stopped with error: %v", gerr)
+
 	return gerr
 }
 

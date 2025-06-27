@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
@@ -44,4 +45,8 @@ func SetPeerAddr(c context.Context, param *model.PeerAddressParam) error {
 	}
 
 	return nil
+}
+
+func GetMyPeerAddrInfos(ctx context.Context) ([]*model.PeerAddressParam, error) {
+	service.GetService().Options().Registry.GetPeer(ctx, "")
 }

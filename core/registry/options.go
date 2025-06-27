@@ -115,12 +115,26 @@ type DeregisterOptions struct {
 type GetOption func(*GetOptions)
 
 type GetOptions struct {
+	Me           bool
 	NameIsPeerID bool
+	Name         string
 }
 
 func WithNameIsPeerID() GetOption {
 	return func(o *GetOptions) {
 		o.NameIsPeerID = true
+	}
+}
+
+func WithName(name string) GetOption {
+	return func(o *GetOptions) {
+		o.Name = name
+	}
+}
+
+func GetMe() GetOption {
+	return func(o *GetOptions) {
+		o.Me = true
 	}
 }
 

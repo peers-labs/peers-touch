@@ -47,3 +47,8 @@ func (p *PeerAddressParam) Check() error {
 
 	return errors.New("invalid peer address type")
 }
+
+type PeerAddrInfo struct {
+	PeerId string   `json:"peerId"`
+	Addrs  []string `json:"addrs"`
+}

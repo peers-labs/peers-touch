@@ -131,7 +131,10 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	hostOptions = append(hostOptions,
 		/*		libp2p.Transport(webrtc.New),
 				libp2p.Transport(quic.NewTransport),*/
-		libp2p.Identity(identityKey))
+		libp2p.Identity(identityKey),
+		libp2p.EnableNATService(),
+		libp2p.EnableRelay(),
+	)
 
 	if r.extOpts.bootstrapEnable {
 		// Define the listen address
@@ -325,7 +328,7 @@ func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, op
 	return r.dht.PutValue(ctx, key, []byte{})
 }
 
-func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...registry.GetOption) (*registry.Peer, error) {
+func (r *nativeRegistry) GetPeer(ctx context.Context, opts ...registry.GetOption) (*registry.Peer, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -334,7 +337,13 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...regis
 		o(getOpts)
 	}
 
-	targetID, err := peer.Decode(name)
+	// Me means get current peer info
+	if getOpts.Me {
+
+		return
+	}
+
+	targetID, err := peer.Decode(getOpts.Name)
 	if err != nil {
 		return nil, fmt.Errorf("[GetPeer] registry failed to decode peer ID: %w", err)
 	}
@@ -346,7 +355,7 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, name string, opts ...regis
 
 	logger.Infof(ctx, "[GetPeer] registry found peers: %+v", peerAddrs)
 
-	key := fmt.Sprintf(peerKeyFormat, networkNamespace, name)
+	key := fmt.Sprintf(peerKeyFormat, networkNamespace, getOpts.Name)
 	data, err := r.dht.GetValue(ctx, key)
 	if err != nil {
 		return nil, err
@@ -694,7 +703,7 @@ func (r *nativeRegistry) refreshTurn(ctx context.Context) {
 		addr := relayConn.LocalAddr().String()
 		logger.Infof(ctx, "relayed-address=%s", addr)
 		r.turnRelayAddresses = append(r.turnRelayAddresses, addr)
-		errAdd := r.addListenAddr(ctx, addr)
+		errAdd := r.addListenAddr(ctx, addr, "peers-relay")
 		if errAdd != nil {
 			logger.Errorf(ctx, "[refreshTurn] Failed to add listen relay-address: %v", errAdd)
 		}
@@ -708,7 +717,7 @@ func (r *nativeRegistry) refreshTurn(ctx context.Context) {
 	} else {
 		logger.Infof(ctx, "STUN traversal address=%s", mappedAddr.String())
 		r.turnStunAddresses = append(r.turnStunAddresses, mappedAddr.String())
-		errAdd := r.addListenAddr(ctx, mappedAddr.String())
+		errAdd := r.addListenAddr(ctx, mappedAddr.String(), "peers-stun")
 		if errAdd != nil {
 			logger.Errorf(ctx, "[refreshTurn] Failed to add listen stun-address: %v", errAdd)
 		}
@@ -781,25 +790,25 @@ func (r *nativeRegistry) bootstrapSuccessful() (workingBootNodes []string, ok bo
 }
 
 // addListenAddr adds a new listen address to the running libp2p host.
-func (r *nativeRegistry) addListenAddr(ctx context.Context, addr string) error {
+func (r *nativeRegistry) addListenAddr(ctx context.Context, addr string, protocol string) error {
 	var ma string
 	h, port, err := net.SplitHostPort(addr)
 	if err == nil {
 		ip := net.ParseIP(h)
 		if ip.To4() != nil {
-			ma = fmt.Sprintf("/ip4/%s/udp/%s", h, port)
+			ma = fmt.Sprintf("/ip4/%s/udp/%s/%s", h, port, protocol)
 		} else {
-			ma = fmt.Sprintf("/ip6/%s/udp/%s", h, port)
+			ma = fmt.Sprintf("/ip6/%s/udp/%s/%s", h, port, protocol)
 		}
 	}
 
 	listenAddr, err := multiaddr.NewMultiaddr(ma)
 	if err != nil {
-		return fmt.Errorf("[addListenAddr] failed to create multiaddr from string '%s': %w", addr, err)
+		return fmt.Errorf("[addListenAddr] failed to create multiaddr from string '%s': %w", ma, err)
 	}
 
 	if err := r.host.Network().Listen(listenAddr); err != nil {
-		return fmt.Errorf("[addListenAddr] failed to listen on new address: %w", err)
+		return fmt.Errorf("[addListenAddr] failed to listen on new address[%s]: %w", listenAddr, err)
 	}
 
 	logger.Infof(ctx, "Host started listening on new address: %s", listenAddr)

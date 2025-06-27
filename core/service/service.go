@@ -2,10 +2,15 @@ package service
 
 import (
 	"context"
+	"sync"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+)
+
+var (
+	s Service
 )
 
 // Service is an interface that wraps the lower level libraries
@@ -24,4 +29,27 @@ type Service interface {
 	Server() server.Server
 	// Run the service
 	Run() error
+}
+
+type AbstractService struct {
+	Service
+
+	doOnce sync.Once
+}
+
+// Finish tells the root that the real service's initialization
+// Call this method in the real service's Init method or after starting
+// todo Stop event empty s
+func (as *AbstractService) Finish() {
+	as.doOnce.Do(func() {
+		s = as
+	})
+}
+
+func GetService() Service {
+	if s == nil {
+		panic("service not initialized")
+	}
+
+	return s
 }
