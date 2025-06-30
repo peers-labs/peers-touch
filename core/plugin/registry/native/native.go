@@ -339,8 +339,19 @@ func (r *nativeRegistry) GetPeer(ctx context.Context, opts ...registry.GetOption
 
 	// Me means get current peer info
 	if getOpts.Me {
+		p := &registry.Peer{
+			ID: r.host.ID().String(),
+		}
 
-		return
+		p.Metadata = map[string]interface{}{}
+
+		var addrs []string
+		for _, a := range r.host.Addrs() {
+			addrs = append(addrs, a.String())
+		}
+
+		p.Metadata[MetaConstantKeyAddress] = strings.Join(addrs, ",")
+		return p, nil
 	}
 
 	targetID, err := peer.Decode(getOpts.Name)

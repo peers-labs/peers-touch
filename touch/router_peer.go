@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	RouterURLSetPeerAddr RouterURL = "/peer/set-addr"
+	RouterURLSetPeerAddr   RouterURL = "/peer/set-addr"
+	RouterURLGetMyPeerAddr RouterURL = "/peer/get-my-peer-info"
 )
 
 type PeerRouters struct{}
@@ -22,6 +23,8 @@ func (mr *PeerRouters) Routers() []Router {
 	return []Router{
 		server.NewHandler(RouterURLSetPeerAddr.Name(), RouterURLSetPeerAddr.URL(), SetPeerAddrHandler,
 			server.WithMethod(server.POST)),
+		server.NewHandler(RouterURLSetPeerAddr.Name(), RouterURLGetMyPeerAddr.URL(), GetMyPeerAddrInfos,
+			server.WithMethod(server.GET)),
 	}
 }
 
@@ -67,4 +70,16 @@ func SetPeerAddrHandler(c context.Context, ctx *app.RequestContext) {
 
 	// If everything is successful, return a success response
 	SuccessResponse(ctx, "Peer address saved successfully", nil)
+}
+
+func GetMyPeerAddrInfos(c context.Context, ctx *app.RequestContext) {
+	// Call the GetMyPeerInfos function to retrieve the peer address information
+	peerAddrInfos, err := peer.GetMyPeerInfos(c)
+	if err != nil {
+		log.Warnf(c, "GetMyPeerInfos executed failed: %v", err)
+		failedResponse(ctx, err)
+		return
+	}
+	// If everything is successful, return the peer address information as a success response
+	SuccessResponse(ctx, "Peer address information retrieved successfully", peerAddrInfos)
 }

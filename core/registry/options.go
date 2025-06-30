@@ -126,6 +126,13 @@ func WithNameIsPeerID() GetOption {
 	}
 }
 
+func WithId(id string) GetOption {
+	return func(o *GetOptions) {
+		o.Name = id
+		WithNameIsPeerID()
+	}
+}
+
 func WithName(name string) GetOption {
 	return func(o *GetOptions) {
 		o.Name = name

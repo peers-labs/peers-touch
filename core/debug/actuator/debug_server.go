@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 )
@@ -117,7 +118,7 @@ func (d *debugSubServer) Handlers() []server.Handler {
 					return
 				}
 
-				peers, err := d.opts.registry.GetPeer(c, id)
+				peers, err := d.opts.registry.GetPeer(c, registry.WithId(id))
 				if err != nil {
 					ctx.String(http.StatusInternalServerError, fmt.Sprintf("Error getting peer: %v", err))
 					return
