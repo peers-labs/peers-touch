@@ -40,8 +40,9 @@ type AbstractService struct {
 // Finish tells the root that the real service's initialization
 // Call this method in the real service's Init method or after starting
 // todo Stop event empty s
-func (as *AbstractService) Finish() {
+func (as *AbstractService) Finish(sIn Service) {
 	as.doOnce.Do(func() {
+		as.Service = sIn
 		s = as
 	})
 }
