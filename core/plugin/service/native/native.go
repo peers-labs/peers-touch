@@ -88,7 +88,7 @@ func (s *native) Start(ctx context.Context) error {
 
 	logger.Infof(ctx, "peers' service started at %s", s.opts.Server.Options().Address)
 
-	s.Finish()
+	s.Finish(s)
 	return nil
 }
 
