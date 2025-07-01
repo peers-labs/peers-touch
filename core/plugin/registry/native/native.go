@@ -728,10 +728,10 @@ func (r *nativeRegistry) refreshTurn(ctx context.Context) {
 	} else {
 		logger.Infof(ctx, "STUN traversal address=%s", mappedAddr.String())
 		r.turnStunAddresses = append(r.turnStunAddresses, mappedAddr.String())
-		errAdd := r.addListenAddr(ctx, mappedAddr.String(), "peers-stun")
+		/*errAdd := r.addListenAddr(ctx, mappedAddr.String(), "peers-stun")
 		if errAdd != nil {
 			logger.Errorf(ctx, "[refreshTurn] Failed to add listen stun-address: %v", errAdd)
-		}
+		}*/
 	}
 
 	r.turnUpdateTime = time.Now()
