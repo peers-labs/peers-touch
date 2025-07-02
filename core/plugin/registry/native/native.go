@@ -133,6 +133,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 				libp2p.Transport(quic.NewTransport),*/
 		libp2p.Identity(identityKey),
 		libp2p.EnableNATService(),
+		libp2p.EnableHolePunching(),
 		libp2p.EnableRelay(),
 	)
 
