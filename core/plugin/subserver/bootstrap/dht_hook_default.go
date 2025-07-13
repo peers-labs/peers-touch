@@ -13,6 +13,12 @@ func init() {
 }
 
 func handleDHTSetValue(ctx context.Context, s network.Stream, req *pb.Message) {
+	id := s.ID()
+	record := req.GetRecord()
+	var v []byte
+	if record != nil {
+		v = record.Value
+	}
 	logger.Debugf(ctx, "Successfully stored value for key: %s (size: %d bytes)",
-		s.ID(), len(req.GetRecord().Value))
+		id, len(v))
 }
