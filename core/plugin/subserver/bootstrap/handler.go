@@ -2,11 +2,13 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap/model"
 	"github.com/dirty-bro-tech/peers-touch-go/touch"
 	pm "github.com/dirty-bro-tech/peers-touch-go/touch/model"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // listPeerInfos processes the HTTP request and returns peer info
@@ -50,4 +52,36 @@ func (s *SubServer) listPeerInfos(c context.Context, ctx *app.RequestContext) {
 	}
 
 	touch.SuccessResponse(ctx, "query peers infos success", page)
+}
+
+func (s *SubServer) queryDHTPeer(c context.Context, ctx *app.RequestContext) {
+	peerIDStr := ctx.Query("peer_id")
+	if peerIDStr == "" {
+		touch.FailedResponse(ctx, fmt.Errorf("peer_id parameter is required"))
+		return
+	}
+
+	pid, err := peer.Decode(peerIDStr)
+	if err != nil {
+		touch.FailedResponse(ctx, fmt.Errorf("invalid peer ID format: %s", err))
+		return
+	}
+
+	// Query DHT for peer information
+	peerInfo, err := s.dht.FindPeer(c, pid)
+	if err != nil {
+		touch.FailedResponse(ctx, fmt.Errorf("failed to find peer in DHT: %s", err))
+		return
+	}
+
+	// Convert multiaddresses to strings
+	var addrs []string
+	for _, addr := range peerInfo.Addrs {
+		addrs = append(addrs, addr.String())
+	}
+
+	touch.SuccessResponse(ctx, "DHT peer query successful", map[string]interface{}{
+		"peer_id":   peerInfo.ID.String(),
+		"addresses": addrs,
+	})
 }

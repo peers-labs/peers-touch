@@ -21,7 +21,7 @@ func main() {
 	p := peers.NewPeer()
 	err := p.Init(
 		ctx,
-		service.Name("peers-touch-hellohumans"),
+		service.Name("peers-touch-helloworld"),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("")),
 		server.WithHandlers(
 			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

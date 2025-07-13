@@ -284,6 +284,11 @@ func (s *SubServer) Handlers() []server.Handler {
 			"/sub-bootstrap/list-peers",
 			s.listPeerInfos,
 		),
+		server.NewHandler(
+			"query-dht-peer",
+			"/sub-bootstrap/query-dht-peer",
+			s.queryDHTPeer,
+		),
 	}
 }
 

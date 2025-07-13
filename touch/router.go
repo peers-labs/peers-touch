@@ -88,7 +88,7 @@ func SuccessResponse(ctx *app.RequestContext, msg string, data interface{}) {
 	ctx.JSON(http.StatusOK, model.NewSuccessResponse(msg, data))
 }
 
-func failedResponse(ctx *app.RequestContext, err error) {
+func FailedResponse(ctx *app.RequestContext, err error) {
 	if err != nil {
 		var e *model.Error
 		if errors.As(err, &e) {

@@ -43,14 +43,14 @@ func UserSignup(c context.Context, ctx *app.RequestContext) {
 
 	if err := params.Check(); err != nil {
 		log.Warnf(c, "Singup checked params failed: %v", err)
-		failedResponse(ctx, err)
+		FailedResponse(ctx, err)
 		return
 	}
 
 	err := user.SignUp(c, &params)
 	if err != nil {
 		log.Warnf(c, "Singup executed failed: %v", err)
-		failedResponse(ctx, err)
+		FailedResponse(ctx, err)
 		return
 	}
 

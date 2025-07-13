@@ -52,7 +52,7 @@ func SetPeerAddrHandler(c context.Context, ctx *app.RequestContext) {
 	// Validate the PeerAddressParam data
 	if err := param.Check(); err != nil {
 		log.Warnf(c, "SetPeerAddr checked params failed: %v", err)
-		failedResponse(ctx, err)
+		FailedResponse(ctx, err)
 		return
 	}
 
@@ -77,7 +77,7 @@ func GetMyPeerAddrInfos(c context.Context, ctx *app.RequestContext) {
 	peerAddrInfos, err := peer.GetMyPeerInfos(c)
 	if err != nil {
 		log.Warnf(c, "GetMyPeerInfos executed failed: %v", err)
-		failedResponse(ctx, err)
+		FailedResponse(ctx, err)
 		return
 	}
 	// If everything is successful, return the peer address information as a success response

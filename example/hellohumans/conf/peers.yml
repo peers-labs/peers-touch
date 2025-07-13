@@ -1,5 +1,5 @@
 peers:
-  includes: store.yml
+  includes: store.yml, actor_user.yml
   run-mode: 2
   config:
     hierarchy-merge: true
@@ -18,11 +18,23 @@ peers:
         some-key: "some-value"
     registry:
       retry-interval: 10s
+      turn:
+        enabled: true
+        server-addresses:
+          - freestun.net:3478
+        method: long-term
+        long-term:
+          username: free
+          password: free
+          realm: peers-touch
+        short-term:
+          username: free
+          password: free
       native:
         mdns-enable: true
         bootstrap-enable: false
         bootstrap-listen-addr:
           -
         bootstrap-nodes:
-          - /ip4/127.0.0.1/tcp/4001/p2p/12D3KooWNkwN8YVfM1vTuBGMbq7roouSTobJrSNM4RXvYWgHsr2r
+          - /ip4/203.0.113.1/tcp/5001/p2p/12D3KooWMsPvD5yp7s3UYYXSohEshNB5Xv5Epwdb5oHmtYuqLCzT
     
