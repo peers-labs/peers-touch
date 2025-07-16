@@ -139,6 +139,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 
 	// Create DHT instance in server mode
 	s.dht, err = dht.New(ctx, s.host,
+		dht.Mode(dht.ModeServer),
 		// Isolate network namespace via /peers-touch
 		dht.ProtocolPrefix(networkId),
 		dht.Validator(

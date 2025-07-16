@@ -52,3 +52,23 @@ type PeerAddrInfo struct {
 	PeerId string   `json:"peerId"`
 	Addrs  []string `json:"addrs"`
 }
+
+type TouchHiToParam struct {
+	PeerAddress string `json:"peer_address"` // The peer address to connect to
+}
+
+func (p *TouchHiToParam) Check() error {
+	if p.PeerAddress == "" {
+		return errors.New("peer address cannot be empty")
+	}
+	return nil
+}
+
+type TouchHiSession struct {
+	SessionId string `json:"session_id"`
+}
+
+type StreamMessage struct {
+	SessionID string `json:"session_id"` // Session identifier for message routing
+	Content   string `json:"content"`    // Actual message payload
+}

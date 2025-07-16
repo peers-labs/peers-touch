@@ -15,6 +15,7 @@ import (
 const (
 	RouterURLSetPeerAddr   RouterURL = "/peer/set-addr"
 	RouterURLGetMyPeerAddr RouterURL = "/peer/get-my-peer-info"
+	RouterURLTouchHiTo     RouterURL = "/peer/touch-hi-to"
 )
 
 type PeerRouters struct{}
@@ -25,6 +26,8 @@ func (mr *PeerRouters) Routers() []Router {
 			server.WithMethod(server.POST)),
 		server.NewHandler(RouterURLSetPeerAddr.Name(), RouterURLGetMyPeerAddr.URL(), GetMyPeerAddrInfos,
 			server.WithMethod(server.GET)),
+		server.NewHandler(RouterURLTouchHiTo.Name(), RouterURLTouchHiTo.URL(), TouchHiToHandler,
+			server.WithMethod(server.POST)),
 	}
 }
 
@@ -82,4 +85,30 @@ func GetMyPeerAddrInfos(c context.Context, ctx *app.RequestContext) {
 	}
 	// If everything is successful, return the peer address information as a success response
 	SuccessResponse(ctx, "Peer address information retrieved successfully", peerAddrInfos)
+}
+
+// TouchHiToHandler initiates a connection to a peer address and establishes a stream
+func TouchHiToHandler(c context.Context, ctx *app.RequestContext) {
+	var param model.TouchHiToParam
+	if err := ctx.Bind(&param); err != nil {
+		log.Warnf(c, "TouchHiTo bound params failed: %v", err)
+		ctx.JSON(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := param.Check(); err != nil {
+		log.Warnf(c, "TouchHiTo checked params failed: %v", err)
+		FailedResponse(ctx, err)
+		return
+	}
+
+	// Establish connection and get status
+	status, err := peer.TouchHiTo(c, &param)
+	if err != nil {
+		log.Errorf(c, "TouchHiTo connection failed: %v", err)
+		FailedResponse(ctx, err)
+		return
+	}
+
+	SuccessResponse(ctx, "Connection established successfully", status)
 }

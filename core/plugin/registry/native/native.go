@@ -696,6 +696,11 @@ func (r *nativeRegistry) refreshTurn(ctx context.Context) {
 	r.bootstrapStateLock.RLock()
 	defer r.bootstrapStateLock.RUnlock()
 
+	if r.turn == nil {
+		logger.Infof(ctx, "[refreshTurn] turn peer not initialized")
+		return
+	}
+
 	cl, errClient := r.turn.Get()
 	if errClient != nil {
 		logger.Errorf(ctx, "[refreshTurn] get native turn client failed: %v", errClient)
