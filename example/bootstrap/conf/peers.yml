@@ -19,7 +19,7 @@ peers:
     registry:
       interval: 180s
       turn:
-        enabled: true
+        enabled: false
         server-addresses:
           - freestun.net:3478
         method: long-term

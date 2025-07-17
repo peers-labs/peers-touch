@@ -1,11 +1,15 @@
 package client
 
-import "context"
+import (
+	"context"
+
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+)
 
 // Option is a function that can be used to configure a Client
-type Option func(*Options)
 
 type Options struct {
+	*option.Options
 }
 
 // CallOption is a function that can be used to configure a CallOptions

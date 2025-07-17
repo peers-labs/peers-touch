@@ -11,4 +11,5 @@ peers:
             - /ip4/0.0.0.0/tcp/5001/quic-v1
             - /ip4/0.0.0.0/tcp/5001/webrtc-direct
           bootstrap-nodes:                  # Matches pconf:"bootstrap-nodes"
+            - /ip4/203.0.113.1/tcp/5001/p2p/12D3KooWMsPvD5yp7s3UYYXSohEshNB5Xv5Epwdb5oHmtYuqLCzT
           dht-refresh-interval: 30       # Matches pconf:"dht-refresh-interval"
