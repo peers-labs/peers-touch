@@ -10,6 +10,7 @@ type SubserverType = string
 
 const (
 	SubserverTypeDebug     SubserverType = "http"
+	SubserverTypeHTTP      SubserverType = "http" // http server will be appended to the main server, no longer create a new server.
 	SubserverTypeTurn      SubserverType = "turn"
 	SubserverTypeBootstrap SubserverType = "bootstrap"
 )
