@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/dirty-bro-tech/peers-touch-go/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	"github.com/dirty-bro-tech/peers-touch-go/core/service"
@@ -43,7 +42,6 @@ type nativePeer struct {
 	once sync.Once
 
 	service service.Service
-	client  client.Client
 }
 
 func (n *nativePeer) ID() object.ID {
@@ -73,7 +71,7 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 		} else {
 			// todo add default service
 			if plugin.ServicePlugins[plugin.NativePluginName] == nil {
-				panic("new service failed, try to use default service by importing peers-touch-go/core/plugin/service/native")
+				panic("new service failed, try to use default service by importing peers-touch-go/core/plugin/native")
 			}
 
 			newServiceFunc = plugin.ServicePlugins[plugin.NativePluginName].New

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	cl "github.com/dirty-bro-tech/peers-touch-go/core/client"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
 	lg "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
@@ -55,8 +54,8 @@ type Client struct {
 	Request  clientRequest `json:"request" pconf:"request"`
 }
 
-func (c *Client) Options() []cl.Option {
-	var cliOpts []cl.Option
+func (c *Client) Options() []option.Option {
+	var cliOpts []option.Option
 
 	return cliOpts
 }

@@ -24,8 +24,8 @@ type Server struct {
 	once       sync.Once
 }
 
-func (s *Server) Init(ctx context.Context, option ...option.Option) (err error) {
-	err = s.BaseServer.Init(ctx, option...)
+func (s *Server) Init(option ...option.Option) (err error) {
+	err = s.BaseServer.Init(option...)
 	if err != nil {
 		return err
 	}

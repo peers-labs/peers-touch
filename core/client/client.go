@@ -6,11 +6,12 @@ import (
 	"context"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/codec"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
 // Client is an interface that represents a client.
 type Client interface {
-	Init(...Option) error
+	Init(...option.Option) error
 
 	Call(ctx context.Context, req Request, rsp interface{}, opts ...CallOption) error
 	Stream(ctx context.Context, req Request, opts ...CallOption) (Stream, error)

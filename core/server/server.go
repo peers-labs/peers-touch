@@ -27,7 +27,7 @@ const (
 )
 
 type Server interface {
-	Init(context.Context, ...option.Option) error
+	Init(...option.Option) error
 	Options() *Options
 	// Handle use to add new handler dynamically
 	Handle(Handler) error

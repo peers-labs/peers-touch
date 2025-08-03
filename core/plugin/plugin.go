@@ -27,8 +27,8 @@ type LoggerPlugin interface {
 
 type ClientPlugin interface {
 	Plugin
-	Options() []client.Option
-	New(...client.Option) client.Client
+	Options() []option.Option
+	New(...option.Option) client.Client
 }
 
 type ServerPlugin interface {

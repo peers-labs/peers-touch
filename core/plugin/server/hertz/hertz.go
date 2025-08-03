@@ -33,8 +33,8 @@ func NewServer(opts ...option.Option) *Server {
 	return s
 }
 
-func (s *Server) Init(ctx context.Context, opts ...option.Option) error {
-	err := s.BaseServer.Init(ctx, opts...)
+func (s *Server) Init(opts ...option.Option) error {
+	err := s.BaseServer.Init(opts...)
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 
 	ctx, cancel := context.WithCancel(ctx)
 	s.Options().Apply(opts...)
-	err := s.BaseServer.Start(ctx)
+	err := s.BaseServer.Start()
 	if err != nil {
 		log.Errorf(ctx, "warmup baseServer error: %v", err)
 		cancel()

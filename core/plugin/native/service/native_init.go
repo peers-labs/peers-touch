@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"os"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
@@ -108,7 +109,7 @@ func (s *native) initComponents(ctx context.Context) error {
 		return fmt.Errorf("init registry err: %v", err)
 	}
 
-	// todo init server
+	// init server
 	if s.opts.Server == nil {
 		serverName := config.Get("peers.service.server.name").String(plugin.NativePluginName)
 		if len(serverName) > 0 {
@@ -130,7 +131,25 @@ func (s *native) initComponents(ctx context.Context) error {
 			}
 		}
 	}
-	if err := s.opts.Server.Init(ctx, s.opts.ServerOptions...); err != nil {
+	if err := s.opts.Server.Init(s.opts.ServerOptions...); err != nil {
+		return err
+	}
+
+	// init client
+	if s.opts.Client == nil {
+		clientName := config.Get("peers.client.name").String(plugin.NativePluginName)
+		if len(clientName) > 0 {
+			if plugin.ClientPlugins[clientName] == nil {
+				logger.Errorf(ctx, "client %s not found, use native by default", clientName)
+				clientName = plugin.NativePluginName
+			}
+		}
+
+		logger.Infof(ctx, "initial client's name is: %s", clientName)
+		s.opts.Client = plugin.ClientPlugins[clientName].New(client.Registry(s.opts.Registry))
+	}
+
+	if err := s.opts.Client.Init(s.opts.ClientOptions...); err != nil {
 		return err
 	}
 

@@ -26,9 +26,9 @@ func (b *BaseServer) Options() *Options {
 	return b.opts
 }
 
-func (b *BaseServer) Init(ctx context.Context, opts ...option.Option) error {
+func (b *BaseServer) Init(opts ...option.Option) error {
 	b.once.Do(func() {
-		if err := b.init(ctx, opts...); err != nil {
+		if err := b.init(opts...); err != nil {
 			// todo log
 			panic(err)
 		}
@@ -38,7 +38,7 @@ func (b *BaseServer) Init(ctx context.Context, opts ...option.Option) error {
 }
 
 // Start : current job helps to start the subservers.
-func (b *BaseServer) Start(ctx context.Context, opts ...option.Option) error {
+func (b *BaseServer) Start(opts ...option.Option) error {
 	if b.subServerStarted {
 		return errors.New("server is already started")
 	}
@@ -49,7 +49,7 @@ func (b *BaseServer) Start(ctx context.Context, opts ...option.Option) error {
 	// Start all subservers sequentially with shared context
 	for _, sub := range b.subServers {
 		// Ensure all subservers are started
-		if err := sub.Start(ctx); err != nil {
+		if err := sub.Start(b.opts.Ctx()); err != nil {
 			panic(err)
 		}
 	}
@@ -69,7 +69,7 @@ func (b *BaseServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
+func (b *BaseServer) init(opts ...option.Option) error {
 	for _, opt := range opts {
 		b.opts.Apply(opt)
 	}
@@ -79,12 +79,12 @@ func (b *BaseServer) init(ctx context.Context, opts ...option.Option) error {
 		// create the sub server
 		sub := subFuc.exec(subFuc.options...)
 		// init the sub server
-		if err := sub.Init(ctx); err != nil {
+		if err := sub.Init(b.opts.Ctx()); err != nil {
 			// todo log
 			panic(err)
 		}
 
-		logger.Infof(ctx, "init sub server: %s", sub.Name())
+		logger.Infof(b.opts.Ctx(), "init sub server: %s", sub.Name())
 
 		// append the sub server to the map
 		b.subServers[sub.Name()] = sub

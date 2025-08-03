@@ -63,7 +63,7 @@ type Options struct {
 	Signal bool
 }
 
-type ClientOptions []client.Option
+type ClientOptions []option.Option
 
 type ServerOptions []option.Option
 

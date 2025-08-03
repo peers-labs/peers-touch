@@ -3,3 +3,12 @@ private.pem
 public.pem
 libp2pIdentity.key
 peers.db
+*.vlog
+*.sst
+KEYREGISTRY
+LOCK
+MANIFEST
+*.key
+.vercel/
+.vscode/
+.DS_Store
