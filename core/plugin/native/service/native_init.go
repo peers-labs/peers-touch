@@ -3,9 +3,9 @@ package native
 import (
 	"context"
 	"fmt"
-	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"os"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
@@ -146,10 +146,10 @@ func (s *native) initComponents(ctx context.Context) error {
 		}
 
 		logger.Infof(ctx, "initial client's name is: %s", clientName)
-		s.opts.Client = plugin.ClientPlugins[clientName].New(client.Registry(s.opts.Registry))
+		s.opts.Client = plugin.ClientPlugins[clientName].New()
 	}
 
-	if err := s.opts.Client.Init(s.opts.ClientOptions...); err != nil {
+	if err := s.opts.Client.Init(append([]option.Option{client.Registry(s.opts.Registry)}, s.opts.ClientOptions...)...); err != nil {
 		return err
 	}
 

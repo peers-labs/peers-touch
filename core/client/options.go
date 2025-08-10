@@ -38,6 +38,12 @@ type Options struct {
 	Codecs      map[string]codec.NewCodec
 }
 
+func WithInit() option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		// do nothing
+	})
+}
+
 func Registry(r registry.Registry) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.Registry = r
@@ -146,3 +152,7 @@ type RequestOptions struct {
 
 // RequestOption used by NewRequest.
 type RequestOption func(*RequestOptions)
+
+func GetOptions() *Options {
+	return option.GetOptions().Ctx().Value(registryOptionsKey{}).(*Options)
+}

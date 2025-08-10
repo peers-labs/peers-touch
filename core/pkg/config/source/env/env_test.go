@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 )
 
@@ -51,12 +52,12 @@ func TestEnvvar_Prefixes(t *testing.T) {
 	os.Setenv("STACK_REGISTRY", "mdns")
 
 	var prefixtests = []struct {
-		prefixOpts   []source.Option
+		prefixOpts   []option.Option
 		expectedKeys []string
 	}{
-		{[]source.Option{WithPrefix("APP", "STACK")}, []string{"app", "stack"}},
-		{[]source.Option{WithPrefix("STACK"), WithStrippedPrefix("APP")}, []string{"database", "stack"}},
-		{[]source.Option{WithPrefix("STACK"), WithStrippedPrefix("APP")}, []string{"database", "stack"}},
+		{[]option.Option{WithPrefix("APP", "STACK")}, []string{"app", "stack"}},
+		{[]option.Option{WithPrefix("STACK"), WithStrippedPrefix("APP")}, []string{"database", "stack"}},
+		{[]option.Option{WithPrefix("STACK"), WithStrippedPrefix("APP")}, []string{"database", "stack"}},
 	}
 
 	for _, pt := range prefixtests {

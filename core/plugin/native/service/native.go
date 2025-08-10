@@ -229,6 +229,10 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 
 			return nil
 		}),
+		// kernal components pre-initialization, this helps to set up the options for each component.
+		// so we can use the options by calling GetOptions() in each comp's directory.
+		// other comps is going to do...
+		client.WithInit(),
 		// set the default components
 		// see initComponents
 		// service.Store(plugin.StorePlugins["native"].New()),

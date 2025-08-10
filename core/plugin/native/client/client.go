@@ -28,7 +28,7 @@ var (
 type libp2pClient struct {
 	host      host.Host
 	transport transport.Transport
-	opts      client.Options
+	opts      *client.Options
 	codecs    map[string]codec.NewCodec
 	mutex     sync.RWMutex
 	initOnce  sync.Once
@@ -39,12 +39,11 @@ type libp2pClient struct {
 func NewClient(opts ...option.Option) client.Client {
 	c := &libp2pClient{
 		codecs: make(map[string]codec.NewCodec),
-		opts: client.Options{
-			Options:     &option.Options{},
-			CallOptions: client.DefaultCallOptions(),
-			Codecs:      make(map[string]codec.NewCodec),
-		},
+		opts:   client.GetOptions(),
 	}
+
+	c.opts.CallOptions = client.DefaultCallOptions()
+	c.opts.Codecs = make(map[string]codec.NewCodec)
 
 	// Register default codecs
 	c.opts.Codecs = c.codecs
