@@ -54,6 +54,14 @@ type bootstrapState struct {
 	Logs        []string
 }
 
+type mdnsDiscoveryStats struct {
+	TotalDiscovered     int
+	BootstrapDiscovered int
+	ConnectedBootstrap  int
+	LastDiscoveryTime   time.Time
+	ActivePeers         []string
+}
+
 // native registry is based on telibp2p kad-dht
 // it works as a peer discovery service which serves entrance for peers to find each other
 type nativeRegistry struct {
@@ -65,9 +73,10 @@ type nativeRegistry struct {
 	peers map[string]*registry.Peer
 	mu    sync.RWMutex
 
-	host  host.Host
-	dht   *dht.IpfsDHT
-	mdnsS mdns.Service
+	host        host.Host
+	dht         *dht.IpfsDHT
+	mdnsS       mdns.Service
+	mdnsNotifee *mdnsNotifee
 
 	turn               *turnClient
 	turnUpdateLock     sync.Mutex
@@ -78,6 +87,10 @@ type nativeRegistry struct {
 	// bootstrap nodes status
 	bootstrapStateLock   sync.RWMutex
 	bootstrapNodesStatus map[string]*bootstrapState
+	
+	// mDNS discovery statistics
+	mdnsStatsLock sync.RWMutex
+	mdnsStats     *mdnsDiscoveryStats
 }
 
 func NewRegistry(opts ...option.Option) registry.Registry {
@@ -92,6 +105,9 @@ func NewRegistry(opts ...option.Option) registry.Registry {
 		peers:                make(map[string]*registry.Peer),
 		options:              registry.GetPluginRegions(opts...),
 		bootstrapNodesStatus: make(map[string]*bootstrapState),
+		mdnsStats: &mdnsDiscoveryStats{
+			ActivePeers: make([]string, 0),
+		},
 	}
 
 	return regInstance
@@ -212,11 +228,22 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 
 	// Init MDNS
 	if r.extOpts.mdnsEnable {
-		r.mdnsS = mdns.NewMdnsService(r.host, "peers-touch.mdns."+r.host.ID().String(), &mdnsNotifee{})
+		r.mdnsNotifee = newMDNSNotifee(r.host, r)
+		r.mdnsS = mdns.NewMdnsService(r.host, "peers-touch.mdns."+r.host.ID().String(), r.mdnsNotifee)
 		err = r.mdnsS.Start()
 		if err != nil {
 			return fmt.Errorf("start mdns service: %w", err)
 		}
+		logger.Infof(ctx, "[Registry] mDNS service started for aggressive bootstrap discovery")
+		
+		// Cleanup mDNS notifee when context is done
+		go func() {
+			<-ctx.Done()
+			if r.mdnsNotifee != nil {
+				r.mdnsNotifee.Close()
+				logger.Infof(context.Background(), "[Registry] mDNS notifee closed")
+			}
+		}()
 	}
 
 	// Init TURN
@@ -659,21 +686,28 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 
 	logger.Infof(ctx, "bootstrap peer: %s", r.host.ID().String())
 
+	// Initial bootstrap
 	if err := r.dht.Bootstrap(ctx); err != nil {
 		logger.Errorf(ctx, "[bootstrap] failed to bootstrap peers: %v", err)
+	} else {
+		logger.Infof(ctx, "[bootstrap] initial bootstrap successful")
 	}
 
-	if true {
-		return
-	}
+	// Connect to bootstrap nodes and track their status
+	go r.connectToBootstrapNodes(ctx)
 
+	// Periodic bootstrap refresh
 	for {
 		select {
 		case <-ticker.C:
-			logger.Infof(ctx, "bootstrap peer: %s", r.host.ID().String())
+			logger.Debugf(ctx, "[bootstrap] refreshing bootstrap for peer: %s", r.host.ID().String())
 			if err := r.dht.Bootstrap(ctx); err != nil {
-				logger.Errorf(ctx, "[bootstrap] failed to bootstrap peers: %v", err)
+				logger.Errorf(ctx, "[bootstrap] failed to refresh bootstrap: %v", err)
+			} else {
+				logger.Debugf(ctx, "[bootstrap] bootstrap refresh successful")
 			}
+			// Also refresh routing table periodically
+			go r.refreshRoutingTable(ctx)
 		case <-ctx.Done():
 			logger.Warnf(ctx, "[bootstrap] bootstrap stopped %+v", ctx.Err())
 			return
@@ -689,6 +723,63 @@ func (r *nativeRegistry) refreshRoutingTable(ctx context.Context) {
 		}
 	case <-time.After(30 * time.Second):
 		logger.Warnf(ctx, "[refreshRoutingTable] Routing table refresh timed out")
+	}
+}
+
+// connectToBootstrapNodes connects to bootstrap nodes and tracks their connection status
+func (r *nativeRegistry) connectToBootstrapNodes(ctx context.Context) {
+	// Start with configured bootstrap nodes and default peers
+	bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
+	
+	// Add mDNS-discovered bootstrap peers if mDNS is enabled
+	if r.extOpts.mdnsEnable && r.mdnsNotifee != nil {
+		mdnsBootstrapPeers := r.mdnsNotifee.getConnectedBootstrapPeers()
+		logger.Infof(ctx, "[connectToBootstrapNodes] Found %d mDNS-discovered bootstrap peers", len(mdnsBootstrapPeers))
+		
+		// Convert mDNS peers to multiaddr format and add to bootstrap nodes
+		for _, mdnsPeer := range mdnsBootstrapPeers {
+			for _, addr := range mdnsPeer.Addrs {
+				fullAddr := addr.Encapsulate(multiaddr.StringCast("/p2p/" + mdnsPeer.ID.String()))
+				// Check if already exists to avoid duplicates
+				alreadyExists := false
+				for _, existing := range bootstrapNodes {
+					if existing.Equal(fullAddr) {
+						alreadyExists = true
+						break
+					}
+				}
+				if !alreadyExists {
+					bootstrapNodes = append(bootstrapNodes, fullAddr)
+				}
+			}
+		}
+	}
+	
+	logger.Infof(ctx, "[connectToBootstrapNodes] Connecting to %d total bootstrap nodes (configured + mDNS discovered)", len(bootstrapNodes))
+	
+	for _, addr := range bootstrapNodes {
+		go func(addrStr multiaddr.Multiaddr) {
+			pi, err := peer.AddrInfoFromP2pAddr(addrStr)
+			if err != nil {
+				logger.Errorf(ctx, "[connectToBootstrapNodes] failed to parse bootstrap address %s: %v", addrStr, err)
+				r.updateBootstrapStatus(ctx, addrStr.String(), false)
+				return
+			}
+			
+			// Skip self-connection
+			if pi.ID == r.host.ID() {
+				return
+			}
+			
+			// Try to connect
+			if err := r.host.Connect(ctx, *pi); err != nil {
+				logger.Debugf(ctx, "[connectToBootstrapNodes] failed to connect to bootstrap peer %s: %v", pi.ID, err)
+				r.updateBootstrapStatus(ctx, addrStr.String(), false)
+			} else {
+				logger.Infof(ctx, "[connectToBootstrapNodes] successfully connected to bootstrap peer %s", pi.ID)
+				r.updateBootstrapStatus(ctx, addrStr.String(), true)
+			}
+		}(addr)
 	}
 }
 
@@ -906,6 +997,26 @@ func (r *nativeRegistry) isBootstrapNode(id peer.ID) bool {
 		}
 	}
 	return false
+}
+
+// updateMDNSStats updates the mDNS discovery statistics
+func (r *nativeRegistry) updateMDNSStats(totalDiscovered, bootstrapDiscovered, connectedBootstrap int, activePeers []string) {
+	r.mdnsStatsLock.Lock()
+	defer r.mdnsStatsLock.Unlock()
+	
+	r.mdnsStats.TotalDiscovered = totalDiscovered
+	r.mdnsStats.BootstrapDiscovered = bootstrapDiscovered
+	r.mdnsStats.ConnectedBootstrap = connectedBootstrap
+	r.mdnsStats.LastDiscoveryTime = time.Now()
+	r.mdnsStats.ActivePeers = activePeers
+}
+
+// getMDNSStats returns a copy of the current mDNS discovery statistics
+func (r *nativeRegistry) getMDNSStats() mdnsDiscoveryStats {
+	r.mdnsStatsLock.RLock()
+	defer r.mdnsStatsLock.RUnlock()
+	
+	return *r.mdnsStats
 }
 
 // GetLibp2pHost returns the libp2p host

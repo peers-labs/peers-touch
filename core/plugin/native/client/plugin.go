@@ -37,6 +37,12 @@ func (n *nativeClientPlugin) New(opts ...option.Option) client.Client {
 	return NewClient(opts...)
 }
 
+// NewNodeClient creates a new NodeClient with extended functionality
+func (n *nativeClientPlugin) NewNodeClient(opts ...option.Option) NodeClient {
+	opts = append(opts, n.Options()...)
+	return NewClient(opts...).(*libp2pClient)
+}
+
 func init() {
 	config.RegisterOptions(&options)
 	plugin.ClientPlugins[plugin.NativePluginName] = &nativeClientPlugin{}

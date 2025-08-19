@@ -32,9 +32,9 @@ peers:
           password: free
       native:
         mdns-enable: true
-        bootstrap-enable: false
+        bootstrap-enable: true
         bootstrap-listen-addr:
           -
         bootstrap-nodes:
+          #- /ip4/127.0.0.1/tcp/5001/p2p/12D3KooWP1FqMsufKL4v2uCbz8V4i36gwnbV49DtXrmXzRiULDJE
           #- /ip4/203.0.113.1/tcp/5001/p2p/12D3KooWMsPvD5yp7s3UYYXSohEshNB5Xv5Epwdb5oHmtYuqLCzT
-          - /ip4/127.0.0.1/tcp/5001/p2p/12D3KooWR1QjveRKiKMQYQHHbzykFmLRrqHrcrWpBwro8t7mSKwg

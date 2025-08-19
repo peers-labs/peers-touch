@@ -10,11 +10,14 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/codec"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	native "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/transport"
+	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/transport"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 )
 
 const (
@@ -25,6 +28,22 @@ var (
 	_ client.Client = (*libp2pClient)(nil)
 )
 
+// NodeInfo represents information about a network node
+type NodeInfo struct {
+	PeerID     string          `json:"peer_id"`
+	Addresses  []string        `json:"addresses"`
+	Connection *ConnectionInfo `json:"connection,omitempty"`
+	IsActive   bool            `json:"is_active"`
+}
+
+// ConnectionInfo represents connection details for a peer
+type ConnectionInfo struct {
+	Direction  string        `json:"direction"`
+	Opened     time.Time     `json:"opened"`
+	NumStreams int           `json:"num_streams"`
+	Latency    time.Duration `json:"latency"`
+}
+
 type libp2pClient struct {
 	host      host.Host
 	transport transport.Transport
@@ -33,6 +52,8 @@ type libp2pClient struct {
 	mutex     sync.RWMutex
 	initOnce  sync.Once
 	initErr   error
+	dht       *dht.IpfsDHT
+	registry  registry.Registry
 }
 
 // NewClient creates a new libp2p client
@@ -54,6 +75,25 @@ func NewClient(opts ...option.Option) client.Client {
 	}
 
 	return c
+}
+
+// NewNodeClient creates a new NodeClient with extended functionality
+func NewNodeClient(opts ...option.Option) NodeClient {
+	return NewClient(opts...).(*libp2pClient)
+}
+
+// WithDHT sets the DHT instance for the client
+func WithDHT(dht *dht.IpfsDHT) option.Option {
+	return func(o *option.Options) {
+		o.AppendCtx("dht", dht)
+	}
+}
+
+// WithRegistry sets the registry instance for the client
+func WithRegistry(reg registry.Registry) option.Option {
+	return func(o *option.Options) {
+		o.AppendCtx("registry", reg)
+	}
 }
 
 // Init initializes the client
@@ -81,6 +121,19 @@ func (c *libp2pClient) Init(opts ...option.Option) error {
 		if err := c.transport.Init(); err != nil {
 			c.initErr = fmt.Errorf("failed to initialize transport: %w", err)
 			return
+		}
+
+		// Extract DHT and registry from context if provided
+		ctx := c.opts.Ctx()
+		if dhtVal := ctx.Value("dht"); dhtVal != nil {
+			if dht, ok := dhtVal.(*dht.IpfsDHT); ok {
+				c.dht = dht
+			}
+		}
+		if regVal := ctx.Value("registry"); regVal != nil {
+			if reg, ok := regVal.(registry.Registry); ok {
+				c.registry = reg
+			}
 		}
 	})
 
@@ -227,6 +280,143 @@ func (c *libp2pClient) Publish(ctx context.Context, msg client.Message, opts ...
 // Name returns the client name
 func (c *libp2pClient) Name() string {
 	return "libp2p"
+}
+
+// GetActiveNodes returns information about active nodes in the network
+func (c *libp2pClient) GetActiveNodes(ctx context.Context) ([]*NodeInfo, error) {
+	if err := c.Init(); err != nil {
+		return nil, fmt.Errorf("failed to initialize client: %w", err)
+	}
+
+	var nodes []*NodeInfo
+
+	// Get connected peers from libp2p host
+	connectedPeers := c.host.Network().Peers()
+	for _, peerID := range connectedPeers {
+		// Get peer addresses
+		addrs := c.host.Peerstore().Addrs(peerID)
+		addrStrs := make([]string, len(addrs))
+		for i, addr := range addrs {
+			addrStrs[i] = addr.String()
+		}
+
+		// Get connection info
+		conns := c.host.Network().ConnsToPeer(peerID)
+		var connectionInfo *ConnectionInfo
+		if len(conns) > 0 {
+			conn := conns[0]
+			latency := c.host.Peerstore().LatencyEWMA(peerID)
+			connectionInfo = &ConnectionInfo{
+				Direction:  conn.Stat().Direction.String(),
+				Opened:     conn.Stat().Opened,
+				NumStreams: conn.Stat().NumStreams,
+				Latency:    latency,
+			}
+		}
+
+		nodes = append(nodes, &NodeInfo{
+			PeerID:     peerID.String(),
+			Addresses:  addrStrs,
+			Connection: connectionInfo,
+			IsActive:   c.host.Network().Connectedness(peerID) == network.Connected,
+		})
+	}
+
+	// If we have DHT access, also get peers from DHT
+	if c.dht != nil {
+		if dhtPeers, err := c.getDHTNodes(ctx); err == nil {
+			nodes = append(nodes, dhtPeers...)
+		}
+	}
+
+	return nodes, nil
+}
+
+// GetNodeInfo returns information about a specific node
+func (c *libp2pClient) GetNodeInfo(ctx context.Context, peerID string) (*NodeInfo, error) {
+	if err := c.Init(); err != nil {
+		return nil, fmt.Errorf("failed to initialize client: %w", err)
+	}
+
+	// Parse peer ID
+	pid, err := peer.Decode(peerID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid peer ID: %w", err)
+	}
+
+	// Get peer addresses
+	addrs := c.host.Peerstore().Addrs(pid)
+	addrStrs := make([]string, len(addrs))
+	for i, addr := range addrs {
+		addrStrs[i] = addr.String()
+	}
+
+	// Get connection info
+	conns := c.host.Network().ConnsToPeer(pid)
+	var connectionInfo *ConnectionInfo
+	if len(conns) > 0 {
+		conn := conns[0]
+		latency := c.host.Peerstore().LatencyEWMA(pid)
+		connectionInfo = &ConnectionInfo{
+			Direction:  conn.Stat().Direction.String(),
+			Opened:     conn.Stat().Opened,
+			NumStreams: conn.Stat().NumStreams,
+			Latency:    latency,
+		}
+	}
+
+	return &NodeInfo{
+		PeerID:     peerID,
+		Addresses:  addrStrs,
+		Connection: connectionInfo,
+		IsActive:   c.host.Network().Connectedness(pid) == network.Connected,
+	}, nil
+}
+
+// ListPeers returns a list of peers from the registry
+func (c *libp2pClient) ListPeers(ctx context.Context) ([]*registry.Peer, error) {
+	if err := c.Init(); err != nil {
+		return nil, fmt.Errorf("failed to initialize client: %w", err)
+	}
+
+	if c.registry != nil {
+		return c.registry.ListPeers(ctx)
+	}
+
+	return nil, fmt.Errorf("registry not available")
+}
+
+// getDHTNodes retrieves nodes from DHT
+func (c *libp2pClient) getDHTNodes(ctx context.Context) ([]*NodeInfo, error) {
+	var nodes []*NodeInfo
+
+	// Get routing table peers
+	routingTable := c.dht.RoutingTable()
+	for _, peerID := range routingTable.ListPeers() {
+		// Skip if already in connected peers
+		if c.host.Network().Connectedness(peerID) == network.Connected {
+			continue
+		}
+
+		// Try to find peer info
+		peerInfo, err := c.dht.FindPeer(ctx, peerID)
+		if err != nil {
+			continue
+		}
+
+		addrStrs := make([]string, len(peerInfo.Addrs))
+		for i, addr := range peerInfo.Addrs {
+			addrStrs[i] = addr.String()
+		}
+
+		nodes = append(nodes, &NodeInfo{
+			PeerID:    peerID.String(),
+			Addresses: addrStrs,
+			IsActive:  false, // DHT peers are not directly connected
+		})
+	}
+
+	return nodes, nil
 }
 
 // transportCodec wraps a transport client to implement io.ReadWriteCloser
