@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+
 	"github.com/dirty-bro-tech/peers-touch-go"
 	"github.com/dirty-bro-tech/peers-touch-go/core/debug/actuator"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
@@ -13,7 +14,7 @@ import (
 
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/registry"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native"
+	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/store"
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite"
 )
 

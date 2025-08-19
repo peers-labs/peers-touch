@@ -2,10 +2,10 @@ package bootstrap
 
 import (
 	"context"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap/model"
 	"time"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap/model"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/multiformats/go-multiaddr"
 )

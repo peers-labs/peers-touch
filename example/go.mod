@@ -7,10 +7,6 @@ toolchain go1.23.10
 replace (
 	github.com/dirty-bro-tech/peers-touch-go => ../
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native => ../core/plugin/native
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/registry/native => ../core/plugin/registry/native
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/native => ../core/plugin/server/native
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/service/native => ../core/plugin/service/native
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native => ../core/plugin/store/native
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite => ../core/plugin/store/rds/sqlite
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap => ../core/plugin/subserver/bootstrap
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/turn => ../core/plugin/subserver/turn
@@ -20,9 +16,6 @@ require (
 	github.com/cloudwego/hertz v0.9.5
 	github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250612165025-f866ebda0623
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native v0.0.0-00010101000000-000000000000
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/registry/native v0.0.0
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/native v0.0.0
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
 	github.com/libp2p/go-libp2p v0.41.1
 	github.com/libp2p/go-libp2p-kad-dht v0.33.1
 	github.com/libp2p/go-libp2p-record v0.3.1
@@ -51,8 +44,7 @@ require (
 	github.com/dgraph-io/badger/v2 v2.2007.4 // indirect
 	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
 	github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2 // indirect
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/native v0.0.0 // indirect
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/service/native v0.0.0 // indirect
+	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap v0.0.0-00010101000000-000000000000 // indirect
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/turn v0.0.0-00010101000000-000000000000 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
