@@ -1,6 +1,8 @@
 module github.com/dirty-bro-tech/peers-touch-go/core/store/rds/sqlite
 
-go 1.23.6
+go 1.24.0
+
+toolchain go1.24.6
 
 replace github.com/dirty-bro-tech/peers-touch-go => ./../../../../..
 

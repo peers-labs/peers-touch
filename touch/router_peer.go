@@ -7,15 +7,20 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/peer"
 )
 
 const (
-	RouterURLSetPeerAddr   RouterURL = "/peer/set-addr"
-	RouterURLGetMyPeerAddr RouterURL = "/peer/get-my-peer-info"
-	RouterURLTouchHiTo     RouterURL = "/peer/touch-hi-to"
+	RouterURLSetPeerAddr    RouterURL = "/peer/set-addr"
+	RouterURLGetMyPeerAddr  RouterURL = "/peer/get-my-peer-info"
+	RouterURLTouchHiTo      RouterURL = "/peer/touch-hi-to"
+	RouterURLListPeers      RouterURL = "/peer/registry/peers"
+	RouterURLGetPeer        RouterURL = "/peer/registry/peers/{id}"
+	RouterURLDeregisterPeer RouterURL = "/peer/registry/peers/{id}"
+	RouterURLRegistryStatus RouterURL = "/peer/registry/status"
 )
 
 type PeerRouters struct{}
@@ -24,10 +29,16 @@ func (mr *PeerRouters) Routers() []Router {
 	return []Router{
 		server.NewHandler(RouterURLSetPeerAddr.Name(), RouterURLSetPeerAddr.URL(), SetPeerAddrHandler,
 			server.WithMethod(server.POST)),
-		server.NewHandler(RouterURLSetPeerAddr.Name(), RouterURLGetMyPeerAddr.URL(), GetMyPeerAddrInfos,
+		server.NewHandler(RouterURLGetMyPeerAddr.Name(), RouterURLGetMyPeerAddr.URL(), GetMyPeerAddrInfos,
 			server.WithMethod(server.GET)),
 		server.NewHandler(RouterURLTouchHiTo.Name(), RouterURLTouchHiTo.URL(), TouchHiToHandler,
 			server.WithMethod(server.POST)),
+		server.NewHandler(RouterURLListPeers.Name(), RouterURLListPeers.URL(), ListPeersHandler,
+			server.WithMethod(server.GET)),
+		server.NewHandler(RouterURLGetPeer.Name(), RouterURLGetPeer.URL(), GetPeerHandler,
+			server.WithMethod(server.GET)),
+		server.NewHandler(RouterURLRegistryStatus.Name(), RouterURLRegistryStatus.URL(), RegistryStatusHandler,
+			server.WithMethod(server.GET)),
 	}
 }
 
@@ -111,4 +122,90 @@ func TouchHiToHandler(c context.Context, ctx *app.RequestContext) {
 	}
 
 	SuccessResponse(ctx, "Connection established successfully", status)
+}
+
+// Registry endpoint handlers - these implement registry functionality using ctx directly
+
+// ListPeersHandler handles GET /peer/registry/peers
+func ListPeersHandler(c context.Context, ctx *app.RequestContext) {
+	// Parse query parameters
+	var opts []registry.GetOption
+
+	// Check for 'me' parameter
+	if string(ctx.QueryArgs().Peek("me")) == "true" {
+		opts = append(opts, registry.GetMe())
+	}
+
+	// Check for 'name' parameter
+	if name := string(ctx.QueryArgs().Peek("name")); name != "" {
+		opts = append(opts, registry.WithName(name))
+	}
+
+	// Check for 'id' parameter
+	if id := string(ctx.QueryArgs().Peek("id")); id != "" {
+		opts = append(opts, registry.WithId(id))
+	}
+
+	peers, err := registry.ListPeers(c, opts...)
+	if err != nil {
+		log.Errorf(c, "[ListPeersHandler] Failed to list peers: %v", err)
+		ctx.JSON(http.StatusInternalServerError, map[string]interface{}{
+			"error":   "Failed to list peers",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	response := map[string]interface{}{
+		"peers": peers,
+		"total": len(peers),
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// GetPeerHandler handles GET /peer/registry/peers/{id}
+func GetPeerHandler(c context.Context, ctx *app.RequestContext) {
+	peerID := ctx.Param("id")
+
+	if peerID == "" {
+		ctx.JSON(http.StatusBadRequest, map[string]interface{}{
+			"error": "Peer ID is required",
+		})
+		return
+	}
+
+	peer, err := registry.GetPeer(c, registry.WithId(peerID))
+	if err != nil {
+		if registry.IsNotFound(err) {
+			ctx.JSON(http.StatusNotFound, map[string]interface{}{
+				"error":   "Peer not found",
+				"message": err.Error(),
+			})
+		} else {
+			log.Errorf(c, "[GetPeerHandler] Failed to get peer %s: %v", peerID, err)
+			ctx.JSON(http.StatusInternalServerError, map[string]interface{}{
+				"error":   "Failed to get peer",
+				"message": err.Error(),
+			})
+		}
+		return
+	}
+
+	response := map[string]interface{}{
+		"peer": peer,
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// RegistryStatusHandler handles GET /peer/registry/status
+func RegistryStatusHandler(c context.Context, ctx *app.RequestContext) {
+	response := map[string]interface{}{
+		"has_default_registry": registry.GetDefaultRegistry() != nil,
+		"registry_count":       len(registry.GetRegistries()),
+		"namespace":            registry.DefaultPeersNetworkNamespace,
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }

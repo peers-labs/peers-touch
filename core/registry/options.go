@@ -62,6 +62,7 @@ type OAuthAuth struct {
 type Options struct {
 	*option.Options
 
+	IsDefault      bool
 	PrivateKey     string
 	Interval       time.Duration
 	ConnectTimeout time.Duration
@@ -96,6 +97,12 @@ func WithTurnConfig(turnConfig TURNAuthConfig) option.Option {
 func WithStore(store store.Store) option.Option {
 	return OptionWrapper.Wrap(func(o *Options) {
 		o.Store = store
+	})
+}
+
+func WithISDefault() option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.IsDefault = true
 	})
 }
 

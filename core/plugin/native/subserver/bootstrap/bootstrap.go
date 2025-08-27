@@ -9,20 +9,13 @@ import (
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/pkg/mdns"
+	native "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
-	"github.com/ipfs/boxo/ipns"
-	badger "github.com/ipfs/go-ds-badger2"
-	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
-	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/peerstore"
-	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
-	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoreds"
-	"github.com/multiformats/go-multiaddr"
 )
 
 var (
@@ -40,9 +33,7 @@ type SubServer struct {
 	runningLock sync.Mutex
 	status      server.Status
 	addrs       []string
-	mdns        mdns.Service
-	mdnsNotifee *mdnsNotifee
-	peerStore   peerstore.Peerstore
+	mdnsService *mdns.Service
 }
 
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error) {
@@ -68,58 +59,10 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		return
 	}
 
-	// --- Create a persistent peerStore with BadgerDB ---
-	dbPath := "./peerStore-bootstrap"
-	datastore, err := badger.NewDatastore(dbPath, nil)
-	if err != nil {
-		err = fmt.Errorf("failed to create badger datastore at %s: %w", dbPath, err)
-		return
-	}
-
-	ps, err := pstoreds.NewPeerstore(ctx, datastore, pstoreds.DefaultOpts())
-	if err != nil {
-		datastore.Close() // clean up on failure
-		err = fmt.Errorf("failed to create pstoreds peerStore: %w", err)
-		return
-	}
-	s.peerStore = ps // Store for later use and closing.
-
-	var hostOptions []libp2p.Option
-
-	// Load or generate private key
-	if s.opts.IdentityKey == nil {
-		err = errors.New("[Init] identity key for bootstrap server is required")
-		return
-	}
-
-	hostOptions = append(hostOptions,
-		/*		libp2p.Transport(webrtc.New),
-				libp2p.Transport(quic.NewTransport),*/
-		libp2p.Identity(s.opts.IdentityKey),
-		libp2p.Peerstore(s.peerStore), // Inject the persistent peerStore
-	)
-
-	addrs := s.opts.ListenAddrs
-	if len(addrs) == 0 {
-		addrs = append(addrs, "/ip4/0.0.0.0/tcp/4001")
-	}
-
-	s.addrs = addrs
-	for _, addr := range s.addrs {
-		listenAddr, errIn := multiaddr.NewMultiaddr(addr)
-		if errIn != nil {
-			err = fmt.Errorf("failed to parse bootstrap server listening address: %v", errIn)
-			return
-		}
-		hostOptions = append(hostOptions, libp2p.ListenAddrs(listenAddr))
-	}
-
-	// Initialize libp2p host
-	s.host, err = libp2p.New(
-		hostOptions...,
-	)
-	if err != nil {
-		err = fmt.Errorf("failed to create libp2p host: %v", err)
+	// Use the shared libp2p host from registry instead of creating a new one
+	s.host, s.dht = native.GetLibp2pHost()
+	if s.host == nil {
+		err = errors.New("[Init] failed to get libp2p host from registry - registry may not be initialized")
 		return
 	}
 	notifee := &libp2pHostNotifee{
@@ -127,55 +70,31 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 	}
 	s.host.Network().Notify(notifee)
 
-	// Init MDNS
+	// Init MDNS with singleton pattern
 	if s.opts.EnableMDNS {
-		s.mdnsNotifee = newMDNSNotifee(s.host, s.opts.DHTRefreshInterval)
-		s.mdns = mdns.NewMdnsService(s.host, "peers-touch.mdns."+s.host.ID().String(), s.mdnsNotifee)
-		err = s.mdns.Start()
+		s.mdnsService = mdns.NewMDNSServiceWithComponent(s.host, "bootstrap")
+
+		// Register bootstrap-specific callbacks
+		callbackReg := &mdns.CallbackRegistration{
+			ComponentID: "bootstrap",
+			PeerDiscovery: func(ctx context.Context, pi peer.AddrInfo, isBootstrap bool) error {
+				// Bootstrap subserver should not connect to mDNS-discovered nodes
+				// Just log the discovery for informational purposes
+				logger.Infof(ctx, "Discovered peer via mDNS (bootstrap=%t): %s", isBootstrap, pi.ID.String())
+				return nil
+			},
+		}
+		s.mdnsService.RegisterCallback(callbackReg)
+
+		err = s.mdnsService.Start()
 		if err != nil {
 			return fmt.Errorf("start mdns service: %w", err)
 		}
+		s.mdnsService.StartPeriodicRefresh()
 	}
 
-	// Create DHT instance in server mode
-	s.dht, err = dht.New(ctx, s.host,
-		dht.Mode(dht.ModeServer),
-		// Isolate network namespace via /peers-touch
-		dht.ProtocolPrefix(networkId),
-		dht.Validator(
-			record.NamespacedValidator{
-				// actually, these validators are the defaults in libp2p[see github.com/libp2p/go-libp2p-kad-dht/internal/config/config.go#ApplyFallbacks]
-				// but we need to set them here to learn how they work,
-				// so we can customize them according to our needs in the future.
-				"pk":                                  record.PublicKeyValidator{},
-				"ipns":                                ipns.Validator{KeyBook: s.host.Peerstore()},
-				registry.DefaultPeersNetworkNamespace: &NamespaceValidator{},
-			},
-		),
-		dht.BootstrapPeersFunc(func() []peer.AddrInfo {
-			logger.Infof(ctx, "libp2p is fetching bootstrap nodes.")
-			bootstrapNodes := append(s.opts.BootstrapNodes, dht.DefaultBootstrapPeers...)
-			bootstrapNodes = append(bootstrapNodes, s.mdnsNotifee.listAlivePeerAddrs()...)
-
-			var peerBootstrapNodes []peer.AddrInfo
-			for _, addr := range bootstrapNodes {
-				pi, errIn := peer.AddrInfoFromP2pAddr(addr)
-				if errIn != nil {
-					logger.Errorf(ctx, "failed to parse bootstrap node address: %s", errIn)
-					continue
-				}
-				peerBootstrapNodes = append(peerBootstrapNodes, *pi)
-			}
-
-			return peerBootstrapNodes
-		}),
-		dht.BucketSize(20),
-		dht.OnRequestHook(dhtRequestHooksWrap),
-	)
-	if err != nil {
-		err = fmt.Errorf("create libp2p host: %w", err)
-		return
-	}
+	// Note: DHT is also obtained from the registry along with the host
+	// No need to create a separate DHT instance
 
 	return
 }
@@ -243,20 +162,17 @@ func (s *SubServer) Stop(ctx context.Context) (err error) {
 		return err
 	}
 
+	// Unregister mDNS callbacks if enabled
+	if s.mdnsService != nil {
+		s.mdnsService.UnregisterCallback("bootstrap")
+		// Note: Don't close the singleton service as other components may be using it
+	}
+
 	err = s.host.Close()
 	if err != nil {
 		err = fmt.Errorf("failed to close bootstrap host: %w", err)
 		s.status = server.StatusError
 		return err
-	}
-
-	// Close the persistent peerStore (which also closes the datastore).
-	if s.peerStore != nil {
-		err = s.peerStore.Close()
-		if err != nil {
-			err = fmt.Errorf("failed to close peerStore: %w", err)
-			return err
-		}
 	}
 
 	s.status = server.StatusStopped
@@ -295,6 +211,18 @@ func (s *SubServer) Handlers() []server.Handler {
 
 func (s *SubServer) Type() server.SubserverType {
 	return server.SubserverTypeBootstrap
+}
+
+// AddBootstrapNode implements mdns.Registry interface
+func (s *SubServer) AddBootstrapNode(pi peer.AddrInfo) {
+	// Add the peer to our bootstrap nodes for DHT
+	logger.Infof(context.Background(), "Adding bootstrap node from mDNS: %s", pi.ID.String())
+}
+
+// Register implements mdns.Registry interface
+func (s *SubServer) Register(ctx context.Context, pi peer.AddrInfo) error {
+	// Connect to the discovered peer
+	return s.host.Connect(ctx, pi)
 }
 
 // NewBootstrapServer creates a new bootstrap subserver with the provided options.

@@ -9,7 +9,6 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -158,32 +157,23 @@ func TestNativeRegistry_AllDiscoveryMechanisms(t *testing.T) {
 
 func TestNativeRegistry_BootstrapStatusTracking(t *testing.T) {
 	reg := NewRegistry().(*nativeRegistry)
-	reg.bootstrapNodesStatus = make(map[string]*bootstrapState)
 	
-	ctx := context.Background()
-	addr := "/ip4/127.0.0.1/tcp/5001/p2p/12D3KooWR1QjveRKiKMQYQHHbzykFmLRrqHrcrWpBwro8t7mSKwg"
+	// Test that registry can be created without errors
+	assert.NotNil(t, reg)
 	
-	// Test successful connection
-	reg.updateBootstrapStatus(ctx, addr, true)
+	// Test mDNS stats initialization
+	stats := reg.getMDNSStats()
+	assert.Equal(t, 0, stats.TotalDiscovered)
+	assert.Equal(t, 0, stats.BootstrapDiscovered)
+	assert.Equal(t, 0, stats.ConnectedBootstrap)
 	
-	reg.bootstrapStateLock.RLock()
-	status, exists := reg.bootstrapNodesStatus[addr]
-	reg.bootstrapStateLock.RUnlock()
-	
-	require.True(t, exists)
-	assert.True(t, status.Connected)
-	assert.Equal(t, 0, status.failedTimes)
-	
-	// Test failed connection
-	reg.updateBootstrapStatus(ctx, addr, false)
-	
-	reg.bootstrapStateLock.RLock()
-	status, exists = reg.bootstrapNodesStatus[addr]
-	reg.bootstrapStateLock.RUnlock()
-	
-	require.True(t, exists)
-	assert.False(t, status.Connected)
-	assert.Equal(t, 1, status.failedTimes)
+	// Test mDNS stats update
+	reg.updateMDNSStats(5, 2, 1, []string{"peer1", "peer2"})
+	stats = reg.getMDNSStats()
+	assert.Equal(t, 5, stats.TotalDiscovered)
+	assert.Equal(t, 2, stats.BootstrapDiscovered)
+	assert.Equal(t, 1, stats.ConnectedBootstrap)
+	assert.Equal(t, 2, len(stats.ActivePeers))
 }
 
 func TestNativeRegistry_DiscoveryMechanismOptions(t *testing.T) {

@@ -49,8 +49,9 @@ func (p *PeerAddressParam) Check() error {
 }
 
 type PeerAddrInfo struct {
-	PeerId string   `json:"peerId"`
-	Addrs  []string `json:"addrs"`
+	PeerId   string                 `json:"peerId"`
+	Addrs    []string               `json:"addrs"`
+	Metadata map[string]interface{} `json:"metadata"`
 }
 
 type TouchHiToParam struct {

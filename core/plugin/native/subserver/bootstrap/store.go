@@ -7,7 +7,7 @@ import (
 	"time"
 
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/subserver/bootstrap/model"
+	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/subserver/bootstrap/model"
 	"gorm.io/gorm"
 )
 
