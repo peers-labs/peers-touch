@@ -2,7 +2,7 @@ module github.com/dirty-bro-tech/peers-touch-go
 
 go 1.23.10
 
-toolchain go1.24.6
+
 
 require (
 	dario.cat/mergo v1.0.1
