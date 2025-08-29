@@ -45,6 +45,12 @@ type Handler interface {
 	Wrappers() []Wrapper
 }
 
+// RouterURL interface defines methods for router URL handling
+type RouterURL interface {
+	Name() string
+	URL() string
+}
+
 // Wrapper defines a function type for Wrapper
 type Wrapper func(next http.Handler) http.Handler
 
@@ -76,15 +82,15 @@ func (h *httpHandler) Method() Method {
 	return h.method
 }
 
-func NewHandler(name, path string, handler interface{}, opts ...HandlerOption) Handler {
+func NewHandler(routerURL RouterURL, handler interface{}, opts ...HandlerOption) Handler {
 	config := &HandlerOptions{}
 	for _, opt := range opts {
 		opt(config)
 	}
 
 	return &httpHandler{
-		name:    name,
-		path:    path,
+		name:    routerURL.Name(),
+		path:    routerURL.URL(),
 		handler: handler,
 		method:  config.Method,
 		// wrapper: config.middlewares,

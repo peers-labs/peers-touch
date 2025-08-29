@@ -22,6 +22,20 @@ var (
 	_ server.Subserver = &SubServer{}
 )
 
+// bootstrapRouterURL implements server.RouterURL for bootstrap endpoints
+type bootstrapRouterURL struct {
+	name string
+	url  string
+}
+
+func (b bootstrapRouterURL) Name() string {
+	return b.name
+}
+
+func (b bootstrapRouterURL) URL() string {
+	return b.url
+}
+
 type SubServer struct {
 	opts *Options
 
@@ -197,13 +211,11 @@ func (s *SubServer) Status() server.Status {
 func (s *SubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
-			"list-peers",
-			"/sub-bootstrap/list-peers",
+			bootstrapRouterURL{name: "list-peers", url: "/sub-bootstrap/list-peers"},
 			s.listPeerInfos,
 		),
 		server.NewHandler(
-			"query-dht-peer",
-			"/sub-bootstrap/query-dht-peer",
+			bootstrapRouterURL{name: "query-dht-peer", url: "/sub-bootstrap/query-dht-peer"},
 			s.queryDHTPeer,
 		),
 	}

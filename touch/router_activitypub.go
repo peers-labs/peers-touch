@@ -6,54 +6,81 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/dirty-bro-tech/peers-touch-go/touch/activitypub"
 )
 
 const (
-	ActivityPubRouterURLInbox    RouterURL = "/inbox"
-	ActivityPubRouterURLOutbox   RouterURL = "/outbox"
-	ActivityPubRouterURLFollow   RouterURL = "/follow"
-	ActivityPubRouterURLUnfollow RouterURL = "/unfollow"
-	ActivityPubRouterURLLike     RouterURL = "/like"
-	ActivityPubRouterURLUndo     RouterURL = "/undo"
+	ActivityPubRouterURLInbox     RouterURL = "/{user}/inbox"
+	ActivityPubRouterURLOutbox    RouterURL = "/{user}/outbox"
+	ActivityPubRouterURLFollowers RouterURL = "/{user}/followers"
+	ActivityPubRouterURLFollowing RouterURL = "/{user}/following"
+	ActivityPubRouterURLLiked     RouterURL = "/{user}/liked"
+	ActivityPubRouterURLFollow    RouterURL = "/{user}/follow"
+	ActivityPubRouterURLUnfollow  RouterURL = "/{user}/unfollow"
+	ActivityPubRouterURLLike      RouterURL = "/{user}/like"
+	ActivityPubRouterURLUndo      RouterURL = "/{user}/undo"
+	ActivityPubRouterURLActor     RouterURL = "/{user}/actor"
 
 	// ActivityPubRouterURLChat
 	// There is no chat-activity in ActivityPub official document. we implement it for chatting.
-	ActivityPubRouterURLChat RouterURL = "/chat"
+	ActivityPubRouterURLChat RouterURL = "/{user}/chat"
 )
 
 // ActivityPubRouters is a router for ActivityPub endpoints that implements the ActivityPub protocol
 // also implements Routers interface
-type ActivityPubRouters struct{}
+type ActivityPubRouters struct {
+}
 
 func (apr *ActivityPubRouters) Routers() []Router {
 	return []Router{
-		server.NewHandler(ActivityPubRouterURLInbox.Name(), ActivityPubRouterURLInbox.URL(),
+		server.NewHandler(ActivityPubRouterURLInbox,
 			func(c context.Context, ctx *app.RequestContext) {
-				ctx.String(http.StatusOK, "hello world, inbox")
+				activitypub.HandleInboxActivity(c, ctx)
 			}, server.WithMethod(server.POST)),
-		server.NewHandler(ActivityPubRouterURLOutbox.Name(), ActivityPubRouterURLOutbox.URL(),
+		server.NewHandler(ActivityPubRouterURLOutbox,
 			func(c context.Context, ctx *app.RequestContext) {
-				ctx.String(http.StatusOK, "hello world, outbox")
+				activitypub.GetOutboxActivities(c, ctx)
+			}, server.WithMethod(server.GET)),
+		server.NewHandler(ActivityPubRouterURLOutbox,
+			func(c context.Context, ctx *app.RequestContext) {
+				activitypub.CreateOutboxActivity(c, ctx)
 			}, server.WithMethod(server.POST)),
-		server.NewHandler(ActivityPubRouterURLFollow.Name(), ActivityPubRouterURLFollow.URL(),
+		server.NewHandler(ActivityPubRouterURLFollowers,
 			func(c context.Context, ctx *app.RequestContext) {
-				ctx.String(http.StatusOK, "hello world, follow")
+				activitypub.GetFollowers(c, ctx)
+			}, server.WithMethod(server.GET)),
+		server.NewHandler(ActivityPubRouterURLFollowing,
+			func(c context.Context, ctx *app.RequestContext) {
+				activitypub.GetFollowing(c, ctx)
+			}, server.WithMethod(server.GET)),
+		server.NewHandler(ActivityPubRouterURLLiked,
+			func(c context.Context, ctx *app.RequestContext) {
+				activitypub.GetLiked(c, ctx)
+			}, server.WithMethod(server.GET)),
+
+		server.NewHandler(ActivityPubRouterURLActor,
+			func(c context.Context, ctx *app.RequestContext) {
+				activitypub.GetActor(c, ctx)
+			}, server.WithMethod(server.GET)),
+		server.NewHandler(ActivityPubRouterURLFollow,
+			func(c context.Context, ctx *app.RequestContext) {
+				activitypub.CreateFollow(c, ctx)
 			}, server.WithMethod(server.POST)),
-		server.NewHandler(ActivityPubRouterURLUnfollow.Name(), ActivityPubRouterURLUnfollow.URL(),
+		server.NewHandler(ActivityPubRouterURLUnfollow,
 			func(c context.Context, ctx *app.RequestContext) {
-				ctx.String(http.StatusOK, "hello world, unfollow")
+				activitypub.CreateUnfollow(c, ctx)
 			}, server.WithMethod(server.POST)),
-		server.NewHandler(ActivityPubRouterURLLike.Name(), ActivityPubRouterURLLike.URL(),
+		server.NewHandler(ActivityPubRouterURLLike,
 			func(c context.Context, ctx *app.RequestContext) {
-				ctx.String(http.StatusOK, "hello world, like")
+				activitypub.CreateLike(c, ctx)
 			}, server.WithMethod(server.POST)),
-		server.NewHandler(ActivityPubRouterURLUndo.Name(), ActivityPubRouterURLUndo.URL(),
+		server.NewHandler(ActivityPubRouterURLUndo,
 			func(c context.Context, ctx *app.RequestContext) {
-				ctx.String(http.StatusOK, "hello world, undo")
+				activitypub.CreateUndo(c, ctx)
 			}, server.WithMethod(server.POST)),
-		server.NewHandler(ActivityPubRouterURLChat.Name(), ActivityPubRouterURLChat.URL(),
+		server.NewHandler(ActivityPubRouterURLChat,
 			func(c context.Context, ctx *app.RequestContext) {
-				ctx.String(http.StatusOK, "hello world, undo")
+				ctx.String(http.StatusOK, "Chat endpoint not implemented yet")
 			}, server.WithMethod(server.POST)),
 	}
 }

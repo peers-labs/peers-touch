@@ -1,0 +1,8 @@
+peers:
+  touch:
+    routers:
+      management: false
+      activitypub: false
+      wellknown: false
+      user: false
+      peer: false

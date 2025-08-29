@@ -27,17 +27,17 @@ type PeerRouters struct{}
 
 func (mr *PeerRouters) Routers() []Router {
 	return []Router{
-		server.NewHandler(RouterURLSetPeerAddr.Name(), RouterURLSetPeerAddr.URL(), SetPeerAddrHandler,
+		server.NewHandler(RouterURLSetPeerAddr, SetPeerAddrHandler,
 			server.WithMethod(server.POST)),
-		server.NewHandler(RouterURLGetMyPeerAddr.Name(), RouterURLGetMyPeerAddr.URL(), GetMyPeerAddrInfos,
+		server.NewHandler(RouterURLGetMyPeerAddr, GetMyPeerAddrInfos,
 			server.WithMethod(server.GET)),
-		server.NewHandler(RouterURLTouchHiTo.Name(), RouterURLTouchHiTo.URL(), TouchHiToHandler,
+		server.NewHandler(RouterURLTouchHiTo, TouchHiToHandler,
 			server.WithMethod(server.POST)),
-		server.NewHandler(RouterURLListPeers.Name(), RouterURLListPeers.URL(), ListPeersHandler,
+		server.NewHandler(RouterURLListPeers, ListPeersHandler,
 			server.WithMethod(server.GET)),
-		server.NewHandler(RouterURLGetPeer.Name(), RouterURLGetPeer.URL(), GetPeerHandler,
+		server.NewHandler(RouterURLGetPeer, GetPeerHandler,
 			server.WithMethod(server.GET)),
-		server.NewHandler(RouterURLRegistryStatus.Name(), RouterURLRegistryStatus.URL(), RegistryStatusHandler,
+		server.NewHandler(RouterURLRegistryStatus, RegistryStatusHandler,
 			server.WithMethod(server.GET)),
 	}
 }

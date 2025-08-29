@@ -19,7 +19,7 @@ type UserRouters struct{}
 
 func (mr *UserRouters) Routers() []Router {
 	return []Router{
-		server.NewHandler(RouterURLUserSignUP.Name(), RouterURLUserSignUP.URL(), UserSignup,
+		server.NewHandler(RouterURLUserSignUP, UserSignup,
 			server.WithMethod(server.POST)),
 	}
 }

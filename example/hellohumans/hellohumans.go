@@ -16,6 +16,20 @@ import (
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite"
 )
 
+// helloRouterURL implements server.RouterURL for hello endpoints
+type helloRouterURL struct {
+	name string
+	url  string
+}
+
+func (h helloRouterURL) Name() string {
+	return h.name
+}
+
+func (h helloRouterURL) URL() string {
+	return h.url
+}
+
 func main() {
 	ctx := context.Background()
 	p := peers.NewPeer()
@@ -24,10 +38,10 @@ func main() {
 		service.Name("peers-touch-helloworld"),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("")),
 		server.WithHandlers(
-			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server.NewHandler(helloRouterURL{name: "hello-world", url: "/hello"}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("hello world, from native handler"))
 			})),
-			server.NewHandler("hello-world-hertz", "/hello-hz",
+			server.NewHandler(helloRouterURL{name: "hello-world-hertz", url: "/hello-hz"},
 				func(c context.Context, ctx *app.RequestContext) {
 					ctx.String(http.StatusOK, "hello world, from hertz handler")
 				},

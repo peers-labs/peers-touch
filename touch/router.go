@@ -11,11 +11,12 @@ import (
 )
 
 const (
-	RoutersNameManagement  = "management"
-	RoutersNameActivityPub = "activitypub"
-	RoutersNameWellKnown   = ".well-known"
-	RoutersNameUser        = "user"
-	RoutersNamePeer        = "peer"
+	RoutersNameManagement      = "management"
+	RoutersNameActivityPub     = "activitypub"
+	RoutersNameUserActivityPub = "user-activitypub"
+	RoutersNameWellKnown       = ".well-known"
+	RoutersNameUser            = "user"
+	RoutersNamePeer            = "peer"
 )
 
 // Router is a server handler that can be registered with a server.
@@ -45,32 +46,50 @@ func (apr RouterURL) URL() string {
 }
 
 func Handlers() []option.Option {
-	m := NewManageRouter()
-	a := NewActivityPubRouter()
-	w := NewWellKnownRouter()
-	u := NewUserRouter()
-	p := NewPeerRouter()
-
+	routerConfig := GetRouterConfig()
 	handlers := make([]option.Option, 0)
 
-	for _, r := range m.Routers() {
-		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+	// Conditionally add routers based on configuration
+	if routerConfig.Management {
+		m := NewManageRouter()
+		for _, r := range m.Routers() {
+			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+		}
 	}
 
-	for _, r := range a.Routers() {
-		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+	if routerConfig.ActivityPub {
+		a := NewActivityPubRouter()
+		for _, r := range a.Routers() {
+			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+		}
 	}
 
-	for _, r := range w.Routers() {
-		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+	if routerConfig.UserActivityPub {
+		ua := NewUserActivityPubRouter()
+		for _, r := range ua.Routers() {
+			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+		}
 	}
 
-	for _, r := range u.Routers() {
-		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+	if routerConfig.WellKnown {
+		w := NewWellKnownRouter()
+		for _, r := range w.Routers() {
+			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+		}
 	}
 
-	for _, r := range p.Routers() {
-		handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+	if routerConfig.User {
+		u := NewUserRouter()
+		for _, r := range u.Routers() {
+			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+		}
+	}
+
+	if routerConfig.Peer {
+		p := NewPeerRouter()
+		for _, r := range p.Routers() {
+			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
+		}
 	}
 
 	return handlers
