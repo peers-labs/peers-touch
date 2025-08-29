@@ -219,13 +219,16 @@ func (l *Logger) Options() []lg.Option {
 	return logOptions
 }
 
+
+
 type PeersConfig struct {
 	Peers struct {
-		Includes string   `json:"includes" pconf:"includes"`
-		Config   Config   `json:"config" pconf:"config"`
-		Registry Registry `json:"registry" pconf:"registry"`
-		Client   Client   `json:"client" pconf:"client"`
-		Logger   Logger   `json:"logger" pconf:"logger"`
-		Service  Service  `json:"service" pconf:"service"`
+		Includes string       `json:"includes" pconf:"includes"`
+		Config   Config       `json:"config" pconf:"config"`
+		Registry Registry     `json:"registry" pconf:"registry"`
+		Client   Client       `json:"client" pconf:"client"`
+		Logger   Logger       `json:"logger" pconf:"logger"`
+		Service  Service      `json:"service" pconf:"service"`
+
 	} `json:"peers" pconf:"peers"`
 }

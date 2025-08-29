@@ -17,6 +17,20 @@ var (
 	_ server.Subserver = (*debugSubServer)(nil)
 )
 
+// debugRouterURL implements server.RouterURL for debug endpoints
+type debugRouterURL struct {
+	name string
+	url  string
+}
+
+func (d debugRouterURL) Name() string {
+	return d.name
+}
+
+func (d debugRouterURL) URL() string {
+	return d.url
+}
+
 type debugSubServer struct {
 	opts *DebugServerOptions
 }
@@ -66,8 +80,7 @@ func (d *debugSubServer) Status() server.Status {
 func (d *debugSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
-			"debugListRegisteredPeers",
-			"/debug/registered-peers",
+			debugRouterURL{name: "debugListRegisteredPeers", url: "/debug/registered-peers"},
 			func(c context.Context, ctx *app.RequestContext) {
 				peers, err := d.opts.registry.ListPeers(c)
 				if err != nil {
@@ -83,8 +96,7 @@ func (d *debugSubServer) Handlers() []server.Handler {
 			server.WithMethod(server.GET),
 		),
 		server.NewHandler(
-			"debugListAllHandlers",
-			"/debug/list-all-handlers",
+			debugRouterURL{name: "debugListAllHandlers", url: "/debug/list-all-handlers"},
 			func(c context.Context, ctx *app.RequestContext) {
 				handlers := server.GetOptions().Handlers
 				type handlerStruct struct {
@@ -109,8 +121,7 @@ func (d *debugSubServer) Handlers() []server.Handler {
 			}, server.WithMethod(server.GET),
 		),
 		server.NewHandler(
-			"debugGetPeerByID",
-			"/debug/get-peer-by-id",
+			debugRouterURL{name: "debugGetPeerByID", url: "/debug/get-peer-by-id"},
 			func(c context.Context, ctx *app.RequestContext) {
 				id := ctx.Query("id")
 				if id == "" {

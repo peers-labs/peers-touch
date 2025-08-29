@@ -25,11 +25,11 @@ func main() {
 		server.WithHandlers(
 			server.NewHandler("hello-world", "/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("hello world, from native handler"))
-			})),
+			}), server.WithMethod(http.MethodGet)),
 			server.NewHandler("hello-world-hertz", "/hello-hz",
 				func(c context.Context, ctx *app.RequestContext) {
 					ctx.String(http.StatusOK, "hello world, from hertz handler")
-				},
+				}, server.WithMethod(http.MethodGet),
 			),
 		),
 	)

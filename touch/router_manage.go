@@ -18,7 +18,7 @@ type ManageRouters struct{}
 
 func (mr *ManageRouters) Routers() []Router {
 	return []Router{
-		server.NewHandler(ManageRouterURLHealth.Name(), ManageRouterURLHealth.URL(),
+		server.NewHandler(ManageRouterURLHealth,
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world，health")
 			}, server.WithMethod(server.GET)),

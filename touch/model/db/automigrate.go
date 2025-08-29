@@ -12,7 +12,12 @@ import (
 // call it after store is initiated
 func init() {
 	store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
-		err := rds.AutoMigrate(&User{}, &PeerAddress{})
+		err := rds.AutoMigrate(
+			&User{}, &PeerAddress{},
+			// ActivityPub models
+			&ActivityPubActor{}, &ActivityPubActivity{}, &ActivityPubObject{},
+			&ActivityPubFollow{}, &ActivityPubLike{}, &ActivityPubCollection{},
+		)
 		if err != nil {
 			panic(fmt.Errorf("auto migrate failed: %v", err))
 		}

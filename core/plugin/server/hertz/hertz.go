@@ -16,6 +16,20 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 )
 
+// hertzRouterURL implements server.RouterURL for hertz endpoints
+type hertzRouterURL struct {
+	name string
+	url  string
+}
+
+func (h hertzRouterURL) Name() string {
+	return h.name
+}
+
+func (h hertzRouterURL) URL() string {
+	return h.url
+}
+
 type Server struct {
 	*server.BaseServer
 
@@ -113,7 +127,7 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 				h.ServeHTTP(rw, req)
 			}
 
-			err = s.Handle(server.NewHandler(handler.Name(), handler.Path(),
+			err = s.Handle(server.NewHandler(hertzRouterURL{name: handler.Name(), url: handler.Path()},
 				hertzHandler, server.WithMethod(handler.Method())))
 			if err != nil {
 				return err
