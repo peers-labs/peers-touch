@@ -2,8 +2,6 @@ module github.com/dirty-bro-tech/peers-touch-go/example
 
 go 1.24.0
 
-toolchain go1.24.6
-
 replace (
 	github.com/dirty-bro-tech/peers-touch-go => ../
 	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native => ../core/plugin/native

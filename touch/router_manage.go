@@ -10,6 +10,7 @@ import (
 
 const (
 	ManageRouterURLHealth RouterURL = "/health"
+	ManageRouterURLPing   RouterURL = "/ping"
 )
 
 // ManageRouters provides management endpoints for the service
@@ -20,6 +21,13 @@ func (mr *ManageRouters) Routers() []Router {
 		server.NewHandler(ManageRouterURLHealth,
 			func(c context.Context, ctx *app.RequestContext) {
 				ctx.String(http.StatusOK, "hello world，health")
+			}, server.WithMethod(server.GET)),
+		server.NewHandler(ManageRouterURLPing.Name(), ManageRouterURLPing.URL(),
+			func(c context.Context, ctx *app.RequestContext) {
+				ctx.JSON(http.StatusOK, map[string]interface{}{
+					"status": "ok",
+					"message": "pong",
+				})
 			}, server.WithMethod(server.GET)),
 	}
 }
