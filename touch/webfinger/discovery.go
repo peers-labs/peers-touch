@@ -6,32 +6,15 @@ import (
 	"strings"
 
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/service"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/user"
-	"gorm.io/gorm"
 )
 
-// DiscoveryService handles WebFinger user discovery operations
-type DiscoveryService struct {
-	db             *gorm.DB
-	baseURL        string
-	profileService *service.ActivityPubProfileService
-}
-
-// NewDiscoveryService creates a new WebFinger discovery service
-func NewDiscoveryService(db *gorm.DB, baseURL string) *DiscoveryService {
-	return &DiscoveryService{
-		db:             db,
-		baseURL:        strings.TrimSuffix(baseURL, "/"),
-		profileService: service.NewActivityPubProfileService(db, baseURL),
-	}
-}
-
 // DiscoverUser discovers a user by WebFinger resource and returns a WebFinger response
-func (s *DiscoveryService) DiscoverUser(ctx context.Context, params *model.WebFingerParams) (*model.WebFingerResponse, error) {
+func DiscoverUser(ctx context.Context, params *model.WebFingerParams) (*model.WebFingerResponse, error) {
 	// Parse the discovery request
 	request, err := model.ParseUserDiscoveryRequest(params.Resource, nil)
 	if err != nil {
@@ -46,20 +29,23 @@ func (s *DiscoveryService) DiscoverUser(ctx context.Context, params *model.WebFi
 		return nil, fmt.Errorf("user not found: %s", request.Username)
 	}
 
+	// Get base URL from config
+	baseURL := getBaseURL()
+
 	// Convert database user to ActivityPub actor
-	actor, err := s.buildActivityPubActor(dbUser)
+	actor, err := buildActivityPubActor(ctx, dbUser, baseURL)
 	if err != nil {
 		log.Errorf(ctx, "[DiscoverUser] Failed to build ActivityPub actor: %v", err)
 		return nil, err
 	}
 
 	// Build and return WebFinger response
-	response := model.BuildWebFingerResponse(actor, s.baseURL, params.Resource)
+	response := model.BuildWebFingerResponse(actor, baseURL, params.Resource)
 	return response, nil
 }
 
 // GetActivityPubActor returns the ActivityPub actor representation for a user
-func (s *DiscoveryService) GetActivityPubActor(ctx context.Context, username string) (*model.ActivityPubActor, error) {
+func GetActivityPubActor(ctx context.Context, username string) (*model.ActivityPubActor, error) {
 	// Look up the user in the database
 	dbUser, err := user.GetUserByName(ctx, username)
 	if err != nil {
@@ -67,12 +53,15 @@ func (s *DiscoveryService) GetActivityPubActor(ctx context.Context, username str
 		return nil, fmt.Errorf("user not found: %s", username)
 	}
 
+	// Get base URL from config
+	baseURL := getBaseURL()
+
 	// Convert database user to ActivityPub actor
-	return s.buildActivityPubActor(dbUser)
+	return buildActivityPubActor(ctx, dbUser, baseURL)
 }
 
 // CreateActivityPubActor creates a new ActivityPub actor for a user
-func (s *DiscoveryService) CreateActivityPubActor(ctx context.Context, userID uint64) (*model.ActivityPubActor, error) {
+func CreateActivityPubActor(ctx context.Context, userID uint64) (*model.ActivityPubActor, error) {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		log.Errorf(ctx, "[CreateActivityPubActor] Failed to get database connection: %v", err)
@@ -86,58 +75,45 @@ func (s *DiscoveryService) CreateActivityPubActor(ctx context.Context, userID ui
 		return nil, fmt.Errorf("user not found with ID: %d", userID)
 	}
 
+	// Get base URL from config
+	baseURL := getBaseURL()
+
 	// Build ActivityPub actor
-	return s.buildActivityPubActor(&dbUser)
+	return buildActivityPubActor(ctx, &dbUser, baseURL)
 }
 
 // buildActivityPubActor converts a database user to an ActivityPub actor
-func (s *DiscoveryService) buildActivityPubActor(dbUser *db.User) (*model.ActivityPubActor, error) {
-	if dbUser == nil {
-		return nil, fmt.Errorf("user cannot be nil")
-	}
-
-	// Build actor ID and endpoints
-	actorID := fmt.Sprintf("%s/users/%s", s.baseURL, dbUser.Name)
-	inboxURL := fmt.Sprintf("%s/users/%s/inbox", s.baseURL, dbUser.Name)
-	outboxURL := fmt.Sprintf("%s/users/%s/outbox", s.baseURL, dbUser.Name)
-	followersURL := fmt.Sprintf("%s/users/%s/followers", s.baseURL, dbUser.Name)
-	followingURL := fmt.Sprintf("%s/users/%s/following", s.baseURL, dbUser.Name)
-	likedURL := fmt.Sprintf("%s/users/%s/liked", s.baseURL, dbUser.Name)
+func buildActivityPubActor(ctx context.Context, dbUser *db.User, baseURL string) (*model.ActivityPubActor, error) {
+	// Build ActivityPub actor URLs
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	actorID := fmt.Sprintf("%s/users/%s", baseURL, dbUser.Name)
+	inboxURL := fmt.Sprintf("%s/users/%s/inbox", baseURL, dbUser.Name)
+	outboxURL := fmt.Sprintf("%s/users/%s/outbox", baseURL, dbUser.Name)
+	followersURL := fmt.Sprintf("%s/users/%s/followers", baseURL, dbUser.Name)
+	followingURL := fmt.Sprintf("%s/users/%s/following", baseURL, dbUser.Name)
 
 	// Create ActivityPub actor
 	actor := &model.ActivityPubActor{
 		ID:                actorID,
 		Type:              "Person",
 		PreferredUsername: dbUser.Name,
-		Name:              dbUser.Name, // Use name as display name for now
+		Name:              dbUser.Name, // Use database name as display name
+		Summary:           "",          // Default empty summary
 		Inbox:             inboxURL,
 		Outbox:            outboxURL,
 		Followers:         followersURL,
 		Following:         followingURL,
-		Liked:             likedURL,
 		CreatedAt:         dbUser.CreatedAt,
 		UpdatedAt:         dbUser.UpdatedAt,
-	}
-
-	// Add public key for HTTP signatures (placeholder for now)
-	actor.PublicKey = &model.ActivityPubPublicKey{
-		ID:           fmt.Sprintf("%s#main-key", actorID),
-		Owner:        actorID,
-		PublicKeyPem: "", // TODO: Generate and store actual public keys
-	}
-
-	// Add endpoints
-	actor.Endpoints = map[string]string{
-		"sharedInbox": fmt.Sprintf("%s/inbox", s.baseURL),
 	}
 
 	return actor, nil
 }
 
-// ValidateLocalUser checks if a user exists locally and can be discovered
-func (s *DiscoveryService) ValidateLocalUser(ctx context.Context, username, domain string) error {
+// ValidateLocalUser validates that a user exists on this server
+func ValidateLocalUser(ctx context.Context, username, domain string) error {
 	// Check if the domain matches our base URL
-	if !s.isLocalDomain(domain) {
+	if !isLocalDomain(domain) {
 		return fmt.Errorf("domain %s is not local to this server", domain)
 	}
 
@@ -150,18 +126,32 @@ func (s *DiscoveryService) ValidateLocalUser(ctx context.Context, username, doma
 	return nil
 }
 
-// isLocalDomain checks if the given domain belongs to this server
-func (s *DiscoveryService) isLocalDomain(domain string) bool {
+// isLocalDomain checks if the given domain matches our server's domain
+func isLocalDomain(domain string) bool {
+	baseURL := getBaseURL()
 	// Extract domain from base URL
-	baseURL := strings.TrimPrefix(s.baseURL, "http://")
-	baseURL = strings.TrimPrefix(baseURL, "https://")
-	baseDomain := strings.Split(baseURL, ":")[0] // Remove port if present
+	serverDomain := baseURL
+	if strings.HasPrefix(serverDomain, "http://") {
+		serverDomain = strings.TrimPrefix(serverDomain, "http://")
+	} else if strings.HasPrefix(serverDomain, "https://") {
+		serverDomain = strings.TrimPrefix(serverDomain, "https://")
+	}
 
-	return strings.EqualFold(domain, baseDomain)
+	// Remove port if present
+	if colonIndex := strings.Index(serverDomain, ":"); colonIndex != -1 {
+		serverDomain = serverDomain[:colonIndex]
+	}
+
+	// Remove path if present
+	if slashIndex := strings.Index(serverDomain, "/"); slashIndex != -1 {
+		serverDomain = serverDomain[:slashIndex]
+	}
+
+	return strings.EqualFold(serverDomain, domain)
 }
 
 // GetSupportedRelationships returns the relationships supported by this server
-func (s *DiscoveryService) GetSupportedRelationships() []string {
+func GetSupportedRelationships() []string {
 	return []string{
 		model.RelSelf,
 		model.RelProfilePage,
@@ -172,8 +162,8 @@ func (s *DiscoveryService) GetSupportedRelationships() []string {
 	}
 }
 
-// FilterRequestedRelationships filters the WebFinger response based on requested relationships
-func (s *DiscoveryService) FilterRequestedRelationships(response *model.WebFingerResponse, requestedRels []string) *model.WebFingerResponse {
+// FilterRequestedRelationships filters WebFinger response links based on requested relationships
+func FilterRequestedRelationships(response *model.WebFingerResponse, requestedRels []string) *model.WebFingerResponse {
 	if len(requestedRels) == 0 {
 		return response // Return all relationships if none specifically requested
 	}
@@ -197,4 +187,27 @@ func (s *DiscoveryService) FilterRequestedRelationships(response *model.WebFinge
 	filteredResponse.Links = filteredLinks
 
 	return &filteredResponse
+}
+
+// IsUserDiscoverable checks if a user is discoverable via WebFinger
+func IsUserDiscoverable(ctx context.Context, username string) (bool, error) {
+	// Check if user exists
+	_, err := user.GetUserByName(ctx, username)
+	if err != nil {
+		return false, fmt.Errorf("user %s not found", username)
+	}
+
+	// For now, all existing users are discoverable
+	// This can be extended to check user preferences in the future
+	return true, nil
+}
+
+// getBaseURL retrieves the base URL from configuration
+func getBaseURL() string {
+	// Get base URL from core config system
+	if baseURL := cfg.Get("peers", "service", "server", "baseurl").String(""); baseURL != "" {
+		return baseURL
+	}
+	// Fallback to default
+	return "https://localhost:8080"
 }

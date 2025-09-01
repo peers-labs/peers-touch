@@ -18,7 +18,7 @@ var (
 type env struct {
 	prefixes         []string
 	strippedPrefixes []string
-	opts             source.Options
+	opts             *source.Options
 }
 
 func (e *env) Read() (*source.ChangeSet, error) {
@@ -125,15 +125,15 @@ func (e *env) String() string {
 //	    }
 //	}
 func NewSource(opts ...option.Option) source.Source {
-	options := source.NewOptions(opts...)
+	options := source.GetOptions(option.GetOptions(opts...))
 
 	var sp []string
 	var pre []string
-	if p, ok := options.Ctx.Value(strippedPrefixKey{}).([]string); ok {
+	if p, ok := options.Ctx().Value(strippedPrefixKey{}).([]string); ok {
 		sp = p
 	}
 
-	if p, ok := options.Ctx.Value(prefixKey{}).([]string); ok {
+	if p, ok := options.Ctx().Value(prefixKey{}).([]string); ok {
 		pre = p
 	}
 

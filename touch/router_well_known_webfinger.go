@@ -7,13 +7,9 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/webfinger"
 )
-
-// TODO: This should be configurable or derived from the server configuration
-const defaultBaseURL = "https://localhost:9082"
 
 func Webfinger(c context.Context, ctx *app.RequestContext) {
 	var params model.WebFingerParams
@@ -22,7 +18,7 @@ func Webfinger(c context.Context, ctx *app.RequestContext) {
 	if err := ctx.BindQuery(&params); err != nil {
 		log.Warnf(c, "[Webfinger] bind params failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "invalid_request",
+			"error":   "invalid_request",
 			"message": "Failed to parse query parameters",
 		})
 		return
@@ -32,7 +28,7 @@ func Webfinger(c context.Context, ctx *app.RequestContext) {
 	if err := params.Check(); err != nil {
 		log.Warnf(c, "[Webfinger] check resource failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "invalid_resource",
+			"error":   "invalid_resource",
 			"message": err.Error(),
 		})
 		return
@@ -51,29 +47,15 @@ func Webfinger(c context.Context, ctx *app.RequestContext) {
 		}
 	}
 
-	// Get database connection
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "[Webfinger] failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "server_error",
-			"message": "Internal server error occurred",
-		})
-		return
-	}
-
-	// Create discovery service
-	discoveryService := webfinger.NewDiscoveryService(rds, defaultBaseURL)
-
 	// Discover the user
-	response, err := discoveryService.DiscoverUser(c, &params)
+	response, err := webfinger.DiscoverUser(c, &params)
 	if err != nil {
 		log.Warnf(c, "[Webfinger] user discovery failed: %v", err)
-		
+
 		// Check if it's a "not found" error
 		if strings.Contains(err.Error(), "user not found") {
 			ctx.JSON(http.StatusNotFound, map[string]string{
-				"error": "not_found",
+				"error":   "not_found",
 				"message": "The requested resource was not found",
 			})
 			return
@@ -81,7 +63,7 @@ func Webfinger(c context.Context, ctx *app.RequestContext) {
 
 		// Other errors are internal server errors
 		ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "server_error",
+			"error":   "server_error",
 			"message": "Internal server error occurred",
 		})
 		return
@@ -89,7 +71,7 @@ func Webfinger(c context.Context, ctx *app.RequestContext) {
 
 	// Filter response based on requested relationships
 	if len(requestedRels) > 0 {
-		response = discoveryService.FilterRequestedRelationships(response, requestedRels)
+		response = webfinger.FilterRequestedRelationships(response, requestedRels)
 	}
 
 	// Set appropriate content type for WebFinger response

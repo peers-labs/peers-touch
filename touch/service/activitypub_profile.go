@@ -60,7 +60,7 @@ func (s *ActivityPubProfileService) CreateUserProfile(user *db.User, displayName
 	})
 
 	// Create ActivityPub actor
-	actorID := fmt.Sprintf("%s/users/%s", s.baseURL, user.Name)
+	actorID := fmt.Sprintf("%s/%s", s.baseURL, user.Name)
 	publicKeyID := fmt.Sprintf("%s#main-key", actorID)
 
 	// Set metadata with public key information
@@ -78,11 +78,11 @@ func (s *ActivityPubProfileService) CreateUserProfile(user *db.User, displayName
 		Name:              displayName,
 		PreferredUsername: user.Name,
 		Summary:           summary,
-		InboxURL:          fmt.Sprintf("%s/users/%s/inbox", s.baseURL, user.Name),
-		OutboxURL:         fmt.Sprintf("%s/users/%s/outbox", s.baseURL, user.Name),
-		FollowersURL:      fmt.Sprintf("%s/users/%s/followers", s.baseURL, user.Name),
-		FollowingURL:      fmt.Sprintf("%s/users/%s/following", s.baseURL, user.Name),
-		LikedURL:          fmt.Sprintf("%s/users/%s/liked", s.baseURL, user.Name),
+		InboxURL:          fmt.Sprintf("%s/%s/inbox", s.baseURL, user.Name),
+		OutboxURL:         fmt.Sprintf("%s/%s/outbox", s.baseURL, user.Name),
+		FollowersURL:      fmt.Sprintf("%s/%s/followers", s.baseURL, user.Name),
+		FollowingURL:      fmt.Sprintf("%s/%s/following", s.baseURL, user.Name),
+		LikedURL:          fmt.Sprintf("%s/%s/liked", s.baseURL, user.Name),
 		PublicKeyPem:      string(publicKeyPEM),
 		PrivateKeyPem:     string(privateKeyPEM),
 		IsLocal:           true,

@@ -63,5 +63,4 @@ func NewSource(opts ...option.Option) source.Source {
 		path = f
 	}
 	return &file{opts: options, path: path}
-
 }

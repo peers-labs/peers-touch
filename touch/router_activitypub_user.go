@@ -8,18 +8,17 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/webfinger"
 )
 
 const (
 	// User-specific ActivityPub endpoints
-	ActivityPubRouterURLUserActor     RouterURL = "/users/{username}"
-	ActivityPubRouterURLUserInbox     RouterURL = "/users/{username}/inbox"
-	ActivityPubRouterURLUserOutbox    RouterURL = "/users/{username}/outbox"
-	ActivityPubRouterURLUserFollowers RouterURL = "/users/{username}/followers"
-	ActivityPubRouterURLUserFollowing RouterURL = "/users/{username}/following"
-	ActivityPubRouterURLUserLiked     RouterURL = "/users/{username}/liked"
+	ActivityPubRouterURLUserActor     RouterURL = "/{username}"
+	ActivityPubRouterURLUserInbox     RouterURL = "/{username}/inbox"
+	ActivityPubRouterURLUserOutbox    RouterURL = "/{username}/outbox"
+	ActivityPubRouterURLUserFollowers RouterURL = "/{username}/followers"
+	ActivityPubRouterURLUserFollowing RouterURL = "/{username}/following"
+	ActivityPubRouterURLUserLiked     RouterURL = "/{username}/liked"
 )
 
 // UserActivityPubRouters provides user-specific ActivityPub endpoints
@@ -68,41 +67,27 @@ func GetUserActor(c context.Context, ctx *app.RequestContext) {
 	if username == "" {
 		log.Warnf(c, "[GetUserActor] missing username parameter")
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "missing_parameter",
+			"error":   "missing_parameter",
 			"message": "Username parameter is required",
 		})
 		return
 	}
 
-	// Get database connection
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "[GetUserActor] failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "server_error",
-			"message": "Internal server error occurred",
-		})
-		return
-	}
-
-	// Create discovery service
-	discoveryService := webfinger.NewDiscoveryService(rds, defaultBaseURL)
-
 	// Get ActivityPub actor
-	actor, err := discoveryService.GetActivityPubActor(c, username)
+	actor, err := webfinger.GetActivityPubActor(c, username)
 	if err != nil {
 		log.Warnf(c, "[GetUserActor] failed to get actor for user %s: %v", username, err)
-		
+
 		if strings.Contains(err.Error(), "user not found") {
 			ctx.JSON(http.StatusNotFound, map[string]string{
-				"error": "not_found",
+				"error":   "not_found",
 				"message": "User not found",
 			})
 			return
 		}
 
 		ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "server_error",
+			"error":   "server_error",
 			"message": "Internal server error occurred",
 		})
 		return
@@ -123,7 +108,7 @@ func GetUserInbox(c context.Context, ctx *app.RequestContext) {
 	if username == "" {
 		log.Warnf(c, "[GetUserInbox] missing username parameter")
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "missing_parameter",
+			"error":   "missing_parameter",
 			"message": "Username parameter is required",
 		})
 		return
@@ -132,10 +117,10 @@ func GetUserInbox(c context.Context, ctx *app.RequestContext) {
 	// TODO: Implement actual inbox retrieval
 	// For now, return an empty ActivityPub collection
 	inboxCollection := map[string]interface{}{
-		"@context": "https://www.w3.org/ns/activitystreams",
-		"type":     "OrderedCollection",
-		"id":       ctx.Request.URI().String(),
-		"totalItems": 0,
+		"@context":     "https://www.w3.org/ns/activitystreams",
+		"type":         "OrderedCollection",
+		"id":           ctx.Request.URI().String(),
+		"totalItems":   0,
 		"orderedItems": []interface{}{},
 	}
 
@@ -149,7 +134,7 @@ func PostUserInbox(c context.Context, ctx *app.RequestContext) {
 	if username == "" {
 		log.Warnf(c, "[PostUserInbox] missing username parameter")
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "missing_parameter",
+			"error":   "missing_parameter",
 			"message": "Username parameter is required",
 		})
 		return
@@ -171,7 +156,7 @@ func GetUserOutbox(c context.Context, ctx *app.RequestContext) {
 	if username == "" {
 		log.Warnf(c, "[GetUserOutbox] missing username parameter")
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "missing_parameter",
+			"error":   "missing_parameter",
 			"message": "Username parameter is required",
 		})
 		return
@@ -180,10 +165,10 @@ func GetUserOutbox(c context.Context, ctx *app.RequestContext) {
 	// TODO: Implement actual outbox retrieval
 	// For now, return an empty ActivityPub collection
 	outboxCollection := map[string]interface{}{
-		"@context": "https://www.w3.org/ns/activitystreams",
-		"type":     "OrderedCollection",
-		"id":       ctx.Request.URI().String(),
-		"totalItems": 0,
+		"@context":     "https://www.w3.org/ns/activitystreams",
+		"type":         "OrderedCollection",
+		"id":           ctx.Request.URI().String(),
+		"totalItems":   0,
 		"orderedItems": []interface{}{},
 	}
 
@@ -197,7 +182,7 @@ func PostUserOutbox(c context.Context, ctx *app.RequestContext) {
 	if username == "" {
 		log.Warnf(c, "[PostUserOutbox] missing username parameter")
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "missing_parameter",
+			"error":   "missing_parameter",
 			"message": "Username parameter is required",
 		})
 		return
@@ -219,7 +204,7 @@ func GetUserFollowers(c context.Context, ctx *app.RequestContext) {
 	if username == "" {
 		log.Warnf(c, "[GetUserFollowers] missing username parameter")
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "missing_parameter",
+			"error":   "missing_parameter",
 			"message": "Username parameter is required",
 		})
 		return
@@ -228,10 +213,10 @@ func GetUserFollowers(c context.Context, ctx *app.RequestContext) {
 	// TODO: Implement actual followers retrieval
 	// For now, return an empty ActivityPub collection
 	followersCollection := map[string]interface{}{
-		"@context": "https://www.w3.org/ns/activitystreams",
-		"type":     "OrderedCollection",
-		"id":       ctx.Request.URI().String(),
-		"totalItems": 0,
+		"@context":     "https://www.w3.org/ns/activitystreams",
+		"type":         "OrderedCollection",
+		"id":           ctx.Request.URI().String(),
+		"totalItems":   0,
 		"orderedItems": []interface{}{},
 	}
 
@@ -245,7 +230,7 @@ func GetUserFollowing(c context.Context, ctx *app.RequestContext) {
 	if username == "" {
 		log.Warnf(c, "[GetUserFollowing] missing username parameter")
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "missing_parameter",
+			"error":   "missing_parameter",
 			"message": "Username parameter is required",
 		})
 		return
@@ -254,10 +239,10 @@ func GetUserFollowing(c context.Context, ctx *app.RequestContext) {
 	// TODO: Implement actual following retrieval
 	// For now, return an empty ActivityPub collection
 	followingCollection := map[string]interface{}{
-		"@context": "https://www.w3.org/ns/activitystreams",
-		"type":     "OrderedCollection",
-		"id":       ctx.Request.URI().String(),
-		"totalItems": 0,
+		"@context":     "https://www.w3.org/ns/activitystreams",
+		"type":         "OrderedCollection",
+		"id":           ctx.Request.URI().String(),
+		"totalItems":   0,
 		"orderedItems": []interface{}{},
 	}
 
@@ -271,7 +256,7 @@ func GetUserLiked(c context.Context, ctx *app.RequestContext) {
 	if username == "" {
 		log.Warnf(c, "[GetUserLiked] missing username parameter")
 		ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "missing_parameter",
+			"error":   "missing_parameter",
 			"message": "Username parameter is required",
 		})
 		return
@@ -280,10 +265,10 @@ func GetUserLiked(c context.Context, ctx *app.RequestContext) {
 	// TODO: Implement actual liked retrieval
 	// For now, return an empty ActivityPub collection
 	likedCollection := map[string]interface{}{
-		"@context": "https://www.w3.org/ns/activitystreams",
-		"type":     "OrderedCollection",
-		"id":       ctx.Request.URI().String(),
-		"totalItems": 0,
+		"@context":     "https://www.w3.org/ns/activitystreams",
+		"type":         "OrderedCollection",
+		"id":           ctx.Request.URI().String(),
+		"totalItems":   0,
 		"orderedItems": []interface{}{},
 	}
 

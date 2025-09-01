@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"dario.cat/mergo"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 )
 
 type flagsrc struct {
-	opts source.Options
+	opts *source.Options
 }
 
 func (fs *flagsrc) Read() (*source.ChangeSet, error) {
@@ -39,7 +40,7 @@ func (fs *flagsrc) Read() (*source.ChangeSet, error) {
 		_ = mergo.Map(&changes, tmp) // need to sort error handling
 	}
 
-	unset, ok := fs.opts.Context.Value(includeUnsetKey{}).(bool)
+	unset, ok := fs.opts.Ctx().Value(includeUnsetKey{}).(bool)
 	if ok && unset {
 		flag.VisitAll(visitFn)
 	} else {
@@ -93,6 +94,6 @@ func (fs *flagsrc) String() string {
 //	        "host": "localhost"
 //	    }
 //	}
-func NewSource(opts ...source.Option) source.Source {
-	return &flagsrc{opts: source.NewOptions(opts...)}
+func NewSource(opts ...option.Option) source.Source {
+	return &flagsrc{opts: source.GetOptions(option.GetOptions(opts...))}
 }
