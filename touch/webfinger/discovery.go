@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
+	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
@@ -29,7 +29,7 @@ func DiscoverUser(ctx context.Context, params *model.WebFingerParams) (*model.We
 		return nil, fmt.Errorf("user not found: %s", request.Username)
 	}
 
-	// Get base URL from config
+	// Get base SubPath from config
 	baseURL := getBaseURL()
 
 	// Convert database user to ActivityPub actor
@@ -53,7 +53,7 @@ func GetActivityPubActor(ctx context.Context, username string) (*model.ActivityP
 		return nil, fmt.Errorf("user not found: %s", username)
 	}
 
-	// Get base URL from config
+	// Get base SubPath from config
 	baseURL := getBaseURL()
 
 	// Convert database user to ActivityPub actor
@@ -75,7 +75,7 @@ func CreateActivityPubActor(ctx context.Context, userID uint64) (*model.Activity
 		return nil, fmt.Errorf("user not found with ID: %d", userID)
 	}
 
-	// Get base URL from config
+	// Get base SubPath from config
 	baseURL := getBaseURL()
 
 	// Build ActivityPub actor
@@ -112,7 +112,7 @@ func buildActivityPubActor(ctx context.Context, dbUser *db.User, baseURL string)
 
 // ValidateLocalUser validates that a user exists on this server
 func ValidateLocalUser(ctx context.Context, username, domain string) error {
-	// Check if the domain matches our base URL
+	// Check if the domain matches our base SubPath
 	if !isLocalDomain(domain) {
 		return fmt.Errorf("domain %s is not local to this server", domain)
 	}
@@ -129,7 +129,7 @@ func ValidateLocalUser(ctx context.Context, username, domain string) error {
 // isLocalDomain checks if the given domain matches our server's domain
 func isLocalDomain(domain string) bool {
 	baseURL := getBaseURL()
-	// Extract domain from base URL
+	// Extract domain from base SubPath
 	serverDomain := baseURL
 	if strings.HasPrefix(serverDomain, "http://") {
 		serverDomain = strings.TrimPrefix(serverDomain, "http://")
@@ -202,9 +202,9 @@ func IsUserDiscoverable(ctx context.Context, username string) (bool, error) {
 	return true, nil
 }
 
-// getBaseURL retrieves the base URL from configuration
+// getBaseURL retrieves the base SubPath from configuration
 func getBaseURL() string {
-	// Get base URL from core config system
+	// Get base SubPath from core config system
 	if baseURL := cfg.Get("peers", "service", "server", "baseurl").String(""); baseURL != "" {
 		return baseURL
 	}

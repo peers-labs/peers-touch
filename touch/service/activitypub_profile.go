@@ -14,8 +14,8 @@ import (
 
 // ActivityPubProfileService handles user profile management for ActivityPub
 type ActivityPubProfileService struct {
-	db       *gorm.DB
-	baseURL  string // Base URL for this instance (e.g., "https://example.com")
+	db      *gorm.DB
+	baseURL string // Base SubPath for this instance (e.g., "https://example.com")
 }
 
 // NewActivityPubProfileService creates a new ActivityPub profile service

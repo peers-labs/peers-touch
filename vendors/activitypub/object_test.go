@@ -296,7 +296,7 @@ func validateEmptyObject(o Object, t *testing.T) {
 		t.Errorf("Unmarshaled object %T should have empty Content, received %q", o, o.Content)
 	}
 	if o.URL != nil {
-		t.Errorf("Unmarshaled object %T should have empty URL, received %v", o, o.URL)
+		t.Errorf("Unmarshaled object %T should have empty SubPath, received %v", o, o.URL)
 	}
 	if o.Icon != nil {
 		t.Errorf("Unmarshaled object %T should have empty Icon, received %v", o, o.Icon)

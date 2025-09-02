@@ -45,10 +45,21 @@ type Handler interface {
 	Wrappers() []Wrapper
 }
 
+// Routers interface defines a collection of handlers with a name
+type Routers interface {
+	Handlers() []Handler
+
+	// Name declares the cluster-name of routers
+	// it must be unique. Peers uses it to check if there are already routers(like activitypub
+	// and management interface.) that must be registered,
+	// if you want to register a bundle of routers with the same name, it will be overwritten
+	Name() string
+}
+
 // RouterURL interface defines methods for router URL handling
 type RouterURL interface {
 	Name() string
-	URL() string
+	SubPath() string
 }
 
 // Wrapper defines a function type for Wrapper
@@ -89,10 +100,10 @@ func NewHandler(routerURL RouterURL, handler interface{}, opts ...HandlerOption)
 	}
 
 	return &httpHandler{
-		name:    routerURL.Name(),
-		path:    routerURL.URL(),
-		handler: handler,
-		method:  config.Method,
-		// wrapper: config.middlewares,
+		name:     routerURL.Name(),
+		path:     routerURL.SubPath(),
+		handler:  handler,
+		method:   config.Method,
+		wrappers: config.Wrappers,
 	}
 }

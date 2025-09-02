@@ -2,8 +2,6 @@ module github.com/dirty-bro-tech/peers-touch-go
 
 go 1.23.10
 
-
-
 require (
 	dario.cat/mergo v1.0.1
 	git.sr.ht/~mariusor/go-xsd-duration v0.0.0-20220703122237-02e73435a078

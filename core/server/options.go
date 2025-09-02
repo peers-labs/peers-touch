@@ -67,6 +67,37 @@ func WithHandlers(handlers ...Handler) option.Option {
 	})
 }
 
+// WithRouters converts routers to handlers and adds them to the server
+// Each handler's path will be prefixed with the router's name
+func WithRouters(routers ...Routers) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		for _, router := range routers {
+			routerName := router.Name()
+			handlers := router.Handlers()
+			
+			// Create new handlers with router name prefixed to path
+			for _, handler := range handlers {
+				var prefixedPath string
+				if routerName == "" {
+					// If router name is empty, use original path without prefix
+					prefixedPath = handler.Path()
+				} else {
+					// Otherwise, prefix with router name
+					prefixedPath = "/" + routerName + handler.Path()
+				}
+				prefixedHandler := &httpHandler{
+					name:     handler.Name(),
+					method:   handler.Method(),
+					path:     prefixedPath,
+					handler:  handler.Handler(),
+					wrappers: handler.Wrappers(),
+				}
+				opts.Handlers = append(opts.Handlers, prefixedHandler)
+			}
+		}
+	})
+}
+
 // WithSubServer adds a subserver to the server
 func WithSubServer(name string, newFunc func(opts ...option.Option) Subserver, subServerOptions ...option.Option) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
@@ -96,8 +127,15 @@ func WithMethod(method Method) HandlerOption {
 	}
 }
 
+func WithWrappers(wrappers ...Wrapper) HandlerOption {
+	return func(opts *HandlerOptions) {
+		opts.Wrappers = wrappers
+	}
+}
+
 type HandlerOptions struct {
-	Method Method
+	Method   Method
+	Wrappers []Wrapper
 }
 
 // endregion

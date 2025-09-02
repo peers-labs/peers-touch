@@ -26,7 +26,7 @@ func (h hertzRouterURL) Name() string {
 	return h.name
 }
 
-func (h hertzRouterURL) URL() string {
+func (h hertzRouterURL) SubPath() string {
 	return h.url
 }
 

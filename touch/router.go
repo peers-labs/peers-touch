@@ -1,22 +1,23 @@
 package touch
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
 )
 
 const (
-	RoutersNameManagement      = "management"
-	RoutersNameActivityPub     = "activitypub"
-	RoutersNameUserActivityPub = "user-activitypub"
-	RoutersNameWellKnown       = ".well-known"
-	RoutersNameUser            = "user"
-	RoutersNamePeer            = "peer"
+	RoutersNameManagement  = "management"
+	RoutersNameActivityPub = "activitypub"
+	RoutersNameWellKnown   = ".well-known"
+	RoutersNameUser        = "user"
+	RoutersNamePeer        = "peer"
 )
 
 // Router is a server handler that can be registered with a server.
@@ -25,74 +26,117 @@ const (
 // if you what to register a handler with Peers server, you can implement this interface, then call server.listPeers() to register it.
 type Router server.Handler
 
-type Routers interface {
-	Routers() []Router
+type RouterPath string
 
-	// Name declares the cluster-name of routers
-	// it must be unique. Peers uses it to check if there are already routers(like activitypub
-	// and management interface.) that must be registered,
-	// if you want to register a bundle of routers with the same name, it will be overwritten
-	Name() string
-}
-
-type RouterURL string
-
-func (apr RouterURL) Name() string {
+func (apr RouterPath) Name() string {
 	return string(apr)
 }
 
-func (apr RouterURL) URL() string {
+func (apr RouterPath) SubPath() string {
 	return string(apr)
 }
 
-func Handlers() []option.Option {
+// CommonAccessControlWrapper creates a wrapper that checks router accessibility based on router family name
+func CommonAccessControlWrapper(routerFamilyName string) server.Wrapper {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			routerConfig := GetRouterConfig()
+
+			// Check if the router family is enabled based on its name
+			var isEnabled bool
+			switch routerFamilyName {
+			case RoutersNameManagement:
+				isEnabled = routerConfig.Management
+			case RoutersNameActivityPub:
+				isEnabled = routerConfig.ActivityPub
+			case RoutersNameWellKnown:
+				isEnabled = routerConfig.WellKnown
+			case RoutersNameUser:
+				isEnabled = routerConfig.User
+			case RoutersNamePeer:
+				isEnabled = routerConfig.Peer
+			default:
+				log.Warnf(r.Context(), "Unknown router family: %s", routerFamilyName)
+				isEnabled = false
+			}
+
+			if !isEnabled {
+				log.Warnf(r.Context(), "Router family %s is disabled by configuration", routerFamilyName)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"error":"Page not found"}`)) // Match the existing 404 response format
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// wrapHandler creates a wrapper that checks configuration before executing the handler
+func wrapHandler(handlerName string, configCheck func(*RouterConfig) bool, handler func(context.Context, *app.RequestContext)) func(context.Context, *app.RequestContext) {
+	return func(ctx context.Context, c *app.RequestContext) {
+		routerConfig := GetRouterConfig()
+		if !configCheck(routerConfig) {
+			log.Warnf(context.Background(), "Handler %s is disabled by configuration", handlerName)
+			c.JSON(http.StatusNotFound, map[string]string{"error": "Handler disabled"})
+			return
+		}
+		handler(ctx, c)
+	}
+}
+
+// Routers returns server options with touch handlers
+func Routers() []option.Option {
 	routerConfig := GetRouterConfig()
-	handlers := make([]option.Option, 0)
+	log.Infof(context.Background(), "Router config: %+v", routerConfig)
+
+	routers := make([]server.Routers, 0)
 
 	// Conditionally add routers based on configuration
 	if routerConfig.Management {
-		m := NewManageRouter()
-		for _, r := range m.Routers() {
-			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
-		}
+		routers = append(routers, NewManageRouter())
 	}
 
 	if routerConfig.ActivityPub {
-		a := NewActivityPubRouter()
-		for _, r := range a.Routers() {
-			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
-		}
-	}
-
-	if routerConfig.UserActivityPub {
-		ua := NewUserActivityPubRouter()
-		for _, r := range ua.Routers() {
-			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
-		}
+		routers = append(routers, NewActivityPubRouter())
 	}
 
 	if routerConfig.WellKnown {
-		w := NewWellKnownRouter()
-		for _, r := range w.Routers() {
-			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
-		}
+		routers = append(routers, NewWellKnownRouter())
 	}
 
 	if routerConfig.User {
-		u := NewUserRouter()
-		for _, r := range u.Routers() {
-			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
-		}
+		routers = append(routers, NewUserRouter())
 	}
 
 	if routerConfig.Peer {
-		p := NewPeerRouter()
-		for _, r := range p.Routers() {
-			handlers = append(handlers, server.WithHandlers(convertRouterToServerHandler(r)))
-		}
+		routers = append(routers, NewPeerRouter())
 	}
 
-	return handlers
+	return []option.Option{
+		server.WithRouters(routers...),
+	}
+}
+
+// wrapRouterHandler wraps a router handler with configuration checking
+func wrapRouterHandler(router Router, routerName string, configCheck func(*RouterConfig) bool) server.Handler {
+	originalHandler := router.Handler()
+	wrappedHandler := func(ctx context.Context, c *app.RequestContext) {
+		routerConfig := GetRouterConfig()
+		if !configCheck(routerConfig) {
+			log.Warnf(context.Background(), "Router %s is disabled by configuration", routerName)
+			c.JSON(http.StatusNotFound, map[string]string{"error": "Router disabled"})
+			return
+		}
+		originalHandler.(func(context.Context, *app.RequestContext))(ctx, c)
+	}
+
+	// Create a RouterPath from the router's path
+	routerURL := RouterPath(router.Path())
+
+	// Create a new handler with the wrapped function and method
+	return server.NewHandler(routerURL, wrappedHandler, server.WithMethod(router.Method()))
 }
 
 func convertRouterToServerHandler(r Router) server.Handler {

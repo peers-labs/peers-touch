@@ -1,8 +1,8 @@
 package touch
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
 var (
@@ -24,12 +24,11 @@ type TouchConfig struct {
 
 // RouterConfig controls which routers are enabled
 type RouterConfig struct {
-	Management      bool `json:"management" pconf:"management" yaml:"management"`
-	ActivityPub     bool `json:"activitypub" pconf:"activitypub" yaml:"activitypub"`
-	UserActivityPub bool `json:"user_activitypub" pconf:"user_activitypub" yaml:"user_activitypub"`
-	WellKnown       bool `json:"wellknown" pconf:"wellknown" yaml:"wellknown"`
-	User            bool `json:"user" pconf:"user" yaml:"user"`
-	Peer            bool `json:"peer" pconf:"peer" yaml:"peer"`
+	Management  bool `json:"management" pconf:"management" yaml:"management"`
+	ActivityPub bool `json:"activitypub" pconf:"activitypub" yaml:"activitypub"`
+	WellKnown   bool `json:"wellknown" pconf:"wellknown" yaml:"wellknown"`
+	User        bool `json:"user" pconf:"user" yaml:"user"`
+	Peer        bool `json:"peer" pconf:"peer" yaml:"peer"`
 }
 
 func (r *RouterConfig) Options() []option.Option {

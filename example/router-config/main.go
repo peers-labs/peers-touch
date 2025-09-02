@@ -11,18 +11,18 @@ import (
 func main() {
 	fmt.Println("Router Configuration Example")
 	fmt.Println("============================")
-	
+
 	// Check if configuration files exist
 	configPaths := []string{"peers.yml", "conf/peers.yml"}
 	var foundConfig string
-	
+
 	for _, path := range configPaths {
 		if _, err := os.Stat(path); err == nil {
 			foundConfig = path
 			break
 		}
 	}
-	
+
 	if foundConfig != "" {
 		fmt.Printf("Found configuration file: %s\n", foundConfig)
 	} else {
@@ -42,10 +42,10 @@ func main() {
 	fmt.Println()
 
 	// Get the handlers based on configuration
-	handlers := touch.Handlers()
+	handlers := touch.Routers()
 	fmt.Printf("Total handlers registered: %d\n", len(handlers))
 	fmt.Println()
-	
+
 	fmt.Println("Router Configuration System Features:")
 	fmt.Println("- All routers are enabled by default")
 	fmt.Println("- Routers can be disabled via YAML configuration")

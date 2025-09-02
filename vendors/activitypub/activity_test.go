@@ -770,7 +770,7 @@ func TestActivity_UnmarshalJSON(t *testing.T) {
 		t.Errorf("Unmarshaled object %T should have empty Content, received %q", a, a.Content)
 	}
 	if a.URL != nil {
-		t.Errorf("Unmarshaled object %T should have empty URL, received %v", a, a.URL)
+		t.Errorf("Unmarshaled object %T should have empty SubPath, received %v", a, a.URL)
 	}
 	if !a.Published.IsZero() {
 		t.Errorf("Unmarshaled object %T should have empty Published, received %q", a, a.Published)
@@ -807,7 +807,7 @@ func TestCreate_UnmarshalJSON(t *testing.T) {
 		t.Errorf("Unmarshaled object %T should have empty Content, received %q", c, c.Content)
 	}
 	if c.URL != nil {
-		t.Errorf("Unmarshaled object %T should have empty URL, received %v", c, c.URL)
+		t.Errorf("Unmarshaled object %T should have empty SubPath, received %v", c, c.URL)
 	}
 	if !c.Published.IsZero() {
 		t.Errorf("Unmarshaled object %T should have empty Published, received %q", c, c.Published)
@@ -844,7 +844,7 @@ func TestDislike_UnmarshalJSON(t *testing.T) {
 		t.Errorf("Unmarshaled object %T should have empty Content, received %q", d, d.Content)
 	}
 	if d.URL != nil {
-		t.Errorf("Unmarshaled object %T should have empty URL, received %v", d, d.URL)
+		t.Errorf("Unmarshaled object %T should have empty SubPath, received %v", d, d.URL)
 	}
 	if !d.Published.IsZero() {
 		t.Errorf("Unmarshaled object %T should have empty Published, received %q", d, d.Published)
@@ -881,7 +881,7 @@ func TestLike_UnmarshalJSON(t *testing.T) {
 		t.Errorf("Unmarshaled object %T should have empty Content, received %q", l, l.Content)
 	}
 	if l.URL != nil {
-		t.Errorf("Unmarshaled object %T should have empty URL, received %v", l, l.URL)
+		t.Errorf("Unmarshaled object %T should have empty SubPath, received %v", l, l.URL)
 	}
 	if !l.Published.IsZero() {
 		t.Errorf("Unmarshaled object %T should have empty Published, received %q", l, l.Published)
@@ -918,7 +918,7 @@ func TestUpdate_UnmarshalJSON(t *testing.T) {
 		t.Errorf("Unmarshaled object %T should have empty Content, received %q", u, u.Content)
 	}
 	if u.URL != nil {
-		t.Errorf("Unmarshaled object %T should have empty URL, received %v", u, u.URL)
+		t.Errorf("Unmarshaled object %T should have empty SubPath, received %v", u, u.URL)
 	}
 	if !u.Published.IsZero() {
 		t.Errorf("Unmarshaled object %T should have empty Published, received %q", u, u.Published)

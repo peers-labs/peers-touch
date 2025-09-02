@@ -8,13 +8,13 @@ import (
 
 // Server: Fetching the inbox
 // Try retrieving the actor's inbox of an actor.
-// Server responds to GET request at inbox URL
+// Server responds to GET request at inbox SubPath
 func TestInboxGETRequest(t *testing.T) {
 	desc := `
 Server: Fetching the inbox
  Try retrieving the actor's inbox of an actor.
 
-  Server responds to GET request at inbox URL
+  Server responds to GET request at inbox SubPath
 `
 	t.Skip(desc)
 }

@@ -120,11 +120,11 @@ func TestIRI_URL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.i.URL()
 			if (err != nil) != tt.wantErr {
-				t.Errorf("URL() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("SubPath() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("URL() got = %v, want %v", got, tt.want)
+				t.Errorf("SubPath() got = %v, want %v", got, tt.want)
 			}
 		})
 	}

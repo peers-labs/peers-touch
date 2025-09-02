@@ -9,7 +9,7 @@ type ActivityPubEndpointInfo struct {
 	// PeerID is the unique identifier for the peer
 	PeerID string `json:"peer_id"`
 
-	// BaseURL is the root URL of the ActivityPub server (e.g., "https://example.com")
+	// BaseURL is the root SubPath of the ActivityPub server (e.g., "https://example.com")
 	BaseURL string `json:"base_url"`
 
 	// EndpointCount is the total number of available ActivityPub endpoints

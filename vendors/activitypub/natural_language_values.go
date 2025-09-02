@@ -755,7 +755,7 @@ func (n *NaturalLanguageValues) UnmarshalJSON(data []byte) error {
 // UnmarshalText tries to load the NaturalLanguage array from the incoming Text value
 func (n *NaturalLanguageValues) UnmarshalText(data []byte) error {
 	if data[0] == '"' {
-		// a quoted string - loading it to c.URL
+		// a quoted string - loading it to c.SubPath
 		if data[len(data)-1] != '"' {
 			return fmt.Errorf("invalid string value when unmarshaling %T value", n)
 		}

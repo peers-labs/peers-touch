@@ -27,7 +27,7 @@ func (d debugRouterURL) Name() string {
 	return d.name
 }
 
-func (d debugRouterURL) URL() string {
+func (d debugRouterURL) SubPath() string {
 	return d.url
 }
 

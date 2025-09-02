@@ -32,7 +32,7 @@ func (b bootstrapRouterURL) Name() string {
 	return b.name
 }
 
-func (b bootstrapRouterURL) URL() string {
+func (b bootstrapRouterURL) SubPath() string {
 	return b.url
 }
 

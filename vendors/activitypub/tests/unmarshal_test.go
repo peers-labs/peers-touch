@@ -239,14 +239,14 @@ var allTests = testMaps{
 	//	expected: true,
 	//	blank:    &pub.Object{},
 	//	result: &pub.Object{
-	//		URL: pub.IRI("http://littr.git/api/accounts/system"),
+	//		SubPath: pub.IRI("http://littr.git/api/accounts/system"),
 	//	},
 	//},
 	//"object_with_url_collection": testPair{
 	//	expected: true,
 	//	blank:    &pub.Object{},
 	//	result: &pub.Object{
-	//		URL: pub.ItemCollection{
+	//		SubPath: pub.ItemCollection{
 	//			pub.IRI("http://littr.git/api/accounts/system"),
 	//			pub.IRI("http://littr.git/~system"),
 	//		},
@@ -348,11 +348,11 @@ var allTests = testMaps{
 	//		Type:              pub.PersonType,
 	//		Name:              pub.NaturalLanguageValues{{pub.NilLangRef, pub.Content("ana")}},
 	//		PreferredUsername: pub.NaturalLanguageValues{{pub.NilLangRef, pub.Content("Ana")}},
-	//		URL:               pub.IRI("http://example.com/accounts/ana"),
+	//		SubPath:               pub.IRI("http://example.com/accounts/ana"),
 	//		Outbox: &pub.OrderedCollection{
 	//			ID:   "http://example.com/accounts/ana/outbox",
 	//			Type: pub.OrderedCollectionType,
-	//			URL:  pub.IRI("http://example.com/outbox"),
+	//			SubPath:  pub.IRI("http://example.com/outbox"),
 	//		},
 	//	},
 	//},
@@ -362,7 +362,7 @@ var allTests = testMaps{
 	//	result: &pub.OrderedCollection{
 	//		ID:         pub.ID("http://example.com/outbox"),
 	//		Type:       pub.OrderedCollectionType,
-	//		URL:        pub.IRI("http://example.com/outbox"),
+	//		SubPath:        pub.IRI("http://example.com/outbox"),
 	//		TotalItems: 1,
 	//		OrderedItems: pub.ItemCollection{
 	//			&pub.Object{
@@ -370,7 +370,7 @@ var allTests = testMaps{
 	//				Type:         pub.ArticleType,
 	//				Name:         pub.NaturalLanguageValues{{pub.NilLangRef, pub.Content("Example title")}},
 	//				Content:      pub.NaturalLanguageValues{{pub.NilLangRef, pub.Content("Example content!")}},
-	//				URL:          pub.IRI("http://example.com/53c6fb47"),
+	//				SubPath:          pub.IRI("http://example.com/53c6fb47"),
 	//				MediaType:    pub.MimeType("text/markdown"),
 	//				Published:    time.Date(2018, time.July, 5, 16, 46, 44, 0, zLoc),
 	//				Generator:    pub.IRI("http://example.com"),

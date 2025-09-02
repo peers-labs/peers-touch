@@ -19,9 +19,9 @@ type ActivityPubActor struct {
 	Summary           string     `gorm:"type:text"`                       // Bio/description
 	InboxURL          string     `gorm:"size:512;not null"`               // Inbox endpoint
 	OutboxURL         string     `gorm:"size:512;not null"`               // Outbox endpoint
-	FollowersURL      string     `gorm:"size:512"`                        // Followers collection URL
-	FollowingURL      string     `gorm:"size:512"`                        // Following collection URL
-	LikedURL          string     `gorm:"size:512"`                        // Liked collection URL
+	FollowersURL      string     `gorm:"size:512"`                        // Followers collection SubPath
+	FollowingURL      string     `gorm:"size:512"`                        // Following collection SubPath
+	LikedURL          string     `gorm:"size:512"`                        // Liked collection SubPath
 	PublicKeyPem      string     `gorm:"type:text"`                       // Public key for verification
 	PrivateKeyPem     string     `gorm:"type:text"`                       // Private key (for local actors)
 	IsLocal           bool       `gorm:"default:false;not null"`          // Whether this is a local actor

@@ -26,7 +26,7 @@ func (h helloRouterURL) Name() string {
 	return h.name
 }
 
-func (h helloRouterURL) URL() string {
+func (h helloRouterURL) SubPath() string {
 	return h.url
 }
 

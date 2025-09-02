@@ -125,7 +125,7 @@ func TestCollection_UnmarshalJSON(t *testing.T) {
 		t.Errorf("Unmarshaled object should have empty Items, received %v", c.Items)
 	}
 	if c.URL != nil {
-		t.Errorf("Unmarshaled object should have empty URL, received %v", c.URL)
+		t.Errorf("Unmarshaled object should have empty SubPath, received %v", c.URL)
 	}
 	if !c.Published.IsZero() {
 		t.Errorf("Unmarshaled object should have empty Published, received %q", c.Published)
