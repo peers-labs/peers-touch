@@ -88,55 +88,15 @@ func wrapHandler(handlerName string, configCheck func(*RouterConfig) bool, handl
 
 // Routers returns server options with touch handlers
 func Routers() []option.Option {
-	routerConfig := GetRouterConfig()
-	log.Infof(context.Background(), "Router config: %+v", routerConfig)
-
 	routers := make([]server.Routers, 0)
-
-	// Conditionally add routers based on configuration
-	if routerConfig.Management {
-		routers = append(routers, NewManageRouter())
-	}
-
-	if routerConfig.ActivityPub {
-		routers = append(routers, NewActivityPubRouter())
-	}
-
-	if routerConfig.WellKnown {
-		routers = append(routers, NewWellKnownRouter())
-	}
-
-	if routerConfig.User {
-		routers = append(routers, NewUserRouter())
-	}
-
-	if routerConfig.Peer {
-		routers = append(routers, NewPeerRouter())
-	}
-
+	routers = append(routers, NewManageRouter())
+	routers = append(routers, NewActivityPubRouter())
+	routers = append(routers, NewWellKnownRouter())
+	routers = append(routers, NewUserRouter())
+	routers = append(routers, NewPeerRouter())
 	return []option.Option{
 		server.WithRouters(routers...),
 	}
-}
-
-// wrapRouterHandler wraps a router handler with configuration checking
-func wrapRouterHandler(router Router, routerName string, configCheck func(*RouterConfig) bool) server.Handler {
-	originalHandler := router.Handler()
-	wrappedHandler := func(ctx context.Context, c *app.RequestContext) {
-		routerConfig := GetRouterConfig()
-		if !configCheck(routerConfig) {
-			log.Warnf(context.Background(), "Router %s is disabled by configuration", routerName)
-			c.JSON(http.StatusNotFound, map[string]string{"error": "Router disabled"})
-			return
-		}
-		originalHandler.(func(context.Context, *app.RequestContext))(ctx, c)
-	}
-
-	// Create a RouterPath from the router's path
-	routerURL := RouterPath(router.Path())
-
-	// Create a new handler with the wrapped function and method
-	return server.NewHandler(routerURL, wrappedHandler, server.WithMethod(router.Method()))
 }
 
 func convertRouterToServerHandler(r Router) server.Handler {
