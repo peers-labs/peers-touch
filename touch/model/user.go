@@ -7,7 +7,7 @@ import (
 // Password validation constants
 const (
 	// Default password pattern: numbers, symbols, and English letters (8-20 chars)
-	DefaultPasswordPattern = `^(?=.*[0-9])(?=.*[a-zA-Z])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,20}$`
+	DefaultPasswordPattern = `^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]{8,20}$`
 	DefaultPasswordMinLength = 8
 	DefaultPasswordMaxLength = 20
 )

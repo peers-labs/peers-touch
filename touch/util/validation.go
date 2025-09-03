@@ -26,7 +26,7 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 	// Use default config if not provided
 	if config == nil {
 		config = &PasswordConfig{
-			Pattern:   `^(?=.*[0-9])(?=.*[a-zA-Z])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,20}$`,
+			Pattern:   `^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]{8,20}$`,
 			MinLength: 8,
 			MaxLength: 20,
 		}
@@ -46,7 +46,35 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 		return errors.New("invalid password pattern configuration")
 	}
 	if !matched {
-		return errors.New("password must contain numbers, English letters, and symbols")
+		return errors.New("password contains invalid characters")
+	}
+	
+	// Check for required character types (numbers, letters, symbols)
+	hasNumber := regexp.MustCompile(`[0-9]`).MatchString(password)
+	hasLetter := regexp.MustCompile(`[a-zA-Z]`).MatchString(password)
+	hasSymbol := regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]`).MatchString(password)
+	
+	var missing []string
+	if !hasNumber {
+		missing = append(missing, "numbers")
+	}
+	if !hasLetter {
+		missing = append(missing, "English letters")
+	}
+	if !hasSymbol {
+		missing = append(missing, "symbols")
+	}
+	
+	if len(missing) > 0 {
+		var errorMsg string
+		if len(missing) == 1 {
+			errorMsg = "password is missing " + missing[0]
+		} else if len(missing) == 2 {
+			errorMsg = "password is missing " + missing[0] + " and " + missing[1]
+		} else {
+			errorMsg = "password is missing " + missing[0] + ", " + missing[1] + " and " + missing[2]
+		}
+		return errors.New(errorMsg)
 	}
 
 	return nil
