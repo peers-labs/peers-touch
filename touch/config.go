@@ -67,7 +67,7 @@ func GetPasswordConfig() *util.PasswordConfig {
 	// Set default values if not configured
 	if config.Pattern == "" || config.MinLength == 0 || config.MaxLength == 0 {
 		return &util.PasswordConfig{
-			Pattern:   `^(?=.*[0-9])(?=.*[a-zA-Z])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,20}$`,
+			Pattern:   `^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]{8,20}$`,
 			MinLength: 8,
 			MaxLength: 20,
 		}
