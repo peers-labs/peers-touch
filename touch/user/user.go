@@ -68,6 +68,21 @@ func GetUserByName(c context.Context, name string) (*db.User, error) {
 	return &presentUser, nil
 }
 
+func GetUserByEmail(c context.Context, email string) (*db.User, error) {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		log.Warnf(c, "[GetUserByEmail] Get db err: %v", err)
+		return nil, err
+	}
+
+	presentUser := db.User{}
+	if err = rds.Where("email = ?", email).First(&presentUser).Error; err != nil {
+		return nil, err
+	}
+
+	return &presentUser, nil
+}
+
 func generateHash(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	return string(bytes), err

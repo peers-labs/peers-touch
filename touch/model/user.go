@@ -17,6 +17,12 @@ type UserSignParams struct {
 	Password string `json:"password" form:"password"`
 }
 
+type UserLoginParams struct {
+	Params
+	Email    string `json:"email" form:"email"`
+	Password string `json:"password" form:"password"`
+}
+
 func (user UserSignParams) Check() error {
 	if user.Name == "" {
 		return ErrUserInvalidName
@@ -26,6 +32,19 @@ func (user UserSignParams) Check() error {
 	if !validateEmail(user.Email) {
 		return ErrUserInvalidEmail
 	}
+	return nil
+}
+
+func (user UserLoginParams) Check() error {
+	// check email format
+	if !validateEmail(user.Email) {
+		return ErrUserInvalidEmail
+	}
+	
+	if user.Password == "" {
+		return ErrUserInvalidPassword
+	}
+	
 	return nil
 }
 
