@@ -13,8 +13,8 @@ var (
 	ErrUserInvalidEmail               = NewError("t10004", "signup with an invalid email")
 	ErrUserInvalidPassword            = NewError("t10005", "signup with an invalid password")
 	ErrUserUserExists                 = NewError("t10006", "signup with an existing user")
-
-	ErrPeerAddrExists = NewError("t10007", "peer address already exists")
+	ErrUserInvalidPassport            = NewError("t10007", "signup with an invalid passport")
+	ErrPeerAddrExists                 = NewError("t10007", "peer address already exists")
 )
 
 type Error struct {
@@ -32,6 +32,11 @@ func (e *Error) Error() string {
 	}
 
 	return e.Message
+}
+
+func (e *Error) ReplaceMsg(msg string) *Error {
+	e.Message = msg
+	return e
 }
 
 func NewError(code, message string) *Error {

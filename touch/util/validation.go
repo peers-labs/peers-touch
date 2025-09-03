@@ -3,6 +3,7 @@ package util
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"regexp"
 	"unicode/utf8"
 )
@@ -31,7 +32,7 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 			MaxLength: 20,
 		}
 	}
-	
+
 	// Check length
 	if len(password) < config.MinLength {
 		return errors.New("password is too short")
@@ -43,17 +44,17 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 	// Validate against regex pattern
 	matched, err := regexp.MatchString(config.Pattern, password)
 	if err != nil {
-		return errors.New("invalid password pattern configuration")
+		return fmt.Errorf("invalid password pattern[%s] configuration: %+v", config.Pattern, err)
 	}
 	if !matched {
 		return errors.New("password contains invalid characters")
 	}
-	
+
 	// Check for required character types (numbers, letters, symbols)
 	hasNumber := regexp.MustCompile(`[0-9]`).MatchString(password)
 	hasLetter := regexp.MustCompile(`[a-zA-Z]`).MatchString(password)
 	hasSymbol := regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]`).MatchString(password)
-	
+
 	var missing []string
 	if !hasNumber {
 		missing = append(missing, "numbers")
@@ -64,7 +65,7 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 	if !hasSymbol {
 		missing = append(missing, "symbols")
 	}
-	
+
 	if len(missing) > 0 {
 		var errorMsg string
 		if len(missing) == 1 {
@@ -79,8 +80,6 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 
 	return nil
 }
-
-
 
 // ValidateName validates and encodes name to base64
 func ValidateName(name string) (string, error) {

@@ -7,16 +7,14 @@ import (
 // Password validation constants
 const (
 	// Default password pattern: numbers, symbols, and English letters (8-20 chars)
-	DefaultPasswordPattern = `^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]{8,20}$`
+	DefaultPasswordPattern   = `^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]{8,20}$`
 	DefaultPasswordMinLength = 8
 	DefaultPasswordMaxLength = 20
 )
 
-
-
 type UserSignParams struct {
 	Params
-	Name     string `json:"name" form:"name"`         // Will be base64 encoded
+	Name     string `json:"name" form:"name"` // Will be base64 encoded
 	Email    string `json:"email" form:"email"`
 	Password string `json:"password" form:"password"`
 }
@@ -47,7 +45,7 @@ func (user UserSignParams) Check() error {
 		MaxLength: DefaultPasswordMaxLength,
 	}
 	if err := util.ValidatePassword(user.Password, config); err != nil {
-		return err
+		return ErrUserInvalidPassport.ReplaceMsg(err.Error())
 	}
 
 	return nil
@@ -58,7 +56,7 @@ func (user UserLoginParams) Check() error {
 	if err := util.ValidateEmail(user.Email); err != nil {
 		return ErrUserInvalidEmail
 	}
-	
+
 	// Validate password using default pattern
 	config := &util.PasswordConfig{
 		Pattern:   DefaultPasswordPattern,
@@ -68,6 +66,6 @@ func (user UserLoginParams) Check() error {
 	if err := util.ValidatePassword(user.Password, config); err != nil {
 		return ErrUserInvalidPassword
 	}
-	
+
 	return nil
 }
