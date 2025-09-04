@@ -83,6 +83,30 @@ func GetUserByEmail(c context.Context, email string) (*db.User, error) {
 	return &presentUser, nil
 }
 
+// Login authenticates a user with email and password
+func Login(c context.Context, loginParams *model.UserLoginParams) (*db.User, error) {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		log.Warnf(c, "[Login] Get db err: %v", err)
+		return nil, err
+	}
+
+	// Find user by email
+	var user db.User
+	if err = rds.Where("email = ?", loginParams.Email).First(&user).Error; err != nil {
+		log.Warnf(c, "[Login] Find user by email err: %v", err)
+		return nil, model.ErrUserNotFound
+	}
+
+	// Verify password
+	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(loginParams.Password)); err != nil {
+		log.Warnf(c, "[Login] Password verification failed: %v", err)
+		return nil, model.ErrUserInvalidCredentials
+	}
+
+	return &user, nil
+}
+
 func generateHash(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	return string(bytes), err

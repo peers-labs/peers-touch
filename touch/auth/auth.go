@@ -2,8 +2,11 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
 )
 
@@ -104,5 +107,74 @@ func (s *AuthService) ValidateToken(ctx context.Context, token string) (*TokenIn
 	if provider == nil {
 		return nil, ErrNoAuthProvider
 	}
+
 	return provider.ValidateToken(ctx, token)
+}
+
+// SessionLoginResult contains the result of a successful login with session
+type SessionLoginResult struct {
+	AccessToken  string                 `json:"access_token"`
+	RefreshToken string                 `json:"refresh_token"`
+	TokenType    string                 `json:"token_type"`
+	ExpiresAt    time.Time              `json:"expires_at"`
+	SessionID    string                 `json:"session_id"`
+	User         map[string]interface{} `json:"user"`
+}
+
+// LoginWithSession handles JWT authentication and session creation
+func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, userAgent string) (*SessionLoginResult, error) {
+	// Get database connection for JWT provider
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize JWT provider
+	jwtProvider := NewJWTProvider(rds, "your-secret-key", 24*time.Hour, 7*24*time.Hour)
+
+	// Authenticate user
+	authResult, err := jwtProvider.Authenticate(ctx, credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate session ID
+	sessionID, err := generateSessionID()
+	if err != nil {
+		return nil, err
+	}
+
+	// Create session manager and store session
+	sessionStore := NewMemorySessionStore(24 * time.Hour)
+	sessionManager := NewSessionManager(sessionStore, 24*time.Hour)
+
+	// Create session
+	session, err := sessionManager.CreateSession(ctx, authResult.User, sessionID, clientIP, userAgent)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return login result
+	return &SessionLoginResult{
+		AccessToken:  authResult.AccessToken,
+		RefreshToken: authResult.RefreshToken,
+		TokenType:    authResult.TokenType,
+		ExpiresAt:    authResult.ExpiresAt,
+		SessionID:    session.ID,
+		User: map[string]interface{}{
+			"id":    authResult.User.ID,
+			"name":  authResult.User.Name,
+			"email": authResult.User.Email,
+		},
+	}, nil
+}
+
+// generateSessionID generates a random session ID
+func generateSessionID() (string, error) {
+	bytes := make([]byte, 32)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }

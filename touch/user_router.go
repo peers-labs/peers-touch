@@ -5,8 +5,9 @@ import (
 )
 
 const (
-	RouterURLUserSignUP RouterPath = "/sign-up"
-	RouterURLUserLogin  RouterPath = "/login"
+	RouterURLUserSignUP    RouterPath = "/sign-up"
+	RouterURLUserLogin     RouterPath = "/login"
+	RouterURLUserProfile   RouterPath = "/profile"
 )
 
 type UserRouters struct{}

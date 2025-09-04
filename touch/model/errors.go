@@ -14,7 +14,9 @@ var (
 	ErrUserInvalidPassword            = NewError("t10005", "signup with an invalid password")
 	ErrUserUserExists                 = NewError("t10006", "signup with an existing user")
 	ErrUserInvalidPassport            = NewError("t10007", "signup with an invalid passport")
-	ErrPeerAddrExists                 = NewError("t10007", "peer address already exists")
+	ErrUserNotFound                   = NewError("t10008", "user not found")
+	ErrUserInvalidCredentials         = NewError("t10009", "invalid email or password")
+	ErrPeerAddrExists                 = NewError("t10010", "peer address already exists")
 )
 
 type Error struct {
