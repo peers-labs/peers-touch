@@ -2,8 +2,6 @@ package touch
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"net/http"
 	"time"
 
@@ -51,7 +49,6 @@ func GetUserHandlers() []UserHandlerInfo {
 			Method:    server.PUT,
 			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("User")},
 		},
-
 	}
 }
 
@@ -119,18 +116,6 @@ func UserLogin(c context.Context, ctx *app.RequestContext) {
 	// Return success response
 	SuccessResponse(ctx, "Login successful", result)
 }
-
-// generateSessionID generates a random session ID
-func generateSessionID() (string, error) {
-	bytes := make([]byte, 32)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
-}
-
-// Profile-related handlers
 
 func GetUserProfile(c context.Context, ctx *app.RequestContext) {
 	// TODO: Extract user ID from JWT token or session

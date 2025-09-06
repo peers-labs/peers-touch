@@ -83,16 +83,11 @@ func GetProfile(c context.Context, userID uint64) (*model.ProfileGetResponse, er
 	var profile db.UserProfile
 	if err := rds.Where("user_id = ?", userID).First(&profile).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Create profile if not exists
-			createdProfile, createErr := CreateProfile(c, userID, user.Name, user.Email)
-			if createErr != nil {
-				return nil, createErr
-			}
-			profile = *createdProfile
-		} else {
-			log.Warnf(c, "[GetProfile] Get profile err: %v", err)
-			return nil, err
+			// Return profile not found error instead of auto-creating
+			return nil, model.NewError("t20009", "Profile not found")
 		}
+		log.Warnf(c, "[GetProfile] Get profile err: %v", err)
+		return nil, err
 	}
 
 	return &model.ProfileGetResponse{
@@ -143,6 +138,7 @@ func GetProfileByPeersID(c context.Context, peersID string) (*model.ProfileGetRe
 }
 
 // UpdateProfile updates user profile information
+// Supports updating specific items (partial updates) like WeChat
 func UpdateProfile(c context.Context, userID uint64, params *model.ProfileUpdateParams) error {
 	// Validate parameters
 	if err := params.Validate(); err != nil {
@@ -165,7 +161,7 @@ func UpdateProfile(c context.Context, userID uint64, params *model.ProfileUpdate
 		return err
 	}
 
-	// Update fields if provided
+	// Update fields if provided - supports partial updates
 	updates := make(map[string]interface{})
 
 	if params.ProfilePhoto != nil {
@@ -195,8 +191,6 @@ func UpdateProfile(c context.Context, userID uint64, params *model.ProfileUpdate
 	log.Infof(c, "[UpdateProfile] Profile updated for user %d", userID)
 	return nil
 }
-
-
 
 // GetUserByID retrieves user by ID (helper function)
 func GetUserByID(c context.Context, userID uint64) (*db.User, error) {
