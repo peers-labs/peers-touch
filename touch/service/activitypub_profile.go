@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ActivityPubProfileService handles user profile management for ActivityPub
+// ActivityPubProfileService handles actor profile management for ActivityPub
 type ActivityPubProfileService struct {
 	db      *gorm.DB
 	baseURL string // Base SubPath for this instance (e.g., "https://example.com")
@@ -26,10 +26,10 @@ func NewActivityPubProfileService(database *gorm.DB, baseURL string) *ActivityPu
 	}
 }
 
-// CreateUserProfile creates an ActivityPub profile for a user
-func (s *ActivityPubProfileService) CreateUserProfile(user *db.User, displayName, summary string) (*db.UserActivityPubProfile, error) {
+// CreateActorProfile creates an ActivityPub profile for an actor
+func (s *ActivityPubProfileService) CreateActorProfile(actor *db.Actor, displayName, summary string) (*db.ActorActivityPubProfile, error) {
 	// Check if user already has an ActivityPub profile
-	var existingProfile db.UserActivityPubProfile
+	var existingProfile db.ActorActivityPubProfile
 	if err := s.db.Where("user_id = ?", user.ID).First(&existingProfile).Error; err == nil {
 		return &existingProfile, fmt.Errorf("user already has an ActivityPub profile")
 	} else if err != gorm.ErrRecordNotFound {

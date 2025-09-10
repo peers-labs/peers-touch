@@ -16,16 +16,16 @@ import (
 
 // JWTProvider implements JWT authentication
 type JWTProvider struct {
-	db        *gorm.DB
-	secret    []byte
-	expiry    time.Duration
+	db            *gorm.DB
+	secret        []byte
+	expiry        time.Duration
 	refreshExpiry time.Duration
 }
 
 // JWTClaims represents JWT token claims
 type JWTClaims struct {
-	UserID uint64 `json:"user_id"`
-	Email  string `json:"email"`
+	ActorID uint64 `json:"actor_id"`
+	Email   string `json:"email"`
 	jwt.RegisteredClaims
 }
 
@@ -68,7 +68,7 @@ func (j *JWTProvider) Authenticate(ctx context.Context, credentials *Credentials
 	}
 
 	// Find user by email
-	var user db.User
+	var user db.Actor
 	err := j.db.WithContext(ctx).Where("email = ?", credentials.Email).First(&user).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -96,7 +96,7 @@ func (j *JWTProvider) Authenticate(ctx context.Context, credentials *Credentials
 	}
 
 	return &AuthResult{
-		User:         &user,
+		Actor:        &user,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresAt:    expiresAt,
@@ -129,7 +129,7 @@ func (j *JWTProvider) ValidateToken(ctx context.Context, tokenString string) (*T
 	}
 
 	return &TokenInfo{
-		UserID:    claims.UserID,
+		ActorID:   claims.ActorID,
 		Email:     claims.Email,
 		ExpiresAt: claims.ExpiresAt.Time,
 		IssuedAt:  claims.IssuedAt.Time,
@@ -145,8 +145,8 @@ func (j *JWTProvider) RefreshToken(ctx context.Context, refreshToken string) (*A
 	}
 
 	// Get user from database
-	var user db.User
-	err = j.db.WithContext(ctx).Where("id = ?", tokenInfo.UserID).First(&user).Error
+	var user db.Actor
+	err = j.db.WithContext(ctx).Where("id = ?", tokenInfo.ActorID).First(&user).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrUserNotFound
@@ -167,7 +167,7 @@ func (j *JWTProvider) RefreshToken(ctx context.Context, refreshToken string) (*A
 	}
 
 	return &AuthResult{
-		User:         &user,
+		Actor:        &user,
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
 		ExpiresAt:    expiresAt,
@@ -189,8 +189,8 @@ func (j *JWTProvider) generateToken(userID uint64, email string, expiry time.Dur
 	expiresAt := now.Add(expiry)
 
 	claims := &JWTClaims{
-		UserID: userID,
-		Email:  email,
+		ActorID: userID,
+		Email:   email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),

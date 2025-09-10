@@ -6,7 +6,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
 )
 
-// ProfileGetResponse represents the response for getting user profile
+// ProfileGetResponse represents the response for getting actor profile
 type ProfileGetResponse struct {
 	ProfilePhoto string    `json:"profile_photo"`
 	Name         string    `json:"name"`
@@ -17,7 +17,7 @@ type ProfileGetResponse struct {
 	WhatsUp      string    `json:"whats_up"`
 }
 
-// ProfileUpdateParams represents the parameters for updating user profile
+// ProfileUpdateParams represents the parameters for updating actor profile
 type ProfileUpdateParams struct {
 	ProfilePhoto *string    `json:"profile_photo,omitempty"`
 	Gender       *db.Gender `json:"gender,omitempty"`

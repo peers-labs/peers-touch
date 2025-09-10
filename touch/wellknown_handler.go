@@ -80,12 +80,12 @@ func WebfingerHandler(c context.Context, ctx *app.RequestContext) {
 		}
 	}
 
-	// Discover the user
-	response, err := webfinger.DiscoverUser(c, &params)
+	// Discover the actor
+	response, err := webfinger.DiscoverActor(c, &params)
 	if err != nil {
 		log.Warnf(c, "[Webfinger] discovery failed: %v", err)
 
-		if strings.Contains(err.Error(), "user not found") {
+		if strings.Contains(err.Error(), "actor not found") {
 			ctx.JSON(http.StatusNotFound, map[string]string{
 				"error":   "not_found",
 				"message": "Resource not found",

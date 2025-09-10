@@ -33,7 +33,7 @@ type ActivityPubEndpointInfo struct {
 
 // EndpointDescriptor describes a single ActivityPub endpoint
 type EndpointDescriptor struct {
-	// Path is the relative path (e.g., "/users/alice", "/inbox", "/outbox")
+	// Path is the relative path (e.g., "/actors/alice", "/inbox", "/outbox")
 	Path string `json:"path"`
 
 	// Type is the endpoint category

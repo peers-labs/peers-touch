@@ -13,20 +13,20 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/touch/user"
 )
 
-// DiscoverUser discovers a user by WebFinger resource and returns a WebFinger response
-func DiscoverUser(ctx context.Context, params *model.WebFingerParams) (*model.WebFingerResponse, error) {
+// DiscoverActor discovers an actor by WebFinger resource and returns a WebFinger response
+func DiscoverActor(ctx context.Context, params *model.WebFingerParams) (*model.WebFingerResponse, error) {
 	// Parse the discovery request
 	request, err := model.ParseUserDiscoveryRequest(params.Resource, nil)
 	if err != nil {
-		log.Warnf(ctx, "[DiscoverUser] Failed to parse discovery request: %v", err)
+		log.Warnf(ctx, "[DiscoverActor] Failed to parse discovery request: %v", err)
 		return nil, err
 	}
 
 	// Look up the user in the database
 	dbUser, err := user.GetUserByName(ctx, request.Username)
 	if err != nil {
-		log.Warnf(ctx, "[DiscoverUser] Failed to find user %s: %v", request.Username, err)
-		return nil, fmt.Errorf("user not found: %s", request.Username)
+		log.Warnf(ctx, "[DiscoverActor] Failed to find actor %s: %v", request.Username, err)
+		return nil, fmt.Errorf("actor not found: %s", request.Username)
 	}
 
 	// Get base SubPath from config
@@ -35,7 +35,7 @@ func DiscoverUser(ctx context.Context, params *model.WebFingerParams) (*model.We
 	// Convert database user to ActivityPub actor
 	actor, err := buildActivityPubActor(ctx, dbUser, baseURL)
 	if err != nil {
-		log.Errorf(ctx, "[DiscoverUser] Failed to build ActivityPub actor: %v", err)
+		log.Errorf(ctx, "[DiscoverActor] Failed to build ActivityPub actor: %v", err)
 		return nil, err
 	}
 
@@ -44,13 +44,13 @@ func DiscoverUser(ctx context.Context, params *model.WebFingerParams) (*model.We
 	return response, nil
 }
 
-// GetActivityPubActor returns the ActivityPub actor representation for a user
+// GetActivityPubActor returns the ActivityPub actor representation for an actor
 func GetActivityPubActor(ctx context.Context, username string) (*model.ActivityPubActor, error) {
 	// Look up the user in the database
 	dbUser, err := user.GetUserByName(ctx, username)
 	if err != nil {
-		log.Warnf(ctx, "[GetActivityPubActor] Failed to find user %s: %v", username, err)
-		return nil, fmt.Errorf("user not found: %s", username)
+		log.Warnf(ctx, "[GetActivityPubActor] Failed to find actor %s: %v", username, err)
+		return nil, fmt.Errorf("actor not found: %s", username)
 	}
 
 	// Get base SubPath from config
@@ -60,7 +60,7 @@ func GetActivityPubActor(ctx context.Context, username string) (*model.ActivityP
 	return buildActivityPubActor(ctx, dbUser, baseURL)
 }
 
-// CreateActivityPubActor creates a new ActivityPub actor for a user
+// CreateActivityPubActor creates a new ActivityPub actor for an actor
 func CreateActivityPubActor(ctx context.Context, userID uint64) (*model.ActivityPubActor, error) {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
@@ -71,8 +71,8 @@ func CreateActivityPubActor(ctx context.Context, userID uint64) (*model.Activity
 	// Get user from database
 	var dbUser db.User
 	if err := rds.Where("id = ?", userID).First(&dbUser).Error; err != nil {
-		log.Errorf(ctx, "[CreateActivityPubActor] Failed to find user with ID %d: %v", userID, err)
-		return nil, fmt.Errorf("user not found with ID: %d", userID)
+		log.Errorf(ctx, "[CreateActivityPubActor] Failed to find actor with ID %d: %v", userID, err)
+		return nil, fmt.Errorf("actor not found with ID: %d", userID)
 	}
 
 	// Get base SubPath from config
@@ -82,7 +82,7 @@ func CreateActivityPubActor(ctx context.Context, userID uint64) (*model.Activity
 	return buildActivityPubActor(ctx, &dbUser, baseURL)
 }
 
-// buildActivityPubActor converts a database user to an ActivityPub actor
+// buildActivityPubActor converts a database actor to an ActivityPub actor
 func buildActivityPubActor(ctx context.Context, dbUser *db.User, baseURL string) (*model.ActivityPubActor, error) {
 	// Build ActivityPub actor URLs
 	baseURL = strings.TrimSuffix(baseURL, "/")
@@ -110,7 +110,7 @@ func buildActivityPubActor(ctx context.Context, dbUser *db.User, baseURL string)
 	return actor, nil
 }
 
-// ValidateLocalUser validates that a user exists on this server
+// ValidateLocalUser validates that an actor exists on this server
 func ValidateLocalUser(ctx context.Context, username, domain string) error {
 	// Check if the domain matches our base SubPath
 	if !isLocalDomain(domain) {
@@ -120,7 +120,7 @@ func ValidateLocalUser(ctx context.Context, username, domain string) error {
 	// Check if user exists
 	_, err := user.GetUserByName(ctx, username)
 	if err != nil {
-		return fmt.Errorf("user %s not found on this server", username)
+		return fmt.Errorf("actor %s not found on this server", username)
 	}
 
 	return nil
@@ -189,16 +189,16 @@ func FilterRequestedRelationships(response *model.WebFingerResponse, requestedRe
 	return &filteredResponse
 }
 
-// IsUserDiscoverable checks if a user is discoverable via WebFinger
+// IsUserDiscoverable checks if an actor is discoverable via WebFinger
 func IsUserDiscoverable(ctx context.Context, username string) (bool, error) {
 	// Check if user exists
 	_, err := user.GetUserByName(ctx, username)
 	if err != nil {
-		return false, fmt.Errorf("user %s not found", username)
+		return false, fmt.Errorf("actor %s not found", username)
 	}
 
-	// For now, all existing users are discoverable
-	// This can be extended to check user preferences in the future
+	// For now, all existing actors are discoverable
+	// This can be extended to check actor preferences in the future
 	return true, nil
 }
 

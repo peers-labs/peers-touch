@@ -44,8 +44,8 @@ type WebFingerLink struct {
 	Titles map[string]string `json:"titles,omitempty"`
 }
 
-// ActivityPubActor represents an ActivityPub actor for WebFinger discovery
-type ActivityPubActor struct {
+// WebFingerActivityPubActor represents an ActivityPub actor for WebFinger discovery
+type WebFingerActivityPubActor struct {
 	// ID is the unique identifier for the actor (ActivityPub ID)
 	ID string `json:"id"`
 
@@ -109,8 +109,8 @@ type ActivityPubPublicKey struct {
 	PublicKeyPem string `json:"publicKeyPem"`
 }
 
-// UserDiscoveryRequest represents a request to discover a user
-type UserDiscoveryRequest struct {
+// ActorDiscoveryRequest represents a request to discover an actor
+type ActorDiscoveryRequest struct {
 	// Resource is the WebFinger resource identifier (e.g., "acct:alice@example.com")
 	Resource WebFingerResource `json:"resource"`
 
@@ -124,8 +124,8 @@ type UserDiscoveryRequest struct {
 	RequestedRels []string `json:"rel,omitempty"`
 }
 
-// ParseUserDiscoveryRequest parses a WebFinger resource into a UserDiscoveryRequest
-func ParseUserDiscoveryRequest(resource WebFingerResource, rels []string) (*UserDiscoveryRequest, error) {
+// ParseActorDiscoveryRequest parses a WebFinger resource into an ActorDiscoveryRequest
+func ParseActorDiscoveryRequest(resource WebFingerResource, rels []string) (*ActorDiscoveryRequest, error) {
 	if err := resource.Validate(); err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func ParseUserDiscoveryRequest(resource WebFingerResource, rels []string) (*User
 		return nil, fmt.Errorf("invalid account format: expected username@domain, got %s", value)
 	}
 
-	return &UserDiscoveryRequest{
+	return &ActorDiscoveryRequest{
 		Resource:      resource,
 		Username:      parts[0],
 		Domain:        parts[1],
@@ -182,7 +182,7 @@ func (r WebFingerResource) Validate() error {
 }
 
 // BuildWebFingerResponse builds a WebFinger response for an ActivityPub actor
-func BuildWebFingerResponse(actor *ActivityPubActor, baseURL string, resource WebFingerResource) *WebFingerResponse {
+func BuildWebFingerResponse(actor *WebFingerActivityPubActor, baseURL string, resource WebFingerResource) *WebFingerResponse {
 	response := &WebFingerResponse{
 		Subject: string(resource),
 		Aliases: []string{

@@ -22,16 +22,16 @@ const (
 type AuthProvider interface {
 	// Authenticate validates user credentials and returns authentication result
 	Authenticate(ctx context.Context, credentials *Credentials) (*AuthResult, error)
-	
+
 	// ValidateToken validates an authentication token and returns user info
 	ValidateToken(ctx context.Context, token string) (*TokenInfo, error)
-	
+
 	// RefreshToken refreshes an existing token
 	RefreshToken(ctx context.Context, refreshToken string) (*AuthResult, error)
-	
+
 	// RevokeToken revokes/invalidates a token
 	RevokeToken(ctx context.Context, token string) error
-	
+
 	// GetMethod returns the authentication method this provider supports
 	GetMethod() AuthMethod
 }
@@ -48,7 +48,7 @@ type Credentials struct {
 
 // AuthResult represents the result of authentication
 type AuthResult struct {
-	User         *db.User  `json:"user"`
+	Actor        *db.Actor `json:"actor"`
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at"`
@@ -57,7 +57,7 @@ type AuthResult struct {
 
 // TokenInfo represents information extracted from a validated token
 type TokenInfo struct {
-	UserID    uint64    `json:"user_id"`
+	ActorID   uint64    `json:"user_id"`
 	Email     string    `json:"email"`
 	ExpiresAt time.Time `json:"expires_at"`
 	IssuedAt  time.Time `json:"issued_at"`
@@ -149,7 +149,7 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 	sessionManager := NewSessionManager(sessionStore, 24*time.Hour)
 
 	// Create session
-	session, err := sessionManager.CreateSession(ctx, authResult.User, sessionID, clientIP, userAgent)
+	session, err := sessionManager.CreateSession(ctx, authResult.Actor, sessionID, clientIP, userAgent)
 	if err != nil {
 		return nil, err
 	}
@@ -162,9 +162,9 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 		ExpiresAt:    authResult.ExpiresAt,
 		SessionID:    session.ID,
 		User: map[string]interface{}{
-			"id":    authResult.User.ID,
-			"name":  authResult.User.Name,
-			"email": authResult.User.Email,
+			"id":    authResult.Actor.ID,
+			"name":  authResult.Actor.Name,
+			"email": authResult.Actor.Email,
 		},
 	}, nil
 }
