@@ -31,6 +31,7 @@ type RouterConfig struct {
 	WellKnown   bool `json:"wellknown" pconf:"wellknown" yaml:"wellknown"`
 	User        bool `json:"user" pconf:"user" yaml:"user"`
 	Peer        bool `json:"peer" pconf:"peer" yaml:"peer"`
+	Actor       bool `json:"actor" pconf:"actor" yaml:"actor"`
 }
 
 // SecurityConfig holds security-related configuration

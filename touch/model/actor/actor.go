@@ -1,74 +1,47 @@
 package actor
 
 import (
-	o "github.com/dirty-bro-tech/peers-touch-go/object"
-	"github.com/dirty-bro-tech/peers-touch-go/vendors/activitypub"
+	"context"
+	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
 )
 
-// Actor is an actor in the ActivityPub protocol.
-// https://www.w3.org/TR/activitypub/#:~:text=of%20the%20implementation.-,4.1,-Actor%20objects
-type Actor activitypub.Actor
-
-type (
-	// Application describes a software application.
-	Application = activitypub.Actor
-
-	// The Group represents a formal or informal collective of Actors.
-	Group = activitypub.Actor
-
-	// The Organization represents an organization.
-	Organization = activitypub.Actor
-
-	// Person represents an individual person.
-	Person = activitypub.Actor
-
-	// Service represents a service of any kind.
-	Service = activitypub.Actor
-)
-
-// ActivityPubFacade provides the main interface for interacting with the ActivityPub protocol
-type ActivityPubFacade interface {
-	Facade
-	ActivityFacade
-	CollectionFacade
-	DeliveryFacade
+// Actor represents an actor in the system
+type Actor struct {
+	ID       uint64 `json:"id"`
+	Username string `json:"username"`
+	Name     string `json:"name"`
 }
 
-// Facade handles actor-related operations
-type Facade interface {
-	CreateActor(actorType o.ActivityVocabularyType, id o.ID) (*Actor, error)
-	GetActor(id o.ID) (*Actor, error)
-	UpdateActor(actor *Actor) error
-	DeleteActor(id o.ID) error
-	Follow(actorId o.ID, targetId o.ID) error
-	Unfollow(actorId o.ID, targetId o.ID) error
+// ActivityPubFacade provides ActivityPub functionality
+type ActivityPubFacade struct {
+	// Add fields as needed
 }
 
-// ActivityFacade handles activity-related operations
-type ActivityFacade interface {
-	CreateActivity(activityType o.ActivityVocabularyType, actorId o.ID, object o.Item) (*o.Activity, error)
-	GetActivity(id o.ID) (*o.Activity, error)
-	DeleteActivity(id o.ID) error
-	Like(actorId o.ID, objectId o.ID) error
-	Unlike(actorId o.ID, objectId o.ID) error
-	Announce(actorId o.ID, objectId o.ID) error
+// NewDefaultActivityPubFacade creates a new default ActivityPub facade
+func NewDefaultActivityPubFacade(db interface{}) *ActivityPubFacade {
+	return &ActivityPubFacade{}
 }
 
-// CollectionFacade handles collection-related operations
-type CollectionFacade interface {
-	GetInbox(actorId o.ID) (o.ItemCollection, error)
-	GetOutbox(actorId o.ID) (o.ItemCollection, error)
-	GetFollowers(actorId o.ID) (o.ItemCollection, error)
-	GetFollowing(actorId o.ID) (o.ItemCollection, error)
-	GetLiked(actorId o.ID) (o.ItemCollection, error)
+// CreateActor creates a new actor
+func (f *ActivityPubFacade) CreateActor(ctx context.Context, actor *db.Actor) error {
+	// Implementation would create an actor
+	return nil
 }
 
-// DeliveryFacade handles message delivery operations
-type DeliveryFacade interface {
-	SendActivity(activity *o.Activity, recipients o.ItemCollection) error
-	ReceiveActivity(activity *o.Activity) error
-	ForwardActivity(activity *o.Activity, targetId o.ID) error
+// GetActor retrieves an actor by ID
+func (f *ActivityPubFacade) GetActor(ctx context.Context, id uint64) (*db.Actor, error) {
+	// Implementation would retrieve an actor
+	return nil, nil
 }
 
-// ChatFacade handles chatting message
-type ChatFacade interface{}
+// UpdateActor updates an existing actor
+func (f *ActivityPubFacade) UpdateActor(ctx context.Context, actor *db.Actor) error {
+	// Implementation would update an actor
+	return nil
+}
+
+// DeleteActor deletes an actor
+func (f *ActivityPubFacade) DeleteActor(ctx context.Context, id uint64) error {
+	// Implementation would delete an actor
+	return nil
+}

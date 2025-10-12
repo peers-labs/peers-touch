@@ -2,7 +2,6 @@ package touch
 
 import (
 	"context"
-	"errors"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -108,20 +107,19 @@ func SuccessResponse(ctx *app.RequestContext, msg string, data interface{}) {
 		msg = "success"
 	}
 
-	ctx.JSON(http.StatusOK, model.NewSuccessResponse(msg, data))
+	response := map[string]interface{}{
+		"success": true,
+		"message": msg,
+		"data":    data,
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func FailedResponse(ctx *app.RequestContext, err error) {
 	if err != nil {
-		var e *model.Error
-		if errors.As(err, &e) {
-			ctx.JSON(http.StatusBadRequest, e)
-			return
-		}
-
-		ctx.JSON(http.StatusBadRequest, model.UndefinedError(err))
+		ctx.JSON(http.StatusBadRequest, model.Error(err.Error()))
 		return
 	}
 
-	ctx.JSON(http.StatusBadRequest, model.ErrUndefined)
+	ctx.JSON(http.StatusBadRequest, model.Error("undefined error"))
 }

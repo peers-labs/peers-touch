@@ -22,16 +22,16 @@ const (
 type AuthProvider interface {
 	// Authenticate validates user credentials and returns authentication result
 	Authenticate(ctx context.Context, credentials *Credentials) (*AuthResult, error)
-
+	
 	// ValidateToken validates an authentication token and returns user info
 	ValidateToken(ctx context.Context, token string) (*TokenInfo, error)
-
+	
 	// RefreshToken refreshes an existing token
 	RefreshToken(ctx context.Context, refreshToken string) (*AuthResult, error)
-
+	
 	// RevokeToken revokes/invalidates a token
 	RevokeToken(ctx context.Context, token string) error
-
+	
 	// GetMethod returns the authentication method this provider supports
 	GetMethod() AuthMethod
 }
@@ -48,16 +48,18 @@ type Credentials struct {
 
 // AuthResult represents the result of authentication
 type AuthResult struct {
-	Actor        *db.Actor `json:"actor"`
+	User         *db.User  `json:"user"`
+	Actor        *db.Actor `json:"actor,omitempty"`
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	TokenType    string    `json:"token_type"` // "Bearer", etc.
 }
 
-// TokenInfo represents information extracted from a validated token
+// TokenInfo represents information about a validated token
 type TokenInfo struct {
-	ActorID   uint64    `json:"user_id"`
+	UserID    uint64    `json:"user_id"`
+	ActorID   uint64    `json:"actor_id"`
 	Email     string    `json:"email"`
 	ExpiresAt time.Time `json:"expires_at"`
 	IssuedAt  time.Time `json:"issued_at"`

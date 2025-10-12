@@ -39,7 +39,7 @@ func (m *AuthMiddleware) RequireAuth() func(context.Context, *app.RequestContext
 		// Try to authenticate using JWT token first
 		if userInfo := m.authenticateWithJWT(c, ctx); userInfo != nil {
 			// Set user info in context for use in handlers
-			ctx.Set("user_id", userInfo.ActorID)
+			ctx.Set("user_id", userInfo.UserID)
 			ctx.Set("user_email", userInfo.Email)
 			return
 		}
@@ -47,7 +47,7 @@ func (m *AuthMiddleware) RequireAuth() func(context.Context, *app.RequestContext
 		// Try to authenticate using session
 		if userInfo := m.authenticateWithSession(c, ctx); userInfo != nil {
 			// Set user info in context for use in handlers
-			ctx.Set("user_id", userInfo.ActorID)
+			ctx.Set("user_id", userInfo.UserID)
 			ctx.Set("user_email", userInfo.Email)
 			return
 		}
@@ -73,7 +73,7 @@ func (m *AuthMiddleware) RequireJWT() func(context.Context, *app.RequestContext)
 		}
 
 		// Set user info in context for use in handlers
-		ctx.Set("user_id", userInfo.ActorID)
+		ctx.Set("user_id", userInfo.UserID)
 		ctx.Set("user_email", userInfo.Email)
 	}
 }
@@ -91,7 +91,7 @@ func (m *AuthMiddleware) RequireSession() func(context.Context, *app.RequestCont
 		}
 
 		// Set user info in context for use in handlers
-		ctx.Set("user_id", userInfo.ActorID)
+		ctx.Set("user_id", userInfo.UserID)
 		ctx.Set("user_email", userInfo.Email)
 	}
 }
@@ -150,7 +150,7 @@ func (m *AuthMiddleware) authenticateWithSession(c context.Context, ctx *app.Req
 
 	// Convert session to TokenInfo
 	return &TokenInfo{
-		ActorID:   session.UserID,
+		UserID:    session.UserID,
 		Email:     session.Email,
 		ExpiresAt: session.ExpiresAt,
 		IssuedAt:  session.CreatedAt,

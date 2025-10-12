@@ -65,19 +65,23 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 			n.opts.Apply(o)
 		}
 
-		var newServiceFunc NewService
 		if n.opts.NewService != nil {
-			newServiceFunc = n.opts.NewService
+			// Use custom service creation function
+			nodeInstance := n.opts.NewService(n.opts.Options, opts...)
+			// Convert node.Node to service.Service if needed
+			if svc, ok := nodeInstance.(service.Service); ok {
+				n.service = svc
+			} else {
+				panic("NewService function must return a service.Service compatible type")
+			}
 		} else {
 			// todo add default service
 			if plugin.ServicePlugins[plugin.NativePluginName] == nil {
 				panic("new service failed, try to use default service by importing peers-touch-go/core/plugin/native")
 			}
 
-			newServiceFunc = plugin.ServicePlugins[plugin.NativePluginName].New
+			n.service = plugin.ServicePlugins[plugin.NativePluginName].New(n.opts.Options, opts...)
 		}
-
-		n.service = newServiceFunc(n.opts.Options, opts...)
 
 		err = n.service.Init(n.opts.Ctx())
 	})

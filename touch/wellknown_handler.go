@@ -81,7 +81,7 @@ func WebfingerHandler(c context.Context, ctx *app.RequestContext) {
 	}
 
 	// Discover the actor
-	response, err := webfinger.DiscoverActor(c, &params)
+	response, err := webfinger.DiscoverUser(c, &params)
 	if err != nil {
 		log.Warnf(c, "[Webfinger] discovery failed: %v", err)
 

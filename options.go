@@ -1,24 +1,24 @@
 package peers
 
 import (
+	"github.com/dirty-bro-tech/peers-touch-go/core/node"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 )
 
-type NewService func(rootOpts *option.Options, opts ...option.Option) service.Service
+type NewNode func(rootOpts *option.Options, opts ...option.Option) node.Node
 
 type peersOptionsKey struct{}
 
 type Options struct {
 	*option.Options
 
-	NewService NewService
+	NewService NewNode
 }
 
-/*func WithNewService(newService NewService) option.Option {
+/*func WithNewService(newService NewNode) option.Option {
 	return &option.Option{Option: func(o *option.Options) {
 		optionWrap(o, func(opts *Options) {
-			opts.NewService = newService
+			opts.NewNode = newService
 		})
 	}}
 }*/
