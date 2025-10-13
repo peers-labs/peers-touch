@@ -16,7 +16,7 @@ var options struct {
 					EnableDebug bool `pconf:"enable-debug"`
 				} `pconf:"native"`
 			} `pconf:"server"`
-		} `pconf:"service"`
+		} `pconf:"node"`
 	} `pconf:"peers"`
 }
 

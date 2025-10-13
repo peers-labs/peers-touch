@@ -15,7 +15,7 @@ func NewHelper(logger Logger) *Helper {
 
 // Extract always returns valid Helper with logger from context or with DefaultLogger as fallback.
 // Can be used in pair with function Inject.
-// Example: propagate RequestID to logger in service handler methods.
+// Example: propagate RequestID to logger in node handler methods.
 func Extract(ctx context.Context) *Helper {
 	if l, ok := FromContext(ctx); ok {
 		return NewHelper(l)

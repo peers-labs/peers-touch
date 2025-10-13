@@ -55,7 +55,7 @@ func main() {
 	fmt.Println("To test with custom configuration:")
 	fmt.Println("1. Edit conf/peers.yml to disable specific routers")
 	fmt.Println("2. Use environment variables like PEERS_ROUTERS_ACTIVITYPUB=false")
-	fmt.Println("3. Run within a full peers service for complete functionality")
+	fmt.Println("3. Run within a full peers node for complete functionality")
 
 	log.Println("Router configuration system is working correctly.")
 }

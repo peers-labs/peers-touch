@@ -10,13 +10,15 @@ import (
 )
 
 var (
-	n Node
+	s Node
 )
 
-// Node is an interface that wraps the lower level libraries
+type Node = Service
+
+// Service is an interface that wraps the lower level libraries
 // within stack. It's a convenience method for building
-// and initialising nodes.
-type Node interface {
+// and initialising services.
+type Service interface {
 	// Name The node name
 	Name() string
 	// Init initialises options
@@ -31,26 +33,26 @@ type Node interface {
 	Run() error
 }
 
-type AbstractNode struct {
-	Node
+type AbstractService struct {
+	Service
 
 	doOnce sync.Once
 }
 
 // Finish tells the root that the real node's initialization
 // Call this method in the real node's Init method or after starting
-// todo Stop event empty n
-func (an *AbstractNode) Finish(nIn Node) {
-	an.doOnce.Do(func() {
-		an.Node = nIn
-		n = an
+// todo Stop event empty s
+func (as *AbstractService) Finish(sIn Service) {
+	as.doOnce.Do(func() {
+		as.Service = sIn
+		s = as
 	})
 }
 
-func GetNode() Node {
-	if n == nil {
+func GetService() Service {
+	if s == nil {
 		panic("node not initialized")
 	}
 
-	return n
+	return s
 }

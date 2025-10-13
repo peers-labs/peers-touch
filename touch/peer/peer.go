@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/node"
+	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
@@ -50,7 +50,7 @@ func SetPeerAddr(c context.Context, param *model.PeerAddressParam) error {
 }
 
 func GetMyPeerInfos(ctx context.Context) (*model.PeerAddrInfo, error) {
-	p, err := node.GetNode().Options().Registry.GetPeer(ctx, registry.GetMe())
+	p, err := node.GetService().Options().Registry.GetPeer(ctx, registry.GetMe())
 	if err != nil {
 		log.Warnf(ctx, "[GetMyPeerInfos] Get peer err: %v", err)
 		return nil, err

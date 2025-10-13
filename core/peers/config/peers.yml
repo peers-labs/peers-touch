@@ -36,9 +36,9 @@ peers:
     consul:
       # specifies services should be registered as Consul Connect services
       connect:
-      # sets whether any Consul server (non-leader) can service
+      # sets whether any Consul server (non-leader) can node
       allow-stale:
-      # will tell the service provider to check the service address
+      # will tell the node provider to check the node address
       tcp-check:
   transport:
     name: http

@@ -4,10 +4,10 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/node"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 )
 
@@ -58,7 +58,7 @@ type RegistryPlugin interface {
 type ServicePlugin interface {
 	Plugin
 	Options() []option.Option
-	New(*option.Options, ...option.Option) service.Service
+	New(*option.Options, ...option.Option) node.Service
 }
 
 type SubserverPlugin interface {

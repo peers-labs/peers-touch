@@ -244,9 +244,9 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 
 	// Init MDNS with singleton pattern
 	if r.extOpts.mdnsEnable {
-		logger.Infof(ctx, "[Registry] mDNS service enabled for peer discovery")
+		logger.Infof(ctx, "[Registry] mDNS node enabled for peer discovery")
 
-		// Get singleton mDNS service
+		// Get singleton mDNS node
 		r.mdnsService = mdns.NewMDNSServiceWithComponent(r.host, "registry")
 
 		// Register registry-specific callbacks
@@ -284,7 +284,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		r.mdnsService.RegisterCallback(callbackReg)
 
 		if err := r.mdnsService.Start(); err != nil {
-			return fmt.Errorf("failed to start mDNS service: %w", err)
+			return fmt.Errorf("failed to start mDNS node: %w", err)
 		}
 		r.mdnsService.StartPeriodicRefresh()
 
@@ -292,7 +292,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		go func() {
 			<-ctx.Done()
 			if r.mdnsService != nil {
-				// Unregister registry callbacks from singleton service
+				// Unregister registry callbacks from singleton node
 				r.mdnsService.UnregisterCallback("registry")
 			}
 			logger.Infof(context.Background(), "[Registry] mDNS cleanup completed")
@@ -502,9 +502,9 @@ func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOpti
 		MhType:   multihash.SHA2_256,
 		MhLength: -1,
 	}
-	serviceCID, err := prefix.Sum([]byte(networkNamespace + ":peers-service"))
+	serviceCID, err := prefix.Sum([]byte(networkNamespace + ":peers-node"))
 	if err != nil {
-		return nil, fmt.Errorf("[ListPeers] failed to create service CID: %w", err)
+		return nil, fmt.Errorf("[ListPeers] failed to create node CID: %w", err)
 	}
 
 	// Query DHT for all providers
@@ -667,7 +667,7 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 		data := networkBootstrapNamespace + ":" + peerReg.ID
 		serviceCID, err := prefix.Sum([]byte(data))
 		if err != nil {
-			return fmt.Errorf("[register] failed to create service CID: %w", err)
+			return fmt.Errorf("[register] failed to create node CID: %w", err)
 		}
 
 		err = r.dht.Provide(ctx, serviceCID, true)
@@ -910,7 +910,7 @@ func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *registry.Peer
 		Timestamp: peerReg.Timestamp,
 	})
 
-	// Sign the payload using your service's private key
+	// Sign the payload using your node's private key
 	signData, err := r.signPayload(r.options.PrivateKey, dataToSign) // Implement signing logic
 	if err != nil {
 		return nil, fmt.Errorf("[marshal] native Registry failed to sign payload: %w", err)

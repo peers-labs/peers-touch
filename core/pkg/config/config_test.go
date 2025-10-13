@@ -49,8 +49,8 @@ func createFileForIssue18(t *testing.T, content string) *os.File {
 func createFileForTest(t *testing.T) *os.File {
 	data := []byte(`
 stack:
-  service:
-    name: demo.service
+  node:
+    name: demo.node
     rpc-port: 8081
     http-port: 8082`)
 	path := filepath.Join(os.TempDir(), "file.yml")
@@ -211,8 +211,8 @@ func TestConfigLoadFromBackupFile(t *testing.T) {
 func TestYmlConfigLoadFromBackupFile(t *testing.T) {
 	data := []byte(`
 stack:
-  service:
-    name: demo.service
+  node:
+    name: demo.node
     rpc-port: 8081
     http-port: 8082`)
 	path := filepath.Join(os.TempDir(), "file.yml")
@@ -256,7 +256,7 @@ stack:
 		t.Fatalf("Expected no error but got %v", err)
 	}
 
-	port := conf.Get("stack", "service", "rpc-port").Int(1)
+	port := conf.Get("stack", "node", "rpc-port").Int(1)
 	if port != 8081 {
 		t.Fatalf("Expected %d but got %d",
 			8081,

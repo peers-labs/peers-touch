@@ -10,7 +10,7 @@ import (
 
 var (
 	// cache the context of runtime from init & run
-	// rootOpts is the key component of Peers' lifecycle. it manages entire options info for peers' service.
+	// rootOpts is the key component of Peers' lifecycle. it manages entire options info for peers' node.
 	rootOpts *Options
 
 	ctxLock       sync.RWMutex
@@ -78,7 +78,7 @@ type Option func(o *Options)
 // It will be used as the root context for all other contexts. so don't use it to set a context for a subcomponent if you use
 // components together. but when you want to use only one component like config as a lib, you can convey WithRootCtx as the first
 // Option to the component's init.
-// If you want to use a custom peer service, please refer to peers.NewPeer's init function.
+// If you want to use a custom peer node, please refer to peers.NewPeer's init function.
 func WithRootCtx(ctx context.Context) Option {
 	return func(o *Options) {
 		ctxLock.Lock()

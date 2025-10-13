@@ -9,7 +9,7 @@ const (
 	ManageRouterURLPing   RouterPath = "/ping"
 )
 
-// ManageRouters provides management endpoints for the service
+// ManageRouters provides management endpoints for the node
 type ManageRouters struct{}
 
 // Ensure ManageRouters implements server.Routers interface

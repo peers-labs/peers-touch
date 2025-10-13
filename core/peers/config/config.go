@@ -6,10 +6,10 @@ import (
 
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
 	lg "github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	pp "github.com/dirty-bro-tech/peers-touch-go/core/node"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
 	ser "github.com/dirty-bro-tech/peers-touch-go/core/server"
-	pp "github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
 
@@ -219,16 +219,13 @@ func (l *Logger) Options() []lg.Option {
 	return logOptions
 }
 
-
-
 type PeersConfig struct {
 	Peers struct {
-		Includes string       `json:"includes" pconf:"includes"`
-		Config   Config       `json:"config" pconf:"config"`
-		Registry Registry     `json:"registry" pconf:"registry"`
-		Client   Client       `json:"client" pconf:"client"`
-		Logger   Logger       `json:"logger" pconf:"logger"`
-		Service  Service      `json:"service" pconf:"service"`
-
+		Includes string   `json:"includes" pconf:"includes"`
+		Config   Config   `json:"config" pconf:"config"`
+		Registry Registry `json:"registry" pconf:"registry"`
+		Client   Client   `json:"client" pconf:"client"`
+		Logger   Logger   `json:"logger" pconf:"logger"`
+		Service  Service  `json:"node" pconf:"node"`
 	} `json:"peers" pconf:"peers"`
 }

@@ -174,7 +174,7 @@ var (
 		&cli.StringFlag{
 			Name:   "auth",
 			EnvVar: "PEERS_AUTH",
-			Usage:  "Auth for role based access control, e.g. service",
+			Usage:  "Auth for role based access control, e.g. node",
 			Alias:  "peers_auth_name",
 		},
 		&cli.StringFlag{
@@ -240,7 +240,7 @@ func newCmd(opts ...Option) Cmd {
 	}
 
 	if len(options.Description) == 0 {
-		options.Description = "a peers service"
+		options.Description = "a peers node"
 	}
 
 	cmd := new(peersCmd)

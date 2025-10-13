@@ -11,7 +11,7 @@ import (
 // ResourceID represents a unique identifier for a discoverable resource.
 type ResourceID string
 
-// ServiceID represents a unique identifier for a service.
+// ServiceID represents a unique identifier for a node.
 type ServiceID string
 
 // ResourceType represents the type of a discoverable resource.
@@ -19,7 +19,7 @@ type ResourceType string
 
 const (
 	ResourceTypePeer    ResourceType = "peer"
-	ResourceTypeService ResourceType = "service"
+	ResourceTypeService ResourceType = "node"
 	ResourceTypeContent ResourceType = "content"
 	ResourceTypeTopic   ResourceType = "topic"
 	ResourceTypeFile    ResourceType = "file"
@@ -29,98 +29,98 @@ const (
 type DiscoveryScope string
 
 const (
-	ScopeLocal   DiscoveryScope = "local"   // Local network only
-	ScopeRegion  DiscoveryScope = "region"  // Regional network
-	ScopeGlobal  DiscoveryScope = "global"  // Global network
+	ScopeLocal  DiscoveryScope = "local"  // Local network only
+	ScopeRegion DiscoveryScope = "region" // Regional network
+	ScopeGlobal DiscoveryScope = "global" // Global network
 )
 
 // ResourceInfo contains metadata about a discoverable resource.
 type ResourceInfo struct {
-	ID          ResourceID                 `json:"id"`
-	Type        ResourceType               `json:"type"`
-	Name        string                     `json:"name"`
-	Description string                     `json:"description,omitempty"`
-	Owner       *identitypb.IdentityID     `json:"owner"`
-	Addresses   []string                   `json:"addresses"`
-	Metadata    map[string]string          `json:"metadata,omitempty"`
-	Tags        []string                   `json:"tags,omitempty"`
-	CreatedAt   time.Time                  `json:"created_at"`
-	UpdatedAt   time.Time                  `json:"updated_at"`
-	ExpiresAt   *time.Time                 `json:"expires_at,omitempty"`
-	Signature   *identitypb.Signature      `json:"signature,omitempty"`
+	ID          ResourceID             `json:"id"`
+	Type        ResourceType           `json:"type"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
+	Owner       *identitypb.IdentityID `json:"owner"`
+	Addresses   []string               `json:"addresses"`
+	Metadata    map[string]string      `json:"metadata,omitempty"`
+	Tags        []string               `json:"tags,omitempty"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	ExpiresAt   *time.Time             `json:"expires_at,omitempty"`
+	Signature   *identitypb.Signature  `json:"signature,omitempty"`
 }
 
-// ServiceInfo contains metadata about a discoverable service.
+// ServiceInfo contains metadata about a discoverable node.
 type ServiceInfo struct {
-	ID          ServiceID                  `json:"id"`
-	Name        string                     `json:"name"`
-	Version     string                     `json:"version"`
-	Description string                     `json:"description,omitempty"`
-	Provider    *identitypb.IdentityID     `json:"provider"`
-	Endpoints   []string                   `json:"endpoints"`
-	Protocol    string                     `json:"protocol"`
-	Metadata    map[string]string          `json:"metadata,omitempty"`
-	Tags        []string                   `json:"tags,omitempty"`
-	Health      string                     `json:"health"` // "healthy", "degraded", "unhealthy"
-	Load        float64                    `json:"load"`   // 0.0 to 1.0
-	CreatedAt   time.Time                  `json:"created_at"`
-	UpdatedAt   time.Time                  `json:"updated_at"`
-	ExpiresAt   *time.Time                 `json:"expires_at,omitempty"`
+	ID          ServiceID              `json:"id"`
+	Name        string                 `json:"name"`
+	Version     string                 `json:"version"`
+	Description string                 `json:"description,omitempty"`
+	Provider    *identitypb.IdentityID `json:"provider"`
+	Endpoints   []string               `json:"endpoints"`
+	Protocol    string                 `json:"protocol"`
+	Metadata    map[string]string      `json:"metadata,omitempty"`
+	Tags        []string               `json:"tags,omitempty"`
+	Health      string                 `json:"health"` // "healthy", "degraded", "unhealthy"
+	Load        float64                `json:"load"`   // 0.0 to 1.0
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	ExpiresAt   *time.Time             `json:"expires_at,omitempty"`
 }
 
 // PeerInfo contains metadata about a discoverable peer.
 type PeerInfo struct {
-	ID          *identitypb.IdentityID     `json:"id"`
-	Addresses   []string                   `json:"addresses"`
-	Protocols   []string                   `json:"protocols"`
-	Services    []ServiceID                `json:"services"`
-	Metadata    map[string]string          `json:"metadata,omitempty"`
-	Tags        []string                   `json:"tags,omitempty"`
-	LastSeen    time.Time                  `json:"last_seen"`
-	IsOnline    bool                       `json:"is_online"`
-	Reputation  float64                    `json:"reputation"` // 0.0 to 1.0
-	Distance    int                        `json:"distance"`   // Network hops
+	ID         *identitypb.IdentityID `json:"id"`
+	Addresses  []string               `json:"addresses"`
+	Protocols  []string               `json:"protocols"`
+	Services   []ServiceID            `json:"services"`
+	Metadata   map[string]string      `json:"metadata,omitempty"`
+	Tags       []string               `json:"tags,omitempty"`
+	LastSeen   time.Time              `json:"last_seen"`
+	IsOnline   bool                   `json:"is_online"`
+	Reputation float64                `json:"reputation"` // 0.0 to 1.0
+	Distance   int                    `json:"distance"`   // Network hops
 }
 
 // QueryFilter represents filters for discovery queries.
 type QueryFilter struct {
-	Type        ResourceType               `json:"type,omitempty"`
-	Tags        []string                   `json:"tags,omitempty"`
-	Metadata    map[string]string          `json:"metadata,omitempty"`
-	Owner       *identitypb.IdentityID     `json:"owner,omitempty"`
-	MinDistance *int                       `json:"min_distance,omitempty"`
-	MaxDistance *int                       `json:"max_distance,omitempty"`
-	OnlineOnly  bool                       `json:"online_only,omitempty"`
+	Type        ResourceType           `json:"type,omitempty"`
+	Tags        []string               `json:"tags,omitempty"`
+	Metadata    map[string]string      `json:"metadata,omitempty"`
+	Owner       *identitypb.IdentityID `json:"owner,omitempty"`
+	MinDistance *int                   `json:"min_distance,omitempty"`
+	MaxDistance *int                   `json:"max_distance,omitempty"`
+	OnlineOnly  bool                   `json:"online_only,omitempty"`
 }
 
 // QueryOptions contains options for discovery queries.
 type QueryOptions struct {
-	Scope       DiscoveryScope `json:"scope,omitempty"`
-	Limit       int            `json:"limit,omitempty"`
-	Timeout     time.Duration  `json:"timeout,omitempty"`
-	SortBy      string         `json:"sort_by,omitempty"` // "distance", "reputation", "last_seen"
-	SortOrder   string         `json:"sort_order,omitempty"` // "asc", "desc"
-	IncludeStale bool          `json:"include_stale,omitempty"`
+	Scope        DiscoveryScope `json:"scope,omitempty"`
+	Limit        int            `json:"limit,omitempty"`
+	Timeout      time.Duration  `json:"timeout,omitempty"`
+	SortBy       string         `json:"sort_by,omitempty"`    // "distance", "reputation", "last_seen"
+	SortOrder    string         `json:"sort_order,omitempty"` // "asc", "desc"
+	IncludeStale bool           `json:"include_stale,omitempty"`
 }
 
 // AnnounceOptions contains options for announcing resources.
 type AnnounceOptions struct {
-	Scope     DiscoveryScope `json:"scope,omitempty"`
-	TTL       time.Duration  `json:"ttl,omitempty"`
-	Replicas  int            `json:"replicas,omitempty"`
-	Priority  int            `json:"priority,omitempty"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
+	Scope    DiscoveryScope    `json:"scope,omitempty"`
+	TTL      time.Duration     `json:"ttl,omitempty"`
+	Replicas int               `json:"replicas,omitempty"`
+	Priority int               `json:"priority,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // IndexEntry represents an entry in the discovery index.
 type IndexEntry struct {
-	Key       string                     `json:"key"`
-	Value     []byte                     `json:"value"`
-	Type      ResourceType               `json:"type"`
-	Owner     *identitypb.IdentityID     `json:"owner"`
-	Metadata  map[string]string          `json:"metadata,omitempty"`
-	CreatedAt time.Time                  `json:"created_at"`
-	ExpiresAt *time.Time                 `json:"expires_at,omitempty"`
+	Key       string                 `json:"key"`
+	Value     []byte                 `json:"value"`
+	Type      ResourceType           `json:"type"`
+	Owner     *identitypb.IdentityID `json:"owner"`
+	Metadata  map[string]string      `json:"metadata,omitempty"`
+	CreatedAt time.Time              `json:"created_at"`
+	ExpiresAt *time.Time             `json:"expires_at,omitempty"`
 }
 
 // DiscoveryClient provides methods for querying and discovering resources.
@@ -191,13 +191,13 @@ type RoutingTable interface {
 
 // DiscoveryManager coordinates all discovery-related operations.
 type DiscoveryManager interface {
-	// RegisterService registers a service for discovery.
+	// RegisterService registers a node for discovery.
 	RegisterService(ctx context.Context, req *discoverypb.RegisterServiceRequest) (*discoverypb.RegisterServiceResponse, error)
 
-	// UnregisterService unregisters a service from discovery.
+	// UnregisterService unregisters a node from discovery.
 	UnregisterService(ctx context.Context, serviceID *discoverypb.ServiceID) error
 
-	// Heartbeat sends a heartbeat for a registered service.
+	// Heartbeat sends a heartbeat for a registered node.
 	Heartbeat(ctx context.Context, req *discoverypb.HeartbeatRequest) (*discoverypb.HeartbeatResponse, error)
 
 	// GetClient returns a discovery client for querying resources.

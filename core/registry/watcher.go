@@ -7,7 +7,7 @@ type Watcher interface {
 }
 
 // Result is what is returned from the watcher
-// it contains the service and the action that was performed, either create, update, delete
+// it contains the node and the action that was performed, either create, update, delete
 type Result struct {
 	Service *Peer
 	Action  string
@@ -30,9 +30,9 @@ func (t EventType) String() string {
 }
 
 const (
-	// Create is emitted when a new service is registered.
+	// Create is emitted when a new node is registered.
 	Create EventType = iota
-	// Delete is emitted when an existing service is deregsitered.
+	// Delete is emitted when an existing node is deregsitered.
 	Delete
 	// Update is emitted when an existing servicec is updated.
 	Update

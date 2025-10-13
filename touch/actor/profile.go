@@ -92,8 +92,8 @@ func GetProfile(c context.Context, actorId uint64) (*model.ProfileGetResponse, e
 
 	return &model.ProfileGetResponse{
 		ProfilePhoto: profile.ProfilePhoto,
-		Name:         user.Name,
-		Gender:       profile.Gender,
+		Name:         user.Name.String(),
+		Gender:       string(profile.Gender),
 		Region:       profile.Region,
 		Email:        profile.Email,
 		PeersID:      profile.PeersID,
@@ -128,8 +128,8 @@ func GetProfileByPeersID(c context.Context, peersID string) (*model.ProfileGetRe
 
 	return &model.ProfileGetResponse{
 		ProfilePhoto: profile.ProfilePhoto,
-		Name:         user.Name,
-		Gender:       profile.Gender,
+		Name:         user.Name.String(),
+		Gender:       string(profile.Gender),
 		Region:       profile.Region,
 		Email:        profile.Email,
 		PeersID:      profile.PeersID,

@@ -7,10 +7,10 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/node"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 )
 
 var (
@@ -48,8 +48,8 @@ func (d *debugSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	}
 
 	if d.opts.registry == nil {
-		logger.Warn(ctx, "debug server registry is nil, trying to get from service")
-		d.opts.registry = service.GetOptions(d.opts.Options).Registry
+		logger.Warn(ctx, "debug server registry is nil, trying to get from node")
+		d.opts.registry = node.GetOptions(d.opts.Options).Registry
 	}
 
 	return nil

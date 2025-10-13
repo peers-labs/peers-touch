@@ -28,7 +28,7 @@ var configOptions struct {
 					Libp2pIdentityKeyFile    string   `pconf:"libp2p-identity-key-file"`
 				} `pconf:"native"`
 			} `pconf:"registry"`
-		} `pconf:"service"`
+		} `pconf:"node"`
 		RunMode modeOpt `pconf:"run-mode"`
 	} `pconf:"peers"`
 }

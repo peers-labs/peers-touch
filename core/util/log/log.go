@@ -152,7 +152,7 @@ func SetPrefix(p string) {
 	prefix = p
 }
 
-// Set service name
+// Set node name
 func Name(name string) {
 	prefix = fmt.Sprintf("[%s]", name)
 }

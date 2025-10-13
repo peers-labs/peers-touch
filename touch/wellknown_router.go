@@ -9,7 +9,7 @@ const (
 	RouterURLWellKnownWebFinger RouterPath = "/webfinger"
 )
 
-// WellKnownRouters provides .well-known endpoints for the service
+// WellKnownRouters provides .well-known endpoints for the node
 // see: https://www.w3.org/community/reports/socialcg/CG-FINAL-apwf-20240608/
 type WellKnownRouters struct{}
 

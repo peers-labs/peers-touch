@@ -1,10 +1,10 @@
 package client
 
 import (
+	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 )
 
 var options struct {
@@ -15,7 +15,7 @@ var options struct {
 					Enabled bool `pconf:"enabled"`
 				} `pconf:"native"`
 			} `pconf:"client"`
-		} `pconf:"service"`
+		} `pconf:"node"`
 	} `pconf:"peers"`
 }
 

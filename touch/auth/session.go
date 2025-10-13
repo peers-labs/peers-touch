@@ -171,7 +171,7 @@ func NewSessionManager(store SessionStore, ttl time.Duration) *SessionManager {
 func (sm *SessionManager) CreateSession(ctx context.Context, user *db.Actor, sessionID, ipAddress, userAgent string) (*Session, error) {
 	session := &Session{
 		ID:        sessionID,
-		UserID:    user.ID,
+		UserID:    user.InternalID,
 		Email:     user.Email,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(sm.ttl),

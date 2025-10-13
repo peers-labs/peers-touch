@@ -102,7 +102,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 
 		err = s.mdnsService.Start()
 		if err != nil {
-			return fmt.Errorf("start mdns service: %w", err)
+			return fmt.Errorf("start mdns node: %w", err)
 		}
 		s.mdnsService.StartPeriodicRefresh()
 	}
@@ -179,7 +179,7 @@ func (s *SubServer) Stop(ctx context.Context) (err error) {
 	// Unregister mDNS callbacks if enabled
 	if s.mdnsService != nil {
 		s.mdnsService.UnregisterCallback("bootstrap")
-		// Note: Don't close the singleton service as other components may be using it
+		// Note: Don't close the singleton node as other components may be using it
 	}
 
 	err = s.host.Close()

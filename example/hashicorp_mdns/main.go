@@ -22,7 +22,7 @@ func randomSuffix(n int) string {
 }
 
 func main() {
-	// RFC 6763 service type must start with an underscore and end with "._tcp" or "._udp"
+	// RFC 6763 node type must start with an underscore and end with "._tcp" or "._udp"
 	const serviceType = "_peers-touch-mdns-demo._tcp"
 
 	hostname, err := os.Hostname()
@@ -46,7 +46,7 @@ func main() {
 	infoTxt := []string{"txtvers=1", fmt.Sprintf("instance=%s", instance)}
 	svc, err := mdns.NewMDNSService(instance, serviceType, "", "", 8000, nil, infoTxt)
 	if err != nil {
-		log.Fatalf("failed to create mdns service: %v", err)
+		log.Fatalf("failed to create mdns node: %v", err)
 	}
 
 	server, err := mdns.NewServer(&mdns.Config{Zone: svc})
@@ -55,7 +55,7 @@ func main() {
 	}
 	defer server.Shutdown()
 
-	log.Printf("mDNS service started as %s.%s.local on port %d", instance, serviceType, 8000)
+	log.Printf("mDNS node started as %s.%s.local on port %d", instance, serviceType, 8000)
 
 	// Channel to receive discovered peers
 	entriesCh := make(chan *mdns.ServiceEntry, 16)
@@ -72,7 +72,7 @@ func main() {
 		}
 	}()
 
-	// Periodically query for peers advertising the same service
+	// Periodically query for peers advertising the same node
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 

@@ -373,7 +373,7 @@ func newCmd(opts ...Option) Cmd {
 	}
 
 	if len(options.Description) == 0 {
-		options.Description = "a stack service"
+		options.Description = "a stack node"
 	}
 
 	cmd := new(cmd)

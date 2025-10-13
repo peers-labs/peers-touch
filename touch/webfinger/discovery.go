@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/config"
 	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
@@ -108,17 +108,15 @@ func buildActivityPubActor(ctx context.Context, dbUser *db.User, baseURL string)
 
 	// Create ActivityPub actor
 	actor := &model.ActivityPubActor{
-		ID:                actorID,
+		ID:                model.ID(actorID),
 		Type:              "Person",
-		PreferredUsername: dbUser.Name,
-		Name:              dbUser.Name, // Use database name as display name
-		Summary:           "",          // Default empty summary
-		InboxURL:          inboxURL,
-		OutboxURL:         outboxURL,
-		FollowersURL:      followersURL,
-		FollowingURL:      followingURL,
-		CreatedAt:         dbUser.CreatedAt,
-		UpdatedAt:         dbUser.UpdatedAt,
+		PreferredUsername: model.DefaultNaturalLanguageValue(dbUser.Name),
+		Name:              model.DefaultNaturalLanguageValue(dbUser.Name),
+		Summary:           model.DefaultNaturalLanguageValue(""),
+		Inbox:             model.IRI(inboxURL),
+		Outbox:            model.IRI(outboxURL),
+		Followers:         model.IRI(followersURL),
+		Following:         model.IRI(followingURL),
 	}
 
 	return actor, nil
@@ -233,7 +231,7 @@ func IsUserDiscoverable(ctx context.Context, username string) (bool, error) {
 // getBaseURL retrieves the base SubPath from configuration
 func getBaseURL() string {
 	// Get base SubPath from core config system
-	if baseURL := cfg.Get("peers", "service", "server", "baseurl").String(""); baseURL != "" {
+	if baseURL := config.Get("peers", "node", "server", "baseurl").String(""); baseURL != "" {
 		return baseURL
 	}
 	// Fallback to default

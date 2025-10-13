@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
 	"gorm.io/gorm"
 )
@@ -18,7 +19,7 @@ type ActivityPubProfileService struct {
 	baseURL string // Base SubPath for this instance (e.g., "https://example.com")
 }
 
-// NewActivityPubProfileService creates a new ActivityPub profile service
+// NewActivityPubProfileService creates a new ActivityPub profile node
 func NewActivityPubProfileService(database *gorm.DB, baseURL string) *ActivityPubProfileService {
 	return &ActivityPubProfileService{
 		db:      database,
@@ -41,13 +42,6 @@ func (s *ActivityPubProfileService) CreateUserProfile(user *db.User, displayName
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate RSA key pair: %w", err)
 	}
-
-	// Encode private key to PEM
-	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
-	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: privateKeyBytes,
-	})
 
 	// Encode public key to PEM
 	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
@@ -72,22 +66,24 @@ func (s *ActivityPubProfileService) CreateUserProfile(user *db.User, displayName
 		},
 	}
 
-	activityPubActor := &db.ActivityPubActor{
-		ActivityPubID:     actorID,
-		Type:              "Person",
-		Name:              displayName,
-		PreferredUsername: user.Name,
-		Summary:           summary,
-		InboxURL:          fmt.Sprintf("%s/%s/inbox", s.baseURL, user.Name),
-		OutboxURL:         fmt.Sprintf("%s/%s/outbox", s.baseURL, user.Name),
-		FollowersURL:      fmt.Sprintf("%s/%s/followers", s.baseURL, user.Name),
-		FollowingURL:      fmt.Sprintf("%s/%s/following", s.baseURL, user.Name),
-		LikedURL:          fmt.Sprintf("%s/%s/liked", s.baseURL, user.Name),
-		PublicKeyPem:      string(publicKeyPEM),
-		PrivateKeyPem:     string(privateKeyPEM),
-		IsLocal:           true,
-		IsActive:          true,
+	activityPubActor := &db.Actor{
+		PeersActorID: fmt.Sprintf("%d", user.ID),
+		Email:        user.Email,
+		IsLocal:      true,
+		IsActive:     true,
 	}
+
+	// Set ActivityPub fields
+	activityPubActor.ID = model.ID(actorID).ToVendorID()
+	activityPubActor.Type = "Person"
+	activityPubActor.Name = model.DefaultNaturalLanguageValue(displayName).ToVendorNaturalLanguageValues()
+	activityPubActor.PreferredUsername = model.DefaultNaturalLanguageValue(user.Name).ToVendorNaturalLanguageValues()
+	activityPubActor.Summary = model.DefaultNaturalLanguageValue(summary).ToVendorNaturalLanguageValues()
+	activityPubActor.Inbox = model.IRI(fmt.Sprintf("%s/%s/inbox", s.baseURL, user.Name)).ToVendorIRI()
+	activityPubActor.Outbox = model.IRI(fmt.Sprintf("%s/%s/outbox", s.baseURL, user.Name)).ToVendorIRI()
+	activityPubActor.Followers = model.IRI(fmt.Sprintf("%s/%s/followers", s.baseURL, user.Name)).ToVendorIRI()
+	activityPubActor.Following = model.IRI(fmt.Sprintf("%s/%s/following", s.baseURL, user.Name)).ToVendorIRI()
+	activityPubActor.Liked = model.IRI(fmt.Sprintf("%s/%s/liked", s.baseURL, user.Name)).ToVendorIRI()
 
 	// Set metadata
 	if err := activityPubActor.SetMetadata(metadata); err != nil {
@@ -119,7 +115,7 @@ func (s *ActivityPubProfileService) CreateUserProfile(user *db.User, displayName
 	}
 
 	// Set the actor ID in the profile
-	userProfile.ActivityPubActorID = activityPubActor.ID
+	userProfile.ActivityPubActorID = activityPubActor.InternalID
 
 	// Create user profile
 	if err := tx.Create(userProfile).Error; err != nil {
@@ -134,7 +130,7 @@ func (s *ActivityPubProfileService) CreateUserProfile(user *db.User, displayName
 
 	// Load relationships
 	userProfile.User = user
-	userProfile.ActivityPubActor = activityPubActor
+	userProfile.Actor = activityPubActor
 
 	return userProfile, nil
 }
@@ -142,7 +138,7 @@ func (s *ActivityPubProfileService) CreateUserProfile(user *db.User, displayName
 // GetUserProfile retrieves a user's ActivityPub profile
 func (s *ActivityPubProfileService) GetUserProfile(userID uint64) (*db.UserActivityPubProfile, error) {
 	var profile db.UserActivityPubProfile
-	err := s.db.Preload("User").Preload("ActivityPubActor").Where("user_id = ?", userID).First(&profile).Error
+	err := s.db.Preload("User").Preload("Actor").Where("user_id = ?", userID).First(&profile).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("user profile not found")
@@ -155,7 +151,7 @@ func (s *ActivityPubProfileService) GetUserProfile(userID uint64) (*db.UserActiv
 // GetUserProfileByUsername retrieves a user's ActivityPub profile by username
 func (s *ActivityPubProfileService) GetUserProfileByUsername(username string) (*db.UserActivityPubProfile, error) {
 	var profile db.UserActivityPubProfile
-	err := s.db.Preload("User").Preload("ActivityPubActor").
+	err := s.db.Preload("User").Preload("Actor").
 		Joins("JOIN touch_user ON touch_user_activitypub_profile.user_id = touch_user.id").
 		Where("touch_user.name = ?", username).First(&profile).Error
 	if err != nil {
@@ -209,7 +205,7 @@ func (s *ActivityPubProfileService) UpdateUserProfile(userID uint64, updates map
 	// Update actor if there are actor updates
 	if len(actorUpdates) > 0 {
 		actorUpdates["updated_at"] = time.Now()
-		if err := tx.Model(&profile.ActivityPubActor).Updates(actorUpdates).Error; err != nil {
+		if err := tx.Model(&profile.Actor).Updates(actorUpdates).Error; err != nil {
 			tx.Rollback()
 			return fmt.Errorf("failed to update actor: %w", err)
 		}
@@ -246,7 +242,7 @@ func (s *ActivityPubProfileService) DeleteUserProfile(userID uint64) error {
 	}
 
 	// Delete associated ActivityPub actor
-	if err := tx.Delete(&profile.ActivityPubActor).Error; err != nil {
+	if err := tx.Delete(&profile.Actor).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to delete actor: %w", err)
 	}
@@ -260,12 +256,12 @@ func (s *ActivityPubProfileService) DeleteUserProfile(userID uint64) error {
 }
 
 // GetActivityPubActor retrieves an ActivityPub actor by username
-func (s *ActivityPubProfileService) GetActivityPubActor(username string) (*db.ActivityPubActor, error) {
+func (s *ActivityPubProfileService) GetActivityPubActor(username string) (*db.Actor, error) {
 	profile, err := s.GetUserProfileByUsername(username)
 	if err != nil {
 		return nil, err
 	}
-	return profile.ActivityPubActor, nil
+	return profile.Actor, nil
 }
 
 // IsUserDiscoverable checks if a user is discoverable via WebFinger

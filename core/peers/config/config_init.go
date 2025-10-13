@@ -6,17 +6,17 @@ import (
 	"strings"
 
 	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/node"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
 	cliSource "github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/cli"
 	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	uf "github.com/dirty-bro-tech/peers-touch-go/core/util/file"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 	yaml "gopkg.in/yaml.v2"
 )
 
-func LoadConfig(sOpts *service.Options) (err error) {
+func LoadConfig(sOpts *node.Options) (err error) {
 	// set the config file path
 	if filePath := sOpts.Cmd.App().Context().String("config"); len(filePath) > 0 {
 		sOpts.Conf = filePath
@@ -104,7 +104,7 @@ func LoadConfig(sOpts *service.Options) (err error) {
 	return
 }
 
-func SetOptions(sOpts *service.Options) (err error) {
+func SetOptions(sOpts *node.Options) (err error) {
 	conf := peersConfig.Peers
 
 	// serviceOptions

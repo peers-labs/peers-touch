@@ -109,7 +109,7 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 		libp2pOpts = append(libp2pOpts, libp2p.NoSecurity)
 	}
 
-	// Enable ping service for connectivity checking
+	// Enable ping node for connectivity checking
 	libp2pOpts = append(libp2pOpts, libp2p.Ping(true))
 
 	// Create the host
