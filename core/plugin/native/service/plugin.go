@@ -10,7 +10,7 @@ import (
 var options struct {
 	Peers struct {
 		Service struct {
-		} `pconf:"service"`
+		} `pconf:"node"`
 	} `pconf:"peers"`
 }
 

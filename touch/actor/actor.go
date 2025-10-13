@@ -38,9 +38,12 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 
 	// Part 1: Create actor with actor's input
 	a := db.Actor{
-		Name:  actorParams.Name,
 		Email: actorParams.Email,
 	}
+
+	// Set PreferredUsername using NaturalLanguageValues
+	a.PreferredUsername = model.DefaultNaturalLanguageValue(actorParams.Name).ToVendorNaturalLanguageValues()
+	a.Name = model.DefaultNaturalLanguageValue(actorParams.Name).ToVendorNaturalLanguageValues()
 
 	// hash the password before storing it
 	a.PasswordHash, err = generateHash(actorParams.Password)
@@ -74,7 +77,7 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 
 	// Part 2: Create actor profile with default values if missing
 	profile := db.ActorProfile{
-		ActorID: a.ID,
+		ActorID: a.InternalID,
 		Email:   a.Email,      // Use actor's email
 		Gender:  db.GenderOther, // Default gender
 		PeersID: a.PeersActorID,  // Use the same peers actor ID

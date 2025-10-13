@@ -84,13 +84,13 @@ func (j *JWTProvider) Authenticate(ctx context.Context, credentials *Credentials
 	}
 
 	// Generate access token
-	accessToken, expiresAt, err := j.generateToken(user.ID, user.Email, j.expiry)
+	accessToken, expiresAt, err := j.generateToken(user.InternalID, user.Email, j.expiry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
 	// Generate refresh token
-	refreshToken, _, err := j.generateToken(user.ID, user.Email, j.refreshExpiry)
+	refreshToken, _, err := j.generateToken(user.InternalID, user.Email, j.refreshExpiry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
 	}
@@ -155,13 +155,13 @@ func (j *JWTProvider) RefreshToken(ctx context.Context, refreshToken string) (*A
 	}
 
 	// Generate new access token
-	accessToken, expiresAt, err := j.generateToken(user.ID, user.Email, j.expiry)
+	accessToken, expiresAt, err := j.generateToken(user.InternalID, user.Email, j.expiry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
 	// Generate new refresh token
-	newRefreshToken, _, err := j.generateToken(user.ID, user.Email, j.refreshExpiry)
+	newRefreshToken, _, err := j.generateToken(user.InternalID, user.Email, j.refreshExpiry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
 	}

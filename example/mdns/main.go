@@ -124,7 +124,7 @@ func main() {
 	// Advertise ourselves on the local network via mDNS
 	svc, err := mdns.NewMDNSService(instance, serviceType, "", "", port, nil, infoTxt)
 	if err != nil {
-		log.Fatalf("failed to create mdns service: %v", err)
+		log.Fatalf("failed to create mdns node: %v", err)
 	}
 
 	server, err := mdns.NewServer(&mdns.Config{Zone: svc})
@@ -133,7 +133,7 @@ func main() {
 	}
 	defer server.Shutdown()
 
-	log.Printf("mDNS service started with rendezvous \"%s\"", serviceType)
+	log.Printf("mDNS node started with rendezvous \"%s\"", serviceType)
 	log.Printf("Instance: %s.%s.local on port %d", instance, serviceType, port)
 
 	// Channel to receive discovered peers
@@ -185,7 +185,7 @@ func main() {
 		}
 	}()
 
-	// Periodically query for peers advertising the same service
+	// Periodically query for peers advertising the same node
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 

@@ -14,11 +14,10 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/transport"
 )
 
-type nodeOptionsKey struct{}
 type serviceOptionsKey struct{}
 
 var (
-	wrapper = option.NewWrapper[Options](nodeOptionsKey{}, func(options *option.Options) *Options {
+	wrapper = option.NewWrapper[Options](serviceOptionsKey{}, func(options *option.Options) *Options {
 		return &Options{
 			Options: options,
 		}
@@ -88,7 +87,7 @@ func Cmd(c cmd.Cmd) option.Option {
 	})
 }
 
-// RPC sets the type of service, eg. stack, grpc
+// RPC sets the type of node, eg. stack, grpc
 // but this func will be deprecated
 func RPC(r string) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
@@ -123,7 +122,7 @@ func Store(c store.Store) option.Option {
 
 // HandleSignal toggles automatic installation of the signal handler that
 // traps TERM, INT, and QUIT.  Users of this feature to disable the signal
-// handler, should control liveness of the service through the context.
+// handler, should control liveness of the node through the context.
 func HandleSignal(b bool) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Signal = b
@@ -136,7 +135,7 @@ func Server(s server.Server) option.Option {
 	})
 }
 
-// Registry sets the registry for the service
+// Registry sets the registry for the node
 // and the underlying components
 func Registry(r registry.Registry) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
@@ -144,7 +143,7 @@ func Registry(r registry.Registry) option.Option {
 	})
 }
 
-// Transport sets the transport for the service
+// Transport sets the transport for the node
 // and the underlying components
 func Transport(t transport.Transport) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
@@ -194,7 +193,7 @@ func WithPrivateKey(key string) option.Option {
 	})
 }
 
-// WithHandlers adds handlers to the service's server
+// WithHandlers adds handlers to the node's server
 func WithHandlers(handlers ...server.Handler) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.ServerOptions = append(opts.ServerOptions, server.WithHandlers(handlers...))

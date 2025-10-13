@@ -285,7 +285,7 @@ type (
 	// Person represents an individual person.
 	Person = Actor
 
-	// Service represents a service of any kind.
+	// Service represents a node of any kind.
 	Service = Actor
 )
 

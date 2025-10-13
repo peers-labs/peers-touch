@@ -4,9 +4,9 @@ import (
 	"context"
 	"sync"
 
+	"github.com/dirty-bro-tech/peers-touch-go/core/node"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/object"
 	"github.com/dirty-bro-tech/peers-touch-go/touch"
 )
@@ -41,7 +41,7 @@ type nativePeer struct {
 
 	once sync.Once
 
-	service service.Service
+	service node.Service
 }
 
 func (n *nativePeer) ID() object.ID {
@@ -66,18 +66,18 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 		}
 
 		if n.opts.NewService != nil {
-			// Use custom service creation function
+			// Use custom node creation function
 			nodeInstance := n.opts.NewService(n.opts.Options, opts...)
-			// Convert node.Node to service.Service if needed
-			if svc, ok := nodeInstance.(service.Service); ok {
+			// Convert node.Node to node.Service if needed
+			if svc, ok := nodeInstance.(node.Service); ok {
 				n.service = svc
 			} else {
-				panic("NewService function must return a service.Service compatible type")
+				panic("NewService function must return a node.Service compatible type")
 			}
 		} else {
-			// todo add default service
+			// todo add default node
 			if plugin.ServicePlugins[plugin.NativePluginName] == nil {
-				panic("new service failed, try to use default service by importing peers-touch-go/core/plugin/native")
+				panic("new node failed, try to use default node by importing peers-touch-go/core/plugin/native")
 			}
 
 			n.service = plugin.ServicePlugins[plugin.NativePluginName].New(n.opts.Options, opts...)

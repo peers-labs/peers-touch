@@ -12,6 +12,7 @@ var (
 	ErrTokenExpired      = errors.New("token has expired")
 	ErrTokenRevoked      = errors.New("token has been revoked")
 	ErrNoAuthProvider    = errors.New("no authentication provider available")
+	ErrNotLoggedIn       = errors.New("user not logged in")
 	
 	// Session errors
 	ErrSessionNotFound   = errors.New("session not found")

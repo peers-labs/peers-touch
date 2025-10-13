@@ -73,7 +73,7 @@ func (s *native) Start(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	// register service
+	// register node
 	if err := s.opts.Registry.Register(ctx, s.toPeer()); err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func (s *native) Start(ctx context.Context) error {
 		}
 	}
 
-	logger.Infof(ctx, "peers' service started at %s", s.opts.Server.Options().Address)
+	logger.Infof(ctx, "peers' node started at %s", s.opts.Server.Options().Address)
 
 	s.Finish(s)
 	return nil
@@ -95,7 +95,7 @@ func (s *native) Start(ctx context.Context) error {
 func (s *native) Stop(ctx context.Context) error {
 	var gerr error
 
-	logger.Infof(ctx, "stop native peers' service. begin to execute before stop hooks")
+	logger.Infof(ctx, "stop native peers' node. begin to execute before stop hooks")
 
 	for _, fn := range s.opts.BeforeStop {
 		if err := fn(); err != nil {
@@ -103,25 +103,25 @@ func (s *native) Stop(ctx context.Context) error {
 		}
 	}
 
-	logger.Infof(ctx, "stop native peers' service. begin to execute stop hooks")
+	logger.Infof(ctx, "stop native peers' node. begin to execute stop hooks")
 
 	if err := s.opts.Server.Stop(ctx); err != nil {
 		return err
 	}
 
-	logger.Infof(ctx, "stop native peers' service. begin to execute config close")
+	logger.Infof(ctx, "stop native peers' node. begin to execute config close")
 	if err := s.opts.Config.Close(); err != nil {
 		return err
 	}
 
-	logger.Infof(ctx, "stop native peers' service. begin to execute after stop hooks")
+	logger.Infof(ctx, "stop native peers' node. begin to execute after stop hooks")
 	for _, fn := range s.opts.AfterStop {
 		if err := fn(); err != nil {
 			gerr = err
 		}
 	}
 
-	logger.Warnf(ctx, "stop native peers' native service stopped with error: %v", gerr)
+	logger.Warnf(ctx, "stop native peers' native node stopped with error: %v", gerr)
 
 	return gerr
 }
@@ -152,8 +152,8 @@ func (s *native) Run() error {
 	return s.Stop(ctx)
 }
 
-// todo, update to one service supports multiple peers
-// now there is a service for one peer, it's not graceful.
+// todo, update to one node supports multiple peers
+// now there is a node for one peer, it's not graceful.
 func (s *native) toPeer() *registry.Peer {
 	p := &registry.Peer{
 		Name:    s.opts.Name,
@@ -235,10 +235,10 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 		client.WithInit(),
 		// set the default components
 		// see initComponents
-		// service.Store(plugin.StorePlugins["native"].New()),
-		// service.Server(plugin.ServerPlugins["native"].New()),
-		// service.Logger(plugin.LoggerPlugins["console"].New()),
-		//service.HandleSignal(true),
+		// node.Store(plugin.StorePlugins["native"].New()),
+		// node.Server(plugin.ServerPlugins["native"].New()),
+		// node.Logger(plugin.LoggerPlugins["console"].New()),
+		//node.HandleSignal(true),
 	}
 
 	// make sure the custom options are applied last

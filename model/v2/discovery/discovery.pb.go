@@ -177,7 +177,7 @@ func (x *ResourceID) GetValue() string {
 	return ""
 }
 
-// ServiceID represents a unique identifier for a service.
+// ServiceID represents a unique identifier for a node.
 type ServiceID struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
@@ -355,7 +355,7 @@ func (x *ResourceInfo) GetScore() float64 {
 	return 0
 }
 
-// ServiceInfo contains metadata about a discoverable service.
+// ServiceInfo contains metadata about a discoverable node.
 type ServiceInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            *ServiceID             `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1528,10 +1528,10 @@ func (x *FindServicesResponse) GetServices() []*ServiceInfo {
 	return nil
 }
 
-// RegisterServiceRequest represents a request to register a service.
+// RegisterServiceRequest represents a request to register a node.
 type RegisterServiceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Service       *ServiceInfo           `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
+	Service       *ServiceInfo           `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1573,7 +1573,7 @@ func (x *RegisterServiceRequest) GetService() *ServiceInfo {
 	return nil
 }
 
-// RegisterServiceResponse represents the response to service registration.
+// RegisterServiceResponse represents the response to node registration.
 type RegisterServiceResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ServiceId     *ServiceID             `protobuf:"bytes,1,opt,name=service_id,json=serviceId,proto3" json:"service_id,omitempty"`
@@ -1626,7 +1626,7 @@ func (x *RegisterServiceResponse) GetErrorMessage() string {
 	return ""
 }
 
-// UnregisterServiceRequest represents a request to unregister a service.
+// UnregisterServiceRequest represents a request to unregister a node.
 type UnregisterServiceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ServiceId     *ServiceID             `protobuf:"bytes,1,opt,name=service_id,json=serviceId,proto3" json:"service_id,omitempty"`
@@ -1671,7 +1671,7 @@ func (x *UnregisterServiceRequest) GetServiceId() *ServiceID {
 	return nil
 }
 
-// HeartbeatRequest represents a service heartbeat request.
+// HeartbeatRequest represents a node heartbeat request.
 type HeartbeatRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ServiceId     *ServiceID             `protobuf:"bytes,1,opt,name=service_id,json=serviceId,proto3" json:"service_id,omitempty"`
@@ -2413,7 +2413,7 @@ const file_discovery_proto_rawDesc = "" +
 	"\x14FindServicesResponse\x127\n" +
 	"\bservices\x18\x01 \x03(\v2\x1b.peers_touch.v2.ServiceInfoR\bservices\"O\n" +
 	"\x16RegisterServiceRequest\x125\n" +
-	"\aservice\x18\x01 \x01(\v2\x1b.peers_touch.v2.ServiceInfoR\aservice\"x\n" +
+	"\anode\x18\x01 \x01(\v2\x1b.peers_touch.v2.ServiceInfoR\anode\"x\n" +
 	"\x17RegisterServiceResponse\x128\n" +
 	"\n" +
 	"service_id\x18\x01 \x01(\v2\x19.peers_touch.v2.ServiceIDR\tserviceId\x12#\n" +
@@ -2589,7 +2589,7 @@ var file_discovery_proto_depIdxs = []int32{
 	40, // 34: peers_touch.v2.ResolveResponse.resources:type_name -> peers_touch.v2.ResolveResponse.ResourcesEntry
 	6,  // 35: peers_touch.v2.FindPeersResponse.peers:type_name -> peers_touch.v2.PeerInfo
 	5,  // 36: peers_touch.v2.FindServicesResponse.services:type_name -> peers_touch.v2.ServiceInfo
-	5,  // 37: peers_touch.v2.RegisterServiceRequest.service:type_name -> peers_touch.v2.ServiceInfo
+	5,  // 37: peers_touch.v2.RegisterServiceRequest.node:type_name -> peers_touch.v2.ServiceInfo
 	3,  // 38: peers_touch.v2.RegisterServiceResponse.service_id:type_name -> peers_touch.v2.ServiceID
 	3,  // 39: peers_touch.v2.UnregisterServiceRequest.service_id:type_name -> peers_touch.v2.ServiceID
 	3,  // 40: peers_touch.v2.HeartbeatRequest.service_id:type_name -> peers_touch.v2.ServiceID

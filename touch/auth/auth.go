@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
 )
@@ -22,16 +23,16 @@ const (
 type AuthProvider interface {
 	// Authenticate validates user credentials and returns authentication result
 	Authenticate(ctx context.Context, credentials *Credentials) (*AuthResult, error)
-	
+
 	// ValidateToken validates an authentication token and returns user info
 	ValidateToken(ctx context.Context, token string) (*TokenInfo, error)
-	
+
 	// RefreshToken refreshes an existing token
 	RefreshToken(ctx context.Context, refreshToken string) (*AuthResult, error)
-	
+
 	// RevokeToken revokes/invalidates a token
 	RevokeToken(ctx context.Context, token string) error
-	
+
 	// GetMethod returns the authentication method this provider supports
 	GetMethod() AuthMethod
 }
@@ -71,7 +72,7 @@ type AuthService struct {
 	defaultMethod AuthMethod
 }
 
-// NewAuthService creates a new authentication service
+// NewAuthService creates a new authentication node
 func NewAuthService() *AuthService {
 	return &AuthService{
 		providers:     make(map[AuthMethod]AuthProvider),
@@ -179,4 +180,33 @@ func generateSessionID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+// GetCurrentActor extracts the current actor from the request context
+// Returns nil if no actor is found or if the actor is not authenticated
+func GetCurrentActor(ctx *app.RequestContext) *db.Actor {
+	// Try to get user ID from context (set by middleware)
+	userIDInterface, exists := ctx.Get("user_id")
+	if !exists {
+		return nil
+	}
+
+	userID, ok := userIDInterface.(uint64)
+	if !ok {
+		return nil
+	}
+
+	// Get database connection
+	rds, err := store.GetRDS(context.Background())
+	if err != nil {
+		return nil
+	}
+
+	// Find the actor by user ID
+	var actor db.Actor
+	if err := rds.Where("internal_id = ?", userID).First(&actor).Error; err != nil {
+		return nil
+	}
+
+	return &actor
 }

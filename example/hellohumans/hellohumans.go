@@ -7,8 +7,8 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/dirty-bro-tech/peers-touch-go"
 	"github.com/dirty-bro-tech/peers-touch-go/core/debug/actuator"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/dirty-bro-tech/peers-touch-go/core/node"
+	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
 	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/registry"
@@ -35,7 +35,7 @@ func main() {
 	p := peers.NewPeer()
 	err := p.Init(
 		ctx,
-		service.Name("peers-touch-helloworld"),
+		node.Name("peers-touch-helloworld"),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("")),
 		server.WithHandlers(
 			server.NewHandler(helloRouterURL{name: "hello-world", url: "/hello"}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

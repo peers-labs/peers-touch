@@ -4,18 +4,27 @@ import (
 	"time"
 
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
+	"github.com/dirty-bro-tech/peers-touch-go/vendors/activitypub"
 	"gorm.io/gorm"
 )
 
+// Actor represents an ActivityPub actor with database-specific fields
+// It embeds the standard ActivityPub Actor and adds database management fields
 type Actor struct {
-	ID           uint64 `gorm:"primary_key;autoIncrement:false"` // Internal identity - cannot be changed
-	PeersActorID string `gorm:"uniqueIndex;size:255"`            // Network identification ID
-	Name         string `gorm:"size:100;not null"`               // Actor's display name
-	Email        string `gorm:"uniqueIndex;size:255;not null"`   // Unique email address
-	PasswordHash string `gorm:"size:128;not null"`               // bcrypt hashed password
+	// Embed the standard ActivityPub Actor
+	activitypub.Actor
 
-	CreatedAt time.Time `gorm:"created_at"`
-	UpdatedAt time.Time `gorm:"updated_at"`
+	// Database-specific fields
+	InternalID   uint64 `json:"internal_id" gorm:"primary_key;autoIncrement:false"` // Internal database ID
+	PeersActorID string `json:"peers_actor_id" gorm:"uniqueIndex;size:255"`         // Network identification ID
+	Email        string `json:"email" gorm:"uniqueIndex;size:255;not null"`         // Unique email address
+	PasswordHash string `json:"-" gorm:"size:128;not null"`                         // bcrypt hashed password
+	IsLocal      bool   `json:"is_local" gorm:"default:true"`                       // Whether this actor is local to this instance
+	IsActive     bool   `json:"is_active" gorm:"default:true"`                      // Whether this actor is active
+
+	// Timestamps
+	CreatedAt time.Time `json:"created_at" gorm:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"updated_at"`
 }
 
 func (*Actor) TableName() string {
@@ -23,8 +32,20 @@ func (*Actor) TableName() string {
 }
 
 func (a *Actor) BeforeCreate(tx *gorm.DB) error {
-	if a.ID == 0 {
-		a.ID = id.NextID()
+	if a.InternalID == 0 {
+		a.InternalID = id.NextID()
 	}
+	return nil
+}
+
+// GetInternalID returns the internal database ID
+func (a *Actor) GetInternalID() uint64 {
+	return a.InternalID
+}
+
+// SetMetadata sets the metadata for the ActivityPub actor
+func (a *Actor) SetMetadata(metadata interface{}) error {
+	// Implementation would serialize metadata to JSON string
+	// For now, just return nil
 	return nil
 }

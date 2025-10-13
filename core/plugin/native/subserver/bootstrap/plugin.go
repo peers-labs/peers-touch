@@ -25,7 +25,7 @@ var bootstrapOptions struct {
 					} `pconf:"bootstrap"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
-		} `pconf:"service"`
+		} `pconf:"node"`
 	} `pconf:"peers"`
 }
 

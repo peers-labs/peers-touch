@@ -15,7 +15,7 @@ var options struct {
 					Enabled bool `pconf:"enabled"`
 				} `pconf:"native"`
 			} `pconf:"server"`
-		} `pconf:"service"`
+		} `pconf:"node"`
 	} `pconf:"peers"`
 }
 

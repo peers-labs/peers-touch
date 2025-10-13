@@ -5,20 +5,20 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
-type NewNode func(rootOpts *option.Options, opts ...option.Option) node.Node
+type NewService func(rootOpts *option.Options, opts ...option.Option) node.Service
 
 type peersOptionsKey struct{}
 
 type Options struct {
 	*option.Options
 
-	NewService NewNode
+	NewService NewService
 }
 
-/*func WithNewService(newService NewNode) option.Option {
+/*func WithNewService(newService NewService) option.Option {
 	return &option.Option{Option: func(o *option.Options) {
 		optionWrap(o, func(opts *Options) {
-			opts.NewNode = newService
+			opts.NewService = newService
 		})
 	}}
 }*/

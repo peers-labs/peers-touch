@@ -102,7 +102,7 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 	clientIP := ctx.ClientIP()
 	userAgent := string(ctx.GetHeader("User-Agent"))
 
-	// Use auth service to handle login with session
+	// Use auth node to handle login with session
 	result, err := auth.LoginWithSession(c, credentials, clientIP, userAgent)
 	if err != nil {
 		log.Warnf(c, "Login failed: %v", err)
@@ -126,7 +126,7 @@ func GetActorProfile(c context.Context, ctx *app.RequestContext) {
 	}
 
 	// Get actor profile
-	profile, err := actor.GetProfile(c, currentActor.ID)
+	profile, err := actor.GetProfile(c, currentActor.InternalID)
 	if err != nil {
 		log.Warnf(c, "Get actor profile failed: %v", err)
 		FailedResponse(ctx, err)
@@ -151,7 +151,7 @@ func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	if err := actor.UpdateProfile(c, currentActor.ID, &params); err != nil {
+	if err := actor.UpdateProfile(c, currentActor.InternalID, &params); err != nil {
 		log.Warnf(c, "Update profile failed: %v", err)
 		FailedResponse(ctx, err)
 		return

@@ -111,7 +111,7 @@ func (s *native) initComponents(ctx context.Context) error {
 
 	// init server
 	if s.opts.Server == nil {
-		serverName := config.Get("peers.service.server.name").String(plugin.NativePluginName)
+		serverName := config.Get("peers.node.server.name").String(plugin.NativePluginName)
 		if len(serverName) > 0 {
 			if plugin.ServerPlugins[serverName] == nil {
 				logger.Errorf(ctx, "server %s not found, use native by default", serverName)

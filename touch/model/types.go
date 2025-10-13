@@ -9,8 +9,11 @@ import (
 
 // Error definitions
 var (
-	ErrPeerAddrExists = errors.New("peer address already exists")
-	ErrUndefined      = errors.New("undefined error")
+	ErrPeerAddrExists            = errors.New("peer address already exists")
+	ErrUndefined                 = errors.New("undefined error")
+	ErrActorActorExists         = errors.New("actor already exists")
+	ErrActorNotFound            = errors.New("actor not found")
+	ErrActorInvalidCredentials  = errors.New("invalid credentials")
 )
 
 // UndefinedError represents an undefined error
@@ -92,25 +95,6 @@ func (t *TouchHiToParam) Check() error {
 	return nil
 }
 
-// ActivityPubActor represents an ActivityPub actor
-type ActivityPubActor struct {
-	ID                string    `json:"id"`
-	Type              string    `json:"type"`
-	Name              string    `json:"name"`
-	PreferredUsername string    `json:"preferredUsername"`
-	Summary           string    `json:"summary"`
-	InboxURL          string    `json:"inbox"`
-	OutboxURL         string    `json:"outbox"`
-	FollowersURL      string    `json:"followers"`
-	FollowingURL      string    `json:"following"`
-	LikedURL          string    `json:"liked"`
-	PublicKeyPem      string    `json:"publicKey"`
-	IsLocal           bool      `json:"isLocal"`
-	IsActive          bool      `json:"isActive"`
-	CreatedAt         time.Time `json:"createdAt"`
-	UpdatedAt         time.Time `json:"updatedAt"`
-}
-
 // WebFingerParams represents parameters for WebFinger discovery
 type WebFingerParams struct {
 	Resource string   `json:"resource"`
@@ -150,17 +134,9 @@ type WebFingerLink struct {
 }
 
 // BuildWebFingerResponse builds a WebFinger response for an ActivityPub actor
+// Deprecated: Use BuildWebFingerResponseFromModel instead
 func BuildWebFingerResponse(actor *ActivityPubActor, baseURL, resource string) *WebFingerResponse {
-	return &WebFingerResponse{
-		Subject: resource,
-		Links: []WebFingerLink{
-			{
-				Rel:  "self",
-				Type: "application/activity+json",
-				Href: actor.ID,
-			},
-		},
-	}
+	return BuildWebFingerResponseFromModel(actor, baseURL, resource)
 }
 
 // WebFinger relation constants
@@ -193,4 +169,87 @@ func ParseUserDiscoveryRequest(resource string) (*WebFingerParams, error) {
 		Username: parts[0],
 		Domain:   parts[1],
 	}, nil
+}
+
+// ActorSignParams represents parameters for actor signup
+type ActorSignParams struct {
+	Name     string `json:"name" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=6"`
+}
+
+// Check validates the ActorSignParams
+func (a *ActorSignParams) Check() error {
+	if a.Name == "" {
+		return errors.New("name is required")
+	}
+	if a.Email == "" {
+		return errors.New("email is required")
+	}
+	if a.Password == "" {
+		return errors.New("password is required")
+	}
+	if len(a.Password) < 6 {
+		return errors.New("password must be at least 6 characters")
+	}
+	return nil
+}
+
+// ActorLoginParams represents parameters for actor login
+type ActorLoginParams struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+}
+
+// Check validates the ActorLoginParams
+func (a *ActorLoginParams) Check() error {
+	if a.Email == "" {
+		return errors.New("email is required")
+	}
+	if a.Password == "" {
+		return errors.New("password is required")
+	}
+	return nil
+}
+
+// ProfileGetResponse represents the response for getting a profile
+type ProfileGetResponse struct {
+	ProfilePhoto string `json:"profile_photo"`
+	Name         string `json:"name"`
+	Gender       string `json:"gender"`
+	Region       string `json:"region"`
+	Email        string `json:"email"`
+	PeersID      string `json:"peers_id"`
+	WhatsUp      string `json:"whats_up"`
+}
+
+// ProfileUpdateParams represents parameters for updating a profile
+type ProfileUpdateParams struct {
+	ProfilePhoto *string `json:"profile_photo,omitempty"`
+	Gender       *string `json:"gender,omitempty"`
+	Region       *string `json:"region,omitempty"`
+	Email        *string `json:"email,omitempty"`
+	WhatsUp      *string `json:"whats_up,omitempty"`
+}
+
+// Validate validates the ProfileUpdateParams
+func (p *ProfileUpdateParams) Validate() error {
+	// At least one field must be provided for update
+	if p.ProfilePhoto == nil && p.Gender == nil && p.Region == nil && 
+		p.Email == nil && p.WhatsUp == nil {
+		return errors.New("at least one field must be provided for update")
+	}
+	return nil
+}
+
+// PageData represents paginated data response
+type PageData[T any] struct {
+	Total int `json:"total"`
+	List  []T `json:"list"`
+	No    int `json:"no"`
+}
+
+// NewError creates a new error with code and message
+func NewError(code, message string) error {
+	return fmt.Errorf("[%s] %s", code, message)
 }

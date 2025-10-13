@@ -14,10 +14,10 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/transport"
 
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 )
 
 const (
@@ -140,7 +140,7 @@ func (c *libp2pClient) Init(opts ...option.Option) error {
 	return c.initErr
 }
 
-// Call makes a synchronous call to a service
+// Call makes a synchronous call to a node
 func (c *libp2pClient) Call(ctx context.Context, req client.Request, rsp interface{}, opts ...client.CallOption) error {
 	// Apply call options
 	callOpts := c.opts.CallOptions
@@ -157,10 +157,10 @@ func (c *libp2pClient) Call(ctx context.Context, req client.Request, rsp interfa
 	ctx, cancel := context.WithTimeout(ctx, callOpts.Timeout)
 	defer cancel()
 
-	// Get service address
+	// Get node address
 	addr := req.Service()
 	if addr == "" {
-		return fmt.Errorf("service address is required")
+		return fmt.Errorf("node address is required")
 	}
 
 	// Parse peer ID
@@ -213,7 +213,7 @@ func (c *libp2pClient) Call(ctx context.Context, req client.Request, rsp interfa
 	return nil
 }
 
-// Stream creates a bidirectional stream to a service
+// Stream creates a bidirectional stream to a node
 func (c *libp2pClient) Stream(ctx context.Context, req client.Request, opts ...client.CallOption) (client.Stream, error) {
 	// Apply call options
 	callOpts := c.opts.CallOptions
@@ -230,10 +230,10 @@ func (c *libp2pClient) Stream(ctx context.Context, req client.Request, opts ...c
 	ctx, cancel := context.WithTimeout(ctx, callOpts.Timeout)
 	defer cancel()
 
-	// Get service address
+	// Get node address
 	addr := req.Service()
 	if addr == "" {
-		return nil, fmt.Errorf("service address is required")
+		return nil, fmt.Errorf("node address is required")
 	}
 
 	// Parse peer ID

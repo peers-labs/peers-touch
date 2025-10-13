@@ -60,7 +60,7 @@ type DiscoveredPeer struct {
 	IsBootstrap  bool
 }
 
-// Service represents the unified mDNS service for peer discovery (singleton)
+// Service represents the unified mDNS node for peer discovery (singleton)
 type Service struct {
 	host host.Host
 
@@ -113,12 +113,12 @@ func init() {
 	services = make(map[string]*Service)
 }
 
-// NewMDNSService returns a mDNS service instance for the given host
+// NewMDNSService returns a mDNS node instance for the given host
 func NewMDNSService(h host.Host) *Service {
 	return NewMDNSServiceWithComponent(h, "default")
 }
 
-// NewMDNSServiceWithComponent returns a mDNS service instance for the given host and component
+// NewMDNSServiceWithComponent returns a mDNS node instance for the given host and component
 func NewMDNSServiceWithComponent(h host.Host, componentID string) *Service {
 	servicesMu.Lock()
 	defer servicesMu.Unlock()
@@ -147,7 +147,7 @@ func NewMDNSServiceWithComponent(h host.Host, componentID string) *Service {
 		started:         false,
 	}
 	services[serviceKey] = service
-	log.Printf("[mDNS] Initialized mDNS service with port: %d for host: %s, component: %s", port, h.ID().String()[:8], componentID)
+	log.Printf("[mDNS] Initialized mDNS node with port: %d for host: %s, component: %s", port, h.ID().String()[:8], componentID)
 	return service
 }
 
@@ -191,15 +191,15 @@ func (s *Service) UnregisterCallback(componentID string) {
 	log.Printf("[mDNS] Unregistered mDNS callbacks for component: %s", componentID)
 }
 
-// Start initializes and starts the mDNS service
+// Start initializes and starts the mDNS node
 func (s *Service) Start() error {
 	if s.started {
-		log.Printf("[mDNS] mDNS service already started")
+		log.Printf("[mDNS] mDNS node already started")
 		return nil
 	}
 
 	if err := s.startMDNSService(); err != nil {
-		return fmt.Errorf("failed to start mDNS service: %w", err)
+		return fmt.Errorf("failed to start mDNS node: %w", err)
 	}
 
 	// Start periodic discovery
@@ -210,19 +210,19 @@ func (s *Service) Start() error {
 	go s.periodicRefresh()
 
 	s.started = true
-	log.Printf("[mDNS] mDNS service started successfully")
+	log.Printf("[mDNS] mDNS node started successfully")
 	return nil
 }
 
 // startMDNSService initializes the HashiCorp mDNS server
 func (s *Service) startMDNSService() error {
-	// Get local addresses for the service
+	// Get local addresses for the node
 	addresses := s.getLocalAddresses()
 	if len(addresses) == 0 {
 		return fmt.Errorf("no valid local addresses found")
 	}
 
-	// Create service info with size limits to avoid DNS TXT record 255-byte limit
+	// Create node info with size limits to avoid DNS TXT record 255-byte limit
 	info := []string{
 		fmt.Sprintf("peer_id=%s", s.host.ID().String()),
 		fmt.Sprintf("port=%d", s.port),
@@ -250,7 +250,7 @@ func (s *Service) startMDNSService() error {
 		info = append(info, fmt.Sprintf("addresses=%s", addressesStr))
 	}
 
-	// Create mDNS service
+	// Create mDNS node
 	service, err := mdns.NewMDNSService(
 		s.instanceName,
 		s.serviceType,
@@ -261,7 +261,7 @@ func (s *Service) startMDNSService() error {
 		info,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create mDNS service: %w", err)
+		return fmt.Errorf("failed to create mDNS node: %w", err)
 	}
 
 	// Create and start mDNS server
@@ -274,7 +274,7 @@ func (s *Service) startMDNSService() error {
 	return nil
 }
 
-// getLocalAddresses returns the local addresses for mDNS service
+// getLocalAddresses returns the local addresses for mDNS node
 func (s *Service) getLocalAddresses() []string {
 	var addresses []string
 
@@ -356,7 +356,7 @@ func (s *Service) discoverPeers() {
 
 // handleDiscoveredEntry processes a discovered mDNS entry
 func (s *Service) handleDiscoveredEntry(entry *mdns.ServiceEntry) {
-	// Skip our own service
+	// Skip our own node
 	if entry.Name == s.instanceName+"."+s.serviceType+".local." {
 		return
 	}
@@ -822,7 +822,7 @@ func (s *Service) GetAlivePeerAddrs() []multiaddr.Multiaddr {
 	return addrs
 }
 
-// Close stops the mDNS service
+// Close stops the mDNS node
 func (s *Service) Close() {
 	if !s.started {
 		return
@@ -847,7 +847,7 @@ func (s *Service) Close() {
 	s.callbacksMu.Unlock()
 
 	s.started = false
-	log.Printf("[mDNS] mDNS service stopped")
+	log.Printf("[mDNS] mDNS node stopped")
 }
 
 // CloseAllServices safely closes all mDNS services
@@ -863,7 +863,7 @@ func CloseAllServices() {
 	}
 }
 
-// CloseServiceForHost closes the mDNS service for a specific host
+// CloseServiceForHost closes the mDNS node for a specific host
 func CloseServiceForHost(hostID peer.ID) {
 	servicesMu.Lock()
 	defer servicesMu.Unlock()
@@ -879,7 +879,7 @@ func CloseServiceForHost(hostID peer.ID) {
 	}
 }
 
-// CloseServiceForHostAndComponent closes the mDNS service for a specific host and component
+// CloseServiceForHostAndComponent closes the mDNS node for a specific host and component
 func CloseServiceForHostAndComponent(hostID peer.ID, componentID string) {
 	servicesMu.Lock()
 	defer servicesMu.Unlock()

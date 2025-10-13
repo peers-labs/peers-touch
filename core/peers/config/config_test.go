@@ -32,8 +32,8 @@ var (
   registry:
     name: mdns
     address: 127.0.0.1:6500
-  service:
-    name: test-service
+  node:
+    name: test-node
     server:
       address: :8090
       advertise: no-test
@@ -151,8 +151,8 @@ func TestPeersConfig_Config(t *testing.T) {
 	if conf.Peers.Service.Server.Name != "default-srv-name" {
 		t.Fatal(fmt.Errorf("server name should be [default-srv-name], not: [%s]", conf.Peers.Service.Server.Name))
 	}
-	if c.Get("peers", "service", "server", "name").String("") != "default-srv-name" {
-		t.Fatal(fmt.Errorf("server name in [c] should be [default-srv-name], not: [%s]", c.Get("peers", "service", "server", "name").String("")))
+	if c.Get("peers", "node", "server", "name").String("") != "default-srv-name" {
+		t.Fatal(fmt.Errorf("server name in [c] should be [default-srv-name], not: [%s]", c.Get("peers", "node", "server", "name").String("")))
 	}
 
 	if conf.Peers.Service.Server.ID != "test-id" {

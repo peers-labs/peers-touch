@@ -21,7 +21,7 @@ var turnOptions struct {
 					} `pconf:"turn"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
-		} `pconf:"service"`
+		} `pconf:"node"`
 	} `pconf:"peers"`
 }
 
