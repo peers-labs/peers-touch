@@ -25,12 +25,8 @@ Through such a privacy-focused network, we aim to create a society that respects
 > Here only representative modules are listed.
 
 ### MVP Flow
-> This is essentially a demo to confirm the feasibility of our solution.
 
 ## Features
-
-* Registry: In addition to being able to register with discovery nodes, it can also operate as a discovery node. <br />
-* Config-Driven: The configuration file is used to configure the whole options.  <br />
 
 ## References
 
