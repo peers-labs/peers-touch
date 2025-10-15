@@ -5,7 +5,7 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 )
 
-type NewService func(rootOpts *option.Options, opts ...option.Option) node.Service
+type NewService func(rootOpts *option.Options, opts ...option.Option) node.Node
 
 type peersOptionsKey struct{}
 

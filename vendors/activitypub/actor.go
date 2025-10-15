@@ -16,7 +16,7 @@ const (
 	GroupType        ActivityVocabularyType = "Group"
 	OrganizationType ActivityVocabularyType = "Organization"
 	PersonType       ActivityVocabularyType = "Person"
-	ServiceType      ActivityVocabularyType = "Service"
+	ServiceType      ActivityVocabularyType = "service"
 )
 
 // ActorTypes represent the valid Actor types.

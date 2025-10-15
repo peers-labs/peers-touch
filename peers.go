@@ -41,7 +41,7 @@ type nativePeer struct {
 
 	once sync.Once
 
-	service node.Service
+	node node.Node
 }
 
 func (n *nativePeer) ID() object.ID {
@@ -49,7 +49,7 @@ func (n *nativePeer) ID() object.ID {
 }
 
 func (n *nativePeer) Name() string {
-	return n.service.Name()
+	return n.node.Name()
 }
 
 func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
@@ -68,11 +68,11 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 		if n.opts.NewService != nil {
 			// Use custom node creation function
 			nodeInstance := n.opts.NewService(n.opts.Options, opts...)
-			// Convert node.Node to node.Service if needed
-			if svc, ok := nodeInstance.(node.Service); ok {
-				n.service = svc
+			// Convert node.Node to node.node if needed
+			if svc, ok := nodeInstance.(node.Node); ok {
+				n.node = svc
 			} else {
-				panic("NewService function must return a node.Service compatible type")
+				panic("NewService function must return a node.node compatible type")
 			}
 		} else {
 			// todo add default node
@@ -80,10 +80,10 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 				panic("new node failed, try to use default node by importing peers-touch-go/core/plugin/native")
 			}
 
-			n.service = plugin.ServicePlugins[plugin.NativePluginName].New(n.opts.Options, opts...)
+			n.node = plugin.ServicePlugins[plugin.NativePluginName].New(n.opts.Options, opts...)
 		}
 
-		err = n.service.Init(n.opts.Ctx())
+		err = n.node.Init(n.opts.Ctx())
 	})
 
 	// wrap the client and server
@@ -91,5 +91,5 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 }
 
 func (n *nativePeer) Start() error {
-	return n.service.Run()
+	return n.node.Run()
 }

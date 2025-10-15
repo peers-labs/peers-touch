@@ -10,21 +10,21 @@ import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/client"
 	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
 	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/dirty-bro-tech/peers-touch-go/core/node"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/peers/config"
 	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
 )
 
 var (
-	_ service.Service = (*native)(nil)
+	_ node.Node = (*native)(nil)
 )
 
 type native struct {
-	opts *service.Options
-	service.AbstractService
+	opts *node.Options
+	node.AbstractService
 
 	once sync.Once
 }
@@ -33,7 +33,7 @@ func (s *native) Name() string {
 	return s.opts.Name
 }
 
-func (s *native) Options() *service.Options {
+func (s *native) Options() *node.Options {
 	return s.opts
 }
 
@@ -181,13 +181,13 @@ func (s *native) toPeer() *registry.Peer {
 
 // NewService
 // todo remove rootOptions, not graceful
-func NewService(rootOpts *option.Options, opts ...option.Option) service.Service {
+func NewService(rootOpts *option.Options, opts ...option.Option) node.Node {
 	defaultOpts := []option.Option{
 		// todo remove non-peers' code
-		service.RPC("peers"),
-		service.HandleSignal(true),
+		node.RPC("peers"),
+		node.HandleSignal(true),
 		// print runtime info
-		service.BeforeInit(func(sOpts *service.Options) error {
+		node.BeforeInit(func(sOpts *node.Options) error {
 			// current working directory
 			wd, err := os.Getwd()
 			if err != nil {
@@ -199,7 +199,7 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 			return nil
 		}),
 		// load config
-		service.BeforeInit(func(sOpts *service.Options) error {
+		node.BeforeInit(func(sOpts *node.Options) error {
 			// cmd helps peers parse command options and reset the options that should work.
 			err := sOpts.Cmd.Init()
 			if err != nil {
@@ -216,11 +216,11 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 			return nil
 		}),
 		// Load Private Key & Public Key
-		service.BeforeInit(func(sOpts *service.Options) error {
+		node.BeforeInit(func(sOpts *node.Options) error {
 			return initKeys(sOpts)
 		}),
 		// parse config to options for components
-		service.BeforeInit(func(sOpts *service.Options) error {
+		node.BeforeInit(func(sOpts *node.Options) error {
 			err := config.SetOptions(sOpts)
 			if err != nil {
 				log.Errorf("init components' options error: %s", err)
@@ -248,7 +248,7 @@ func NewService(rootOpts *option.Options, opts ...option.Option) service.Service
 	rootOpts.Apply(defaultOpts...)
 
 	s := &native{
-		opts: service.GetOptions(rootOpts),
+		opts: node.GetOptions(rootOpts),
 	}
 
 	// set CMD for loading config
