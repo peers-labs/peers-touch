@@ -2,14 +2,14 @@ package native
 
 import (
 	"github.com/dirty-bro-tech/peers-touch-go/core/config"
+	"github.com/dirty-bro-tech/peers-touch-go/core/node"
 	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
 )
 
 var options struct {
 	Peers struct {
-		Service struct {
+		Node struct {
 		} `pconf:"node"`
 	} `pconf:"peers"`
 }
@@ -17,7 +17,7 @@ var options struct {
 type nativeServicePlugin struct {
 }
 
-func (n *nativeServicePlugin) New(opts *option.Options, o ...option.Option) service.Service {
+func (n *nativeServicePlugin) New(opts *option.Options, o ...option.Option) node.Node {
 	return NewService(opts, o...)
 }
 

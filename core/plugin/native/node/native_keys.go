@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/service"
+	"github.com/dirty-bro-tech/peers-touch-go/core/node"
 )
 
-func initKeys(sOpts *service.Options) error {
+func initKeys(sOpts *node.Options) error {
 	// Check if keys exist in current directory
 	if _, err := os.Stat("private.pem"); err != nil {
 		// Generate new RSA keys

@@ -77,7 +77,7 @@ func collectOwnIPs() map[string]struct{} {
 }
 
 func main() {
-	// Service type following RFC 6763 - using TCP for consistency with working HashiCorp demo
+	// service type following RFC 6763 - using TCP for consistency with working HashiCorp demo
 	const serviceType = "_peers-touch-mdns-demo._tcp"
 	const port = 8000
 

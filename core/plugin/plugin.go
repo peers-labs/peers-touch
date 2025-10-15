@@ -58,7 +58,7 @@ type RegistryPlugin interface {
 type ServicePlugin interface {
 	Plugin
 	Options() []option.Option
-	New(*option.Options, ...option.Option) node.Service
+	New(*option.Options, ...option.Option) node.Node
 }
 
 type SubserverPlugin interface {
