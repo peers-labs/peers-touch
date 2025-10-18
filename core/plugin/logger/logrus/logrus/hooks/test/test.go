@@ -7,7 +7,7 @@ import (
 	"io/ioutil"
 	"sync"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
+	"github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus/logrus"
 )
 
 // Hook is a hook designed for dealing with logs in test scenarios.

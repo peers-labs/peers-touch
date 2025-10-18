@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
+	"github.com/peers-touch/peers-touch-go/core/util/log"
 	dk "github.com/sasha-s/go-deadlock"
 )
 

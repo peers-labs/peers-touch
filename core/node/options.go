@@ -3,15 +3,15 @@ package node
 import (
 	"sync"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/client"
-	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
-	"github.com/dirty-bro-tech/peers-touch-go/core/transport"
+	"github.com/peers-touch/peers-touch-go/core/client"
+	"github.com/peers-touch/peers-touch-go/core/cmd"
+	"github.com/peers-touch/peers-touch-go/core/config"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/registry"
+	"github.com/peers-touch/peers-touch-go/core/server"
+	"github.com/peers-touch/peers-touch-go/core/store"
+	"github.com/peers-touch/peers-touch-go/core/transport"
 )
 
 type serviceOptionsKey struct{}

@@ -1,11 +1,11 @@
 package logrus
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	scfg "github.com/dirty-bro-tech/peers-touch-go/core/peers/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
+	"github.com/peers-touch/peers-touch-go/core/config"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	scfg "github.com/peers-touch/peers-touch-go/core/peers/config"
+	"github.com/peers-touch/peers-touch-go/core/plugin"
+	"github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus/logrus"
 )
 
 var options struct {

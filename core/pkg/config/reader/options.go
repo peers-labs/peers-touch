@@ -1,12 +1,12 @@
 package reader
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder/hcl"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder/json"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder/toml"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder/xml"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder/yaml"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/encoder"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/encoder/hcl"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/encoder/json"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/encoder/toml"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/encoder/xml"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/encoder/yaml"
 )
 
 type Options struct {

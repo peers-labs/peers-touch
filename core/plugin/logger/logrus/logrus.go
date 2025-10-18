@@ -6,10 +6,10 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	sLog "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/lumberjack.v2"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	sLog "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus/logrus"
+	"github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus/lumberjack.v2"
 )
 
 var (

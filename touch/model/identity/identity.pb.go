@@ -1051,7 +1051,7 @@ const file_identity_proto_rawDesc = "" +
 	"\x15CredentialListRequest\x124\n" +
 	"\asubject\x18\x01 \x01(\v2\x1a.peers_touch.v2.IdentityIDR\asubject\"V\n" +
 	"\x16CredentialListResponse\x12<\n" +
-	"\vcredentials\x18\x01 \x03(\v2\x1a.peers_touch.v2.CredentialR\vcredentialsB9Z7github.com/dirty-bro-tech/peers-touch-go/model/v2/identityb\x06proto3"
+	"\vcredentials\x18\x01 \x03(\v2\x1a.peers_touch.v2.CredentialR\vcredentialsB9Z7github.com/peers-touch/peers-touch-go/model/v2/identityb\x06proto3"
 
 var (
 	file_identity_proto_rawDescOnce sync.Once

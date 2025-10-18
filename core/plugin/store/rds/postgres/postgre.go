@@ -1,7 +1,7 @@
 package postgres
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
+	"github.com/peers-touch/peers-touch-go/core/store"
 	"gorm.io/driver/postgres"
 )
 

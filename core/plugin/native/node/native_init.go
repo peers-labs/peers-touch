@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/client"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
+	"github.com/peers-touch/peers-touch-go/core/client"
+	"github.com/peers-touch/peers-touch-go/core/config"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/plugin"
+	"github.com/peers-touch/peers-touch-go/core/registry"
+	"github.com/peers-touch/peers-touch-go/core/server"
+	"github.com/peers-touch/peers-touch-go/core/util/log"
 )
 
 // Init initialises options. Additionally, it calls cmd.Init

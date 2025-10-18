@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	ls "github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/lumberjack.v2"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	ls "github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus/logrus"
+	"github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus/lumberjack.v2"
 )
 
 func prepareLevelHooks(ctx context.Context, opts logger.PersistenceOptions, l ls.Level) ls.LevelHooks {

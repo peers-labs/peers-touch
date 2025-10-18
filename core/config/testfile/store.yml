@@ -2,12 +2,12 @@ peers:
   store:
     rds:
       gorm:
-        # see github.com/dirty-bro-tech/peers-touch-go/core/store/rds/sqlite
+        # see github.com/peers-touch/peers-touch-go/core/store/rds/sqlite
         - name: sqlite
           default: true
           enable: true
           dsn: file:peers.db?cache=shared&_fk=1
-        # see github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/postgres
+        # see github.com/peers-touch/peers-touch-go/core/plugin/store/rds/postgres
         - name: postgres
           enable: false
           default: true

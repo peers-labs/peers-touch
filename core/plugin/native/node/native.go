@@ -7,15 +7,15 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/client"
-	"github.com/dirty-bro-tech/peers-touch-go/core/cmd"
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/node"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/peers/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
+	"github.com/peers-touch/peers-touch-go/core/client"
+	"github.com/peers-touch/peers-touch-go/core/cmd"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/node"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/peers/config"
+	"github.com/peers-touch/peers-touch-go/core/registry"
+	"github.com/peers-touch/peers-touch-go/core/server"
+	"github.com/peers-touch/peers-touch-go/core/util/log"
 )
 
 var (

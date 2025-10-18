@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
+	"github.com/peers-touch/peers-touch-go/core/store"
+	"github.com/peers-touch/peers-touch-go/touch/model/db"
 )
 
 // AuthMethod represents different authentication methods

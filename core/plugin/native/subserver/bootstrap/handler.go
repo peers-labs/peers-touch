@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/subserver/bootstrap/model"
-	"github.com/dirty-bro-tech/peers-touch-go/touch"
-	pm "github.com/dirty-bro-tech/peers-touch-go/touch/model"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/peers-touch/peers-touch-go/core/plugin/native/subserver/bootstrap/model"
+	"github.com/peers-touch/peers-touch-go/touch"
+	pm "github.com/peers-touch/peers-touch-go/touch/model"
 )
 
 // listPeerInfos processes the HTTP request and returns peer info

@@ -3,9 +3,9 @@ package native
 import (
 	"context"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/peers-touch/peers-touch-go/core/logger"
 )
 
 var (

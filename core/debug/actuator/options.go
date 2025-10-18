@@ -1,8 +1,8 @@
 package actuator
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/registry"
 )
 
 type debugServerOptionsKey struct{}

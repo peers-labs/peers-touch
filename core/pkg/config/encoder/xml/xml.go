@@ -3,7 +3,7 @@ package xml
 import (
 	"encoding/xml"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/encoder"
 )
 
 type xmlEncoder struct{}

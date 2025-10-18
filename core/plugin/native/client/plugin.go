@@ -1,10 +1,10 @@
 package client
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/client"
-	"github.com/dirty-bro-tech/peers-touch-go/core/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
+	"github.com/peers-touch/peers-touch-go/core/client"
+	"github.com/peers-touch/peers-touch-go/core/config"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/plugin"
 )
 
 var options struct {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
+	"github.com/peers-touch/peers-touch-go/core/registry"
+	"github.com/peers-touch/peers-touch-go/core/util/id"
 	"gorm.io/gorm"
 )
 

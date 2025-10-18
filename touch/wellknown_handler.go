@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/webfinger"
+	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/server"
+	"github.com/peers-touch/peers-touch-go/touch/model"
+	"github.com/peers-touch/peers-touch-go/touch/webfinger"
 )
 
 // WellKnownHandlerInfo represents a single handler's information

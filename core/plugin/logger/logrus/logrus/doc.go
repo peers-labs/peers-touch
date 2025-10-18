@@ -6,7 +6,7 @@ The simplest way to use Logrus is simply the package-level exported logger:
 	package main
 
 	import (
-	  log "github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
+	  log "github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus/logrus"
 	)
 
 	func main() {

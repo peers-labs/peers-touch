@@ -4,8 +4,8 @@ package memory
 import (
 	"fmt"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/debug/log"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/ring"
+	"github.com/peers-touch/peers-touch-go/core/debug/log"
+	"github.com/peers-touch/peers-touch-go/core/util/ring"
 )
 
 var (

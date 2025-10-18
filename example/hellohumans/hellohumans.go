@@ -5,15 +5,15 @@ import (
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/dirty-bro-tech/peers-touch-go"
-	"github.com/dirty-bro-tech/peers-touch-go/core/debug/actuator"
-	"github.com/dirty-bro-tech/peers-touch-go/core/node"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/peers-touch/peers-touch-go"
+	"github.com/peers-touch/peers-touch-go/core/debug/actuator"
+	"github.com/peers-touch/peers-touch-go/core/node"
+	"github.com/peers-touch/peers-touch-go/core/server"
 
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/registry"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/store"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite"
+	_ "github.com/peers-touch/peers-touch-go/core/plugin/native"
+	_ "github.com/peers-touch/peers-touch-go/core/plugin/native/registry"
+	_ "github.com/peers-touch/peers-touch-go/core/plugin/native/store"
+	_ "github.com/peers-touch/peers-touch-go/core/plugin/store/rds/sqlite"
 )
 
 // helloRouterURL implements server.RouterURL for hello endpoints

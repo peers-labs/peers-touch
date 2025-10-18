@@ -1,7 +1,7 @@
 package turn
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/logger"
 	"github.com/pion/logging"
 )
 

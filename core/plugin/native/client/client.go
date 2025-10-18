@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/client"
-	"github.com/dirty-bro-tech/peers-touch-go/core/codec"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	native "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/transport"
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
-	"github.com/dirty-bro-tech/peers-touch-go/core/transport"
+	"github.com/peers-touch/peers-touch-go/core/client"
+	"github.com/peers-touch/peers-touch-go/core/codec"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	native "github.com/peers-touch/peers-touch-go/core/plugin/native/transport"
+	"github.com/peers-touch/peers-touch-go/core/registry"
+	"github.com/peers-touch/peers-touch-go/core/transport"
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"

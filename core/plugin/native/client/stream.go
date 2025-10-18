@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/client"
-	"github.com/dirty-bro-tech/peers-touch-go/core/codec"
-	"github.com/dirty-bro-tech/peers-touch-go/core/transport"
+	"github.com/peers-touch/peers-touch-go/core/client"
+	"github.com/peers-touch/peers-touch-go/core/codec"
+	"github.com/peers-touch/peers-touch-go/core/transport"
 )
 
 // libp2pStream implements the client.Stream interface

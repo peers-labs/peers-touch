@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
+	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/store"
+	"github.com/peers-touch/peers-touch-go/core/util/id"
+	"github.com/peers-touch/peers-touch-go/touch/model"
+	"github.com/peers-touch/peers-touch-go/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -78,15 +78,15 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 	// Part 2: Create actor profile with default values if missing
 	profile := db.ActorProfile{
 		ActorID: a.InternalID,
-		Email:   a.Email,      // Use actor's email
+		Email:   a.Email,        // Use actor's email
 		Gender:  db.GenderOther, // Default gender
-		PeersID: a.PeersActorID,  // Use the same peers actor ID
+		PeersID: a.PeersActorID, // Use the same peers actor ID
 	}
 
 	// Set default values for optional fields if not provided
 	profile.ProfilePhoto = "" // Default empty profile photo
-	profile.Region = ""      // Default empty region
-	profile.WhatsUp = ""     // Default empty what's up message
+	profile.Region = ""       // Default empty region
+	profile.WhatsUp = ""      // Default empty what's up message
 
 	if err = rds.Create(&profile).Error; err != nil {
 		log.Warnf(c, "[SignUp] Create profile err: %v", err)
@@ -160,7 +160,7 @@ func generateHash(password string) (string, error) {
 func generatePeersActorID(name string) string {
 	// Use snowflake ID to ensure uniqueness
 	snowflakeID := id.NextID()
-	
+
 	// Create a simple peers actor ID format: first 3 chars of name + timestamp suffix
 	prefix := ""
 	if len(name) >= 3 {
@@ -168,7 +168,7 @@ func generatePeersActorID(name string) string {
 	} else {
 		prefix = name
 	}
-	
+
 	// Remove non-alphanumeric characters and convert to lowercase
 	cleanPrefix := ""
 	for _, r := range prefix {
@@ -176,10 +176,10 @@ func generatePeersActorID(name string) string {
 			cleanPrefix += string(r)
 		}
 	}
-	
+
 	if cleanPrefix == "" {
 		cleanPrefix = "act"
 	}
-	
+
 	return fmt.Sprintf("%s_%d", cleanPrefix, snowflakeID%1000000)
 }

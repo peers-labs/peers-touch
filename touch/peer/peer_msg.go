@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
 	"github.com/google/uuid"
+	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/touch/model"
 )
 
 func TouchHiTo(c context.Context, param *model.TouchHiToParam) (string, error) {

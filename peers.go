@@ -4,11 +4,11 @@ import (
 	"context"
 	"sync"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/node"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	"github.com/dirty-bro-tech/peers-touch-go/object"
-	"github.com/dirty-bro-tech/peers-touch-go/touch"
+	"github.com/peers-touch/peers-touch-go/core/node"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/plugin"
+	"github.com/peers-touch/peers-touch-go/object"
+	"github.com/peers-touch/peers-touch-go/touch"
 )
 
 type Peer interface {

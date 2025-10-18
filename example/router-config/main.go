@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/dirty-bro-tech/peers-touch-go/touch"
+	"github.com/peers-touch/peers-touch-go/touch"
 )
 
 func main() {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
+	"github.com/peers-touch/peers-touch-go/touch/model"
 )
 
 // Add session structure

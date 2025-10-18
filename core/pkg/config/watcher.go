@@ -3,8 +3,8 @@ package config
 import (
 	"bytes"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/loader"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/reader"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/loader"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/reader"
 )
 
 // Watcher is the config watcher

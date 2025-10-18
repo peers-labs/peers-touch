@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	. "github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
+	. "github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus/logrus"
 	. "github.com/sirupsen/logrus/internal/testutils"
 )
 

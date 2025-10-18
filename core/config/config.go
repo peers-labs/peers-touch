@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/reader"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/reader"
+	"github.com/peers-touch/peers-touch-go/core/util/log"
 )
 
 var (
@@ -113,7 +113,7 @@ func NewConfig(opts ...option.Option) Config {
 func RegisterOptions(options ...interface{}) {
 	poolSync.Lock()
 	defer poolSync.Unlock()
-	
+
 	for _, o := range options {
 		val := reflect.ValueOf(o)
 		if val.Kind() != reflect.Ptr {

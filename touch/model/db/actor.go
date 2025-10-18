@@ -3,8 +3,8 @@ package db
 import (
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
-	"github.com/dirty-bro-tech/peers-touch-go/vendors/activitypub"
+	"github.com/peers-touch/peers-touch-go/core/util/id"
+	"github.com/peers-touch/peers-touch-go/vendors/activitypub"
 	"gorm.io/gorm"
 )
 

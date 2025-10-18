@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/server"
 )
 
 // Server is a golang native web server based on net/http.

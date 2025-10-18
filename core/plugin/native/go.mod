@@ -1,17 +1,17 @@
-module github.com/dirty-bro-tech/peers-touch-go/core/plugin/native
+module github.com/peers-touch/peers-touch-go/core/plugin/native
 
 go 1.24.0
 
 replace (
-	github.com/dirty-bro-tech/peers-touch-go => ../../../
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus => ../../../core/plugin/logger/logrus
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/server/hertz => ../../../core/plugin/server/hertz
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite => ../../../core/plugin/store/rds/sqlite
+	github.com/peers-touch/peers-touch-go => ../../../
+	github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus => ../../../core/plugin/logger/logrus
+	github.com/peers-touch/peers-touch-go/core/plugin/server/hertz => ../../../core/plugin/server/hertz
+	github.com/peers-touch/peers-touch-go/core/plugin/store/rds/sqlite => ../../../core/plugin/store/rds/sqlite
 )
 
 require (
 	github.com/cloudwego/hertz v0.9.5
-	github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250612165025-f866ebda0623
+	github.com/peers-touch/peers-touch-go v0.0.0-20250612165025-f866ebda0623
 	github.com/golang/protobuf v1.5.4
 	github.com/hashicorp/mdns v1.0.6
 	github.com/ipfs/boxo v0.34.0

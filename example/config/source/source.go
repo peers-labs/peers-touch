@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/config"
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
+	"github.com/peers-touch/peers-touch-go/core/config"
+	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/source/file"
 )
 
 type source struct {

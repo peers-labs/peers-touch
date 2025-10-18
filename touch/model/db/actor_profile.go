@@ -3,7 +3,7 @@ package db
 import (
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
+	"github.com/peers-touch/peers-touch-go/core/util/id"
 	"gorm.io/gorm"
 )
 
