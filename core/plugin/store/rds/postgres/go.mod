@@ -1,12 +1,12 @@
-module github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/postgres
+module github.com/peers-touch/peers-touch-go/core/plugin/store/rds/postgres
 
 go 1.23.10
 
 toolchain go1.24.0
 
-replace github.com/dirty-bro-tech/peers-touch-go => ../../../../..
+replace github.com/peers-touch/peers-touch-go => ../../../../..
 
-require github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250319154115-dcf7e4a01b62
+require github.com/peers-touch/peers-touch-go v0.0.0-20250319154115-dcf7e4a01b62
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

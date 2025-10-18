@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/registry"
 	"github.com/gorilla/mux"
+	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/registry"
 )
 
 // RegisterRegistryEndpoints registers all registry-related HTTP endpoints
@@ -16,7 +16,7 @@ func RegisterRegistryEndpoints(router *mux.Router) {
 	router.HandleFunc("/api/v1/peers/{id}", GetPeerHandler).Methods("GET")
 	router.HandleFunc("/api/v1/peers", RegisterPeerHandler).Methods("POST")
 	router.HandleFunc("/api/v1/peers/{id}", DeregisterPeerHandler).Methods("DELETE")
-	
+
 	// Registry management endpoints
 	router.HandleFunc("/api/v1/registry/status", GetRegistryStatusHandler).Methods("GET")
 }
@@ -48,37 +48,37 @@ type ErrorResponse struct {
 // ListPeersHandler handles GET /api/v1/peers
 func ListPeersHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
+
 	// Parse query parameters
 	var opts []registry.GetOption
-	
+
 	// Check for 'me' parameter
 	if r.URL.Query().Get("me") == "true" {
 		opts = append(opts, registry.GetMe())
 	}
-	
+
 	// Check for 'name' parameter
 	if name := r.URL.Query().Get("name"); name != "" {
 		opts = append(opts, registry.WithName(name))
 	}
-	
+
 	// Check for 'id' parameter
 	if id := r.URL.Query().Get("id"); id != "" {
 		opts = append(opts, registry.WithId(id))
 	}
-	
+
 	peers, err := registry.ListPeers(ctx, opts...)
 	if err != nil {
 		log.Errorf(ctx, "[ListPeersHandler] Failed to list peers: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to list peers", err.Error())
 		return
 	}
-	
+
 	response := ListPeersResponse{
 		Peers: peers,
 		Total: len(peers),
 	}
-	
+
 	respondWithJSON(w, http.StatusOK, response)
 }
 
@@ -87,12 +87,12 @@ func GetPeerHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	peerID := vars["id"]
-	
+
 	if peerID == "" {
 		respondWithError(w, http.StatusBadRequest, "Peer ID is required", "")
 		return
 	}
-	
+
 	peer, err := registry.GetPeer(ctx, registry.WithId(peerID))
 	if err != nil {
 		if registry.IsNotFound(err) {
@@ -103,36 +103,36 @@ func GetPeerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	
+
 	response := PeerResponse{
 		Peer: peer,
 	}
-	
+
 	respondWithJSON(w, http.StatusOK, response)
 }
 
 // RegisterPeerHandler handles POST /api/v1/peers
 func RegisterPeerHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
+
 	var peer registry.Peer
 	if err := json.NewDecoder(r.Body).Decode(&peer); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON payload", err.Error())
 		return
 	}
-	
+
 	// Validate required fields
 	if peer.ID == "" {
 		respondWithError(w, http.StatusBadRequest, "Peer ID is required", "")
 		return
 	}
-	
+
 	// Register the peer using the default registry
 	if registry.GetDefaultRegistry() == nil {
 		respondWithError(w, http.StatusServiceUnavailable, "No registry available", "")
 		return
 	}
-	
+
 	err := registry.GetDefaultRegistry().Register(ctx, &peer)
 	if err != nil {
 		if registry.IsPeerExists(err) {
@@ -143,11 +143,11 @@ func RegisterPeerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	
+
 	response := PeerResponse{
 		Peer: &peer,
 	}
-	
+
 	respondWithJSON(w, http.StatusCreated, response)
 }
 
@@ -156,12 +156,12 @@ func DeregisterPeerHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	peerID := vars["id"]
-	
+
 	if peerID == "" {
 		respondWithError(w, http.StatusBadRequest, "Peer ID is required", "")
 		return
 	}
-	
+
 	// Get the peer first
 	peer, err := registry.GetPeer(ctx, registry.WithId(peerID))
 	if err != nil {
@@ -173,20 +173,20 @@ func DeregisterPeerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	
+
 	// Deregister the peer
 	if registry.GetDefaultRegistry() == nil {
 		respondWithError(w, http.StatusServiceUnavailable, "No registry available", "")
 		return
 	}
-	
+
 	err = registry.GetDefaultRegistry().Deregister(ctx, peer)
 	if err != nil {
 		log.Errorf(ctx, "[DeregisterPeerHandler] Failed to deregister peer %s: %v", peerID, err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to deregister peer", err.Error())
 		return
 	}
-	
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -197,7 +197,7 @@ func GetRegistryStatusHandler(w http.ResponseWriter, r *http.Request) {
 		RegistryCount:      len(registry.GetRegistries()),
 		Namespace:          registry.DefaultPeersNetworkNamespace,
 	}
-	
+
 	respondWithJSON(w, http.StatusOK, response)
 }
 
@@ -206,7 +206,7 @@ func GetRegistryStatusHandler(w http.ResponseWriter, r *http.Request) {
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	
+
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}

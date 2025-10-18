@@ -5,7 +5,7 @@ import (
 	"flag"
 	"strings"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/cli"
+	"github.com/peers-touch/peers-touch-go/core/pkg/cli"
 )
 
 func copyFlag(name string, ff *flag.Flag, set *flag.FlagSet) {

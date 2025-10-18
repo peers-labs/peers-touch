@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/storage"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/storage"
 )
 
 const _perm = 0644

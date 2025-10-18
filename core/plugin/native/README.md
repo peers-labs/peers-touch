@@ -8,7 +8,7 @@ just need to import the package like side-effect initialization
 
 ```golang
 import (
-    _ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
+    _ "github.com/peers-touch/peers-touch-go/core/plugin/native"
 )
 ```
 

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
+	"github.com/peers-touch/peers-touch-go/touch/model/db"
 )
 
 // JWTProvider implements JWT authentication

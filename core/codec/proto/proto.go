@@ -4,8 +4,8 @@ package proto
 import (
 	"io"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/codec"
 	"github.com/golang/protobuf/proto"
+	"github.com/peers-touch/peers-touch-go/core/codec"
 )
 
 func init() {

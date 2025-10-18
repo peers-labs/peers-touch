@@ -5,8 +5,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/option"
 )
 
 // BaseServer is the base server for all servers.

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/config"
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/user"
+	"github.com/peers-touch/peers-touch-go/core/config"
+	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/store"
+	"github.com/peers-touch/peers-touch-go/touch/model"
+	"github.com/peers-touch/peers-touch-go/touch/model/db"
+	"github.com/peers-touch/peers-touch-go/touch/user"
 )
 
 // DiscoverUser discovers a user by WebFinger resource and returns a WebFinger response

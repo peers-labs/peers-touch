@@ -3,8 +3,8 @@ package log
 import (
 	"sync"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/ring"
 	"github.com/google/uuid"
+	"github.com/peers-touch/peers-touch-go/core/util/ring"
 )
 
 // Should stream from OS

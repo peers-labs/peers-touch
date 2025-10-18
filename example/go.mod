@@ -1,17 +1,17 @@
-module github.com/dirty-bro-tech/peers-touch-go/example
+module github.com/peers-touch/peers-touch-go/example
 
 go 1.24.0
 
 replace (
-	github.com/dirty-bro-tech/peers-touch-go => ../
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native => ../core/plugin/native
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite => ../core/plugin/store/rds/sqlite
+	github.com/peers-touch/peers-touch-go => ../
+	github.com/peers-touch/peers-touch-go/core/plugin/native => ../core/plugin/native
+	github.com/peers-touch/peers-touch-go/core/plugin/store/rds/sqlite => ../core/plugin/store/rds/sqlite
 )
 
 require (
 	github.com/cloudwego/hertz v0.9.5
-	github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250612165025-f866ebda0623
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native v0.0.0-00010101000000-000000000000
+	github.com/peers-touch/peers-touch-go v0.0.0-20250612165025-f866ebda0623
+	github.com/peers-touch/peers-touch-go/core/plugin/native v0.0.0-00010101000000-000000000000
 	github.com/hashicorp/mdns v1.0.6
 	github.com/libp2p/go-libp2p v0.43.0
 	github.com/libp2p/go-libp2p-kad-dht v0.34.0
@@ -42,7 +42,7 @@ require (
 	github.com/cloudwego/netpoll v0.6.4 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0
+	github.com/peers-touch/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect

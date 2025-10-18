@@ -3,9 +3,9 @@ package bootstrap
 import (
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/peers-touch/peers-touch-go/core/option"
 )
 
 type optionsKey struct{}

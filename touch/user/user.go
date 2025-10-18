@@ -1,7 +1,7 @@
 package user
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
+	"github.com/peers-touch/peers-touch-go/touch/model/db"
 	"gorm.io/gorm"
 )
 

@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
+	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/touch/model"
 )
 
 type stream struct {

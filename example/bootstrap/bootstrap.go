@@ -3,19 +3,19 @@ package main
 import (
 	"context"
 
-	"github.com/dirty-bro-tech/peers-touch-go"
-	"github.com/dirty-bro-tech/peers-touch-go/core/debug/actuator"
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/node"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/registry"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/peers-touch/peers-touch-go"
+	"github.com/peers-touch/peers-touch-go/core/debug/actuator"
+	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/node"
+	"github.com/peers-touch/peers-touch-go/core/plugin/native/registry"
+	"github.com/peers-touch/peers-touch-go/core/server"
 
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/registry"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/store"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite"
+	_ "github.com/peers-touch/peers-touch-go/core/plugin/native"
+	_ "github.com/peers-touch/peers-touch-go/core/plugin/native/registry"
+	_ "github.com/peers-touch/peers-touch-go/core/plugin/native/store"
+	_ "github.com/peers-touch/peers-touch-go/core/plugin/store/rds/sqlite"
 )
 
 func main() {

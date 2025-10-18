@@ -15,7 +15,7 @@ This package provides a libp2p-based client implementation for the peers-touch-g
 ### Basic Client
 
 ```go
-import "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/client"
+import "github.com/peers-touch/peers-touch-go/core/plugin/native/client"
 
 // Create a basic client
 client := client.NewClient()
@@ -30,7 +30,7 @@ if err != nil {
 ```go
 import (
     "context"
-    "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/client"
+    "github.com/peers-touch/peers-touch-go/core/plugin/native/client"
 )
 
 // Create a NodeClient with DHT and Registry

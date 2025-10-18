@@ -1,7 +1,7 @@
 package touch
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/peers-touch/peers-touch-go/core/server"
 )
 
 const (

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
+	"github.com/peers-touch/peers-touch-go/touch/model"
+	"github.com/peers-touch/peers-touch-go/touch/model/db"
 	"gorm.io/gorm"
 )
 

@@ -7,15 +7,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/pkg/mdns"
-	native "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/registry"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/plugin/native/pkg/mdns"
+	native "github.com/peers-touch/peers-touch-go/core/plugin/native/registry"
+	"github.com/peers-touch/peers-touch-go/core/server"
+	"github.com/peers-touch/peers-touch-go/core/store"
 )
 
 var (

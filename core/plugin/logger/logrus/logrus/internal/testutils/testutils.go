@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	. "github.com/dirty-bro-tech/peers-touch-go/core/plugin/logger/logrus/logrus"
+	. "github.com/peers-touch/peers-touch-go/core/plugin/logger/logrus/logrus"
 
 	"github.com/stretchr/testify/require"
 )

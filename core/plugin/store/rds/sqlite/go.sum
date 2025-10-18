@@ -1,5 +1,5 @@
-github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250319154115-dcf7e4a01b62 h1:J/utm0vTCArynosgcB0rFcgYWI+d+MpX74Q6uRcsMtw=
-github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250319154115-dcf7e4a01b62/go.mod h1:MVTliN6PfOmd8B2k1lKhf1DrPOJUpk1EjuK3oJS6BYA=
+github.com/peers-touch/peers-touch-go v0.0.0-20250319154115-dcf7e4a01b62 h1:J/utm0vTCArynosgcB0rFcgYWI+d+MpX74Q6uRcsMtw=
+github.com/peers-touch/peers-touch-go v0.0.0-20250319154115-dcf7e4a01b62/go.mod h1:MVTliN6PfOmd8B2k1lKhf1DrPOJUpk1EjuK3oJS6BYA=
 github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
 github.com/jinzhu/now v1.1.5 h1:/o9tlHleP7gOFmsnYNz3RGnqzefHA47wQpKrrdTIwXQ=

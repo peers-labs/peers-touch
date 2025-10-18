@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/env"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/source/env"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/source/file"
 )
 
 func createFile(t *testing.T, content string, format string) *os.File {

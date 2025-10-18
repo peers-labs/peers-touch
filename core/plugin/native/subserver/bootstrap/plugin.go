@@ -3,11 +3,11 @@ package bootstrap
 import (
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/peers-touch/peers-touch-go/core/config"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/plugin"
+	"github.com/peers-touch/peers-touch-go/core/server"
 )
 
 var bootstrapOptions struct {

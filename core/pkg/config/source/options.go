@@ -1,10 +1,10 @@
 package source
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/cli"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/encoder/json"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/pkg/cli"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/encoder"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/encoder/json"
 )
 
 type sourceOptionsKey struct{}

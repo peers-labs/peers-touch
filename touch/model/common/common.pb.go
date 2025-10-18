@@ -697,7 +697,7 @@ const file_common_proto_rawDesc = "" +
 	"\x15HEALTH_STATUS_UNKNOWN\x10\x00\x12\x19\n" +
 	"\x15HEALTH_STATUS_HEALTHY\x10\x01\x12\x1a\n" +
 	"\x16HEALTH_STATUS_DEGRADED\x10\x02\x12\x1b\n" +
-	"\x17HEALTH_STATUS_UNHEALTHY\x10\x03B7Z5github.com/dirty-bro-tech/peers-touch-go/model/v2/commonb\x06proto3"
+	"\x17HEALTH_STATUS_UNHEALTHY\x10\x03B7Z5github.com/peers-touch/peers-touch-go/model/v2/commonb\x06proto3"
 
 var (
 	file_common_proto_rawDescOnce sync.Once

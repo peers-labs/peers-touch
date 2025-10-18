@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/codec"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
+	"github.com/peers-touch/peers-touch-go/core/codec"
 )
 
 var (

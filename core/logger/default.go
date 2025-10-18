@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/debug/log"
+	"github.com/peers-touch/peers-touch-go/core/debug/log"
 )
 
 // TODO no explicitly

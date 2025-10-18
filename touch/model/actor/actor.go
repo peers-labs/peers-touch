@@ -2,7 +2,7 @@ package actor
 
 import (
 	"context"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
+	"github.com/peers-touch/peers-touch-go/touch/model/db"
 )
 
 // Actor represents an actor in the system

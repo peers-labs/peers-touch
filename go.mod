@@ -1,4 +1,4 @@
-module github.com/dirty-bro-tech/peers-touch-go
+module github.com/peers-touch/peers-touch-go
 
 go 1.23.10
 

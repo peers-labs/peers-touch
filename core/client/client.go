@@ -5,8 +5,8 @@ package client
 import (
 	"context"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/codec"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/codec"
+	"github.com/peers-touch/peers-touch-go/core/option"
 )
 
 // Client is an interface that represents a client.

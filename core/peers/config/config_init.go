@@ -5,14 +5,14 @@ import (
 	"os"
 	"strings"
 
-	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
-	"github.com/dirty-bro-tech/peers-touch-go/core/node"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
-	cliSource "github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/cli"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source/file"
-	uf "github.com/dirty-bro-tech/peers-touch-go/core/util/file"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
+	cfg "github.com/peers-touch/peers-touch-go/core/config"
+	"github.com/peers-touch/peers-touch-go/core/node"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/source"
+	cliSource "github.com/peers-touch/peers-touch-go/core/pkg/config/source/cli"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/source/file"
+	uf "github.com/peers-touch/peers-touch-go/core/util/file"
+	"github.com/peers-touch/peers-touch-go/core/util/log"
 	yaml "gopkg.in/yaml.v2"
 )
 

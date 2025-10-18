@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	log "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model"
-	"github.com/dirty-bro-tech/peers-touch-go/touch/model/db"
+	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/store"
+	"github.com/peers-touch/peers-touch-go/core/util/id"
+	"github.com/peers-touch/peers-touch-go/touch/model"
+	"github.com/peers-touch/peers-touch-go/touch/model/db"
 	"gorm.io/gorm"
 )
 

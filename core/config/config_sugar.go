@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/reader"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/reader"
 )
 
 var (

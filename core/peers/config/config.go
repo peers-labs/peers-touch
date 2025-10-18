@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	cfg "github.com/dirty-bro-tech/peers-touch-go/core/config"
-	lg "github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	pp "github.com/dirty-bro-tech/peers-touch-go/core/node"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin"
-	ser "github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/log"
+	cfg "github.com/peers-touch/peers-touch-go/core/config"
+	lg "github.com/peers-touch/peers-touch-go/core/logger"
+	pp "github.com/peers-touch/peers-touch-go/core/node"
+	"github.com/peers-touch/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/plugin"
+	ser "github.com/peers-touch/peers-touch-go/core/server"
+	"github.com/peers-touch/peers-touch-go/core/util/log"
 )
 
 var (

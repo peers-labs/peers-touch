@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/reader"
-	"github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/reader"
+	"github.com/peers-touch/peers-touch-go/core/pkg/config/source"
 )
 
 // Watcher lets you watch sources and returns a merged ChangeSet

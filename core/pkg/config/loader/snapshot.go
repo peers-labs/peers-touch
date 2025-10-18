@@ -1,6 +1,6 @@
 package loader
 
-import "github.com/dirty-bro-tech/peers-touch-go/core/pkg/config/source"
+import "github.com/peers-touch/peers-touch-go/core/pkg/config/source"
 
 // Snapshot is a merged ChangeSet
 type Snapshot struct {

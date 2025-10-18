@@ -9,18 +9,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peers-touch/peers-touch-go/core/store"
 	"github.com/sony/sonyflake"
-	"github.com/dirty-bro-tech/peers-touch-go/core/store"
 )
 
 // IDType defines the type of ID generation method
 type IDType int
 
 const (
-	IDTypeTiming IDType = iota // Timing-based IDs using Sonyflake
-	IDTypeReadable             // Human-readable unique IDs
-	IDTypeRandom               // Cryptographically secure random IDs
-	IDTypeSonyflake            // Sonyflake distributed ID generator
+	IDTypeTiming    IDType = iota // Timing-based IDs using Sonyflake
+	IDTypeReadable                // Human-readable unique IDs
+	IDTypeRandom                  // Cryptographically secure random IDs
+	IDTypeSonyflake               // Sonyflake distributed ID generator
 )
 
 // StoreMode defines how IDs are stored
@@ -28,7 +28,7 @@ type StoreMode int
 
 const (
 	StoreModeRealTime StoreMode = iota // Real-time computing, no store layer
-	StoreModeDB                     // Database mode, uses store layer
+	StoreModeDB                        // Database mode, uses store layer
 )
 
 // String returns string representation of IDType
@@ -200,17 +200,17 @@ var defaultOptions = IDOptions{
 // Usage: id.NextID(id.WithTiming()) or id.NextID(id.WithSonyflake())
 func NextID(opts ...Option) uint64 {
 	options := applyOptions(opts)
-	
+
 	// Validate compatibility
 	if options.IDType == IDTypeReadable || options.IDType == IDTypeRandom {
 		panic(fmt.Sprintf("NextID() cannot be used with %s ID type. Use NextIDS() instead.", options.IDType))
 	}
-	
+
 	// Handle store mode
 	if options.StoreMode == StoreModeDB {
 		return handleDBStoreID(options)
 	}
-	
+
 	// Real-time mode
 	var id uint64
 	switch options.IDType {
@@ -223,7 +223,7 @@ func NextID(opts ...Option) uint64 {
 	default:
 		panic(fmt.Sprintf("unsupported ID type for NextID: %s", options.IDType))
 	}
-	
+
 	return id
 }
 
@@ -233,30 +233,30 @@ func NextID(opts ...Option) uint64 {
 // For IDTypeReadable and IDTypeRandom, generates appropriate string formats
 func NextIDS(opts ...Option) string {
 	options := applyOptions(opts)
-	
+
 	// Handle store mode
 	if options.StoreMode == StoreModeDB {
 		return handleDBStoreStringID(options)
 	}
-	
+
 	// Real-time mode
 	var idStr string
-	
+
 	switch options.IDType {
 	case IDTypeTiming, IDTypeSonyflake:
 		id := NextID(opts...)
 		idStr = strconv.FormatUint(id, 10)
-		
+
 	case IDTypeReadable:
 		idStr = generateReadableID(options)
-		
+
 	case IDTypeRandom:
 		idStr = generateRandomID(options)
-		
+
 	default:
 		panic(fmt.Sprintf("unsupported ID type: %s", options.IDType))
 	}
-	
+
 	// Apply prefix and suffix
 	if options.Prefix != "" {
 		idStr = options.Prefix + idStr
@@ -264,7 +264,7 @@ func NextIDS(opts ...Option) string {
 	if options.Suffix != "" {
 		idStr = idStr + options.Suffix
 	}
-	
+
 	return idStr
 }
 
@@ -273,23 +273,23 @@ func handleDBStoreID(options IDOptions) uint64 {
 	if options.Context == nil {
 		panic("context is required when StoreModeDB is used")
 	}
-	
+
 	// Get store instance
 	st, err := store.GetStore(options.Context)
 	if err != nil {
 		panic(fmt.Sprintf("failed to get store: %v", err))
 	}
-	
+
 	// Use store for logging/debugging
 	_ = st
-	
+
 	// For now, use Sonyflake for numeric IDs
 	// Future: integrate with store-specific ID generation
 	id, err := flake.NextID()
 	if err != nil {
 		panic(fmt.Sprintf("failed to generate Sonyflake ID: %v", err))
 	}
-	
+
 	return id
 }
 
@@ -298,51 +298,51 @@ func handleDBStoreStringID(options IDOptions) string {
 	if options.Context == nil {
 		panic("context is required when StoreModeDB is used")
 	}
-	
+
 	// Get store instance
 	st, err := store.GetStore(options.Context)
 	if err != nil {
 		panic(fmt.Sprintf("failed to get store: %v", err))
 	}
-	
+
 	// Use store for logging/debugging
 	_ = st
-	
+
 	// Generate ID based on type
 	var idStr string
-	
+
 	switch options.IDType {
 	case IDTypeTiming, IDTypeSonyflake:
 		id := handleDBStoreID(options)
 		idStr = strconv.FormatUint(id, 10)
-		
+
 	case IDTypeReadable:
 		idStr = generateReadableID(options)
-		
+
 	case IDTypeRandom:
 		idStr = generateRandomID(options)
-		
+
 	default:
 		panic(fmt.Sprintf("unsupported ID type: %s", options.IDType))
 	}
-	
+
 	return idStr
 }
 
 // generateReadableID creates human-readable IDs
 func generateReadableID(opts IDOptions) string {
 	parts := []string{}
-	
+
 	// Add random readable part
 	randomPart := generateReadableRandom(opts.Length)
 	parts = append(parts, randomPart)
-	
+
 	// Add timestamp if enabled
 	if opts.Timestamp {
 		timestamp := time.Now().Format("20060102-150405")
 		parts = append(parts, timestamp)
 	}
-	
+
 	return strings.Join(parts, opts.Separator)
 }
 
@@ -350,7 +350,7 @@ func generateReadableID(opts IDOptions) string {
 func generateReadableRandom(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	result := make([]byte, length)
-	
+
 	for i := 0; i < length; i++ {
 		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		if err != nil {
@@ -358,7 +358,7 @@ func generateReadableRandom(length int) string {
 		}
 		result[i] = charset[num.Int64()]
 	}
-	
+
 	return string(result)
 }
 
@@ -366,7 +366,7 @@ func generateReadableRandom(length int) string {
 func generateRandomID(opts IDOptions) string {
 	const charset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	result := make([]byte, opts.Length)
-	
+
 	for i := 0; i < opts.Length; i++ {
 		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		if err != nil {
@@ -374,7 +374,7 @@ func generateRandomID(opts IDOptions) string {
 		}
 		result[i] = charset[num.Int64()]
 	}
-	
+
 	return string(result)
 }
 
@@ -438,16 +438,16 @@ func storeIDInDB(ctx context.Context, id uint64, idType IDType) error {
 	if ctx == nil {
 		return nil
 	}
-	
+
 	// Get store from context
 	st, err := store.GetStore(ctx)
 	if err != nil {
 		return err
 	}
-	
+
 	// Use store for logging/debugging
 	_ = st
-	
+
 	// TODO: Implement actual storage logic based on your requirements
 	// For now, we just return nil
 	return nil
@@ -458,16 +458,16 @@ func storeStringIDInDB(ctx context.Context, id string, idType IDType) error {
 	if ctx == nil {
 		return nil
 	}
-	
+
 	// Get store from context
 	st, err := store.GetStore(ctx)
 	if err != nil {
 		return err
 	}
-	
+
 	// Use store for logging/debugging
 	_ = st
-	
+
 	// TODO: Implement actual storage logic based on your requirements
 	// For now, we just return nil
 	return nil

@@ -3,8 +3,8 @@ package model
 import (
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/util/id"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/peers-touch/peers-touch-go/core/util/id"
 	"gorm.io/gorm"
 )
 

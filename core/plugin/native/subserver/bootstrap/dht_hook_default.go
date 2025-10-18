@@ -3,9 +3,9 @@ package bootstrap
 import (
 	"context"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/peers-touch/peers-touch-go/core/logger"
 )
 
 func init() {

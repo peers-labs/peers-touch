@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/logger"
-	"github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/subserver/bootstrap/model"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/peers-touch/peers-touch-go/core/plugin/native/subserver/bootstrap/model"
 )
 
 var (

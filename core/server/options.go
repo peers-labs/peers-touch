@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
+	"github.com/peers-touch/peers-touch-go/core/option"
 )
 
 // region server options
@@ -74,7 +74,7 @@ func WithRouters(routers ...Routers) option.Option {
 		for _, router := range routers {
 			routerName := router.Name()
 			handlers := router.Handlers()
-			
+
 			// Create new handlers with router name prefixed to path
 			for _, handler := range handlers {
 				var prefixedPath string

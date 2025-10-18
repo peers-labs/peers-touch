@@ -7,9 +7,9 @@
 package communication
 
 import (
-	_ "github.com/dirty-bro-tech/peers-touch-go/model/v2/common"
-	connection "github.com/dirty-bro-tech/peers-touch-go/model/v2/connection"
-	identity "github.com/dirty-bro-tech/peers-touch-go/model/v2/identity"
+	_ "github.com/peers-touch/peers-touch-go/model/v2/common"
+	connection "github.com/peers-touch/peers-touch-go/model/v2/connection"
+	identity "github.com/peers-touch/peers-touch-go/model/v2/identity"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -2116,7 +2116,7 @@ const file_communication_proto_rawDesc = "" +
 	"\x13MESSAGE_STATUS_SENT\x10\x02\x12\x1c\n" +
 	"\x18MESSAGE_STATUS_DELIVERED\x10\x03\x12\x1f\n" +
 	"\x1bMESSAGE_STATUS_ACKNOWLEDGED\x10\x04\x12\x19\n" +
-	"\x15MESSAGE_STATUS_FAILED\x10\x05B>Z<github.com/dirty-bro-tech/peers-touch-go/model/v2/communicationb\x06proto3"
+	"\x15MESSAGE_STATUS_FAILED\x10\x05B>Z<github.com/peers-touch/peers-touch-go/model/v2/communicationb\x06proto3"
 
 var (
 	file_communication_proto_rawDescOnce sync.Once
