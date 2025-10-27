@@ -1,221 +1,402 @@
 package peer
 
 import (
-	"encoding/json"
+	"context"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
-	"github.com/gorilla/mux"
-	log "github.com/peers-touch/peers-touch-go/core/logger"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/peers-touch/peers-touch-go/core/logger"
 	"github.com/peers-touch/peers-touch-go/core/registry"
+	"github.com/peers-touch/peers-touch-go/touch/model"
 )
 
-// RegisterRegistryEndpoints registers all registry-related HTTP endpoints
-func RegisterRegistryEndpoints(router *mux.Router) {
-	// Peer management endpoints
-	router.HandleFunc("/api/v1/peers", ListPeersHandler).Methods("GET")
-	router.HandleFunc("/api/v1/peers/{id}", GetPeerHandler).Methods("GET")
-	router.HandleFunc("/api/v1/peers", RegisterPeerHandler).Methods("POST")
-	router.HandleFunc("/api/v1/peers/{id}", DeregisterPeerHandler).Methods("DELETE")
-
-	// Registry management endpoints
-	router.HandleFunc("/api/v1/registry/status", GetRegistryStatusHandler).Methods("GET")
+// RegisterRegistryEndpoints 注册节点注册中心相关的路由端点
+func RegisterRegistryEndpoints() []model.Endpoint {
+	return []model.Endpoint{
+		{
+			Method:  "GET",
+			Path:    "/nodes",
+			Handler: ListNodesHandler,
+		},
+		{
+			Method:  "GET",
+			Path:    "/nodes/:id",
+			Handler: GetNodeHandler,
+		},
+		{
+			Method:  "POST",
+			Path:    "/nodes",
+			Handler: RegisterNodeHandler,
+		},
+		{
+			Method:  "PUT",
+			Path:    "/nodes/:id",
+			Handler: UpdateNodeHandler,
+		},
+		{
+			Method:  "DELETE",
+			Path:    "/nodes/:id",
+			Handler: UnregisterNodeHandler,
+		},
+		{
+			Method:  "POST",
+			Path:    "/nodes/:id/heartbeat",
+			Handler: HeartbeatHandler,
+		},
+		{
+			Method:  "GET",
+			Path:    "/nodes/stats",
+			Handler: GetNodeStatsHandler,
+		},
+	}
 }
 
-// ListPeersResponse represents the response for listing peers
-type ListPeersResponse struct {
-	Peers []*registry.Peer `json:"peers"`
+// 全局节点注册中心实例
+var nodeRegistry *registry.NodeRegistry
+
+// InitNodeRegistry 初始化节点注册中心
+func InitNodeRegistry(storage registry.NodeStorage) {
+	if storage == nil {
+		storage = registry.NewMemoryStorage()
+	}
+	nodeRegistry = registry.NewNodeRegistry(storage)
+}
+
+// GetNodeRegistry 获取节点注册中心实例
+func GetNodeRegistry() *registry.NodeRegistry {
+	if nodeRegistry == nil {
+		InitNodeRegistry(nil)
+	}
+	return nodeRegistry
+}
+
+// NodeListResponse 节点列表响应
+type NodeListResponse struct {
+	Nodes []*registry.Node `json:"nodes"`
 	Total int              `json:"total"`
+	Page  int              `json:"page"`
+	Size  int              `json:"size"`
 }
 
-// PeerResponse represents a single peer response
-type PeerResponse struct {
-	Peer *registry.Peer `json:"peer"`
+// RegisterNodeRequest 注册节点请求
+type RegisterNodeRequest struct {
+	ID           string                 `json:"id" binding:"required"`
+	Name         string                 `json:"name" binding:"required"`
+	Addresses    []string               `json:"addresses" binding:"required"`
+	Capabilities []string               `json:"capabilities"`
+	Metadata     map[string]interface{} `json:"metadata"`
 }
 
-// RegistryStatusResponse represents registry status
-type RegistryStatusResponse struct {
-	HasDefaultRegistry bool   `json:"has_default_registry"`
-	RegistryCount      int    `json:"registry_count"`
-	Namespace          string `json:"namespace"`
+// UpdateNodeRequest 更新节点请求
+type UpdateNodeRequest struct {
+	Name         string                 `json:"name"`
+	Addresses    []string               `json:"addresses"`
+	Capabilities []string               `json:"capabilities"`
+	Metadata     map[string]interface{} `json:"metadata"`
 }
 
-// ErrorResponse represents an error response
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message,omitempty"`
-}
+// ListNodesHandler 处理 GET /nodes - 列出节点
+func ListNodesHandler(ctx context.Context, c *app.RequestContext) {
+	// 解析查询参数
+	limitStr := c.Query("limit")
+	offsetStr := c.Query("offset")
+	status := c.Query("status")
+	capabilities := c.Query("capabilities")
+	onlineOnly := c.Query("online_only")
 
-// ListPeersHandler handles GET /api/v1/peers
-func ListPeersHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	limit := 20 // 默认限制
+	offset := 0 // 默认偏移
 
-	// Parse query parameters
-	var opts []registry.GetOption
-
-	// Check for 'me' parameter
-	if r.URL.Query().Get("me") == "true" {
-		opts = append(opts, registry.GetMe())
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 100 {
+			limit = parsedLimit
+		}
 	}
 
-	// Check for 'name' parameter
-	if name := r.URL.Query().Get("name"); name != "" {
-		opts = append(opts, registry.WithName(name))
+	if offsetStr != "" {
+		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
 	}
 
-	// Check for 'id' parameter
-	if id := r.URL.Query().Get("id"); id != "" {
-		opts = append(opts, registry.WithId(id))
+	// 构建过滤器
+	filter := &registry.NodeFilter{
+		Limit:  limit,
+		Offset: offset,
 	}
 
-	peers, err := registry.ListPeers(ctx, opts...)
+	if status != "" {
+		statusList := strings.Split(status, ",")
+		for _, s := range statusList {
+			switch strings.TrimSpace(s) {
+			case "online":
+				filter.Status = append(filter.Status, registry.NodeStatusOnline)
+			case "offline":
+				filter.Status = append(filter.Status, registry.NodeStatusOffline)
+			case "inactive":
+				filter.Status = append(filter.Status, registry.NodeStatusInactive)
+			}
+		}
+	}
+
+	if capabilities != "" {
+		filter.Capabilities = strings.Split(capabilities, ",")
+		for i, cap := range filter.Capabilities {
+			filter.Capabilities[i] = strings.TrimSpace(cap)
+		}
+	}
+
+	if onlineOnly == "true" {
+		filter.OnlineOnly = true
+	}
+
+	// 获取节点列表
+	nr := GetNodeRegistry()
+	nodes, total, err := nr.ListNodes(ctx, filter)
 	if err != nil {
-		log.Errorf(ctx, "[ListPeersHandler] Failed to list peers: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to list peers", err.Error())
+		logger.Errorf(ctx, "Failed to list nodes: %v", err)
+		c.JSON(http.StatusInternalServerError, model.NewFailedResponse(
+			"500",
+			"Failed to list nodes",
+			model.NewError("500", err.Error()),
+		))
 		return
 	}
 
-	response := ListPeersResponse{
-		Peers: peers,
-		Total: len(peers),
+	page := offset/limit + 1
+	response := &NodeListResponse{
+		Nodes: nodes,
+		Total: total,
+		Page:  page,
+		Size:  len(nodes),
 	}
 
-	respondWithJSON(w, http.StatusOK, response)
+	c.JSON(http.StatusOK, model.NewSuccessResponse("success", response))
 }
 
-// GetPeerHandler handles GET /api/v1/peers/{id}
-func GetPeerHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	vars := mux.Vars(r)
-	peerID := vars["id"]
-
-	if peerID == "" {
-		respondWithError(w, http.StatusBadRequest, "Peer ID is required", "")
+// GetNodeHandler 处理 GET /nodes/:id - 获取单个节点
+func GetNodeHandler(ctx context.Context, c *app.RequestContext) {
+	nodeID := c.Param("id")
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, model.NewFailedResponse(
+			"400",
+			"node ID is required",
+			model.UndefinedError(fmt.Errorf("missing node ID")),
+		))
 		return
 	}
 
-	peer, err := registry.GetPeer(ctx, registry.WithId(peerID))
+	nr := GetNodeRegistry()
+	node, err := nr.GetNode(ctx, nodeID)
 	if err != nil {
-		if registry.IsNotFound(err) {
-			respondWithError(w, http.StatusNotFound, "Peer not found", err.Error())
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, model.NewFailedResponse(
+				"404",
+				fmt.Sprintf("node not found: %s", nodeID),
+				model.NewError("404", err.Error()),
+			))
 		} else {
-			log.Errorf(ctx, "[GetPeerHandler] Failed to get peer %s: %v", peerID, err)
-			respondWithError(w, http.StatusInternalServerError, "Failed to get peer", err.Error())
+			logger.Errorf(ctx, "Failed to get node %s: %v", nodeID, err)
+			c.JSON(http.StatusInternalServerError, model.NewFailedResponse(
+				"500",
+				"Failed to get node",
+				model.NewError("500", err.Error()),
+			))
 		}
 		return
 	}
 
-	response := PeerResponse{
-		Peer: peer,
-	}
-
-	respondWithJSON(w, http.StatusOK, response)
+	c.JSON(http.StatusOK, model.NewSuccessResponse("success", node))
 }
 
-// RegisterPeerHandler handles POST /api/v1/peers
-func RegisterPeerHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	var peer registry.Peer
-	if err := json.NewDecoder(r.Body).Decode(&peer); err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid JSON payload", err.Error())
+// RegisterNodeHandler 处理 POST /nodes - 注册新节点
+func RegisterNodeHandler(ctx context.Context, c *app.RequestContext) {
+	var req RegisterNodeRequest
+	if err := c.BindAndValidate(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.NewFailedResponse(
+			"400",
+			"Invalid request body",
+			model.NewError("400", err.Error()),
+		))
 		return
 	}
 
-	// Validate required fields
-	if peer.ID == "" {
-		respondWithError(w, http.StatusBadRequest, "Peer ID is required", "")
+	// 创建节点对象
+	node := &registry.Node{
+		ID:           req.ID,
+		Name:         req.Name,
+		Addresses:    req.Addresses,
+		Capabilities: req.Capabilities,
+		Metadata:     req.Metadata,
+		Status:       registry.NodeStatusOnline,
+		LastSeenAt:   time.Now(),
+		HeartbeatAt:  time.Now(),
+		RegisteredAt: time.Now(),
+	}
+
+	nr := GetNodeRegistry()
+	if err := nr.Register(ctx, node); err != nil {
+		logger.Errorf(ctx, "Failed to register node %s: %v", req.ID, err)
+		c.JSON(http.StatusInternalServerError, model.NewFailedResponse(
+			"500",
+			"Failed to register node",
+			model.NewError("500", err.Error()),
+		))
 		return
 	}
 
-	// Register the peer using the default registry
-	if registry.GetDefaultRegistry() == nil {
-		respondWithError(w, http.StatusServiceUnavailable, "No registry available", "")
+	logger.Infof(ctx, "Node registered successfully: %s", req.ID)
+	c.JSON(http.StatusCreated, model.NewSuccessResponse("Node registered successfully", node))
+}
+
+// UpdateNodeHandler 处理 PUT /nodes/:id - 更新节点信息
+func UpdateNodeHandler(ctx context.Context, c *app.RequestContext) {
+	nodeID := c.Param("id")
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, model.NewFailedResponse(
+			"400",
+			"node ID is required",
+			model.NewError("400", "missing node ID"),
+		))
 		return
 	}
 
-	err := registry.GetDefaultRegistry().Register(ctx, &peer)
+	nr := GetNodeRegistry()
+	existingNode, err := nr.GetNode(ctx, nodeID)
 	if err != nil {
-		if registry.IsPeerExists(err) {
-			respondWithError(w, http.StatusConflict, "Peer already exists", err.Error())
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, model.NewFailedResponse(
+				"404",
+				fmt.Sprintf("node not found: %s", nodeID),
+				model.NewError("404", err.Error()),
+			))
 		} else {
-			log.Errorf(ctx, "[RegisterPeerHandler] Failed to register peer %s: %v", peer.ID, err)
-			respondWithError(w, http.StatusInternalServerError, "Failed to register peer", err.Error())
+			c.JSON(http.StatusInternalServerError, model.NewFailedResponse(
+				"500",
+				"Failed to get node",
+				model.NewError("500", err.Error()),
+			))
 		}
 		return
 	}
 
-	response := PeerResponse{
-		Peer: &peer,
-	}
-
-	respondWithJSON(w, http.StatusCreated, response)
-}
-
-// DeregisterPeerHandler handles DELETE /api/v1/peers/{id}
-func DeregisterPeerHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	vars := mux.Vars(r)
-	peerID := vars["id"]
-
-	if peerID == "" {
-		respondWithError(w, http.StatusBadRequest, "Peer ID is required", "")
+	var req UpdateNodeRequest
+	if err := c.BindAndValidate(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.NewFailedResponse(
+			"400",
+			"Invalid request body",
+			model.NewError("400", err.Error()),
+		))
 		return
 	}
 
-	// Get the peer first
-	peer, err := registry.GetPeer(ctx, registry.WithId(peerID))
-	if err != nil {
-		if registry.IsNotFound(err) {
-			respondWithError(w, http.StatusNotFound, "Peer not found", err.Error())
+	// 更新节点信息
+	if req.Name != "" {
+		existingNode.Name = req.Name
+	}
+	if len(req.Addresses) > 0 {
+		existingNode.Addresses = req.Addresses
+	}
+	if len(req.Capabilities) > 0 {
+		existingNode.Capabilities = req.Capabilities
+	}
+	if req.Metadata != nil {
+		existingNode.Metadata = req.Metadata
+	}
+	existingNode.LastSeenAt = time.Now()
+
+	if err := nr.Register(ctx, existingNode); err != nil {
+		logger.Errorf(ctx, "Failed to update node %s: %v", nodeID, err)
+		c.JSON(http.StatusInternalServerError, model.NewFailedResponse(
+			"500",
+			"Failed to update node",
+			model.NewError("500", err.Error()),
+		))
+		return
+	}
+
+	logger.Infof(ctx, "Node updated successfully: %s", nodeID)
+	c.JSON(http.StatusOK, model.NewSuccessResponse("Node updated successfully", existingNode))
+}
+
+// UnregisterNodeHandler 处理 DELETE /nodes/:id - 注销节点
+func UnregisterNodeHandler(ctx context.Context, c *app.RequestContext) {
+	nodeID := c.Param("id")
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, model.NewFailedResponse(
+			"400",
+			"node ID is required",
+			model.NewError("400", "missing node ID"),
+		))
+		return
+	}
+
+	nr := GetNodeRegistry()
+	if err := nr.Deregister(ctx, nodeID); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, model.NewFailedResponse(
+				"404",
+				fmt.Sprintf("node not found: %s", nodeID),
+				model.NewError("404", err.Error()),
+			))
 		} else {
-			log.Errorf(ctx, "[DeregisterPeerHandler] Failed to get peer %s: %v", peerID, err)
-			respondWithError(w, http.StatusInternalServerError, "Failed to get peer", err.Error())
+			logger.Errorf(ctx, "Failed to unregister node %s: %v", nodeID, err)
+			c.JSON(http.StatusInternalServerError, model.NewFailedResponse(
+				"500",
+				"Failed to unregister node",
+				model.NewError("500", err.Error()),
+			))
 		}
 		return
 	}
 
-	// Deregister the peer
-	if registry.GetDefaultRegistry() == nil {
-		respondWithError(w, http.StatusServiceUnavailable, "No registry available", "")
+	logger.Infof(ctx, "Node unregistered successfully: %s", nodeID)
+	c.JSON(http.StatusOK, model.NewSuccessResponse("Node unregistered successfully", nil))
+}
+
+// HeartbeatHandler 处理 POST /nodes/:id/heartbeat - 节点心跳
+func HeartbeatHandler(ctx context.Context, c *app.RequestContext) {
+	nodeID := c.Param("id")
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, model.NewFailedResponse(
+			"400",
+			"node ID is required",
+			model.NewError("400", "missing node ID"),
+		))
 		return
 	}
 
-	err = registry.GetDefaultRegistry().Deregister(ctx, peer)
+	nr := GetNodeRegistry()
+	if err := nr.Heartbeat(ctx, nodeID); err != nil {
+		logger.Errorf(ctx, "Failed to update heartbeat for node %s: %v", nodeID, err)
+		c.JSON(http.StatusInternalServerError, model.NewFailedResponse(
+			"500",
+			"Failed to update heartbeat",
+			model.NewError("500", err.Error()),
+		))
+		return
+	}
+
+	c.JSON(http.StatusOK, model.NewSuccessResponse("Heartbeat updated successfully", nil))
+}
+
+// GetNodeStatsHandler 处理 GET /nodes/stats - 获取节点统计信息
+func GetNodeStatsHandler(ctx context.Context, c *app.RequestContext) {
+	nr := GetNodeRegistry()
+	stats, err := nr.GetStats(ctx)
 	if err != nil {
-		log.Errorf(ctx, "[DeregisterPeerHandler] Failed to deregister peer %s: %v", peerID, err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to deregister peer", err.Error())
+		logger.Errorf(ctx, "Failed to get node stats: %v", err)
+		c.JSON(http.StatusInternalServerError, model.NewFailedResponse(
+			"500",
+			"Failed to get node statistics",
+			model.NewError("500", err.Error()),
+		))
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// GetRegistryStatusHandler handles GET /api/v1/registry/status
-func GetRegistryStatusHandler(w http.ResponseWriter, r *http.Request) {
-	response := RegistryStatusResponse{
-		HasDefaultRegistry: registry.GetDefaultRegistry() != nil,
-		RegistryCount:      len(registry.GetRegistries()),
-		Namespace:          registry.DefaultPeersNetworkNamespace,
-	}
-
-	respondWithJSON(w, http.StatusOK, response)
-}
-
-// Helper functions
-
-func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-	}
-}
-
-func respondWithError(w http.ResponseWriter, code int, message, details string) {
-	errorResp := ErrorResponse{
-		Error:   message,
-		Message: details,
-	}
-	respondWithJSON(w, code, errorResp)
+	c.JSON(http.StatusOK, model.NewSuccessResponse("success", stats))
 }

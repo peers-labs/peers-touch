@@ -3,7 +3,10 @@ package touch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/peers-touch/peers-touch-go/core/logger"
@@ -17,10 +20,7 @@ const (
 	RouterURLSetPeerAddr    RouterPath = "/set-addr"
 	RouterURLGetMyPeerAddr  RouterPath = "/get-my-peer-info"
 	RouterURLTouchHiTo      RouterPath = "/touch-hi-to"
-	RouterURLListPeers      RouterPath = "/registry/peers"
-	RouterURLGetPeer        RouterPath = "/registry/peers/{id}"
-	RouterURLDeregisterPeer RouterPath = "/registry/peers/{id}"
-	RouterURLRegistryStatus RouterPath = "/registry/status"
+
 )
 
 type PeerRouters struct{}
@@ -131,86 +131,198 @@ func TouchHiToHandler(c context.Context, ctx *app.RequestContext) {
 
 // Registry endpoint handlers - these implement registry functionality using ctx directly
 
-// ListPeersHandler handles GET /peer/registry/peers
-func ListPeersHandler(c context.Context, ctx *app.RequestContext) {
+// ListNodesHandler handles GET /nodes - list nodes
+func ListNodesHandler(c context.Context, ctx *app.RequestContext) {
 	// Parse query parameters
-	var opts []registry.GetOption
+	limitStr := string(ctx.QueryArgs().Peek("limit"))
+	offsetStr := string(ctx.QueryArgs().Peek("offset"))
+	status := string(ctx.QueryArgs().Peek("status"))
+	capabilities := string(ctx.QueryArgs().Peek("capabilities"))
+	onlineOnly := string(ctx.QueryArgs().Peek("online_only"))
 
-	// Check for 'me' parameter
-	if string(ctx.QueryArgs().Peek("me")) == "true" {
-		opts = append(opts, registry.GetMe())
+	limit := 20 // default limit
+	offset := 0 // default offset
+
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 100 {
+			limit = parsedLimit
+		}
 	}
 
-	// Check for 'name' parameter
-	if name := string(ctx.QueryArgs().Peek("name")); name != "" {
-		opts = append(opts, registry.WithName(name))
+	if offsetStr != "" {
+		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
 	}
 
-	// Check for 'id' parameter
-	if id := string(ctx.QueryArgs().Peek("id")); id != "" {
-		opts = append(opts, registry.WithId(id))
+	// Build filter
+	filter := &registry.NodeFilter{
+		Limit:  limit,
+		Offset: offset,
 	}
 
-	peers, err := registry.ListPeers(c, opts...)
+	if status != "" {
+		statusList := strings.Split(status, ",")
+		for _, s := range statusList {
+			switch strings.TrimSpace(s) {
+			case "online":
+				filter.Status = append(filter.Status, registry.NodeStatusOnline)
+			case "offline":
+				filter.Status = append(filter.Status, registry.NodeStatusOffline)
+			case "inactive":
+				filter.Status = append(filter.Status, registry.NodeStatusInactive)
+			}
+		}
+	}
+
+	if capabilities != "" {
+		filter.Capabilities = strings.Split(capabilities, ",")
+		for i, cap := range filter.Capabilities {
+			filter.Capabilities[i] = strings.TrimSpace(cap)
+		}
+	}
+
+	if onlineOnly == "true" {
+		filter.OnlineOnly = true
+	}
+
+	// Get node registry and list nodes
+	nr := peer.GetNodeRegistry()
+	nodes, total, err := nr.ListNodes(c, filter)
 	if err != nil {
-		log.Errorf(c, "[ListPeersHandler] Failed to list peers: %v", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"error":   "Failed to list peers",
-			"message": err.Error(),
-		})
+		log.Errorf(c, "Failed to list nodes: %v", err)
+		FailedResponse(ctx, err)
 		return
 	}
 
-	response := map[string]interface{}{
-		"peers": peers,
-		"total": len(peers),
-	}
-
-	ctx.JSON(http.StatusOK, response)
+	page := offset/limit + 1
+	SuccessResponse(ctx, "Nodes listed successfully", map[string]interface{}{
+		"nodes": nodes,
+		"total": total,
+		"page":  page,
+		"size":  len(nodes),
+	})
 }
 
-// GetPeerHandler handles GET /peer/registry/peers/{id}
-func GetPeerHandler(c context.Context, ctx *app.RequestContext) {
-	peerID := ctx.Param("id")
+// GetNodeHandler handles GET /nodes/{id} - get single node
+func GetNodeHandler(c context.Context, ctx *app.RequestContext) {
+	nodeID := ctx.Param("id")
 
-	if peerID == "" {
-		ctx.JSON(http.StatusBadRequest, map[string]interface{}{
-			"error": "Peer ID is required",
-		})
+	if nodeID == "" {
+		FailedResponse(ctx, errors.New("node id is required"))
 		return
 	}
 
-	peer, err := registry.GetPeer(c, registry.WithId(peerID))
+	nr := peer.GetNodeRegistry()
+	node, err := nr.GetNode(c, nodeID)
 	if err != nil {
-		if registry.IsNotFound(err) {
+		if strings.Contains(err.Error(), "not found") {
 			ctx.JSON(http.StatusNotFound, map[string]interface{}{
-				"error":   "Peer not found",
-				"message": err.Error(),
+				"code": http.StatusNotFound,
+				"msg":  fmt.Sprintf("node not found: %s", nodeID),
 			})
 		} else {
-			log.Errorf(c, "[GetPeerHandler] Failed to get peer %s: %v", peerID, err)
-			ctx.JSON(http.StatusInternalServerError, map[string]interface{}{
-				"error":   "Failed to get peer",
-				"message": err.Error(),
-			})
+			log.Errorf(c, "Failed to get node %s: %v", nodeID, err)
+			FailedResponse(ctx, err)
 		}
 		return
 	}
 
-	response := map[string]interface{}{
-		"peer": peer,
-	}
-
-	ctx.JSON(http.StatusOK, response)
+	SuccessResponse(ctx, "Node retrieved", map[string]interface{}{
+		"node": node,
+	})
 }
 
-// RegistryStatusHandler handles GET /peer/registry/status
-func RegistryStatusHandler(c context.Context, ctx *app.RequestContext) {
-	response := map[string]interface{}{
-		"has_default_registry": registry.GetDefaultRegistry() != nil,
-		"registry_count":       len(registry.GetRegistries()),
-		"namespace":            registry.DefaultPeersNetworkNamespace,
+
+
+// RegisterNodeHandler handles POST /nodes - register node
+func RegisterNodeHandler(c context.Context, ctx *app.RequestContext) {
+	var req struct {
+		Name         string                 `json:"name" binding:"required"`
+		Version      string                 `json:"version" binding:"required"`
+		Capabilities []string               `json:"capabilities"`
+		Metadata     map[string]interface{} `json:"metadata"`
+		PublicKey    string                 `json:"public_key"`
+		Addresses    []string               `json:"addresses" binding:"required"`
+		Port         int                    `json:"port" binding:"required"`
 	}
 
-	ctx.JSON(http.StatusOK, response)
+	if err := ctx.Bind(&req); err != nil {
+		log.Errorf(c, "Failed to bind JSON: %v", err)
+		FailedResponse(ctx, err)
+		return
+	}
+
+	// Validate request parameters
+	if req.Name == "" {
+		FailedResponse(ctx, errors.New("node name is required"))
+		return
+	}
+
+	if req.Version == "" {
+		FailedResponse(ctx, errors.New("node version is required"))
+		return
+	}
+
+	if len(req.Addresses) == 0 {
+		FailedResponse(ctx, errors.New("at least one address is required"))
+		return
+	}
+
+	if req.Port <= 0 || req.Port > 65535 {
+		FailedResponse(ctx, errors.New("invalid port number"))
+		return
+	}
+
+	// Create node object
+	node := &registry.Node{
+		Name:         req.Name,
+		Version:      req.Version,
+		Capabilities: req.Capabilities,
+		Metadata:     req.Metadata,
+		PublicKey:    req.PublicKey,
+		Addresses:    req.Addresses,
+		Port:         req.Port,
+	}
+
+	// Register node
+	nr := peer.GetNodeRegistry()
+	if err := nr.Register(c, node); err != nil {
+		log.Errorf(c, "Failed to register node: %v", err)
+		FailedResponse(ctx, err)
+		return
+	}
+
+	log.Infof(c, "Successfully registered node: %s", node.ID)
+
+	SuccessResponse(ctx, "Node registered successfully", map[string]interface{}{
+		"node": node,
+	})
+}
+
+// DeregisterNodeHandler handles DELETE /nodes/{id} - deregister node
+func DeregisterNodeHandler(c context.Context, ctx *app.RequestContext) {
+	nodeID := ctx.Param("id")
+	if nodeID == "" {
+		FailedResponse(ctx, errors.New("node id is required"))
+		return
+	}
+
+	nr := peer.GetNodeRegistry()
+	if err := nr.Deregister(c, nodeID); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, map[string]interface{}{
+				"code": http.StatusNotFound,
+				"msg":  fmt.Sprintf("node not found: %s", nodeID),
+			})
+		} else {
+			log.Errorf(c, "Failed to deregister node %s: %v", nodeID, err)
+			FailedResponse(ctx, err)
+		}
+		return
+	}
+
+	log.Infof(c, "Successfully deregistered node: %s", nodeID)
+
+	SuccessResponse(ctx, "Node deregistered successfully", map[string]string{"id": nodeID})
 }
