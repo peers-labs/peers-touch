@@ -38,23 +38,6 @@ func GetPeerHandlers() []PeerHandlerInfo {
 			Method:    server.POST,
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
-		{
-			RouterURL: RouterURLListPeers,
-			Handler:   ListPeersHandler,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper},
-		},
-		{
-			RouterURL: RouterURLGetPeer,
-			Handler:   GetPeerHandler,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper},
-		},
-		{
-			RouterURL: RouterURLRegistryStatus,
-			Handler:   RegistryStatusHandler,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper},
-		},
+
 	}
 }
