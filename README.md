@@ -1,4 +1,6 @@
-# [WIP]Peers-Touch-Go
+# [WIP] Peers-Touch-Go
+
+Peers 是一款去中心化的社交网络与个人的 AI 服务开发框架。它提供了一个基于 ActivityPub 协议的社交网络，允许用户在网络中创建个人账号、发布内容、与其他用户互动。同时，Peers 还提供了一个 AI 扩展，该AI
 
 An implementation of the [W3C ActivityPub](https://www.w3.org/TR/activitypub/) protocol in Go.
 
