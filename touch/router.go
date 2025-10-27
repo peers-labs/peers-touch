@@ -16,7 +16,7 @@ const (
 	RoutersNameManagement  = "management"
 	RoutersNameActivityPub = "activitypub"
 	RoutersNameWellKnown   = ".well-known"
-	RoutersNameActor       = "actor"
+	RoutersNameUser        = "user"
 	RoutersNamePeer        = "peer"
 )
 
@@ -51,8 +51,8 @@ func CommonAccessControlWrapper(routerFamilyName string) server.Wrapper {
 				isEnabled = routerConfig.ActivityPub
 			case RoutersNameWellKnown:
 				isEnabled = routerConfig.WellKnown
-			case RoutersNameActor:
-				isEnabled = routerConfig.Actor
+			case RoutersNameUser:
+				isEnabled = routerConfig.User
 			case RoutersNamePeer:
 				isEnabled = routerConfig.Peer
 			default:
