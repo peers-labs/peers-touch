@@ -1,0 +1,41 @@
+peers:
+  includes: store.yml, turn.yml, bootstrap.yml
+  run-mode: 2
+  config:
+    hierarchy-merge: true
+  service:
+    server:
+      name: "hertz"
+      address: :9081
+      metadata:
+        name: "foo"
+        value: "qux"
+      native:
+        enabled: true
+        some-key: "some-value"
+      hertz:
+        enabled: true
+        some-key: "some-value"
+    registry:
+      interval: 180s
+      turn:
+        enabled: false
+        server-addresses:
+          - freestun.net:3478
+        method: long-term
+        long-term:
+          username: free
+          password: free
+          realm: peers-touch
+        short-term:
+          username: free
+          password: free
+      native:
+        mdns-enable: true
+        bootstrap-enable: true
+        libp2p-identity-key-file: client.key
+        bootstrap-listen-addrs:
+          - /ip4/0.0.0.0/tcp/33333
+        bootstrap-nodes:
+          -
+    

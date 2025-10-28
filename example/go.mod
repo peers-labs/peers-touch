@@ -10,18 +10,17 @@ replace (
 
 require (
 	github.com/cloudwego/hertz v0.9.5
-	github.com/peers-touch/peers-touch-go v0.0.0-20250612165025-f866ebda0623
-	github.com/peers-touch/peers-touch-go/core/plugin/native v0.0.0-00010101000000-000000000000
 	github.com/hashicorp/mdns v1.0.6
 	github.com/libp2p/go-libp2p v0.43.0
 	github.com/libp2p/go-libp2p-kad-dht v0.34.0
+	github.com/libp2p/go-libp2p-record v0.3.1
+	github.com/peers-touch/peers-touch-go v0.0.0-20250612165025-f866ebda0623
+	github.com/peers-touch/peers-touch-go/core/plugin/native v0.0.0-00010101000000-000000000000
 )
 
 require (
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
-	github.com/gorilla/mux v1.8.1 // indirect
-	github.com/libp2p/go-libp2p-record v0.3.1 // indirect
 	github.com/multiformats/go-multiaddr v0.16.1 // indirect
 	golang.org/x/time v0.12.0 // indirect
 )
@@ -42,7 +41,6 @@ require (
 	github.com/cloudwego/netpoll v0.6.4 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
-	github.com/peers-touch/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
@@ -103,7 +101,8 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
-	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
+	github.com/peers-touch/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0
+	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
 	github.com/pion/dtls/v3 v3.0.6 // indirect
@@ -131,7 +130,7 @@ require (
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
 	github.com/quic-go/webtransport-go v0.9.0 // indirect
-	github.com/sasha-s/go-deadlock v0.3.5 // indirect
+	github.com/sasha-s/go-deadlock v0.3.6 // indirect
 	github.com/sony/sonyflake v1.2.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect

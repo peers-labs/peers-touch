@@ -34,8 +34,8 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
-	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
-	github.com/sasha-s/go-deadlock v0.3.5 // indirect
+	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
+	github.com/sasha-s/go-deadlock v0.3.6 // indirect
 	github.com/sony/sonyflake v1.2.1 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect

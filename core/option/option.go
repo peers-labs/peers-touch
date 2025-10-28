@@ -72,6 +72,10 @@ func (o *Options) AppendCtx(key interface{}, value interface{}) {
 	return
 }
 
+func (o *Options) GetExtOptions() any {
+	return o.ExtOptions
+}
+
 type Option func(o *Options)
 
 // WithRootCtx sets the context

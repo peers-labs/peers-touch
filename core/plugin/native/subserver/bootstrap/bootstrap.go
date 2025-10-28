@@ -7,13 +7,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-touch/peers-touch-go/core/logger"
 	"github.com/peers-touch/peers-touch-go/core/option"
 	"github.com/peers-touch/peers-touch-go/core/plugin/native/pkg/mdns"
-	native "github.com/peers-touch/peers-touch-go/core/plugin/native/registry"
 	"github.com/peers-touch/peers-touch-go/core/server"
 	"github.com/peers-touch/peers-touch-go/core/store"
 )
@@ -73,12 +75,13 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		return
 	}
 
-	// Use the shared libp2p host from registry instead of creating a new one
-	s.host, s.dht = native.GetLibp2pHost()
-	if s.host == nil {
-		err = errors.New("[Init] failed to get libp2p host from registry - registry may not be initialized")
+	// Create a new dedicated libp2p host for bootstrap subserver using injected options
+	err = s.createBootstrapHost(ctx)
+	if err != nil {
+		err = fmt.Errorf("[Init] failed to create bootstrap host: %w", err)
 		return
 	}
+
 	notifee := &libp2pHostNotifee{
 		SubServer: s,
 	}
@@ -98,6 +101,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 				return nil
 			},
 		}
+
 		s.mdnsService.RegisterCallback(callbackReg)
 
 		err = s.mdnsService.Start()
@@ -107,8 +111,12 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		s.mdnsService.StartPeriodicRefresh()
 	}
 
-	// Note: DHT is also obtained from the registry along with the host
-	// No need to create a separate DHT instance
+	// Create DHT instance for the bootstrap subserver
+	err = s.createBootstrapDHT(ctx)
+	if err != nil {
+		err = fmt.Errorf("[Init] failed to create bootstrap DHT: %w", err)
+		return
+	}
 
 	return
 }
@@ -170,10 +178,13 @@ func (s *SubServer) Stop(ctx context.Context) (err error) {
 		}
 	}()
 
-	err = s.dht.Close()
-	if err != nil {
-		err = fmt.Errorf("failed to close bootstrap dht: %w", err)
-		return err
+	// Close DHT first
+	if s.dht != nil {
+		err = s.dht.Close()
+		if err != nil {
+			err = fmt.Errorf("failed to close bootstrap dht: %w", err)
+			return err
+		}
 	}
 
 	// Unregister mDNS callbacks if enabled
@@ -182,11 +193,14 @@ func (s *SubServer) Stop(ctx context.Context) (err error) {
 		// Note: Don't close the singleton node as other components may be using it
 	}
 
-	err = s.host.Close()
-	if err != nil {
-		err = fmt.Errorf("failed to close bootstrap host: %w", err)
-		s.status = server.StatusError
-		return err
+	// Close the dedicated host
+	if s.host != nil {
+		err = s.host.Close()
+		if err != nil {
+			err = fmt.Errorf("failed to close bootstrap host: %w", err)
+			s.status = server.StatusError
+			return err
+		}
 	}
 
 	s.status = server.StatusStopped
@@ -245,4 +259,100 @@ func NewBootstrapServer(opts ...option.Option) server.Subserver {
 	}
 
 	return bootS
+}
+
+// createBootstrapHost creates a dedicated libp2p host for the bootstrap subserver using injected options
+func (s *SubServer) createBootstrapHost(ctx context.Context) error {
+	var hostOptions []libp2p.Option
+
+	// Use injected identity key if available, otherwise generate a new one
+	if s.opts.IdentityKey != nil {
+		hostOptions = append(hostOptions, libp2p.Identity(s.opts.IdentityKey))
+		logger.Infof(ctx, "Bootstrap subserver using injected identity key")
+	} else {
+		// Generate a new identity key for this bootstrap instance
+		privKey, _, err := crypto.GenerateEd25519Key(nil)
+		if err != nil {
+			return fmt.Errorf("failed to generate identity key: %w", err)
+		}
+		hostOptions = append(hostOptions, libp2p.Identity(privKey))
+		logger.Infof(ctx, "Bootstrap subserver generated new identity key")
+	}
+
+	// Use injected listen addresses if available
+	if len(s.opts.ListenAddrs) > 0 {
+		for _, addr := range s.opts.ListenAddrs {
+			listenAddr, err := multiaddr.NewMultiaddr(addr)
+			if err != nil {
+				return fmt.Errorf("invalid listen address %s: %w", addr, err)
+			}
+			hostOptions = append(hostOptions, libp2p.ListenAddrs(listenAddr))
+		}
+		logger.Infof(ctx, "Bootstrap subserver using %d injected listen addresses", len(s.opts.ListenAddrs))
+	} else {
+		// Default listen address if none provided
+		defaultAddr, err := multiaddr.NewMultiaddr("/ip4/0.0.0.0/tcp/0")
+		if err != nil {
+			return fmt.Errorf("failed to create default listen address: %w", err)
+		}
+		hostOptions = append(hostOptions, libp2p.ListenAddrs(defaultAddr))
+		logger.Infof(ctx, "Bootstrap subserver using default listen address")
+	}
+
+	// Add standard libp2p options for bootstrap functionality
+	hostOptions = append(hostOptions,
+		libp2p.EnableNATService(),
+		libp2p.EnableHolePunching(),
+		libp2p.EnableRelay(),
+	)
+
+	// Create the libp2p host
+	host, err := libp2p.New(hostOptions...)
+	if err != nil {
+		return fmt.Errorf("failed to create libp2p host: %w", err)
+	}
+
+	s.host = host
+	s.addrs = make([]string, len(host.Addrs()))
+	for i, addr := range host.Addrs() {
+		s.addrs[i] = addr.String()
+	}
+
+	logger.Infof(ctx, "Bootstrap subserver created host with ID: %s", host.ID().String())
+	logger.Infof(ctx, "Bootstrap subserver listening on addresses: %v", s.addrs)
+
+	return nil
+}
+
+// createBootstrapDHT creates a dedicated DHT instance for the bootstrap subserver
+func (s *SubServer) createBootstrapDHT(ctx context.Context) error {
+	var dhtOptions []dht.Option
+
+	// Set DHT mode to server for bootstrap functionality
+	dhtOptions = append(dhtOptions, dht.Mode(dht.ModeServer))
+
+	// Set protocol prefix for network isolation
+	dhtOptions = append(dhtOptions, dht.ProtocolPrefix("/peers-touch"))
+
+	// Use injected bootstrap nodes if available
+	for _, bn := range s.opts.BootstrapNodes {
+		info, err := peer.AddrInfoFromP2pAddr(bn)
+		if err != nil {
+			logger.Errorf(ctx, "failed to convert bootstrapper address to peer addr info", "address",
+				bn.String(), err, "err")
+			continue
+		}
+
+		dhtOptions = append(dhtOptions, dht.BootstrapPeers(*info))
+		logger.Infof(ctx, "Bootstrap subserver using %d configured bootstrap nodes", len(s.opts.BootstrapNodes))
+	}
+
+	// Create DHT instance
+	dhtInstance, err := dht.New(ctx, s.host, dhtOptions...)
+	if err != nil {
+		return fmt.Errorf("failed to create DHT: %w", err)
+	}
+
+	s.dht = dhtInstance
+	return nil
 }
