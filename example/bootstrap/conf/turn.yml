@@ -1,0 +1,10 @@
+peers:
+  node:
+    server:
+      subserver:
+        turn:
+          enabled: false
+          port: 3478
+          realm: peers-touch
+          public-ip: 0.0.0.0
+          auth-secret: your_auth_secret

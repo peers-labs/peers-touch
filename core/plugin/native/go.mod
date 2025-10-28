@@ -11,7 +11,6 @@ replace (
 
 require (
 	github.com/cloudwego/hertz v0.9.5
-	github.com/peers-touch/peers-touch-go v0.0.0-20250612165025-f866ebda0623
 	github.com/golang/protobuf v1.5.4
 	github.com/hashicorp/mdns v1.0.6
 	github.com/ipfs/boxo v0.34.0
@@ -23,6 +22,7 @@ require (
 	github.com/libp2p/go-libp2p-record v0.3.1
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/multiformats/go-multihash v0.2.3
+	github.com/peers-touch/peers-touch-go v0.0.0-20250612165025-f866ebda0623
 	github.com/pion/logging v0.2.4
 	github.com/pion/turn/v4 v4.1.1
 	github.com/stretchr/testify v1.10.0
@@ -107,7 +107,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
-	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
+	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
 	github.com/pion/dtls/v3 v3.0.6 // indirect
@@ -135,7 +135,7 @@ require (
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
 	github.com/quic-go/webtransport-go v0.9.0 // indirect
-	github.com/sasha-s/go-deadlock v0.3.5 // indirect
+	github.com/sasha-s/go-deadlock v0.3.6 // indirect
 	github.com/sony/sonyflake v1.2.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
