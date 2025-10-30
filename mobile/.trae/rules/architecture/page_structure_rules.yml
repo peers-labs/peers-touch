@@ -1,0 +1,24 @@
+page_structure:
+  navigation_bar:
+    height: "44px"  # 64px with status bar
+    background: "#FFFFFF"
+    title:
+      position: "centered"
+      font_size: "18px"
+      font_weight: 500
+    actions:
+      margin_from_edges: "16px"
+      spacing_between_buttons: "16px"
+  
+  bottom_tab_bar:
+    height: "56px"
+    background: "#FFFFFF"
+    tabs:
+      icon_size: "24px"
+      text_size: "12px"
+      icon_text_spacing: "4px"
+      layout: "icon (top) + text (bottom)"
+    selected_state:
+      color: "#4A9D7C"  # Applies to both icon and text
+    unselected_state:
+      color: "#7A8C86"

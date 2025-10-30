@@ -1,0 +1,5 @@
+validation_rules:
+  - "all_colors_must_use: values from 01_color_rules.yml (no custom colors allowed)"
+  - "all_dimensions_spacing: must be multiples of 8px"
+  - "components_must_match: specifications in 04_component_rules.yml"
+  - "interactions_must_include: click feedback from 06_interaction_rules.yml"

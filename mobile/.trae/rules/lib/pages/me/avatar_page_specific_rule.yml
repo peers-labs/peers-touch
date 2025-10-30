@@ -1,0 +1,16 @@
+# Example of a file-specific rule for avatar_change_page.dart
+rules:
+  - id: avatar-page-withopacity-rule
+    name: "Avatar Page withOpacity Rule"
+    description: "Ensure avatar_change_page.dart uses withOpacity correctly"
+    # Target only the avatar_change_page.dart file
+    target:
+      files:
+        - "lib/pages/me/avatar_change_page.dart"
+    pattern: "withOpacity\("
+    message: "In avatar_change_page.dart, use withValue instead of withOpacity for better performance"
+    severity: "warning"
+    # Example fix suggestion
+    fix:
+      find: "withOpacity(\$1)"
+      replace: "withValue(\$1)"

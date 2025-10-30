@@ -1,0 +1,167 @@
+# 个人主页布局与模块规则
+# Target file: lib/pages/me/me_profile.dart
+target:
+  files:
+    - "lib/pages/me/me_profile.dart"
+
+profile_page:
+  # 页面整体容器
+  container:
+    background_color: "ref(background.page)"  # 引用全局背景色
+    padding_top: "0px"  # 与顶部导航栏无缝衔接
+    padding_bottom: "80px"  # 预留底部标签栏空间
+
+  # 1. 顶部个人信息区
+  personal_info:
+    height: "200px"  # 含头像+背景区域总高
+    background:
+      type: "blurred_gradient"  # 模糊渐变背景
+      color: "#F5F5F5"  # 默认浅灰底
+    layout: "vertical_center"  # 内容垂直居中
+
+    # 1.1 头像与编辑入口
+    avatar_section:
+      position: "absolute"
+      top: "72px"
+      left: "50%"
+      transform: "translateX(-50%)"
+      avatar:
+        size: "100px"  # 标准大头像尺寸
+        border: "4px solid #FFFFFF"  # 白色边框
+        border_radius: "50%"  # 圆形头像
+      edit_icon:
+        position: "bottom-4px right-4px"  # 头像右下角
+        size: "28px"
+        background: "ref(primary.color)"  # 主色圆形背景
+        icon: "camera"  # 相机图标
+        color: "#FFFFFF"
+
+    # 1.2 基础信息展示
+    info_display:
+      position: "absolute"
+      top: "180px"
+      left: "50%"
+      transform: "translateX(-50%)"
+      text_alignment: "center"
+      spacing: "4px"  # 信息项间距
+
+      nickname:
+        font_size: "ref(typography.font_sizes.title)"  # 16px
+        font_weight: "500"
+        color: "ref(text.primary)"
+
+      user_id:
+        font_size: "ref(typography.font_sizes.subtitle)"  # 13px
+        color: "ref(text.secondary)"
+        prefix: "用户ID："  # 固定前缀
+
+      status:
+        font_size: "ref(typography.font_sizes.subtitle)"  # 13px
+        color: "ref(text.secondary)"
+        max_length: "20"  # 最多显示20字
+
+    # 1.3 操作菜单按钮
+    action_menu:
+      position: "absolute"
+      top: "16px"
+      right: "16px"
+      size: "40px"  # 点击热区
+      icon: "ellipsis"  # 三点菜单图标
+      color: "ref(text.primary)"
+      icon_size: "24px"
+
+  # 2. 功能模块区
+  feature_modules:
+    position: "relative"
+    top: "60px"  # 与信息区保持间距
+    padding: "0px ref(layout_spacing.page_margins)"  # 左右边距16px
+    spacing_between_modules: "16px"  # 模块间距
+
+    # 2.1 模块通用样式
+    module_base:
+      background: "ref(background.card)"  # 白色卡片背景
+      border_radius: "12px"  # 卡片圆角
+      shadow: "0 2px 8px rgba(0,0,0,0.05)"  # 轻微投影
+      overflow: "hidden"  # 内容不溢出
+
+    # 2.2 快捷功能网格
+    quick_access_grid:
+      type: "grid"  # 网格布局
+      row_count: "2"
+      column_count: "4"
+      padding: "16px 0px"
+      item_spacing: "8px"
+
+      function_item:
+        flex_direction: "column"  # 图标在上文字在下
+        align_items: "center"
+        icon:
+          size: "40px"
+          margin_bottom: "8px"
+        text:
+          font_size: "ref(typography.font_sizes.label)"  # 12px
+          color: "ref(text.primary)"
+
+    # 2.3 功能列表
+    feature_list:
+      type: "list"  # 列表布局
+      item_count: "5-7"  # 典型5-7个功能项
+      padding: "8px 0px"
+
+      list_item:
+        height: "56px"  # 标准列表项高度
+        padding: "0px ref(layout_spacing.page_margins)"
+        flex_direction: "row"  # 图标-文字-箭头布局
+        align_items: "center"
+        icon:
+          size: "24px"
+          margin_right: "16px"
+          color: "#5C5C5C"  # 中性图标色
+        text:
+          font_size: "ref(typography.font_sizes.body)"  # 15px
+          color: "ref(text.primary)"
+          flex_grow: "1"  # 占满剩余空间
+        arrow:
+          size: "24px"
+          color: "ref(text.secondary)"  # 浅灰箭头
+        divider:
+          display: "true"  # 显示分割线
+          height: "1px"
+          color: "ref(functional.divider)"
+          margin_left: "56px"  # 避开图标区域
+
+  # 3. 底部选项区
+  bottom_navigation:
+    position: "relative"
+    top: "80px"  # 与功能区保持间距
+    padding: "0px ref(layout_spacing.page_margins)"
+
+    module:
+      type: "list"
+      background: "ref(background.card)"
+      border_radius: "12px"
+      padding: "8px 0px"
+
+      list_item:
+        height: "56px"
+        padding: "0px ref(layout_spacing.page_margins)"
+        text:
+          font_size: "ref(typography.font_sizes.body)"  # 15px
+          color: "ref(text.primary)"
+        arrow:
+          size: "24px"
+          color: "ref(text.secondary)"
+        divider:
+          display: "false"  # 底部选项无分割线
+
+  # 4. 交互规则
+  interactions:
+    # 下拉刷新
+    pull_to_refresh:
+      indicator_color: "ref(primary.color)"  # 主色刷新指示器
+      background: "ref(background.page)"
+
+    # 点击反馈
+    item_click:
+      feedback: "ref(interaction.click_feedback)"  # 复用全局反馈
+      ripple_effect: "true"  # 水波纹效果

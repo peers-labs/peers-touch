@@ -1,0 +1,43 @@
+# Example of a module-specific rule
+rules:
+  - id: profile-page-layout-rule
+    name: "Profile Page Layout Rule"
+    description: "Specific layout rules for the profile page"
+    # Target specific file
+    target:
+      files:
+        - "lib/pages/me/profile_page.dart"
+    pattern: "Container\(\s*width:\s*[^,]+,\s*height:\s*[^,]+"
+    message: "In profile_page.dart, use SizedBox instead of Container for fixed dimensions"
+    severity: "warning"
+
+  - id: home-module-navigation-rule
+    name: "Home Module Navigation Rule"
+    description: "Navigation pattern for home module"
+    # Target specific module/directory
+    target:
+      directories:
+        - "lib/pages/home/**"
+    pattern: "Navigator.push\("
+    message: "In home module, use Get.to() instead of Navigator.push() for consistent navigation"
+    severity: "error"
+
+  - id: photo-controller-rule
+    name: "Photo Controller Implementation Rule"
+    description: "Rules for photo controller implementation"
+    # Target specific file with specific conditions
+    target:
+      files:
+        - "lib/controller/photo_controller.dart"
+    conditions:
+      - pattern: "class PhotoController"
+        required: true
+      - pattern: "extends GetxController"
+        required: true
+    # Multiple patterns to check
+    patterns:
+      - pattern: "final RxList<Photo>"
+        message: "Photo data should be stored in RxList"
+      - pattern: "void onInit\(\)"
+        message: "Must implement onInit() lifecycle method"
+    severity: "error"

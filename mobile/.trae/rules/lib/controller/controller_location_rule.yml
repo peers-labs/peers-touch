@@ -1,0 +1,7 @@
+rules:
+  - id: controller-in-controller-dir
+    description: "Controllers should be written in the controller directory"
+    pattern: "class.*Controller extends GetxController"
+    allowedPaths:
+      - "lib/controller/**/*.dart"
+    message: "Controllers must be placed in the 'lib/controller' directory"

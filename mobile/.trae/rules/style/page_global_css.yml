@@ -1,0 +1,22 @@
+# 全局颜色定义
+colors:
+  background:
+    page: "#FFFFFF"  # 页面背景
+    card: "#FFFFFF"  # 卡片背景
+  text:
+    primary: "#1A1A1A"  # 主文本色
+    secondary: "#5C5C5C"  # 次文本色
+  functional:
+    divider: "#E5E5E5"  # 分割线颜色
+  primary: "#07C160"  # 主色（可替换）
+
+# 全局字体定义
+typography:
+  font_sizes:
+    title: "16px"
+    body: "15px"
+    subtitle: "13px"
+    label: "12px"
+  font_weights:
+    bold: "600"
+    regular: "400"

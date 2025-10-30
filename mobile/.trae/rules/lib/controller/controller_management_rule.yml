@@ -1,0 +1,11 @@
+rules:
+  - name: ControllerManagementInControllerFile
+    description: "Ensure that controller.dart is used for controller management and not for special logic of a certain component."
+    conditions:
+      - file: "E:/Projects/dirty-bro-tech/peers-touch-mobile/lib/controller/controller.dart"
+        patterns:
+          - type: "regex"
+            value: "\b(?!(ControllerManager|Get\.find|Get\.put|Get\.delete))\w+Logic\w*\b"
+            errorMessage: "Special component - specific logic should not be placed in controller.dart. This file is for controller management only."
+    actions:
+      - type: "warning"

@@ -1,0 +1,12 @@
+layout_spacing:
+  base_grid_unit: "8px"  # All sizes/spacing must be multiples of 8
+  page_margins:
+    left_right: "16px"  # 8×2 (mobile-friendly)
+  
+  module_spacing:
+    vertical_between_sections: "24px"
+  
+  component_padding:
+    compact: "8px"  # Icon-text gaps
+    regular: "16px"  # Button internal padding
+    loose: "24px"  # Title-content gaps

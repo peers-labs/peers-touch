@@ -1,0 +1,38 @@
+# Me Profile Page Specific Rules
+# These rules apply only to the me_profile.dart file
+
+target:
+  files:
+    - "lib/pages/me/me_profile.dart"
+
+rules:
+  - id: me-profile-getx-controller
+    name: "Me Profile GetX Controller Usage"
+    description: "Ensure MeProfilePage uses GetX controllers properly"
+    pattern: "class MeProfilePage extends StatelessWidget"
+    message: "MeProfilePage must extend StatelessWidget and use GetX controllers"
+    severity: "error"
+  
+  - id: me-profile-controller-injection
+    name: "Me Profile Controller Injection"
+    description: "Ensure proper controller injection in MeProfilePage"
+    pattern: "final profileController = Get\.find<ProfileController>\(\)"
+    message: "Use Get.find<ProfileController>() for controller injection"
+    severity: "warning"
+  
+  - id: me-profile-responsive-layout
+    name: "Me Profile Responsive Layout"
+    description: "Ensure responsive layout in MeProfilePage"
+    pattern: "MediaQuery\.of\(context\)\.size\.width"
+    message: "Use MediaQuery for responsive sizing in MeProfilePage"
+    severity: "info"
+  
+  - id: me-profile-avatar-handling
+    name: "Me Profile Avatar Handling"
+    description: "Ensure proper avatar handling in MeProfilePage"
+    pattern: "CircleAvatar\("
+    message: "Use CircleAvatar with proper border and size in MeProfilePage"
+    severity: "info"
+    fix:
+      find: "CircleAvatar(\s*radius:\s*(\d+),)"
+      replace: "CircleAvatar(\n  radius: $1,\n  backgroundColor: Colors.white,\n  child: CircleAvatar(\n    radius: $1 - 2,\n  )"

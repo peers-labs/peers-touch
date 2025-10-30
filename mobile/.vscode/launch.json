@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "peers-touch-mobile",
+            "request": "launch",
+            "type": "dart",
+            "env": {
+                "JAVA_HOME": "E:\\Projects\\java\\jdk\\17"
+            }
+        },
+        {
+            "name": "peers-touch-mobile (profile mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "peers-touch-mobile (release mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        }
+    ]
+}

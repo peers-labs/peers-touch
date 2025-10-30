@@ -1,0 +1,11 @@
+name: "No StatefulWidget Usage"
+description: "Avoid using StatefulWidget, prefer GetX StatelessWidget with controllers"
+rules:
+  - type: "pattern"
+    pattern: "class.*extends StatefulWidget"
+    message: "Don't use StatefulWidget. Use StatelessWidget with GetX controllers instead."
+    severity: "error"
+  - type: "pattern"
+    pattern: "createState\(\)"
+    message: "Don't use createState(). Use StatelessWidget with GetX controllers instead."
+    severity: "error"

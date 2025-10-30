@@ -1,0 +1,63 @@
+# Button Style Rules (Global)
+
+# Global button styling rules that apply across the entire application
+# These rules define consistent button appearance and behavior
+
+button_styles:
+  # Primary button styling
+  primary:
+    background_color: "primary"
+    text_color: "on_primary"
+    border_radius: 8
+    padding:
+      horizontal: 16
+      vertical: 12
+    
+  # Secondary button styling
+  secondary:
+    background_color: "secondary"
+    text_color: "on_secondary"
+    border_radius: 8
+    padding:
+      horizontal: 16
+      vertical: 12
+
+  # Outlined button styling
+  outlined:
+    background_color: "transparent"
+    border_color: "primary"
+    border_width: 1
+    text_color: "primary"
+    border_radius: 8
+    padding:
+      horizontal: 16
+      vertical: 12
+
+# Button interaction states
+interaction_states:
+  hover:
+    opacity: 0.8
+  pressed:
+    opacity: 0.6
+  disabled:
+    opacity: 0.4
+
+# Button sizing variants
+sizing:
+  small:
+    padding:
+      horizontal: 12
+      vertical: 8
+    font_size: 14
+  
+  medium:
+    padding:
+      horizontal: 16
+      vertical: 12
+    font_size: 16
+  
+  large:
+    padding:
+      horizontal: 20
+      vertical: 16
+    font_size: 18

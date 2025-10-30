@@ -1,0 +1,981 @@
+{
+  "@@locale": "en",
+  "@@last_modified": "2024-01-01T00:00:00.000Z",
+  
+  "appTitle": "Peers Touch",
+  "@appTitle": {
+    "description": "The title of the application"
+  },
+  
+  "homePageTitle": "Home Page",
+  "@homePageTitle": {
+    "description": "Title for the home page"
+  },
+  
+  "navHome": "Home",
+  "@navHome": {
+    "description": "Navigation label for home"
+  },
+  
+  "navChat": "Chat",
+  "@navChat": {
+    "description": "Navigation label for chat"
+  },
+  
+  "navPhoto": "Photo",
+  "@navPhoto": {
+    "description": "Navigation label for photo"
+  },
+  
+  "navProfile": "Profile",
+  "@navProfile": {
+    "description": "Navigation label for profile"
+  },
+  
+  "deviceInformation": "Device Information",
+  "@deviceInformation": {
+    "description": "Title for device information page"
+  },
+  
+  "installationStatus": "Installation Status",
+  "@installationStatus": {
+    "description": "Label for installation status"
+  },
+  
+  "firstLaunch": "First Launch",
+  "@firstLaunch": {
+    "description": "Status text for first app launch"
+  },
+  
+  "returningUser": "Returning User",
+  "@returningUser": {
+    "description": "Status text for returning user"
+  },
+  
+  "deviceId": "Device ID (DID)",
+  "@deviceId": {
+    "description": "Label for device ID"
+  },
+  
+  "installationId": "Installation ID",
+  "@installationId": {
+    "description": "Label for installation ID"
+  },
+  
+  "generatedAvatar": "Generated Avatar",
+  "@generatedAvatar": {
+    "description": "Title for generated avatar section"
+  },
+  
+  "avatarDescription": "This avatar is generated based on your device ID and will remain consistent across app sessions:",
+  "@avatarDescription": {
+    "description": "Description of how avatar is generated"
+  },
+  
+  "resetDeviceId": "Reset Device ID (Testing)",
+  "@resetDeviceId": {
+    "description": "Button text for resetting device ID"
+  },
+  
+  "resetDeviceIdTitle": "Reset Device ID?",
+  "@resetDeviceIdTitle": {
+    "description": "Title for reset device ID dialog"
+  },
+  
+  "resetDeviceIdMessage": "This will generate a new device ID and installation ID. This action is typically only used for testing purposes.",
+  "@resetDeviceIdMessage": {
+    "description": "Message for reset device ID dialog"
+  },
+  
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel button text"
+  },
+  
+  "reset": "Reset",
+  "@reset": {
+    "description": "Reset button text"
+  },
+  
+  "resetComplete": "Reset Complete",
+  "@resetComplete": {
+    "description": "Title for reset complete message"
+  },
+  
+  "resetCompleteMessage": "Device ID has been reset and regenerated",
+  "@resetCompleteMessage": {
+    "description": "Message for reset complete"
+  },
+  
+  "copied": "Copied",
+  "@copied": {
+    "description": "Message when content is copied"
+  },
+  
+  "copiedMessage": "Content copied to clipboard",
+  "@copiedMessage": {
+    "description": "Detailed message when content is copied"
+  },
+  
+  "copyToClipboard": "Copy to clipboard",
+  "@copyToClipboard": {
+    "description": "Tooltip for copy button"
+  },
+  
+  "syncPhotos": "Sync Photos",
+  "@syncPhotos": {
+    "description": "Tooltip for sync photos button"
+  },
+  
+  "takePhoto": "Take Photo",
+  "@takePhoto": {
+    "description": "Tooltip for take photo button"
+  },
+  
+  "uploadPhoto": "Upload Photo",
+  "@uploadPhoto": {
+    "description": "Tooltip for upload photo button"
+  },
+  
+  "selectProfilePicture": "Select Profile Picture",
+  "@selectProfilePicture": {
+    "description": "Title for profile picture selection page"
+  },
+  
+  "chooseFromGallery": "Choose from Gallery",
+  "@chooseFromGallery": {
+    "description": "Option to choose from gallery"
+  },
+  
+  "selectFromPhotos": "Select from your photos",
+  "@selectFromPhotos": {
+    "description": "Subtitle for gallery option"
+  },
+  
+  "chooseFromPosts": "Choose from Posts",
+  "@chooseFromPosts": {
+    "description": "Option to choose from posts"
+  },
+  
+  "comingSoon": "Coming soon...",
+  "@comingSoon": {
+    "description": "Text for features coming soon"
+  },
+  
+  "comingSoonTitle": "Coming Soon",
+  "@comingSoonTitle": {
+    "description": "Title for coming soon dialog"
+  },
+  
+  "comingSoonMessage": "This feature will be available in future updates",
+  "@comingSoonMessage": {
+    "description": "Message for coming soon features"
+  },
+  
+  "ok": "OK",
+  "@ok": {
+    "description": "OK button text"
+  },
+  
+  "selectPhoto": "Select Photo",
+  "@selectPhoto": {
+    "description": "Title for photo selection dialog"
+  },
+  
+  "noPhotosFound": "No photos found",
+  "@noPhotosFound": {
+    "description": "Message when no photos are found"
+  },
+  
+  "success": "Success",
+  "@success": {
+    "description": "Success message title"
+  },
+  
+  "profilePictureUpdated": "Profile picture updated successfully",
+  "@profilePictureUpdated": {
+    "description": "Message when profile picture is updated"
+  },
+  
+  "error": "Error",
+  "@error": {
+    "description": "Error message title"
+  },
+  
+  "permissionDenied": "Permission Denied",
+  "@permissionDenied": {
+    "description": "Permission denied message title"
+  },
+  
+  "needPhotoAccess": "Photo access is needed to select a profile image",
+  "@needPhotoAccess": {
+    "description": "Message when photo access is needed"
+  },
+  
+  "needMediaAccess": "Media access is needed to load albums",
+  "@needMediaAccess": {
+    "description": "Message when media access is needed"
+  },
+  
+  "photosSyncedSuccessfully": "Photos synced successfully",
+  "@photosSyncedSuccessfully": {
+    "description": "Message when photos are synced successfully"
+  },
+  
+  "failedToSyncPhotos": "Failed to sync photos",
+  "@failedToSyncPhotos": {
+    "description": "Message when photo sync fails"
+  },
+  
+  "unexpectedError": "An unexpected error occurred: {error}",
+  "@unexpectedError": {
+    "description": "Message for unexpected errors",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "description": "The error message"
+      }
+    }
+  },
+  
+  "syncSelectedPhotos": "Sync Selected Photos ({count})",
+  "@syncSelectedPhotos": {
+    "description": "Button text for syncing selected photos",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "description": "Number of selected photos"
+      }
+    }
+  },
+  
+  "userName": "User Name",
+  "@userName": {
+    "description": "Default user name"
+  },
+  
+  "userBio": "This is a sample user biography.",
+  "@userBio": {
+    "description": "Default user bio text"
+  },
+  
+  "photoAlbums": "Photo Albums",
+  "@photoAlbums": {
+    "description": "Title for photo albums page"
+  },
+  
+  "albumSync": "Album Sync",
+  "@albumSync": {
+    "description": "Title for album sync dialog"
+  },
+  
+  "albumSyncMessage": "Select albums to sync with your account. Synced albums will be available across all your devices.",
+  "@albumSyncMessage": {
+    "description": "Message for album sync dialog"
+  },
+  
+  "syncSelectedAlbums": "Sync Selected Albums",
+  "@syncSelectedAlbums": {
+    "description": "Button text for syncing selected albums"
+  },
+  
+  "selectAll": "Select All",
+  "@selectAll": {
+    "description": "Tooltip for select all button"
+  },
+  
+  "deselectAll": "Deselect All",
+  "@deselectAll": {
+    "description": "Tooltip for deselect all button"
+  },
+  
+  "noAlbumsSelected": "No Albums Selected",
+  "@noAlbumsSelected": {
+    "description": "Title when no albums are selected"
+  },
+  
+  "selectAtLeastOneAlbum": "Please select at least one album to sync",
+  "@selectAtLeastOneAlbum": {
+    "description": "Message when no albums are selected for sync"
+  },
+  
+  "albumsSyncedSuccessfully": "Albums synced successfully",
+  "@albumsSyncedSuccessfully": {
+    "description": "Message when albums are synced successfully"
+  },
+  
+  "syncFailed": "Sync Failed",
+  "@syncFailed": {
+    "description": "Title for sync failed message"
+  },
+  
+  "syncFailedMessage": "Upload failed. Check:\n• Network connection\n• Server availability\n• Photo permissions\n• Storage space",
+  "@syncFailedMessage": {
+    "description": "Detailed message for sync failure"
+  },
+  
+  "networkConnectionFailed": "Network connection failed",
+  "@networkConnectionFailed": {
+    "description": "Error message for network connection failure"
+  },
+  
+  "requestTimedOut": "Request timed out",
+  "@requestTimedOut": {
+    "description": "Error message for request timeout"
+  },
+  
+  "invalidServerResponse": "Invalid server response",
+  "@invalidServerResponse": {
+    "description": "Error message for invalid server response"
+  },
+  
+  "photoAccessDenied": "Photo access permission denied",
+  "@photoAccessDenied": {
+    "description": "Error message for photo access denial"
+  },
+  
+  "syncSelectedAlbumsCount": "Sync Selected Albums ({count})",
+  "@syncSelectedAlbumsCount": {
+    "description": "Button text for syncing selected albums with count",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "description": "Number of selected albums"
+      }
+    }
+  },
+  
+  "loading": "Loading...",
+  "@loading": {
+    "description": "Loading text"
+  },
+  
+  "errorLoadingCount": "Error loading count",
+  "@errorLoadingCount": {
+    "description": "Error message when loading count fails"
+  },
+  
+  "itemsCount": "{count} items",
+  "@itemsCount": {
+    "description": "Text showing number of items",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "description": "Number of items"
+      }
+    }
+  },
+  
+  "newGroup": "New Group",
+  "@newGroup": {
+    "description": "Tooltip for new group button"
+  },
+  
+  "addContact": "Add Contact",
+  "@addContact": {
+    "description": "Tooltip for add contact button"
+  },
+  
+  "uploadingPhotos": "Uploading Photos",
+  "@uploadingPhotos": {
+    "description": "Title for uploading photos dialog"
+  },
+  
+  "uploadError": "Upload Error",
+  "@uploadError": {
+    "description": "Title for upload error messages"
+  },
+  
+  "storageError": "Storage Error",
+  "@storageError": {
+    "description": "Title for storage error messages"
+  },
+  
+  "notEnoughStorageSpace": "Not enough storage space on the device to load photos. Please free up at least 100MB of space and try again.",
+  "@notEnoughStorageSpace": {
+    "description": "Message when there's not enough storage space"
+  },
+  
+  "settings": "Settings",
+  "@settings": {
+    "description": "Settings page title"
+  },
+  
+  "myAccount": "My Account",
+  "@myAccount": {
+    "description": "My Account settings item"
+  },
+  
+  "general": "General",
+  "@general": {
+    "description": "General settings item"
+  },
+  
+  "language": "Language",
+  "@language": {
+    "description": "Language setting label"
+  },
+  
+  "selectLanguage": "Select Language",
+  "@selectLanguage": {
+    "description": "Language selection dialog title"
+  },
+  
+  "startingUpload": "Starting upload...",
+  "@startingUpload": {
+    "description": "Status message when upload starts"
+  },
+  
+  "cancellingUpload": "Cancelling upload...",
+  "@cancellingUpload": {
+    "description": "Status message when upload is being cancelled"
+  },
+  
+  "uploadCompletedSuccessfully": "Upload completed successfully!",
+  "@uploadCompletedSuccessfully": {
+    "description": "Message when upload completes successfully"
+  },
+  
+  "loadingPhotosFrom": "Loading photos from {albumName}...",
+  "@loadingPhotosFrom": {
+    "description": "Message when loading photos from an album",
+    "placeholders": {
+      "albumName": {
+        "type": "String",
+        "description": "Name of the album"
+      }
+    }
+  },
+  
+  "friendName": "Friend Name",
+  "@friendName": {
+    "description": "Default friend name in posts"
+  },
+  
+  "samplePostContent": "This is a sample post content...",
+  "@samplePostContent": {
+    "description": "Sample post content text"
+  },
+  
+  "increment": "Increment",
+  "@increment": {
+    "description": "Tooltip for increment button"
+  },
+  
+  "youHavePushedButton": "You have pushed the button this many times:",
+  "@youHavePushedButton": {
+    "description": "Counter description text"
+  },
+
+  "navMe": "Me",
+  "@navMe": {
+    "description": "Navigation label for me"
+  },
+
+  "meProfile": "Profile",
+  "@meProfile": {
+    "description": "Title for me profile page"
+  },
+
+  "profilePhoto": "Profile Photo",
+  "@profilePhoto": {
+    "description": "Label for profile photo"
+  },
+
+  "name": "Name",
+  "@name": {
+    "description": "Label for name field"
+  },
+
+  "gender": "Gender",
+  "@gender": {
+    "description": "Label for gender field"
+  },
+
+  "region": "Region",
+  "@region": {
+    "description": "Label for region field"
+  },
+
+  "email": "Email",
+  "@email": {
+    "description": "Label for email field"
+  },
+
+  "peersId": "Peers ID",
+  "@peersId": {
+    "description": "Label for peers ID field"
+  },
+
+  "myQrCode": "My QR Code",
+  "@myQrCode": {
+    "description": "Label for QR code section"
+  },
+
+  "shortBio": "Short Bio",
+  "@shortBio": {
+    "description": "Label for Short Bio section"
+  },
+  
+  "whatsUp": "What's Up",
+  "@whatsUp": {
+    "description": "Greeting or status inquiry"
+  },
+
+  "male": "Male",
+  "@male": {
+    "description": "Gender option: Male"
+  },
+
+  "female": "Female",
+  "@female": {
+    "description": "Gender option: Female"
+  },
+
+  "preferNotToSay": "Prefer not to say",
+  "@preferNotToSay": {
+    "description": "Gender option: Prefer not to say"
+  },
+
+  "littleFirst": "Little First",
+  "@littleFirst": {
+    "description": "Default name placeholder"
+  },
+
+  "update": "Update",
+  "@update": {
+    "description": "Button text for update action"
+  },
+  
+  "newLabel": "New",
+  "@newLabel": {
+    "description": "Label for new item"
+  },
+  
+  "current": "Current",
+  "@current": {
+    "description": "Label for current item"
+  },
+  
+  "characterCount": "{count}/{max}",
+  "@characterCount": {
+    "description": "Character count display",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "description": "Current character count"
+      },
+      "max": {
+        "type": "int",
+        "description": "Maximum character count"
+      }
+    }
+  },
+  
+  "nameVisibilityHelper": "Your name will be visible to other users when you connect with them.",
+  "@nameVisibilityHelper": {
+    "description": "Helper text explaining name visibility"
+  },
+  
+  "nameCannotBeEmpty": "{field} cannot be empty",
+  "@nameCannotBeEmpty": {
+    "description": "Validation message for empty name",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "description": "Field name"
+      }
+    }
+  },
+  
+  "nameMinLength": "{field} must be at least {min} characters",
+  "@nameMinLength": {
+    "description": "Validation message for minimum length",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "description": "Field name"
+      },
+      "min": {
+        "type": "int",
+        "description": "Minimum character count"
+      }
+    }
+  },
+  
+  "nameMaxLength": "{field} cannot exceed {max} characters",
+  "@nameMaxLength": {
+    "description": "Validation message for maximum length",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "description": "Field name"
+      },
+      "max": {
+        "type": "int",
+        "description": "Maximum character count"
+      }
+    }
+  },
+  
+  "nameUpdatedSuccessfully": "{field} updated successfully",
+  "@nameUpdatedSuccessfully": {
+    "description": "Success message for name update",
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "description": "Field name"
+      }
+    }
+  },
+  
+  "contactsTitle": "Contacts",
+  "@contactsTitle": {
+    "description": "Title for contacts page"
+  },
+  
+  "searchContacts": "Search contacts",
+  "@searchContacts": {
+    "description": "Placeholder for contact search field"
+  },
+  
+  "noContactsFound": "No contacts found",
+  "@noContactsFound": {
+    "description": "Message when no contacts are found"
+  },
+  
+  "viewProfile": "View Profile",
+  "@viewProfile": {
+    "description": "Option to view contact profile"
+  },
+  
+  "editRemark": "Edit Remark",
+  "@editRemark": {
+    "description": "Option to edit contact remark"
+  },
+  
+  "enterRemark": "Enter remark",
+  "@enterRemark": {
+    "description": "Placeholder for remark input field"
+  },
+  
+  "save": "Save",
+  "@save": {
+    "description": "Save button text"
+  },
+  
+  "mute": "Mute",
+  "@mute": {
+    "description": "Option to mute notifications from contact"
+  },
+  
+  "unmute": "Unmute",
+  "@unmute": {
+    "description": "Option to unmute notifications from contact"
+  },
+  
+  "deleteFriend": "Delete Friend",
+  "@deleteFriend": {
+    "description": "Option to delete a contact"
+  },
+  
+  "deleteFriendConfirmation": "Are you sure you want to delete this contact? This action cannot be undone.",
+  "@deleteFriendConfirmation": {
+    "description": "Confirmation message for deleting a contact"
+  },
+  
+  "delete": "Delete",
+  "@delete": {
+    "description": "Delete button text"
+  },
+  
+  "online": "Online",
+  "@online": {
+    "description": "Status indicating user is online"
+  },
+  
+  "lastSeen": "Last seen: {time}",
+  "@lastSeen": {
+    "description": "Status showing when user was last seen",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "description": "Time of last activity"
+      }
+    }
+  },
+  
+  "justNow": "Just now",
+  "@justNow": {
+    "description": "Time indicator for very recent activity"
+  },
+  
+  "minutesAgo": "{minutes} minutes ago",
+  "@minutesAgo": {
+    "description": "Time indicator for minutes ago",
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "description": "Number of minutes"
+      }
+    }
+  },
+  
+  "hoursAgo": "{hours} hours ago",
+  "@hoursAgo": {
+    "description": "Time indicator for hours ago",
+    "placeholders": {
+      "hours": {
+        "type": "int",
+        "description": "Number of hours"
+      }
+    }
+  },
+  
+  "daysAgo": "{days} days ago",
+  "@daysAgo": {
+    "description": "Time indicator for days ago",
+    "placeholders": {
+      "days": {
+        "type": "int",
+        "description": "Number of days"
+      }
+    }
+  },
+  
+  "today": "Today",
+  "@today": {
+    "description": "Label for today"
+  },
+  
+  "yesterday": "Yesterday",
+  "@yesterday": {
+    "description": "Label for yesterday"
+  },
+  
+  "monday": "Monday",
+  "@monday": {
+    "description": "Day of week: Monday"
+  },
+  
+  "tuesday": "Tuesday",
+  "@tuesday": {
+    "description": "Day of week: Tuesday"
+  },
+  
+  "wednesday": "Wednesday",
+  "@wednesday": {
+    "description": "Day of week: Wednesday"
+  },
+  
+  "thursday": "Thursday",
+  "@thursday": {
+    "description": "Day of week: Thursday"
+  },
+  
+  "friday": "Friday",
+  "@friday": {
+    "description": "Day of week: Friday"
+  },
+  
+  "saturday": "Saturday",
+  "@saturday": {
+    "description": "Day of week: Saturday"
+  },
+  
+  "sunday": "Sunday",
+  "@sunday": {
+    "description": "Day of week: Sunday"
+  },
+  
+  "noMessages": "No messages yet",
+  "@noMessages": {
+    "description": "Message shown when chat has no messages"
+  },
+  
+  "typeMessage": "Type a message...",
+  "@typeMessage": {
+    "description": "Placeholder for message input field"
+  },
+  
+  "send": "Send",
+  "@send": {
+    "description": "Send message button text"
+  },
+  
+  "copy": "Copy",
+  "@copy": {
+    "description": "Option to copy message content"
+  },
+  
+  "forward": "Forward",
+  "@forward": {
+    "description": "Option to forward message"
+  },
+  
+  "deleteMessage": "Delete Message",
+  "@deleteMessage": {
+    "description": "Option to delete message"
+  },
+  
+  "deleteMessageConfirmation": "Are you sure you want to delete this message?",
+  "@deleteMessageConfirmation": {
+    "description": "Confirmation message for deleting a message"
+  },
+  
+  "photo": "Photo",
+  "@photo": {
+    "description": "Label for photo message type"
+  },
+  
+  "file": "File",
+  "@file": {
+    "description": "Label for file message type"
+  },
+  
+  "location": "Location",
+  "@location": {
+    "description": "Label for location message type"
+  },
+  
+  "voice": "Voice",
+  "@voice": {
+    "description": "Label for voice message type"
+  },
+  
+  "video": "Video",
+  "@video": {
+    "description": "Label for video message type"
+  },
+  
+  "contact": "Contact",
+  "@contact": {
+    "description": "Label for contact"
+  },
+
+  "allFriends": "All Friends",
+  "@allFriends": {
+    "description": "Title for all friends page"
+  },
+
+  "conversations": "Conversations",
+  "@conversations": {
+    "description": "Title for conversations tab"
+  },
+
+  "friends": "Friends",
+  "@friends": {
+    "description": "Title for friends tab"
+  },
+
+  "onlineFriends": "Online Friends",
+  "@onlineFriends": {
+    "description": "Section title for online friends"
+  },
+
+  "offlineFriends": "Offline Friends",
+  "@offlineFriends": {
+    "description": "Section title for offline friends"
+  },
+
+  "addFriend": "Add Friend",
+  "@addFriend": {
+    "description": "Button text to add a friend"
+  },
+
+  "viewProfile": "View Profile",
+  "@viewProfile": {
+    "description": "Option to view friend's profile"
+  },
+
+  "sendMessage": "Send Message",
+  "@sendMessage": {
+    "description": "Option to send message to friend"
+  },
+
+  "removeFriend": "Remove Friend",
+  "@removeFriend": {
+    "description": "Option to remove friend"
+  },
+
+  "blockFriend": "Block Friend",
+  "@blockFriend": {
+    "description": "Option to block friend"
+  },
+  
+  "emailValidationError": "Please enter a valid email address",
+  "@emailValidationError": {
+    "description": "Validation message for invalid email format"
+  },
+  
+  "emailVisibilityHelper": "Your email will be used for account recovery and important notifications.",
+  "@emailVisibilityHelper": {
+    "description": "Helper text explaining email usage"
+  },
+  
+  "emailVisibilityTitle": "Email Visibility",
+  "@emailVisibilityTitle": {
+    "description": "Title for email visibility section"
+  },
+  
+  "allowEmailPublishing": "Allow others to find me by email",
+  "@allowEmailPublishing": {
+    "description": "Option to allow email publishing for discovery"
+  },
+  
+  "emailPublishingHelper": "When enabled, other users can find and connect with you using your email address.",
+  "@emailPublishingHelper": {
+    "description": "Helper text explaining email publishing feature"
+  },
+  
+  "success": "Success",
+  "@success": {
+    "description": "Success message title"
+  },
+  
+  "error": "Error",
+  "@error": {
+    "description": "Error message title"
+  },
+  
+  "unexpectedError": "An unexpected error occurred: {error}",
+  "@unexpectedError": {
+    "description": "Generic error message",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "description": "Error details"
+      }
+    }
+  },
+  
+  "peersIdUpdateTitle": "Peers ID",
+  "@peersIdUpdateTitle": {
+    "description": "Title for Peers ID update page"
+  },
+  
+  "peersIdReadOnlyMessage": "Your Peers ID is automatically generated by the network and cannot be changed manually. This unique identifier helps other users find and connect with you on the Peers Touch network.",
+  "@peersIdReadOnlyMessage": {
+    "description": "Explanation message for read-only Peers ID"
+  },
+  
+  "peersIdHelper": "This ID is unique to your device and network connection. It remains consistent as long as you're connected to the same network.",
+  "@peersIdHelper": {
+    "description": "Helper text explaining Peers ID behavior"
+  },
+  
+  "shortBioUpdateTitle": "Short Bio",
+  "@shortBioUpdateTitle": {
+    "description": "Title for Short Bio update page"
+  },
+  
+  "shortBioHelper": "Share a brief description about yourself. This will be visible to other users when they view your profile.",
+  "@shortBioHelper": {
+    "description": "Helper text explaining short bio visibility"
+  },
+  
+  "shortBioMaxLength": "Short bio cannot exceed 30 characters",
+  "@shortBioMaxLength": {
+    "description": "Validation message for short bio maximum length"
+  }
+}

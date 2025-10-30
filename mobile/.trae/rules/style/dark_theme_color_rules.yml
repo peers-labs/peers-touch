@@ -1,0 +1,28 @@
+# Dark Theme Color System
+color_system_dark:
+  primary:
+    value: "#5BBFA0"  # Brighter green for better visibility
+    name: "Bright Green"
+    usage: "navigation bars, primary buttons, selected states"
+    constraint: "only for core actions needing emphasis"
+  
+  secondary:
+    value: "#8CD6C2"  # Brighter turquoise for better visibility
+    name: "Bright Turquoise"
+    usage: "secondary buttons, active icons"
+  
+  background:
+    page: "#1A1A1A"  # Dark gray instead of pure black
+    card_list: "#2A2A2A"  # Medium dark gray for content containers
+    input: "#333333"  # Lighter dark gray for input areas
+  
+  text:
+    primary: "#FFFFFF"  # White text
+    secondary: "#CCCCCC"  # Lighter gray for better readability
+    link: "#8CD6C2"  # Brighter turquoise for links
+  
+  functional:
+    success: "#5BBFA0"  # Brighter green for better visibility
+    warning: "#FFB84D"  # Brighter orange for better visibility
+    error: "#FF8080"  # Brighter red for better visibility
+    divider: "rgba(255, 255, 255, 0.15)"  # Slightly more visible dividers

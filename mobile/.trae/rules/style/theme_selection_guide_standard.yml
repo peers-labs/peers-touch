@@ -1,0 +1,47 @@
+# Theme Selection Guide Rules
+
+# Overview and default behavior
+theme_selection:
+  overview: "Guide for when to use light theme versus dark theme in the application"
+  default_behavior: "Application follows system theme setting with specific exceptions"
+
+# Default theme configuration
+default_theme:
+  behavior: "follow_system_theme"
+  description: "All pages should respect system theme setting unless specifically noted"
+
+# Pages with fixed theme requirements
+fixed_theme_pages:
+  # Dark theme pages
+  dark_theme_required:
+    pages: []
+    note: "Currently no pages require fixed dark theme styling"
+  
+  # Light theme pages
+  light_theme_required:
+    pages:
+      - name: "Main Feed"
+        styling: "standard_light_theme_colors"
+      - name: "Photo Gallery"
+        styling: "standard_light_theme_colors"
+
+# Implementation guidelines
+implementation_guidelines:
+  # Dark theme implementation
+  dark_theme_pages:
+    scaffold_background: "Colors.black"
+    text_color: "Colors.white"
+    divider_color: "Colors.white.withOpacity(0.1)"
+    contrast_requirement: "sufficient_contrast_for_all_ui_elements"
+  
+  # System theme implementation
+  system_theme_pages:
+    color_usage: "Theme.of(context).colorScheme.*"
+    testing_requirement: "test_appearance_in_both_light_and_dark_modes"
+    contrast_requirement: "sufficient_contrast_in_both_themes"
+
+# Theme application rules
+theme_rules:
+  priority: "system_theme_default"
+  exceptions: "only_for_specifically_noted_pages"
+  testing: "required_for_both_light_and_dark_modes"

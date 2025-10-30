@@ -1,0 +1,44 @@
+# 项目主规则入口
+rule_priority:
+  - "component_rules > layout_rules > base_style_rules"
+  - "undefined_elements_inherit_from: closest_defined_type"
+
+# Global Rules
+includes:
+  # Style Rules (Global)
+  - "./rules/style/page_global_css.yml"
+  - "./rules/style/color_rules.yml"
+  - "./rules/style/dark_theme_color_rules.yml"
+  - "./rules/style/typography_rules.yml"
+  - "./rules/style/layout_spacing_rules.yml"
+  - "./rules/style/theme_selection_guide.md"
+  
+  # Component Rules (Global)
+  - "./rules/components/button_style_rules.yml"
+  
+  # Architecture Rules (Global)
+  - "./rules/architecture/page_structure_rules.yml"
+  
+  # Code Quality Rules (Global)
+  - "./rules/code_quality/interaction_rules.yml"
+  - "./rules/code_quality/validation_rules.yml"
+  - "./rules/code_quality/no_deprecated_apis.yml"
+  - "./rules/code_quality/no_stateful_widget.yml"
+  
+  # Lib-Based Rules (Following project structure)
+  # Controller Rules
+  - "./rules/lib/controller/controller_location_rule.yml"
+  - "./rules/lib/controller/controller_management_rule.yml"
+  - "./rules/lib/controller/photo_controller_management_rule.yml"
+  
+  # Component Rules
+  - "./rules/lib/components/button_style_rules.yml"
+  
+  # Page Rules - Me Section
+  - "./rules/lib/pages/me/me_profile_layout_rules.yml"  # Layout rules for me_profile.dart
+  - "./rules/lib/pages/me/me_profile_controller_rules.yml"  # Rules specific to me_profile.dart
+  - "./rules/lib/pages/me/avatar_page_rules.yml"  # Rules specific to avatar_change_page.dart
+  - "./rules/pages/me/me_profile_implementation_guide.md"  # Implementation guide for me_profile.dart
+  
+  # Page Rules - General
+  - "./rules/lib/pages/general_page_rules.yml"  # General page rules
