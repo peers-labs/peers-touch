@@ -25,6 +25,10 @@ type Options struct {
 	ListenAddrs        []string
 	BootstrapNodes     []multiaddr.Multiaddr
 	DHTRefreshInterval time.Duration
+	
+	// Private host configuration
+	PrivateKey crypto.PrivKey
+	ListenMultiAddrs []multiaddr.Multiaddr
 }
 
 func WithIdentityKey(keyFile crypto.PrivKey) option.Option {
@@ -60,5 +64,17 @@ func WithBootstrapNodes(bootstrapNodes []multiaddr.Multiaddr) option.Option {
 func WithDHTRefreshInterval(dhtRefreshInterval time.Duration) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.DHTRefreshInterval = dhtRefreshInterval
+	})
+}
+
+func WithPrivateKey(key crypto.PrivKey) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.PrivateKey = key
+	})
+}
+
+func WithListenMultiAddrs(addrs []multiaddr.Multiaddr) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.ListenMultiAddrs = addrs
 	})
 }

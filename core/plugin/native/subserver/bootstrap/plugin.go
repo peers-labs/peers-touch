@@ -12,7 +12,7 @@ import (
 
 var bootstrapOptions struct {
 	Peers struct {
-		Service struct {
+		Node struct {
 			Server struct {
 				Subserver struct {
 					Bootstrap struct {
@@ -32,18 +32,17 @@ var bootstrapOptions struct {
 type bootstrap struct{}
 
 func (p *bootstrap) Name() string {
-	return "turn"
+	return "bootstrap"
 }
 
 func (p *bootstrap) Options() []option.Option {
 	var opts []option.Option
+	
+	opts = append(opts, WithEnabled(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Enabled))
+	opts = append(opts, WithListenAddrs(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.ListenAddrs))
 
-	opts = append(opts, WithEnabled(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.Enabled))
-	opts = append(opts, WithListenAddrs(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.ListenAddrs))
-	opts = append(opts, WithMDNS(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.EnableMDNS))
-
-	if len(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.BootstrapNodes) != 0 {
-		nodes := bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.BootstrapNodes
+	if len(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.BootstrapNodes) != 0 {
+		nodes := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.BootstrapNodes
 		for i := range nodes {
 			addr, err := multiaddr.NewMultiaddr(nodes[i])
 			if err != nil {
@@ -54,21 +53,12 @@ func (p *bootstrap) Options() []option.Option {
 		}
 	}
 
-	if len(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.IdentityKey) > 0 {
-		key, err := loadOrGenerateKey(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.IdentityKey)
-		if err != nil {
-			panic(err)
-		}
-
-		opts = append(opts, WithIdentityKey(key))
-	}
-
-	opts = append(opts, WithDHTRefreshInterval(bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.DHTRefreshInterval*time.Second))
+	opts = append(opts, WithDHTRefreshInterval(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.DHTRefreshInterval*time.Second))
 	return opts
 }
 
 func (p *bootstrap) Enabled() bool {
-	return bootstrapOptions.Peers.Service.Server.Subserver.Bootstrap.Enabled
+	return bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Enabled
 }
 
 func (p *bootstrap) New(opts ...option.Option) server.Subserver {

@@ -8,14 +8,17 @@ import (
 	"time"
 
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	libp2p "github.com/libp2p/go-libp2p"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-touch/peers-touch-go/core/logger"
 	"github.com/peers-touch/peers-touch-go/core/option"
-	"github.com/peers-touch/peers-touch-go/core/plugin/native/pkg/mdns"
-	native "github.com/peers-touch/peers-touch-go/core/plugin/native/registry"
+	"github.com/peers-touch/peers-touch-go/core/plugin/native/internal/mdns"
 	"github.com/peers-touch/peers-touch-go/core/server"
 	"github.com/peers-touch/peers-touch-go/core/store"
+	"github.com/peers-touch/peers-touch-go/core/types"
 )
 
 var (
@@ -73,10 +76,10 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 		return
 	}
 
-	// Use the shared libp2p host from registry instead of creating a new one
-	s.host, s.dht = native.GetLibp2pHost()
-	if s.host == nil {
-		err = errors.New("[Init] failed to get libp2p host from registry - registry may not be initialized")
+	// Create libp2p host and DHT
+	s.host, s.dht, err = s.createHost(ctx)
+	if err != nil {
+		err = fmt.Errorf("[Init] failed to create libp2p host: %w", err)
 		return
 	}
 	notifee := &libp2pHostNotifee{
@@ -84,27 +87,29 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 	}
 	s.host.Network().Notify(notifee)
 
-	// Init MDNS with singleton pattern
+	// Init MDNS with new internal mDNS service
 	if s.opts.EnableMDNS {
-		s.mdnsService = mdns.NewMDNSServiceWithComponent(s.host, "bootstrap")
-
-		// Register bootstrap-specific callbacks
-		callbackReg := &mdns.CallbackRegistration{
-			ComponentID: "bootstrap",
-			PeerDiscovery: func(ctx context.Context, pi peer.AddrInfo, isBootstrap bool) error {
-				// Bootstrap subserver should not connect to mDNS-discovered nodes
-				// Just log the discovery for informational purposes
-				logger.Infof(ctx, "Discovered peer via mDNS (bootstrap=%t): %s", isBootstrap, pi.ID.String())
-				return nil
-			},
+		var err error
+		s.mdnsService, err = mdns.NewMDNSService(ctx,
+			mdns.WithNamespace("bootstrap"),
+			mdns.WithService("_peers-touch._tcp"),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create mDNS service: %w", err)
 		}
-		s.mdnsService.RegisterCallback(callbackReg)
+
+		// Set up discovery callback - bootstrap just logs discoveries
+		s.mdnsService.Watch(func(peer *types.Peer) {
+			// Bootstrap subserver should not connect to mDNS-discovered nodes
+			// Just log the discovery for informational purposes
+			ctx := context.Background()
+			logger.Infof(ctx, "Discovered peer via mDNS: %s (type: %s)", peer.Name, peer.ID)
+		})
 
 		err = s.mdnsService.Start()
 		if err != nil {
-			return fmt.Errorf("start mdns node: %w", err)
+			return fmt.Errorf("failed to start mDNS service: %w", err)
 		}
-		s.mdnsService.StartPeriodicRefresh()
 	}
 
 	// Note: DHT is also obtained from the registry along with the host
@@ -176,10 +181,11 @@ func (s *SubServer) Stop(ctx context.Context) (err error) {
 		return err
 	}
 
-	// Unregister mDNS callbacks if enabled
+	// Stop mDNS service if enabled
 	if s.mdnsService != nil {
-		s.mdnsService.UnregisterCallback("bootstrap")
-		// Note: Don't close the singleton node as other components may be using it
+		if err := s.mdnsService.Stop(); err != nil {
+			logger.Errorf(ctx, "[Bootstrap] Error stopping mDNS service: %v", err)
+		}
 	}
 
 	err = s.host.Close()
@@ -245,4 +251,56 @@ func NewBootstrapServer(opts ...option.Option) server.Subserver {
 	}
 
 	return bootS
+}
+
+// createHost creates libp2p host and DHT for bootstrap server
+func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, error) {
+	// Prepare libp2p options
+	var hostOptions []libp2p.Option
+
+	// Use configured private key or generate new one
+	if s.opts.PrivateKey != nil {
+		hostOptions = append(hostOptions, libp2p.Identity(s.opts.PrivateKey))
+	} else {
+		// Generate new private key
+		priv, _, err := crypto.GenerateKeyPair(crypto.Ed25519, 0)
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate key pair: %w", err)
+		}
+		hostOptions = append(hostOptions, libp2p.Identity(priv))
+	}
+
+	// Set listen addresses
+	if len(s.opts.ListenMultiAddrs) > 0 {
+		hostOptions = append(hostOptions, libp2p.ListenAddrs(s.opts.ListenMultiAddrs...))
+	} else if len(s.opts.ListenAddrs) > 0 {
+		// Convert string addresses to multiaddr
+		var addrs []multiaddr.Multiaddr
+		for _, addrStr := range s.opts.ListenAddrs {
+			addr, err := multiaddr.NewMultiaddr(addrStr)
+			if err != nil {
+				return nil, nil, fmt.Errorf("parse listen address %s: %w", addrStr, err)
+			}
+			addrs = append(addrs, addr)
+		}
+		hostOptions = append(hostOptions, libp2p.ListenAddrs(addrs...))
+	}
+
+	// Create libp2p host
+	h, err := libp2p.New(hostOptions...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create libp2p host: %w", err)
+	}
+
+	// Create DHT instance
+	dhtInstance, err := dht.New(ctx, h, dht.Mode(dht.ModeServer))
+	if err != nil {
+		h.Close()
+		return nil, nil, fmt.Errorf("create DHT: %w", err)
+	}
+
+	logger.Infof(ctx, "Created bootstrap host: %s", h.ID())
+	logger.Infof(ctx, "Bootstrap listening on addresses: %v", h.Addrs())
+
+	return h, dhtInstance, nil
 }

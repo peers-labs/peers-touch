@@ -82,7 +82,7 @@ func (d *debugSubServer) Handlers() []server.Handler {
 		server.NewHandler(
 			debugRouterURL{name: "debugListRegisteredPeers", url: "/debug/registered-peers"},
 			func(c context.Context, ctx *app.RequestContext) {
-				peers, err := d.opts.registry.ListPeers(c)
+				peers, err := d.opts.registry.Query(c)
 				if err != nil {
 					ctx.String(http.StatusInternalServerError, fmt.Sprintf("Error getting registered peers: %v", err))
 					return
@@ -121,26 +121,31 @@ func (d *debugSubServer) Handlers() []server.Handler {
 			}, server.WithMethod(server.GET),
 		),
 		server.NewHandler(
-			debugRouterURL{name: "debugGetPeerByID", url: "/debug/get-peer-by-id"},
-			func(c context.Context, ctx *app.RequestContext) {
-				id := ctx.Query("id")
-				if id == "" {
-					ctx.String(http.StatusBadRequest, "id is required")
-					return
-				}
+				debugRouterURL{name: "debugGetPeerByID", url: "/debug/get-peer-by-id"},
+				func(c context.Context, ctx *app.RequestContext) {
+					id := ctx.Query("id")
+					if id == "" {
+						ctx.String(http.StatusBadRequest, "id is required")
+						return
+					}
 
-				peers, err := d.opts.registry.GetPeer(c, registry.WithId(id))
-				if err != nil {
-					ctx.String(http.StatusInternalServerError, fmt.Sprintf("Error getting peer: %v", err))
-					return
-				}
+					peers, err := d.opts.registry.Query(c, registry.WithID(id))
+					if err != nil {
+						ctx.String(http.StatusInternalServerError, fmt.Sprintf("Error getting peer: %v", err))
+						return
+					}
 
-				ctx.JSON(http.StatusOK, map[string]interface{}{
-					"data": peers,
-				})
-			},
-			server.WithMethod(server.GET),
-		),
+					if len(peers) == 0 {
+						ctx.String(http.StatusNotFound, "peer not found")
+						return
+					}
+
+					ctx.JSON(http.StatusOK, map[string]interface{}{
+						"data": peers[0],
+					})
+				},
+				server.WithMethod(server.GET),
+			),
 	}
 }
 

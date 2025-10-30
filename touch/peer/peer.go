@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	log "github.com/peers-touch/peers-touch-go/core/logger"
@@ -50,12 +51,18 @@ func SetPeerAddr(c context.Context, param *model.PeerAddressParam) error {
 }
 
 func GetMyPeerInfos(ctx context.Context) (*model.PeerAddrInfo, error) {
-	p, err := node.GetService().Options().Registry.GetPeer(ctx, registry.GetMe())
+	peers, err := node.GetService().Options().Registry.Query(ctx, registry.GetMe())
 	if err != nil {
-		log.Warnf(ctx, "[GetMyPeerInfos] Get peer err: %v", err)
+		log.Warnf(ctx, "[GetMyPeerInfos] Query peer err: %v", err)
 		return nil, err
 	}
 
+	if len(peers) == 0 {
+		log.Warnf(ctx, "[GetMyPeerInfos] No peer found")
+		return nil, fmt.Errorf("no peer found")
+	}
+
+	p := peers[0]
 	ret := &model.PeerAddrInfo{
 		PeerId: p.ID,
 		Addrs:  strings.Split(p.Metadata["address"].(string), ","),

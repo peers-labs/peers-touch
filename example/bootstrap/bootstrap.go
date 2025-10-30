@@ -15,6 +15,7 @@ import (
 	_ "github.com/peers-touch/peers-touch-go/core/plugin/native"
 	_ "github.com/peers-touch/peers-touch-go/core/plugin/native/registry"
 	_ "github.com/peers-touch/peers-touch-go/core/plugin/native/store"
+	_ "github.com/peers-touch/peers-touch-go/core/plugin/native/subserver/bootstrap"
 	_ "github.com/peers-touch/peers-touch-go/core/plugin/store/rds/sqlite"
 )
 
