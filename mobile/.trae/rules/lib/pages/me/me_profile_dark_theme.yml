@@ -1,0 +1,53 @@
+# Dark Theme Rules for Me Profile Page
+# Target file: lib/pages/me/me_profile.dart
+
+me_profile_dark_theme:
+  # Page container
+  container:
+    background_color: "#000000"  # Black background
+    text_color: "#FFFFFF"  # White text
+  
+  # AppBar styling
+  app_bar:
+    background_color: "#000000"  # Black background
+    text_color: "#FFFFFF"  # White text
+    elevation: 0
+    bottom_border:
+      color: "rgba(255, 255, 255, 0.1)"  # Semi-transparent white
+      height: "0.5px"
+  
+  # Profile fields
+  profile_fields:
+    layout: "horizontal"  # Label on left, value on right
+    item_height: "56px"
+    divider:
+      color: "rgba(255, 255, 255, 0.1)"  # Semi-transparent white
+      height: "0.5px"
+      margin: "0px"  # Full width dividers
+    label:
+      text_color: "#FFFFFF"  # White text
+      font_size: "15px"
+    value:
+      text_color: "#FFFFFF"  # White text
+      font_size: "15px"
+      alignment: "right"  # Right-aligned values
+    chevron:
+      color: "rgba(255, 255, 255, 0.5)"  # Semi-transparent white
+      size: "20px"
+  
+  # Avatar section
+  avatar:
+    size: "80px"
+    border_radius: "40px"  # Circular
+    border: "none"
+    margin: "16px 0"  # Vertical spacing
+  
+  # Special fields
+  special_fields:
+    qr_code:
+      icon_size: "24px"
+      icon_color: "#FFFFFF"  # White
+    what_up:
+      text_color: "#FFFFFF"  # White text
+      font_size: "15px"
+      max_lines: 2

@@ -1,0 +1,70 @@
+components:
+  buttons:
+    primary:
+      size:
+        height: "44px"
+        left_right_padding: "24px"
+      style:
+        background: "#4A9D7C"
+        text_color: "#FFFFFF"
+        border_radius: "6px"
+      active_state:
+        background: "#3D8A6B"  # 10% darker
+    
+    secondary:
+      size: "same as primary"
+      style:
+        background: "#FFFFFF"
+        border: "1px solid #4A9D7C"
+        text_color: "#4A9D7C"
+        border_radius: "6px"
+      active_state:
+        background: "#F0F7F4"  # Page background
+    
+    text_button:
+      style:
+        border: "none"
+        text_color: "#4A9D7C"
+      active_state:
+        text_color: "#3D8A6B"  # Darker on click
+
+  list_items:
+    height: "56px"  # 8×7
+    layout: "left icon/avatar + center text + right auxiliary info"
+    padding:
+      left_right: "16px"
+      top_bottom: "12px"
+    divider:
+      height: "1px"
+      color: "#E4ECE8"
+      left_indent: "72px"  # Avatar + spacing width
+
+  chat_bubbles:
+    self:
+      background: "#4A9D7C"
+      border_radius: "18px 4px 18px 18px"
+      padding:
+        top_bottom: "8px"
+        left_right: "16px"
+    
+    other:
+      background: "#FFFFFF"
+      border: "1px solid #E4ECE8"
+      border_radius: "4px 18px 18px 4px"
+      padding: "same as self"
+
+  avatars_icons:
+    avatar_sizes:
+      list: "40px"
+      chat: "32px"
+      profile: "80px"
+    avatar_style:
+      border_radius: "50%"  # Full circle
+    
+    icons:
+      sizes:
+        nav_bar: "24px"
+        function_areas: "20px"
+      stroke_width: "2px"
+      default_color: "#7A8C86"  # Secondary text color
+      selected_color: "#4A9D7C"  # Primary color

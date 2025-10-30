@@ -1,0 +1,27 @@
+typography:
+  font_families:
+    priority:
+      - "PingFang SC"  # iOS
+      - "HarmonyOS Sans"  # Android
+    fallback: "-apple-system, BlinkMacSystemFont, sans-serif"
+  
+  font_sizes:
+    page_titles:
+      size: "18px"
+      weight: 500
+    module_titles:
+      size: "16px"
+      weight: 500
+    body_text:
+      size: "15px"
+      weight: 400
+    auxiliary_text:
+      size: "13px"
+      weight: 400
+    label_text:
+      size: "12px"
+      weight: 400
+  
+  line_heights:
+    titles: 1.2  # Compact
+    body: 1.5  # Spacious

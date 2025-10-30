@@ -1,0 +1,11 @@
+rules:
+  - name: PhotoControllerManagementInPhotoControllerFile
+    description: "Ensure that photo_controller.dart is used for photo - related controller management and not for special logic of a certain component."
+    conditions:
+      - file: "lib/controller/photo_controller.dart"
+        patterns:
+          - type: "regex"
+            value: "\b(?!(PhotoControllerManager|Get\.find|Get\.put|Get\.delete|loadAlbums|loadPhotos|loadPhotosForAlbum|uploadSelectedAlbums|uploadSelectedPhotos|clearAlbumAndPhotoData))\w+Logic\w*\b"
+            errorMessage: "Special component - specific logic should not be placed in photo_controller.dart. This file is for photo - related controller management only."
+    actions:
+      - type: "warning"

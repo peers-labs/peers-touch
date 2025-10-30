@@ -1,0 +1,27 @@
+color_system:
+  primary:
+    value: "#4A9D7C"
+    name: "Fresh Green"
+    usage: "navigation bars, primary buttons, selected states"
+    constraint: "only for core actions needing emphasis"
+  
+  secondary:
+    value: "#78C2AD"
+    name: "Light Turquoise"
+    usage: "secondary buttons, active icons"
+  
+  background:
+    page: "#F0F7F4"  # Light Turquoise base
+    card_list: "#FFFFFF"  # Content containers
+    input: "#F7FAF8"  # Input areas
+  
+  text:
+    primary: "#2D3A36"  # Dark Gray-Green (body/text)
+    secondary: "#7A8C86"  # Gray-Green (timestamps)
+    link: "#4A9D7C"  # Clickable text
+  
+  functional:
+    success: "#4A9D7C"
+    warning: "#F5A623"  # Warm Orange
+    error: "#F86A6A"  # Light Red
+    divider: "#E4ECE8"  # Module separators

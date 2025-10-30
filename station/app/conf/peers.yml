@@ -1,0 +1,28 @@
+peers:
+  version: 0.0.1
+  run-mode: 2
+  includes: store.yml
+  config:
+    hierarchy-merge: true
+  node:
+    server:
+      name: hertz
+      address: :8082
+      metadata:
+        name: foo
+        value: qux
+      native:
+        enabled: true
+        some-key: some-value
+      hertz:
+        enabled: true
+        some-key: some-value
+    registry:
+      interval: 180s
+      native:
+        mdns-enable: true
+        bootstrap-enable: false
+        bootstrap-listen-addr:
+          - /ip4/0.0.0.0/tcp/4001
+        bootstrap-nodes:
+          - /ip4/127.0.0.1/tcp/5001/p2p/12D3KooWDcXKxox7pJQWo8Yww3KLgFaxES1VpRfnmnnCMJwZzgns

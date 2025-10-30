@@ -1,0 +1,233 @@
+
+{
+  "@@locale": "zh",
+  "@@last_modified": "2024-01-01T00:00:00.000Z",
+  
+  "appTitle": "Peers Touch",
+  "homePageTitle": "主页",
+  "navHome": "主页",
+  "navChat": "聊天",
+  "navPhoto": "照片",
+  "navProfile": "个人资料",
+  "deviceInformation": "设备信息",
+  "installationStatus": "安装状态",
+  "firstLaunch": "首次启动",
+  "returningUser": "回访用户",
+  "deviceId": "设备 ID (DID)",
+  "installationId": "安装 ID",
+  "generatedAvatar": "生成的头像",
+  "avatarDescription": "此头像基于您的设备 ID 生成，将在所有应用会话中保持一致：",
+  "resetDeviceId": "重置设备 ID (测试)",
+  "resetDeviceIdTitle": "重置设备 ID？",
+  "resetDeviceIdMessage": "这将生成新的设备 ID 和安装 ID。此操作通常仅用于测试目的。",
+  "cancel": "取消",
+  "reset": "重置",
+  "resetComplete": "重置完成",
+  "resetCompleteMessage": "设备 ID 已重置并重新生成",
+  "copied": "已复制",
+  "copiedMessage": "内容已复制到剪贴板",
+  "copyToClipboard": "复制到剪贴板",
+  "syncPhotos": "同步照片",
+  "takePhoto": "拍照",
+  "uploadPhoto": "上传照片",
+  "selectProfilePicture": "选择个人资料照片",
+  "chooseFromGallery": "从图库选择",
+  "selectFromPhotos": "从您的照片中选择",
+  "chooseFromPosts": "从帖子中选择",
+  "comingSoon": "即将推出...",
+  "comingSoonTitle": "即将推出",
+  "comingSoonMessage": "此功能将在未来更新中提供",
+  "ok": "确定",
+  "selectPhoto": "选择照片",
+  "noPhotosFound": "未找到照片",
+  "success": "成功",
+  "profilePictureUpdated": "个人资料照片更新成功",
+  "error": "错误",
+  "permissionDenied": "权限被拒绝",
+  "needPhotoAccess": "需要照片访问权限才能选择个人资料照片",
+  "needMediaAccess": "需要媒体访问权限才能加载相册",
+  "photosSyncedSuccessfully": "照片同步成功",
+  "failedToSyncPhotos": "照片同步失败",
+  "unexpectedError": "发生意外错误：{error}",
+  "@unexpectedError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  
+  "settings": "设置",
+  "myAccount": "我的账户",
+  "general": "通用",
+  "language": "语言",
+  "selectLanguage": "选择语言",
+  "syncSelectedPhotos": "同步选中的照片 ({count})",
+  "userName": "用户名",
+  "userBio": "这是一个示例用户简介。",
+  "photoAlbums": "相册",
+  "albumSync": "相册同步",
+  "albumSyncMessage": "选择要与您的账户同步的相册。同步的相册将在您的所有设备上可用。",
+  "syncSelectedAlbums": "同步选中的相册",
+  "selectAll": "全选",
+  "deselectAll": "取消全选",
+  "noAlbumsSelected": "未选择相册",
+  "selectAtLeastOneAlbum": "请至少选择一个相册进行同步",
+  "albumsSyncedSuccessfully": "相册同步成功",
+  "syncFailed": "同步失败",
+  "syncFailedMessage": "上传失败。请检查：\n• 网络连接\n• 服务器可用性\n• 照片权限\n• 存储空间",
+  "networkConnectionFailed": "网络连接失败",
+  "requestTimedOut": "请求超时",
+  "invalidServerResponse": "服务器响应无效",
+  "photoAccessDenied": "照片访问权限被拒绝",
+  "syncSelectedAlbumsCount": "同步选中的相册 ({count})",
+  "loading": "加载中...",
+  "errorLoadingCount": "加载计数出错",
+  "itemsCount": "{count} 项",
+  "newGroup": "新群组",
+  "addContact": "添加联系人",
+  "uploadingPhotos": "正在上传照片",
+  "uploadError": "上传错误",
+  "storageError": "存储错误",
+  "notEnoughStorageSpace": "设备存储空间不足，无法上传照片。请至少释放 100MB 空间后重试。",
+  "startingUpload": "开始上传...",
+  "cancellingUpload": "正在取消上传...",
+  "uploadCompletedSuccessfully": "上传成功完成！",
+  "loadingPhotosFrom": "正在从 {albumName} 加载照片...",
+  "friendName": "朋友姓名",
+  "samplePostContent": "这是一个示例帖子内容...",
+  "increment": "增加",
+  "youHavePushedButton": "您已按下按钮这么多次：",
+  "navMe": "我",
+  "meProfile": "个人资料",
+  "profilePhoto": "个人资料照片",
+  "name": "姓名",
+  "gender": "性别",
+  "region": "地区",
+  "email": "电子邮箱",
+  "peersId": "Peers ID",
+  "myQrCode": "我的二维码",
+  "whatsUp": "最近怎么样？",
+  "shortBio": "个人简介",
+  "male": "男性",
+  "female": "女性",
+  "preferNotToSay": "不愿透露",
+  "littleFirst": "小名优先",
+  "update": "更新",
+  
+  "newLabel": "新",
+  "current": "当前",
+  "characterCount": "{count}/{max}",
+  "nameVisibilityHelper": "当您与他人连接时，您的姓名将对其他用户可见。",
+  "nameCannotBeEmpty": "{field} 不能为空",
+  "nameMinLength": "{field} 至少需要 {min} 个字符",
+  "nameMaxLength": "{field} 不能超过 {max} 个字符",
+  "nameUpdatedSuccessfully": "{field} 更新成功",
+  
+  "contactsTitle": "联系人",
+  "searchContacts": "搜索联系人",
+  "noContactsFound": "未找到联系人",
+  "viewProfile": "查看资料",
+  "editRemark": "编辑备注",
+  "enterRemark": "输入备注",
+  "save": "保存",
+  "mute": "消息免打扰",
+  "unmute": "取消免打扰",
+  "deleteFriend": "删除好友",
+  "deleteFriendConfirmation": "确定要删除该联系人吗？此操作不可恢复。",
+  "delete": "删除",
+  "online": "在线",
+  "lastSeen": "最后活跃：{time}",
+  "justNow": "刚刚",
+  "minutesAgo": "{minutes} 分钟前",
+  "hoursAgo": "{hours} 小时前",
+  "daysAgo": "{days} 天前",
+  "today": "今天",
+  "yesterday": "昨天",
+  "monday": "星期一",
+  "tuesday": "星期二",
+  "wednesday": "星期三",
+  "thursday": "星期四",
+  "friday": "星期五",
+  "saturday": "星期六",
+  "sunday": "星期日",
+  "noMessages": "暂无消息",
+  "typeMessage": "输入消息...",
+  "send": "发送",
+  "copy": "复制",
+  "forward": "转发",
+  "deleteMessage": "删除消息",
+  "deleteMessageConfirmation": "确定要删除这条消息吗？",
+  "photo": "照片",
+  "file": "文件",
+  "location": "位置",
+  "voice": "语音",
+  "video": "视频",
+  "contact": "联系人",
+  "@contact": {
+    "description": "Label for contact"
+  },
+
+  "allFriends": "所有好友",
+  "@allFriends": {
+    "description": "Title for all friends page"
+  },
+
+  "conversations": "聊天",
+  "@conversations": {
+    "description": "Title for conversations tab"
+  },
+
+  "friends": "好友",
+  "@friends": {
+    "description": "Title for friends tab"
+  },
+
+  "onlineFriends": "在线好友",
+  "@onlineFriends": {
+    "description": "Section title for online friends"
+  },
+
+  "offlineFriends": "离线好友",
+  "@offlineFriends": {
+    "description": "Section title for offline friends"
+  },
+
+  "addFriend": "添加好友",
+  "@addFriend": {
+    "description": "Button text to add a friend"
+  },
+
+  "viewProfile": "查看资料",
+  "@viewProfile": {
+    "description": "Option to view friend's profile"
+  },
+
+  "sendMessage": "发送消息",
+  "@sendMessage": {
+    "description": "Option to send message to friend"
+  },
+
+  "removeFriend": "删除好友",
+  "@removeFriend": {
+    "description": "Option to remove friend"
+  },
+
+  "blockFriend": "拉黑好友",
+  "@blockFriend": {
+    "description": "Option to block friend"
+  },
+  "startingUpload": "开始上传...",
+  
+  "emailValidationError": "请输入有效的电子邮件地址",
+  "emailVisibilityHelper": "您的电子邮件将用于账户恢复和重要通知。",
+  "emailVisibilityTitle": "邮箱可见性",
+  "allowEmailPublishing": "允许他人通过邮箱找到我",
+  "emailPublishingHelper": "启用后，其他用户可以使用您的电子邮件地址找到并与您连接。",
+  "peersIdUpdateTitle": "Peers ID",
+  "peersIdReadOnlyMessage": "您的 Peers ID 由网络自动生成，无法手动更改。这个唯一标识符帮助其他用户在 Peers Touch 网络中找到并连接您。",
+  "peersIdHelper": "此 ID 对您的设备和网络连接是唯一的。只要您连接到同一网络，它就会保持一致。",
+  "shortBioUpdateTitle": "个人简介",
+  "shortBioHelper": "分享一个关于您自己的简短描述。当其他用户查看您的个人资料时，这将是可见的。",
+  "shortBioMaxLength": "个人简介不能超过30个字符"
+}

@@ -1,0 +1,26 @@
+interaction:
+  click_feedback:
+    style: "background color #E4ECE8"
+    duration: "150ms"
+    applies_to: "all clickable elements (buttons, list items)"
+  
+  page_transitions:
+    animation: "fade-in/out"
+    duration: "300ms"
+    constraints: "no sliding effects"
+  
+  loading_states:
+    style: "circular progress bar"
+    size: "24px"
+    color: "#4A9D7C"
+    rotation_speed: "1s per rotation"
+  
+  unread_indicators:
+    dot:
+      diameter: "8px"
+      color: "#F86A6B"
+    badge:
+      background: "#F86A6B"
+      text_color: "#FFFFFF"
+      border_radius: "10px"
+      min_width: "20px"

@@ -1,0 +1,29 @@
+name: "No Deprecated APIs"
+description: "Avoid using any deprecated Flutter fields, methods, classes, and APIs"
+rules:
+  # General rule to catch all APIs marked with @deprecated annotation
+  - type: "pattern"
+    pattern: "@deprecated"
+    message: "This API is marked as deprecated. Find and use the recommended alternative."
+    severity: "warning"
+    
+  # General rule to enforce using analyzer warnings for deprecated APIs
+  - type: "analyzer"
+    rule: "deprecated_member_use"
+    message: "Using deprecated APIs is not allowed. Please use the recommended alternative."
+    severity: "error"
+    
+  # General rule to enforce using analyzer warnings for deprecated members
+  - type: "analyzer"
+    rule: "deprecated_member_use_from_same_package"
+    message: "Using deprecated members from the same package is not allowed. Please use the recommended alternative."
+    severity: "error"
+    
+  # Examples of common deprecated APIs (for reference only)
+  # These should be caught by the analyzer rules above
+  # - WillPopScope -> PopScope
+  # - onWillPop -> onPopInvokedWithResult
+  # - RaisedButton -> ElevatedButton
+  # - FlatButton -> TextButton
+  # - OutlineButton -> OutlinedButton
+  # - withOpacity -> withValues()
