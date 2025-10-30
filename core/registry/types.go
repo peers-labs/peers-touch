@@ -3,64 +3,142 @@ package registry
 import (
 	"context"
 	"time"
-
-	"github.com/peers-touch/peers-touch-go/core/option"
 )
 
-type StationType = string
+type RegisterType string
 
 const (
-	StationTypeStun      StationType = "stun"
-	StationTypeTurnRelay StationType = "turnRelay"
-	StationTypeHttp      StationType = "http"
+	RegisterTypeComponent RegisterType = "component"
+	RegisterTypeNode      RegisterType = "node"
 )
 
-type Registry interface {
-	Init(ctx context.Context, opts ...option.Option) error
-	Options() Options
-	Register(ctx context.Context, peer *Peer, opts ...RegisterOption) error
-	Deregister(ctx context.Context, peer *Peer, opts ...DeregisterOption) error
-	GetPeer(ctx context.Context, opts ...GetOption) (*Peer, error)
-	ListPeers(ctx context.Context, opts ...GetOption) ([]*Peer, error)
-	Watch(ctx context.Context, opts ...WatchOption) (Watcher, error)
-	String() string
+// Registration registration information - V2 minimalist design
+type Registration struct {
+	ID         string                 // Unique identifier
+	Name       string                 // Display name
+	Type       RegisterType           // Type: component, node
+	Namespaces []string               // Multi-namespace registration support
+	Addresses  []string               // Network addresses
+	Metadata   map[string]interface{} // Extended metadata
+	TTL        time.Duration          // Time to live
+	CreatedAt  interface{}            // Creation time, specific type determined by implementation
+	UpdatedAt  interface{}            // Update time, specific type determined by implementation
 }
 
+// WatchEvent watch event - V2 design
+type WatchEvent struct {
+	Type         WatchEventType // Event type
+	Registration *Registration  // Registration information
+	Timestamp    interface{}    // Timestamp, specific type determined by implementation
+	Namespace    string         // Namespace that triggered the event
+}
+
+// WatchEventType event type
+type WatchEventType string
+
+const (
+	WatchEventAdd    WatchEventType = "ADD"
+	WatchEventUpdate WatchEventType = "UPDATE"
+	WatchEventDelete WatchEventType = "DELETE"
+)
+
+// WatchCallback watch callback
+type WatchCallback func(event WatchEvent)
+
+// Standard namespaces - V2 equality concept
+const (
+	// Basic namespaces
+	NamespaceGlobal   = "global"
+	NamespaceLocal    = "local"
+	NamespaceInternal = "internal"
+
+	// Versioned namespaces
+	NamespaceV1Prefix  = "pt1"
+	NamespaceV1Global  = "pt1/global"
+	NamespaceV1Local   = "pt1/local"
+	NamespaceV1Prod    = "pt1/prod"
+	NamespaceV1Staging = "pt1/staging"
+	NamespaceV1Test    = "pt1/test"
+
+	// Component namespaces
+	NamespaceV1Bootstrap = "pt1/bootstrap"
+	NamespaceV1Registry  = "pt1/registry"
+	NamespaceV1Turn      = "pt1/turn"
+
+	// Backward compatibility
+	DefaultPeersNetworkNamespace = "pst" // Original default namespace
+)
+
+// Station types for peer addressing
+const (
+	StationTypeStun      = "stun"
+	StationTypeTurnRelay = "turn-relay"
+	StationTypeHttp      = "http"
+)
+
+// Peer represents a peer in the network
 type Peer struct {
-	// ID is the unique identifier of the peer.
-	// for libp2p, it's the peer ID encrypted with the public key of the peer.
-	ID       string                 `json:"id"`
-	Name     string                 `json:"name"`
-	Version  string                 `json:"version"`
-	Metadata map[string]interface{} `json:"metadata"`
-
-	// EndStation maintains the available connect-to information of the peer.
-	// Registry should help set the value after registering to various networks like turn/bootstrap/mdns/http/tcp, etc.
-	// The clients can use the value to connect to the peer's endpoints declared in stations.
-	// These stations can be stored in memory only. Because networks change frequently. we can get those addresses info
-	// through a superstructure http interface of 'peers-touch' by an activitypub like interface.
-	EndStation map[string]*EndStation `json:"endstation"`
-	Timestamp  time.Time              `json:"timestamp"`
-	Signature  []byte                 `json:"signature"`
+	Name       string                 `json:"name"`
+	ID         string                 `json:"id"`
+	Version    string                 `json:"version"`
+	Metadata   map[string]interface{} `json:"metadata"`
+	EndStation map[string]*EndStation `json:"end_station,omitempty"`
 }
 
+// EndStation represents an endpoint station for a peer
 type EndStation struct {
-	Name       string
-	Typ        StationType
-	NetAddress string
-
-	Endpoints []*Endpoint `json:"endpoints"`
+	Name       string       `json:"name"`
+	Typ        string       `json:"typ"`
+	NetAddress string       `json:"net_address"`
+	Endpoints  []*Endpoint  `json:"endpoints"`
 }
 
+// Endpoint represents a service endpoint
 type Endpoint struct {
-	Request  *Value            `json:"request"`
-	Response *Value            `json:"response"`
-	Metadata map[string]string `json:"metadata"`
-	Name     string            `json:"name"`
+	Name string `json:"name"`
+	// Add other endpoint fields as needed
 }
 
-type Value struct {
-	Name   string   `json:"name"`
-	Type   string   `json:"type"`
-	Values []*Value `json:"values"`
+// Node represents a node in the network
+type Node struct {
+	ID           string                 `json:"id"`
+	Name         string                 `json:"name"`
+	Version      string                 `json:"version"`
+	Addresses    []string               `json:"addresses"`
+	Capabilities []string               `json:"capabilities"`
+	Metadata     map[string]interface{} `json:"metadata"`
+	Status       string                 `json:"status"`
+	PublicKey    string                 `json:"public_key"`
+	Port         int                    `json:"port"`
+	LastSeenAt   interface{}            `json:"last_seen_at"`
+	HeartbeatAt  interface{}            `json:"heartbeat_at"`
+	RegisteredAt interface{}            `json:"registered_at"`
 }
+
+// NodeFilter represents filters for querying nodes
+type NodeFilter struct {
+	Limit        int      `json:"limit"`
+	Offset       int      `json:"offset"`
+	Status       []string `json:"status"`
+	Capabilities []string `json:"capabilities"`
+	OnlineOnly   bool     `json:"online_only"`
+}
+
+// NodeStorage interface for node storage
+type NodeStorage interface {
+	Register(ctx context.Context, node *Node) error
+	Deregister(ctx context.Context, id string) error
+	GetNode(ctx context.Context, id string) (*Node, error)
+	ListNodes(ctx context.Context, filter *NodeFilter) ([]*Node, int, error)
+	UpdateNode(ctx context.Context, node *Node) error
+	Heartbeat(ctx context.Context, id string) error
+}
+
+
+
+// Node status constants
+const (
+	NodeStatusOnline   = "online"
+	NodeStatusOffline  = "offline"
+	NodeStatusInactive = "inactive"
+)
