@@ -1,163 +1,191 @@
 package registry
 
-import (
-	"time"
+import "time"
 
-	"github.com/peers-touch/peers-touch-go/core/option"
-	"github.com/peers-touch/peers-touch-go/core/store"
-)
-
-type registryOptionsKey struct{}
-
-var OptionWrapper = option.NewWrapper[Options](registryOptionsKey{}, func(options *option.Options) *Options {
-	return &Options{
-		Options: options,
-	}
-})
-
-// TURNAuthMethod defines the type of TURN authentication
-type TURNAuthMethod string
-
-const (
-	TURNAuthLongTerm  TURNAuthMethod = "long-term"  // Long-term credential
-	TURNAuthShortTerm TURNAuthMethod = "short-term" // Short-term credential
-	TURNAuthOAuth     TURNAuthMethod = "oauth"      // OAuth 2.0 token
-	TURNAuthAnonymous TURNAuthMethod = "anonymous"  // No authentication
-)
-
-// TURNAuthConfig is an abstract struct to hold authentication configurations
-type TURNAuthConfig struct {
-	Enabled         bool           `json:"enabled" pconf:"enabled"`
-	ServerAddresses []string       `json:"server_addresses" pconf:"server-addresses"`
-	Method          TURNAuthMethod `json:"method" pconf:"method"`         // Determines which nested config to use
-	LongTerm        LongTermAuth   `json:"long_term" pconf:"long-term"`   // For TURNAuthLongTerm
-	ShortTerm       ShortTermAuth  `json:"short_term" pconf:"short-term"` // For TURNAuthShortTerm
-	OAuth           OAuthAuth      `json:"oauth" pconf:"oauth"`           // For TURNAuthOAuth, todo implement
-}
-
-// LongTermAuth holds config for long-term credential auth
-type LongTermAuth struct {
-	Username string `json:"username,omitempty" pconf:"username"` // Client username
-	Password string `json:"password,omitempty" pconf:"password"` // Pre-shared secret (hashed with realm)
-	Realm    string `json:"realm,omitempty" pconf:"realm"`       // TURN server realm (e.g., "turn.example.com")
-}
-
-// ShortTermAuth holds config for short-term credential auth
-type ShortTermAuth struct {
-	Username string `json:"username,omitempty" pconf:"username"`
-	Password string `json:"password,omitempty" pconf:"password"`
-}
-
-// OAuthAuth holds config for OAuth 2.0 token auth
-type OAuthAuth struct {
-	Token         string `json:"token,omitempty" pconf:"token"`                   // Access token (e.g., Bearer token)
-	TokenEndpoint string `json:"token_endpoint,omitempty" pconf:"token-endpoint"` // Optional: Endpoint to refresh the token
-	ClientID      string `json:"client_id,omitempty" pconf:"client-id"`           // Optional: OAuth client ID (for token refresh)
-	ClientSecret  string `json:"client_secret,omitempty" pconf:"client-secret"`   // Optional: OAuth client secret (for token refresh)
-}
-
-// region Options
-
-// Options is the options for the registry plugin.
-type Options struct {
-	*option.Options
-
-	IsDefault      bool
-	PrivateKey     string
-	Interval       time.Duration
-	ConnectTimeout time.Duration
-	TurnConfig     *TURNAuthConfig
-	Store          store.Store
-}
-
-func WithInterval(dur time.Duration) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.Interval = dur
-	})
-}
-
-func WithConnectTimeout(dur time.Duration) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.ConnectTimeout = dur
-	})
-}
-
-func WithPrivateKey(privateKey string) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.PrivateKey = privateKey
-	})
-}
-
-func WithTurnConfig(turnConfig TURNAuthConfig) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.TurnConfig = &turnConfig
-	})
-}
-
-func WithStore(store store.Store) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.Store = store
-	})
-}
-
-func WithISDefault() option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.IsDefault = true
-	})
-}
-
+// RegisterOption 注册选项 - 支持多namespace和V2理念
 type RegisterOption func(*RegisterOptions)
 
 type RegisterOptions struct {
-	Namespace string
+	// V2理念：支持多namespace
+	Namespaces []string
+	
+	// V2理念：基础字段
+	Type     string
+	Name     string
+	Metadata map[string]interface{}
+	
+	// 兼容现有字段
+	Namespace string // 单namespace的向后兼容
 	Interval  time.Duration
 	TTL       time.Duration
 }
 
-type DeregisterOption func(*DeregisterOptions)
-
-type DeregisterOptions struct {
+// WithNamespaces 设置多个namespace（V2理念）
+func WithNamespaces(namespaces ...string) RegisterOption {
+	return func(o *RegisterOptions) {
+		o.Namespaces = namespaces
+	}
 }
 
-type GetOption func(*GetOptions)
+// WithType 设置类型（V2理念）
+func WithType(typeStr string) RegisterOption {
+	return func(o *RegisterOptions) {
+		o.Type = typeStr
+	}
+}
 
-type GetOptions struct {
+// WithName 设置名称（V2理念）
+func WithName(name string) RegisterOption {
+	return func(o *RegisterOptions) {
+		o.Name = name
+	}
+}
+
+// WithMetadata 设置元数据（V2理念）
+func WithMetadata(metadata map[string]interface{}) RegisterOption {
+	return func(o *RegisterOptions) {
+		o.Metadata = metadata
+	}
+}
+
+// 向后兼容的Option
+func WithTTL(ttl time.Duration) RegisterOption {
+	return func(o *RegisterOptions) {
+		o.TTL = ttl
+	}
+}
+
+func WithInterval(interval time.Duration) RegisterOption {
+	return func(o *RegisterOptions) {
+		o.Interval = interval
+	}
+}
+
+func WithNamespace(namespace string) RegisterOption {
+	return func(o *RegisterOptions) {
+		o.Namespace = namespace
+	}
+}
+
+// DeregisterOption 注销选项
+type DeregisterOption func(*DeregisterOptions)
+
+type DeregisterOptions struct{}
+
+// QueryOption 查询选项 - 统一Query和Get
+type QueryOption func(*QueryOptions)
+
+type QueryOptions struct {
+	// V2理念：统一Query和Get
+	ID         string   // 通过ID查询（替代原来的Get）
+	Namespaces []string // 查询的namespaces（支持多namespace）
+	Recursive  bool     // 是否递归子namespace
+	Types      []string // 类型过滤（V2理念）
+	ActiveOnly bool     // 只查询活跃的
+	MaxResults int      // 最大结果数
+	
+	// 向后兼容
 	Me           bool
 	NameIsPeerID bool
 	Name         string
 }
 
-func WithNameIsPeerID() GetOption {
-	return func(o *GetOptions) {
+// WithID 通过ID查询（V2理念，替代Get）
+func WithID(id string) QueryOption {
+	return func(o *QueryOptions) {
+		o.ID = id
+	}
+}
+
+// WithNamespaces 设置查询的namespaces（V2理念）
+func WithNamespaces(namespaces ...string) QueryOption {
+	return func(o *QueryOptions) {
+		o.Namespaces = namespaces
+	}
+}
+
+// WithTypes 设置类型过滤（V2理念）
+func WithTypes(types ...string) QueryOption {
+	return func(o *QueryOptions) {
+		o.Types = types
+	}
+}
+
+// WithRecursive 设置递归查询（V2理念）
+func WithRecursive(recursive bool) QueryOption {
+	return func(o *QueryOptions) {
+		o.Recursive = recursive
+	}
+}
+
+// WithActiveOnly 只查询活跃的（V2理念）
+func WithActiveOnly(active bool) QueryOption {
+	return func(o *QueryOptions) {
+		o.ActiveOnly = active
+	}
+}
+
+// WithMaxResults 设置最大结果数（V2理念）
+func WithMaxResults(max int) QueryOption {
+	return func(o *QueryOptions) {
+		o.MaxResults = max
+	}
+}
+
+// 向后兼容的Query Option
+func WithNameIsPeerID() QueryOption {
+	return func(o *QueryOptions) {
 		o.NameIsPeerID = true
 	}
 }
 
-func WithId(id string) GetOption {
-	return func(o *GetOptions) {
-		o.Name = id
-		WithNameIsPeerID()
-	}
-}
-
-func WithName(name string) GetOption {
-	return func(o *GetOptions) {
+func WithQueryName(name string) QueryOption {
+	return func(o *QueryOptions) {
 		o.Name = name
 	}
 }
 
-func GetMe() GetOption {
-	return func(o *GetOptions) {
+func GetMe() QueryOption {
+	return func(o *QueryOptions) {
 		o.Me = true
 	}
 }
 
+// WatchOption Watch选项 - fire-and-forget
 type WatchOption func(*WatchOptions)
 
-type WatchOptions struct{}
+type WatchOptions struct {
+	// V2理念：fire-and-forget，支持多namespace
+	Namespaces []string // 观察的namespaces（支持多namespace）
+	Types      []string // 观察的类型
+	ActiveOnly bool     // 只观察活跃的
+	Recursive  bool     // 是否递归观察
+}
 
-// endregion
+// WithWatchNamespaces 设置观察的namespaces（V2理念）
+func WithWatchNamespaces(namespaces ...string) WatchOption {
+	return func(o *WatchOptions) {
+		o.Namespaces = namespaces
+	}
+}
 
-func GetPluginRegions(opts ...option.Option) *Options {
-	return option.GetOptions(opts...).Ctx().Value(registryOptionsKey{}).(*Options)
+// WithWatchTypes 设置观察的类型（V2理念）
+func WithWatchTypes(types ...string) WatchOption {
+	return func(o *WatchOptions) {
+		o.Types = types
+	}
+}
+
+// WithWatchActiveOnly 只观察活跃的（V2理念）
+func WithWatchActiveOnly(active bool) WatchOption {
+	return func(o *WatchOptions) {
+		o.ActiveOnly = active
+	}
+}
+
+// WithWatchRecursive 递归观察（V2理念）
+func WithWatchRecursive(recursive bool) WatchOption {
+	return func(o *WatchOptions) {
+		o.Recursive = recursive
+	}
 }
