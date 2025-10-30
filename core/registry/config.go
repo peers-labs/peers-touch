@@ -1,8 +1,6 @@
 package registry
 
 import (
-	"context"
-	"fmt"
 	"time"
 	
 	"github.com/peers-touch/peers-touch-go/core/option"
