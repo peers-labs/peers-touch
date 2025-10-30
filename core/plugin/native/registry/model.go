@@ -5,10 +5,19 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/peers-touch/peers-touch-go/core/registry"
 	"github.com/peers-touch/peers-touch-go/core/util/id"
 	"gorm.io/gorm"
 )
+
+// Peer represents a peer in the network - for internal compatibility with V1
+type Peer struct {
+	ID       string
+	Name     string
+	Version  string
+	Metadata map[string]interface{}
+	Signature []byte
+	Timestamp time.Time
+}
 
 // RegisterRecord represents a record of peer registration.
 type RegisterRecord struct {
@@ -25,7 +34,7 @@ type RegisterRecord struct {
 	// EndStation represents the end - station information of the peer, stored as text without length limit.
 	EndStation string `gorm:"type:text"`
 	// EndStation represents the end - station information of the peer, stored as text without length limit.
-	EndStationMap map[string]*registry.EndStation `gorm:"-"`
+	EndStationMap map[string]interface{} `gorm:"-"` // Changed from *registry.EndStation to interface{} for V2 compatibility
 	// UpdatedAt records the time when the record was last updated.
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 	// CreatedAt records the time when the record was created.

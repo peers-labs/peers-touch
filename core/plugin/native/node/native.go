@@ -154,11 +154,13 @@ func (s *native) Run() error {
 
 // todo, update to one node supports multiple peers
 // now there is a node for one peer, it's not graceful.
-func (s *native) toPeer() *registry.Peer {
-	p := &registry.Peer{
-		Name:    s.opts.Name,
-		ID:      s.opts.Id,
-		Version: "1.0",
+func (s *native) toPeer() *registry.Registration {
+	registration := &registry.Registration{
+		ID:         s.opts.Id,
+		Name:       s.opts.Name,
+		Type:       registry.RegisterTypeNode,
+		Namespaces: []string{"native"},
+		Addresses:  []string{},
 		Metadata: map[string]interface{}{
 			"demo": "hello-world",
 		},
@@ -166,17 +168,11 @@ func (s *native) toPeer() *registry.Peer {
 
 	// the root of http entrance
 	if s.opts.Server != nil {
-		p.EndStation = make(map[string]*registry.EndStation)
-
-		p.EndStation[registry.StationTypeHttp] = &registry.EndStation{
-			Name:       "activitypub",
-			Typ:        registry.StationTypeHttp,
-			NetAddress: s.opts.Server.Options().Address,
-			Endpoints:  []*registry.Endpoint{},
-		}
+		registration.Addresses = append(registration.Addresses, s.opts.Server.Options().Address)
+		registration.Metadata["server_address"] = s.opts.Server.Options().Address
 	}
 
-	return p
+	return registration
 }
 
 // NewService

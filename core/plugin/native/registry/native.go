@@ -31,9 +31,10 @@ import (
 	"github.com/multiformats/go-multihash"
 	"github.com/peers-touch/peers-touch-go/core/logger"
 	"github.com/peers-touch/peers-touch-go/core/option"
-	"github.com/peers-touch/peers-touch-go/core/plugin/native/pkg/mdns"
+	"github.com/peers-touch/peers-touch-go/core/plugin/native/internal/mdns"
 	"github.com/peers-touch/peers-touch-go/core/registry"
 	"github.com/peers-touch/peers-touch-go/core/store"
+	"github.com/peers-touch/peers-touch-go/core/types"
 	"github.com/pion/turn/v4"
 )
 
@@ -61,7 +62,7 @@ type nativeRegistry struct {
 	extOpts *options
 
 	store store.Store
-	peers map[string]*registry.Peer
+	peers map[string]*Peer
 	mu    sync.RWMutex
 
 	host        host.Host
@@ -94,7 +95,7 @@ func NewRegistry(opts ...option.Option) registry.Registry {
 	}
 
 	regInstance = &nativeRegistry{
-		peers:   make(map[string]*registry.Peer),
+		peers:   make(map[string]*Peer),
 		options: registry.GetPluginRegions(opts...),
 		// bootstrapNodesStatus initialization removed
 		mdnsDiscoveredBootstrapNodes: make([]multiaddr.Multiaddr, 0),
@@ -242,58 +243,89 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 
 	// todo init relay nodes
 
-	// Init MDNS with singleton pattern
+	// Init MDNS with new internal mDNS service
 	if r.extOpts.mdnsEnable {
 		logger.Infof(ctx, "[Registry] mDNS node enabled for peer discovery")
 
-		// Get singleton mDNS node
-		r.mdnsService = mdns.NewMDNSServiceWithComponent(r.host, "registry")
+		// Create new mDNS service with registry namespace
+		r.mdnsService, err = mdns.NewMDNSService(ctx,
+			mdns.WithNamespace("registry"),
+			mdns.WithService("_peers-touch._tcp"),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create mDNS service: %w", err)
+		}
 
-		// Register registry-specific callbacks
-		callbackReg := &mdns.CallbackRegistration{
-			ComponentID: "registry",
-			PeerDiscovery: func(ctx context.Context, pi peer.AddrInfo, isBootstrap bool) error {
-				// If this is a bootstrap node, add it to our bootstrap nodes list
-				if isBootstrap {
-					r.mdnsBootstrapLock.Lock()
-					defer r.mdnsBootstrapLock.Unlock()
-					// Convert peer.AddrInfo to multiaddr format
-					for _, addr := range pi.Addrs {
-						// Create full multiaddr with peer ID
-						fullAddr := addr.Encapsulate(multiaddr.StringCast("/p2p/" + pi.ID.String()))
-
-						// Check if already exists to avoid duplicates
-						alreadyExists := false
-						for _, existing := range r.mdnsDiscoveredBootstrapNodes {
-							if existing.Equal(fullAddr) {
-								alreadyExists = true
-								break
+		// Set up discovery callback for bootstrap nodes
+		r.mdnsService.Watch(func(discoveredPeer *types.Peer) {
+			// Check if this is a bootstrap node
+			if discoveredPeer.Nodes != nil && len(discoveredPeer.Nodes) > 0 {
+				for _, node := range discoveredPeer.Nodes {
+					if node.Type == "bootstrap" {
+						// Convert peer to AddrInfo
+						ctx := context.Background()
+						peerID, err := peer.Decode(discoveredPeer.ID)
+						if err != nil {
+							logger.Errorf(ctx, "Failed to decode peer ID: %v", err)
+							continue
+						}
+						pi := peer.AddrInfo{
+							ID: peerID,
+							Addrs: []multiaddr.Multiaddr{},
+						}
+						
+						// Parse addresses from peer metadata
+						if addrs, ok := discoveredPeer.Metadata["addresses"].([]string); ok {
+							for _, addrStr := range addrs {
+								if addr, err := multiaddr.NewMultiaddr(addrStr); err == nil {
+									pi.Addrs = append(pi.Addrs, addr)
+								}
 							}
 						}
-
-						if !alreadyExists {
-							r.mdnsDiscoveredBootstrapNodes = append(r.mdnsDiscoveredBootstrapNodes, fullAddr)
-							logger.Infof(context.Background(), "Added mDNS bootstrap node: %s", fullAddr.String())
+						
+						// Add to bootstrap nodes list
+						r.mdnsBootstrapLock.Lock()
+						for _, addr := range pi.Addrs {
+							// Create full multiaddr with peer ID
+							fullAddr := addr.Encapsulate(multiaddr.StringCast("/p2p/" + pi.ID.String()))
+							
+							// Check if already exists to avoid duplicates
+							alreadyExists := false
+							for _, existing := range r.mdnsDiscoveredBootstrapNodes {
+								if existing.Equal(fullAddr) {
+									alreadyExists = true
+									break
+								}
+							}
+							
+							if !alreadyExists {
+								r.mdnsDiscoveredBootstrapNodes = append(r.mdnsDiscoveredBootstrapNodes, fullAddr)
+								logger.Infof(context.Background(), "Added mDNS bootstrap node: %s", fullAddr.String())
+							}
+						}
+						r.mdnsBootstrapLock.Unlock()
+						
+						// Connect to the discovered peer
+						if err := r.host.Connect(ctx, pi); err != nil {
+							logger.Errorf(ctx, "Failed to connect to discovered bootstrap peer: %v", err)
 						}
 					}
 				}
-				// Connect to the discovered peer
-				return r.host.Connect(ctx, pi)
-			},
-		}
-		r.mdnsService.RegisterCallback(callbackReg)
+			}
+		})
 
+		// Start the mDNS service
 		if err := r.mdnsService.Start(); err != nil {
-			return fmt.Errorf("failed to start mDNS node: %w", err)
+			return fmt.Errorf("failed to start mDNS service: %w", err)
 		}
-		r.mdnsService.StartPeriodicRefresh()
 
 		// Cleanup mDNS when context is done
 		go func() {
 			<-ctx.Done()
 			if r.mdnsService != nil {
-				// Unregister registry callbacks from singleton node
-				r.mdnsService.UnregisterCallback("registry")
+				if err := r.mdnsService.Stop(); err != nil {
+					logger.Errorf(context.Background(), "[Registry] Error stopping mDNS service: %v", err)
+				}
 			}
 			logger.Infof(context.Background(), "[Registry] mDNS cleanup completed")
 		}()
@@ -336,7 +368,28 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	}
 
 	// rememer to register it
-	registry.Register(r)
+	registration := &registry.Registration{
+		ID:         r.host.ID().String(),
+		Name:       r.host.ID().String(),
+		Type:       "registry",
+		Namespaces: []string{"native"},
+		Addresses:  []string{},
+		Metadata:   map[string]interface{}{},
+	}
+	
+	// Get host addresses
+	for _, addr := range r.host.Addrs() {
+		registration.Addresses = append(registration.Addresses, addr.String())
+	}
+	
+	// Set as default registry first, before registering self
+	registry.SetDefaultRegistry(r)
+	
+	// Now register self
+	if err := registry.Register(ctx, registration); err != nil {
+		return fmt.Errorf("failed to register native registry: %w", err)
+	}
+	
 	return nil
 }
 
@@ -349,13 +402,13 @@ func (r *nativeRegistry) Options() registry.Options {
 // only accepts IDs generated from public keys. We do not support individual IDs for peers.
 // All peers use the same public key belonging to the host to generate their IDs.
 // Consequently, we can only support registering one peer at present.
-func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, opts ...registry.RegisterOption) error {
+func (r *nativeRegistry) Register(ctx context.Context, registration *registry.Registration, opts ...registry.RegisterOption) error {
 	regOpts := &registry.RegisterOptions{}
 	for _, opt := range opts {
 		opt(regOpts)
 	}
 
-	err := r.beforeRegister(ctx, peerReg, regOpts)
+	err := r.beforeRegister(ctx, registration, regOpts)
 	if err != nil {
 		return fmt.Errorf("register peer: %w", err)
 	}
@@ -366,7 +419,7 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 		defer ticker.Stop()
 
 		re := func() {
-			if errIn := r.register(ctx, peerReg, regOpts); errIn != nil {
+			if errIn := r.register(ctx, registration, regOpts); errIn != nil {
 				logger.Errorf(ctx, "native Registry failed to register peer: %s", errIn)
 			} else {
 				logger.Infof(ctx, "native Registry registered peer")
@@ -391,110 +444,147 @@ func (r *nativeRegistry) Register(ctx context.Context, peerReg *registry.Peer, o
 
 // Deregister removes a peer from the registry,
 // but DHT doesn't support delete operation, so we just remove it from the map
-func (r *nativeRegistry) Deregister(ctx context.Context, peer *registry.Peer, opts ...registry.DeregisterOption) error {
+func (r *nativeRegistry) Deregister(ctx context.Context, id string, opts ...registry.DeregisterOption) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if peer == nil {
-		return errors.New("peer cannot be nil")
+	// For DHT-based registry, we use the ID as the key
+	// Remove from local cache if it exists
+	if peer, exists := r.peers[id]; exists {
+		delete(r.peers, peer.Name)
 	}
-
-	// Remove from local cache
-	delete(r.peers, peer.Name)
 
 	// Remove from DHT network
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	key := fmt.Sprintf(peerKeyFormat, networkNamespace, peer.Name)
+	key := fmt.Sprintf(peerKeyFormat, networkNamespace, id)
 	// Set empty value with short TTL
 	return r.dht.PutValue(ctx, key, []byte{})
 }
 
-func (r *nativeRegistry) GetPeer(ctx context.Context, opts ...registry.GetOption) (*registry.Peer, error) {
+func (r *nativeRegistry) Query(ctx context.Context, opts ...registry.QueryOption) ([]*registry.Registration, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	getOpts := &registry.GetOptions{}
+	queryOpts := &registry.QueryOptions{}
 	for _, o := range opts {
-		o(getOpts)
+		o(queryOpts)
 	}
 
-	// Me means get current peer info
-	if getOpts.Me {
-		p := &registry.Peer{
-			ID: r.host.ID().String(),
-		}
+	var results []*registry.Registration
 
-		p.Metadata = map[string]interface{}{}
+	// Handle Me query (get current peer info)
+	if queryOpts.Me {
+		registration := &registry.Registration{
+			ID:         r.host.ID().String(),
+			Name:       r.host.ID().String(),
+			Type:       "peer",
+			Namespaces: []string{"local"},
+			Addresses:  []string{},
+			Metadata:   map[string]interface{}{},
+		}
 
 		var addrs []string
 		for _, a := range r.host.Addrs() {
 			addrs = append(addrs, a.String())
 		}
-
-		p.Metadata[MetaConstantKeyAddress] = strings.Join(addrs, ",")
-		return p, nil
+		registration.Addresses = addrs
+		registration.Metadata[MetaConstantKeyAddress] = strings.Join(addrs, ",")
+		
+		results = append(results, registration)
+		return results, nil
 	}
 
-	targetID, err := peer.Decode(getOpts.Name)
-	if err != nil {
-		return nil, fmt.Errorf("[GetPeer] registry failed to decode peer ID: %w", err)
+	// Handle ID-based query
+	if queryOpts.ID != "" {
+		targetID, err := peer.Decode(queryOpts.ID)
+		if err != nil {
+			return nil, fmt.Errorf("[Query] registry failed to decode peer ID: %w", err)
+		}
+
+		peerAddrs, err := r.dht.FindPeer(ctx, targetID)
+		if err != nil {
+			return nil, fmt.Errorf("[Query] registry failed to find peer: %w", err)
+		}
+
+		logger.Infof(ctx, "[Query] registry found peers: %+v", peerAddrs)
+
+		key := fmt.Sprintf(peerKeyFormat, networkNamespace, queryOpts.ID)
+		data, err := r.dht.GetValue(ctx, key)
+		if err != nil {
+			return results, nil // Return empty results if not found
+		}
+
+		peerReg, err := r.unmarshalPeer(data)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert Peer to Registration
+		registration := &registry.Registration{
+			ID:         peerReg.ID,
+			Name:       peerReg.Name,
+			Type:       "peer",
+			Namespaces: []string{"dht"},
+			Addresses:  []string{},
+			Metadata:   peerReg.Metadata,
+		}
+
+		// Handle TURN addresses
+		if time.Now().Sub(r.turnUpdateTime) > 8*time.Second {
+			r.refreshTurn(ctx)
+		}
+
+		if len(r.turnRelayAddresses) > 0 {
+			registration.Addresses = append(registration.Addresses, r.turnRelayAddresses...)
+		}
+		if len(r.turnStunAddresses) > 0 {
+			registration.Addresses = append(registration.Addresses, r.turnStunAddresses...)
+		}
+
+		results = append(results, registration)
+		return results, nil
 	}
 
-	peerAddrs, err := r.dht.FindPeer(ctx, targetID)
-	if err != nil {
-		return nil, fmt.Errorf("[GetPeer] registry failed to find peer: %w", err)
+	// Handle name-based query (backward compatibility)
+	if queryOpts.Name != "" {
+		return r.listPeersToRegistrations(ctx, queryOpts)
 	}
 
-	logger.Infof(ctx, "[GetPeer] registry found peers: %+v", peerAddrs)
+	// Default: list all peers
+	return r.listPeersToRegistrations(ctx, queryOpts)
+}
 
-	key := fmt.Sprintf(peerKeyFormat, networkNamespace, getOpts.Name)
-	data, err := r.dht.GetValue(ctx, key)
+func (r *nativeRegistry) Watch(ctx context.Context, callback registry.WatchCallback, opts ...registry.WatchOption) error {
+	// Implement DHT-based watch functionality using callback pattern
+	return errors.New("[Watch] not implemented")
+}
+
+func (r *nativeRegistry) listPeersToRegistrations(ctx context.Context, queryOpts *registry.QueryOptions) ([]*registry.Registration, error) {
+	peers, err := r.listPeers(ctx, queryOpts)
 	if err != nil {
 		return nil, err
 	}
 
-	var p *registry.Peer
-	if p, err = r.unmarshalPeer(data); err != nil {
-		return nil, err
-	}
-
-	// append accessible networks
-	// todo configure
-	if time.Now().Sub(r.turnUpdateTime) > 8*time.Second {
-		r.refreshTurn(ctx)
-	}
-
-	p.EndStation = map[string]*registry.EndStation{}
-	if len(r.turnRelayAddresses) > 0 {
-		p.EndStation = map[string]*registry.EndStation{
-			registry.StationTypeTurnRelay: {
-				Name:       registry.StationTypeTurnRelay,
-				Typ:        registry.StationTypeTurnRelay,
-				NetAddress: r.turnRelayAddresses[0],
-			},
+	var registrations []*registry.Registration
+	for _, p := range peers {
+		registration := &registry.Registration{
+			ID:         p.ID,
+			Name:       p.Name,
+			Type:       "peer",
+			Namespaces: []string{"dht"},
+			Addresses:  []string{},
+			Metadata:   p.Metadata,
 		}
-	}
-	if len(r.turnStunAddresses) > 0 {
-		p.EndStation = map[string]*registry.EndStation{
-			registry.StationTypeStun: {
-				Name:       registry.StationTypeStun,
-				Typ:        registry.StationTypeStun,
-				NetAddress: r.turnStunAddresses[0],
-			},
-		}
+		registrations = append(registrations, registration)
 	}
 
-	return p, nil
+	return registrations, nil
 }
 
-func (r *nativeRegistry) Watch(ctx context.Context, opts ...registry.WatchOption) (registry.Watcher, error) {
-	// Implement DHT-based watch functionality
-	return nil, errors.New("[Watch] not implemented")
-}
+func (r *nativeRegistry) listPeers(ctx context.Context, queryOpts *registry.QueryOptions) ([]*Peer, error) {
 
-func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOption) ([]*registry.Peer, error) {
 	// Create CID for provider lookup
 	prefix := cid.Prefix{
 		Version:  1,
@@ -510,7 +600,7 @@ func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOpti
 	// Query DHT for all providers
 	providerChan := r.dht.FindProvidersAsync(ctx, serviceCID, 0)
 
-	var peers []*registry.Peer
+	var peers []*Peer
 	seen := make(map[peer.ID]bool)
 
 	// Process discovered providers
@@ -548,7 +638,7 @@ func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOpti
 			}
 
 			sort.Strings(addrStrings)
-			peers = append(peers, &registry.Peer{
+			peers = append(peers, &Peer{
 				Name: pid.String(),
 				Metadata: map[string]interface{}{
 					MetaConstantKeyRegisterType: MetaRegisterTypeConnected,
@@ -561,8 +651,8 @@ func (r *nativeRegistry) ListPeers(ctx context.Context, opts ...registry.GetOpti
 	return peers, nil
 }
 
-func (r *nativeRegistry) ListPeers_old(ctx context.Context, opts ...registry.GetOption) ([]*registry.Peer, error) {
-	var connectedPeers []*registry.Peer
+func (r *nativeRegistry) ListPeers_old(ctx context.Context, queryOpts *registry.QueryOptions) ([]*Peer, error) {
+	var connectedPeers []*Peer
 
 	// Get the list of connected peer IDs
 	peerIDs := r.host.Network().Peers()
@@ -584,58 +674,41 @@ func (r *nativeRegistry) ListPeers_old(ctx context.Context, opts ...registry.Get
 			logger.Infof(ctx, "[ListPeers] peer %s find in routing table result: %+v", peerID, addrInfo)
 		}
 
-		// Here you need to get more information about the peer to create a registry.Peer struct.
-		// For simplicity, we assume you can get the peer's name from the peer ID (this may need adjustment in a real - world scenario).
-		peerName := peerID.String()
-		var addrs []string
-		addrInfo, err := r.dht.FindPeer(ctx, peerID)
-		if err != nil {
-			logger.Errorf(ctx, "[ListPeers] failed to find peer %s: %s", peerID, err)
-		} else {
-			addrs = make([]string, len(addrInfo.Addrs))
-			for i, addr := range addrInfo.Addrs {
-				addrs[i] = addr.String()
-			}
-
-			// Create a new registry.Peer struct
-			peerConnected := &registry.Peer{
-				Name: peerName,
-				// You may need to fill in other fields according to your actual requirements.
-				// For example, you can get the peer's addresses from the peerstore.
-				Metadata: map[string]interface{}{
-					MetaConstantKeyRegisterType: MetaRegisterTypeConnected,
-					MetaConstantKeyAddress:      addrs,
-				},
-			}
-			connectedPeers = append(connectedPeers, peerConnected)
-		}
-
-		dhtValue, err := r.dht.GetValue(ctx, networkNamespace+"/"+peerName)
-		if err != nil {
-			logger.Errorf(ctx, "[ListPeers] failed to get dht value: %s", err)
+		// Skip bootstrap nodes
+		if r.isBootstrapNode(peerID) {
 			continue
 		}
 
-		if dhtValue != nil {
-			var dhtPeer *registry.Peer
-			if dhtPeer, err = r.unmarshalPeer(dhtValue); err != nil {
-				logger.Errorf(ctx, "[ListPeers] failed to unmarshal dht value: %s", err)
-				continue
-			}
+		// Get addresses from peerstore
+		addrs := r.host.Peerstore().Addrs(peerID)
+		addrStrings := make([]string, len(addrs))
+		for i, addr := range addrs {
+			addrStrings[i] = addr.String()
+		}
 
-			var dhtPk pb.PublicKey
-			err = proto.Unmarshal(dhtValue, &dhtPk)
-			if err != nil {
-				logger.Errorf(ctx, "[ListPeers] failed to unmarshal dht pk value: %s", err)
-				continue
-			}
+		// Create peer entry for connected peer
+		peerConnected := &Peer{
+			ID:   peerID.String(),
+			Name: peerID.String(),
+			Metadata: map[string]interface{}{
+				MetaConstantKeyRegisterType: MetaRegisterTypeConnected,
+				MetaConstantKeyAddress:      addrStrings,
+			},
+		}
+		connectedPeers = append(connectedPeers, peerConnected)
 
-			if dhtPeer.Metadata == nil {
-				dhtPeer.Metadata = map[string]interface{}{}
+		// Try to get additional peer data from DHT
+		key := fmt.Sprintf(peerKeyFormat, networkNamespace, peerID.String())
+		dhtValue, err := r.dht.GetValue(ctx, key)
+		if err == nil && len(dhtValue) > 0 {
+			dhtPeer, err := r.unmarshalPeer(dhtValue)
+			if err == nil {
+				if dhtPeer.Metadata == nil {
+					dhtPeer.Metadata = map[string]interface{}{}
+				}
+				dhtPeer.Metadata[MetaConstantKeyRegisterType] = MetaRegisterTypeDHT
+				connectedPeers = append(connectedPeers, dhtPeer)
 			}
-			dhtPeer.Metadata[MetaConstantKeyRegisterType] = MetaRegisterTypeDHT
-
-			connectedPeers = append(connectedPeers, dhtPeer)
 		}
 	}
 
@@ -646,12 +719,12 @@ func (r *nativeRegistry) String() string {
 	return "native-registry"
 }
 
-func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, opts *registry.RegisterOptions) error {
+func (r *nativeRegistry) register(ctx context.Context, registration *registry.Registration, opts *registry.RegisterOptions) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if peerReg == nil {
-		return errors.New("[register] peerReg cannot be nil")
+	if registration == nil {
+		return errors.New("[register] registration cannot be nil")
 	}
 
 	// register to DHT
@@ -664,7 +737,7 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 			MhType:   multihash.SHA2_256,
 			MhLength: -1,
 		}
-		data := networkBootstrapNamespace + ":" + peerReg.ID
+		data := networkBootstrapNamespace + ":" + registration.ID
 		serviceCID, err := prefix.Sum([]byte(data))
 		if err != nil {
 			return fmt.Errorf("[register] failed to create node CID: %w", err)
@@ -679,10 +752,10 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 	{
 		rd := &RegisterRecord{
 			Version:       "0.0.1",
-			PeerId:        peerReg.ID,
-			PeerName:      peerReg.Name,
+			PeerId:        registration.ID,
+			PeerName:      registration.Name,
 			Libp2pId:      r.host.ID().String(),
-			EndStationMap: peerReg.EndStation,
+			EndStationMap: make(map[string]interface{}), // Convert to interface{} for V2 compatibility
 		}
 
 		err := r.setRegisterRecord(ctx, rd)
@@ -696,11 +769,17 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 		return nil
 	}
 
-	dataPk, err := r.marshalPeer(ctx, peerReg)
+	// Convert Registration to Peer for marshaling
+	dataPk, err := r.marshalPeer(ctx, &Peer{
+		ID:       registration.ID,
+		Name:     registration.Name,
+		Version:  "0.0.1", // Default version
+		Metadata: registration.Metadata,
+	})
 	if err != nil {
 		return fmt.Errorf("[register] failed to marshal peerReg: %w", err)
 	}
-	id := r.host.ID().String()
+	id := registration.ID
 	key := fmt.Sprintf(peerKeyFormat, networkNamespace, id)
 
 	err = r.dht.PutValue(ctx, key, dataPk)
@@ -712,24 +791,20 @@ func (r *nativeRegistry) register(ctx context.Context, peerReg *registry.Peer, o
 	return nil
 }
 
-func (r *nativeRegistry) beforeRegister(ctx context.Context, peerReg *registry.Peer, opts *registry.RegisterOptions) error {
-	if peerReg.Metadata == nil {
-		peerReg.Metadata = map[string]interface{}{}
+func (r *nativeRegistry) beforeRegister(ctx context.Context, registration *registry.Registration, opts *registry.RegisterOptions) error {
+	if registration.Metadata == nil {
+		registration.Metadata = map[string]interface{}{}
 	}
 
-	if peerReg.ID == "" {
-		return errors.New("[beforeRegister] peer ID cannot be nil")
+	if registration.ID == "" {
+		return errors.New("[beforeRegister] registration ID cannot be nil")
 	}
 
-	if peerReg.Version == "" {
-		return errors.New("[beforeRegister] peer Version cannot be nil")
+	if registration.Name == "" {
+		return errors.New("[beforeRegister] registration Name cannot be nil")
 	}
 
-	if peerReg.Name == "" {
-		return errors.New("[beforeRegister] peer Name cannot be nil")
-	}
-
-	peerReg.Metadata[MetaConstantKeyPeerID] = r.host.ID().String()
+	registration.Metadata[MetaConstantKeyPeerID] = r.host.ID().String()
 
 	// todo any other hooks?
 	return nil
@@ -879,13 +954,13 @@ func (r *nativeRegistry) addListenAddr(ctx context.Context, addr string, protoco
 	return nil
 }
 
-func (r *nativeRegistry) unmarshalPeer(data []byte) (peerReg *registry.Peer, err error) {
+func (r *nativeRegistry) unmarshalPeer(data []byte) (peerReg *Peer, err error) {
 	pk := &pb.PublicKey{}
 	if err = proto.Unmarshal(data, pk); err != nil {
 		return nil, fmt.Errorf("[unmarshalPeer] failed to unmarshal public key: %w", err)
 	}
 
-	peerReg = &registry.Peer{}
+	peerReg = &Peer{}
 	err = json.Unmarshal(pk.Data, peerReg)
 	if err != nil {
 		return nil, fmt.Errorf("[unmarshalPeer] failed to unmarshal peerReg: %w", err)
@@ -894,11 +969,10 @@ func (r *nativeRegistry) unmarshalPeer(data []byte) (peerReg *registry.Peer, err
 	return peerReg, nil
 }
 
-func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *registry.Peer) ([]byte, error) {
+func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *Peer) ([]byte, error) {
 	// Add security metadata
 	peerReg.Version = "1.0"
-	peerReg.Timestamp = time.Now()
-
+	
 	// Sign the payload
 	dataToSign, err := json.Marshal(struct {
 		Name      string
@@ -907,15 +981,21 @@ func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *registry.Peer
 	}{
 		Name:      peerReg.Name,
 		Version:   peerReg.Version,
-		Timestamp: peerReg.Timestamp,
+		Timestamp: time.Now(),
 	})
+	if err != nil {
+		return nil, fmt.Errorf("[marshal] marshal data for signing: %w", err)
+	}
 
 	// Sign the payload using your node's private key
 	signData, err := r.signPayload(r.options.PrivateKey, dataToSign) // Implement signing logic
 	if err != nil {
 		return nil, fmt.Errorf("[marshal] native Registry failed to sign payload: %w", err)
 	}
-	peerReg.Signature = signData
+	peerReg.Metadata = map[string]interface{}{
+		"signature": signData,
+		"timestamp": time.Now(),
+	}
 
 	// Serialize peerReg data
 	data, err := json.Marshal(peerReg)

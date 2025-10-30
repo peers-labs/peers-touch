@@ -380,7 +380,24 @@ func (c *libp2pClient) ListPeers(ctx context.Context) ([]*registry.Peer, error) 
 	}
 
 	if c.registry != nil {
-		return c.registry.ListPeers(ctx)
+		// Use Query method to get all peers
+		registrations, err := c.registry.Query(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query peers: %w", err)
+		}
+		
+		// Convert registrations to peers
+		peers := make([]*registry.Peer, 0, len(registrations))
+		for _, reg := range registrations {
+			peer := &registry.Peer{
+				ID:       reg.ID,
+				Name:     reg.Name,
+				Version:  "1.0", // Default version
+				Metadata: reg.Metadata,
+			}
+			peers = append(peers, peer)
+		}
+		return peers, nil
 	}
 
 	return nil, fmt.Errorf("registry not available")
