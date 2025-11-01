@@ -1,0 +1,18 @@
+- id: "log-method-prefix"
+  description: Ensure log statements start with current method name in brackets
+  message: "Log calls must prefix message with [CurrentMethodName]"
+  pattern: |
+    func $FUNC(...) {
+        // ... existing code ...
+        log.$LEVEL($CTX, "$MSG")
+        // ... existing code ...
+    }
+  replacement: |
+    func $FUNC(...) {
+        // ... existing code ...
+        log.$LEVEL($CTX, "[%s]$MSG", "$FUNC")
+        // ... existing code ...
+    }
+  severity: error
+  paths:
+    - "**/*.go"

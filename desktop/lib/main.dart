@@ -1,8 +1,33 @@
+import 'package:desktop/pages/ai/ai_chat_page.dart';
+import 'package:desktop/pages/ai/ai_chat_page.dart';
+import 'package:desktop/pages/ai/chat_list.dart';
+import 'package:desktop/providers/model_provider.dart';
+import 'package:desktop/providers/ai_provider_state.dart';
+import 'package:desktop/providers/right_sidebar_provider.dart';
+import 'package:desktop/providers/sidebar_state_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import 'services/backend_client.dart';
 import 'pages/peers_center.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Must add this line.
+  await windowManager.ensureInitialized();
+
+  WindowOptions windowOptions = const WindowOptions(
+    minimumSize: Size(1000, 750),
+    center: true,
+    backgroundColor: Colors.transparent,
+    skipTaskbar: false,
+    titleBarStyle: TitleBarStyle.hidden,
+  );
+  windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.show();
+    await windowManager.focus();
+  });
+
   runApp(const PeersTouchStationApp());
 }
 
@@ -11,14 +36,22 @@ class PeersTouchStationApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Peers Touch Station',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        fontFamily: 'Segoe UI',
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AIModelProvider()),
+        ChangeNotifierProvider(create: (_) => RightSidebarProvider()),
+        ChangeNotifierProvider(create: (_) => SidebarStateProvider()),
+        ChangeNotifierProvider(create: (_) => AIProviderState()),
+      ],
+      child: MaterialApp(
+        title: 'Peers Touch Station',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          fontFamily: 'Segoe UI',
+        ),
+        home: const HomeScreen(),
+        debugShowCheckedModeBanner: false,
       ),
-      home: const HomeScreen(),
-      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -37,208 +70,98 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Minimal backend check: fetch photo list and log result.
-    _backend.listPhotos().then((data) {
-      // Print basic info to console for verification without changing UI.
-      final total = data['total'] ?? 'unknown';
-      debugPrint('[StationDesktop] Backend reachable. total photos: $total');
-    }).catchError((e) {
-      debugPrint('[StationDesktop] Backend not reachable: $e');
-    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final sidebarState = Provider.of<SidebarStateProvider>(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       body: Row(
         children: [
-          // Sidebar
-          Container(
-            width: 220,
-            decoration: const BoxDecoration(
-              color: Color(0xFF2B3A67),
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(20),
-                bottomRight: Radius.circular(20),
-              ),
-            ),
-            child: Column(
-              children: [
-                // Logo/Header
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: Colors.blue,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.cloud,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'Peers Touch',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Navigation Items
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    children: [
-                      _buildNavItem(
-                        icon: Icons.home,
-                        label: 'Home',
-                        isSelected: selectedIndex == 0,
-                        onTap: () => setState(() => selectedIndex = 0),
-                      ),
-                      _buildNavItem(
-                        icon: Icons.folder,
-                        label: 'Files',
-                        isSelected: selectedIndex == 1,
-                        onTap: () => setState(() => selectedIndex = 1),
-                      ),
-                      _buildNavItem(
-                        icon: Icons.description,
-                        label: 'Paper',
-                        isSelected: selectedIndex == 2,
-                        onTap: () => setState(() => selectedIndex = 2),
-                      ),
-                      _buildNavItem(
-                        icon: Icons.slideshow,
-                        label: 'Peers-Center',
-                        isSelected: selectedIndex == 3,
-                        onTap: () => setState(() => selectedIndex = 3),
-                      ),
-                    ],
-                  ),
-                ),
-                // Upgrade Section
-                Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.upgrade,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Upgrade',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Account',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Personal Section
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Personal',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        '10.7 MB',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Main Content
+          // Conditional Sidebar
+          if (sidebarState.isLeftSidebarOpen)
+            _buildFullSidebar(context)
+          else
+            _buildMiniSidebar(context),
+
+          // Main Content Area
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.fromLTRB(0, 32, 32, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
+                  // Header with toggle button
                   Row(
                     children: [
-                      Text(
-                        _titleForIndex(selectedIndex),
-                        style: const TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1A1A1A),
-                        ),
+                      IconButton(
+                        icon: Icon(sidebarState.isLeftSidebarOpen ? Icons.menu_open : Icons.menu),
+                        onPressed: () => sidebarState.toggleLeftSidebar(),
+                        tooltip: sidebarState.isLeftSidebarOpen ? 'Collapse Sidebar' : 'Expand Sidebar',
                       ),
-                      const Spacer(),
-                      // Search Bar
-                      Container(
-                        width: 300,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F3F4),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const TextField(
-                          decoration: InputDecoration(
-                            hintText: 'Search your content',
-                            prefixIcon: Icon(Icons.search, color: Colors.grey),
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(vertical: 12),
+                      const SizedBox(width: 16),
+                      // Page Title
+                      Expanded(
+                        child: Text(
+                          _titleForIndex(selectedIndex),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 16),
+                      // Middle column toggle (only for AI Chat page)
+                      if (selectedIndex == 4)
+                        IconButton(
+                          icon: Icon(sidebarState.isMiddleColumnOpen ? Icons.keyboard_arrow_left : Icons.keyboard_arrow_right),
+                          onPressed: () => sidebarState.toggleMiddleColumn(),
+                          tooltip: sidebarState.isMiddleColumnOpen ? 'Hide Chat List' : 'Show Chat List',
+                        ),
+                      // Search Bar - 使用LayoutBuilder根据可用空间决定是否显示
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          // 只有当可用宽度大于400px时才显示搜索框
+                          if (constraints.maxWidth > 400) {
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 200,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F3F4),
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                  child: const TextField(
+                                    decoration: InputDecoration(
+                                      hintText: 'Search',
+                                      prefixIcon: Icon(Icons.search, color: Colors.grey, size: 18),
+                                      border: InputBorder.none,
+                                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                              ],
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
                       // Profile
-                      CircleAvatar(
-                        radius: 20,
+                      const CircleAvatar(
+                        radius: 18,
                         backgroundColor: Colors.orange,
-                        child: const Text(
+                        child: Text(
                           'BE',
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
+                            fontSize: 12,
                           ),
                         ),
                       ),
@@ -246,246 +169,223 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 32),
                   // Content Switcher
-                  if (selectedIndex == 3)
-                    Expanded(child: PeersCenterPage(backend: _backend))
-                  else
-                    Expanded(child: Container(
-                    width: 400,
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3CD),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 60,
-                              height: 60,
-                              decoration: BoxDecoration(
-                                color: Colors.orange,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(
-                                Icons.home,
-                                color: Colors.white,
-                                size: 30,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Project',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  const Text(
-                                    'We should be ready to reveal the new\nproject next week and we are very excited',
-                                    style: TextStyle(
-                                      color: Colors.black87,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        // Task Items
-                        _buildTaskItem('Creating storyboard', '@Bruce Patterson', false),
-                        _buildTaskItem('Preparing the source files', '@Charlie Huff', true),
-                      ],
-                    ),
-                  )),
-                  const SizedBox(height: 16),
+                  Expanded(
+                    child: _buildMainContent(),
+                  ),
                 ],
               ),
             ),
           ),
-          // Right Sidebar
-          Container(
-            width: 300,
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                // Profile Card
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8E3FF),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: Colors.purple.shade200,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.headphones,
-                          color: Colors.purple,
-                          size: 30,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Billie Eilish',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const Text(
-                        '1.9 MB · Modified 3 hours ago',
-                        style: TextStyle(
-                          color: Colors.black54,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // Audio waveform placeholder
-                      Container(
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.purple.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            '♪ ♫ ♪ ♫ ♪ ♫ ♪ ♫',
-                            style: TextStyle(
-                              color: Colors.purple,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          IconButton(
-                            onPressed: () {},
-                            icon: const Icon(Icons.link),
-                          ),
-                          IconButton(
-                            onPressed: () {},
-                            icon: const Icon(Icons.more_horiz),
-                          ),
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2B3A67),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Icon(
-                              Icons.play_arrow,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+
+          // Right Sidebar (conditionally shown)
+          if (selectedIndex != 4)
+            Container(
+              width: 300,
+              decoration: const BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: Color(0xFFE0E0E0)),
                 ),
-                const SizedBox(height: 24),
-                // Collaborators
-                Row(
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor: Colors.blue,
-                          child: const Text('A', style: TextStyle(color: Colors.white, fontSize: 12)),
-                        ),
-                        Positioned(
-                          left: 20,
-                          child: CircleAvatar(
-                            radius: 16,
-                            backgroundColor: Colors.green,
-                            child: const Text('B', style: TextStyle(color: Colors.white, fontSize: 12)),
-                          ),
-                        ),
-                        Positioned(
-                          left: 40,
-                          child: CircleAvatar(
-                            radius: 16,
-                            backgroundColor: Colors.orange,
-                            child: const Text('C', style: TextStyle(color: Colors.white, fontSize: 12)),
-                          ),
-                        ),
-                        Positioned(
-                          left: 60,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade300,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.add, size: 16),
-                          ),
-                        ),
-                      ],
+                    const Text(
+                      'Tasks',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTaskItem('Review Q3 budget', 'You', true),
+                    _buildTaskItem('Finalize presentation deck', 'Alex', false),
+                    _buildTaskItem('Onboarding new hire', 'You', false),
+                    const SizedBox(height: 32),
+                    const Text(
+                      'Recent',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildRecentItem(
+                      icon: Icons.description,
+                      name: 'Project Phoenix Spec',
+                      type: 'Paper',
+                      color: Colors.blue,
+                    ),
+                    _buildRecentItem(
+                      icon: Icons.folder,
+                      name: 'Marketing Assets Q4',
+                      type: 'Folder',
+                      color: Colors.orange,
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                // Comments
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Colors.blue,
-                      child: const Text('M', style: TextStyle(color: Colors.white, fontSize: 12)),
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        '@Marie We need to make sure to review the cover',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Colors.orange,
-                      child: const Text('U', style: TextStyle(color: Colors.white, fontSize: 12)),
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Write a comment',
-                          border: InputBorder.none,
-                          hintStyle: TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
-          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMainContent() {
+    switch (selectedIndex) {
+      case 3:
+        return PeersCenterPage(backend: _backend);
+      case 4:
+        return const AIChatPage();
+      default:
+        return Center(
+          child: Text('Content for ${_titleForIndex(selectedIndex)}'),
+        );
+    }
+  }
+
+  Widget _buildFullSidebar(BuildContext context) {
+    final sidebarState = Provider.of<SidebarStateProvider>(context, listen: false);
+    return Container(
+      width: 240,
+      decoration: const BoxDecoration(
+        color: Color(0xFF2B3A67),
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Logo
+            Padding(
+              padding: const EdgeInsets.only(left: 8.0, bottom: 24),
+              child: Row(
+                mainAxisSize: MainAxisSize.min, // 限制Row的最小尺寸
+                children: const [
+                  Icon(Icons.cloud_queue, color: Colors.white, size: 28),
+                  SizedBox(width: 12),
+                  Flexible( // 使用Flexible而不是Expanded，避免强制撑满
+                    child: Text(
+                      'Peers Touch',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis, // 过长时显示省略号
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Nav Items
+            _buildNavItem(
+              icon: Icons.home_outlined,
+              label: 'Home',
+              isSelected: selectedIndex == 0,
+              onTap: () => setState(() => selectedIndex = 0),
+            ),
+            _buildNavItem(
+              icon: Icons.folder_outlined,
+              label: 'Files',
+              isSelected: selectedIndex == 1,
+              onTap: () => setState(() => selectedIndex = 1),
+            ),
+            _buildNavItem(
+              icon: Icons.description_outlined,
+              label: 'Paper',
+              isSelected: selectedIndex == 2,
+              onTap: () => setState(() => selectedIndex = 2),
+            ),
+            _buildNavItem(
+              icon: Icons.people_alt_outlined,
+              label: 'Peers-Center',
+              isSelected: selectedIndex == 3,
+              onTap: () => setState(() => selectedIndex = 3),
+            ),
+            _buildNavItem(
+              icon: Icons.smart_toy_outlined,
+              label: 'AI Chat',
+              isSelected: selectedIndex == 4,
+              onTap: () => setState(() => selectedIndex = 4),
+            ),
+            const Divider(color: Colors.white24, height: 32, indent: 8, endIndent: 8),
+
+            const Spacer(), // Pushes the collapse button to the bottom
+
+             _buildNavItem(
+               icon: Icons.menu_open,
+               label: 'Collapse',
+               isSelected: false,
+               onTap: () => sidebarState.toggleLeftSidebar(),
+             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniSidebar(BuildContext context) {
+    final sidebarState = Provider.of<SidebarStateProvider>(context, listen: false);
+    return Container(
+      width: 72,
+      decoration: const BoxDecoration(
+        color: Color(0xFF2B3A67),
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 32, 8, 16),
+        child: Column(
+          children: [
+            // Logo Icon
+            const Icon(Icons.cloud_queue, color: Colors.white, size: 28),
+            const SizedBox(height: 24),
+
+            // Nav Icons
+            _buildMiniIcon(Icons.home_outlined, 'Home', 0),
+            _buildMiniIcon(Icons.folder_outlined, 'Files', 1),
+            _buildMiniIcon(Icons.description_outlined, 'Paper', 2),
+            _buildMiniIcon(Icons.people_alt_outlined, 'Peers-Center', 3),
+            _buildMiniIcon(Icons.smart_toy_outlined, 'AI Chat', 4),
+
+            const Spacer(),
+
+            // Expand Button
+            IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white70),
+              onPressed: () => sidebarState.toggleLeftSidebar(),
+              tooltip: 'Expand Sidebar',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniIcon(IconData icon, String tooltip, int index) {
+    final isSelected = selectedIndex == index;
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        height: 48,
+        width: 56,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => setState(() => selectedIndex = index),
+            borderRadius: BorderRadius.circular(8),
+            child: Icon(icon, color: isSelected ? Colors.white : Colors.white70, size: 20),
+          ),
+        ),
       ),
     );
   }
@@ -500,6 +400,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return 'Paper';
       case 3:
         return 'Peers-Center';
+      case 4:
+        return 'AI Chat';
       default:
         return 'Peers Touch';
     }
@@ -544,22 +446,25 @@ class _HomeScreenState extends State<HomeScreen> {
           Icon(
             isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
             color: isCompleted ? Colors.green : Colors.grey,
-            size: 16,
+            size: 14, // 减小图标尺寸
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6), // 减小间距
           Expanded(
             child: Text(
               task,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13, // 减小字体大小
                 decoration: isCompleted ? TextDecoration.lineThrough : null,
               ),
+              maxLines: 1, // 限制单行显示
+              overflow: TextOverflow.ellipsis, // 过长时显示省略号
             ),
           ),
+          const SizedBox(width: 4), // 减小间距
           Text(
             assignee,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 11, // 减小字体大小
               color: Colors.blue,
             ),
           ),
@@ -576,7 +481,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12), // 减小内边距
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -591,19 +496,19 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 32, // 减小图标容器尺寸
+            height: 32,
             decoration: BoxDecoration(
               color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
               icon,
               color: color,
-              size: 20,
+              size: 16, // 减小图标尺寸
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12), // 减小间距
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -612,14 +517,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   name,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                    fontSize: 13, // 减小字体大小
                   ),
+                  maxLines: 1, // 限制单行显示
+                  overflow: TextOverflow.ellipsis, // 过长时显示省略号
                 ),
                 Text(
                   type,
                   style: const TextStyle(
                     color: Colors.grey,
-                    fontSize: 12,
+                    fontSize: 11, // 减小字体大小
                   ),
                 ),
               ],

@@ -11,9 +11,9 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
-	"github.com/dirty-bro-tech/peers-touch-go/core/option"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-station/subserver/station/model"
+	"github.com/peers-touch/peers-touch/station/app/subserver/station/model"
+	"github.com/peers-touch/peers-touch/station/frame/core/option"
+	"github.com/peers-touch/peers-touch/station/frame/core/server"
 )
 
 // StationHandlerInfo represents a single handler's information

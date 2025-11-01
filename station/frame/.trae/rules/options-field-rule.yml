@@ -1,0 +1,17 @@
+# Enforce Options structs to include *option.Options
+- id: "options-field-requirement"
+  description: Ensure Options structs include *option.Options from core/option package
+  message: "Options structs must include *option.Options as a field"
+  pattern: |
+    type Options struct {
+      $FIELDS
+      *option.Options
+      $MORE_FIELDS
+    }
+  severity: error
+  paths:
+    - "**/*/options.go"
+    - "**/options.go"
+  imports:
+    required:
+      - "github.com/peers-touch/peers-touch/station/frame/core/option"

@@ -1,0 +1,23 @@
+peers:
+  run-mode: 2
+  includes: store.yml
+  config:
+    hierarchy-merge: true
+  service:
+    server:
+      name: hertz
+      address: :8082
+      metadata:
+        name: foo
+        value: qux
+      native:
+        enabled: true
+        some-key: some-value
+      hertz:
+        enabled: true
+        some-key: some-value
+    registry:
+      retry-interval: 10s
+      native:
+        enable-mdns: true
+        enable-bootstrap: true

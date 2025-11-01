@@ -36,6 +36,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.2.0
   multicast_dns: ^0.3.2
+  file_picker: ^10.3.3
+  provider: ^6.1.2
+  window_manager: ^0.3.9
 
 dev_dependencies:
   flutter_test:
@@ -47,6 +50,26 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo_foreground.png"
+  adaptive_icon_background: "#2B3A67"
+  adaptive_icon_foreground: "assets/images/logo_foreground.png"
+  macos:
+    generate: true
+    image_path: "assets/images/logo_foreground.png"
+  windows:
+    generate: true
+    image_path: "assets/images/logo_foreground.png"
+    icon_size: 256
+  web:
+    generate: true
+    image_path: "assets/images/logo_foreground.png"
+    background_color: "#2B3A67"
+    theme_color: "#2B3A67"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

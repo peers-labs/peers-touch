@@ -1,24 +1,25 @@
-module github.com/dirty-bro-tech/peers-touch-station
+module github.com/peers-touch/peers-touch/station/app
 
 go 1.24.0
 
 toolchain go1.24.6
 
 replace (
-	github.com/dirty-bro-tech/peers-touch-go => ../../peers-touch-go
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native => ../../peers-touch-go/core/plugin/native
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/store => ../../peers-touch-go/core/plugin/native/store
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/postgres => ../../peers-touch-go/core/plugin/store/rds/postgres
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite => ../../peers-touch-go/core/plugin/store/rds/sqlite
+	github.com/peers-touch/peers-touch/station/frame => ../../station/frame
+	github.com/peers-touch/peers-touch/station/frame/core/plugin/native => ../../station/frame/core/plugin/native
+	github.com/peers-touch/peers-touch/station/frame/core/plugin/native/store => ../../station/frame/core/plugin/native/store
+	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/postgres => ../../station/frame/core/plugin/store/rds/postgres
+	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite => ../../station/frame/core/plugin/store/rds/sqlite
 )
 
 require (
 	github.com/cloudwego/hertz v0.9.5
-	github.com/dirty-bro-tech/peers-touch-go v0.0.0-20250612165025-f866ebda0623
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/native v0.0.0-00010101000000-000000000000
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/postgres v0.0.0-00010101000000-000000000000
-	github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
 	github.com/libp2p/go-libp2p v0.43.0
+	github.com/peers-touch/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
+	github.com/peers-touch/peers-touch/station/frame/core/plugin/native v0.0.0-00010101000000-000000000000
+	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/postgres v0.0.0-00010101000000-000000000000
+	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
+	google.golang.org/protobuf v1.36.7
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gen v0.3.27
 	gorm.io/gorm v1.25.12
@@ -56,7 +57,6 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -68,9 +68,9 @@ require (
 	github.com/ipfs/go-log/v2 v2.8.1 // indirect
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20231201235250-de7065d80cb9 // indirect
-	github.com/jackc/pgx/v5 v5.5.5 // indirect
-	github.com/jackc/puddle/v2 v2.2.1 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/pgx/v5 v5.7.2 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
@@ -114,6 +114,7 @@ require (
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
+	github.com/pgvector/pgvector-go v0.3.0 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
 	github.com/pion/dtls/v3 v3.0.6 // indirect
@@ -171,7 +172,6 @@ require (
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.36.0 // indirect
 	gonum.org/v1/gonum v0.16.0 // indirect
-	google.golang.org/protobuf v1.36.7 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gorm.io/datatypes v1.2.4 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
