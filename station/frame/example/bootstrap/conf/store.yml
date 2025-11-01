@@ -1,0 +1,9 @@
+peers:
+  store:
+    rds:
+      gorm:
+        # see github.com/peers-touch/peers-touch/station/frame/core/store/rds/sqlite
+        - name: sqlite
+          default: true
+          enable: true
+          dsn: file:peers.db?cache=shared&_fk=1

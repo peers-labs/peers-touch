@@ -1,0 +1,14 @@
+# Enforce CreatedAt and UpdatedAt as last struct fields
+- id: "timestamp-field-order"
+  description: Ensure CreatedAt and UpdatedAt are always the last fields in model structs
+  message: "Model structs must have CreatedAt and UpdatedAt as the last two fields"
+  pattern: |
+    type $NAME struct {
+      $FIELDS
+      CreatedAt time.Time
+      UpdatedAt time.Time 
+    }
+  severity: error
+  paths:
+    - "**/model/*.go"
+    - "**/models/*.go"

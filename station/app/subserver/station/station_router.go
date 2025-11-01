@@ -1,7 +1,7 @@
 package station
 
 import (
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
+	"github.com/peers-touch/peers-touch/station/frame/core/server"
 )
 
 const (

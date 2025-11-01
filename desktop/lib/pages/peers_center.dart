@@ -134,16 +134,22 @@ class _PeersCenterPageState extends State<PeersCenterPage> {
                 ),
               ),
               const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: _discovering ? null : _discover,
-                icon: const Icon(Icons.wifi_tethering),
-                label: Text(_discovering ? 'Discovering...' : 'Discover mDNS'),
-              ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: _checking ? null : _checkStatus,
-                icon: const Icon(Icons.health_and_safety),
-                label: Text(_checking ? 'Checking...' : 'Check Status'),
+              // 使用Wrap来替代Row，在小屏幕上自动换行
+              Wrap(
+                spacing: 12,
+                alignment: WrapAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _discovering ? null : _discover,
+                    icon: const Icon(Icons.wifi_tethering),
+                    label: Text(_discovering ? 'Discovering...' : 'Discover mDNS'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _checking ? null : _checkStatus,
+                    icon: const Icon(Icons.health_and_safety),
+                    label: Text(_checking ? 'Checking...' : 'Check Status'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -204,39 +210,82 @@ class _PeersCenterPageState extends State<PeersCenterPage> {
             ),
 
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7F7F7),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Status',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
+          // 使用LayoutBuilder根据可用宽度调整布局
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth > 600) {
+                // 宽屏幕：使用Row布局
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF7F7F7),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Status',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Ping: ${_pingMessage ?? '-'}'),
+                            Text('Health: ${_healthText ?? '-'}'),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text('Ping: ${_pingMessage ?? '-'}'),
-                      Text('Health: ${_healthText ?? '-'}'),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              ElevatedButton.icon(
-                onPressed: _loadingPeers ? null : _loadPeers,
-                icon: const Icon(Icons.list),
-                label: Text(_loadingPeers ? 'Loading...' : 'Load Nodes'),
-              ),
-            ],
+                    ),
+                    const SizedBox(width: 16),
+                    ElevatedButton.icon(
+                      onPressed: _loadingPeers ? null : _loadPeers,
+                      icon: const Icon(Icons.list),
+                      label: Text(_loadingPeers ? 'Loading...' : 'Load Nodes'),
+                    ),
+                  ],
+                );
+              } else {
+                // 窄屏幕：使用Column布局
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7F7F7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Status',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text('Ping: ${_pingMessage ?? '-'}'),
+                          Text('Health: ${_healthText ?? '-'}'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _loadingPeers ? null : _loadPeers,
+                      icon: const Icon(Icons.list),
+                      label: Text(_loadingPeers ? 'Loading...' : 'Load Nodes'),
+                    ),
+                  ],
+                );
+              }
+            },
           ),
 
           const SizedBox(height: 16),

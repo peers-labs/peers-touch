@@ -3,16 +3,18 @@ package main
 import (
 	"context"
 
-	"github.com/dirty-bro-tech/peers-touch-go/core/debug/actuator"
-	"github.com/dirty-bro-tech/peers-touch-go/core/node"
-	"github.com/dirty-bro-tech/peers-touch-go/core/server"
-	"github.com/dirty-bro-tech/peers-touch-station/subserver/station"
+	aibox "github.com/peers-touch/peers-touch/station/app/subserver/ai-box"
+	"github.com/peers-touch/peers-touch/station/app/subserver/station"
+	peers "github.com/peers-touch/peers-touch/station/frame"
+	"github.com/peers-touch/peers-touch/station/frame/core/debug/actuator"
+	"github.com/peers-touch/peers-touch/station/frame/core/node"
+	"github.com/peers-touch/peers-touch/station/frame/core/server"
 
 	// default plugins
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/native/registry"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/postgres"
-	_ "github.com/dirty-bro-tech/peers-touch-go/core/plugin/store/rds/sqlite"
+	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native"
+	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native/registry"
+	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/postgres"
+	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite"
 )
 
 func main() {
@@ -27,12 +29,13 @@ func main() {
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("")),
 		// Use the new router pattern for station endpoints
 		server.WithRouters(station.NewStationRouter()),
+		server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
 		// Initialize station options
 		station.WithPhotoSaveDir("photos-directory"),
 	)
 	if err != nil {
-		return
 		panic(err)
+		return
 	}
 
 	err = p.Start()
