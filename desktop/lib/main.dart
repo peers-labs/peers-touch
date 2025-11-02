@@ -1,6 +1,8 @@
 import 'package:desktop/pages/ai/ai_chat_page.dart';
-import 'package:desktop/pages/ai/ai_chat_page.dart';
 import 'package:desktop/pages/ai/chat_list.dart';
+import 'package:desktop/pages/settings/settings_page.dart';
+import 'package:desktop/pages/settings/settings_main_page.dart';
+import 'package:desktop/pages/settings/ai_service_provider_page.dart';
 import 'package:desktop/providers/model_provider.dart';
 import 'package:desktop/providers/ai_provider_state.dart';
 import 'package:desktop/providers/right_sidebar_provider.dart';
@@ -21,7 +23,7 @@ void main() async {
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
-    titleBarStyle: TitleBarStyle.hidden,
+    titleBarStyle: TitleBarStyle.normal,
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
@@ -50,6 +52,10 @@ class PeersTouchStationApp extends StatelessWidget {
           fontFamily: 'Segoe UI',
         ),
         home: const HomeScreen(),
+        routes: {
+          '/settings': (context) => const SettingsPage(),
+          '/ai-service-provider': (context) => const AiServiceProviderPage(),
+        },
         debugShowCheckedModeBanner: false,
       ),
     );
@@ -93,15 +99,9 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header with toggle button
+                  // Header
                   Row(
                     children: [
-                      IconButton(
-                        icon: Icon(sidebarState.isLeftSidebarOpen ? Icons.menu_open : Icons.menu),
-                        onPressed: () => sidebarState.toggleLeftSidebar(),
-                        tooltip: sidebarState.isLeftSidebarOpen ? 'Collapse Sidebar' : 'Expand Sidebar',
-                      ),
-                      const SizedBox(width: 16),
                       // Page Title
                       Expanded(
                         child: Text(
@@ -152,18 +152,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           return const SizedBox.shrink();
                         },
                       ),
-                      // Profile
-                      const CircleAvatar(
-                        radius: 18,
-                        backgroundColor: Colors.orange,
-                        child: Text(
-                          'BE',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
+                      // Settings Button
+                      IconButton(
+                        icon: const Icon(Icons.settings, size: 24),
+                        onPressed: () {
+                          setState(() => selectedIndex = 5);
+                        },
+                        tooltip: 'Settings',
                       ),
                     ],
                   ),
@@ -232,6 +227,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return PeersCenterPage(backend: _backend);
       case 4:
         return const AIChatPage();
+      case 5:
+        return const SettingsMainPage();
       default:
         return Center(
           child: Text('Content for ${_titleForIndex(selectedIndex)}'),
@@ -255,30 +252,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Logo
-            Padding(
-              padding: const EdgeInsets.only(left: 8.0, bottom: 24),
-              child: Row(
-                mainAxisSize: MainAxisSize.min, // 限制Row的最小尺寸
-                children: const [
-                  Icon(Icons.cloud_queue, color: Colors.white, size: 28),
-                  SizedBox(width: 12),
-                  Flexible( // 使用Flexible而不是Expanded，避免强制撑满
-                    child: Text(
-                      'Peers Touch',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis, // 过长时显示省略号
-                      maxLines: 1,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
             // Nav Items
             _buildNavItem(
               icon: Icons.home_outlined,
@@ -312,7 +285,15 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const Divider(color: Colors.white24, height: 32, indent: 8, endIndent: 8),
 
-            const Spacer(), // Pushes the collapse button to the bottom
+            const Spacer(), // Pushes the settings and collapse buttons to the bottom
+
+            // Settings Button
+            _buildNavItem(
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+              isSelected: selectedIndex == 5,
+              onTap: () => setState(() => selectedIndex = 5),
+            ),
 
              _buildNavItem(
                icon: Icons.menu_open,
@@ -341,10 +322,6 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.fromLTRB(8, 32, 8, 16),
         child: Column(
           children: [
-            // Logo Icon
-            const Icon(Icons.cloud_queue, color: Colors.white, size: 28),
-            const SizedBox(height: 24),
-
             // Nav Icons
             _buildMiniIcon(Icons.home_outlined, 'Home', 0),
             _buildMiniIcon(Icons.folder_outlined, 'Files', 1),
@@ -353,6 +330,9 @@ class _HomeScreenState extends State<HomeScreen> {
             _buildMiniIcon(Icons.smart_toy_outlined, 'AI Chat', 4),
 
             const Spacer(),
+
+            // Settings Icon
+            _buildMiniIcon(Icons.settings_outlined, 'Settings', 5),
 
             // Expand Button
             IconButton(
@@ -402,6 +382,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return 'Peers-Center';
       case 4:
         return 'AI Chat';
+      case 5:
+        return 'Settings';
       default:
         return 'Peers Touch';
     }

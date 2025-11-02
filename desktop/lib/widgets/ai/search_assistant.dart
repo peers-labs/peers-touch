@@ -24,7 +24,7 @@ class SearchAssistant extends StatelessWidget {
       ],
       child: Row(
         children: [
-          Text('Search Assistant Model'),
+          Icon(Icons.language, size: 20),
           Icon(Icons.arrow_drop_down),
         ],
       ),
