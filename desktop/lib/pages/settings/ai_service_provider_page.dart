@@ -46,6 +46,7 @@ class AiServiceProviderPage extends StatelessWidget {
               if (providerState.error != null)
                 ErrorMessageBar(
                   message: providerState.error!,
+                  isRetryable: _isErrorRetryable(providerState.error!),
                   onRetry: () {
                     providerState.clearError();
                     providerState.refreshProviders();
@@ -59,6 +60,45 @@ class AiServiceProviderPage extends StatelessWidget {
         },
       ),
     );
+  }
+
+  /// 判断错误是否可重试
+  /// 网络错误、超时错误、服务器错误等可重试
+  /// 配置错误、认证错误、格式错误等不可重试
+  static bool _isErrorRetryable(String error) {
+    final errorLower = error.toLowerCase();
+    
+    // 不可重试的错误类型
+    final nonRetryableErrors = [
+      'invalid', 'unsupported', 'unauthorized', 'forbidden',
+      'not found', 'bad request', 'malformed', 'format',
+      'authentication', 'permission', 'access denied',
+      'invalid api key', 'invalid token', 'invalid configuration'
+    ];
+    
+    // 可重试的错误类型
+    final retryableErrors = [
+      'timeout', 'connection', 'network', 'server error',
+      'service unavailable', 'internal server error',
+      'failed to connect', 'connection refused', 'host unreachable'
+    ];
+    
+    // 检查是否为明确不可重试的错误
+    for (String nonRetryable in nonRetryableErrors) {
+      if (errorLower.contains(nonRetryable)) {
+        return false;
+      }
+    }
+    
+    // 检查是否为明确可重试的错误
+    for (String retryable in retryableErrors) {
+      if (errorLower.contains(retryable)) {
+        return true;
+      }
+    }
+    
+    // 默认情况下，认为错误是可重试的
+    return true;
   }
 
   Widget _buildLeftPanel(BuildContext context) {
@@ -407,6 +447,12 @@ class _ProviderConfigFormState extends State<_ProviderConfigForm> {
       description: 'Must include http(s)://; can be left blank if not specified locally.',
       controller: _controllers['interface_proxy_address']!,
       onChanged: (val) => _config['interface_proxy_address'] = val,
+      onFocusChange: (hasFocus) {
+        // 当失去焦点时，自动获取模型列表
+        if (!hasFocus && widget.providerInfo.name == 'ollama') {
+          _autoFetchModelsOnAddressChange();
+        }
+      },
     ));
 
     // Use Client-Side Fetching Mode switch
@@ -799,6 +845,25 @@ class _ProviderConfigFormState extends State<_ProviderConfigForm> {
     }
   }
   
+  Future<void> _autoFetchModelsOnAddressChange() async {
+    // 检查地址是否有效
+    String endpoint = _config['interface_proxy_address'] ?? '';
+    if (endpoint.isEmpty || !endpoint.startsWith('http')) {
+      return; // 地址无效，不执行自动获取
+    }
+    
+    // 静默获取模型列表，不显示加载状态
+    try {
+      await _fetchOllamaModels();
+      if (mounted) {
+        setState(() {}); // 刷新UI以显示新获取的模型
+      }
+    } catch (e) {
+      // 静默处理错误，不显示错误消息
+      print('Auto fetch models failed: $e');
+    }
+  }
+  
   Future<void> _fetchOllamaModels() async {
     // Get the endpoint from config
     String endpoint = _config['interface_proxy_address'] ?? 
@@ -963,6 +1028,7 @@ class _SettingsTextField extends StatelessWidget {
   final bool isPassword;
   final TextEditingController controller;
   final Function(String) onChanged;
+  final Function(bool)? onFocusChange;
 
   const _SettingsTextField({
     required this.label,
@@ -971,6 +1037,7 @@ class _SettingsTextField extends StatelessWidget {
     this.isPassword = false,
     required this.controller,
     required this.onChanged,
+    this.onFocusChange,
   });
 
   @override
@@ -989,14 +1056,17 @@ class _SettingsTextField extends StatelessWidget {
             ),
             const SizedBox(height: 8),
           ],
-          TextField(
-            controller: controller,
-            obscureText: isPassword,
-            onChanged: onChanged,
-            decoration: InputDecoration(
-              hintText: hint,
-              border: const OutlineInputBorder(),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          Focus(
+            onFocusChange: onFocusChange,
+            child: TextField(
+              controller: controller,
+              obscureText: isPassword,
+              onChanged: onChanged,
+              decoration: InputDecoration(
+                hintText: hint,
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
             ),
           ),
         ],

@@ -6,6 +6,7 @@ class ErrorMessageBar extends StatelessWidget {
   final VoidCallback? onClose;
   final bool showRetry;
   final bool showClose;
+  final bool isRetryable; // 新增参数：是否可重试
 
   const ErrorMessageBar({
     super.key,
@@ -14,6 +15,7 @@ class ErrorMessageBar extends StatelessWidget {
     this.onClose,
     this.showRetry = true,
     this.showClose = true,
+    this.isRetryable = true, // 默认为可重试
   });
 
   @override
@@ -48,26 +50,20 @@ class ErrorMessageBar extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (showRetry && onRetry != null) ...[
-                TextButton.icon(
+              if (showRetry && onRetry != null && isRetryable) ...[
+                IconButton(
                   onPressed: onRetry,
                   icon: Icon(
                     Icons.refresh,
                     size: 16,
                     color: Colors.red.shade700,
                   ),
-                  label: Text(
-                    'Retry',
-                    style: TextStyle(
-                      color: Colors.red.shade700,
-                      fontSize: 12,
-                    ),
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(
+                    minWidth: 24,
+                    minHeight: 24,
                   ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
+                  tooltip: 'Retry',
                 ),
                 const SizedBox(width: 8),
               ],

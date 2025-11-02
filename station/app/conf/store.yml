@@ -4,7 +4,7 @@ peers:
       gorm:
         # see github.com/peers-touch/peers-touch/station/frame/core/store/rds/sqlite
         - name: sqlite
-          default: true
+          default: false
           enable: true
           dsn: file:peers.db?cache=shared&_fk=1
         # see github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/postgres

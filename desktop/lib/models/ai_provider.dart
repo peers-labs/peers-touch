@@ -194,7 +194,7 @@ class AIProvider {
       case 'openai':
         return Icons.cloud_queue;
       case 'ollama':
-        return Icons.memory;
+        return Icons.developer_board;
       case 'google':
         return Icons.search;
       case 'anthropic':

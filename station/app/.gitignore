@@ -5,6 +5,7 @@ peers.db
 libp2pIdentity.key
 private.pem
 public.pem
+*.local.yml
 
 # Configuration files
 backend/gen/tool/config.yml
