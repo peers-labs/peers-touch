@@ -4,7 +4,8 @@ import 'package:desktop/pages/settings/settings_page.dart';
 import 'package:desktop/pages/settings/settings_main_page.dart';
 import 'package:desktop/pages/settings/ai_service_provider_page.dart';
 import 'package:desktop/providers/model_provider.dart';
-import 'package:desktop/providers/ai_provider_state.dart';
+import 'package:desktop/providers/ai_provider_state_interface.dart';
+import 'package:desktop/providers/mock_ai_provider_state.dart';
 import 'package:desktop/providers/right_sidebar_provider.dart';
 import 'package:desktop/providers/sidebar_state_provider.dart';
 import 'package:flutter/material.dart';
@@ -43,7 +44,8 @@ class PeersTouchStationApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AIModelProvider()),
         ChangeNotifierProvider(create: (_) => RightSidebarProvider()),
         ChangeNotifierProvider(create: (_) => SidebarStateProvider()),
-        ChangeNotifierProvider(create: (_) => AIProviderState()),
+        // Use mock provider state for testing dynamic config fields
+        ChangeNotifierProvider<AIProviderStateInterface>(create: (_) => MockAIProviderState()),
       ],
       child: MaterialApp(
         title: 'Peers Touch Station',
