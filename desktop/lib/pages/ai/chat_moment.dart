@@ -45,7 +45,7 @@ class _ChatMomentPageState extends State<ChatMomentPage> {
                 onPressed: () => sidebarState.toggleMiddleColumn(),
                 tooltip: 'Show Chat List',
               ),
-        title: Text('Chat Session ${widget.chatId + 1}'),
+        title: const Text('Chat Session 1'),
         actions: [
           IconButton(
             icon: const Icon(Icons.menu),
@@ -77,8 +77,9 @@ class _ChatMomentPageState extends State<ChatMomentPage> {
                               },
                             ),
                           ),
-                          // 使用Flexible而不是固定宽度，确保ChatAnchorBar可以收缩
-                          Flexible(
+                          // 历史消息锚点，添加右边距避免顶格
+                          Container(
+                            margin: const EdgeInsets.only(right: 8.0),
                             child: ChatAnchorBar(controller: _scrollController, itemCount: 20),
                           ),
                         ],

@@ -1,4 +1,6 @@
 import 'package:desktop/pages/ai/knowledge_base_page.dart';
+import 'package:desktop/widgets/ai/agent_selector.dart';
+import 'package:desktop/widgets/ai/search_assistant.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -73,6 +75,10 @@ class ChatToolbar extends StatelessWidget {
         ),
         Row(
           children: [
+            const AgentSelector(),
+            const SizedBox(width: 8),
+            const SearchAssistant(),
+            const SizedBox(width: 8),
             IconButton(onPressed: () {}, icon: const Icon(Icons.save_alt_outlined, size: 20), tooltip: 'Save Session'),
             IconButton(onPressed: () {}, icon: const Icon(Icons.send_outlined, size: 20), tooltip: 'Send'),
           ],

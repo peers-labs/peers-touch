@@ -1,6 +1,4 @@
-import 'package:desktop/widgets/ai/agent_selector.dart';
 import 'package:desktop/widgets/ai/chat_input.dart';
-import 'package:desktop/widgets/ai/search_assistant.dart';
 import 'package:flutter/material.dart';
 
 class ChatBox extends StatelessWidget {
@@ -18,15 +16,6 @@ class ChatBox extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min, // Important for bottom nav bar
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              AgentSelector(),
-              SearchAssistant(),
-            ],
-          ),
-          const SizedBox(height: 8.0),
-          const Divider(),
           const ChatInput(),
         ],
       ),
