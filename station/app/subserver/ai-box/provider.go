@@ -21,6 +21,16 @@ type ModelInfo struct {
 	IsActive     bool               `json:"is_active"`
 }
 
+// ConfigField represents a configuration field for a provider
+type ConfigField struct {
+	Name         string      `json:"name"`
+	Type         string      `json:"type"` // "string", "boolean", "number"
+	Required     bool        `json:"required"`
+	Description  string      `json:"description"`
+	EnvVar       string      `json:"env_var,omitempty"`
+	DefaultValue interface{} `json:"default_value,omitempty"`
+}
+
 // Provider defines the interface for AI model providers
 type Provider interface {
 	// Name returns the provider name (e.g., "openai", "anthropic")
@@ -40,6 +50,9 @@ type Provider interface {
 
 	// GetConfig gets provider configuration
 	GetConfig() map[string]interface{}
+
+	// GetConfigFields returns the configuration fields for this provider
+	GetConfigFields() []ConfigField
 
 	// IsEnabled checks if provider is enabled
 	IsEnabled() bool
@@ -61,13 +74,14 @@ type ProviderRegistry struct {
 
 // ProviderInfo represents comprehensive information about a provider
 type ProviderInfo struct {
-	Name        string                 `json:"name"`
-	DisplayName string                 `json:"display_name"`
-	Enabled     bool                   `json:"enabled"`
-	Config      map[string]interface{} `json:"config"`
-	Models      []ModelInfo            `json:"models"`
-	Status      string                 `json:"status"` // "connected", "error", "unknown"
-	Error       string                 `json:"error,omitempty"`
+	Name         string                 `json:"name"`
+	DisplayName  string                 `json:"display_name"`
+	Enabled      bool                   `json:"enabled"`
+	Config       map[string]interface{} `json:"config"`
+	ConfigFields []ConfigField          `json:"config_fields"`
+	Models       []ModelInfo            `json:"models"`
+	Status       string                 `json:"status"` // "connected", "error", "unknown"
+	Error        string                 `json:"error,omitempty"`
 }
 
 // NewProviderRegistry creates a new provider registry
@@ -128,13 +142,14 @@ func (r *ProviderRegistry) GetProviderInfo(name string) (*ProviderInfo, error) {
 	}
 
 	return &ProviderInfo{
-		Name:        provider.Name(),
-		DisplayName: provider.DisplayName(),
-		Enabled:     provider.IsEnabled(),
-		Config:      provider.GetConfig(),
-		Models:      provider.ListModels(),
-		Status:      status,
-		Error:       connectionError,
+		Name:         provider.Name(),
+		DisplayName:  provider.DisplayName(),
+		Enabled:      provider.IsEnabled(),
+		Config:       provider.GetConfig(),
+		ConfigFields: provider.GetConfigFields(),
+		Models:       provider.ListModels(),
+		Status:       status,
+		Error:        connectionError,
 	}, nil
 }
 
@@ -316,9 +331,12 @@ func (p *MockProvider) TestConnection() error {
 func CreateDefaultProviderRegistry() *ProviderRegistry {
 	registry := NewProviderRegistry()
 
+	// Register real providers
+	registry.Register(NewOllamaProvider())
+	registry.Register(NewOpenAIProvider())
+	registry.Register(NewAnthropicProvider())
+
 	// Register mock providers for MVP
-	registry.Register(NewMockProvider("openai"))
-	registry.Register(NewMockProvider("anthropic"))
 	registry.Register(NewMockProvider("local"))
 
 	return registry
