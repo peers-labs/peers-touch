@@ -1,4 +1,4 @@
-# Peers-touch Station .gitignore
+# Peers-touch Station App .gitignore
 
 # Database and key files
 peers.db
@@ -18,8 +18,8 @@ photos-directory
 # Key files
 *.key
 
-# Framework backup
-framework_back
-
-# App directory (if needed)
-app/app
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib

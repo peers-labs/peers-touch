@@ -1,8 +1,11 @@
+# Peers-touch Desktop App .gitignore
+
 # Miscellaneous
 *.class
 *.log
 *.pyc
 *.swp
+*.swo
 .DS_Store
 .atom/
 .build/
@@ -39,7 +42,16 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# macOS specific (Desktop only)
+/macos/Flutter/Flutter-Debug.xcconfig
+/macos/Flutter/Flutter-Release.xcconfig
+/macos/Flutter/Flutter-Profile.xcconfig
+/macos/Flutter/ephemeral/
+/macos/Podfile.lock
+/macos/Pods/Manifest.lock
+
+# Linux specific (Desktop only)
+/linux/flutter/generated_plugin_registrant.cc
+/linux/flutter/generated_plugin_registrant.h
+/linux/flutter/generated_plugins.cmake
+/linux/flutter/ephemeral/
