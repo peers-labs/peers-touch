@@ -1,8 +1,11 @@
+# Peers-touch Mobile App .gitignore
+
 # Miscellaneous
 *.class
 *.log
 *.pyc
 *.swp
+*.swo
 .DS_Store
 .atom/
 .build/
@@ -46,6 +49,53 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Android specific
+/android/local.properties
+/android/key.properties
+/android/app/key.jks
+/android/app/*.keystore
+/android/app/*.jks
+
+# iOS specific
+/ios/Flutter/Flutter.podspec
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/app.flx
+/ios/Flutter/app.zip
+/ios/Flutter/flutter_assets/
+/ios/Flutter/flutter_export_environment.sh
+/ios/Flutter/ephemeral/
+/ios/ServiceDefinitions.json
+/ios/Runner/GeneratedPluginRegistrant.*
+/ios/Podfile.lock
+/ios/Pods/Manifest.lock
+
+# macOS specific
+/macos/Flutter/Flutter-Debug.xcconfig
+/macos/Flutter/Flutter-Release.xcconfig
+/macos/Flutter/Flutter-Profile.xcconfig
+/macos/Flutter/ephemeral/
+/macos/Podfile.lock
+/macos/Pods/Manifest.lock
+
+# Windows specific
+/windows/flutter/generated_plugin_registrant.cc
+/windows/flutter/generated_plugin_registrant.h
+/windows/flutter/generated_plugins.cmake
+/windows/flutter/ephemeral/
+
+# Linux specific
+/linux/flutter/generated_plugin_registrant.cc
+/linux/flutter/generated_plugin_registrant.h
+/linux/flutter/generated_plugins.cmake
+/linux/flutter/ephemeral/
+
+# Web specific
+/web/flutter_service_worker.js
+/web/flutter.js
+/web/version.json
+/web/assets/FontManifest.json
+
+# Platform specific directories
 windows/
 macos/
 linux/
