@@ -288,6 +288,64 @@ func (p *MockProvider) GetConfig() map[string]interface{} {
 	return p.config
 }
 
+// GetConfigFields returns the configuration fields for this provider
+func (p *MockProvider) GetConfigFields() []ConfigField {
+	switch p.name {
+	case "openai":
+		return []ConfigField{
+			{
+				Name:        "api_key",
+				Type:        "string",
+				Required:    true,
+				Description: "OpenAI API Key",
+				EnvVar:      "OPENAI_API_KEY",
+			},
+			{
+				Name:         "base_url",
+				Type:         "string",
+				Required:     false,
+				Description:  "Custom API Base URL (optional)",
+				DefaultValue: "https://api.openai.com/v1",
+			},
+		}
+	case "anthropic":
+		return []ConfigField{
+			{
+				Name:        "api_key",
+				Type:        "string",
+				Required:    true,
+				Description: "Anthropic API Key",
+				EnvVar:      "ANTHROPIC_API_KEY",
+			},
+		}
+	case "local":
+		return []ConfigField{
+			{
+				Name:        "model_path",
+				Type:        "string",
+				Required:    true,
+				Description: "Path to local model file",
+			},
+			{
+				Name:         "max_tokens",
+				Type:         "number",
+				Required:     false,
+				Description:  "Maximum tokens for generation",
+				DefaultValue: 2048,
+			},
+		}
+	default:
+		return []ConfigField{
+			{
+				Name:        "api_key",
+				Type:        "string",
+				Required:    true,
+				Description: "API Key",
+			},
+		}
+	}
+}
+
 // IsEnabled checks if provider is enabled
 func (p *MockProvider) IsEnabled() bool {
 	return p.enabled
