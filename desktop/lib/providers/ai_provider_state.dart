@@ -60,19 +60,19 @@ class AIProviderState extends AIProviderStateInterface {
   void _loadMockProviders() {
     // 提供默认的provider列表，即使在网络错误时也能显示基本界面
     _providers = [
-      AIProvider(id: 'openai', name: 'OpenAI', description: 'OpenAI is a global leader in artificial intelligence research, with models like GPT-4.', icon: Icons.cloud_queue, isEnabled: true),
-      AIProvider(id: 'ollama', name: 'Ollama', description: 'Ollama provides models that cover a wide range of fields, including code generation.', icon: Icons.memory, isEnabled: true),
-      AIProvider(id: 'comfyui', name: 'ComfyUI', description: 'A powerful open-source workflow engine for generating images, videos, and audio.', icon: Icons.widgets, isEnabled: true),
-      AIProvider(id: 'google', name: 'Google', description: 'Google offers a variety of advanced AI models, including Gemini.', icon: Icons.search, isEnabled: true),
-      AIProvider(id: 'anthropic', name: 'Anthropic', description: 'Anthropic provides advanced AI models like Claude.', icon: Icons.psychology, isEnabled: true),
-      AIProvider(id: 'moonshot', name: 'Moonshot', description: 'Moonshot AI offers powerful language models.', icon: Icons.rocket_launch, isEnabled: true),
-      AIProvider(id: 'fal', name: 'Fal', description: 'Fal.ai provides fast and scalable AI model inference.', icon: Icons.flash_on, isEnabled: true),
-      AIProvider(id: 'bytedance-kimi2', name: 'bytedance-kimi2', description: 'Kimi is a large language model from Bytedance.', icon: Icons.android, isEnabled: false),
-      AIProvider(id: 'azure_openai', name: 'Azure OpenAI', description: 'Azure offers a variety of advanced AI models, including GPT-3.5 and the latest.', icon: Icons.cloud, isEnabled: false),
-      AIProvider(id: 'azure_ai', name: 'Azure AI', description: 'Azure offers a variety of advanced AI models, including GPT-3.5 and the latest.', icon: Icons.cloud_circle, isEnabled: false),
-      AIProvider(id: 'ollama_cloud', name: 'Ollama Cloud', description: 'Ollama Cloud offers officially hosted inference services, providing out-of-the-box support.', icon: Icons.cloud_upload, isEnabled: false),
-      AIProvider(id: 'vllm', name: 'vLLM', description: 'vLLM is a fast and easy-to-use library for LLM inference and serving.', icon: Icons.model_training, isEnabled: false),
-      AIProvider(id: 'xinference', name: 'Xorbits Inference', description: 'A powerful and versatile library for running various AI models.', icon: Icons.api, isEnabled: false),
+      AIProvider(id: 'openai', name: 'OpenAI', icon: Icons.cloud_queue, isEnabled: true),
+      AIProvider(id: 'ollama', name: 'Ollama', icon: Icons.memory, isEnabled: true),
+      AIProvider(id: 'comfyui', name: 'ComfyUI', icon: Icons.widgets, isEnabled: true),
+      AIProvider(id: 'google', name: 'Google', icon: Icons.search, isEnabled: true),
+      AIProvider(id: 'anthropic', name: 'Anthropic', icon: Icons.psychology, isEnabled: true),
+      AIProvider(id: 'moonshot', name: 'Moonshot', icon: Icons.rocket_launch, isEnabled: true),
+      AIProvider(id: 'fal', name: 'Fal', icon: Icons.flash_on, isEnabled: true),
+      AIProvider(id: 'bytedance-kimi2', name: 'bytedance-kimi2', icon: Icons.android, isEnabled: false),
+      AIProvider(id: 'azure_openai', name: 'Azure OpenAI', icon: Icons.cloud, isEnabled: false),
+      AIProvider(id: 'azure_ai', name: 'Azure AI', icon: Icons.cloud_circle, isEnabled: false),
+      AIProvider(id: 'ollama_cloud', name: 'Ollama Cloud', icon: Icons.cloud_upload, isEnabled: false),
+      AIProvider(id: 'vllm', name: 'vLLM', icon: Icons.model_training, isEnabled: false),
+      AIProvider(id: 'xinference', name: 'Xorbits Inference', icon: Icons.api, isEnabled: false),
     ];
     
     // 创建对应的ProviderInfo对象，状态设为unknown（因为网络错误无法获取真实状态）
