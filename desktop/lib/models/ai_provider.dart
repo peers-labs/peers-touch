@@ -174,16 +174,18 @@ class ProviderInfo {
 class AIProvider {
   final String id;
   final String name;
+  final String description;
   final IconData icon;
   bool isEnabled;
 
-  AIProvider({required this.id, required this.name, required this.icon, this.isEnabled = false});
+  AIProvider({required this.id, required this.name, required this.description, required this.icon, this.isEnabled = false});
 
   // Convert from ProviderInfo
   factory AIProvider.fromProviderInfo(ProviderInfo info) {
     return AIProvider(
       id: info.name,
       name: info.displayName,
+      description: '', // TODO: Get description from ProviderInfo when available
       icon: _getIconForProvider(info.name),
       isEnabled: info.enabled,
     );
@@ -225,12 +227,14 @@ class AIProvider {
   AIProvider copyWith({
     String? id,
     String? name,
+    String? description,
     IconData? icon,
     bool? isEnabled,
   }) {
     return AIProvider(
       id: id ?? this.id,
       name: name ?? this.name,
+      description: description ?? this.description,
       icon: icon ?? this.icon,
       isEnabled: isEnabled ?? this.isEnabled,
     );
