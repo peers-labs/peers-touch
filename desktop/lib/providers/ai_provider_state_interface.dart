@@ -17,4 +17,4 @@ abstract class AIProviderStateInterface with ChangeNotifier {
   ProviderInfo? getProviderInfo(String providerId);
   void clearError();
   Future<void> refreshProviders();
-}...
+}

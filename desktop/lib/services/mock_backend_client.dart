@@ -32,7 +32,7 @@ class MockBackendClient {
       'models': [
         {
           'id': 'llama2',
-          'name': 'Llama 2',
+          'name': 'Llama 233',
           'provider': 'ollama',
           'type': 'chat',
           'description': 'Meta\'s Llama 2 model',
