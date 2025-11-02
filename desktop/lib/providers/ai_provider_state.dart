@@ -61,7 +61,7 @@ class AIProviderState extends AIProviderStateInterface {
     // 提供默认的provider列表，即使在网络错误时也能显示基本界面
     _providers = [
       AIProvider(id: 'openai', name: 'OpenAI', icon: Icons.cloud_queue, isEnabled: true),
-      AIProvider(id: 'ollama', name: 'Ollama', icon: Icons.memory, isEnabled: true),
+      AIProvider(id: 'ollama', name: 'Ollama', icon: Icons.developer_board, isEnabled: true),
       AIProvider(id: 'comfyui', name: 'ComfyUI', icon: Icons.widgets, isEnabled: true),
       AIProvider(id: 'google', name: 'Google', icon: Icons.search, isEnabled: true),
       AIProvider(id: 'anthropic', name: 'Anthropic', icon: Icons.psychology, isEnabled: true),
