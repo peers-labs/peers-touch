@@ -19,8 +19,11 @@ require (
 	github.com/peers-touch/peers-touch/station/frame/core/plugin/native v0.0.0-00010101000000-000000000000
 	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/postgres v0.0.0-00010101000000-000000000000
 	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
+	github.com/pgvector/pgvector-go v0.3.0
+	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.7
 	gorm.io/driver/postgres v1.5.11
+	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gen v0.3.27
 	gorm.io/gorm v1.25.12
 )
@@ -40,6 +43,7 @@ require (
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/cloudwego/netpoll v0.6.4 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
@@ -114,7 +118,6 @@ require (
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
-	github.com/pgvector/pgvector-go v0.3.0 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
 	github.com/pion/dtls/v3 v3.0.6 // indirect
@@ -134,6 +137,7 @@ require (
 	github.com/pion/transport/v3 v3.0.7 // indirect
 	github.com/pion/turn/v4 v4.1.1 // indirect
 	github.com/pion/webrtc/v4 v4.1.2 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
 	github.com/prometheus/client_golang v1.23.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
@@ -173,9 +177,9 @@ require (
 	golang.org/x/tools v0.36.0 // indirect
 	gonum.org/v1/gonum v0.16.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/datatypes v1.2.4 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
-	gorm.io/driver/sqlite v1.5.7 // indirect
 	gorm.io/hints v1.1.0 // indirect
 	gorm.io/plugin/dbresolver v1.5.0 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
