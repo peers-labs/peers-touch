@@ -1,32 +1,78 @@
 import 'package:flutter/foundation.dart';
 import 'package:desktop/models/ai_model_simple.dart';
-import 'package:desktop/models/ai_models.dart';
 
-class AIModelProvider with ChangeNotifier {
-  List<ModelCapability> _availableModels = [];
+class AIModelProvider extends ChangeNotifier {
   ModelCapability? _selectedModel;
-
-  AIModelProvider() {
-    _loadModels();
-  }
-
-  List<ModelCapability> get availableModels => _availableModels;
+  bool _isLoading = false;
+  
   ModelCapability? get selectedModel => _selectedModel;
-
-  void _loadModels() {
-    // 将来这里会替换为从后端API获取数据的逻辑
-    _availableModels = aiModelCapabilities;
-    
-    // 设置一个默认选中的模型
-    if (_availableModels.isNotEmpty) {
-      _selectedModel = _availableModels.first;
-    }
-    
-    notifyListeners();
-  }
-
+  bool get isLoading => _isLoading;
+  
   void selectModel(ModelCapability model) {
     _selectedModel = model;
     notifyListeners();
+  }
+  
+  void setLoading(bool loading) {
+    _isLoading = loading;
+    notifyListeners();
+  }
+  
+  List<ModelCapability> get availableModels => [
+    ModelCapability(
+      id: 'llama3.2:latest',
+      displayName: 'Llama 3.2 Latest',
+      provider: ModelProvider.ollama,
+      visionSupported: false,
+      fileUploadSupported: true,
+      ttsSupported: false,
+      sttSupported: false,
+      toolCallingSupported: true,
+      webSearchSupported: false,
+      maxContextWindow: 8192,
+    ),
+    ModelCapability(
+      id: 'qwen2.5:latest',
+      displayName: 'Qwen 2.5 Latest',
+      provider: ModelProvider.ollama,
+      visionSupported: false,
+      fileUploadSupported: true,
+      ttsSupported: false,
+      sttSupported: false,
+      toolCallingSupported: true,
+      webSearchSupported: false,
+      maxContextWindow: 32768,
+    ),
+    ModelCapability(
+      id: 'deepseek-coder:latest',
+      displayName: 'DeepSeek Coder Latest',
+      provider: ModelProvider.ollama,
+      visionSupported: false,
+      fileUploadSupported: true,
+      ttsSupported: false,
+      sttSupported: false,
+      toolCallingSupported: true,
+      webSearchSupported: false,
+      maxContextWindow: 16384,
+    ),
+    ModelCapability(
+      id: 'codellama:latest',
+      displayName: 'Code Llama Latest',
+      provider: ModelProvider.ollama,
+      visionSupported: false,
+      fileUploadSupported: true,
+      ttsSupported: false,
+      sttSupported: false,
+      toolCallingSupported: false,
+      webSearchSupported: false,
+      maxContextWindow: 16384,
+    ),
+  ];
+  
+  AIModelProvider() {
+    // 设置默认模型
+    if (availableModels.isNotEmpty) {
+      _selectedModel = availableModels.first;
+    }
   }
 }
