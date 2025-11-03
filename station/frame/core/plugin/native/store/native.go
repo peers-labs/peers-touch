@@ -34,7 +34,7 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 		n.db = make(map[string]*gorm.DB)
 		for _, rds := range n.opts.RDSMap {
 			if rds.Enable {
-				dialector := store.GetDialector(rds.Name)
+				dialector := store.GetDialector(rds.Driver)
 				if dialector == nil {
 					panic("dialector not found")
 				}
@@ -67,7 +67,7 @@ func (n *nativeStore) RDS(ctx context.Context, opts ...store.RDSDMLOption) (*gor
 		opt(qOpts)
 	}
 
-	rdsName := qOpts.Name
+	rdsName := qOpts.DBName
 	if rdsName == "" {
 		rdsName = n.defaultRDS
 	}

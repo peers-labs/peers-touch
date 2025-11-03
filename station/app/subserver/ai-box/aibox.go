@@ -3,8 +3,13 @@ package aibox
 import (
 	"context"
 
+	"github.com/peers-touch/peers-touch/station/frame/core/logger"
 	"github.com/peers-touch/peers-touch/station/frame/core/option"
 	"github.com/peers-touch/peers-touch/station/frame/core/server"
+	"github.com/peers-touch/peers-touch/station/frame/core/store"
+
+	"github.com/peers-touch/peers-touch/station/app/subserver/ai-box/db/models"
+	aiboxpb "github.com/peers-touch/peers-touch/station/app/subserver/ai-box/proto_gen/v1/peers_touch_station/ai_box"
 )
 
 var (
@@ -34,28 +39,46 @@ type aiBoxSubServer struct {
 }
 
 func (s *aiBoxSubServer) Init(ctx context.Context, opts ...option.Option) error {
-	//TODO implement me
-	panic("implement me")
+	logger.Info(ctx, "begin to initiate new ai-box subserver")
+	// apply options
+	for _, opt := range opts {
+		s.opts.Apply(opt)
+	}
+
+	// migrate tables for ai-box
+	logger.Infof(ctx, "initiated new ai-box db name: %s", s.opts.DBName)
+	rds, err := store.GetRDS(ctx, store.WithRDSDBName(s.opts.DBName))
+	if err != nil {
+		return err
+	}
+	if err = rds.AutoMigrate(&models.Provider{}); err != nil {
+		return err
+	}
+
+	s.status = server.StatusStarting
+
+	logger.Info(ctx, "end to initiate new ai-box subserver")
+	return nil
 }
 
 func (s *aiBoxSubServer) Start(ctx context.Context, opts ...option.Option) error {
-	//TODO implement me
-	panic("implement me")
+	// No standalone server to start; mark as running
+	s.status = server.StatusRunning
+	return nil
 }
 
 func (s *aiBoxSubServer) Stop(ctx context.Context) error {
-	//TODO implement me
-	panic("implement me")
+	s.status = server.StatusStopped
+	return nil
 }
 
 func (s *aiBoxSubServer) Status() server.Status {
-	//TODO implement me
-	panic("implement me")
+	return s.status
 }
 
 // Name returns the subserver identifier
 func (s *aiBoxSubServer) Name() string {
-	return "photo-save"
+	return "ai-box"
 }
 
 // Type returns the subserver type (HTTP in this case)
@@ -74,9 +97,79 @@ func (s *aiBoxSubServer) Address() server.SubserverAddress {
 func (s *aiBoxSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
-			aiBoxURL{name: "ai-box", path: "/provider/new"},
-			handleNewProvider,              // Handler function
-			server.WithMethod(server.POST), // HTTP method
+			aiBoxURL{name: "ai-box-create", path: "/ai-box/provider/new"},
+			s.handleNewProvider,
+			server.WithMethod(server.POST),
+		),
+		server.NewHandler(
+			aiBoxURL{name: "ai-box-update", path: "/ai-box/provider/update"},
+			s.handleUpdateProvider,
+			server.WithMethod(server.POST),
+		),
+		server.NewHandler(
+			aiBoxURL{name: "ai-box-delete", path: "/ai-box/provider/delete"},
+			s.handleDeleteProvider,
+			server.WithMethod(server.POST),
+		),
+		server.NewHandler(
+			aiBoxURL{name: "ai-box-get", path: "/ai-box/provider/get"},
+			s.handleGetProvider,
+			server.WithMethod(server.GET),
+		),
+		server.NewHandler(
+			aiBoxURL{name: "ai-box-list", path: "/ai-box/providers"},
+			s.handleListProviders,
+			server.WithMethod(server.GET),
+		),
+		server.NewHandler(
+			aiBoxURL{name: "ai-box-test", path: "/ai-box/provider/test"},
+			s.handleTestProvider,
+			server.WithMethod(server.POST),
 		),
 	}
+}
+
+// NewAIBoxSubServer creates a new AI-Box subserver
+func NewAIBoxSubServer(opts ...option.Option) server.Subserver {
+	return &aiBoxSubServer{
+		opts:   option.GetOptions(opts...).Ctx().Value(serverOptionsKey{}).(*Options),
+		addrs:  []string{},
+		status: server.StatusStopped,
+	}
+}
+
+// local request types
+type serviceRequestCreateProvider struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Logo        string `json:"logo"`
+}
+type serviceRequestUpdateProvider struct {
+	Id          string  `json:"id"`
+	DisplayName *string `json:"display_name"`
+	Description *string `json:"description"`
+	Logo        *string `json:"logo"`
+	Enabled     *bool   `json:"enabled"`
+}
+
+func (r serviceRequestCreateProvider) ToProto() *aiboxpb.CreateProviderRequest {
+	return &aiboxpb.CreateProviderRequest{Name: r.Name, Description: r.Description, Logo: r.Logo}
+}
+func (r serviceRequestUpdateProvider) ToProto() *aiboxpb.UpdateProviderRequest {
+	return &aiboxpb.UpdateProviderRequest{Id: r.Id, DisplayName: r.DisplayName, Description: r.Description, Logo: r.Logo, Enabled: r.Enabled}
+}
+
+// helpers
+func parseInt32(b []byte) (int32, bool) {
+	var n int64
+	for _, c := range b {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int64(c-'0')
+	}
+	if n > int64(1<<31-1) {
+		return 0, false
+	}
+	return int32(n), true
 }
