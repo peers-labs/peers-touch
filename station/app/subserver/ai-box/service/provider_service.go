@@ -1,4 +1,4 @@
-package aibox
+package service
 
 import (
 	"context"
