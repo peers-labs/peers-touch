@@ -43,6 +43,7 @@ type GetOption func(*GetStoreOptions)
 
 type RDSInit struct {
 	Name    string // use to identify the RDSMap instance
+	Driver  string
 	Default bool
 	Enable  bool
 	DSN     string // use to connect to the database, gorm protocol

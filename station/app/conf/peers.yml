@@ -1,7 +1,7 @@
 peers:
   version: 0.0.1
   run-mode: 2
-  includes: store.yml, store.local.yml
+  includes: store.yml, store.local.yml, sub_aibox.yml
   config:
     hierarchy-merge: true
   node:
