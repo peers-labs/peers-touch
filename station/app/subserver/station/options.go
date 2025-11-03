@@ -12,12 +12,4 @@ var optionWrapper = option.NewWrapper[Options](serverOptionsKey{}, func(options 
 
 type Options struct {
 	*option.Options
-
-	photoSaveDir string
-}
-
-func WithPhotoSaveDir(dir string) option.Option {
-	return optionWrapper.Wrap(func(o *Options) {
-		o.photoSaveDir = dir
-	})
 }

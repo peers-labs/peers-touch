@@ -30,8 +30,6 @@ func main() {
 		// Use the new router pattern for station endpoints
 		server.WithRouters(station.NewStationRouter()),
 		server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
-		// Initialize station options
-		station.WithPhotoSaveDir("photos-directory"),
 	)
 	if err != nil {
 		panic(err)
