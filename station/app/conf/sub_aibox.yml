@@ -1,0 +1,7 @@
+peers:
+  node:
+    server:
+      subserver:
+        ai-box:
+          enabled: true
+          db-name: ai_box

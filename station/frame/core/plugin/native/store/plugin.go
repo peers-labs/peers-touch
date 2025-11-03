@@ -13,6 +13,7 @@ var options struct {
 			RDS struct {
 				GORM []struct {
 					Name    string `pconf:"name"`
+					Driver  string `pconf:"driver"`
 					Default bool   `pconf:"default"`
 					Enable  bool   `pconf:"enable"`
 					DSN     string `pconf:"dsn"`
@@ -39,7 +40,7 @@ func (n *nativeStorePlugin) Options() []option.Option {
 			defaultDeclared = true
 		}
 
-		opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, Default: g.Default || only1Rds, Enable: g.Enable, DSN: g.DSN}))
+		opts = append(opts, store.WithRDS(&store.RDSInit{Name: g.Name, Driver: g.Driver, Default: g.Default || only1Rds, Enable: g.Enable, DSN: g.DSN}))
 	}
 
 	if !defaultDeclared {
