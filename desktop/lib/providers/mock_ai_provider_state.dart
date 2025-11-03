@@ -1,152 +1,110 @@
-import 'package:flutter/material.dart';
-import 'package:desktop/models/ai_provider.dart';
-import 'package:desktop/services/mock_backend_client.dart';
-import 'package:desktop/providers/ai_provider_state_interface.dart';
+import 'ai_provider_state_interface.dart';
 
 class MockAIProviderState extends AIProviderStateInterface {
-  final MockBackendClient _mockClient = MockBackendClient();
-  List<AIProvider> _providers = [];
-  List<ProviderInfo> _providerInfos = [];
-  AIProvider? _selectedProvider;
+  List<Map<String, dynamic>> _providers = [
+    {
+      'id': '1',
+      'name': 'Ollama',
+      'description': 'Local AI models',
+      'enabled': true,
+      'logo': 'assets/icons/ollama.png',
+      'type': 'local',
+    },
+    {
+      'id': '2', 
+      'name': 'OpenAI GPT',
+      'description': 'GPT-3.5 and GPT-4 models',
+      'enabled': false,
+      'logo': 'assets/icons/openai.png',
+      'type': 'api',
+    },
+  ];
+  
   bool _isLoading = false;
   String? _error;
-
-  MockAIProviderState() {
-    _loadProviders();
-  }
-
-  List<AIProvider> get providers => _providers;
-  List<ProviderInfo> get providerInfos => _providerInfos;
-  List<AIProvider> get enabledProviders => _providers.where((p) => p.isEnabled).toList();
-  List<AIProvider> get disabledProviders => _providers.where((p) => !p.isEnabled).toList();
-  AIProvider? get selectedProvider => _selectedProvider;
+  Map<String, dynamic>? _selectedProvider;
+  
+  @override
+  List<Map<String, dynamic>> get providers => _providers;
+  
+  @override
   bool get isLoading => _isLoading;
+  
+  @override
   String? get error => _error;
-
-  Future<void> _loadProviders() async {
+  
+  @override
+  Map<String, dynamic>? get selectedProvider => _selectedProvider;
+  
+  @override
+  Future<void> loadProviders() async {
     _isLoading = true;
-    _error = null;
     notifyListeners();
-
-    try {
-      final response = await _mockClient.listProviderInfos();
-      final providersData = response['providers'] as List<dynamic>?;
-      
-      if (providersData != null) {
-        _providerInfos = providersData
-            .map((data) => ProviderInfo.fromJson(data as Map<String, dynamic>))
-            .toList();
-        
-        _providers = _providerInfos
-            .map((info) => AIProvider.fromProviderInfo(info))
-            .toList();
-        
-        // Select the first provider if none is selected
-        if (_selectedProvider == null && _providers.isNotEmpty) {
-          _selectedProvider = _providers.first;
-        }
-      }
-    } catch (e) {
-      _error = 'Failed to load providers: $e';
-    } finally {
-      _isLoading = false;
+    
+    // Simulate API call
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    _isLoading = false;
+    notifyListeners();
+  }
+  
+  @override
+  Future<void> addProvider(Map<String, dynamic> provider) async {
+    _providers.add(provider);
+    notifyListeners();
+  }
+  
+  @override
+  Future<void> updateProvider(String id, Map<String, dynamic> provider) async {
+    final index = _providers.indexWhere((p) => p['id'] == id);
+    if (index != -1) {
+      _providers[index] = provider;
       notifyListeners();
     }
   }
-
-  void selectProvider(AIProvider provider) {
+  
+  @override
+  Future<void> deleteProvider(String id) async {
+    _providers.removeWhere((p) => p['id'] == id);
+    notifyListeners();
+  }
+  
+  @override
+  Future<void> toggleProvider(String id, bool enabled) async {
+    final index = _providers.indexWhere((p) => p['id'] == id);
+    if (index != -1) {
+      _providers[index]['enabled'] = enabled;
+      notifyListeners();
+    }
+  }
+  
+  @override
+  Future<void> updateProviderConfig(String id, Map<String, dynamic> config) async {
+    final index = _providers.indexWhere((p) => p['id'] == id);
+    if (index != -1) {
+      _providers[index]['config'] = config;
+      notifyListeners();
+    }
+  }
+  
+  @override
+  Future<bool> testProviderConnection(String id) async {
+    // Simulate connection test
+    await Future.delayed(const Duration(seconds: 1));
+    return true; // Mock successful connection
+  }
+  
+  @override
+  void selectProvider(Map<String, dynamic> provider) {
     _selectedProvider = provider;
     notifyListeners();
   }
-
-  Future<void> toggleProvider(AIProvider provider) async {
-    try {
-      final response = await _mockClient.toggleProvider(provider.id);
-      if (response['success'] == true) {
-        // Update local state
-        final index = _providers.indexWhere((p) => p.id == provider.id);
-        if (index != -1) {
-          _providers[index] = _providers[index].copyWith(
-            isEnabled: !_providers[index].isEnabled,
-          );
-          
-          // Update provider info as well
-          final infoIndex = _providerInfos.indexWhere((p) => p.name == provider.id);
-          if (infoIndex != -1) {
-            _providerInfos[infoIndex] = _providerInfos[infoIndex].copyWith(
-              enabled: !_providerInfos[infoIndex].enabled,
-            );
-          }
-          
-          notifyListeners();
-        }
-      } else {
-        _error = response['error'] ?? 'Failed to toggle provider';
-        notifyListeners();
-      }
-    } catch (e) {
-      _error = 'Failed to toggle provider: $e';
-      notifyListeners();
-    }
-  }
-
-  Future<void> updateProviderConfig(String providerId, Map<String, dynamic> config) async {
-    try {
-      final response = await _mockClient.updateProviderConfig(providerId, config);
-      if (response['success'] == true) {
-        // Update local state
-        final infoIndex = _providerInfos.indexWhere((p) => p.name == providerId);
-        if (infoIndex != -1) {
-          final updatedConfig = Map<String, dynamic>.from(_providerInfos[infoIndex].config);
-          updatedConfig.addAll(config);
-          
-          _providerInfos[infoIndex] = _providerInfos[infoIndex].copyWith(
-            config: updatedConfig,
-          );
-          
-          // Update provider as well
-          final providerIndex = _providers.indexWhere((p) => p.id == providerId);
-          if (providerIndex != -1) {
-            _providers[providerIndex] = AIProvider.fromProviderInfo(_providerInfos[infoIndex]);
-          }
-          
-          notifyListeners();
-        }
-      } else {
-        _error = response['error'] ?? 'Failed to update provider config';
-        notifyListeners();
-      }
-    } catch (e) {
-      _error = 'Failed to update provider config: $e';
-      notifyListeners();
-    }
-  }
-
-  Future<bool> testProviderConnection(String providerId) async {
-    try {
-      final response = await _mockClient.testProviderConnection(providerId);
-      return response['success'] == true;
-    } catch (e) {
-      _error = 'Failed to test connection: $e';
-      notifyListeners();
-      return false;
-    }
-  }
-
-  ProviderInfo? getProviderInfo(String providerId) {
-    try {
-      return _providerInfos.firstWhere((info) => info.name == providerId);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  void clearError() {
-    _error = null;
-    notifyListeners();
-  }
-
-  Future<void> refreshProviders() async {
-    await _loadProviders();
+  
+  @override
+  Map<String, dynamic>? getProviderInfo(String id) {
+    return _providers.firstWhere(
+      (p) => p['id'] == id,
+      orElse: () => {},
+    );
   }
 }

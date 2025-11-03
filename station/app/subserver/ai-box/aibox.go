@@ -2,6 +2,7 @@ package aibox
 
 import (
 	"context"
+	_ "embed"
 
 	"github.com/peers-touch/peers-touch/station/frame/core/logger"
 	"github.com/peers-touch/peers-touch/station/frame/core/option"
@@ -11,6 +12,9 @@ import (
 	"github.com/peers-touch/peers-touch/station/app/subserver/ai-box/db/models"
 	aiboxpb "github.com/peers-touch/peers-touch/station/app/subserver/ai-box/proto_gen/v1/peers_touch_station/ai_box"
 )
+
+//go:embed db/models/init.sql
+var initSQL string
 
 var (
 	_ server.Subserver = (*aiBoxSubServer)(nil)
@@ -53,6 +57,17 @@ func (s *aiBoxSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	}
 	if err = rds.AutoMigrate(&models.Provider{}); err != nil {
 		return err
+	}
+
+	// Execute initialization SQL to insert default Ollama configuration
+	if initSQL != "" {
+		logger.Info(ctx, "executing ai-box initialization SQL")
+		if err = rds.Exec(initSQL).Error; err != nil {
+			logger.Warnf(ctx, "failed to execute init SQL (this may be expected if data already exists): %v", err)
+			// Don't return error as this might be expected if data already exists
+		} else {
+			logger.Info(ctx, "ai-box initialization SQL executed successfully")
+		}
 	}
 
 	s.status = server.StatusStarting

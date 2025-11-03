@@ -1,20 +1,24 @@
-import 'package:flutter/material.dart';
-import 'package:desktop/models/ai_provider.dart';
+import 'package:flutter/foundation.dart';
 
-abstract class AIProviderStateInterface with ChangeNotifier {
-  List<AIProvider> get providers;
-  List<ProviderInfo> get providerInfos;
-  List<AIProvider> get enabledProviders;
-  List<AIProvider> get disabledProviders;
-  AIProvider? get selectedProvider;
+import '../models/ai_provider_model.dart';
+
+abstract class AIProviderStateInterface {
+  List<AiProvider> get providers;
+  List<AiProvider> get enabledProviders;
+  List<AiProvider> get disabledProviders;
   bool get isLoading;
   String? get error;
+  AiProvider? get selectedProvider;
 
-  void selectProvider(AIProvider provider);
-  Future<void> toggleProvider(AIProvider provider);
-  Future<void> updateProviderConfig(String providerId, Map<String, dynamic> config);
-  Future<bool> testProviderConnection(String providerId);
-  ProviderInfo? getProviderInfo(String providerId);
-  void clearError();
+  Future<void> loadProviders();
   Future<void> refreshProviders();
+  Future<void> addProvider(CreateProviderRequest request);
+  Future<void> updateProvider(String id, UpdateProviderRequest request);
+  Future<void> deleteProvider(String id);
+  Future<void> toggleProvider(String id, bool enabled);
+  Future<void> updateProviderConfig(String id, ProviderConfig config);
+  Future<TestProviderResponse> testProviderConnection(String id);
+  void selectProvider(String id);
+  void clearError();
+  AiProvider? getProviderInfo(String id);
 }

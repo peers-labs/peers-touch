@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'general_settings_page.dart';
 import 'ai_chat_settings_page.dart';
 import 'about_settings_page.dart';
+import '../provider_settings_page.dart';
 
 class SettingsMainPage extends StatefulWidget {
   const SettingsMainPage({super.key});
@@ -11,7 +12,7 @@ class SettingsMainPage extends StatefulWidget {
 }
 
 class _SettingsMainPageState extends State<SettingsMainPage> {
-  int selectedSubIndex = 0; // 0: General, 1: AI Chat, 2: About
+  int selectedSubIndex = 0; // 0: General, 1: AI Chat, 2: Providers, 3: About
 
   @override
   Widget build(BuildContext context) {
@@ -55,10 +56,16 @@ class _SettingsMainPageState extends State<SettingsMainPage> {
                       onTap: () => setState(() => selectedSubIndex = 1),
                     ),
                     _buildSubNavItem(
-                      icon: Icons.info_outline,
-                      label: 'About',
+                      icon: Icons.settings_applications,
+                      label: 'Providers',
                       isSelected: selectedSubIndex == 2,
                       onTap: () => setState(() => selectedSubIndex = 2),
+                    ),
+                    _buildSubNavItem(
+                      icon: Icons.info_outline,
+                      label: 'About',
+                      isSelected: selectedSubIndex == 3,
+                      onTap: () => setState(() => selectedSubIndex = 3),
                     ),
                   ],
                 ),
@@ -112,6 +119,8 @@ class _SettingsMainPageState extends State<SettingsMainPage> {
       case 1:
         return const AIChatSettingsPage();
       case 2:
+        return const ProviderSettingsPage();
+      case 3:
         return const AboutSettingsPage();
       default:
         return const GeneralSettingsPage();

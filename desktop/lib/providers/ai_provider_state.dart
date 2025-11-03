@@ -1,189 +1,224 @@
-import 'package:flutter/material.dart';
-import 'package:desktop/models/ai_provider.dart';
-import 'package:desktop/services/backend_client.dart';
-import 'package:desktop/providers/ai_provider_state_interface.dart';
+import 'package:flutter/foundation.dart';
+import '../models/ai_provider_model.dart';
+import '../services/ai_box_api_service.dart';
+import 'ai_provider_state_interface.dart';
 
-class AIProviderState extends AIProviderStateInterface {
-  final BackendClient _backendClient;
-  List<AIProvider> _providers = [];
-  List<ProviderInfo> _providerInfos = [];
-  AIProvider? _selectedProvider;
+class AIProviderState extends ChangeNotifier implements AIProviderStateInterface {
+  final AiBoxApiService _apiService;
+  
+  List<AiProvider> _providers = [];
   bool _isLoading = false;
   String? _error;
+  AiProvider? _selectedProvider;
 
-  AIProviderState({BackendClient? backendClient}) 
-      : _backendClient = backendClient ?? BackendClient() {
-    _loadProviders();
-  }
+  AIProviderState({AiBoxApiService? apiService}) 
+      : _apiService = apiService ?? AiBoxApiService();
 
-  List<AIProvider> get providers => _providers;
-  List<ProviderInfo> get providerInfos => _providerInfos;
-  List<AIProvider> get enabledProviders => _providers.where((p) => p.isEnabled).toList();
-  List<AIProvider> get disabledProviders => _providers.where((p) => !p.isEnabled).toList();
-  AIProvider? get selectedProvider => _selectedProvider;
+  @override
+  List<AiProvider> get providers => _providers;
+
+  @override
+  List<AiProvider> get enabledProviders => _providers.where((p) => p.enabled).toList();
+
+  @override
+  List<AiProvider> get disabledProviders => _providers.where((p) => !p.enabled).toList();
+
+  @override
   bool get isLoading => _isLoading;
+
+  @override
   String? get error => _error;
 
-  Future<void> _loadProviders() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+  @override
+  AiProvider? get selectedProvider => _selectedProvider;
 
+  @override
+  Future<void> loadProviders() async {
+    _setLoading(true);
+    _setError(null);
+    
     try {
-      final response = await _backendClient.listProviderInfos();
-      final providersData = response['providers'] as List<dynamic>?;
+      final response = await _apiService.listProviders(
+        page: 1,
+        size: 100, // 获取所有提供商
+        enabledOnly: false,
+      );
       
-      if (providersData != null) {
-        _providerInfos = providersData
-            .map((data) => ProviderInfo.fromJson(data as Map<String, dynamic>))
-            .toList();
+      _providers = response.providers;
+      
+      // 如果没有选中的提供商，选择第一个启用的提供商
+      if (_selectedProvider == null && _providers.isNotEmpty) {
+        final enabledProvider = _providers.firstWhere(
+          (p) => p.enabled,
+          orElse: () => _providers.first,
+        );
+        _selectedProvider = enabledProvider;
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      _setError('加载提供商失败: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  @override
+  Future<void> refreshProviders() async {
+    await loadProviders();
+  }
+
+  @override
+  Future<void> addProvider(CreateProviderRequest request) async {
+    _setLoading(true);
+    _setError(null);
+    
+    try {
+      final newProvider = await _apiService.createProvider(request);
+      _providers.add(newProvider);
+      notifyListeners();
+    } catch (e) {
+      _setError('添加提供商失败: $e');
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  @override
+  Future<void> updateProvider(String id, UpdateProviderRequest request) async {
+    _setLoading(true);
+    _setError(null);
+    
+    try {
+      final updatedProvider = await _apiService.updateProvider(request);
+      
+      final index = _providers.indexWhere((p) => p.id == id);
+      if (index != -1) {
+        _providers[index] = updatedProvider;
         
-        _providers = _providerInfos
-            .map((info) => AIProvider.fromProviderInfo(info))
-            .toList();
-        
-        // Select the first enabled provider if none is selected
-        if (_selectedProvider == null && enabledProviders.isNotEmpty) {
-          _selectedProvider = enabledProviders.first;
+        // 如果更新的是当前选中的提供商，也要更新选中状态
+        if (_selectedProvider?.id == id) {
+          _selectedProvider = updatedProvider;
         }
+        
+        notifyListeners();
       }
     } catch (e) {
-      _error = 'Failed to load providers: $e';
-      // Fallback to mock data if backend is not available
-      _loadMockProviders();
+      _setError('更新提供商失败: $e');
+      rethrow;
     } finally {
-      _isLoading = false;
+      _setLoading(false);
+    }
+  }
+
+  @override
+  Future<void> deleteProvider(String id) async {
+    _setLoading(true);
+    _setError(null);
+    
+    try {
+      await _apiService.deleteProvider(id);
+      
+      _providers.removeWhere((p) => p.id == id);
+      
+      // 如果删除的是当前选中的提供商，清除选中状态
+      if (_selectedProvider?.id == id) {
+        _selectedProvider = _providers.isNotEmpty ? _providers.first : null;
+      }
+      
       notifyListeners();
+    } catch (e) {
+      _setError('删除提供商失败: $e');
+      rethrow;
+    } finally {
+      _setLoading(false);
     }
   }
 
-  void _loadMockProviders() {
-    // 提供默认的provider列表，即使在网络错误时也能显示基本界面
-    _providers = [
-      AIProvider(id: 'openai', name: 'OpenAI', icon: Icons.cloud_queue, isEnabled: true),
-      AIProvider(id: 'ollama', name: 'Ollama', icon: Icons.developer_board, isEnabled: true),
-      AIProvider(id: 'comfyui', name: 'ComfyUI', icon: Icons.widgets, isEnabled: true),
-      AIProvider(id: 'google', name: 'Google', icon: Icons.search, isEnabled: true),
-      AIProvider(id: 'anthropic', name: 'Anthropic', icon: Icons.psychology, isEnabled: true),
-      AIProvider(id: 'moonshot', name: 'Moonshot', icon: Icons.rocket_launch, isEnabled: true),
-      AIProvider(id: 'fal', name: 'Fal', icon: Icons.flash_on, isEnabled: true),
-      AIProvider(id: 'bytedance-kimi2', name: 'bytedance-kimi2', icon: Icons.android, isEnabled: false),
-      AIProvider(id: 'azure_openai', name: 'Azure OpenAI', icon: Icons.cloud, isEnabled: false),
-      AIProvider(id: 'azure_ai', name: 'Azure AI', icon: Icons.cloud_circle, isEnabled: false),
-      AIProvider(id: 'ollama_cloud', name: 'Ollama Cloud', icon: Icons.cloud_upload, isEnabled: false),
-      AIProvider(id: 'vllm', name: 'vLLM', icon: Icons.model_training, isEnabled: false),
-      AIProvider(id: 'xinference', name: 'Xorbits Inference', icon: Icons.api, isEnabled: false),
-    ];
-    
-    // 创建对应的ProviderInfo对象，状态设为unknown（因为网络错误无法获取真实状态）
-    _providerInfos = _providers.map((provider) => ProviderInfo(
-      name: provider.id,
-      displayName: provider.name,
-      enabled: provider.isEnabled,
-      config: {},
-      models: [],
-      status: 'unknown', // 网络错误时状态为unknown
-    )).toList();
-    
-    if (_selectedProvider == null && enabledProviders.isNotEmpty) {
-      _selectedProvider = enabledProviders.first;
+  @override
+  Future<void> toggleProvider(String id, bool enabled) async {
+    try {
+      final request = UpdateProviderRequest(
+        id: id,
+        enabled: enabled,
+      );
+      
+      await updateProvider(id, request);
+    } catch (e) {
+      _setError('切换提供商状态失败: $e');
+      rethrow;
     }
   }
 
-  Future<void> refreshProviders() async {
-    await _loadProviders();
+  @override
+  Future<void> updateProviderConfig(String id, ProviderConfig config) async {
+    // 这个方法需要后端支持单独更新配置的接口
+    // 目前通过 updateProvider 来实现
+    try {
+      final provider = getProviderInfo(id);
+      if (provider != null) {
+        final request = UpdateProviderRequest(id: id);
+        await updateProvider(id, request);
+      }
+    } catch (e) {
+      _setError('更新提供商配置失败: $e');
+      rethrow;
+    }
   }
 
-  void selectProvider(AIProvider provider) {
+  @override
+  Future<TestProviderResponse> testProviderConnection(String id) async {
+    _setError(null);
+    
+    try {
+      return await _apiService.testProvider(id);
+    } catch (e) {
+      _setError('测试提供商连接失败: $e');
+      rethrow;
+    }
+  }
+
+  @override
+  void selectProvider(String id) {
+    final provider = _providers.firstWhere(
+      (p) => p.id == id,
+      orElse: () => throw ArgumentError('Provider with id $id not found'),
+    );
+    
     _selectedProvider = provider;
     notifyListeners();
   }
 
-  Future<void> toggleProvider(AIProvider provider) async {
+  @override
+  AiProvider? getProviderInfo(String id) {
     try {
-      final newEnabledState = !provider.isEnabled;
-      await _backendClient.setProviderEnabled(provider.id, newEnabledState);
-      
-      provider.isEnabled = newEnabledState;
-      
-      // Update the corresponding ProviderInfo
-      final providerInfoIndex = _providerInfos.indexWhere((info) => info.name == provider.id);
-      if (providerInfoIndex != -1) {
-        _providerInfos[providerInfoIndex] = _providerInfos[providerInfoIndex].copyWith(enabled: newEnabledState);
-      }
-      
-      // If we are disabling the currently selected provider, select another one
-      if (!provider.isEnabled && _selectedProvider == provider) {
-        _selectedProvider = enabledProviders.isNotEmpty ? enabledProviders.first : null;
-      }
-      // If we are enabling a provider and none is selected, select it
-      _selectedProvider ??= provider;
-      
-      notifyListeners();
-    } catch (e) {
-      _error = 'Failed to toggle provider: $e';
-      notifyListeners();
-    }
-  }
-
-  Future<void> updateProviderConfig(String providerName, Map<String, dynamic> config) async {
-    try {
-      await _backendClient.updateProviderConfig(providerName, config);
-      
-      // Update local provider info
-      final providerInfoIndex = _providerInfos.indexWhere((info) => info.name == providerName);
-      if (providerInfoIndex != -1) {
-        _providerInfos[providerInfoIndex] = _providerInfos[providerInfoIndex].copyWith(config: config);
-      }
-      
-      notifyListeners();
-    } catch (e) {
-      _error = 'Failed to update provider config: $e';
-      notifyListeners();
-    }
-  }
-
-  Future<bool> testProviderConnection(String providerName) async {
-    try {
-      await _backendClient.testProviderConnection(providerName);
-      
-      // Update provider status to connected
-      final providerInfoIndex = _providerInfos.indexWhere((info) => info.name == providerName);
-      if (providerInfoIndex != -1) {
-        _providerInfos[providerInfoIndex] = _providerInfos[providerInfoIndex].copyWith(
-          status: 'connected',
-          error: null,
-        );
-      }
-      
-      notifyListeners();
-      return true;
-    } catch (e) {
-      // Update provider status to error
-      final providerInfoIndex = _providerInfos.indexWhere((info) => info.name == providerName);
-      if (providerInfoIndex != -1) {
-        _providerInfos[providerInfoIndex] = _providerInfos[providerInfoIndex].copyWith(
-          status: 'error',
-          error: e.toString(),
-        );
-      }
-      
-      _error = 'Connection test failed: $e';
-      notifyListeners();
-      return false;
-    }
-  }
-
-  ProviderInfo? getProviderInfo(String providerName) {
-    try {
-      return _providerInfos.firstWhere((info) => info.name == providerName);
+      return _providers.firstWhere((p) => p.id == id);
     } catch (e) {
       return null;
     }
   }
 
-  void clearError() {
-    _error = null;
+  void _setLoading(bool loading) {
+    _isLoading = loading;
     notifyListeners();
+  }
+
+  void _setError(String? error) {
+    _error = error;
+    if (error != null) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void clearError() {
+    _setError(null);
+  }
+
+  @override
+  void dispose() {
+    _apiService.dispose();
+    super.dispose();
   }
 }
