@@ -193,5 +193,106 @@
   "addFriend": "Agregar Amigo",
   "sendMessage": "Enviar Mensaje",
   "removeFriend": "Eliminar Amigo",
-  "blockFriend": "Bloquear Amigo"
+  "blockFriend": "Bloquear Amigo",
+
+  "login": "Iniciar Sesión",
+  "@login": {
+    "description": "Texto del botón de inicio de sesión"
+  },
+
+  "register": "Registrarse",
+  "@register": {
+    "description": "Texto del botón de registro"
+  },
+
+  "username": "Nombre de Usuario",
+  "@username": {
+    "description": "Etiqueta del campo de nombre de usuario"
+  },
+
+  "password": "Contraseña",
+  "@password": {
+    "description": "Etiqueta del campo de contraseña"
+  },
+
+  "confirmPassword": "Confirmar Contraseña",
+  "@confirmPassword": {
+    "description": "Etiqueta del campo de confirmar contraseña"
+  },
+
+  "serverAddress": "Dirección del Servidor",
+  "@serverAddress": {
+    "description": "Etiqueta del campo de dirección del servidor"
+  },
+
+  "serverAddressHint": "Ingresa la dirección raíz del servidor (ej: https://api.example.com)",
+  "@serverAddressHint": {
+    "description": "Texto de ayuda para el campo de dirección del servidor"
+  },
+
+  "usernameRequired": "El nombre de usuario es requerido",
+  "@usernameRequired": {
+    "description": "Mensaje de validación para nombre de usuario requerido"
+  },
+
+  "passwordRequired": "La contraseña es requerida",
+  "@passwordRequired": {
+    "description": "Mensaje de validación para contraseña requerida"
+  },
+
+  "serverAddressRequired": "La dirección del servidor es requerida",
+  "@serverAddressRequired": {
+    "description": "Mensaje de validación para dirección del servidor requerida"
+  },
+
+  "invalidServerAddress": "Por favor ingresa una dirección de servidor válida",
+  "@invalidServerAddress": {
+    "description": "Mensaje de validación para formato inválido de dirección del servidor"
+  },
+
+  "passwordMismatch": "Las contraseñas no coinciden",
+  "@passwordMismatch": {
+    "description": "Mensaje de validación cuando las contraseñas no coinciden"
+  },
+
+  "passwordMinLength": "La contraseña debe tener al menos {min} caracteres",
+  "@passwordMinLength": {
+    "description": "Mensaje de validación para longitud mínima de contraseña",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "description": "Longitud mínima de contraseña"
+      }
+    }
+  },
+
+  "loginSuccess": "Inicio de sesión exitoso",
+  "@loginSuccess": {
+    "description": "Mensaje de éxito para inicio de sesión"
+  },
+
+  "registerSuccess": "Registro exitoso",
+  "@registerSuccess": {
+    "description": "Mensaje de éxito para registro"
+  },
+
+  "loginFailed": "Error al iniciar sesión",
+  "@loginFailed": {
+    "description": "Mensaje de error para inicio de sesión fallido"
+  },
+
+  "registerFailed": "Error al registrarse",
+  "@registerFailed": {
+    "description": "Mensaje de error para registro fallido"
+  },
+
+  "switchToRegister": "¿No tienes una cuenta? Regístrate",
+  "@switchToRegister": {
+    "description": "Texto para cambiar al formulario de registro"
+  },
+
+  "switchToLogin": "¿Ya tienes una cuenta? Inicia sesión",
+  "@switchToLogin": {
+    "description": "Texto para cambiar al formulario de inicio de sesión"
+  }
 }

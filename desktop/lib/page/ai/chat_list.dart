@@ -3,7 +3,6 @@ import 'package:desktop/provider/model_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:desktop/model/ai_model_simple.dart';
 
 class ChatListPage extends StatelessWidget {
   const ChatListPage({super.key});

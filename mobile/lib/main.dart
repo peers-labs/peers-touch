@@ -5,6 +5,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:peers_touch_mobile/pages/chat/chat_page.dart';
 import 'package:peers_touch_mobile/pages/photo/photo_page.dart';
 import 'package:peers_touch_mobile/pages/me/me_home.dart';
+import 'package:peers_touch_mobile/pages/actor/auth_page.dart';
+import 'package:peers_touch_mobile/pages/actor/auth_wrapper.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
 
 import 'package:peers_touch_mobile/components/navigation/bottom_nav_bar.dart';
@@ -20,6 +22,12 @@ import 'package:peers_touch_mobile/components/sync_status_bar.dart';
 void main() async {
   // Ensure Flutter is initialized
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize ControllerManager to ensure all controllers are ready
+  ControllerManager();
+
+  // Initialize auth service and load saved data
+  await ControllerManager.authService.init();
 
   // Register the method channel early
   const MethodChannel platform = MethodChannel('samples.flutter.dev/storage');
@@ -54,6 +62,7 @@ class MyApp extends StatelessWidget {
       title: 'Peers Touch',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
       ),
       localizationsDelegates: const [
         AppLocalizations.delegate,
@@ -63,11 +72,13 @@ class MyApp extends StatelessWidget {
       ],
       supportedLocales: const [
         Locale('en'), // English
-        Locale('es'), // Spanish
         Locale('zh'), // Chinese
       ],
-      initialRoute: '/',
-      getPages: [GetPage(name: '/', page: () => const MainScreen())],
+      home: const AuthWrapper(),
+      getPages: [
+        GetPage(name: '/', page: () => const MainScreen()),
+        GetPage(name: '/auth', page: () => const AuthPage()),
+      ],
     );
   }
 }
@@ -192,11 +203,14 @@ class _MainScreenState extends State<MainScreen> {
     MeHomePage(),
   ];
 
+  void _logout() async {
+    await ControllerManager.authService.logout();
+    Get.offAll(() => const AuthWrapper());
+  }
+
   @override
   void initState() {
     super.initState();
-    // Initialize ControllerManager to ensure all controllers are ready
-    ControllerManager();
   }
 
   void _updateOptions() {
@@ -236,16 +250,21 @@ class _MainScreenState extends State<MainScreen> {
     if (_currentIndex == 0) {
       modifiedPages[0] = Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('Home'),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () => Get.toNamed('/network-test'),
-              child: const Text('Test Network Connection'),
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('Home'),
+          const SizedBox(height: 20),
+          ElevatedButton(
+              onPressed: _logout,
+              child: const Text('Logout'),
             ),
-          ],
-        ),
+          const SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: () => Get.toNamed('/network-test'),
+            child: const Text('Test Network Connection'),
+          ),
+        ],
+      ),
       );
     }
 

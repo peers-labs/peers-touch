@@ -571,4 +571,65 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get shortBioMaxLength =>
       'La biografía corta no puede exceder 30 caracteres';
+
+  @override
+  String get login => 'Iniciar Sesión';
+
+  @override
+  String get register => 'Registrarse';
+
+  @override
+  String get username => 'Nombre de Usuario';
+
+  @override
+  String get password => 'Contraseña';
+
+  @override
+  String get confirmPassword => 'Confirmar Contraseña';
+
+  @override
+  String get serverAddress => 'Dirección del Servidor';
+
+  @override
+  String get serverAddressHint =>
+      'Ingresa la dirección raíz del servidor (ej: https://api.example.com)';
+
+  @override
+  String get usernameRequired => 'El nombre de usuario es requerido';
+
+  @override
+  String get passwordRequired => 'La contraseña es requerida';
+
+  @override
+  String get serverAddressRequired => 'La dirección del servidor es requerida';
+
+  @override
+  String get invalidServerAddress =>
+      'Por favor ingresa una dirección de servidor válida';
+
+  @override
+  String get passwordMismatch => 'Las contraseñas no coinciden';
+
+  @override
+  String passwordMinLength(int min) {
+    return 'La contraseña debe tener al menos $min caracteres';
+  }
+
+  @override
+  String get loginSuccess => 'Inicio de sesión exitoso';
+
+  @override
+  String get registerSuccess => 'Registro exitoso';
+
+  @override
+  String get loginFailed => 'Error al iniciar sesión';
+
+  @override
+  String get registerFailed => 'Error al registrarse';
+
+  @override
+  String get switchToRegister => '¿No tienes una cuenta? Regístrate';
+
+  @override
+  String get switchToLogin => '¿Ya tienes una cuenta? Inicia sesión';
 }

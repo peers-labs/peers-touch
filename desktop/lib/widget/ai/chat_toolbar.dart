@@ -3,10 +3,10 @@ import 'package:desktop/widget/ai/agent_selector.dart';
 import 'package:desktop/widget/ai/search_assistant.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:desktop/core/network/network.dart';
 import 'package:provider/provider.dart';
-import 'package:desktop/model/ai_model_simple.dart';
 import 'package:desktop/provider/model_provider.dart';
+import 'dart:io';
 
 class ChatToolbar extends StatelessWidget {
   const ChatToolbar({super.key});
@@ -22,15 +22,17 @@ class ChatToolbar extends StatelessWidget {
     if (result != null) {
       PlatformFile file = result.files.first;
 
-      var request = http.MultipartRequest('POST', Uri.parse('http://localhost:8080/ai-box/files/upload'));
-      request.files.add(await http.MultipartFile.fromPath('file', file.path!));
-
-      var response = await request.send();
-
-      if (response.statusCode == 200) {
+      try {
+        await NetworkProvider.client.uploadFile(
+          '/ai-box/files/upload',
+          file: File(file.path!),
+          fileKey: 'file',
+        );
         print('Uploaded!');
-      } else {
-        print('Upload failed');
+      } on NetworkException catch (e) {
+        print('Upload failed: ${e.message}');
+      } catch (e) {
+        print('Upload failed: $e');
       }
     } else {
       // User canceled the picker

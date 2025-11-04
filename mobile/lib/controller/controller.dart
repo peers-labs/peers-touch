@@ -6,7 +6,9 @@ import 'package:peers_touch_mobile/controller/device_id_controller.dart';
 import 'package:peers_touch_mobile/controller/scroll_controller.dart';
 import 'package:peers_touch_mobile/controller/me_controller.dart';
 import 'package:peers_touch_mobile/controller/profile_controller.dart';
+import 'package:peers_touch_mobile/controller/auth_controller.dart';
 import 'package:peers_touch_mobile/store/sync_manager.dart';
+import 'package:peers_touch_mobile/services/auth_service.dart';
 
 class ControllerManager {
   static final ControllerManager _instance = ControllerManager._internal();
@@ -17,7 +19,10 @@ class ControllerManager {
 
   ControllerManager._internal() {
     // Initialize all controllers in the correct order
-    // First initialize device ID and sync manager
+    // First initialize auth service
+    _authService = Get.put(AuthService());
+    
+    // Then initialize device ID and sync manager
     _deviceIdController = Get.put(DeviceIdController());
     _syncManager = Get.put(SyncManager());
     
@@ -27,6 +32,7 @@ class ControllerManager {
     _photoController = Get.put(PhotoController());
     _albumController = Get.put(AlbumController());
     _scrollController = Get.put(AppScrollController());
+    _authController = Get.put(AuthController());
   }
 
   // Add your controllers here
@@ -38,6 +44,8 @@ class ControllerManager {
   static AppScrollController get scrollController => _instance._scrollController;
   static MeController get meController => _instance._meController;
   static ProfileController get profileController => _instance._profileController;
+  static AuthController get authController => _instance._authController;
+  static AuthService get authService => _instance._authService;
   
   late final DeviceIdController _deviceIdController;
   late final SyncManager _syncManager;
@@ -46,4 +54,6 @@ class ControllerManager {
   late final AppScrollController _scrollController;
   late final MeController _meController;
   late final ProfileController _profileController;
+  late final AuthController _authController;
+  late final AuthService _authService;
 }

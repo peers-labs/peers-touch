@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:get/get.dart';
-import 'package:http/http.dart' as http;
+import 'package:desktop/core/network/network.dart';
 
 class KnowledgeBaseController extends GetxController {
   final _files = <String>[].obs;
@@ -14,12 +14,17 @@ class KnowledgeBaseController extends GetxController {
 
   Future<void> fetchFiles() async {
     try {
-      final response = await http.get(Uri.parse('http://localhost:8080/ai-box/files/list'));
-      if (response.statusCode == 200) {
-        _files.value = List<String>.from(json.decode(response.body));
-      }
+      final response = await NetworkProvider.client.get<List<dynamic>>(
+        '/ai-box/files/list',
+        fromJson: (data) => data as List<dynamic>,
+      );
+      _files.value = List<String>.from(response);
+    } on NetworkException catch (e) {
+      // Handle network error
+      print('Network error while fetching files: $e');
     } catch (e) {
-      // Handle error
+      // Handle other errors
+      print('Error while fetching files: $e');
     }
   }
 }

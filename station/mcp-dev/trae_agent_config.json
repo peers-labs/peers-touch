@@ -1,0 +1,19 @@
+{
+  "mcp_servers": {
+    "peers-dev-mcp": {
+      "command": "mcp-dev/mcp-dev.exe",
+      "args": [],
+      "env": {
+        "PORT": "18888"
+      },
+      "capabilities": {
+        "tools": {
+          "listChanged": true
+        },
+        "prompts": {
+          "listChanged": true
+        }
+      }
+    }
+  }
+}

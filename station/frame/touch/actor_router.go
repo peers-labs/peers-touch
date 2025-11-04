@@ -33,7 +33,7 @@ func (mr *ActorRouters) Handlers() []server.Handler {
 }
 
 func (mr *ActorRouters) Name() string {
-	return RoutersNameUser
+	return RoutersNameActor
 }
 
 // NewActorRouter creates ActorRouters

@@ -89,13 +89,7 @@ app.*.map.json
 /linux/flutter/generated_plugins.cmake
 /linux/flutter/ephemeral/
 
-# Web specific
-/web/flutter_service_worker.js
-/web/flutter.js
-/web/version.json
-/web/assets/FontManifest.json
-
-# Platform specific directories
+# Platform specific directories (only keep iOS and Android)
 windows/
 macos/
 linux/

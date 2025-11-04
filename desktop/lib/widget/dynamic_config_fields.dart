@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/ai_provider.dart';
+import '../model/ai_provider.dart';
 
 /// Dynamic configuration fields widget that renders different input types
 /// based on ConfigField definitions from AI provider metadata
