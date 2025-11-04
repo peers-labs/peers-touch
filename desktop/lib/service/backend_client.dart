@@ -1,46 +1,47 @@
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
+import 'package:desktop/core/network/network.dart';
 
 class BackendConfig {
   // TODO: make this configurable via settings or env.
-  static const String defaultBaseUrl = 'http://127.0.0.1:8082';
+  static const String defaultBaseUrl = 'http://127.0.0.1:8080';
 }
 
 class BackendClient {
   final String baseUrl;
-  final http.Client _client;
+  final HttpClient _client;
 
-  BackendClient({String? baseUrl, http.Client? client})
+  BackendClient({String? baseUrl, HttpClient? client})
       : baseUrl = baseUrl ?? BackendConfig.defaultBaseUrl,
-        _client = client ?? http.Client();
-
-  Uri _uri(String path, [Map<String, String>? query]) {
-    return Uri.parse(baseUrl).replace(
-      path: path,
-      queryParameters: query ?? {},
-    );
-  }
+        _client = client ?? NetworkProvider.client;
 
   Future<Map<String, dynamic>> getJson(String path,
       {Map<String, String>? query}) async {
-    final resp = await _client.get(_uri(path, query));
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      try {
-        return jsonDecode(resp.body) as Map<String, dynamic>;
-      } catch (_) {
-        return {'raw': resp.body};
-      }
+    try {
+      final response = await _client.get<Map<String, dynamic>>(
+        path,
+        queryParameters: query,
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      return response;
+    } on NetworkException catch (e) {
+      throw Exception('GET $path failed: ${e.message}');
+    } catch (e) {
+      throw Exception('GET $path failed: $e');
     }
-    throw Exception('GET $path failed: ${resp.statusCode}');
   }
 
   Future<String> getRaw(String path, {Map<String, String>? query}) async {
-    final resp = await _client.get(_uri(path, query));
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return resp.body;
+    try {
+      final response = await _client.get<String>(
+        path,
+        queryParameters: query,
+        fromJson: (data) => data,
+      );
+      return response;
+    } on NetworkException catch (e) {
+      throw Exception('GET $path failed: ${e.message}');
+    } catch (e) {
+      throw Exception('GET $path failed: $e');
     }
-    throw Exception('GET $path failed: ${resp.statusCode}');
   }
 
   BackendClient withBaseUrl(String newBaseUrl) {
@@ -94,50 +95,47 @@ class BackendClient {
   }
 
   Future<Map<String, dynamic>> updateProviderConfig(String providerName, Map<String, dynamic> config) async {
-    final resp = await _client.put(
-      _uri('/sub-ai-box/providers/$providerName/config'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(config),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      try {
-        return jsonDecode(resp.body) as Map<String, dynamic>;
-      } catch (_) {
-        return {'success': true};
-      }
+    try {
+      final response = await _client.put<Map<String, dynamic>>(
+        '/sub-ai-box/providers/$providerName/config',
+        data: config,
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      return response;
+    } on NetworkException catch (e) {
+      throw Exception('PUT /sub-ai-box/providers/$providerName/config failed: ${e.message}');
+    } catch (e) {
+      throw Exception('PUT /sub-ai-box/providers/$providerName/config failed: $e');
     }
-    throw Exception('PUT /sub-ai-box/providers/$providerName/config failed: ${resp.statusCode}');
   }
 
   Future<Map<String, dynamic>> setProviderEnabled(String providerName, bool enabled) async {
-    final resp = await _client.put(
-      _uri('/sub-ai-box/providers/$providerName/enabled'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'enabled': enabled}),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      try {
-        return jsonDecode(resp.body) as Map<String, dynamic>;
-      } catch (_) {
-        return {'success': true};
-      }
+    try {
+      final response = await _client.put<Map<String, dynamic>>(
+        '/sub-ai-box/providers/$providerName/enabled',
+        data: {'enabled': enabled},
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      return response;
+    } on NetworkException catch (e) {
+      throw Exception('PUT /sub-ai-box/providers/$providerName/enabled failed: ${e.message}');
+    } catch (e) {
+      throw Exception('PUT /sub-ai-box/providers/$providerName/enabled failed: $e');
     }
-    throw Exception('PUT /sub-ai-box/providers/$providerName/enabled failed: ${resp.statusCode}');
   }
 
   Future<Map<String, dynamic>> testProviderConnection(String providerName) async {
-    final resp = await _client.post(
-      _uri('/sub-ai-box/providers/$providerName/test'),
-      headers: {'Content-Type': 'application/json'},
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      try {
-        return jsonDecode(resp.body) as Map<String, dynamic>;
-      } catch (_) {
-        return {'success': true};
-      }
+    try {
+      final response = await _client.post<Map<String, dynamic>>(
+        '/sub-ai-box/providers/$providerName/test',
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      return response;
+    } on NetworkException catch (e) {
+      throw Exception('POST /sub-ai-box/providers/$providerName/test failed: ${e.message}');
+    } catch (e) {
+      throw Exception('POST /sub-ai-box/providers/$providerName/test failed: $e');
     }
-    throw Exception('POST /sub-ai-box/providers/$providerName/test failed: ${resp.statusCode}');
   }
 
   // Agent management
@@ -146,15 +144,18 @@ class BackendClient {
   }
 
   Future<Map<String, dynamic>> createAgent(Map<String, dynamic> agentData) async {
-    final resp = await _client.post(
-      _uri('/sub-ai-box/agents'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(agentData),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return jsonDecode(resp.body) as Map<String, dynamic>;
+    try {
+      final response = await _client.post<Map<String, dynamic>>(
+        '/sub-ai-box/agents',
+        data: agentData,
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      return response;
+    } on NetworkException catch (e) {
+      throw Exception('POST /sub-ai-box/agents failed: ${e.message}');
+    } catch (e) {
+      throw Exception('POST /sub-ai-box/agents failed: $e');
     }
-    throw Exception('POST /sub-ai-box/agents failed: ${resp.statusCode}');
   }
 
   Future<Map<String, dynamic>> getAgent(String agentId) async {
@@ -163,15 +164,18 @@ class BackendClient {
 
   // Chat
   Future<Map<String, dynamic>> chat(Map<String, dynamic> chatRequest) async {
-    final resp = await _client.post(
-      _uri('/sub-ai-box/chat'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(chatRequest),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return jsonDecode(resp.body) as Map<String, dynamic>;
+    try {
+      final response = await _client.post<Map<String, dynamic>>(
+        '/sub-ai-box/chat',
+        data: chatRequest,
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      return response;
+    } on NetworkException catch (e) {
+      throw Exception('POST /sub-ai-box/chat failed: ${e.message}');
+    } catch (e) {
+      throw Exception('POST /sub-ai-box/chat failed: $e');
     }
-    throw Exception('POST /sub-ai-box/chat failed: ${resp.statusCode}');
   }
 
   // Health check

@@ -229,5 +229,106 @@
   "peersIdHelper": "此 ID 对您的设备和网络连接是唯一的。只要您连接到同一网络，它就会保持一致。",
   "shortBioUpdateTitle": "个人简介",
   "shortBioHelper": "分享一个关于您自己的简短描述。当其他用户查看您的个人资料时，这将是可见的。",
-  "shortBioMaxLength": "个人简介不能超过30个字符"
+  "shortBioMaxLength": "个人简介不能超过30个字符",
+
+  "login": "登录",
+  "@login": {
+    "description": "登录按钮文本"
+  },
+
+  "register": "注册",
+  "@register": {
+    "description": "注册按钮文本"
+  },
+
+  "username": "用户名",
+  "@username": {
+    "description": "用户名字段标签"
+  },
+
+  "password": "密码",
+  "@password": {
+    "description": "密码字段标签"
+  },
+
+  "confirmPassword": "确认密码",
+  "@confirmPassword": {
+    "description": "确认密码字段标签"
+  },
+
+  "serverAddress": "服务器地址",
+  "@serverAddress": {
+    "description": "服务器地址字段标签"
+  },
+
+  "serverAddressHint": "输入服务器根地址 (例如：https://api.example.com)",
+  "@serverAddressHint": {
+    "description": "服务器地址字段的提示文本"
+  },
+
+  "usernameRequired": "用户名是必需的",
+  "@usernameRequired": {
+    "description": "必需用户名的验证消息"
+  },
+
+  "passwordRequired": "密码是必需的",
+  "@passwordRequired": {
+    "description": "必需密码的验证消息"
+  },
+
+  "serverAddressRequired": "服务器地址是必需的",
+  "@serverAddressRequired": {
+    "description": "必需服务器地址的验证消息"
+  },
+
+  "invalidServerAddress": "请输入有效的服务器地址",
+  "@invalidServerAddress": {
+    "description": "无效服务器地址格式的验证消息"
+  },
+
+  "passwordMismatch": "密码不匹配",
+  "@passwordMismatch": {
+    "description": "密码不匹配时的验证消息"
+  },
+
+  "passwordMinLength": "密码必须至少 {min} 个字符",
+  "@passwordMinLength": {
+    "description": "密码最小长度的验证消息",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "description": "最小密码长度"
+      }
+    }
+  },
+
+  "loginSuccess": "登录成功",
+  "@loginSuccess": {
+    "description": "登录成功的消息"
+  },
+
+  "registerSuccess": "注册成功",
+  "@registerSuccess": {
+    "description": "注册成功的消息"
+  },
+
+  "loginFailed": "登录失败",
+  "@loginFailed": {
+    "description": "登录失败的错误消息"
+  },
+
+  "registerFailed": "注册失败",
+  "@registerFailed": {
+    "description": "注册失败的错误消息"
+  },
+
+  "switchToRegister": "没有账户？注册",
+  "@switchToRegister": {
+    "description": "切换到注册表单的文本"
+  },
+
+  "switchToLogin": "已有账户？登录",
+  "@switchToLogin": {
+    "description": "切换到登录表单的文本"
+  }
 }

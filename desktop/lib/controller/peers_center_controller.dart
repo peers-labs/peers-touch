@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:desktop/service/backend_client.dart';
 import 'package:desktop/service/mdns_service.dart';

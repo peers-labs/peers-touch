@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+// import 'dart:io';
 
 import 'package:multicast_dns/multicast_dns.dart';
 
@@ -40,21 +40,23 @@ class MDNSService {
         if (!completer.isCompleted) completer.complete();
       });
 
-      ptrRecords.listen((ptr) async {
+      ptrRecords.listen((ptr) {
         final instance = ptr.domainName;
         String host = '';
         int port = 0;
         String? peerId;
         final addrs = <String>[];
 
-        await for (final srv in client.lookup<SrvResourceRecord>(
-            ResourceRecordQuery.instance(instance))) {
+        client
+            .lookup<SrvResourceRecord>(ResourceRecordQuery.service(instance))
+            .listen((srv) {
           host = srv.target;
           port = srv.port;
-        }
+        });
 
-        await for (final txt in client.lookup<TxtResourceRecord>(
-            ResourceRecordQuery.instance(instance))) {
+        client
+            .lookup<TxtResourceRecord>(ResourceRecordQuery.service(instance))
+            .listen((txt) {
           for (final e in txt.text.split('\n')) {
             final parts = e.split('=');
             if (parts.length == 2) {
@@ -64,13 +66,14 @@ class MDNSService {
               if (k == 'addresses') addrs.add(v);
             }
           }
-        }
+        });
 
-        await for (final ip in client.lookup<IPAddressResourceRecord>(
-            ResourceRecordQuery.address(host))) {
+        client
+            .lookup<IPAddressResourceRecord>(ResourceRecordQuery.addressIPv4(host))
+            .listen((ip) {
           final addr = ip.address.address;
           if (!addrs.contains(addr)) addrs.add(addr);
-        }
+        });
 
         final selectedHost = addrs.isNotEmpty ? addrs.first : host;
         services.add(DiscoveredService(
@@ -89,9 +92,7 @@ class MDNSService {
     } catch (_) {
       return [];
     } finally {
-      try {
-        await client.stop();
-      } catch (_) {}
+      client.stop();
     }
 
     return services;

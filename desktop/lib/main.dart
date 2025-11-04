@@ -5,19 +5,35 @@ import 'package:desktop/page/settings/settings_main_page.dart';
 import 'package:desktop/page/settings/ai_service_provider_page.dart';
 import 'package:desktop/provider/model_provider.dart';
 import 'package:desktop/provider/right_sidebar_provider.dart';
+import 'package:desktop/provider/sidebar_state_provider.dart';
 import 'package:desktop/provider/locale_provider.dart';
 import 'package:desktop/controller/ai_provider_controller.dart';
 import 'package:desktop/service/backend_client.dart';
 import 'package:desktop/service/logging_service.dart';
+import 'package:desktop/core/network/network.dart';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'config/window_size_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await setupLogging();
+  
+  // Initialize global network client
+  NetworkProvider.initialize(
+    baseUrl: 'http://localhost:8080',
+    enableLogging: true,
+    loggingConfig: const LoggingInterceptorConfig(
+      logHeaders: true,
+      logBody: true,
+      logDuration: true,
+      maxBodyLength: 1000,
+    ),
+  );
+  
   // Must add this line.
   await windowManager.ensureInitialized();
 
@@ -51,19 +67,29 @@ class PeersTouchStationApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GetMaterialApp(
-      title: 'Peers Touch Station',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        fontFamily: 'Segoe UI',
-      ),
-      initialBinding: AppBindings(),
-      home: const HomeScreen(),
-      getPages: [
-        GetPage(name: '/settings', page: () => const SettingsPage()),
-        GetPage(name: '/ai-service-provider', page: () => const AiServiceProviderPage()),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AIModelProvider>(create: (_) => AIModelProvider()),
+        ChangeNotifierProvider<RightSidebarProvider>(create: (_) => RightSidebarProvider()),
+        ChangeNotifierProvider<SidebarStateProvider>(create: (_) => SidebarStateProvider()),
+        ChangeNotifierProvider<LocaleProvider>(
+          create: (_) => LocaleProvider()..setLocale(const Locale('en')),
+        ),
       ],
-      debugShowCheckedModeBanner: false,
+      child: GetMaterialApp(
+        title: 'Peers Touch Station',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          fontFamily: 'Segoe UI',
+        ),
+        initialBinding: AppBindings(),
+        home: const HomeScreen(),
+        getPages: [
+          GetPage(name: '/settings', page: () => const SettingsPage()),
+          GetPage(name: '/ai-service-provider', page: () => const AiServiceProviderPage()),
+        ],
+        debugShowCheckedModeBanner: false,
+      ),
     );
   }
 }
@@ -73,9 +99,6 @@ class AppBindings implements Bindings {
   void dependencies() {
     // 初始化控制器
     Get.put(AIProviderController(), permanent: true);
-    Get.put(AIModelProvider(), permanent: true);
-    Get.put(RightSidebarProvider(), permanent: true);
-    Get.put(LocaleProvider(), permanent: true);
   }
 }
 
@@ -159,14 +182,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             return const SizedBox.shrink();
                           },
                         ),
-                        // Settings Button
-                        IconButton(
-                          icon: const Icon(Icons.settings, size: 24),
-                          onPressed: () {
-                            setState(() => selectedIndex = 5);
-                          },
-                          tooltip: 'Settings',
-                        ),
+                        // Removed settings shortcut button per requirement
                       ],
                     ),
                     const SizedBox(height: 32),
@@ -180,50 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // Right Sidebar (conditionally shown)
-          if (selectedIndex != 4 && selectedIndex != 5)
-            Container(
-              width: 300,
-              decoration: const BoxDecoration(
-                border: Border(
-                  left: BorderSide(color: Color(0xFFE0E0E0)),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Tasks',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildTaskItem('Review Q3 budget', 'You', true),
-                    _buildTaskItem('Finalize presentation deck', 'Alex', false),
-                    _buildTaskItem('Onboarding new hire', 'You', false),
-                    const SizedBox(height: 32),
-                    const Text(
-                      'Recent',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildRecentItem(
-                      icon: Icons.description,
-                      name: 'Project Phoenix Spec',
-                      type: 'Paper',
-                      color: Colors.blue,
-                    ),
-                    _buildRecentItem(
-                      icon: Icons.folder,
-                      name: 'Marketing Assets Q4',
-                      type: 'Folder',
-                      color: Colors.orange,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          // Removed right sidebar per requirement
         ],
       ),
     );

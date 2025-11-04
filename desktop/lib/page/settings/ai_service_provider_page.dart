@@ -4,8 +4,23 @@ import 'package:desktop/widget/error_message_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-class AiServiceProviderPage extends StatelessWidget {
+class AiServiceProviderPage extends StatefulWidget {
   const AiServiceProviderPage({super.key});
+
+  @override
+  State<AiServiceProviderPage> createState() => _AiServiceProviderPageState();
+}
+
+class _AiServiceProviderPageState extends State<AiServiceProviderPage> {
+  @override
+  void initState() {
+    super.initState();
+    // 进入页面时拉取一次最新的 Providers 列表
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final controller = Get.find<AIProviderController>();
+      controller.fetchProviders();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class AiProvider {
   final String id;
   final String name;
@@ -108,13 +110,27 @@ class ProviderConfig {
     required this.maxRetries,
   });
 
-  factory ProviderConfig.fromJson(Map<String, dynamic> json) {
+  factory ProviderConfig.fromJson(dynamic json) {
+    // 后端可能返回字符串形式的 JSON，或直接返回对象
+    Map<String, dynamic> map;
+    if (json is String) {
+      try {
+        map = (json.isEmpty ? {} : (jsonDecode(json) as Map<String, dynamic>));
+      } catch (_) {
+        map = {};
+      }
+    } else if (json is Map<String, dynamic>) {
+      map = json;
+    } else {
+      map = {};
+    }
+
     return ProviderConfig(
-      apiKey: json['api_key'] ?? '',
-      endpoint: json['endpoint'] ?? '',
-      proxyUrl: json['proxy_url'] ?? '',
-      timeout: json['timeout'] ?? 30,
-      maxRetries: json['max_retries'] ?? 3,
+      apiKey: map['api_key'] ?? '',
+      endpoint: map['endpoint'] ?? '',
+      proxyUrl: map['proxy_url'] ?? '',
+      timeout: map['timeout'] ?? 30,
+      maxRetries: map['max_retries'] ?? 3,
     );
   }
 
@@ -155,11 +171,21 @@ class ListProvidersResponse {
   });
 
   factory ListProvidersResponse.fromJson(Map<String, dynamic> json) {
+    // 兼容两种结构：
+    // 1) { total, providers: [...] }
+    // 2) { total, list: [...] } 或包裹在 data 中
+    final root = (json['data'] is Map<String, dynamic>)
+        ? json['data'] as Map<String, dynamic>
+        : json;
+
+    final list = (root['providers'] ?? root['list']) as List<dynamic>?;
+
     return ListProvidersResponse(
-      providers: (json['providers'] as List<dynamic>?)
-          ?.map((item) => AiProvider.fromJson(item as Map<String, dynamic>))
-          .toList() ?? [],
-      total: json['total'] ?? 0,
+      providers: list
+              ?.map((item) => AiProvider.fromJson(item as Map<String, dynamic>))
+              .toList() ??
+          [],
+      total: (root['total'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -175,8 +201,8 @@ class TestProviderResponse {
 
   factory TestProviderResponse.fromJson(Map<String, dynamic> json) {
     return TestProviderResponse(
-      ok: json['ok'] ?? false,
-      message: json['message'] ?? '',
+      ok: json['ok'] ?? json['success'] ?? false,
+      message: json['message'] ?? json['msg'] ?? '',
     );
   }
 }

@@ -1,0 +1,57 @@
+[
+  {
+    "id": "go_service_template",
+    "name": "Go Service Template",
+    "type": "service",
+    "language": "go",
+    "framework": "hertz",
+    "description": "Template for creating a new Hertz service",
+    "content": "package {{.package_name}}\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\n\t\"github.com/cloudwego/hertz/pkg/app\"\n\t\"github.com/cloudwego/hertz/pkg/app/server\"\n\t\"github.com/cloudwego/hertz/pkg/protocol/consts\"\n)\n\ntype {{.service_name}}Handler struct {\n\t// Add your dependencies here\n}\n\nfunc New{{.service_name}}Handler() *{{.service_name}}Handler {\n\treturn &{{.service_name}}Handler{}\n}\n\nfunc (h *{{.service_name}}Handler) RegisterRoutes(r *server.Hertz) {\n\tr.GET(\"{{.route_path}}\", h.handle{{.service_name}})\n}\n\nfunc (h *{{.service_name}}Handler) handle{{.service_name}}(ctx context.Context, c *app.RequestContext) {\n\t// TODO: Implement your logic here\n\tresponse := map[string]interface{}{\n\t\t\"message\": \"{{.service_name}} endpoint\",\n\t\t\"status\":  \"ok\",\n\t}\n\t\n\tc.JSON(consts.StatusOK, response)\n}\n",
+    "variables": [
+      {"name": "package_name", "type": "string", "required": true, "description": "Package name"},
+      {"name": "service_name", "type": "string", "required": true, "description": "Service name"},
+      {"name": "route_path", "type": "string", "required": true, "description": "API route path"}
+    ],
+    "tags": ["go", "hertz", "service"],
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": "go_handler_template",
+    "name": "Go Handler Template",
+    "type": "handler",
+    "language": "go",
+    "framework": "hertz",
+    "description": "Template for creating a new Hertz handler",
+    "content": "package {{.package_name}}\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\n\t\"github.com/cloudwego/hertz/pkg/app\"\n\t\"github.com/cloudwego/hertz/pkg/protocol/consts\"\n)\n\n// {{.handler_name}} handles {{.description}}\nfunc {{.handler_name}}(ctx context.Context, c *app.RequestContext) {\n\t// Validate request\n\tif err := validate{{.handler_name}}Request(c); err != nil {\n\t\tc.JSON(consts.StatusBadRequest, map[string]string{\n\t\t\t\"error\": err.Error(),\n\t\t})\n\t\treturn\n\t}\n\t\n\t// Process request\n\tresult, err := process{{.handler_name}}(ctx, c)\n\tif err != nil {\n\t\tc.JSON(consts.StatusInternalServerError, map[string]string{\n\t\t\t\"error\": err.Error(),\n\t\t})\n\t\treturn\n\t}\n\t\n\t// Return response\n\tc.JSON(consts.StatusOK, result)\n}\n\nfunc validate{{.handler_name}}Request(c *app.RequestContext) error {\n\t// TODO: Implement request validation\n\treturn nil\n}\n\nfunc process{{.handler_name}}(ctx context.Context, c *app.RequestContext) (interface{}, error) {\n\t// TODO: Implement business logic\n\treturn map[string]string{\n\t\t\"message\": \"{{.handler_name}} processed successfully\",\n\t}, nil\n}\n",
+    "variables": [
+      {"name": "package_name", "type": "string", "required": true, "description": "Package name"},
+      {"name": "handler_name", "type": "string", "required": true, "description": "Handler function name"},
+      {"name": "description", "type": "string", "required": false, "description": "Handler description"}
+    ],
+    "tags": ["go", "hertz", "handler"],
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": "go_types_template",
+    "name": "Go Types Template",
+    "type": "types",
+    "language": "go",
+    "framework": "hertz",
+    "description": "Template for creating Go types and structs",
+    "content": "package {{.package_name}}\n\nimport \"time\"\n\n// {{.type_name}} represents {{.description}}\ntype {{.type_name}} struct {\n\tID        string    `json:\"id\" db:\"id\"`\n\tCreatedAt time.Time `json:\"created_at\" db:\"created_at\"`\n\tUpdatedAt time.Time `json:\"updated_at\" db:\"updated_at\"`\n\t{{.fields}}\n}\n\n// {{.type_name}}Request represents the request payload for {{.type_name}}\ntype {{.type_name}}Request struct {\n\t{{.request_fields}}\n}\n\n// {{.type_name}}Response represents the response payload for {{.type_name}}\ntype {{.type_name}}Response struct {\n\t{{.response_fields}}\n}\n\n// Validate validates the {{.type_name}}Request\nfunc (r *{{.type_name}}Request) Validate() error {\n\t// TODO: Implement validation logic\n\treturn nil\n}\n\n// To{{.type_name}} converts {{.type_name}}Request to {{.type_name}}\nfunc (r *{{.type_name}}Request) To{{.type_name}}() *{{.type_name}} {\n\treturn &{{.type_name}}{\n\t\t{{.conversion_fields}}\n\t}\n}\n",
+    "variables": [
+      {"name": "package_name", "type": "string", "required": true, "description": "Package name"},
+      {"name": "type_name", "type": "string", "required": true, "description": "Type name"},
+      {"name": "description", "type": "string", "required": false, "description": "Type description"},
+      {"name": "fields", "type": "string", "required": true, "description": "Struct fields"},
+      {"name": "request_fields", "type": "string", "required": false, "description": "Request struct fields"},
+      {"name": "response_fields", "type": "string", "required": false, "description": "Response struct fields"},
+      {"name": "conversion_fields", "type": "string", "required": false, "description": "Field conversion logic"}
+    ],
+    "tags": ["go", "types", "structs"],
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  }
+]

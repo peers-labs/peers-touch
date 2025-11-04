@@ -977,5 +977,106 @@
   "shortBioMaxLength": "Short bio cannot exceed 30 characters",
   "@shortBioMaxLength": {
     "description": "Validation message for short bio maximum length"
+  },
+
+  "login": "Login",
+  "@login": {
+    "description": "Login button text"
+  },
+
+  "register": "Register",
+  "@register": {
+    "description": "Register button text"
+  },
+
+  "username": "Username",
+  "@username": {
+    "description": "Username field label"
+  },
+
+  "password": "Password",
+  "@password": {
+    "description": "Password field label"
+  },
+
+  "confirmPassword": "Confirm Password",
+  "@confirmPassword": {
+    "description": "Confirm password field label"
+  },
+
+  "serverAddress": "Server Address",
+  "@serverAddress": {
+    "description": "Server address field label"
+  },
+
+  "serverAddressHint": "Enter server root address (e.g., https://api.example.com)",
+  "@serverAddressHint": {
+    "description": "Hint text for server address field"
+  },
+
+  "usernameRequired": "Username is required",
+  "@usernameRequired": {
+    "description": "Validation message for required username"
+  },
+
+  "passwordRequired": "Password is required",
+  "@passwordRequired": {
+    "description": "Validation message for required password"
+  },
+
+  "serverAddressRequired": "Server address is required",
+  "@serverAddressRequired": {
+    "description": "Validation message for required server address"
+  },
+
+  "invalidServerAddress": "Please enter a valid server address",
+  "@invalidServerAddress": {
+    "description": "Validation message for invalid server address format"
+  },
+
+  "passwordMismatch": "Passwords do not match",
+  "@passwordMismatch": {
+    "description": "Validation message when passwords don't match"
+  },
+
+  "passwordMinLength": "Password must be at least {min} characters",
+  "@passwordMinLength": {
+    "description": "Validation message for password minimum length",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "description": "Minimum password length"
+      }
+    }
+  },
+
+  "loginSuccess": "Login successful",
+  "@loginSuccess": {
+    "description": "Success message for login"
+  },
+
+  "registerSuccess": "Registration successful",
+  "@registerSuccess": {
+    "description": "Success message for registration"
+  },
+
+  "loginFailed": "Login failed",
+  "@loginFailed": {
+    "description": "Error message for failed login"
+  },
+
+  "registerFailed": "Registration failed",
+  "@registerFailed": {
+    "description": "Error message for failed registration"
+  },
+
+  "switchToRegister": "Don't have an account? Register",
+  "@switchToRegister": {
+    "description": "Text to switch to registration form"
+  },
+
+  "switchToLogin": "Already have an account? Login",
+  "@switchToLogin": {
+    "description": "Text to switch to login form"
   }
 }

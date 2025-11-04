@@ -4,7 +4,7 @@ import 'package:get/get.dart';
 import 'general_settings_page.dart';
 import 'ai_chat_settings_page.dart';
 import 'about_settings_page.dart';
-import '../provider_settings_page.dart';
+import 'ai_service_provider_page.dart';
 
 class SettingsMainPage extends StatelessWidget {
   const SettingsMainPage({super.key});

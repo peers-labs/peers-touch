@@ -549,4 +549,63 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get shortBioMaxLength => '个人简介不能超过30个字符';
+
+  @override
+  String get login => '登录';
+
+  @override
+  String get register => '注册';
+
+  @override
+  String get username => '用户名';
+
+  @override
+  String get password => '密码';
+
+  @override
+  String get confirmPassword => '确认密码';
+
+  @override
+  String get serverAddress => '服务器地址';
+
+  @override
+  String get serverAddressHint => '输入服务器根地址 (例如：https://api.example.com)';
+
+  @override
+  String get usernameRequired => '用户名是必需的';
+
+  @override
+  String get passwordRequired => '密码是必需的';
+
+  @override
+  String get serverAddressRequired => '服务器地址是必需的';
+
+  @override
+  String get invalidServerAddress => '请输入有效的服务器地址';
+
+  @override
+  String get passwordMismatch => '密码不匹配';
+
+  @override
+  String passwordMinLength(int min) {
+    return '密码必须至少 $min 个字符';
+  }
+
+  @override
+  String get loginSuccess => '登录成功';
+
+  @override
+  String get registerSuccess => '注册成功';
+
+  @override
+  String get loginFailed => '登录失败';
+
+  @override
+  String get registerFailed => '注册失败';
+
+  @override
+  String get switchToRegister => '没有账户？注册';
+
+  @override
+  String get switchToLogin => '已有账户？登录';
 }

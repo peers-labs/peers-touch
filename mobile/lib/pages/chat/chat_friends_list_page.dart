@@ -5,8 +5,6 @@ import 'package:peers_touch_mobile/pages/chat/chat_detail_page.dart';
 import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
 import 'package:peers_touch_mobile/pages/chat/chat_search_bar.dart';
 
-import 'chat_detail_page.dart';
-
 class FriendsListPage extends StatefulWidget {
   const FriendsListPage({super.key});
 
@@ -336,7 +334,15 @@ class _FriendsListPageState extends State<FriendsListPage> {
               title: Text(l10n.removeFriend),
               onTap: () {
                 Navigator.pop(context);
-                appLogger.info('Remove friend ${friend.getDisplayName()}');
+                _showDeleteConfirmation(context, friend);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: Text(l10n.editRemark),
+              onTap: () {
+                Navigator.pop(context);
+                _showEditRemarkDialog(context, friend);
               },
             ),
             ListTile(

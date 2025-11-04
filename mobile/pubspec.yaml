@@ -41,7 +41,7 @@ dependencies:
   video_thumbnail: ^0.5.1
   logger: ^2.0.2+1
   image_picker: ^1.0.4
-  shared_preferences: ^2.2.2
+  shared_preferences: ^2.5.3
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
@@ -55,9 +55,7 @@ dependencies:
   sqflite: ^2.3.3+1
   path: ^1.8.3
   crypto: ^3.0.3
-  protobuf: ^4.2.0
-  fixnum: ^1.1.1
-  googleapis: ^14.0.0
+
 
 dev_dependencies:
   flutter_test:
@@ -69,7 +67,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
-  protoc_plugin: ^22.5.0
+
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

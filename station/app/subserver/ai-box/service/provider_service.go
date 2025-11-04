@@ -9,6 +9,7 @@ import (
 
 	"github.com/peers-touch/peers-touch/station/app/subserver/ai-box/db/models"
 	aiboxpb "github.com/peers-touch/peers-touch/station/app/subserver/ai-box/proto_gen/v1/peers_touch_station/ai_box"
+	"github.com/peers-touch/peers-touch/station/frame/core/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )
@@ -143,40 +144,43 @@ func (s *ProviderService) GetProvider(ctx context.Context, providerID string) (*
 }
 
 // ListProviders 列出提供商
-func (s *ProviderService) ListProviders(ctx context.Context, page, pageSize int32, enabledOnly bool) ([]*aiboxpb.AiProvider, int32, error) {
+func (s *ProviderService) ListProviders(ctx context.Context, query types.PageQuery, enabledOnly bool) (*types.PageData, error) {
 	userID := getUserIDFromContext(ctx)
 	if userID == "" {
-		return nil, 0, fmt.Errorf("user ID not found in context")
+		return nil, fmt.Errorf("user ID not found in context")
 	}
 
 	var providers []*models.Provider
 	var total int32
 
-	query := s.db.Where("peers_user_id = ?", userID)
+	dbQuery := s.db.Where("peers_user_id = ?", userID)
 	if enabledOnly {
-		query = query.Where("enabled = ?", true)
+		dbQuery = dbQuery.Where("enabled = ?", true)
 	}
 
 	// 获取总数
 	var total64 int64
-	if err := query.Model(&models.Provider{}).Count(&total64).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to count providers: %w", err)
+	if err := dbQuery.Model(&models.Provider{}).Count(&total64).Error; err != nil {
+		return nil, fmt.Errorf("failed to count providers: %w", err)
 	}
 	total = int32(total64)
 
 	// 获取分页数据
-	offset := (page - 1) * pageSize
-	if err := query.Limit(int(pageSize)).Offset(int(offset)).Find(&providers).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to list providers: %w", err)
+	offset := (query.Page - 1) * query.Size
+	if err := dbQuery.Limit(int(query.Size)).Offset(int(offset)).Find(&providers).Error; err != nil {
+		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
 
 	// 转换为proto
-	protoProviders := make([]*aiboxpb.AiProvider, len(providers))
+	protoProviders := make([]interface{}, len(providers))
 	for i, provider := range providers {
 		protoProviders[i] = s.convertToProto(provider)
 	}
 
-	return protoProviders, total, nil
+	return &types.PageData{
+		Total: total,
+		List:  protoProviders,
+	}, nil
 }
 
 // TestProvider 测试提供商连接
@@ -253,9 +257,10 @@ func generateProviderID() string {
 
 // getUserIDFromContext 从context获取用户ID
 func getUserIDFromContext(ctx context.Context) string {
-	// 这里应该从context中获取用户ID
-	// 暂时返回默认值，实际实现需要从context中提取
-	return "default_user"
+    // 这里应该从context中获取用户ID
+    // 开发阶段默认使用与种子数据一致的用户ID
+    // TODO: 从鉴权中间件提取真实用户ID
+    return "system"
 }
 
 // 测试函数实现
