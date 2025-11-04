@@ -36,7 +36,7 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 			if rds.Enable {
 				dialector := store.GetDialector(rds.Driver)
 				if dialector == nil {
-					panic("dialector not found")
+					panic("dialector not found for driver: " + rds.Driver)
 				}
 
 				if rds.Default {
