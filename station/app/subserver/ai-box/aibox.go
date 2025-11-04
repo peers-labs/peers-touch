@@ -160,18 +160,20 @@ type serviceRequestCreateProvider struct {
 	Logo        string `json:"logo"`
 }
 type serviceRequestUpdateProvider struct {
-	Id          string  `json:"id"`
-	DisplayName *string `json:"display_name"`
-	Description *string `json:"description"`
-	Logo        *string `json:"logo"`
-	Enabled     *bool   `json:"enabled"`
+    Id          string  `json:"id"`
+    DisplayName *string `json:"display_name"`
+    Description *string `json:"description"`
+    Logo        *string `json:"logo"`
+    Enabled     *bool   `json:"enabled"`
+    // Pass-through provider config from HTTP JSON to protobuf
+    Config      *aiboxpb.ProviderConfig `json:"config"`
 }
 
 func (r serviceRequestCreateProvider) ToProto() *aiboxpb.CreateProviderRequest {
 	return &aiboxpb.CreateProviderRequest{Name: r.Name, Description: r.Description, Logo: r.Logo}
 }
 func (r serviceRequestUpdateProvider) ToProto() *aiboxpb.UpdateProviderRequest {
-	return &aiboxpb.UpdateProviderRequest{Id: r.Id, DisplayName: r.DisplayName, Description: r.Description, Logo: r.Logo, Enabled: r.Enabled}
+    return &aiboxpb.UpdateProviderRequest{Id: r.Id, DisplayName: r.DisplayName, Description: r.Description, Logo: r.Logo, Enabled: r.Enabled, Config: r.Config}
 }
 
 // helpers

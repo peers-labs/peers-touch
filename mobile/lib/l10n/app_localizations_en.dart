@@ -565,4 +565,64 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shortBioMaxLength => 'Short bio cannot exceed 30 characters';
+
+  @override
+  String get login => 'Login';
+
+  @override
+  String get register => 'Register';
+
+  @override
+  String get username => 'Username';
+
+  @override
+  String get password => 'Password';
+
+  @override
+  String get confirmPassword => 'Confirm Password';
+
+  @override
+  String get serverAddress => 'Server Address';
+
+  @override
+  String get serverAddressHint =>
+      'Enter server root address (e.g., https://api.example.com)';
+
+  @override
+  String get usernameRequired => 'Username is required';
+
+  @override
+  String get passwordRequired => 'Password is required';
+
+  @override
+  String get serverAddressRequired => 'Server address is required';
+
+  @override
+  String get invalidServerAddress => 'Please enter a valid server address';
+
+  @override
+  String get passwordMismatch => 'Passwords do not match';
+
+  @override
+  String passwordMinLength(int min) {
+    return 'Password must be at least $min characters';
+  }
+
+  @override
+  String get loginSuccess => 'Login successful';
+
+  @override
+  String get registerSuccess => 'Registration successful';
+
+  @override
+  String get loginFailed => 'Login failed';
+
+  @override
+  String get registerFailed => 'Registration failed';
+
+  @override
+  String get switchToRegister => 'Don\'t have an account? Register';
+
+  @override
+  String get switchToLogin => 'Already have an account? Login';
 }

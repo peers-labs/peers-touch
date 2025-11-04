@@ -1125,6 +1125,120 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Short bio cannot exceed 30 characters'**
   String get shortBioMaxLength;
+
+  /// Login button text
+  ///
+  /// In en, this message translates to:
+  /// **'Login'**
+  String get login;
+
+  /// Register button text
+  ///
+  /// In en, this message translates to:
+  /// **'Register'**
+  String get register;
+
+  /// Username field label
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get username;
+
+  /// Password field label
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get password;
+
+  /// Confirm password field label
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Password'**
+  String get confirmPassword;
+
+  /// Server address field label
+  ///
+  /// In en, this message translates to:
+  /// **'Server Address'**
+  String get serverAddress;
+
+  /// Hint text for server address field
+  ///
+  /// In en, this message translates to:
+  /// **'Enter server root address (e.g., https://api.example.com)'**
+  String get serverAddressHint;
+
+  /// Validation message for required username
+  ///
+  /// In en, this message translates to:
+  /// **'Username is required'**
+  String get usernameRequired;
+
+  /// Validation message for required password
+  ///
+  /// In en, this message translates to:
+  /// **'Password is required'**
+  String get passwordRequired;
+
+  /// Validation message for required server address
+  ///
+  /// In en, this message translates to:
+  /// **'Server address is required'**
+  String get serverAddressRequired;
+
+  /// Validation message for invalid server address format
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a valid server address'**
+  String get invalidServerAddress;
+
+  /// Validation message when passwords don't match
+  ///
+  /// In en, this message translates to:
+  /// **'Passwords do not match'**
+  String get passwordMismatch;
+
+  /// Validation message for password minimum length
+  ///
+  /// In en, this message translates to:
+  /// **'Password must be at least {min} characters'**
+  String passwordMinLength(int min);
+
+  /// Success message for login
+  ///
+  /// In en, this message translates to:
+  /// **'Login successful'**
+  String get loginSuccess;
+
+  /// Success message for registration
+  ///
+  /// In en, this message translates to:
+  /// **'Registration successful'**
+  String get registerSuccess;
+
+  /// Error message for failed login
+  ///
+  /// In en, this message translates to:
+  /// **'Login failed'**
+  String get loginFailed;
+
+  /// Error message for failed registration
+  ///
+  /// In en, this message translates to:
+  /// **'Registration failed'**
+  String get registerFailed;
+
+  /// Text to switch to registration form
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t have an account? Register'**
+  String get switchToRegister;
+
+  /// Text to switch to login form
+  ///
+  /// In en, this message translates to:
+  /// **'Already have an account? Login'**
+  String get switchToLogin;
 }
 
 class _AppLocalizationsDelegate

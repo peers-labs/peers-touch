@@ -1,6 +1,5 @@
 import 'package:desktop/controller/peers_center_controller.dart';
 import 'package:desktop/service/backend_client.dart';
-import 'package:desktop/service/mdns_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 

@@ -1,22 +1,18 @@
 import 'dart:convert';
 import 'package:desktop/model/ai_provider_model.dart';
-import 'package:http/http.dart' as http;
+import 'package:desktop/core/network/network.dart';
 import 'package:logging/logging.dart';
 
 final _log = Logger('AiBoxApiService');
 
 class AiBoxApiService {
-  static const String _baseUrl = 'http://localhost:8080'; // 默认本地服务器地址
-  static const Duration _timeout = Duration(seconds: 30);
+  static const String _defaultBaseUrl = 'http://localhost:8080';
+  
+  final HttpClient _client;
+  final Logger _log = Logger('AiBoxApiService');
 
-  final http.Client _client;
-  final String baseUrl;
-
-  AiBoxApiService({
-    http.Client? client,
-    String? baseUrl,
-  })  : _client = client ?? http.Client(),
-        baseUrl = baseUrl ?? _baseUrl;
+  AiBoxApiService({HttpClient? client})
+      : _client = client ?? NetworkProvider.client;
 
   /// 获取提供商列表
   Future<ListProvidersResponse> listProviders({
@@ -25,183 +21,126 @@ class AiBoxApiService {
     bool enabledOnly = false,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/ai-box/providers').replace(
+      final response = await _client.get<Map<String, dynamic>>(
+        '/ai-box/providers',
         queryParameters: {
           'page': page.toString(),
           'size': size.toString(),
           if (enabledOnly) 'enabled_only': 'true',
         },
+        fromJson: (data) => data as Map<String, dynamic>,
       );
-
-      final response = await _client
-          .get(
-            uri,
-            headers: _getHeaders(),
-          )
-          .timeout(_timeout);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return ListProvidersResponse.fromJson(data);
-      } else {
-        throw AiBoxApiException(
-          'Failed to list providers: ${response.statusCode}',
-          response.statusCode,
-        );
-      }
+      
+      return ListProvidersResponse.fromJson(response);
+    } on NetworkException catch (e) {
+      _log.severe('Network error while listing providers: $e');
+      throw AiBoxApiException('Network error: ${e.message}', e.statusCode ?? 0);
     } catch (e) {
-      if (e is AiBoxApiException) rethrow;
-      throw AiBoxApiException('Network error: $e', 0);
+      _log.severe('Unexpected error while listing providers: $e');
+      throw AiBoxApiException('Unexpected error: $e', 0);
     }
   }
 
   /// 获取单个提供商
   Future<AiProvider> getProvider(String id) async {
     try {
-      final uri = Uri.parse('$baseUrl/ai-box/provider/get').replace(
+      final response = await _client.get<Map<String, dynamic>>(
+        '/ai-box/provider/get',
         queryParameters: {'id': id},
+        fromJson: (data) => data as Map<String, dynamic>,
       );
-
-      final response = await _client
-          .get(
-            uri,
-            headers: _getHeaders(),
-          )
-          .timeout(_timeout);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return AiProvider.fromJson(data);
-      } else {
-        throw AiBoxApiException(
-          'Failed to get provider: ${response.statusCode}',
-          response.statusCode,
-        );
-      }
+      
+      return AiProvider.fromJson(response);
+    } on NetworkException catch (e) {
+      _log.severe('Network error while getting provider: $e');
+      throw AiBoxApiException('Network error: ${e.message}', e.statusCode ?? 0);
     } catch (e) {
-      if (e is AiBoxApiException) rethrow;
-      throw AiBoxApiException('Network error: $e', 0);
+      _log.severe('Unexpected error while getting provider: $e');
+      throw AiBoxApiException('Unexpected error: $e', 0);
     }
   }
 
   /// 创建提供商
   Future<AiProvider> createProvider(CreateProviderRequest request) async {
     try {
-      final uri = Uri.parse('$baseUrl/ai-box/provider/new');
-
-      final response = await _client
-          .post(
-            uri,
-            headers: _getHeaders(),
-            body: json.encode(request.toJson()),
-          )
-          .timeout(_timeout);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return AiProvider.fromJson(data);
-      } else {
-        throw AiBoxApiException(
-          'Failed to create provider: ${response.statusCode}',
-          response.statusCode,
-        );
-      }
+      _log.info('Creating provider with data: ${request.toJson()}');
+      
+      final response = await _client.post<Map<String, dynamic>>(
+        '/ai-box/provider/new',
+        data: request.toJson(),
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      
+      return AiProvider.fromJson(response);
+    } on NetworkException catch (e) {
+      _log.severe('Network error while creating provider: $e');
+      throw AiBoxApiException('Network error: ${e.message}', e.statusCode ?? 0);
     } catch (e) {
-      if (e is AiBoxApiException) rethrow;
-      throw AiBoxApiException('Network error: $e', 0);
+      _log.severe('Unexpected error while creating provider: $e');
+      throw AiBoxApiException('Unexpected error: $e', 0);
     }
   }
 
   /// 更新提供商
   Future<AiProvider> updateProvider(UpdateProviderRequest request) async {
     try {
-      final uri = Uri.parse('$baseUrl/ai-box/provider/update');
-      final body = json.encode(request.toJson());
-
-      _log.info('Sending POST request to $uri');
-      _log.info('Request body: $body');
-
-      final response = await _client
-          .post(
-            uri,
-            headers: _getHeaders(),
-            body: body,
-          )
-          .timeout(_timeout);
-
-      _log.info('Response status: ${response.statusCode}');
-      _log.info('Response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return AiProvider.fromJson(data);
-      } else {
-        _log.severe(
-            'Failed to update provider. Status: ${response.statusCode}, Body: ${response.body}');
-        throw AiBoxApiException(
-          'Failed to update provider: ${response.statusCode}',
-          response.statusCode,
-        );
-      }
-    } catch (e) {
-      if (e is AiBoxApiException) {
-        rethrow;
-      }
+      final body = request.toJson();
+      _log.info('Updating provider with data: $body');
+      
+      final response = await _client.post<Map<String, dynamic>>(
+        '/ai-box/provider/update',
+        data: body,
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      
+      _log.info('Provider updated successfully');
+      return AiProvider.fromJson(response);
+    } on NetworkException catch (e) {
       _log.severe('Network error while updating provider: $e');
-      throw AiBoxApiException('Network error: $e', 0);
+      throw AiBoxApiException('Network error: ${e.message}', e.statusCode ?? 0);
+    } catch (e) {
+      _log.severe('Unexpected error while updating provider: $e');
+      throw AiBoxApiException('Unexpected error: $e', 0);
     }
   }
 
   /// 删除提供商
   Future<void> deleteProvider(String id) async {
     try {
-      final uri = Uri.parse('$baseUrl/ai-box/provider/delete');
-
-      final response = await _client
-          .post(
-            uri,
-            headers: _getHeaders(),
-            body: json.encode({'id': id}),
-          )
-          .timeout(_timeout);
-
-      if (response.statusCode != 200) {
-        throw AiBoxApiException(
-          'Failed to delete provider: ${response.statusCode}',
-          response.statusCode,
-        );
-      }
+      await _client.post<Map<String, dynamic>>(
+        '/ai-box/provider/delete',
+        data: {'id': id},
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      
+      _log.info('Provider $id deleted successfully');
+    } on NetworkException catch (e) {
+      _log.severe('Network error while deleting provider: $e');
+      throw AiBoxApiException('Network error: ${e.message}', e.statusCode ?? 0);
     } catch (e) {
-      if (e is AiBoxApiException) rethrow;
-      throw AiBoxApiException('Network error: $e', 0);
+      _log.severe('Unexpected error while deleting provider: $e');
+      throw AiBoxApiException('Unexpected error: $e', 0);
     }
   }
 
   /// 测试提供商连接
   Future<TestProviderResponse> testProvider(String id) async {
     try {
-      final uri = Uri.parse('$baseUrl/ai-box/provider/test');
-
-      final response = await _client
-          .post(
-            uri,
-            headers: _getHeaders(),
-            body: json.encode({'id': id}),
-          )
-          .timeout(_timeout);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return TestProviderResponse.fromJson(data);
-      } else {
-        throw AiBoxApiException(
-          'Failed to test provider: ${response.statusCode}',
-          response.statusCode,
-        );
-      }
+      _log.info('Testing provider $id');
+      
+      final response = await _client.post<Map<String, dynamic>>(
+        '/ai-box/provider/test',
+        data: {'id': id},
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
+      
+      return TestProviderResponse.fromJson(response);
+    } on NetworkException catch (e) {
+      _log.severe('Network error while testing provider: $e');
+      throw AiBoxApiException('Network error: ${e.message}', e.statusCode ?? 0);
     } catch (e) {
-      if (e is AiBoxApiException) rethrow;
-      throw AiBoxApiException('Network error: $e', 0);
+      _log.severe('Unexpected error while testing provider: $e');
+      throw AiBoxApiException('Unexpected error: $e', 0);
     }
   }
 
@@ -215,7 +154,7 @@ class AiBoxApiService {
 
   /// 释放资源
   void dispose() {
-    _client.close();
+    // No need to dispose the global client
   }
 }
 

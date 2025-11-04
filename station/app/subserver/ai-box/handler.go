@@ -122,12 +122,12 @@ func (s *aiBoxSubServer) handleListProviders(c context.Context, ctx *app.Request
 		enabledOnly = true
 	}
 
-	providers, total, err := svc.ListProviders(c, pg.Page, pg.Size, enabledOnly)
+	pageData, err := svc.ListProviders(c, pg, enabledOnly)
 	if err != nil {
 		ctx.String(http.StatusInternalServerError, "list failed: %v", err)
 		return
 	}
-	ctx.JSON(http.StatusOK, map[string]interface{}{"total": total, "providers": providers})
+	ctx.JSON(http.StatusOK, pageData)
 }
 
 func (s *aiBoxSubServer) handleTestProvider(c context.Context, ctx *app.RequestContext) {
