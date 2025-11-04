@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/peers-touch/peers-touch/station/app/subserver/ai-box/db/models"
@@ -69,6 +71,8 @@ func (s *ProviderService) UpdateProvider(ctx context.Context, req *aiboxpb.Updat
 		return nil, fmt.Errorf("failed to find provider: %w", err)
 	}
 
+	log.Printf("Before update - Provider %s config: %s", req.Id, provider.Config)
+
 	// 更新字段
 	if req.DisplayName != nil {
 		provider.Name = *req.DisplayName
@@ -82,11 +86,22 @@ func (s *ProviderService) UpdateProvider(ctx context.Context, req *aiboxpb.Updat
 	if req.Enabled != nil {
 		provider.Enabled = *req.Enabled
 	}
+	// FIX: Handle config field properly
+	if req.Config != nil {
+		configBytes, err := json.Marshal(req.Config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal config: %w", err)
+		}
+		provider.Config = string(configBytes)
+		log.Printf("Updated provider config for %s: %s", req.Id, string(configBytes))
+	}
 	provider.UpdatedAt = time.Now()
 
 	if err := s.db.Save(&provider).Error; err != nil {
 		return nil, fmt.Errorf("failed to update provider: %w", err)
 	}
+
+	log.Printf("After update - Provider %s config: %s", req.Id, provider.Config)
 
 	return s.convertToProto(&provider), nil
 }
@@ -187,6 +202,30 @@ func (s *ProviderService) TestProvider(ctx context.Context, providerID string) (
 
 // convertToProto 转换为proto格式
 func (s *ProviderService) convertToProto(provider *models.Provider) *aiboxpb.AiProvider {
+	// FIX: Properly unmarshal config from database
+	var config aiboxpb.ProviderConfig
+	if provider.Config != "" && provider.Config != "{}" {
+		if err := json.Unmarshal([]byte(provider.Config), &config); err != nil {
+			// If unmarshal fails, use default values
+			config = aiboxpb.ProviderConfig{
+				ApiKey:     "",
+				Endpoint:   "",
+				ProxyUrl:   "",
+				Timeout:    30,
+				MaxRetries: 3,
+			}
+		}
+	} else {
+		// Default config if empty
+		config = aiboxpb.ProviderConfig{
+			ApiKey:     "",
+			Endpoint:   "",
+			ProxyUrl:   "",
+			Timeout:    30,
+			MaxRetries: 3,
+		}
+	}
+
 	return &aiboxpb.AiProvider{
 		Id:          provider.ID,
 		Name:        provider.Name,
@@ -196,11 +235,11 @@ func (s *ProviderService) convertToProto(provider *models.Provider) *aiboxpb.AiP
 		Logo:        provider.Logo,
 		Sort:        int32(provider.Sort),
 		Config: &aiboxpb.ProviderConfig{
-			ApiKey:     "", // 不返回API密钥
-			Endpoint:   "",
-			ProxyUrl:   "",
-			Timeout:    30,
-			MaxRetries: 3,
+			ApiKey:     "", // 不返回API密钥 (出于安全考虑)
+			Endpoint:   config.Endpoint,
+			ProxyUrl:   config.ProxyUrl,
+			Timeout:    config.Timeout,
+			MaxRetries: config.MaxRetries,
 		},
 		CreatedAt: timestamppb.New(provider.CreatedAt),
 		UpdatedAt: timestamppb.New(provider.UpdatedAt),

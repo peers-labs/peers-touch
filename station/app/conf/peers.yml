@@ -7,7 +7,7 @@ peers:
   node:
     server:
       name: hertz
-      address: :8082
+      address: :8080
       metadata:
         name: foo
         value: qux
