@@ -1,17 +1,19 @@
+import 'package:get_storage/get_storage.dart';
+
 class LocalStorage {
-  final Map<String, dynamic> _store = {};
+  final GetStorage _box = GetStorage();
 
   Future<void> set(String key, dynamic value) async {
-    _store[key] = value;
+    await _box.write(key, value);
   }
 
   T? get<T>(String key) {
-    final v = _store[key];
+    final v = _box.read(key);
     if (v is T) return v;
     return null;
   }
 
   Future<void> remove(String key) async {
-    _store.remove(key);
+    await _box.remove(key);
   }
 }

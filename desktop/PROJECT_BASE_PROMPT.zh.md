@@ -172,6 +172,8 @@ features/下的模块目录名必须是业务语义（如chat/、settings/，而
     * 模型层（Model）约束：
         * 用class定义数据结构，包含必要的字段和fromJson/toJson方法（序列化）。
         * 禁止包含业务逻辑（如 “计算价格” 应放在 Controller，而非 Model）。
+    * 引用
+        * import 禁止使用相对路径（如import '../models/chat_message.dart'），必须使用绝对路径（如import 'package:peers_touch/models/chat_message.dart'）。
 * 特殊模块处理规范
     * 多语言（i18n）：
         * 语言包必须放在app/i18n/，键值对需通过locale_keys.dart的常量引用（避免硬编码字符串）。

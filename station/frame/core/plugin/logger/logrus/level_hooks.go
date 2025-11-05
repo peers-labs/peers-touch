@@ -30,6 +30,7 @@ func prepareLevelHooks(ctx context.Context, opts logger.PersistenceOptions, l ls
 					MaxBackups: maxBackups,
 					MaxAge:     opts.MaxBackupKeepDays,
 					Compress:   true,
+					LocalTime:  true,
 					BackupDir:  opts.BackupDir,
 				},
 				Fired:  true,

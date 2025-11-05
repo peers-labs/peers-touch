@@ -19,6 +19,8 @@ var options struct {
 				WithoutKey      bool   `pconf:"without-key"`
 				WithoutQuote    bool   `pconf:"without-quote"`
 				TimestampFormat string `pconf:"timestamp-format"`
+				IncludePackages []string `pconf:"include-packages"`
+				ExcludePackages []string `pconf:"exclude-packages"`
 			} `pconf:"slogrus"`
 		} `pconf:"logger"`
 	} `pconf:"peers"`
@@ -31,23 +33,30 @@ func (l *logrusLogPlugin) Name() string {
 }
 
 func (l *logrusLogPlugin) Options() []logger.Option {
-	var opts []logger.Option
-	lc := options.Peers.Logger.Logrus
-	opts = append(opts, SplitLevel(lc.SplitLevel))
-	opts = append(opts, ReportCaller(lc.ReportCaller))
-	opts = append(opts, WithoutKey(lc.WithoutKey))
-	opts = append(opts, WithoutQuote(lc.WithoutQuote))
+    var opts []logger.Option
+    lc := options.Peers.Logger.Logrus
+    opts = append(opts, SplitLevel(lc.SplitLevel))
+    opts = append(opts, ReportCaller(lc.ReportCaller))
+    opts = append(opts, WithoutKey(lc.WithoutKey))
+    opts = append(opts, WithoutQuote(lc.WithoutQuote))
 
-	if len(lc.TimestampFormat) > 0 {
-		opts = append(opts, TimestampFormat(lc.TimestampFormat))
-	}
+    if len(lc.TimestampFormat) > 0 {
+        opts = append(opts, TimestampFormat(lc.TimestampFormat))
+    }
 
-	switch lc.Formatter {
-	case "text":
-		opts = append(opts, TextFormatter(new(logrus.TextFormatter)))
-	case "json":
-		opts = append(opts, JSONFormatter(new(logrus.JSONFormatter)))
-	}
+    if len(lc.IncludePackages) > 0 {
+        opts = append(opts, IncludePackages(lc.IncludePackages...))
+    }
+    if len(lc.ExcludePackages) > 0 {
+        opts = append(opts, ExcludePackages(lc.ExcludePackages...))
+    }
+
+    switch lc.Formatter {
+    case "text":
+        opts = append(opts, TextFormatter(new(logrus.TextFormatter)))
+    case "json":
+        opts = append(opts, JSONFormatter(new(logrus.JSONFormatter)))
+    }
 
 	return opts
 }

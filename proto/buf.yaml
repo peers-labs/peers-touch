@@ -1,0 +1,15 @@
+version: v1
+
+# Buf module config. Adjust 'name' if publishing to a remote registry later.
+name: peers-touch
+
+deps:
+  - buf.build/google/protobuf
+
+lint:
+  use:
+    - DEFAULT
+
+breaking:
+  use:
+    - FILE
