@@ -6,13 +6,16 @@ import 'package:flutter/material.dart';
 import 'package:peers_touch_desktop/core/network/network.dart';
 import 'package:peers_touch_desktop/provider/model_provider.dart';
 import 'dart:io';
+import 'package:logging/logging.dart';
 
 class ChatToolbar extends StatelessWidget {
   const ChatToolbar({super.key});
 
+  static final Logger _logger = Logger('ChatToolbar');
+
   void _clearContext() {
     // TODO: Implement context clearing logic
-    print('Clearing context...');
+    _logger.info('Clearing context...');
   }
 
   Future<void> _pickFile(BuildContext context) async {
@@ -22,17 +25,17 @@ class ChatToolbar extends StatelessWidget {
       PlatformFile file = result.files.first;
 
       try {
-        await NetworkProvider.client.uploadFile(
-          '/ai-box/files/upload',
-          file: File(file.path!),
-          fileKey: 'file',
-        );
-        print('Uploaded!');
-      } on NetworkException catch (e) {
-        print('Upload failed: ${e.message}');
-      } catch (e) {
-        print('Upload failed: $e');
-      }
+          await NetworkProvider.client.uploadFile(
+            '/ai-box/files/upload',
+            file: File(file.path!),
+            fileKey: 'file',
+          );
+          _logger.info('File uploaded successfully');
+        } on NetworkException catch (e) {
+          _logger.severe('Upload failed: ${e.message}');
+        } catch (e) {
+          _logger.severe('Upload failed: $e');
+        }
     } else {
       // User canceled the picker
     }

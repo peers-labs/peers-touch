@@ -1,10 +1,12 @@
-import 'dart:convert';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/network/network.dart';
+import 'package:desktop/core/network/network.dart';
+import 'package:logging/logging.dart';
 
 class KnowledgeBaseController extends GetxController {
   final _files = <String>[].obs;
   List<String> get files => _files;
+
+  final Logger _logger = Logger('KnowledgeBaseController');
 
   @override
   void onInit() {
@@ -21,10 +23,10 @@ class KnowledgeBaseController extends GetxController {
       _files.value = List<String>.from(response);
     } on NetworkException catch (e) {
       // Handle network error
-      print('Network error while fetching files: $e');
+      _logger.warning('Network error while fetching files: $e');
     } catch (e) {
       // Handle other errors
-      print('Error while fetching files: $e');
+      _logger.severe('Error while fetching files: $e');
     }
   }
 }

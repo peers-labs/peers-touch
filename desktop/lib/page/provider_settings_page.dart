@@ -86,7 +86,7 @@ class ProviderSettingsPage extends StatelessWidget {
                             provider.description,
                             style: TextStyle(
                               fontSize: 12,
-                              color: isSelected ? const Color(0xFF1976D2).withOpacity(0.7) : const Color(0xFF666666),
+                              color: isSelected ? const Color(0xFF1976D2).withValues(alpha: 0.7) : const Color(0xFF666666),
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -140,7 +140,7 @@ class ProviderSettingsPage extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withValues(alpha: 0.1),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),

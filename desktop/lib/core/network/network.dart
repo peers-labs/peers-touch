@@ -1,29 +1,20 @@
-/// Network core module for desktop application
-/// Provides HTTP client, request/response models, interceptors, and exceptions
+/// Network module for HTTP client and related functionality
 /// 
-/// This module follows industry best practices:
-/// - Clean separation of concerns
-/// - Comprehensive error handling
-/// - Flexible configuration
-/// - Extensible interceptor system
-/// - Type-safe request/response models
+/// This library provides a comprehensive HTTP client implementation
+/// with features like authentication, logging, error handling, and
+/// request/response models. It includes:
 /// 
-/// Usage:
+/// - [HttpClient]: Main HTTP client with configurable options
+/// - [Request]: Base request model for API calls
+/// - [Response]: Base response model with standardized structure
+/// - Network exceptions: Custom exception types for different error scenarios
+/// - Interceptors: Authentication and logging interceptors
+/// - NetworkProvider: Provider for easy access to HTTP client instance
+/// 
+/// Example usage:
 /// ```dart
-/// import 'package:peers_touch_desktop/core/network/network.dart';
-/// 
-/// // Create HTTP client
-/// final client = HttpClient(
-///   config: HttpClientConfig(
-///     baseUrl: 'https://api.example.com',
-///     enableLogging: true,
-///     enableAuth: true,
-///     authTokenProvider: MyTokenProvider(),
-///   ),
-/// );
-/// 
-/// // Make requests
-/// final response = await client.get<User>('/users/1', fromJson: User.fromJson);
+/// final client = NetworkProvider.client;
+/// final response = await client.get('/api/users');
 /// ```
 
 export 'http_client.dart';

@@ -28,13 +28,10 @@ class TimeoutException extends NetworkException {
   final Duration timeout;
 
   const TimeoutException({
-    required String message,
+    required super.message,
     required this.timeout,
-    dynamic data,
-  }) : super(
-          message: message,
-          data: data,
-        );
+    super.data,
+  });
 
   @override
   String toString() {
@@ -45,86 +42,59 @@ class TimeoutException extends NetworkException {
 /// Exception thrown when network connection fails
 class ConnectionException extends NetworkException {
   const ConnectionException({
-    required String message,
-    dynamic data,
-  }) : super(
-          message: message,
-          data: data,
-        );
+    required super.message,
+    super.data,
+  });
 }
 
 /// Exception thrown when server returns an error response
 class ServerException extends NetworkException {
   const ServerException({
-    required String message,
-    required int statusCode,
-    dynamic data,
-  }) : super(
-          message: message,
-          statusCode: statusCode,
-          data: data,
-        );
+    required super.message,
+    required super.statusCode,
+    super.data,
+  });
 }
 
 /// Exception thrown when client-side error occurs (4xx status codes)
 class ClientException extends NetworkException {
   const ClientException({
-    required String message,
-    required int statusCode,
-    dynamic data,
-  }) : super(
-          message: message,
-          statusCode: statusCode,
-          data: data,
-        );
+    required super.message,
+    required super.statusCode,
+    super.data,
+  });
 }
 
 /// Exception thrown when authentication fails (401 status code)
 class UnauthorizedException extends NetworkException {
   const UnauthorizedException({
-    required String message,
-    dynamic data,
-  }) : super(
-          message: message,
-          statusCode: 401,
-          data: data,
-        );
+    required super.message,
+    super.data,
+  }) : super(statusCode: 401);
 }
 
 /// Exception thrown when access is forbidden (403 status code)
 class ForbiddenException extends NetworkException {
   const ForbiddenException({
-    required String message,
-    dynamic data,
-  }) : super(
-          message: message,
-          statusCode: 403,
-          data: data,
-        );
+    required super.message,
+    super.data,
+  }) : super(statusCode: 403);
 }
 
 /// Exception thrown when resource is not found (404 status code)
 class NotFoundException extends NetworkException {
   const NotFoundException({
-    required String message,
-    dynamic data,
-  }) : super(
-          message: message,
-          statusCode: 404,
-          data: data,
-        );
+    required super.message,
+    super.data,
+  }) : super(statusCode: 404);
 }
 
 /// Exception thrown when request payload is invalid (400 status code)
 class BadRequestException extends NetworkException {
   const BadRequestException({
-    required String message,
-    dynamic data,
-  }) : super(
-          message: message,
-          statusCode: 400,
-          data: data,
-        );
+    required super.message,
+    super.data,
+  }) : super(statusCode: 400);
 }
 
 /// Exception thrown when too many requests are made (429 status code)
@@ -132,14 +102,10 @@ class RateLimitException extends NetworkException {
   final Duration? retryAfter;
 
   const RateLimitException({
-    required String message,
+    required super.message,
     this.retryAfter,
-    dynamic data,
-  }) : super(
-          message: message,
-          statusCode: 429,
-          data: data,
-        );
+    super.data,
+  }) : super(statusCode: 429);
 
   @override
   String toString() {
@@ -157,13 +123,10 @@ class ParseException extends NetworkException {
   final dynamic parseError;
 
   const ParseException({
-    required String message,
+    required super.message,
     this.originalData,
     this.parseError,
-  }) : super(
-          message: message,
-          data: originalData,
-        );
+  }) : super(data: originalData);
 
   @override
   String toString() {
