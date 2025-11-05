@@ -10,7 +10,7 @@
 /// 
 /// Usage:
 /// ```dart
-/// import 'package:desktop/core/network/network.dart';
+/// import 'package:peers_touch_desktop/core/network/network.dart';
 /// 
 /// // Create HTTP client
 /// final client = HttpClient(

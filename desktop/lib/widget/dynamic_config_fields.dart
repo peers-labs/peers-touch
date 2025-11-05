@@ -126,7 +126,6 @@ class _DynamicConfigFieldsState extends State<DynamicConfigFields> {
   }
 
   void _updateConfig(String key, dynamic value) {
-    setState(() {
       _config[key] = value;
       
       // Validate the specific field

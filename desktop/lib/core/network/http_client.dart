@@ -153,7 +153,7 @@ class HttpClient {
       case DioExceptionType.sendTimeout:
         return TimeoutException(
           message: 'Request timeout: ${error.message}',
-          timeout: error.requestOptions.connectTimeout,
+          timeout: error.requestOptions.connectTimeout ?? const Duration(seconds: 30),
           data: data,
         );
 
@@ -222,9 +222,8 @@ class HttpClient {
         );
     }
 
-    return NetworkException(
+    return ConnectionException(
       message: 'Unknown error: ${error.message}',
-      statusCode: statusCode,
       data: data,
     );
   }

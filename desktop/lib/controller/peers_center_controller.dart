@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:desktop/service/backend_client.dart';
-import 'package:desktop/service/mdns_service.dart';
+import 'package:peers_touch_desktop/service/backend_client.dart';
+import 'package:peers_touch_desktop/service/mdns_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 

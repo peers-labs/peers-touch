@@ -1,14 +1,13 @@
-import 'package:desktop/widget/ai/chat_toolbar.dart';
+import 'package:peers_touch_desktop/widget/ai/chat_toolbar.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:desktop/provider/model_provider.dart';
+import 'package:peers_touch_desktop/provider/model_provider.dart';
 
 class ChatInput extends StatelessWidget {
   const ChatInput({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final modelProvider = Provider.of<AIModelProvider>(context);
+    final modelProvider = Get.find<AIModelProvider>();
     final currentModel = modelProvider.selectedModel;
     
     return Column(

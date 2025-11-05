@@ -1,5 +1,5 @@
 import 'package:get/get.dart';
-import 'package:desktop/model/ai_model_simple.dart';
+import 'package:peers_touch_desktop/model/ai_model_simple.dart';
 
 class ChatListController extends GetxController {
   final _selectedIndex = RxnInt();
