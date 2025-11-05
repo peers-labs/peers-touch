@@ -3,11 +3,8 @@ import 'package:peers_touch_desktop/model/ai_provider_model.dart';
 import 'package:peers_touch_desktop/core/network/network.dart';
 import 'package:logging/logging.dart';
 
-final _log = Logger('AiBoxApiService');
-
+/// AI Box API 服务类
 class AiBoxApiService {
-  static const String _defaultBaseUrl = 'http://localhost:8080';
-  
   final HttpClient _client;
   final Logger _log = Logger('AiBoxApiService');
 
@@ -142,14 +139,6 @@ class AiBoxApiService {
       _log.severe('Unexpected error while testing provider: $e');
       throw AiBoxApiException('Unexpected error: $e', 0);
     }
-  }
-
-  /// 获取请求头
-  Map<String, String> _getHeaders() {
-    return {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    };
   }
 
   /// 释放资源
