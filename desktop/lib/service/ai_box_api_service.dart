@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'package:desktop/model/ai_provider_model.dart';
-import 'package:desktop/core/network/network.dart';
+import 'package:peers_touch_desktop/model/ai_provider_model.dart';
+import 'package:peers_touch_desktop/core/network/network.dart';
 import 'package:logging/logging.dart';
 
 final _log = Logger('AiBoxApiService');

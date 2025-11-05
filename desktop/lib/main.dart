@@ -1,39 +1,26 @@
-import 'package:desktop/page/ai/ai_chat_page.dart';
-import 'package:desktop/page/peers_center.dart';
-import 'package:desktop/page/settings/settings_page.dart';
-import 'package:desktop/page/settings/settings_main_page.dart';
-import 'package:desktop/page/settings/ai_service_provider_page.dart';
-import 'package:desktop/provider/model_provider.dart';
-import 'package:desktop/provider/right_sidebar_provider.dart';
-import 'package:desktop/provider/sidebar_state_provider.dart';
-import 'package:desktop/provider/locale_provider.dart';
-import 'package:desktop/controller/ai_provider_controller.dart';
-import 'package:desktop/service/backend_client.dart';
-import 'package:desktop/service/logging_service.dart';
-import 'package:desktop/core/network/network.dart';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
+
+import 'package:peers_touch_desktop/core/network/network.dart';
+import 'package:peers_touch_desktop/service/backend_client.dart';
+import 'package:peers_touch_desktop/service/logging_service.dart';
+import 'app/routes.dart';
+import 'modules/peers_center/peers_center_view.dart';
+import 'modules/ai_chat/ai_chat_view.dart';
+import 'modules/settings/settings_main_view.dart';
 import 'config/window_size_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await setupLogging();
-  
+
   // Initialize global network client
   NetworkProvider.initialize(
     baseUrl: 'http://localhost:8080',
     enableLogging: true,
-    loggingConfig: const LoggingInterceptorConfig(
-      logHeaders: true,
-      logBody: true,
-      logDuration: true,
-      maxBodyLength: 1000,
-    ),
   );
-  
+
   // Must add this line.
   await windowManager.ensureInitialized();
 
@@ -67,54 +54,32 @@ class PeersTouchStationApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider<AIModelProvider>(create: (_) => AIModelProvider()),
-        ChangeNotifierProvider<RightSidebarProvider>(create: (_) => RightSidebarProvider()),
-        ChangeNotifierProvider<SidebarStateProvider>(create: (_) => SidebarStateProvider()),
-        ChangeNotifierProvider<LocaleProvider>(
-          create: (_) => LocaleProvider()..setLocale(const Locale('en')),
-        ),
-      ],
-      child: GetMaterialApp(
-        title: 'Peers Touch Station',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          fontFamily: 'Segoe UI',
-        ),
-        initialBinding: AppBindings(),
-        home: const HomeScreen(),
-        getPages: [
-          GetPage(name: '/settings', page: () => const SettingsPage()),
-          GetPage(name: '/ai-service-provider', page: () => const AiServiceProviderPage()),
-        ],
-        debugShowCheckedModeBanner: false,
+    return GetMaterialApp(
+      title: 'Peers Touch Station',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        fontFamily: 'Segoe UI',
       ),
+      home: const HomeScreen(),
+      getPages: getPages(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
 
-class AppBindings implements Bindings {
-  @override
-  void dependencies() {
-    // 初始化控制器
-    Get.put(AIProviderController(), permanent: true);
-  }
+
+
+class HomeScreenController extends GetxController {
+  var selectedIndex = 0.obs;
 }
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  int selectedIndex = 0;
-  final BackendClient _backend = BackendClient();
-
-  @override
   Widget build(BuildContext context) {
+    final controller = Get.put(HomeScreenController());
+    final BackendClient _backend = BackendClient();
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       body: Row(
@@ -129,13 +94,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Header
-                  if (selectedIndex != 5) ...[
+                  if (controller.selectedIndex.value != 5) ...[
                     Row(
                       children: [
                         // Page Title
                         Expanded(
-                          child: Text(
-                            _titleForIndex(selectedIndex),
+                          child: Obx(() => Text(
+                            _titleForIndex(controller.selectedIndex.value),
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -145,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(width: 16),
                         // Middle column toggle (only for AI Chat page)
-                        if (selectedIndex == 4)
+                        if (controller.selectedIndex.value == 4)
                           IconButton(
                             icon: const Icon(Icons.keyboard_arrow_left),
                             onPressed: () {},
@@ -182,34 +147,84 @@ class _HomeScreenState extends State<HomeScreen> {
                             return const SizedBox.shrink();
                           },
                         ),
-                        // Removed settings shortcut button per requirement
+                        // Settings Button
+                        IconButton(
+                          icon: const Icon(Icons.settings, size: 24),
+                          onPressed: () {
+                            controller.selectedIndex.value = 5;
+                          },
+                          tooltip: 'Settings',
+                        ),
                       ],
                     ),
                     const SizedBox(height: 32),
                   ],
                   // Content Switcher
                   Expanded(
-                    child: _buildMainContent(),
+                    child: Obx(() => _buildMainContent(controller.selectedIndex.value, _backend)),
                   ),
                 ],
               ),
             ),
           ),
 
-          // Removed right sidebar per requirement
+          // Right Sidebar (conditionally shown)
+          if (controller.selectedIndex.value != 4 && controller.selectedIndex.value != 5)
+            Container(
+              width: 300,
+              decoration: const BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: Color(0xFFE0E0E0)),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Tasks',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTaskItem('Review Q3 budget', 'You', true),
+                    _buildTaskItem('Finalize presentation deck', 'Alex', false),
+                    _buildTaskItem('Onboarding new hire', 'You', false),
+                    const SizedBox(height: 32),
+                    const Text(
+                      'Recent',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildRecentItem(
+                      icon: Icons.description,
+                      name: 'Project Phoenix Spec',
+                      type: 'Paper',
+                      color: Colors.blue,
+                    ),
+                    _buildRecentItem(
+                      icon: Icons.folder,
+                      name: 'Marketing Assets Q4',
+                      type: 'Folder',
+                      color: Colors.orange,
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildMainContent() {
+  Widget _buildMainContent(int selectedIndex, BackendClient backend) {
     switch (selectedIndex) {
       case 3:
-        return PeersCenterPage(backend: _backend);
+        return PeersCenterView(backend: backend);
       case 4:
-        return const AIChatPage();
+        return const AiChatView();
       case 5:
-        return const SettingsMainPage();
+        return const SettingsMainView();
       default:
         return Center(
           child: Text('Content for ${_titleForIndex(selectedIndex)}'),
@@ -249,27 +264,30 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMiniIcon(IconData icon, String tooltip, int index) {
-    final isSelected = selectedIndex == index;
-    return Tooltip(
-      message: tooltip,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        height: 48,
-        width: 56,
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => setState(() => selectedIndex = index),
+    final controller = Get.find<HomeScreenController>();
+    return Obx(() {
+      final isSelected = controller.selectedIndex.value == index;
+      return Tooltip(
+        message: tooltip,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          height: 48,
+          width: 56,
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
-            child: Icon(icon, color: isSelected ? Colors.white : Colors.white70, size: 20),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => controller.selectedIndex.value = index,
+              borderRadius: BorderRadius.circular(8),
+              child: Icon(icon, color: isSelected ? Colors.white : Colors.white70, size: 20),
+            ),
           ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   String _titleForIndex(int i) {
@@ -340,7 +358,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -352,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 32, // 减小图标容器尺寸
             height: 32,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
+              color: color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
