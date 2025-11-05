@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
-import 'package:desktop/model/ai_provider_model.dart';
-import 'package:desktop/service/ai_box_api_service.dart';
+import 'package:peers_touch_desktop/model/ai_provider_model.dart';
+import 'package:peers_touch_desktop/service/ai_box_api_service.dart';
 import 'package:logging/logging.dart';
 
 final _log = Logger('AIProviderController');

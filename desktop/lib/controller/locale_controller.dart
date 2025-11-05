@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 
-class LocaleProvider extends ChangeNotifier {
-  Locale _locale = const Locale('en');
-
-  Locale get locale => _locale;
+class LocaleController extends GetxController {
+  var locale = const Locale('en').obs;
 
   void setLocale(Locale newLocale) {
-    _locale = newLocale;
-    notifyListeners();
+    locale.value = newLocale;
   }
 
   String? translate(String key) {
     // This is a placeholder. In a real app, you would use a localization library.
-    if (_locale.languageCode == 'zh') {
+    if (locale.value.languageCode == 'zh') {
       switch (key) {
         case 'general':
           return '通用';

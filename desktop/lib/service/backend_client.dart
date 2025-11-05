@@ -1,4 +1,4 @@
-import 'package:desktop/core/network/network.dart';
+import 'package:peers_touch_desktop/core/network/network.dart';
 
 class BackendConfig {
   // TODO: make this configurable via settings or env.

@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:get/get.dart';
-import 'package:desktop/core/network/network.dart';
+import 'package:peers_touch_desktop/core/network/network.dart';
 
 class KnowledgeBaseController extends GetxController {
   final _files = <String>[].obs;

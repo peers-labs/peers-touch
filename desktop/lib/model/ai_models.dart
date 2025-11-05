@@ -1,4 +1,4 @@
-import 'package:desktop/model/ai_model_simple.dart';
+import 'package:peers_touch_desktop/model/ai_model_simple.dart';
 
 // 这是一个临时的、硬编码的模型能力列表，用于在后端接口完成前进行前端开发。
 // 将来这个数据会由后端的 /api/v1/ai/capabilities 接口提供。

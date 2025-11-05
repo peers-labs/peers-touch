@@ -1,11 +1,10 @@
-import 'package:desktop/page/ai/knowledge_base_page.dart';
-import 'package:desktop/widget/ai/agent_selector.dart';
-import 'package:desktop/widget/ai/search_assistant.dart';
+import 'package:peers_touch_desktop/page/ai/knowledge_base_page.dart';
+import 'package:peers_touch_desktop/widget/ai/agent_selector.dart';
+import 'package:peers_touch_desktop/widget/ai/search_assistant.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:desktop/core/network/network.dart';
-import 'package:provider/provider.dart';
-import 'package:desktop/provider/model_provider.dart';
+import 'package:peers_touch_desktop/core/network/network.dart';
+import 'package:peers_touch_desktop/provider/model_provider.dart';
 import 'dart:io';
 
 class ChatToolbar extends StatelessWidget {
@@ -41,7 +40,7 @@ class ChatToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final modelProvider = Provider.of<AIModelProvider>(context);
+    final modelProvider = Get.find<AIModelProvider>();
     final currentModel = modelProvider.selectedModel;
     
     if (currentModel == null) {

@@ -1,8 +1,7 @@
-import 'package:desktop/page/settings/ai_service_provider_page.dart';
+import 'package:peers_touch_desktop/modules/settings/ai_service_provider_view.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:desktop/model/ai_model_simple.dart';
-import 'package:desktop/provider/model_provider.dart';
+import 'package:peers_touch_desktop/model/ai_model_simple.dart';
+import 'package:peers_touch_desktop/provider/model_provider.dart';
 
 class AgentSelector extends StatelessWidget {
   const AgentSelector({super.key});
@@ -41,7 +40,7 @@ class AgentSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final modelProvider = Provider.of<AIModelProvider>(context);
+    final modelProvider = Get.find<AIModelProvider>();
     final currentModel = modelProvider.selectedModel;
     
     if (currentModel == null) {

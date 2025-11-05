@@ -1,4 +1,4 @@
-import 'package:desktop/core/network/network.dart';
+import 'package:peers_touch_desktop/core/network/network.dart';
 
 /// Global HTTP client provider for the application
 /// This ensures only one HTTP client instance is created and used throughout the app

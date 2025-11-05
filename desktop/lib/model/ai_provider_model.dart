@@ -96,14 +96,14 @@ DateTime? _dateTimeFromTimestamp(dynamic timestamp) {
 }
 
 class ProviderConfig {
-  final String apiKey;
+  final String? apiKey;
   final String endpoint;
   final String proxyUrl;
   final int timeout;
   final int maxRetries;
 
   ProviderConfig({
-    required this.apiKey,
+    this.apiKey,
     required this.endpoint,
     required this.proxyUrl,
     required this.timeout,
@@ -126,7 +126,7 @@ class ProviderConfig {
     }
 
     return ProviderConfig(
-      apiKey: map['api_key'] ?? '',
+      apiKey: map['api_key'],
       endpoint: map['endpoint'] ?? '',
       proxyUrl: map['proxy_url'] ?? '',
       timeout: map['timeout'] ?? 30,
@@ -136,7 +136,7 @@ class ProviderConfig {
 
   Map<String, dynamic> toJson() {
     return {
-      'api_key': apiKey.isEmpty ? null : apiKey,
+      'api_key': apiKey,
       'endpoint': endpoint.isEmpty ? null : endpoint,
       'proxy_url': proxyUrl.isEmpty ? null : proxyUrl,
       'timeout': timeout,

@@ -1,4 +1,4 @@
-import 'package:desktop/controller/provider_settings_controller.dart';
+import 'package:peers_touch_desktop/controller/provider_settings_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
