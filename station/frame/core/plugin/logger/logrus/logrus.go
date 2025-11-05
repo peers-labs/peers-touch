@@ -1,15 +1,14 @@
 package logrus
 
 import (
-	"context"
-	"fmt"
-	"io/ioutil"
-	"os"
+    "context"
+    "fmt"
+    "os"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	sLog "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin/logger/logrus/lumberjack.v2"
+    "github.com/peers-touch/peers-touch/station/frame/core/logger"
+    sLog "github.com/peers-touch/peers-touch/station/frame/core/logger"
+    "github.com/peers-touch/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
+    "github.com/peers-touch/peers-touch/station/frame/core/plugin/logger/logrus/lumberjack.v2"
 )
 
 var (
@@ -58,23 +57,44 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 		l.opts.WithoutQuote = withoutQuote
 	}
 
-	if timestampFormat, ok := l.opts.Context.Value(timestampFormat{}).(string); ok {
-		l.opts.TimestampFormat = timestampFormat
-	}
+    if timestampFormat, ok := l.opts.Context.Value(timestampFormat{}).(string); ok {
+        l.opts.TimestampFormat = timestampFormat
+    }
 
-	if l.opts.Formatter != nil {
-		if txtFormatter, ok := l.opts.Formatter.(*logrus.TextFormatter); ok {
-			if l.opts.WithoutKey {
-				txtFormatter.WithoutKey = l.opts.WithoutKey
-			}
-			if l.opts.WithoutQuote {
-				txtFormatter.WithoutQuote = l.opts.WithoutQuote
-			}
-			if len(l.opts.TimestampFormat) > 0 {
-				txtFormatter.TimestampFormat = l.opts.TimestampFormat // "2006-01-02 15:04:05.999"
-			}
-		}
-	}
+    // Package filtering options
+    if includes, ok := l.opts.Context.Value(includePackagesKey{}).([]string); ok {
+        l.opts.IncludePackages = includes
+    }
+    if excludes, ok := l.opts.Context.Value(excludePackagesKey{}).([]string); ok {
+        l.opts.ExcludePackages = excludes
+    }
+
+    if l.opts.Formatter != nil {
+        if txtFormatter, ok := l.opts.Formatter.(*logrus.TextFormatter); ok {
+            if l.opts.WithoutKey {
+                txtFormatter.WithoutKey = l.opts.WithoutKey
+            }
+            if l.opts.WithoutQuote {
+                txtFormatter.WithoutQuote = l.opts.WithoutQuote
+            }
+            if len(l.opts.TimestampFormat) > 0 {
+                txtFormatter.TimestampFormat = l.opts.TimestampFormat // "2006-01-02 15:04:05.999"
+            }
+        }
+    }
+
+    // If package filtering is configured, wrap formatter with FilteringFormatter
+    if (len(l.opts.IncludePackages) > 0 || len(l.opts.ExcludePackages) > 0) && l.opts.Formatter != nil {
+        l.opts.Formatter = FilteringFormatter{
+            Inner: l.opts.Formatter,
+            Filter: PackageFilter{
+                Include: l.opts.IncludePackages,
+                Exclude: l.opts.ExcludePackages,
+            },
+        }
+        // ensure caller info available for filtering
+        l.opts.ReportCaller = true
+    }
 
 	if l.opts.Persistence != nil && l.opts.Persistence.Enable && l.opts.Out == nil {
 		var dir = l.opts.Persistence.Dir
@@ -115,6 +135,7 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 			MaxBackups: maxBackups,
 			MaxAge:     l.opts.Persistence.MaxBackupKeepDays,
 			Compress:   true,
+			LocalTime:  true,
 			BackupDir:  l.opts.Persistence.BackupDir,
 		}
 	}
@@ -123,23 +144,38 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 		l.opts.Out = logger.DefaultLogger.Options().Out
 	}
 
-	log := logrus.New() // defaults
-	log.SetLevel(fromStackLevel(l.opts.Level))
-	log.SetOutput(l.opts.Out)
-	log.SetFormatter(l.opts.Formatter)
-	log.SetReportCaller(l.opts.ReportCaller)
-	log.ExitFunc = l.opts.ExitFunc
-	if l.opts.SplitLevel {
-		// Send all logs to nowhere by default
-		sLog.Infof(ctx, "split log into different level files")
-		log.SetOutput(ioutil.Discard)
-		log.ReplaceHooks(prepareLevelHooks(ctx, *l.opts.Persistence, log.Level))
-	}
+    log := logrus.New() // defaults
+    log.SetLevel(fromStackLevel(l.opts.Level))
+    log.SetOutput(l.opts.Out)
+    log.SetFormatter(l.opts.Formatter)
+    log.SetReportCaller(l.opts.ReportCaller)
+    log.ExitFunc = l.opts.ExitFunc
+    if l.opts.SplitLevel {
+        // Preserve console output; send per-level copies to files via hooks
+        sLog.Infof(ctx, "split log into different level files")
+        if logger.DefaultLogger != nil {
+            log.SetOutput(logger.DefaultLogger.Options().Out)
+        }
+        hooks := prepareLevelHooks(ctx, *l.opts.Persistence, log.Level)
+        for _, hs := range hooks {
+            for _, h := range hs {
+                log.AddHook(h)
+            }
+        }
+    }
 
-	l.Logger = log
+    // Inject default fields as a base entry if provided
+    if l.opts.Options.Fields != nil && len(l.opts.Options.Fields) > 0 {
+        l.Logger = log.WithFields(l.opts.Options.Fields)
+    } else {
+        l.Logger = log
+    }
 
-	// replace the DefaultLogger
-	logger.DefaultLogger = l
+    // Add pkg field hook for observability (works with or without filtering)
+    log.AddHook(&PackageFieldHook{})
+
+    // replace the DefaultLogger
+    logger.DefaultLogger = l
 
 	return nil
 }

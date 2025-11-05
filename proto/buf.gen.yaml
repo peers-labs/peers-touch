@@ -1,0 +1,29 @@
+version: v1
+
+# Code generation targets. You can run `buf generate` from this directory.
+# NOTE: The plugin names below are examples; adjust to match your local setup.
+
+plugins:
+  # Go protobufs
+  - plugin: buf.build/protocolbuffers/go
+    out: ../peers-touch/station/proto/gen
+    opt:
+      - paths=source_relative
+
+  # Go gRPC stubs (if you expose gRPC internally)
+  - plugin: buf.build/grpc/go
+    out: ../peers-touch/station/proto/gen
+    opt:
+      - paths=source_relative
+
+  # Dart protobufs for desktop
+  - plugin: buf.build/community/dart
+    out: ../peers-touch/desktop/lib/generated/proto
+    opt:
+      - grpc
+
+  # Dart protobufs for mobile
+  - plugin: buf.build/community/dart
+    out: ../peers-touch/mobile/lib/generated/proto
+    opt:
+      - grpc

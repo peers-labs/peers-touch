@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package peers.aibox.v1;
+
+// NOTE: Adjust go_package to your actual module path when integrating.
+// option go_package = "github.com/your_org/peers-touch/station/proto/gen/aibox/v1;aiboxv1";
+
+import "common/v1/base.proto";
+import "common/v1/pagination.proto";
+import "aibox/v1/types.proto";
+
+service ProviderService {
+  rpc CreateProvider (CreateProviderRequest) returns (CreateProviderResponse);
+  rpc UpdateProvider (UpdateProviderRequest) returns (UpdateProviderResponse);
+  rpc DeleteProvider (DeleteProviderRequest) returns (DeleteProviderResponse);
+  rpc GetProvider    (GetProviderRequest)    returns (GetProviderResponse);
+  rpc ListProviders  (ListProvidersRequest)  returns (ListProvidersResponse);
+  rpc TestProvider   (TestProviderRequest)   returns (TestProviderResponse);
+}
+
+message CreateProviderRequest {
+  peers.common.v1.RequestMeta meta = 1;
+  string name = 2;
+  string display_name = 3;
+  ProviderType type = 4;
+  bool enabled = 5;
+  string description = 6;
+  string logo_url = 7;
+  int32 sort = 8;
+  ProviderConfig config = 9;
+}
+
+message CreateProviderResponse {
+  peers.common.v1.ResponseMeta meta = 1;
+  AiProvider provider = 2;
+}
+
+message ProviderUpdate {
+  optional string name = 1;
+  optional string display_name = 2;
+  optional bool enabled = 3;
+  optional string description = 4;
+  optional string logo_url = 5;
+  optional int32 sort = 6;
+  optional ProviderConfig config = 7;
+}
+
+message UpdateProviderRequest {
+  peers.common.v1.RequestMeta meta = 1;
+  string id = 2;
+  ProviderUpdate update = 3;
+}
+
+message UpdateProviderResponse {
+  peers.common.v1.ResponseMeta meta = 1;
+  AiProvider provider = 2;
+}
+
+message DeleteProviderRequest {
+  peers.common.v1.RequestMeta meta = 1;
+  string id = 2;
+}
+
+message DeleteProviderResponse {
+  peers.common.v1.ResponseMeta meta = 1;
+}
+
+message GetProviderRequest {
+  peers.common.v1.RequestMeta meta = 1;
+  string id = 2;
+}
+
+message GetProviderResponse {
+  peers.common.v1.ResponseMeta meta = 1;
+  AiProvider provider = 2;
+}
+
+message ListProvidersRequest {
+  peers.common.v1.RequestMeta meta = 1;
+  bool enabled_only = 2;
+  peers.common.v1.PageRequest page = 3;
+}
+
+message ListProvidersResponse {
+  peers.common.v1.ResponseMeta meta = 1;
+  repeated AiProvider providers = 2;
+  peers.common.v1.PageResponse page = 3;
+}
+
+message TestProviderRequest {
+  peers.common.v1.RequestMeta meta = 1;
+  oneof target {
+    string id = 2;              // test by existing provider id
+    ProviderConfig config = 3;  // test by ad-hoc config
+  }
+}
+
+message TestProviderResponse {
+  peers.common.v1.ResponseMeta meta = 1;
+  bool success = 2;
+  string message = 3; // optional detail from the provider test
+}

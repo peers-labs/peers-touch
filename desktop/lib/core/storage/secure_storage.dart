@@ -1,13 +1,17 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 class SecureStorage {
-  final Map<String, String> _secure = {};
+  static const FlutterSecureStorage _fs = FlutterSecureStorage();
 
   Future<void> set(String key, String value) async {
-    _secure[key] = value;
+    await _fs.write(key: key, value: value);
   }
 
-  String? get(String key) => _secure[key];
+  Future<String?> get(String key) async {
+    return _fs.read(key: key);
+  }
 
   Future<void> remove(String key) async {
-    _secure.remove(key);
+    await _fs.delete(key: key);
   }
 }
