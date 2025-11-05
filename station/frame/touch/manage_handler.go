@@ -27,12 +27,12 @@ func GetManageHandlers() []ManageHandlerInfo {
 			Method:    server.GET,
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
-		{
-			RouterURL: ManageRouterURLPing,
-			Handler:   PingHandler,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper},
-		},
+		// {
+		// 	RouterURL: ManageRouterURLPing,
+		// 	Handler:   PingHandler,
+		// 	Method:    server.GET,
+		// 	Wrappers:  []server.Wrapper{commonWrapper},
+		// },
 	}
 }
 
