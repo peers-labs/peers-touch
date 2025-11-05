@@ -1,12 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+import 'dart:io' as io;
+
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
-import 'package:logging/logging.dart';
 import 'exceptions/exceptions.dart';
-import 'request.dart';
-import 'response.dart';
 import 'interceptors/auth_interceptor.dart';
 import 'interceptors/log_interceptor.dart';
 
@@ -75,7 +72,6 @@ class HttpClientConfig {
 class HttpClient {
   late final Dio _dio;
   final HttpClientConfig config;
-  final Logger _logger = Logger('HttpClient');
 
   HttpClient({
     required this.config,
@@ -98,7 +94,8 @@ class HttpClient {
 
     // Configure SSL certificate validation
     if (!config.validateCertificates && _dio.httpClientAdapter is IOHttpClientAdapter) {
-      (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate = (client) {
+      (_dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+        final client = io.HttpClient();
         client.badCertificateCallback = (cert, host, port) => true;
         return client;
       };
@@ -106,7 +103,8 @@ class HttpClient {
 
     // Configure proxy if specified
     if (config.proxyUrl != null && _dio.httpClientAdapter is IOHttpClientAdapter) {
-      (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate = (client) {
+      (_dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+        final client = io.HttpClient();
         client.findProxy = (uri) => 'PROXY ${config.proxyUrl}';
         return client;
       };
@@ -334,7 +332,7 @@ class HttpClient {
   /// Upload file
   Future<T> uploadFile<T>(
     String path, {
-    required File file,
+    required io.File file,
     String? fileKey = 'file',
     Map<String, dynamic>? data,
     Map<String, dynamic>? queryParameters,
@@ -373,7 +371,7 @@ class HttpClient {
   }
 
   /// Download file
-  Future<File> downloadFile(
+  Future<io.File> downloadFile(
     String urlPath, {
     required String savePath,
     Map<String, dynamic>? queryParameters,
@@ -391,7 +389,7 @@ class HttpClient {
         deleteOnError: deleteOnError,
       );
 
-      return File(savePath);
+      return io.File(savePath);
     } on DioException catch (e) {
       throw e.error ?? e;
     }
