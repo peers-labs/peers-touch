@@ -46,7 +46,7 @@ func GetActorHandlers() []ActorHandlerInfo {
 		{
 			RouterURL: RouterURLActorProfile,
 			Handler:   UpdateActorProfile,
-			Method:    server.PUT,
+			Method:    server.POST,
 			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("Actor")},
 		},
 	}

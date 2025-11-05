@@ -25,7 +25,7 @@ func main() {
 		ctx,
 		node.WithPrivateKey("private.pem"),
 		node.Name("peers-touch-station"),
-		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("")),
+		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("/debug")),
 		// Use the new router pattern for station endpoints
 		server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
 	)

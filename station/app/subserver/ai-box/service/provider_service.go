@@ -239,7 +239,7 @@ func (s *ProviderService) convertToProto(provider *models.Provider) *aiboxpb.AiP
 		Logo:        provider.Logo,
 		Sort:        int32(provider.Sort),
 		Config: &aiboxpb.ProviderConfig{
-			ApiKey:     "", // 不返回API密钥 (出于安全考虑)
+			ApiKey:     config.ApiKey, // 正确返回从数据库读取的api_key
 			Endpoint:   config.Endpoint,
 			ProxyUrl:   config.ProxyUrl,
 			Timeout:    config.Timeout,
@@ -257,10 +257,10 @@ func generateProviderID() string {
 
 // getUserIDFromContext 从context获取用户ID
 func getUserIDFromContext(ctx context.Context) string {
-    // 这里应该从context中获取用户ID
-    // 开发阶段默认使用与种子数据一致的用户ID
-    // TODO: 从鉴权中间件提取真实用户ID
-    return "system"
+	// 这里应该从context中获取用户ID
+	// 开发阶段默认使用与种子数据一致的用户ID
+	// TODO: 从鉴权中间件提取真实用户ID
+	return "default_user"
 }
 
 // 测试函数实现

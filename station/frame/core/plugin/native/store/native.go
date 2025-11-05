@@ -7,6 +7,7 @@ import (
 	"github.com/peers-touch/peers-touch/station/frame/core/option"
 	"github.com/peers-touch/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 var (
@@ -43,7 +44,12 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 					n.defaultRDS = rds.Name
 				}
 
-				n.db[rds.Name], err = gorm.Open(dialector(rds.DSN), &gorm.Config{})
+				gormConfig := &gorm.Config{
+					// todo: let gorm logger level follow the one of frame's
+					Logger: NewGormLogger().LogMode(gormlogger.Info),
+				}
+
+				n.db[rds.Name], err = gorm.Open(dialector(rds.DSN), gormConfig)
 			} else {
 				logger.Warnf(ctx, "rds[%s] is disabled, skip init", rds.Name)
 			}
