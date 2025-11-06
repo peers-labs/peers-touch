@@ -115,6 +115,150 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Please select a feature'**
   String get selectFunction;
+
+  /// No description provided for @settingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get settingsTitle;
+
+  /// No description provided for @chooseSettingsSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Please choose a settings section'**
+  String get chooseSettingsSection;
+
+  /// No description provided for @generalSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'General Settings'**
+  String get generalSettings;
+
+  /// No description provided for @globalBusinessSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Global Business Settings'**
+  String get globalBusinessSettings;
+
+  /// No description provided for @theme.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme'**
+  String get theme;
+
+  /// No description provided for @colorScheme.
+  ///
+  /// In en, this message translates to:
+  /// **'Color Scheme'**
+  String get colorScheme;
+
+  /// No description provided for @selectAppLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Select app language'**
+  String get selectAppLanguage;
+
+  /// No description provided for @selectAppTheme.
+  ///
+  /// In en, this message translates to:
+  /// **'Select app theme'**
+  String get selectAppTheme;
+
+  /// No description provided for @selectColorScheme.
+  ///
+  /// In en, this message translates to:
+  /// **'Select app color scheme'**
+  String get selectColorScheme;
+
+  /// No description provided for @backendUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Backend URL'**
+  String get backendUrl;
+
+  /// No description provided for @backendUrlDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Set backend service address'**
+  String get backendUrlDescription;
+
+  /// No description provided for @backendUrlPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter backend service address'**
+  String get backendUrlPlaceholder;
+
+  /// No description provided for @authToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Auth Token'**
+  String get authToken;
+
+  /// No description provided for @authTokenDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Set API authentication token'**
+  String get authTokenDescription;
+
+  /// No description provided for @authTokenPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter authentication token'**
+  String get authTokenPlaceholder;
+
+  /// No description provided for @aiProviderHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Provider'**
+  String get aiProviderHeader;
+
+  /// No description provided for @openaiApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI API Key'**
+  String get openaiApiKey;
+
+  /// No description provided for @openaiApiKeyDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Set OpenAI API access key'**
+  String get openaiApiKeyDescription;
+
+  /// No description provided for @openaiApiKeyPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter OpenAI API key'**
+  String get openaiApiKeyPlaceholder;
+
+  /// No description provided for @openaiBaseUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI Base URL'**
+  String get openaiBaseUrl;
+
+  /// No description provided for @openaiBaseUrlDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Set OpenAI API base URL (optional)'**
+  String get openaiBaseUrlDescription;
+
+  /// No description provided for @openaiBaseUrlPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter OpenAI base URL'**
+  String get openaiBaseUrlPlaceholder;
+
+  /// No description provided for @defaultModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Default Model'**
+  String get defaultModel;
+
+  /// No description provided for @defaultModelDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the default AI model'**
+  String get defaultModelDescription;
 }
 
 class _AppLocalizationsDelegate
