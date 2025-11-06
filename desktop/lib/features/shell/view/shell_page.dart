@@ -1,249 +1,200 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
-
+import 'package:peers_touch_desktop/core/constants/app_constants.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
+import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_desktop/app/theme/app_theme.dart';
 
 class ShellPage extends StatelessWidget {
   const ShellPage({super.key});
 
-  // 尺寸规范（取推荐范围中值）
-  static const double minWidth = 1200;
-  static const double maxWidth = 2560;
-  static const double leftMin = 240;
-  static const double leftMax = 320;
-  static const double rightMin = 240;
-  static const double rightMax = 320;
-  static const double rightCollapsedWidth = 48;
-
-  static const double leftTopH = 110;
-  static const double leftBottomH = 90;
-  static const double centerTopH = 60;
-  static const double centerBottomH = 56;
-  static const double rightTopH = 60;
-
   @override
   Widget build(BuildContext context) {
-    final c = Get.find<ShellController>();
-    return Scaffold(
-      backgroundColor: const Color(0xFF1E1E1E),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final screenW = constraints.maxWidth;
-          final screenH = constraints.maxHeight;
-          final baseW = screenW.clamp(minWidth, maxWidth);
+    final theme = Theme.of(context);
+    final localizations = AppLocalizations.of(context);
 
-          // 计算左右宽度（按20%比例并在最小/最大内夹住）。右侧可折叠。
-          final proposedSide = baseW * 0.20;
-          final leftW = proposedSide.clamp(leftMin, leftMax);
-          final rightExpandedW = proposedSide.clamp(rightMin, rightMax);
-
-          return Center(
-            child: SizedBox(
-              width: baseW,
-              height: screenH,
-              child: Obx(() {
-                final rightW = c.rightCollapsed.value ? rightCollapsedWidth : rightExpandedW;
-                final centerW = baseW - leftW - rightW;
-                return Row(
-                  children: [
-                    // 左侧栏
-                    SizedBox(
-                      key: const Key('left-column'),
-                      width: leftW,
-                      height: screenH,
-                      child: Column(
-                        children: [
-                          _SectionContainer(height: leftTopH),
-                          Expanded(
-                            child: _ScrollableContainer(
-                              child: _LeftEntries(selected: c.selected, onSelect: c.select),
-                            ),
-                          ),
-                          _SectionContainer(height: leftBottomH),
-                        ],
-                      ),
-                    ),
-                    // 中间栏
-                    SizedBox(
-                      key: const Key('center-column'),
-                      width: centerW,
-                      height: screenH,
-                      child: Column(
-                        children: [
-                          _SectionContainer(height: centerTopH),
-                          Expanded(
-                            child: Container(
-                              color: const Color(0xFF202020),
-                              child: Obx(() => IndexedStack(
-                                    index: c.selected.value.index,
-                                    children: ShellScene.values
-                                        .map((_) => _CenterContent(count: c.count))
-                                        .toList(),
-                                  )),
-                            ),
-                          ),
-                          // 底部栏：包含加号按钮（满足现有测试）
-                          _SectionContainer(
-                            height: centerBottomH,
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: IconButton(
-                                icon: const Icon(Icons.add, color: Colors.white),
-                                onPressed: c.increment,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // 右侧栏
-                    SizedBox(
-                      key: const Key('right-column'),
-                      width: rightW,
-                      height: screenH,
-                      child: Column(
-                        children: [
-                          _SectionContainer(
-                            height: rightTopH,
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: IconButton(
-                                icon: Obx(() => Icon(
-                                      c.rightCollapsed.value ? Icons.chevron_right : Icons.chevron_left,
-                                      color: Colors.white,
-                                    )),
-                                onPressed: c.toggleRight,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: _ScrollableContainer(),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              }),
+    return GetBuilder<ShellController>(
+      builder: (controller) {
+        return Scaffold(
+          backgroundColor: theme.colorScheme.surface, // 使用surface替代background
+          body: Padding(
+            padding: EdgeInsets.only(
+              top: Platform.isMacOS ? AppConstants.macOSTitleBarHeight : 0,
             ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// 左侧条目（仅占位，不承载具体内容）
-class _LeftEntries extends StatelessWidget {
-  final Rx<ShellScene> selected;
-  final void Function(ShellScene) onSelect;
-  const _LeftEntries({required this.selected, required this.onSelect});
-
-  @override
-  Widget build(BuildContext context) {
-    return Obx(() => Column(
-          children: ShellScene.values
-              .map(
-                (scene) => _EntryItem(
-                  active: selected.value == scene,
-                  onTap: () => onSelect(scene),
-                ),
-              )
-              .toList(),
-        ));
-  }
-}
-
-class _EntryItem extends StatelessWidget {
-  final bool active;
-  final VoidCallback onTap;
-  const _EntryItem({required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFF2D2D2D) : const Color(0xFF262626),
-          borderRadius: BorderRadius.circular(8),
-        ),
-      ),
-    );
-  }
-}
-
-// 中间内容占位：显示计数与占位骨架边框
-class _CenterContent extends StatelessWidget {
-  final RxInt count;
-  const _CenterContent({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    final i18n = AppLocalizations.of(context);
-    return Obx(() => Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(i18n.general, style: const TextStyle(color: Colors.white, fontSize: 16)),
-              Text(
-                '${count.value}',
-                style: const TextStyle(color: Colors.white, fontSize: 18),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFF3A3A3A)),
-                    color: const Color(0xFF222222),
+            child: Row(
+              children: [
+                // 一级菜单栏 - 固定64px
+                _buildPrimaryMenuBar(context, controller, theme),
+                // 主内容区 - 自适应
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // 响应式断点处理
+                      if (constraints.maxWidth > 1200) {
+                        // 超宽屏幕居中显示
+                        return Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1200),
+                            child: _buildContentArea(context, controller, theme, localizations),
+                          ),
+                        );
+                      } else {
+                        return _buildContentArea(context, controller, theme, localizations);
+                      }
+                    },
                   ),
                 ),
-              ),
-            ],
-          ),
-        ));
-  }
-}
-
-// 可滚动容器：细滚动条，默认隐藏（Flutter默认即可）
-class _ScrollableContainer extends StatelessWidget {
-  final Widget? child;
-  const _ScrollableContainer({this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Container(
-          color: const Color(0xFF202020),
-          child: SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: child ?? SizedBox(height: constraints.maxHeight),
+                // 辅助面板 - overlay模式
+                Obx(() {
+                  if (controller.isRightPanelVisible.value) {
+                    return _buildAssistantPanel(context, controller, theme);
+                  } else {
+                    return const SizedBox.shrink();
+                  }
+                }),
+              ],
             ),
           ),
         );
       },
     );
   }
-}
 
-// 区域容器：固定高度，纯结构占位
-class _SectionContainer extends StatelessWidget {
-  final double height;
-  final Widget? child;
-  const _SectionContainer({required this.height, this.child});
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildPrimaryMenuBar(BuildContext context, ShellController controller, ThemeData theme) {
     return Container(
-      height: height,
-      color: const Color(0xFF2D2D2D),
-      child: child,
+      width: 64, // 一级菜单栏固定宽度
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryMenuBarBackground, // 功能区背景色
+        border: Border(right: BorderSide(color: theme.colorScheme.outlineVariant, width: 1)),
+      ),
+      child: Column(
+        children: [
+          // 头像块区域 - 固定80px（最顶部）
+          _buildAvatarBlock(context, controller, theme),
+          
+          // 头部区域 - 自适应高度（业务功能菜单）
+          Expanded(
+            child: _buildHeadMenuArea(context, controller, theme),
+          ),
+          
+          // 尾部区域 - 固定80px（最底部，重要入口）
+          _buildTailMenuArea(context, controller, theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatarBlock(BuildContext context, ShellController controller, ThemeData theme) {
+    final avatarBuilder = PrimaryMenuManager.getAvatarBlockBuilder();
+    
+    return Container(
+      height: 80, // 固定高度
+      color: theme.colorScheme.avatarAreaBackground, // 头像块背景色
+      child: avatarBuilder != null 
+          ? Builder(builder: avatarBuilder)
+          : Container(
+              color: theme.colorScheme.avatarAreaBackground, // 默认头像块背景
+              child: Center(
+                child: Icon(Icons.person, color: theme.colorScheme.onSurface, size: 32),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildHeadMenuArea(BuildContext context, ShellController controller, ThemeData theme) {
+    final headItems = PrimaryMenuManager.getHeadList();
+    
+    return Container(
+      color: theme.colorScheme.primaryMenuBarBackground, // 头部区域背景色
+      child: ListView.builder(
+        itemCount: headItems.length,
+        itemBuilder: (context, index) {
+          final item = headItems[index];
+          final isSelected = controller.currentMenuItem.value?.id == item.id;
+          
+          return _buildMenuIcon(context, item, isSelected, controller, theme);
+        },
+      ),
+    );
+  }
+
+  Widget _buildTailMenuArea(BuildContext context, ShellController controller, ThemeData theme) {
+    final tailItems = PrimaryMenuManager.getTailList();
+    
+    return Container(
+      height: 80, // 固定高度
+      color: theme.colorScheme.avatarAreaBackground, // 尾部区域背景色
+      child: Column(
+        children: tailItems.map((item) {
+          final isSelected = controller.currentMenuItem.value?.id == item.id;
+          return _buildMenuIcon(context, item, isSelected, controller, theme);
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildMenuIcon(BuildContext context, PrimaryMenuItem item, bool isSelected, ShellController controller, ThemeData theme) {
+    return Container(
+      height: 56, // 菜单图标固定高度
+      color: isSelected ? theme.colorScheme.menuItemSelected : Colors.transparent,
+      child: IconButton(
+        icon: Icon(item.icon, color: theme.colorScheme.onSurface, size: 24),
+        onPressed: () => controller.selectMenuItem(item),
+        tooltip: item.label,
+      ),
+    );
+  }
+
+  Widget _buildContentArea(BuildContext context, ShellController controller, ThemeData theme, AppLocalizations? localizations) {
+    final currentItem = controller.currentMenuItem.value;
+    
+    return Container(
+      color: theme.colorScheme.surface, // 使用surface替代background
+      child: currentItem != null
+          ? Builder(builder: currentItem.contentBuilder) // 显示选中的模块内容
+          : Container(
+              color: theme.colorScheme.surface,
+              child: Center(
+                child: Text(
+                  localizations?.selectFunction ?? '请选择功能',
+                  style: TextStyle(color: theme.colorScheme.onSurface), // 使用onSurface替代onBackground
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildAssistantPanel(BuildContext context, ShellController controller, ThemeData theme) {
+    return Container(
+      width: 320, // 辅助面板固定宽度
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface, // 辅助面板背景色
+        boxShadow: [
+          BoxShadow(
+            color: Color.fromRGBO(0, 0, 0, 0.3),
+            blurRadius: 8,
+            offset: const Offset(-2, 0),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // 顶部控制区 - 固定64px
+          Container(
+            height: 64,
+            color: theme.colorScheme.avatarAreaBackground, // 顶部控制区背景色
+          ),
+          // 内容区域 - 自适应高度
+          Expanded(
+            child: Container(
+              color: theme.colorScheme.surface, // 内容区域背景色
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

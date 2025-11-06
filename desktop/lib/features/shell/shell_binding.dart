@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
 
-import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'controller/shell_controller.dart';
 
 class ShellBinding extends Bindings {
   @override

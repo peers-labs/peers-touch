@@ -1,0 +1,40 @@
+# Flutter相关文件
+Flutter/ephemeral/
+Flutter/App.framework/
+Flutter/Flutter.framework/
+Flutter/Flutter.podspec
+Flutter/GeneratedPluginRegistrant.h
+Flutter/GeneratedPluginRegistrant.m
+
+# CocoaPods相关
+Pods/
+Podfile.lock
+
+# Xcode构建产物
+build/
+DerivedData/
+*.dgph
+
+# Xcode用户特定文件
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcuserstate
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.pbxuser
+
+# 其他临时文件
+.DS_Store
+*.swp
+*.swo
+
+# 注意：以下文件需要保留在版本控制中
+# - Runner.xcodeproj/project.pbxproj (项目配置文件)
+# - Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme (共享scheme)
+# - Runner.xcworkspace/contents.xcworkspacedata (工作区配置)
+# - Runner/ 目录下的所有源代码文件
+# - Flutter/Flutter-Debug.xcconfig
+# - Flutter/Flutter-Release.xcconfig
+# - Flutter/GeneratedPluginRegistrant.swift

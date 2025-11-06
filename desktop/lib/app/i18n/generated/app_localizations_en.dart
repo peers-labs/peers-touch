@@ -13,4 +13,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get general => 'General';
+
+  @override
+  String get selectFunction => 'Please select a feature';
 }

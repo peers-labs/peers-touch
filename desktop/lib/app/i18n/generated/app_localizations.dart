@@ -109,6 +109,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'General'**
   String get general;
+
+  /// No description provided for @selectFunction.
+  ///
+  /// In en, this message translates to:
+  /// **'Please select a feature'**
+  String get selectFunction;
 }
 
 class _AppLocalizationsDelegate
