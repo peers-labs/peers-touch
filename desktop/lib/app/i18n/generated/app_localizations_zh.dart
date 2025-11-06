@@ -13,4 +13,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get general => '通用';
+
+  @override
+  String get selectFunction => '请选择功能';
 }
