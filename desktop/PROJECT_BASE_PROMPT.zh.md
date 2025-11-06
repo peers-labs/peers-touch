@@ -117,7 +117,7 @@ lib/
 │           └── mesh_client.dart     # 并网客户端（发送/接收数据）
 │
 ├── features/                      # 业务模块（按功能内聚，独立可拆）
-│   ├── shared/                    # 业务级共享（跨业务模块复用）
+│   ├── shared/                    # 业务级共享（跨业务模块复用），带业务状态的，非 Core 功能的共享类型都放这里
 │   │   ├── models/                  # 业务共享模型
 │   │   │   └── chat_message.dart    # 聊天消息模型（在首页、聊天页都用）
 │   │   └── services/                # 业务共享服务
@@ -174,6 +174,9 @@ features/下的模块目录名必须是业务语义（如chat/、settings/，而
         * 禁止包含业务逻辑（如 “计算价格” 应放在 Controller，而非 Model）。
     * 引用
         * import 禁止使用相对路径（如import '../models/chat_message.dart'），必须使用绝对路径（如import 'package:peers_touch/models/chat_message.dart'）。
+    * 代码实体
+        * 所有可穷举的类型，必须定义为enum（如消息类型、用户角色等）。
+        * 所有代码注册的语言，都必须用英文
 * 特殊模块处理规范
     * 多语言（i18n）：
         * 语言包必须放在app/i18n/，键值对需通过locale_keys.dart的常量引用（避免硬编码字符串）。
@@ -193,3 +196,7 @@ features/下的模块目录名必须是业务语义（如chat/、settings/，而
 * 测试友好：
     * 控制器逻辑可独立测试（依赖通过Get.put注入，便于 Mock）。
     * 视图纯渲染，无需测试（或仅测试 UI 结构）。
+
+## 其它Prompt
+
+其它非Base级的Prompt在 './PROMPTs' 目录下
