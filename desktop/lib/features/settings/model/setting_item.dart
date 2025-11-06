@@ -35,6 +35,28 @@ class SettingItem {
     this.onTap,
     this.onChanged,
   });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'description': description,
+        'icon': icon?.codePoint,
+        'type': type.name,
+        'value': value,
+        'options': options,
+        'placeholder': placeholder,
+      };
+
+  factory SettingItem.fromJson(Map<String, dynamic> json) => SettingItem(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        description: json['description'] as String?,
+        icon: json['icon'] != null ? IconData(json['icon'] as int, fontFamily: 'MaterialIcons') : null,
+        type: SettingItemType.values.firstWhere((e) => e.name == json['type']),
+        value: json['value'],
+        options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+        placeholder: json['placeholder'] as String?,
+      );
 }
 
 /// 设置分区定义
@@ -50,4 +72,18 @@ class SettingSection {
     this.icon,
     required this.items,
   });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'icon': icon?.codePoint,
+        'items': items.map((e) => e.toJson()).toList(),
+      };
+
+  factory SettingSection.fromJson(Map<String, dynamic> json) => SettingSection(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        icon: json['icon'] != null ? IconData(json['icon'] as int, fontFamily: 'MaterialIcons') : null,
+        items: (json['items'] as List).map((e) => SettingItem.fromJson(e as Map<String, dynamic>)).toList(),
+      );
 }

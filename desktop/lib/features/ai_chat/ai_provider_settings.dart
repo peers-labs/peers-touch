@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../settings/model/setting_item.dart';
+import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 
 /// AI Provider设置模块 - 演示业务模块设置注入
 class AIProviderSettings {

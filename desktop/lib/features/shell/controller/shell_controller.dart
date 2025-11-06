@@ -22,6 +22,7 @@ class ShellController extends GetxController {
     final headItems = PrimaryMenuManager.getHeadList();
     if (headItems.isNotEmpty) {
       currentMenuItem.value = headItems.first;
+      update();
     }
   }
   
@@ -33,6 +34,7 @@ class ShellController extends GetxController {
   // 切换一级菜单项
   void selectMenuItem(PrimaryMenuItem item) {
     currentMenuItem.value = item;
+    update();
   }
   
   // 根据ID切换菜单项

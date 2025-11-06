@@ -29,8 +29,8 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     return GetMaterialApp(
       title: AppConstants.appName,
-      // 使用Flutter官方本地化机制
-      locale: const Locale('zh', 'CN'),
+      // 使用Flutter官方本地化机制（绑定到Get.locale，支持运行时切换）
+      locale: Get.locale ?? const Locale('zh', 'CN'),
       fallbackLocale: const Locale('en', 'US'),
       localizationsDelegates: const [
         AppLocalizations.delegate,
@@ -44,6 +44,8 @@ class App extends StatelessWidget {
       initialRoute: AppRoutes.shell,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
+      // 让主题模式跟随Get的状态，支持运行时切换
+      themeMode: Get.isDarkMode ? ThemeMode.dark : ThemeMode.light,
     );
   }
 }
