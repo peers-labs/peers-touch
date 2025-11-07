@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package peers_touch.touch.v1;
+
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/touch/v1;touchv1";
+
+import "google/protobuf/timestamp.proto";
+
+// ActivityPub endpoint information, representing complete ActivityPub endpoint information for a peer
+message ActivityPubEndpointInfo {
+  string peer_id = 1;                          // Unique identifier for the peer
+  string base_url = 2;                         // Root path of the ActivityPub server
+  int32 endpoint_count = 3;                    // Total number of available ActivityPub endpoints
+  repeated EndpointDescriptor endpoints = 4;    // Array of endpoint descriptors
+  string server_version = 5;                   // ActivityPub implementation version
+  repeated string supported_activities = 6;     // Supported ActivityPub activity types
+  google.protobuf.Timestamp last_updated = 7;  // Timestamp of last endpoint configuration change
+  int64 ttl = 8;                               // Time-to-live for caching this information (seconds)
+}
+
+// Endpoint descriptor, describing a single ActivityPub endpoint
+message EndpointDescriptor {
+  string path = 1;                             // Relative path
+  EndpointType type = 2;                       // Endpoint category
+  repeated string methods = 3;                 // Supported HTTP methods
+  repeated string content_types = 4;           // Supported content types
+  bool is_public = 5;                          // Whether the endpoint is publicly accessible
+  bool requires_auth = 6;                      // Authentication requirements
+  string description = 7;                       // Additional information about the endpoint
+}
+
+// Endpoint type, representing the category of an ActivityPub endpoint
+enum EndpointType {
+  ENDPOINT_TYPE_UNSPECIFIED = 0;
+  ENDPOINT_TYPE_ACTOR = 1;                     // Actor endpoint
+  ENDPOINT_TYPE_INBOX = 2;                      // Inbox
+  ENDPOINT_TYPE_OUTBOX = 3;                     // Outbox
+  ENDPOINT_TYPE_FOLLOWERS = 4;                 // Followers
+  ENDPOINT_TYPE_FOLLOWING = 5;                  // Following
+  ENDPOINT_TYPE_LIKED = 6;                      // Liked
+  ENDPOINT_TYPE_SHARES = 7;                     // Shares
+  ENDPOINT_TYPE_COLLECTION = 8;                 // Collection
+  ENDPOINT_TYPE_ORDERED_COLLECTION = 9;         // Ordered collection
+  ENDPOINT_TYPE_WEBFINGER = 10;                 // WebFinger
+  ENDPOINT_TYPE_NODEINFO = 11;                  // Node info
+  ENDPOINT_TYPE_CUSTOM = 12;                    // Custom
+}
+
+// ActivityPub capabilities, representing the ActivityPub capabilities of a peer
+message ActivityPubCapabilities {
+  repeated ActivityType supported_activities = 1; // Supported ActivityPub activity types
+  repeated ObjectType supported_objects = 2;      // Supported ActivityPub object types
+  repeated string extensions = 3;                  // Supported ActivityPub extensions
+  int64 max_content_length = 4;                   // Maximum content length accepted (bytes)
+  repeated string supported_media_types = 5;      // Supported media types for attachments
+}
+
+// Activity type, representing ActivityPub activity types
+enum ActivityType {
+  ACTIVITY_TYPE_UNSPECIFIED = 0;
+  ACTIVITY_TYPE_CREATE = 1;                      // Create
+  ACTIVITY_TYPE_UPDATE = 2;                      // Update
+  ACTIVITY_TYPE_DELETE = 3;                      // Delete
+  ACTIVITY_TYPE_FOLLOW = 4;                      // Follow
+  ACTIVITY_TYPE_ACCEPT = 5;                      // Accept
+  ACTIVITY_TYPE_REJECT = 6;                      // Reject
+  ACTIVITY_TYPE_ADD = 7;                         // Add
+  ACTIVITY_TYPE_REMOVE = 8;                      // Remove
+  ACTIVITY_TYPE_LIKE = 9;                         // Like
+  ACTIVITY_TYPE_ANNOUNCE = 10;                    // Announce
+  ACTIVITY_TYPE_UNDO = 11;                        // Undo
+  ACTIVITY_TYPE_BLOCK = 12;                       // Block
+  ACTIVITY_TYPE_FLAG = 13;                        // Flag
+}
+
+// Object type, representing ActivityPub object types
+enum ObjectType {
+  OBJECT_TYPE_UNSPECIFIED = 0;
+  OBJECT_TYPE_NOTE = 1;                          // Note
+  OBJECT_TYPE_ARTICLE = 2;                       // Article
+  OBJECT_TYPE_IMAGE = 3;                         // Image
+  OBJECT_TYPE_VIDEO = 4;                         // Video
+  OBJECT_TYPE_AUDIO = 5;                         // Audio
+  OBJECT_TYPE_DOCUMENT = 6;                      // Document
+  OBJECT_TYPE_PAGE = 7;                          // Page
+  OBJECT_TYPE_EVENT = 8;                         // Event
+  OBJECT_TYPE_PLACE = 9;                         // Place
+  OBJECT_TYPE_PERSON = 10;                       // Person
+  OBJECT_TYPE_GROUP = 11;                        // Group
+  OBJECT_TYPE_ORGANIZATION = 12;                 // Organization
+  OBJECT_TYPE_APPLICATION = 13;                  // Application
+  OBJECT_TYPE_SERVICE = 14;                      // Service
+}
+
+// Peer endpoint registry, managing ActivityPub endpoint information for multiple peers
+message PeerEndpointRegistry {
+  map<string, ActivityPubEndpointInfo> peers = 1; // Mapping of peer IDs to endpoint information
+  google.protobuf.Timestamp last_sync = 2;       // Timestamp of last registry synchronization
+  string version = 3;                            // Registry format version
+}
+
+// ActivityPub endpoint service definition
+service ActivityPubEndpointService {
+  // Get peer's ActivityPub endpoint information
+  rpc GetEndpointInfo(GetEndpointInfoRequest) returns (ActivityPubEndpointInfo);
+  
+  // Add endpoint descriptor
+  rpc AddEndpoint(AddEndpointRequest) returns (ActivityPubEndpointInfo);
+  
+  // Get endpoints by type
+  rpc GetEndpointsByType(GetEndpointsByTypeRequest) returns (GetEndpointsByTypeResponse);
+  
+  // Check if endpoint information is expired
+  rpc IsExpired(IsExpiredRequest) returns (IsExpiredResponse);
+  
+  // Add or update peer endpoint information
+  rpc AddPeer(AddPeerRequest) returns (PeerEndpointRegistry);
+  
+  // Get peer endpoint information
+  rpc GetPeer(GetPeerRequest) returns (GetPeerResponse);
+  
+  // Get active peers
+  rpc GetActivePeers(GetActivePeersRequest) returns (GetActivePeersResponse);
+  
+  // Clean up expired peers
+  rpc CleanupExpired(CleanupExpiredRequest) returns (CleanupExpiredResponse);
+}
+
+// Get endpoint information request
+message GetEndpointInfoRequest {
+  string peer_id = 1;
+}
+
+// Add endpoint request
+message AddEndpointRequest {
+  string peer_id = 1;
+  EndpointDescriptor endpoint = 2;
+}
+
+// Get endpoints by type request
+message GetEndpointsByTypeRequest {
+  string peer_id = 1;
+  EndpointType endpoint_type = 2;
+}
+
+// Get endpoints by type response
+message GetEndpointsByTypeResponse {
+  repeated EndpointDescriptor endpoints = 1;
+}
+
+// Check expired request
+message IsExpiredRequest {
+  string peer_id = 1;
+}
+
+// Check expired response
+message IsExpiredResponse {
+  bool is_expired = 1;
+}
+
+// Add peer request
+message AddPeerRequest {
+  ActivityPubEndpointInfo peer_info = 1;
+}
+
+// Get peer request
+message GetPeerRequest {
+  string peer_id = 1;
+}
+
+// Get peer response
+message GetPeerResponse {
+  ActivityPubEndpointInfo peer_info = 1;
+  bool exists = 2;
+}
+
+// Get active peers request
+message GetActivePeersRequest {}
+
+// Get active peers response
+message GetActivePeersResponse {
+  map<string, ActivityPubEndpointInfo> active_peers = 1;
+}
+
+// Cleanup expired request
+message CleanupExpiredRequest {}
+
+// Cleanup expired response
+message CleanupExpiredResponse {
+  int32 cleaned_count = 1;
+}

@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package peers_touch.touch.v1;
+
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/touch/v1;touchv1";
+
+// Peer address parameters
+message PeerAddressParam {
+  string peer_id = 1; // Unique identifier of the peer
+  string addr = 2;    // Peer address
+  string typ = 3;     // Address type (stun, turn, http)
+}
+
+// Peer address information
+message PeerAddrInfo {
+  string peer_id = 1;                      // Peer ID
+  repeated string addrs = 2;               // List of addresses
+  map<string, string> metadata = 3;         // Metadata
+}
+
+// Connection parameters
+message TouchHiToParam {
+  string peer_address = 1; // Peer address to connect to
+}
+
+// Session information
+message TouchHiSession {
+  string session_id = 1; // Session ID
+}
+
+// Stream message
+message StreamMessage {
+  string session_id = 1; // Session identifier for message routing
+  string content = 2;    // Actual message payload
+}
+
+// Peer service definition
+service PeerService {
+  // Get peer address information
+  rpc GetPeerAddrInfo(PeerAddressParam) returns (PeerAddrInfo);
+  
+  // Establish connection
+  rpc TouchHi(TouchHiToParam) returns (TouchHiSession);
+  
+  // Send stream message
+  rpc SendStreamMessage(StreamMessage) returns (StreamMessage);
+}

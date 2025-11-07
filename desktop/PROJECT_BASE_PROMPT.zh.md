@@ -71,8 +71,10 @@ lib/
 │   │   ├── app_theme.dart           # 主题配置（light/dark模式，含颜色、字体）
 │   │   └── app_styles.dart          # 全局样式常量（padding: 16, radius: 8）
 │   │
-│   └── bindings/                  # 依赖注入绑定
+│   ├── bindings/                  # 依赖注入绑定
 │       └── initial_binding.dart     # 全局初始化绑定（注册ApiClient、Storage等）
+│   └── initialization/            # 应用初始化
+│       └── app_initializer.dart     # 应用初始化类（负责初始化所有全局服务）
 │
 ├── core/                          # 全局通用能力（跨模块复用，无业务关联）
 │   ├── components/                # 通用UI组件（纯展示，无业务逻辑）

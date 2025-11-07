@@ -4,20 +4,22 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 
 import 'app/bindings/initial_binding.dart';
+import 'app/initialization/app_initializer.dart';
 import 'app/routes/app_pages.dart';
 import 'app/routes/app_routes.dart';
 import 'app/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
-import 'core/utils/window_options_manager.dart';
-
-import 'package:get_storage/get_storage.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await GetStorage.init();
+  // Use static method for unified initialization - more concise usage
+  final initialized = await AppInitializer.init();
   
-  // 初始化窗口管理器
-  await WindowOptionsManager.initializeWindowManager();
+  if (!initialized) {
+    // Initialization failed, use logging framework to record error information
+    // In actual application, error page or popup can be displayed here
+    // Since logging system is already initialized in AppInitializer, we can use it directly
+    return;
+  }
   
   runApp(const App());
 }
@@ -29,7 +31,7 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     return GetMaterialApp(
       title: AppConstants.appName,
-      // 使用Flutter官方本地化机制
+      // Use Flutter official localization mechanism
       locale: const Locale('zh', 'CN'),
       fallbackLocale: const Locale('en', 'US'),
       localizationsDelegates: const [

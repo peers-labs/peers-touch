@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package peers_touch.touch.v1.actor;
+
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/touch/v1/actor;actorv1";
+
+import "touch/v1/types.proto";
+
+// Outbox message
+message OutboxMessage {
+  string id = 1;               // Message ID
+  string actor_id = 2;         // Sender actor ID
+  string recipient_id = 3;     // Recipient actor ID
+  string type = 4;             // Message type (follow, like, message, etc.)
+  string content = 5;          // Message content
+  string created_at = 6;       // Creation time
+  string status = 7;          // Send status (pending, sent, failed)
+  map<string, string> metadata = 8; // Metadata
+}
+
+// Send message parameters
+message SendMessageParams {
+  string recipient_id = 1; // Recipient actor ID
+  string type = 2;         // Message type
+  string content = 3;      // Message content
+  map<string, string> metadata = 4; // Metadata
+}
+
+// Outbox list response
+message OutboxListResponse {
+  repeated OutboxMessage messages = 1;     // Message list
+  touch.v1.PaginationInfo pagination = 2; // Pagination information
+  int32 total_messages = 3;               // Total message count
+}
+
+// Outbox service definition
+service OutboxService {
+  // Send message
+  rpc SendMessage(SendMessageParams) returns (OutboxMessage);
+  
+  // Get outbox messages list
+  rpc GetOutboxMessages(touch.v1.PaginationParams) returns (OutboxListResponse);
+  
+  // Delete outbox message
+  rpc DeleteOutboxMessage(touch.v1.IDParams) returns (touch.v1.Empty);
+}

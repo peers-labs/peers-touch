@@ -2,8 +2,7 @@ syntax = "proto3";
 
 package peers.common.v1;
 
-// NOTE: Adjust go_package to your actual module path when integrating.
-// option go_package = "github.com/your_org/peers-touch/station/proto/gen/common/v1;commonv1";
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/common/v1;commonv1";
 
 import "google/protobuf/timestamp.proto";
 
