@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package peers_touch.touch.v1.actor;
+
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/touch/v1/actor;actorv1";
+
+// Actor options configuration
+message ActorOptions {
+  // Person configuration
+  message PersonConfig {
+    string name = 1;   // Person name
+    string email = 2;  // Person email
+  }
+  
+  // Actor configuration
+  message ActorConfig {
+    repeated PersonConfig person = 1; // List of persons
+  }
+  
+  // Peers configuration
+  message PeersConfig {
+    ActorConfig actor = 1; // Actor configuration
+  }
+  
+  PeersConfig peers = 1; // Peers configuration
+}
+
+// Actor options service
+service ActorOptionsService {
+  // Get actor options
+  rpc GetActorOptions(GetActorOptionsRequest) returns (ActorOptions);
+  
+  // Update actor options
+  rpc UpdateActorOptions(UpdateActorOptionsRequest) returns (ActorOptions);
+}
+
+// Get actor options request
+message GetActorOptionsRequest {
+  // Can be empty for default options
+}
+
+// Update actor options request
+message UpdateActorOptionsRequest {
+  ActorOptions options = 1; // Actor options to update
+}

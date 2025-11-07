@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package peers_touch.touch.v1;
+
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/touch/v1;touchv1";
+
+import "google/protobuf/timestamp.proto";
+
+// WebFinger response, compliant with RFC 7033 standard
+message WebFingerResponse {
+  string subject = 1;                          // Queried URI (e.g., "acct:alice@example.com")
+  repeated string aliases = 2;                 // List of alternative URIs
+  map<string, string> properties = 3;           // Name-value pairs describing the subject
+  repeated WebFingerLink links = 4;            // Typed connections to related resources
+}
+
+// WebFinger link
+message WebFingerLink {
+  string rel = 1;                              // Relationship type (e.g., "self", "profile")
+  string type = 2;                            // Media type of the linked resource
+  string href = 3;                            // URI of the linked resource
+  string template = 4;                         // URI template for the linked resource
+  map<string, string> properties = 5;          // Additional properties for the link
+  map<string, string> titles = 6;              // Human-readable descriptions in various languages
+}
+
+// WebFinger discovery for ActivityPub actor
+message WebFingerActivityPubActor {
+  string id = 1;                              // Unique identifier for the actor
+  string type = 2;                            // Actor type (Person, Service, Group, etc.)
+  string preferred_username = 3;               // Actor's preferred username
+  string name = 4;                            // Actor's display name
+  string summary = 5;                          // Brief description of the actor
+  ActivityPubImage icon = 6;                  // Actor's avatar/profile picture
+  ActivityPubImage image = 7;                  // Actor's header/banner image
+  string inbox = 8;                            // Actor's inbox endpoint
+  string outbox = 9;                           // Actor's outbox endpoint
+  string followers = 10;                       // Actor's followers collection endpoint
+  string following = 11;                       // Actor's following collection endpoint
+  string liked = 12;                           // Actor's liked collection endpoint
+  ActivityPubPublicKey public_key = 13;        // Public key for HTTP signatures
+  map<string, string> endpoints = 14;          // Additional endpoints
+  google.protobuf.Timestamp created_at = 15;   // Actor creation time
+  google.protobuf.Timestamp updated_at = 16;   // Actor last update time
+}
+
+// ActivityPub image
+message ActivityPubImage {
+  string type = 1;                            // Type
+  string url = 2;                             // URL
+  string media_type = 3;                      // Media type
+}
+
+// Public key for HTTP signatures
+message ActivityPubPublicKey {
+  string id = 1;                              // Key ID
+  string owner = 2;                           // Owner
+  string public_key_pem = 3;                  // Public key in PEM format
+}
+
+// Actor discovery request
+message ActorDiscoveryRequest {
+  string resource = 1;                         // WebFinger resource identifier
+  string domain = 2;                          // Domain part of the resource
+  string username = 3;                         // Username part of the resource
+  repeated string requested_rels = 4;           // Specific relationship types requested
+}
+
+// WebFinger service definition
+service WebFingerService {
+  // Discover actor information
+  rpc DiscoverActor(ActorDiscoveryRequest) returns (WebFingerResponse);
+  
+  // Build WebFinger response
+  rpc BuildWebFingerResponse(WebFingerActivityPubActor) returns (WebFingerResponse);
+}
+
+// Common WebFinger relationship types
+enum WebFingerRelType {
+  REL_UNSPECIFIED = 0;
+  REL_SELF = 1;                                // "self"
+  REL_PROFILE_PAGE = 2;                        // "http://webfinger.net/rel/profile-page"
+  REL_ACTIVITYPUB_ACTOR = 3;                   // "self"
+  REL_ACTIVITYPUB_INBOX = 4;                   // "https://www.w3.org/ns/activitystreams#inbox"
+  REL_ACTIVITYPUB_OUTBOX = 5;                  // "https://www.w3.org/ns/activitystreams#outbox"
+  REL_ACTIVITYPUB_FOLLOWERS = 6;               // "https://www.w3.org/ns/activitystreams#followers"
+  REL_ACTIVITYPUB_FOLLOWING = 7;               // "https://www.w3.org/ns/activitystreams#following"
+}
+
+// Common content types
+enum ContentType {
+  CONTENT_TYPE_UNSPECIFIED = 0;
+  CONTENT_TYPE_ACTIVITY_JSON = 1;              // "application/activity+json"
+  CONTENT_TYPE_JSON = 2;                       // "application/json"
+  CONTENT_TYPE_HTML = 3;                       // "text/html"
+  CONTENT_TYPE_JRD = 4;                        // "application/jrd+json"
+}

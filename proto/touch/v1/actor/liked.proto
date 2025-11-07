@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package peers_touch.touch.v1.actor;
+
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/touch/v1/actor;actorv1";
+
+import "touch/v1/types.proto";
+
+// Like record
+message Like {
+  string id = 1;               // Like ID
+  string actor_id = 2;         // Liker actor ID
+  string target_id = 3;        // Target ID being liked
+  string target_type = 4;      // Target type (post, comment, etc.)
+  string created_at = 5;       // Creation time
+}
+
+// Like parameters
+message LikeParams {
+  string target_id = 1;       // Target ID
+  string target_type = 2;     // Target type
+}
+
+// Unlike parameters
+message UnlikeParams {
+  string target_id = 1;       // Target ID
+  string target_type = 2;     // Target type
+}
+
+// Like list response
+message LikeListResponse {
+  repeated Like likes = 1;               // Like list
+  touch.v1.PaginationInfo pagination = 2; // Pagination information
+  int32 total_likes = 3;                // Total like count
+}
+
+// Like statistics
+message LikeStats {
+  string target_id = 1;       // Target ID
+  string target_type = 2;     // Target type
+  int32 like_count = 3;       // Like count
+  bool is_liked = 4;          // Whether current user has liked
+}
+
+// Like service definition
+service LikeService {
+  // Like target
+  rpc LikeTarget(LikeParams) returns (Like);
+  
+  // Unlike target
+  rpc UnlikeTarget(UnlikeParams) returns (touch.v1.Empty);
+  
+  // Get likes list
+  rpc GetLikes(touch.v1.PaginationParams) returns (LikeListResponse);
+  
+  // Get like statistics
+  rpc GetLikeStats(LikeParams) returns (LikeStats);
+}

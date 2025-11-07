@@ -2,8 +2,7 @@ syntax = "proto3";
 
 package peers.aibox.v1;
 
-// NOTE: Adjust go_package to your actual module path when integrating.
-// option go_package = "github.com/your_org/peers-touch/station/proto/gen/aibox/v1;aiboxv1";
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/aibox/v1;aiboxv1";
 
 import "common/v1/base.proto";
 import "common/v1/pagination.proto";

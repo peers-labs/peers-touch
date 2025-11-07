@@ -1,0 +1,7 @@
+version: v1beta1
+
+plugins:
+  - name: dart
+    out: ../peers-touch/mobile/lib/generated/proto
+    opt:
+      - grpc

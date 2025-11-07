@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package peers_touch.touch.v1.actor;
+
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/touch/v1/actor;actorv1";
+
+import "touch/v1/types.proto";
+
+// Inbox message
+message InboxMessage {
+  string id = 1;               // Message ID
+  string actor_id = 2;         // Recipient actor ID
+  string sender_id = 3;        // Sender actor ID
+  string type = 4;             // Message type (follow, like, message, etc.)
+  string content = 5;          // Message content
+  string created_at = 6;       // Creation time
+  bool is_read = 7;            // Whether read
+  map<string, string> metadata = 8; // Metadata
+}
+
+// Inbox list response
+message InboxListResponse {
+  repeated InboxMessage messages = 1;     // Message list
+  touch.v1.PaginationInfo pagination = 2; // Pagination information
+  int32 unread_count = 3;                 // Unread message count
+}
+
+// Mark as read parameters
+message MarkAsReadParams {
+  repeated string message_ids = 1; // List of message IDs to mark as read
+}
+
+// Inbox service definition
+service InboxService {
+  // Get inbox messages list
+  rpc GetInboxMessages(touch.v1.PaginationParams) returns (InboxListResponse);
+  
+  // Mark messages as read
+  rpc MarkMessagesAsRead(MarkAsReadParams) returns (touch.v1.Empty);
+  
+  // Delete inbox messages
+  rpc DeleteInboxMessages(MarkAsReadParams) returns (touch.v1.Empty);
+}

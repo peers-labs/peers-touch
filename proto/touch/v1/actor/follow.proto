@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package peers_touch.touch.v1.actor;
+
+option go_package = "github.com/peers-touch/peers-touch/proto/gen/touch/v1/actor;actorv1";
+
+import "touch/v1/types.proto";
+
+// Follow relationship
+message Follow {
+  string id = 1;               // Follow relationship ID
+  string follower_id = 2;      // Follower ID
+  string following_id = 3;      // Following ID
+  string created_at = 4;        // Creation time
+  string status = 5;            // Status (pending, accepted, rejected)
+}
+
+// Follow parameters
+message FollowParams {
+  string following_id = 1; // Actor ID to follow
+}
+
+// Unfollow parameters
+message UnfollowParams {
+  string following_id = 1; // Actor ID to unfollow
+}
+
+// Follow list response
+message FollowListResponse {
+  repeated Follow follows = 1;           // Follow list
+  touch.v1.PaginationInfo pagination = 2; // Pagination information
+}
+
+// Follow service definition
+service FollowService {
+  // Follow actor
+  rpc FollowActor(FollowParams) returns (Follow);
+  
+  // Unfollow actor
+  rpc UnfollowActor(UnfollowParams) returns (touch.v1.Empty);
+  
+  // Get following list
+  rpc GetFollowingList(touch.v1.PaginationParams) returns (FollowListResponse);
+  
+  // Get follower list
+  rpc GetFollowerList(touch.v1.PaginationParams) returns (FollowListResponse);
+}
