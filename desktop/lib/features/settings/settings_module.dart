@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
+import 'package:peers_touch_desktop/features/settings/setting_binding.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
 import 'package:peers_touch_desktop/features/settings/view/setting_page.dart';
 
@@ -8,6 +9,7 @@ import 'package:peers_touch_desktop/features/settings/view/setting_page.dart';
 class SettingsModule {
   static void register() {
     // 注册到尾部区域（重要入口）
+    SettingsBinding().dependencies();
     PrimaryMenuManager.registerItem(PrimaryMenuItem(
       id: 'settings',
       label: '设置',
@@ -26,10 +28,7 @@ class SettingsContentPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetBuilder<SettingController>(
-      init: SettingController(),
-      builder: (controller) {
-        return SettingPage(controller: controller);
-      },
+      builder: (controller) => SettingPage(controller: controller),
     );
   }
 }
