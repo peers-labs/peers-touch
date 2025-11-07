@@ -1,7 +1,6 @@
-version: v1
+version: v1beta1
 
-# Buf module config. Adjust 'name' if publishing to a remote registry later.
-name: peers-touch
+name: buf.build/peers-touch/peers-touch
 
 deps:
   - buf.build/google/protobuf
@@ -9,6 +8,8 @@ deps:
 lint:
   use:
     - DEFAULT
+  except:
+    - PACKAGE_DIRECTORY_MATCH
 
 breaking:
   use:
