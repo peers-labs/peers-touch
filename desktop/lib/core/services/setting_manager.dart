@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../model/setting_item.dart';
+import 'package:get/get.dart';
+import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 
 /// 设置项注册器接口
 abstract class SettingRegistry {
@@ -34,8 +35,8 @@ class SettingManager implements SettingRegistry {
   
   /// 初始化通用设置分区
   void initializeGeneralSettings() {
-    // 通用设置分区
-    registerSection(const SettingSection(
+    // 通用设置分区（可变分区，便于后续更新项值）
+    registerSection(SettingSection(
       id: 'general',
       title: '通用设置',
       icon: Icons.settings,
@@ -48,6 +49,18 @@ class SettingManager implements SettingRegistry {
           type: SettingItemType.select,
           value: 'zh-CN',
           options: ['zh-CN', 'en-US'],
+          onChanged: (val) {
+            if (val is String) {
+              switch (val) {
+                case 'zh-CN':
+                  Get.updateLocale(const Locale('zh', 'CN'));
+                  break;
+                case 'en-US':
+                  Get.updateLocale(const Locale('en', 'US'));
+                  break;
+              }
+            }
+          },
         ),
         SettingItem(
           id: 'theme',
@@ -57,6 +70,21 @@ class SettingManager implements SettingRegistry {
           type: SettingItemType.select,
           value: 'dark',
           options: ['dark', 'light', 'auto'],
+          onChanged: (val) {
+            if (val is String) {
+              switch (val) {
+                case 'dark':
+                  Get.changeThemeMode(ThemeMode.dark);
+                  break;
+                case 'light':
+                  Get.changeThemeMode(ThemeMode.light);
+                  break;
+                case 'auto':
+                  Get.changeThemeMode(ThemeMode.system);
+                  break;
+              }
+            }
+          },
         ),
         SettingItem(
           id: 'color_scheme',
@@ -66,12 +94,16 @@ class SettingManager implements SettingRegistry {
           type: SettingItemType.select,
           value: 'lobe_chat',
           options: ['lobe_chat', 'material', 'cupertino'],
+          // 暂未实现不同方案的即时切换，这里预留回调
+          onChanged: (val) {
+            // TODO: 根据方案切换不同的 ThemeData 扩展（后续实现）
+          },
         ),
       ],
     ));
     
     // 全局业务设置分区
-    registerSection(const SettingSection(
+    registerSection(SettingSection(
       id: 'global_business',
       title: '全局业务设置',
       icon: Icons.cloud,

@@ -7,6 +7,7 @@ import 'package:peers_touch_desktop/features/shell/controller/shell_controller.d
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/app_theme.dart';
+import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 
 class ShellPage extends StatelessWidget {
   const ShellPage({super.key});
@@ -14,12 +15,13 @@ class ShellPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = theme.extension<WeChatTokens>()!;
     final localizations = AppLocalizations.of(context);
 
     return GetBuilder<ShellController>(
       builder: (controller) {
         return Scaffold(
-          backgroundColor: theme.colorScheme.surface, // 使用surface替代background
+          backgroundColor: tokens.bgLevel0,
           body: Padding(
             padding: EdgeInsets.only(
               top: Platform.isMacOS ? AppConstants.macOSTitleBarHeight : 0,
@@ -64,11 +66,12 @@ class ShellPage extends StatelessWidget {
   }
 
   Widget _buildPrimaryMenuBar(BuildContext context, ShellController controller, ThemeData theme) {
+    final tokens = theme.extension<WeChatTokens>()!;
     return Container(
       width: 64, // 一级菜单栏固定宽度
       decoration: BoxDecoration(
-        color: theme.colorScheme.primaryMenuBarBackground, // 功能区背景色
-        border: Border(right: BorderSide(color: theme.colorScheme.outlineVariant, width: 1)),
+        color: tokens.bgLevel2, // 功能区背景色
+        border: Border(right: BorderSide(color: tokens.divider, width: 1)),
       ),
       child: Column(
         children: [
@@ -88,27 +91,29 @@ class ShellPage extends StatelessWidget {
   }
 
   Widget _buildAvatarBlock(BuildContext context, ShellController controller, ThemeData theme) {
+    final tokens = theme.extension<WeChatTokens>()!;
     final avatarBuilder = PrimaryMenuManager.getAvatarBlockBuilder();
     
     return Container(
       height: 80, // 固定高度
-      color: theme.colorScheme.avatarAreaBackground, // 头像块背景色
+      color: tokens.bgLevel2, // 头像块背景色
       child: avatarBuilder != null 
           ? Builder(builder: avatarBuilder)
           : Container(
-              color: theme.colorScheme.avatarAreaBackground, // 默认头像块背景
+              color: tokens.bgLevel2, // 默认头像块背景
               child: Center(
-                child: Icon(Icons.person, color: theme.colorScheme.onSurface, size: 32),
+                child: Icon(Icons.person, color: tokens.textPrimary, size: 32),
               ),
             ),
     );
   }
 
   Widget _buildHeadMenuArea(BuildContext context, ShellController controller, ThemeData theme) {
+    final tokens = theme.extension<WeChatTokens>()!;
     final headItems = PrimaryMenuManager.getHeadList();
     
     return Container(
-      color: theme.colorScheme.primaryMenuBarBackground, // 头部区域背景色
+      color: tokens.bgLevel2, // 头部区域背景色
       child: ListView.builder(
         itemCount: headItems.length,
         itemBuilder: (context, index) {
@@ -122,11 +127,12 @@ class ShellPage extends StatelessWidget {
   }
 
   Widget _buildTailMenuArea(BuildContext context, ShellController controller, ThemeData theme) {
+    final tokens = theme.extension<WeChatTokens>()!;
     final tailItems = PrimaryMenuManager.getTailList();
     
     return Container(
       height: 80, // 固定高度
-      color: theme.colorScheme.avatarAreaBackground, // 尾部区域背景色
+      color: tokens.bgLevel2, // 尾部区域背景色
       child: Column(
         children: tailItems.map((item) {
           final isSelected = controller.currentMenuItem.value?.id == item.id;
@@ -137,11 +143,16 @@ class ShellPage extends StatelessWidget {
   }
 
   Widget _buildMenuIcon(BuildContext context, PrimaryMenuItem item, bool isSelected, ShellController controller, ThemeData theme) {
+    final tokens = theme.extension<WeChatTokens>()!;
     return Container(
       height: 56, // 菜单图标固定高度
-      color: isSelected ? theme.colorScheme.menuItemSelected : Colors.transparent,
+      margin: EdgeInsets.symmetric(vertical: tokens.spaceXs, horizontal: tokens.spaceXs),
+      decoration: BoxDecoration(
+        color: isSelected ? tokens.menuSelected : Colors.transparent,
+        borderRadius: BorderRadius.circular(tokens.radiusMd),
+      ),
       child: IconButton(
-        icon: Icon(item.icon, color: theme.colorScheme.onSurface, size: 24),
+        icon: Icon(item.icon, color: tokens.textPrimary, size: 24),
         onPressed: () => controller.selectMenuItem(item),
         tooltip: item.label,
       ),
@@ -149,18 +160,19 @@ class ShellPage extends StatelessWidget {
   }
 
   Widget _buildContentArea(BuildContext context, ShellController controller, ThemeData theme, AppLocalizations? localizations) {
+    final tokens = theme.extension<WeChatTokens>()!;
     final currentItem = controller.currentMenuItem.value;
     
     return Container(
-      color: theme.colorScheme.surface, // 使用surface替代background
+      color: tokens.bgLevel1,
       child: currentItem != null
           ? Builder(builder: currentItem.contentBuilder) // 显示选中的模块内容
           : Container(
-              color: theme.colorScheme.surface,
+              color: tokens.bgLevel1,
               child: Center(
                 child: Text(
                   localizations?.selectFunction ?? '请选择功能',
-                  style: TextStyle(color: theme.colorScheme.onSurface), // 使用onSurface替代onBackground
+                  style: TextStyle(color: tokens.textPrimary),
                 ),
               ),
             ),
@@ -168,10 +180,11 @@ class ShellPage extends StatelessWidget {
   }
 
   Widget _buildAssistantPanel(BuildContext context, ShellController controller, ThemeData theme) {
+    final tokens = theme.extension<WeChatTokens>()!;
     return Container(
       width: 320, // 辅助面板固定宽度
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface, // 辅助面板背景色
+        color: tokens.bgLevel1, // 辅助面板背景色
         boxShadow: [
           BoxShadow(
             color: Color.fromRGBO(0, 0, 0, 0.3),
@@ -185,12 +198,12 @@ class ShellPage extends StatelessWidget {
           // 顶部控制区 - 固定64px
           Container(
             height: 64,
-            color: theme.colorScheme.avatarAreaBackground, // 顶部控制区背景色
+            color: tokens.bgLevel2, // 顶部控制区背景色
           ),
           // 内容区域 - 自适应高度
           Expanded(
             child: Container(
-              color: theme.colorScheme.surface, // 内容区域背景色
+              color: tokens.bgLevel1, // 内容区域背景色
             ),
           ),
         ],
