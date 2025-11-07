@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
-import '../../../core/constants/ai_constants.dart';
-import '../../../core/storage/local_storage.dart';
-import '../settings/model/setting_item.dart';
+import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 
 /// AI Provider设置模块 - 演示业务模块设置注入
 class AIProviderSettings {
@@ -20,11 +17,11 @@ class AIProviderSettings {
         description: '设置OpenAI API访问密钥',
         icon: Icons.key,
         type: SettingItemType.textInput,
-        value: _getStoredValue(AIConstants.openaiApiKey) ?? '',
+        value: '',
         placeholder: '请输入OpenAI API密钥',
         onChanged: (value) {
           // 保存OpenAI API密钥
-          _saveSetting(AIConstants.openaiApiKey, value);
+          // print('OpenAI API密钥更新: $value');
         },
       ),
       SettingItem(
@@ -33,11 +30,11 @@ class AIProviderSettings {
         description: '设置OpenAI API基础URL（可选）',
         icon: Icons.link,
         type: SettingItemType.textInput,
-        value: _getStoredValue(AIConstants.openaiBaseUrl) ?? AIConstants.defaultOpenAIBaseUrl,
+        value: 'https://api.openai.com',
         placeholder: '请输入OpenAI基础URL',
         onChanged: (value) {
           // 保存OpenAI基础URL
-          _saveSetting(AIConstants.openaiBaseUrl, value);
+          // print('OpenAI基础URL更新: $value');
         },
       ),
       SettingItem(
@@ -46,11 +43,11 @@ class AIProviderSettings {
         description: '选择默认使用的AI模型',
         icon: Icons.smart_toy,
         type: SettingItemType.select,
-        value: _getStoredValue(AIConstants.selectedModel) ?? AIConstants.defaultOpenAIModel,
-        options: AIConstants.supportedModels,
+        value: 'gpt-4',
+        options: ['gpt-4', 'gpt-3.5-turbo', 'claude-3', 'gemini-pro'],
         onChanged: (value) {
           // 保存模型选择
-          _saveSetting(AIConstants.selectedModel, value);
+          // print('默认模型更新: $value');
         },
       ),
       SettingItem(
@@ -59,11 +56,11 @@ class AIProviderSettings {
         description: '设置AI回复的随机性（0-1）',
         icon: Icons.thermostat,
         type: SettingItemType.textInput,
-        value: _getStoredValue(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString(),
+        value: '0.7',
         placeholder: '请输入温度参数',
         onChanged: (value) {
           // 保存温度参数
-          _saveSetting(AIConstants.temperature, value);
+          // print('温度参数更新: $value');
         },
       ),
       const SettingItem(
@@ -77,10 +74,10 @@ class AIProviderSettings {
         description: '启用AI回复的流式显示',
         icon: Icons.stream,
         type: SettingItemType.toggle,
-        value: _getStoredValue(AIConstants.enableStreaming) ?? true,
+        value: true,
         onChanged: (value) {
           // 保存流式响应设置
-          _saveSetting(AIConstants.enableStreaming, value.toString());
+          // print('流式响应设置更新: $value');
         },
       ),
     ];
@@ -90,26 +87,5 @@ class AIProviderSettings {
   static void registerToGlobalSettings() {
     // 这个函数将在AI Chat模块注册时调用
     // 通过SettingController注册到全局设置中
-  }
-  
-  /// 获取存储的设置值
-  static dynamic _getStoredValue(String key) {
-    try {
-      final storage = Get.find<LocalStorage>();
-      return storage.get<String>(key);
-    } catch (e) {
-      return null;
-    }
-  }
-  
-  /// 保存设置到存储
-  static void _saveSetting(String key, dynamic value) {
-    try {
-      final storage = Get.find<LocalStorage>();
-      storage.set(key, value);
-    } catch (e) {
-      // 存储服务可能还未初始化
-      print('保存设置失败: $key = $value, 错误: $e');
-    }
   }
 }
