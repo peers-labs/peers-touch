@@ -6,6 +6,9 @@ import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
+import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
+import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
 
 class SettingPage extends StatelessWidget {
   final SettingController controller;
@@ -140,14 +143,32 @@ class SettingPage extends StatelessWidget {
             
             // 设置项列表（避免在此处使用嵌套Obx，直接由外层Obx驱动）
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                itemCount: currentSection.items.length,
-                itemBuilder: (context, index) {
-                  final item = currentSection.items[index];
-                  return _buildSettingItem(context, currentSection.id, item, theme);
-                },
-              ),
+              child: Builder(builder: (context) {
+                // 根据 provider_type 过滤可见项
+                final providerItem = currentSection.items.firstWhere(
+                  (i) => i.id == 'provider_type',
+                  orElse: () => const SettingItem(id: 'provider_type', title: '', type: SettingItemType.select, value: 'OpenAI'),
+                );
+                final providerName = providerItem.value?.toString() ?? 'OpenAI';
+                bool isVisible(SettingItem i) {
+                  if (i.id == 'provider_type' || i.id == 'ai_provider_header') return true;
+                  // 迁移：将“连接测试”“拉取模型”改为内联按钮，这里隐藏其独立项
+                  if (i.id == 'fetch_models' || i.id == 'test_connection') return false;
+                  final id = i.id.toLowerCase();
+                  if (id.startsWith('openai_')) return providerName == 'OpenAI';
+                  if (id.startsWith('ollama_')) return providerName == 'Ollama';
+                  return true; // 其他通用项始终可见
+                }
+                final visibleItems = currentSection.items.where(isVisible).toList();
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  itemCount: visibleItems.length,
+                  itemBuilder: (context, index) {
+                    final item = visibleItems[index];
+                    return _buildSettingItem(context, currentSection.id, item, theme);
+                  },
+                );
+              }),
             ),
           ],
         );
@@ -277,13 +298,18 @@ class SettingPage extends StatelessWidget {
   Widget _buildSelectItem(BuildContext context, String sectionId, SettingItem item, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
     final l = AppLocalizations.of(context);
+    final options = item.options ?? [];
+    final current = item.value?.toString();
+    final isValid = current != null && options.contains(current);
+    final error = controller.getItemError(sectionId, item.id);
+    final borderColor = error != null ? Colors.red : tokens.divider;
     return Container(
       margin: EdgeInsets.symmetric(vertical: tokens.spaceSm),
       padding: EdgeInsets.all(tokens.spaceSm),
       decoration: BoxDecoration(
         color: tokens.bgLevel2,
         borderRadius: BorderRadius.circular(tokens.radiusMd),
-        border: Border.all(color: tokens.divider),
+        border: Border.all(color: borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,33 +326,77 @@ class SettingPage extends StatelessWidget {
                   style: theme.textTheme.bodySmall?.copyWith(color: tokens.textSecondary),
                 ),
               ),
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(horizontal: tokens.spaceSm),
-            decoration: BoxDecoration(
-              color: tokens.bgLevel3,
-              borderRadius: BorderRadius.circular(tokens.radiusSm),
-            ),
-            child: DropdownButton<String>(
-              value: item.value?.toString(),
-              items: item.options?.map((option) {
-                return DropdownMenuItem<String>(
-                  value: option,
-                  child: Text(option, style: TextStyle(color: tokens.textPrimary)),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  controller.updateSettingValue(sectionId, item.id, value);
-                  item.onChanged?.call(value);
-                }
-              },
-              dropdownColor: tokens.bgLevel3,
-              style: TextStyle(color: tokens.textPrimary),
-              isExpanded: true,
-              underline: const SizedBox(),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: tokens.spaceSm),
+                  decoration: BoxDecoration(
+                    color: tokens.bgLevel3,
+                    borderRadius: BorderRadius.circular(tokens.radiusSm),
+                  ),
+                  child: DropdownButton<String>(
+                    value: isValid ? current : null,
+                    items: options.map((option) {
+                      return DropdownMenuItem<String>(
+                        value: option,
+                        child: Text(option, style: TextStyle(color: tokens.textPrimary)),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        controller.updateSettingValue(sectionId, item.id, value);
+                        controller.setItemError(sectionId, item.id, null); // 选择有效项时清除错误
+                        item.onChanged?.call(value);
+                      }
+                    },
+                    dropdownColor: tokens.bgLevel3,
+                    style: TextStyle(color: tokens.textPrimary),
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                  ),
+                ),
+              ),
+              SizedBox(width: tokens.spaceSm),
+              if (item.id == 'model_selection') SizedBox(
+                height: 40,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final storage = Get.find<LocalStorage>();
+                    final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+                    final service = AIServiceFactory.fromName(provider);
+                    try {
+                      final models = await service.fetchModels();
+                      controller.updateSettingOptions(sectionId, item.id, models);
+                      final currentVal = current;
+                      if (currentVal != null && !models.contains(currentVal)) {
+                        controller.setItemError(sectionId, item.id, '当前选择的模型不在最新列表中');
+                      } else {
+                        controller.setItemError(sectionId, item.id, null);
+                      }
+                      if ((controller.getCurrentSection()?.items.firstWhere((i) => i.id == item.id).value) == null && models.isNotEmpty) {
+                        controller.updateSettingValue(sectionId, item.id, models.first);
+                      }
+                      Get.snackbar('拉取模型', '成功获取 ${models.length} 个模型');
+                    } catch (e) {
+                      Get.snackbar('拉取失败', '模型列表拉取失败：$e');
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: tokens.brandAccent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(92, 40),
+                  ),
+                  child: const Text('拉取模型'),
+                ),
+              ),
+            ],
           ),
+          if (error != null)
+            Padding(
+              padding: EdgeInsets.only(top: tokens.spaceXs),
+              child: Text(error, style: TextStyle(color: Colors.red, fontSize: 12)),
+            ),
         ],
       ),
     );
@@ -358,24 +428,52 @@ class SettingPage extends StatelessWidget {
                   style: theme.textTheme.bodySmall?.copyWith(color: tokens.textSecondary),
                 ),
               ),
-          TextField(
-            controller: TextEditingController(text: item.value?.toString() ?? ''),
-            decoration: InputDecoration(
-              hintText: _itemPlaceholder(l, item),
-              hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
-              filled: true,
-              fillColor: tokens.bgLevel3,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(tokens.radiusSm),
-                borderSide: BorderSide(color: tokens.divider),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller.getTextController(sectionId, item.id, item.value?.toString()),
+                  decoration: InputDecoration(
+                    hintText: _itemPlaceholder(l, item),
+                    hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
+                    filled: true,
+                    fillColor: tokens.bgLevel3,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(tokens.radiusSm),
+                      borderSide: BorderSide(color: tokens.divider),
+                    ),
+                    contentPadding: EdgeInsets.symmetric(horizontal: tokens.spaceSm, vertical: tokens.spaceSm),
+                  ),
+                  style: TextStyle(color: tokens.textPrimary),
+                  onChanged: (value) {
+                    controller.updateSettingValue(sectionId, item.id, value);
+                    item.onChanged?.call(value);
+                  },
+                ),
               ),
-              contentPadding: EdgeInsets.symmetric(horizontal: tokens.spaceSm, vertical: tokens.spaceSm),
-            ),
-            style: TextStyle(color: tokens.textPrimary),
-            onChanged: (value) {
-              controller.updateSettingValue(sectionId, item.id, value);
-              item.onChanged?.call(value);
-            },
+              SizedBox(width: tokens.spaceSm),
+              if (item.id == 'ollama_base_url' || item.id == 'openai_base_url')
+                SizedBox(
+                  height: 40,
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      final storage = Get.find<LocalStorage>();
+                      final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+                      final service = AIServiceFactory.fromName(provider);
+                      try {
+                        final ok = await service.testConnection();
+                        Get.snackbar('连接测试', ok ? '$provider 连接正常' : '$provider 连接失败');
+                      } catch (e) {
+                        Get.snackbar('连接失败', '连接测试异常：$e');
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(92, 40),
+                    ),
+                    child: const Text('连接测试'),
+                  ),
+                ),
+            ],
           ),
         ],
       ),

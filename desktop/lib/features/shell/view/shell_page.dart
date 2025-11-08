@@ -68,7 +68,7 @@ class ShellPage extends StatelessWidget {
   Widget _buildPrimaryMenuBar(BuildContext context, ShellController controller, ThemeData theme) {
     final tokens = theme.extension<WeChatTokens>()!;
     return Container(
-      width: 64, // 一级菜单栏固定宽度
+      width: tokens.menuBarWidth, // 一级菜单栏固定宽度（来自主题tokens，避免硬编码）
       decoration: BoxDecoration(
         color: tokens.bgLevel2, // 功能区背景色
         border: Border(right: BorderSide(color: tokens.divider, width: 1)),
@@ -144,17 +144,30 @@ class ShellPage extends StatelessWidget {
 
   Widget _buildMenuIcon(BuildContext context, PrimaryMenuItem item, bool isSelected, ShellController controller, ThemeData theme) {
     final tokens = theme.extension<WeChatTokens>()!;
-    return Container(
-      height: 56, // 菜单图标固定高度
-      margin: EdgeInsets.symmetric(vertical: tokens.spaceXs, horizontal: tokens.spaceXs),
-      decoration: BoxDecoration(
-        color: isSelected ? tokens.menuSelected : Colors.transparent,
-        borderRadius: BorderRadius.circular(tokens.radiusMd),
-      ),
-      child: IconButton(
-        icon: Icon(item.icon, color: tokens.textPrimary, size: 24),
-        onPressed: () => controller.selectMenuItem(item),
-        tooltip: item.label,
+    final double barWidth = tokens.menuBarWidth; // 从 tokens 读取栏宽
+    final double boxSize = barWidth * tokens.menuItemBoxRatio; // 黄金分割比例尺寸（从 tokens 读取）
+    final double horizontalMargin = (barWidth - boxSize) / 2; // 居中，左右留白更大
+    return Tooltip(
+      message: item.label,
+      child: Container(
+        height: boxSize,
+        width: boxSize,
+        margin: EdgeInsets.symmetric(vertical: tokens.spaceXs, horizontal: horizontalMargin),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(tokens.radiusMd),
+          border: Border.all(
+            color: isSelected ? tokens.divider : Colors.transparent,
+            width: 1,
+          ),
+        ),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => controller.selectMenuItem(item),
+          child: Center(
+            child: Icon(item.icon, color: tokens.textPrimary, size: 22),
+          ),
+        ),
       ),
     );
   }

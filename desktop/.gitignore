@@ -69,3 +69,7 @@ app.*.map.json
 *.dll
 *.obj
 *.ilk
+
+android/
+ios/
+web/
