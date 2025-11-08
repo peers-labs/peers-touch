@@ -3,10 +3,18 @@ import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
 import './ai_provider_settings.dart';
+import 'package:peers_touch_desktop/features/ai_chat/ai_chat_binding.dart';
+import 'package:peers_touch_desktop/features/ai_chat/view/ai_chat_page.dart';
+import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
+import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 
 /// AI对话模块 - 演示模块自主注册和设置注入
 class AIChatModule {
   static void register() {
+    // 注入控制器依赖
+    AIChatBinding().dependencies();
     // 注册到头部区域（业务功能）
     PrimaryMenuManager.registerItem(PrimaryMenuItem(
       id: 'ai_chat',
@@ -14,7 +22,7 @@ class AIChatModule {
       icon: Icons.chat,
       isHead: true,    // 头部区域
       order: 100,      // 头部区域内的排序
-      contentBuilder: (context) => AIChatContentPage(),
+      contentBuilder: (context) => const AIChatPage(),
     ));
     
     // 注册AI Provider设置到全局设置管理器
@@ -36,6 +44,36 @@ class AIChatModule {
            'AI服务提供商',
            AIProviderSettings.getSettings(),
          );
+
+         // 注册完成后，自动拉取当前提供商的模型以用于默认模型的自动加载
+         Future.microtask(() async {
+           final storage = Get.find<LocalStorage>();
+           final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+           final service = AIServiceFactory.fromName(provider);
+           try {
+             final models = await service.fetchModels();
+             settingController.updateSettingOptions('module_ai_provider', 'model_selection', models);
+             final section = settingController.sections.firstWhere(
+               (s) => s.id == 'module_ai_provider',
+               orElse: () => settingController.sections.first,
+             );
+             final item = section.items.firstWhere(
+               (i) => i.id == 'model_selection',
+               orElse: () => const SettingItem(id: 'model_selection', title: '', type: SettingItemType.select),
+             );
+             final current = item.value?.toString();
+             if (current != null && !models.contains(current)) {
+               settingController.setItemError('module_ai_provider', 'model_selection', '当前选择的模型不在最新列表中');
+             } else {
+               settingController.setItemError('module_ai_provider', 'model_selection', null);
+             }
+             if (models.isNotEmpty && (current == null || !models.contains(current))) {
+               settingController.updateSettingValue('module_ai_provider', 'model_selection', models.first);
+               final key = provider == 'Ollama' ? AIConstants.selectedModelOllama : AIConstants.selectedModelOpenAI;
+               storage.set(key, models.first);
+             }
+           } catch (_) {}
+         });
        } catch (e) {
           // 设置控制器可能还未初始化，在实际应用中应该有更好的错误处理
           // print('设置控制器未找到，AI Provider设置注册失败: $e');
@@ -44,70 +82,4 @@ class AIChatModule {
    }
 }
 
-/// AI对话内容页面 - 模块自己管理完整界面
-class AIChatContentPage extends StatelessWidget {
-  const AIChatContentPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        // 二级导航栏 - 模块自己管理
-        Container(
-          width: 280, // 二级导航固定宽度
-          decoration: const BoxDecoration(
-            color: Color(0xFF252525),
-            border: Border(right: BorderSide(color: Color(0xFF2D2D2D), width: 1)),
-          ),
-          child: Column(
-            children: [
-              // 顶部搜索区域
-              Container(
-                height: 120,
-                color: const Color(0xFF2D2D2D),
-                child: const Center(child: Text('AI对话导航', style: TextStyle(color: Colors.white))),
-              ),
-              // 会话列表
-              Expanded(
-                child: Container(
-                  color: const Color(0xFF252525),
-                  child: const Center(child: Text('会话列表', style: TextStyle(color: Colors.white))),
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        // 主内容区 - 模块自己管理
-        Expanded(
-          child: Container(
-            color: const Color(0xFF1A1A1A),
-            child: Column(
-              children: [
-                // 标题栏
-                Container(
-                  height: 64,
-                  color: const Color(0xFF252525),
-                  child: const Center(child: Text('AI对话', style: TextStyle(color: Colors.white))),
-                ),
-                // 消息区域
-                Expanded(
-                  child: Container(
-                    color: const Color(0xFF1A1A1A),
-                    child: const Center(child: Text('消息区域', style: TextStyle(color: Colors.white))),
-                  ),
-                ),
-                // 输入区域
-                Container(
-                  height: 120,
-                  color: const Color(0xFF252525),
-                  child: const Center(child: Text('输入区域', style: TextStyle(color: Colors.white))),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
+// 旧占位页面已替换为正式 AIChatPage
