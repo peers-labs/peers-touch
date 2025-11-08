@@ -28,6 +28,10 @@ class LobeTokens extends ThemeExtension<LobeTokens> {
   final double spaceLg;
   final double spaceXl;
 
+  // 布局尺寸（避免硬编码）
+  final double menuBarWidth; // 一级菜单栏宽度
+  final double menuItemBoxRatio; // 菜单按钮正方形占栏宽比例（例如 0.618）
+
   const LobeTokens({
     required this.bgLevel0,
     required this.bgLevel1,
@@ -47,6 +51,8 @@ class LobeTokens extends ThemeExtension<LobeTokens> {
     required this.spaceMd,
     required this.spaceLg,
     required this.spaceXl,
+    required this.menuBarWidth,
+    required this.menuItemBoxRatio,
   });
 
   @override
@@ -69,6 +75,8 @@ class LobeTokens extends ThemeExtension<LobeTokens> {
     double? spaceMd,
     double? spaceLg,
     double? spaceXl,
+    double? menuBarWidth,
+    double? menuItemBoxRatio,
   }) {
     return LobeTokens(
       bgLevel0: bgLevel0 ?? this.bgLevel0,
@@ -89,6 +97,8 @@ class LobeTokens extends ThemeExtension<LobeTokens> {
       spaceMd: spaceMd ?? this.spaceMd,
       spaceLg: spaceLg ?? this.spaceLg,
       spaceXl: spaceXl ?? this.spaceXl,
+      menuBarWidth: menuBarWidth ?? this.menuBarWidth,
+      menuItemBoxRatio: menuItemBoxRatio ?? this.menuItemBoxRatio,
     );
   }
 
@@ -114,6 +124,8 @@ class LobeTokens extends ThemeExtension<LobeTokens> {
       spaceMd: _lerpDouble(spaceMd, other.spaceMd, t),
       spaceLg: _lerpDouble(spaceLg, other.spaceLg, t),
       spaceXl: _lerpDouble(spaceXl, other.spaceXl, t),
+      menuBarWidth: _lerpDouble(menuBarWidth, other.menuBarWidth, t),
+      menuItemBoxRatio: _lerpDouble(menuItemBoxRatio, other.menuItemBoxRatio, t),
     );
   }
 
@@ -139,6 +151,8 @@ class LobeTokens extends ThemeExtension<LobeTokens> {
     spaceMd: 14,
     spaceLg: 20,
     spaceXl: 28,
+    menuBarWidth: 64,
+    menuItemBoxRatio: 0.618,
   );
 
   // 预设：LobeHub 暗色
@@ -161,5 +175,7 @@ class LobeTokens extends ThemeExtension<LobeTokens> {
     spaceMd: 14,
     spaceLg: 20,
     spaceXl: 28,
+    menuBarWidth: 64,
+    menuItemBoxRatio: 0.618,
   );
 }

@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:flutter/material.dart';
 import 'package:peers_touch_desktop/core/services/setting_manager.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
@@ -9,6 +10,8 @@ class SettingController extends GetxController {
   final SettingManager _settingManager = SettingManager();
   late final LocalStorage _localStorage;
   late final SecureStorage _secureStorage;
+  final Map<String, TextEditingController> _textControllers = {};
+  final Map<String, String?> _itemErrors = {};
   
   // 当前选中的设置分区
   final selectedSection = Rx<String>('general');
@@ -76,7 +79,7 @@ class SettingController extends GetxController {
     }
     return results;
   }
-  
+
   /// 更新设置项值
   void updateSettingValue(String sectionId, String itemId, dynamic value) {
     // 更新内存中的值
@@ -110,6 +113,63 @@ class SettingController extends GetxController {
     } else {
       _localStorage.set(key, value);
     }
+  }
+
+  /// 更新设置项的备选项（用于 select 类型动态选项）
+  void updateSettingOptions(String sectionId, String itemId, List<String> options) {
+    final idx = sections.indexWhere((s) => s.id == sectionId);
+    if (idx != -1) {
+      final section = sections[idx];
+      final itemIdx = section.items.indexWhere((i) => i.id == itemId);
+      if (itemIdx != -1) {
+        final currentItem = section.items[itemIdx];
+        section.items[itemIdx] = SettingItem(
+          id: currentItem.id,
+          title: currentItem.title,
+          description: currentItem.description,
+          icon: currentItem.icon,
+          type: currentItem.type,
+          value: currentItem.value,
+          options: options,
+          placeholder: currentItem.placeholder,
+          onTap: currentItem.onTap,
+          onChanged: currentItem.onChanged,
+        );
+        sections.refresh();
+      }
+    }
+  }
+
+  /// 设置或清除设置项错误态
+  void setItemError(String sectionId, String itemId, String? error) {
+    final key = _storageKey(sectionId, itemId);
+    _itemErrors[key] = error;
+    sections.refresh();
+  }
+
+  /// 获取设置项错误信息（null 表示无错误）
+  String? getItemError(String sectionId, String itemId) {
+    final key = _storageKey(sectionId, itemId);
+    return _itemErrors[key];
+  }
+
+  /// 获取或创建文本输入控制器，避免因重建导致光标跳转
+  TextEditingController getTextController(String sectionId, String itemId, String? initialValue) {
+    final key = _storageKey(sectionId, itemId);
+    final existing = _textControllers[key];
+    if (existing != null) return existing;
+    final ctrl = TextEditingController(text: initialValue ?? '');
+    _textControllers[key] = ctrl;
+    return ctrl;
+  }
+
+  @override
+  void onClose() {
+    for (final c in _textControllers.values) {
+      c.dispose();
+    }
+    _textControllers.clear();
+    super.onClose();
   }
   
   /// 注册业务模块设置
@@ -149,6 +209,11 @@ class SettingController extends GetxController {
                     onChanged: item.onChanged,
                   );
                   sections.refresh();
+                  if (item.type == SettingItemType.textInput) {
+                    final ctrlKey = _storageKey(section.id, item.id);
+                    final ctrl = _textControllers[ctrlKey];
+                    if (ctrl != null) ctrl.text = s.toString();
+                  }
                 }
               }
             }
@@ -168,6 +233,12 @@ class SettingController extends GetxController {
               onTap: item.onTap,
               onChanged: item.onChanged,
             );
+            // 同步文本输入的控制器内容
+            if (item.type == SettingItemType.textInput) {
+              final ctrlKey = _storageKey(section.id, item.id);
+              final ctrl = _textControllers[ctrlKey];
+              if (ctrl != null) ctrl.text = stored.toString();
+            }
           }
         }
       }

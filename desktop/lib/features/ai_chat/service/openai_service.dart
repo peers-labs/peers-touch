@@ -4,9 +4,10 @@ import 'package:get/get.dart';
 import '../../../core/constants/ai_constants.dart';
 import '../../../core/storage/local_storage.dart';
 import '../../../core/services/logging_service.dart';
+import 'ai_service.dart';
 
 /// OpenAI服务实现
-class OpenAIService {
+class OpenAIService implements AIService {
   final LocalStorage _storage = Get.find<LocalStorage>();
   
   /// 获取配置的Dio实例
@@ -26,12 +27,38 @@ class OpenAIService {
   }
   
   /// 检查配置是否有效
+  @override
   bool get isConfigured {
     final apiKey = _storage.get<String>(AIConstants.openaiApiKey) ?? '';
     return apiKey.isNotEmpty;
   }
   
+  /// 拉取可用模型列表
+  @override
+  Future<List<String>> fetchModels() async {
+    if (!isConfigured) {
+      throw Exception('OpenAI API密钥未配置');
+    }
+
+    try {
+      final response = await _dio.get('/v1/models');
+      final data = response.data;
+      if (data is Map<String, dynamic> && data['data'] is List) {
+        final list = (data['data'] as List)
+            .map((e) => (e as Map<String, dynamic>)['id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toList();
+        return list;
+      }
+      return [];
+    } catch (e) {
+      LoggingService.error('OpenAI 模型拉取失败', e);
+      rethrow;
+    }
+  }
+
   /// 发送聊天消息（流式响应）
+  @override
   Stream<String> sendMessageStream({
     required String message,
     String? model,
@@ -41,7 +68,10 @@ class OpenAIService {
       throw Exception('OpenAI API密钥未配置');
     }
     
-    final selectedModel = model ?? _storage.get<String>(AIConstants.selectedModel) ?? AIConstants.defaultOpenAIModel;
+    final selectedModel = model ??
+        _storage.get<String>(AIConstants.selectedModelOpenAI) ??
+        _storage.get<String>(AIConstants.selectedModel) ??
+        AIConstants.defaultOpenAIModel;
     final selectedTemperature = temperature ?? double.tryParse(_storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString()) ?? AIConstants.defaultTemperature;
     
     try {
@@ -89,6 +119,7 @@ class OpenAIService {
   }
   
   /// 发送聊天消息（非流式响应）
+  @override
   Future<String> sendMessage({
     required String message,
     String? model,
@@ -98,7 +129,10 @@ class OpenAIService {
       throw Exception('OpenAI API密钥未配置');
     }
     
-    final selectedModel = model ?? _storage.get<String>(AIConstants.selectedModel) ?? AIConstants.defaultOpenAIModel;
+    final selectedModel = model ??
+        _storage.get<String>(AIConstants.selectedModelOpenAI) ??
+        _storage.get<String>(AIConstants.selectedModel) ??
+        AIConstants.defaultOpenAIModel;
     final selectedTemperature = temperature ?? double.tryParse(_storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString()) ?? AIConstants.defaultTemperature;
     
     try {
@@ -123,6 +157,7 @@ class OpenAIService {
   }
   
   /// 测试API连接
+  @override
   Future<bool> testConnection() async {
     if (!isConfigured) {
       return false;

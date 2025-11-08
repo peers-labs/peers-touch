@@ -28,6 +28,10 @@ class WeChatTokens extends ThemeExtension<WeChatTokens> {
   final double spaceLg;
   final double spaceXl;
 
+  // 布局尺寸（避免硬编码）
+  final double menuBarWidth; // 一级菜单栏宽度
+  final double menuItemBoxRatio; // 菜单按钮正方形占栏宽比例（例如 0.618）
+
   const WeChatTokens({
     required this.bgLevel0,
     required this.bgLevel1,
@@ -47,6 +51,8 @@ class WeChatTokens extends ThemeExtension<WeChatTokens> {
     required this.spaceMd,
     required this.spaceLg,
     required this.spaceXl,
+    required this.menuBarWidth,
+    required this.menuItemBoxRatio,
   });
 
   @override
@@ -69,6 +75,8 @@ class WeChatTokens extends ThemeExtension<WeChatTokens> {
     double? spaceMd,
     double? spaceLg,
     double? spaceXl,
+    double? menuBarWidth,
+    double? menuItemBoxRatio,
   }) {
     return WeChatTokens(
       bgLevel0: bgLevel0 ?? this.bgLevel0,
@@ -89,6 +97,8 @@ class WeChatTokens extends ThemeExtension<WeChatTokens> {
       spaceMd: spaceMd ?? this.spaceMd,
       spaceLg: spaceLg ?? this.spaceLg,
       spaceXl: spaceXl ?? this.spaceXl,
+      menuBarWidth: menuBarWidth ?? this.menuBarWidth,
+      menuItemBoxRatio: menuItemBoxRatio ?? this.menuItemBoxRatio,
     );
   }
 
@@ -114,6 +124,8 @@ class WeChatTokens extends ThemeExtension<WeChatTokens> {
       spaceMd: lerpDouble(spaceMd, other.spaceMd, t),
       spaceLg: lerpDouble(spaceLg, other.spaceLg, t),
       spaceXl: lerpDouble(spaceXl, other.spaceXl, t),
+      menuBarWidth: lerpDouble(menuBarWidth, other.menuBarWidth, t),
+      menuItemBoxRatio: lerpDouble(menuItemBoxRatio, other.menuItemBoxRatio, t),
     );
   }
 
@@ -139,6 +151,8 @@ class WeChatTokens extends ThemeExtension<WeChatTokens> {
     spaceMd: 12,
     spaceLg: 16,
     spaceXl: 24,
+    menuBarWidth: 64,
+    menuItemBoxRatio: 0.618,
   );
 
   // 预设：浅色（保持默认，便于统一读取）
@@ -161,5 +175,7 @@ class WeChatTokens extends ThemeExtension<WeChatTokens> {
     spaceMd: 12,
     spaceLg: 16,
     spaceXl: 24,
+    menuBarWidth: 64,
+    menuItemBoxRatio: 0.618,
   );
 }
