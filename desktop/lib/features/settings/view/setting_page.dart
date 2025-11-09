@@ -3,12 +3,16 @@ import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/app_theme.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
+import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
+import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 
 class SettingPage extends StatelessWidget {
   final SettingController controller;
@@ -20,18 +24,22 @@ class SettingPage extends StatelessWidget {
     final theme = Theme.of(context);
     final tokens = theme.extension<LobeTokens>()!;
 
-    return Container(
-      color: tokens.bgLevel1,
-      child: Row(
-        children: [
-          // 左侧设置分区导航
-          _buildSettingNavigation(context, theme),
-          
-          // 右侧设置内容
-          Expanded(
-            child: _buildSettingContent(context, theme),
-          ),
-        ],
+    // 统一使用三段式骨架：左（设置导航）+ 中（设置内容）；右侧由 ShellPage 控制
+    return ShellThreePane(
+      leftBuilder: (context) => _buildSettingNavigation(context, theme),
+      centerBuilder: (context) => _buildSettingContent(context, theme),
+      // 左侧宽度与项目常量保持一致；滚动由内部 ListView 管理，避免嵌套滚动冲突
+      leftProps: PaneProps(
+        width: UIKit.secondaryNavWidth,
+        minWidth: 220,
+        maxWidth: 360,
+        scrollPolicy: ScrollPolicy.none,
+        horizontalPolicy: ScrollPolicy.none,
+      ),
+      // 中心区同理，内部自管理滚动
+      centerProps: const PaneProps(
+        scrollPolicy: ScrollPolicy.none,
+        horizontalPolicy: ScrollPolicy.none,
       ),
     );
   }
@@ -39,25 +47,30 @@ class SettingPage extends StatelessWidget {
   Widget _buildSettingNavigation(BuildContext context, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
     final l = AppLocalizations.of(context);
+    final shell = Get.find<ShellController>();
+    final showTitle = shell.currentMenuItem.value?.toDIsplayPageTitle ?? false;
     return Container(
-      width: 240,
       color: tokens.bgLevel2,
       child: Column(
         children: [
-          // 标题
-          Container(
-            height: 64,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            alignment: Alignment.centerLeft,
-            child: Text(
-              l.settingsTitle,
-              style: theme.textTheme.headlineSmall?.copyWith(color: tokens.textPrimary),
+          if (showTitle)
+            Container(
+              height: UIKit.topBarHeight,
+              padding: EdgeInsets.symmetric(horizontal: UIKit.spaceLg(context)),
+              alignment: Alignment.centerLeft,
+              child: Text(
+                l.settingsTitle,
+                style: theme.textTheme.headlineSmall?.copyWith(color: tokens.textPrimary),
+              ),
             ),
-          ),
           // 左侧搜索框（模块内搜索，位于二级菜单顶部）
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spaceSm),
-            child: _buildLeftSearchBar(context, theme),
+            padding: EdgeInsets.symmetric(horizontal: UIKit.spaceMd(context)),
+            child: FrameActionCombo(
+              hintText: '搜索设置',
+              prefixIcon: Icons.search,
+              onChanged: controller.setSearchQuery,
+            ),
           ),
           
           // 分区列表
@@ -132,8 +145,8 @@ class SettingPage extends StatelessWidget {
           children: [
             // 分区标题
             Container(
-              height: 64,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              height: UIKit.topBarHeight,
+              padding: EdgeInsets.symmetric(horizontal: UIKit.spaceXl(context)),
               alignment: Alignment.centerLeft,
               child: Text(
                 _sectionTitle(l, currentSection),
@@ -161,7 +174,7 @@ class SettingPage extends StatelessWidget {
                 }
                 final visibleItems = currentSection.items.where(isVisible).toList();
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: EdgeInsets.symmetric(horizontal: UIKit.spaceXl(context)),
                   itemCount: visibleItems.length,
                   itemBuilder: (context, index) {
                     final item = visibleItems[index];
@@ -176,26 +189,7 @@ class SettingPage extends StatelessWidget {
     );
   }
 
-  Widget _buildLeftSearchBar(BuildContext context, ThemeData theme) {
-    final tokens = theme.extension<LobeTokens>()!;
-    return TextField(
-      decoration: InputDecoration(
-        hintText: '搜索设置',
-        hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
-        filled: true,
-        fillColor: tokens.bgLevel3,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(tokens.radiusSm),
-          borderSide: BorderSide(color: tokens.divider),
-        ),
-        contentPadding: EdgeInsets.symmetric(horizontal: tokens.spaceSm, vertical: tokens.spaceSm),
-        prefixIcon: Icon(Icons.search, color: tokens.textSecondary),
-        isDense: true,
-      ),
-      style: TextStyle(color: tokens.textPrimary),
-      onChanged: controller.setSearchQuery,
-    );
-  }
+  // 旧搜索框方法已由通用组件替代
 
   Widget _buildSearchResultTile(BuildContext context, SettingSearchResult r, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
@@ -302,7 +296,7 @@ class SettingPage extends StatelessWidget {
     final current = item.value?.toString();
     final isValid = current != null && options.contains(current);
     final error = controller.getItemError(sectionId, item.id);
-    final borderColor = error != null ? Colors.red : tokens.divider;
+    final borderColor = error != null ? theme.colorScheme.error : tokens.divider;
     return Container(
       margin: EdgeInsets.symmetric(vertical: tokens.spaceSm),
       padding: EdgeInsets.all(tokens.spaceSm),
@@ -335,59 +329,28 @@ class SettingPage extends StatelessWidget {
                     color: tokens.bgLevel3,
                     borderRadius: BorderRadius.circular(tokens.radiusSm),
                   ),
-                  child: DropdownButton<String>(
-                    value: isValid ? current : null,
-                    items: options.map((option) {
-                      return DropdownMenuItem<String>(
-                        value: option,
-                        child: Text(option, style: TextStyle(color: tokens.textPrimary)),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        controller.updateSettingValue(sectionId, item.id, value);
-                        controller.setItemError(sectionId, item.id, null); // 选择有效项时清除错误
-                        item.onChanged?.call(value);
-                      }
-                    },
-                    dropdownColor: tokens.bgLevel3,
-                    style: TextStyle(color: tokens.textPrimary),
-                    isExpanded: true,
-                    underline: const SizedBox(),
+                  child: ExcludeSemantics(
+                    child: DropdownButton<String>(
+                      value: isValid ? current : null,
+                      items: options.map((option) {
+                        return DropdownMenuItem<String>(
+                          value: option,
+                          child: Text(option, style: TextStyle(color: tokens.textPrimary)),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          controller.updateSettingValue(sectionId, item.id, value);
+                          controller.setItemError(sectionId, item.id, null); // 选择有效项时清除错误
+                          item.onChanged?.call(value);
+                        }
+                      },
+                      dropdownColor: tokens.bgLevel3,
+                      style: TextStyle(color: tokens.textPrimary),
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                    ),
                   ),
-                ),
-              ),
-              SizedBox(width: tokens.spaceSm),
-              if (item.id == 'model_selection') SizedBox(
-                height: 40,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    final storage = Get.find<LocalStorage>();
-                    final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
-                    final service = AIServiceFactory.fromName(provider);
-                    try {
-                      final models = await service.fetchModels();
-                      controller.updateSettingOptions(sectionId, item.id, models);
-                      final currentVal = current;
-                      if (currentVal != null && !models.contains(currentVal)) {
-                        controller.setItemError(sectionId, item.id, '当前选择的模型不在最新列表中');
-                      } else {
-                        controller.setItemError(sectionId, item.id, null);
-                      }
-                      if ((controller.getCurrentSection()?.items.firstWhere((i) => i.id == item.id).value) == null && models.isNotEmpty) {
-                        controller.updateSettingValue(sectionId, item.id, models.first);
-                      }
-                      Get.snackbar('拉取模型', '成功获取 ${models.length} 个模型');
-                    } catch (e) {
-                      Get.snackbar('拉取失败', '模型列表拉取失败：$e');
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: tokens.brandAccent,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(92, 40),
-                  ),
-                  child: const Text('拉取模型'),
                 ),
               ),
             ],
@@ -395,7 +358,10 @@ class SettingPage extends StatelessWidget {
           if (error != null)
             Padding(
               padding: EdgeInsets.only(top: tokens.spaceXs),
-              child: Text(error, style: TextStyle(color: Colors.red, fontSize: 12)),
+              child: Text(
+                error,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+              ),
             ),
         ],
       ),
@@ -431,48 +397,78 @@ class SettingPage extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: controller.getTextController(sectionId, item.id, item.value?.toString()),
-                  decoration: InputDecoration(
-                    hintText: _itemPlaceholder(l, item),
-                    hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
-                    filled: true,
-                    fillColor: tokens.bgLevel3,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(tokens.radiusSm),
-                      borderSide: BorderSide(color: tokens.divider),
+                child: Obx(() {
+                  final isBackend = item.id == 'backend_url';
+                  final verified = isBackend ? controller.backendVerified.value : true;
+                  final OutlineInputBorder normalBorder = UIKit.inputOutlineBorder(context);
+                  final OutlineInputBorder focusedBorder = UIKit.inputFocusedBorder(context);
+                  final OutlineInputBorder transparentBorder = OutlineInputBorder(
+                    borderSide: const BorderSide(color: Colors.transparent, width: UIKit.dividerThickness),
+                    borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
+                  );
+                  return TextField(
+                    controller: controller.getTextController(sectionId, item.id, item.value?.toString()),
+                    decoration: InputDecoration(
+                      hintText: _itemPlaceholder(l, item),
+                      hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
+                      filled: true,
+                      fillColor: UIKit.inputFillLight(context),
+                      border: verified ? normalBorder : transparentBorder,
+                      enabledBorder: verified ? normalBorder : transparentBorder,
+                      focusedBorder: verified ? focusedBorder : transparentBorder,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: UIKit.spaceSm(context),
+                        vertical: UIKit.spaceSm(context),
+                      ),
                     ),
-                    contentPadding: EdgeInsets.symmetric(horizontal: tokens.spaceSm, vertical: tokens.spaceSm),
-                  ),
-                  style: TextStyle(color: tokens.textPrimary),
-                  onChanged: (value) {
-                    controller.updateSettingValue(sectionId, item.id, value);
-                    item.onChanged?.call(value);
-                  },
-                ),
-              ),
-              SizedBox(width: tokens.spaceSm),
-              if (item.id == 'ollama_base_url' || item.id == 'openai_base_url')
-                SizedBox(
-                  height: 40,
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      final storage = Get.find<LocalStorage>();
-                      final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
-                      final service = AIServiceFactory.fromName(provider);
-                      try {
-                        final ok = await service.testConnection();
-                        Get.snackbar('连接测试', ok ? '$provider 连接正常' : '$provider 连接失败');
-                      } catch (e) {
-                        Get.snackbar('连接失败', '连接测试异常：$e');
-                      }
+                    style: TextStyle(color: tokens.textPrimary),
+                    onChanged: (value) {
+                      controller.updateSettingValue(sectionId, item.id, value);
+                      item.onChanged?.call(value);
                     },
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(92, 40),
+                  );
+                }),
+              ),
+              if (item.id == 'backend_url') ...[
+                SizedBox(width: UIKit.spaceSm(context)),
+                Container(
+                  height: UIKit.controlHeightMd,
+                  padding: EdgeInsets.symmetric(horizontal: UIKit.spaceSm(context)),
+                  decoration: BoxDecoration(
+                    color: tokens.bgLevel3,
+                    borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
+                  ),
+                  child: Obx(() => DropdownButton<String>(
+                        value: controller.backendTestPath.value,
+                        items: const [
+                          DropdownMenuItem<String>(value: 'Ping', child: Text('Ping')),
+                          DropdownMenuItem<String>(value: 'Health', child: Text('Health')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) controller.backendTestPath.value = v;
+                        },
+                        dropdownColor: tokens.bgLevel3,
+                        style: TextStyle(color: tokens.textPrimary),
+                        underline: const SizedBox(),
+                      )),
+                ),
+                SizedBox(width: UIKit.spaceSm(context)),
+                SizedBox(
+                  height: UIKit.controlHeightMd,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final input = controller
+                          .getTextController(sectionId, item.id, item.value?.toString())
+                          .text;
+                      await controller.testBackendAddress(input);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: Size(UIKit.buttonMinWidthSm, UIKit.controlHeightMd),
                     ),
-                    child: const Text('连接测试'),
+                    child: const Text('测试'),
                   ),
                 ),
+              ],
             ],
           ),
         ],
@@ -488,8 +484,8 @@ class SettingPage extends StatelessWidget {
       child: ElevatedButton(
         onPressed: item.onTap,
         style: ElevatedButton.styleFrom(
-          backgroundColor: tokens.brandAccent,
-          foregroundColor: Colors.white,
+          backgroundColor: theme.colorScheme.primary,
+          foregroundColor: theme.colorScheme.onPrimary,
         ),
         child: Text(_itemTitle(l, item)),
       ),

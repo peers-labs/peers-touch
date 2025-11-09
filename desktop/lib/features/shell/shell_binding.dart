@@ -3,6 +3,8 @@ import 'controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/settings/settings_module.dart';
 // 同步注册 AIChat 模块示例
 import 'package:peers_touch_desktop/features/ai_chat/ai_chat_module.dart';
+import 'package:peers_touch_desktop/features/profile/profile_module.dart';
+import 'package:peers_touch_desktop/features/peers_admin/peers_admin_module.dart';
 
 class ShellBinding extends Bindings {
   @override
@@ -12,6 +14,10 @@ class ShellBinding extends Bindings {
     SettingsModule.register();
     // 业务模块示例：AI对话（头部区域）
     AIChatModule.register();
+    // 业务模块：个人主页（头部区域，含头像块点击）
+    ProfileModule.register();
+    // 业务模块：Peers Admin（头部区域）
+    PeersAdminModule.register();
 
     // 再注入 ShellController，确保其读取到已注册的菜单项
     Get.put<ShellController>(ShellController(), permanent: true);

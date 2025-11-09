@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:dio/dio.dart';
-import '../network_status_service.dart';
+import 'package:peers_touch_desktop/core/network/network_status_service.dart';
 
 class RetryInterceptor extends Interceptor {
   final Dio dio;

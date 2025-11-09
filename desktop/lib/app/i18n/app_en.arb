@@ -26,4 +26,35 @@
   "openaiBaseUrlPlaceholder": "Enter OpenAI base URL",
   "defaultModel": "Default Model",
   "defaultModelDescription": "Choose the default AI model"
+  ,
+  "chatSearchSessionsPlaceholder": "Search conversations",
+  "chatNewConversation": "New Chat",
+  "chatSessionActions": "Conversation actions",
+  "rename": "Rename",
+  "delete": "Delete",
+  "chatTopicHistory": "Topic History",
+  "chatAddTopic": "Add Topic",
+  "chatTopicActions": "Topic actions",
+  "aiModelLabel": "Model:",
+  "toggleTopicPanel": "Show/Hide topic panel (Ctrl+Shift+T)",
+  "sharePlaceholder": "Share (placeholder)",
+  "layoutTogglePlaceholder": "Layout toggle (placeholder)",
+  "moreMenuPlaceholder": "More menu (placeholder)",
+  "sendingIndicator": "Sending...",
+  "chatDefaultTitle": "Just Chat",
+  "renameSessionTitle": "Rename Conversation",
+  "renameTopicTitle": "Rename Topic",
+  "inputNewNamePlaceholder": "Enter new name",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "deleteSessionTitle": "Delete Conversation",
+  "deleteSessionConfirm": "Delete conversation {sessionTitle} and all messages?",
+  "@deleteSessionConfirm": {
+    "placeholders": {
+      "sessionTitle": {
+        "type": "String",
+        "example": "My Chat"
+      }
+    }
+  }
 }
