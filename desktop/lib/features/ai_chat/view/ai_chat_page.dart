@@ -1,112 +1,160 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/assistant_sidebar.dart';
+import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/header_toolbar.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/message_list_view.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/chat_input_bar.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/topic_panel.dart';
+import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 
 class AIChatPage extends GetView<AIChatController> {
   const AIChatPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 左栏：会话列表（占位）
-        SizedBox(
-          width: 240,
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        hintText: '搜索会话',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
+    return ShellThreePane(
+      leftBuilder: (ctx) => Obx(() => AssistantSidebar(
+            onNewChat: controller.newChat,
+            sessions: controller.sessions.toList(),
+            selectedId: controller.selectedSessionId.value,
+            onSelectSession: controller.selectSession,
+            onRenameSession: (ChatSession s) async {
+              final textController = TextEditingController(text: s.title);
+              final newTitle = await showDialog<String>(
+                context: ctx,
+                builder: (dctx) => AlertDialog(
+                  title: Text(AppLocalizations.of(dctx).renameSessionTitle),
+                  content: TextField(
+                    controller: textController,
+                    decoration: InputDecoration(hintText: AppLocalizations.of(dctx).inputNewNamePlaceholder),
                   ),
-                  const SizedBox(width: 12),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: ElevatedButton(
-                  onPressed: controller.newChat,
-                  child: const Text('新建对话'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dctx).pop(null),
+                      child: Text(AppLocalizations.of(dctx).cancel),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(dctx).pop(textController.text.trim()),
+                      child: Text(AppLocalizations.of(dctx).confirm),
+                    ),
+                  ],
                 ),
-              ),
-              const Divider(height: 24),
-              const Expanded(
-                child: Center(child: Text('会话列表（占位）')),
-              ),
-            ],
-          ),
-        ),
-        // 中栏：消息与输入
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 顶部：模型选择与状态
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Obx(() {
-                  final models = controller.models;
-                  final current = controller.currentModel.value;
-                  return Row(
-                    children: [
-                      const Text('模型：'),
-                      const SizedBox(width: 8),
-                      DropdownButton<String>(
-                        value: models.contains(current) ? current : null,
-                        hint: Text(current.isEmpty ? '默认' : current),
-                        items: models
-                            .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                            .toList(),
-                        onChanged: (v) {
-                          if (v != null) controller.setModel(v);
-                        },
-                      ),
-                      const Spacer(),
-                      Obx(() => controller.isSending.value
-                          ? const Text('发送中...')
-                          : const SizedBox.shrink()),
-                    ],
-                  );
-                }),
-              ),
-              const Divider(height: 1),
-              // 消息列表
-              Expanded(
-                child: Obx(() {
-                  final msgs = controller.messages;
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: msgs.length,
-                    itemBuilder: (_, i) {
-                      final m = msgs[i];
-                      final isUser = m.role == 'user';
-                      return Align(
-                        alignment:
-                            isUser ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 6),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isUser
-                                ? Colors.blue.withOpacity(0.12)
-                                : Colors.grey.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(m.content),
+              );
+              if (newTitle != null && newTitle.isNotEmpty) {
+                controller.renameSession(s.id, newTitle);
+              }
+            },
+            onDeleteSession: (ChatSession s) async {
+              final ok = await showDialog<bool>(
+                context: ctx,
+                builder: (dctx) => AlertDialog(
+                  title: Text(AppLocalizations.of(dctx).deleteSessionTitle),
+                  content: Text(AppLocalizations.of(dctx).deleteSessionConfirm(s.title)),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dctx).pop(false),
+                      child: Text(AppLocalizations.of(dctx).cancel),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(dctx).pop(true),
+                      child: Text(AppLocalizations.of(dctx).confirm),
+                    ),
+                  ],
+                ),
+              );
+              if (ok == true) {
+                controller.deleteSession(s.id);
+              }
+            },
+          )),
+      centerBuilder: (ctx) => Container(
+        color: UIKit.chatAreaBg(ctx),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+              // 顶部工具栏（在闭包内直接读取 Rx 值，避免 GetX 误用提示）
+              Obx(() {
+                final models = controller.models.toList();
+                final current = controller.currentModel.value;
+                final sending = controller.isSending.value;
+                // 计算标题为当前会话标题
+                String headerTitle = AppLocalizations.of(ctx).chatDefaultTitle;
+                final sid = controller.selectedSessionId.value;
+                if (sid != null) {
+                  final match = controller.sessions.where((e) => e.id == sid);
+                  if (match.isNotEmpty) headerTitle = match.first.title;
+                }
+                return AIChatHeaderBar(
+                  title: headerTitle,
+                  models: models,
+                  currentModel: current,
+                  onModelChanged: controller.setModel,
+                  onToggleTopicPanel: () {
+                    final shell = Get.find<ShellController>();
+                    // 若面板已打开则关闭；否则按需注入 TopicPanel
+                    if (shell.isRightPanelVisible.value) {
+                      shell.closeRightPanel();
+                    } else {
+                      shell.openRightPanelWithOptions(
+                        (ctx) => TopicPanel(
+                          topics: controller.topics.toList(),
+                          onAddTopic: () => controller.addTopic(),
+                          onDeleteTopic: controller.removeTopicAt,
+                          onSelectTopic: null,
+                          onRenameTopic: (int index) async {
+                            final old = controller.topics[index];
+                            final textController = TextEditingController(text: old);
+                            final newTitle = await showDialog<String>(
+                              context: ctx,
+                              builder: (dctx) => AlertDialog(
+                                title: Text(AppLocalizations.of(dctx).renameTopicTitle),
+                                content: TextField(
+                                  controller: textController,
+                                  decoration: InputDecoration(hintText: AppLocalizations.of(dctx).inputNewNamePlaceholder),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(dctx).pop(null),
+                                    child: Text(AppLocalizations.of(dctx).cancel),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.of(dctx).pop(textController.text.trim()),
+                                    child: Text(AppLocalizations.of(dctx).confirm),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (newTitle != null && newTitle.isNotEmpty) {
+                              controller.renameTopic(index, newTitle);
+                            }
+                          },
                         ),
+                        width: UIKit.rightPanelWidth,
+                        showCollapseButton: true,
+                        clearCenter: false,
                       );
-                    },
-                  );
+                    }
+                  },
+                  isSending: sending,
+                  onNewChat: controller.newChat,
+                );
+              }),
+              Divider(
+                height: UIKit.spaceLg(ctx),
+                thickness: UIKit.dividerThickness,
+                color: UIKit.dividerColor(ctx),
+              ),
+              // 消息列表（在闭包内读取 RxList 内容）
+              Flexible(
+                flex: 1,
+                child: Obx(() {
+                  final msgs = controller.messages.toList();
+                  return MessageListView(messages: msgs);
                 }),
               ),
               // 错误提示
@@ -114,49 +162,39 @@ class AIChatPage extends GetView<AIChatController> {
                 final err = controller.error.value;
                 if (err == null) return const SizedBox.shrink();
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: Text(err, style: const TextStyle(color: Colors.red)),
+                  padding: EdgeInsets.symmetric(
+                      horizontal: UIKit.spaceMd(ctx),
+                      vertical: UIKit.spaceXs(ctx)),
+                  child: Text(
+                    err,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: UIKit.errorColor(ctx)),
+                  ),
                 );
               }),
               // 输入框
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        minLines: 1,
-                        maxLines: 5,
-                        onChanged: controller.setInput,
-                        controller: controller.inputController,
-                        decoration: const InputDecoration(
-                          hintText: '输入消息...',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Obx(() => ElevatedButton(
-                          onPressed: controller.isSending.value ? null : controller.send,
-                          child: const Text('发送'),
-                        )),
-                  ],
-                ),
-              ),
-            ],
-          ),
+              Obx(() => ChatInputBar(
+                    controller: controller.inputController,
+                    onChanged: controller.setInput,
+                    onSend: controller.send,
+                    isSending: controller.isSending.value,
+                  )),
+          ],
         ),
-        // 右栏：占位设置/信息
-        SizedBox(
-          width: 280,
-          child: Column(
-            children: const [
-              SizedBox(height: 12),
-              Text('辅助面板（占位）'),
-            ],
-          ),
-        ),
-      ],
+      ),
+      leftProps: PaneProps(
+        width: UIKit.secondaryNavWidth,
+        minWidth: 220,
+        maxWidth: 360,
+        scrollPolicy: ScrollPolicy.none,
+        horizontalPolicy: ScrollPolicy.none,
+      ),
+      centerProps: const PaneProps(
+        scrollPolicy: ScrollPolicy.none,
+        horizontalPolicy: ScrollPolicy.none,
+      ),
     );
   }
 }

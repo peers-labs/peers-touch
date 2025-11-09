@@ -8,6 +8,7 @@ class PrimaryMenuItem {
   final bool isHead; // true=头部区域，false=尾部区域
   final int order; // 区域内的排序权重
   final WidgetBuilder contentBuilder; // 完整的模块内容页面构建器
+  final bool toDIsplayPageTitle; // 二级页是否显示功能标题（默认不显示）
 
   const PrimaryMenuItem({
     required this.id,
@@ -16,6 +17,7 @@ class PrimaryMenuItem {
     required this.isHead,
     required this.order,
     required this.contentBuilder,
+    this.toDIsplayPageTitle = false,
   });
 }
 
@@ -76,6 +78,7 @@ class PrimaryMenuManager {
       isHead: true,
       order: 0,
       contentBuilder: _dummyBuilder,
+      toDIsplayPageTitle: false,
     );
   }
 

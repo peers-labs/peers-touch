@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 
 class LoadingDialog {
   static void show([String message = 'Loading...']) {
@@ -8,16 +9,16 @@ class LoadingDialog {
       Center(
         child: Card(
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(UIKit.spaceLg(Get.context!)),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(),
+                SizedBox(
+                  width: UIKit.indicatorSizeSm,
+                  height: UIKit.indicatorSizeSm,
+                  child: const CircularProgressIndicator(),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: UIKit.spaceMd(Get.context!)),
                 Text(message),
               ],
             ),

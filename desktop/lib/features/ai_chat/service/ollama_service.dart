@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
-import '../../../core/storage/local_storage.dart';
-import '../../../core/constants/ai_constants.dart';
-import '../../../core/services/logging_service.dart';
+import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'ai_service.dart';
 
 /// Ollama 服务实现
@@ -56,6 +56,8 @@ class OllamaService implements AIService {
     required String message,
     String? model,
     double? temperature,
+    List<Map<String, dynamic>>? openAIContent,
+    List<String>? imagesBase64,
   }) async* {
     final m = model ??
         _storage.get<String>(AIConstants.selectedModelOllama) ??
@@ -66,21 +68,23 @@ class OllamaService implements AIService {
       return;
     }
     try {
+      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
       final response = await _dio.post(
         '/api/generate',
         data: {
           'model': m,
           'prompt': message,
+          'system': systemPrompt,
           'stream': true,
           if (temperature != null) 'temperature': temperature,
+          if (imagesBase64 != null && imagesBase64.isNotEmpty) 'images': imagesBase64,
         },
         options: Options(responseType: ResponseType.stream),
       );
       final body = response.data as ResponseBody;
       // 将字节流按行解码（NDJSON）
       final lineStream = body.stream
-          .cast<List<int>>()
-          .transform(utf8.decoder)
+          .map((Uint8List chunk) => utf8.decode(chunk))
           .transform(const LineSplitter());
       await for (final line in lineStream) {
         final trimmed = line.trim();
@@ -107,6 +111,8 @@ class OllamaService implements AIService {
     required String message,
     String? model,
     double? temperature,
+    List<Map<String, dynamic>>? openAIContent,
+    List<String>? imagesBase64,
   }) async {
     final m = model ??
         _storage.get<String>(AIConstants.selectedModelOllama) ??
@@ -116,13 +122,16 @@ class OllamaService implements AIService {
       return '模型未选择';
     }
     try {
+      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
       final resp = await _dio.post(
         '/api/generate',
         data: {
           'model': m,
           'prompt': message,
+          'system': systemPrompt,
           'stream': false,
           if (temperature != null) 'temperature': temperature,
+          if (imagesBase64 != null && imagesBase64.isNotEmpty) 'images': imagesBase64,
         },
       );
       final data = resp.data;

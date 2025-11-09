@@ -88,4 +88,72 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get defaultModelDescription => '选择默认使用的AI模型';
+
+  @override
+  String get chatSearchSessionsPlaceholder => '搜索会话';
+
+  @override
+  String get chatNewConversation => '新建对话';
+
+  @override
+  String get chatSessionActions => '会话操作';
+
+  @override
+  String get rename => '重命名';
+
+  @override
+  String get delete => '删除';
+
+  @override
+  String get chatTopicHistory => '历史主题';
+
+  @override
+  String get chatAddTopic => '新增主题';
+
+  @override
+  String get chatTopicActions => '主题操作';
+
+  @override
+  String get aiModelLabel => '模型：';
+
+  @override
+  String get toggleTopicPanel => '显示/隐藏主题面板（Ctrl+Shift+T）';
+
+  @override
+  String get sharePlaceholder => '分享（占位）';
+
+  @override
+  String get layoutTogglePlaceholder => '布局切换（占位）';
+
+  @override
+  String get moreMenuPlaceholder => '更多菜单（占位）';
+
+  @override
+  String get sendingIndicator => '发送中...';
+
+  @override
+  String get chatDefaultTitle => 'Just Chat';
+
+  @override
+  String get renameSessionTitle => '重命名会话';
+
+  @override
+  String get renameTopicTitle => '重命名主题';
+
+  @override
+  String get inputNewNamePlaceholder => '输入新名称';
+
+  @override
+  String get cancel => '取消';
+
+  @override
+  String get confirm => '确定';
+
+  @override
+  String get deleteSessionTitle => '删除会话';
+
+  @override
+  String deleteSessionConfirm(String sessionTitle) {
+    return '确认删除会话 $sessionTitle 及其消息？';
+  }
 }

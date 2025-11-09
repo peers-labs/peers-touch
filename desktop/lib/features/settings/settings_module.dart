@@ -17,6 +17,7 @@ class SettingsModule {
       isHead: false,   // 尾部区域
       order: 100,      // 尾部区域内的排序
       contentBuilder: (context) => const SettingsContentPage(),
+      toDIsplayPageTitle: false,
     ));
   }
 }

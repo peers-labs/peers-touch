@@ -73,3 +73,5 @@ app.*.map.json
 android/
 ios/
 web/
+
+ide-debug/

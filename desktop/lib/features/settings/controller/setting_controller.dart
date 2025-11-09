@@ -1,5 +1,7 @@
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'dart:convert';
 import 'package:peers_touch_desktop/core/services/setting_manager.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
@@ -12,6 +14,9 @@ class SettingController extends GetxController {
   late final SecureStorage _secureStorage;
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, String?> _itemErrors = {};
+  // 后端地址测试相关状态
+  final backendTestPath = 'Ping'.obs; // 可选：Ping / Health
+  final backendVerified = true.obs;   // 失败后置为 false，用于控制输入框边框
   
   // 当前选中的设置分区
   final selectedSection = Rx<String>('general');
@@ -170,6 +175,41 @@ class SettingController extends GetxController {
     }
     _textControllers.clear();
     super.onClose();
+  }
+
+  /// 规范化后端基础地址，自动补全协议与默认地址
+  String _normalizeBaseUrl(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return 'http://localhost:8080';
+    final hasScheme = trimmed.startsWith('http://') || trimmed.startsWith('https://');
+    final url = hasScheme ? trimmed : 'http://$trimmed';
+    try {
+      final uri = Uri.parse(url);
+      if (uri.scheme.isEmpty) return 'http://localhost:8080';
+      return url;
+    } catch (_) {
+      return 'http://localhost:8080';
+    }
+  }
+
+  /// 测试后端地址指定 path（Ping/Health），结果通过通知栏展示
+  Future<void> testBackendAddress(String baseUrlInput) async {
+    final base = _normalizeBaseUrl(baseUrlInput);
+    final path = backendTestPath.value == 'Health' ? '/management/health' : '/management/ping';
+    final Uri fullUri = Uri.parse(base).resolve(path);
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 8),
+        receiveTimeout: const Duration(seconds: 12),
+      ));
+      final resp = await dio.getUri(fullUri);
+      backendVerified.value = true;
+      final dataText = resp.data is String ? resp.data.toString() : jsonEncode(resp.data);
+      Get.snackbar('地址测试', '成功：$dataText');
+    } catch (e) {
+      backendVerified.value = false;
+      Get.snackbar('地址测试', '失败：$e');
+    }
   }
   
   /// 注册业务模块设置

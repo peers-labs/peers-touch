@@ -60,11 +60,24 @@ class WindowOptionsManager {
 
   /// Initialize window manager
   static Future<void> initializeWindowManager() async {
-    final windowOptions = getWindowOptions();
-    await windowManager.ensureInitialized();
-    await windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
+    // Skip window manager on web (unsupported) and mobile platforms
+    if (kIsWeb) {
+      return;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.macOS:
+      case TargetPlatform.windows:
+      case TargetPlatform.linux:
+        final windowOptions = getWindowOptions();
+        await windowManager.ensureInitialized();
+        await windowManager.waitUntilReadyToShow(windowOptions, () async {
+          await windowManager.show();
+          await windowManager.focus();
+        });
+        break;
+      default:
+        // No-op for iOS/Android
+        return;
+    }
   }
 }

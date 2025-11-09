@@ -259,6 +259,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Choose the default AI model'**
   String get defaultModelDescription;
+
+  /// No description provided for @chatSearchSessionsPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Search conversations'**
+  String get chatSearchSessionsPlaceholder;
+
+  /// No description provided for @chatNewConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'New Chat'**
+  String get chatNewConversation;
+
+  /// No description provided for @chatSessionActions.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation actions'**
+  String get chatSessionActions;
+
+  /// No description provided for @rename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get rename;
+
+  /// No description provided for @delete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get delete;
+
+  /// No description provided for @chatTopicHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Topic History'**
+  String get chatTopicHistory;
+
+  /// No description provided for @chatAddTopic.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Topic'**
+  String get chatAddTopic;
+
+  /// No description provided for @chatTopicActions.
+  ///
+  /// In en, this message translates to:
+  /// **'Topic actions'**
+  String get chatTopicActions;
+
+  /// No description provided for @aiModelLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model:'**
+  String get aiModelLabel;
+
+  /// No description provided for @toggleTopicPanel.
+  ///
+  /// In en, this message translates to:
+  /// **'Show/Hide topic panel (Ctrl+Shift+T)'**
+  String get toggleTopicPanel;
+
+  /// No description provided for @sharePlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Share (placeholder)'**
+  String get sharePlaceholder;
+
+  /// No description provided for @layoutTogglePlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Layout toggle (placeholder)'**
+  String get layoutTogglePlaceholder;
+
+  /// No description provided for @moreMenuPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'More menu (placeholder)'**
+  String get moreMenuPlaceholder;
+
+  /// No description provided for @sendingIndicator.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending...'**
+  String get sendingIndicator;
+
+  /// No description provided for @chatDefaultTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Just Chat'**
+  String get chatDefaultTitle;
+
+  /// No description provided for @renameSessionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename Conversation'**
+  String get renameSessionTitle;
+
+  /// No description provided for @renameTopicTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename Topic'**
+  String get renameTopicTitle;
+
+  /// No description provided for @inputNewNamePlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter new name'**
+  String get inputNewNamePlaceholder;
+
+  /// No description provided for @cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancel;
+
+  /// No description provided for @confirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm'**
+  String get confirm;
+
+  /// No description provided for @deleteSessionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Conversation'**
+  String get deleteSessionTitle;
+
+  /// No description provided for @deleteSessionConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete conversation {sessionTitle} and all messages?'**
+  String deleteSessionConfirm(String sessionTitle);
 }
 
 class _AppLocalizationsDelegate

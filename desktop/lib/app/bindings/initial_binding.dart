@@ -1,10 +1,10 @@
 import 'package:get/get.dart';
 
-import '../../core/network/api_client.dart';
-import '../../core/network/network_status_service.dart';
-import '../../core/storage/local_storage.dart';
-import '../../core/storage/secure_storage.dart';
-import '../../features/shared/services/user_status_service.dart';
+import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_desktop/core/network/network_status_service.dart';
+import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_desktop/features/shared/services/user_status_service.dart';
 
 /// Application dependency injection binding
 /// Focuses on GetX dependency injection registration and management

@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
-import '../../../core/constants/ai_constants.dart';
-import '../../../core/storage/local_storage.dart';
-import '../../../core/services/logging_service.dart';
+import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
+import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'ai_service.dart';
 
 /// OpenAI服务实现
@@ -63,6 +63,8 @@ class OpenAIService implements AIService {
     required String message,
     String? model,
     double? temperature,
+    List<Map<String, dynamic>>? openAIContent,
+    List<String>? imagesBase64,
   }) async* {
     if (!isConfigured) {
       throw Exception('OpenAI API密钥未配置');
@@ -75,12 +77,17 @@ class OpenAIService implements AIService {
     final selectedTemperature = temperature ?? double.tryParse(_storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString()) ?? AIConstants.defaultTemperature;
     
     try {
+      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
       final response = await _dio.post(
         '/v1/chat/completions',
         data: {
           'model': selectedModel,
           'messages': [
-            {'role': 'user', 'content': message}
+            {'role': 'system', 'content': systemPrompt},
+            {
+              'role': 'user',
+              'content': openAIContent ?? message,
+            }
           ],
           'temperature': selectedTemperature,
           'max_tokens': AIConstants.defaultMaxTokens,
@@ -124,6 +131,8 @@ class OpenAIService implements AIService {
     required String message,
     String? model,
     double? temperature,
+    List<Map<String, dynamic>>? openAIContent,
+    List<String>? imagesBase64,
   }) async {
     if (!isConfigured) {
       throw Exception('OpenAI API密钥未配置');
@@ -136,12 +145,17 @@ class OpenAIService implements AIService {
     final selectedTemperature = temperature ?? double.tryParse(_storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString()) ?? AIConstants.defaultTemperature;
     
     try {
+      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
       final response = await _dio.post(
         '/v1/chat/completions',
         data: {
           'model': selectedModel,
           'messages': [
-            {'role': 'user', 'content': message}
+            {'role': 'system', 'content': systemPrompt},
+            {
+              'role': 'user',
+              'content': openAIContent ?? message,
+            }
           ],
           'temperature': selectedTemperature,
           'max_tokens': AIConstants.defaultMaxTokens,

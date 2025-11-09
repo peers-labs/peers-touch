@@ -88,4 +88,72 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get defaultModelDescription => 'Choose the default AI model';
+
+  @override
+  String get chatSearchSessionsPlaceholder => 'Search conversations';
+
+  @override
+  String get chatNewConversation => 'New Chat';
+
+  @override
+  String get chatSessionActions => 'Conversation actions';
+
+  @override
+  String get rename => 'Rename';
+
+  @override
+  String get delete => 'Delete';
+
+  @override
+  String get chatTopicHistory => 'Topic History';
+
+  @override
+  String get chatAddTopic => 'Add Topic';
+
+  @override
+  String get chatTopicActions => 'Topic actions';
+
+  @override
+  String get aiModelLabel => 'Model:';
+
+  @override
+  String get toggleTopicPanel => 'Show/Hide topic panel (Ctrl+Shift+T)';
+
+  @override
+  String get sharePlaceholder => 'Share (placeholder)';
+
+  @override
+  String get layoutTogglePlaceholder => 'Layout toggle (placeholder)';
+
+  @override
+  String get moreMenuPlaceholder => 'More menu (placeholder)';
+
+  @override
+  String get sendingIndicator => 'Sending...';
+
+  @override
+  String get chatDefaultTitle => 'Just Chat';
+
+  @override
+  String get renameSessionTitle => 'Rename Conversation';
+
+  @override
+  String get renameTopicTitle => 'Rename Topic';
+
+  @override
+  String get inputNewNamePlaceholder => 'Enter new name';
+
+  @override
+  String get cancel => 'Cancel';
+
+  @override
+  String get confirm => 'Confirm';
+
+  @override
+  String get deleteSessionTitle => 'Delete Conversation';
+
+  @override
+  String deleteSessionConfirm(String sessionTitle) {
+    return 'Delete conversation $sessionTitle and all messages?';
+  }
 }

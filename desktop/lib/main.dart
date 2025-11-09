@@ -11,27 +11,40 @@ import 'app/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
 
 void main() async {
-  // Use static method for unified initialization - more concise usage
   final initialized = await AppInitializer.init();
-  
   if (!initialized) {
-    // Initialization failed, use logging framework to record error information
-    // In actual application, error page or popup can be displayed here
-    // Since logging system is already initialized in AppInitializer, we can use it directly
     return;
   }
-  
   runApp(const App());
 }
 
-class App extends StatelessWidget {
+class App extends StatefulWidget {
   const App({super.key});
+
+  @override
+  State<App> createState() => _AppState();
+}
+
+class _AppState extends State<App> {
+  bool _absorbing = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Allow pointer events only after the first frame to avoid early hit tests
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _absorbing = false;
+        });
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
       title: AppConstants.appName,
-      // Use Flutter official localization mechanism
       locale: const Locale('zh', 'CN'),
       fallbackLocale: const Locale('en', 'US'),
       localizationsDelegates: const [
@@ -46,6 +59,8 @@ class App extends StatelessWidget {
       initialRoute: AppRoutes.shell,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
+      // Globally absorb pointer events until the first frame is rendered
+      builder: (context, child) => AbsorbPointer(absorbing: _absorbing, child: child ?? const SizedBox.shrink()),
     );
   }
 }

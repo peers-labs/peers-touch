@@ -41,10 +41,3 @@ func GetManageHandlers() []ManageHandlerInfo {
 func HealthHandler(c context.Context, ctx *app.RequestContext) {
 	ctx.String(http.StatusOK, "hello world, health")
 }
-
-func PingHandler(c context.Context, ctx *app.RequestContext) {
-	ctx.JSON(http.StatusOK, map[string]interface{}{
-		"status":  "ok",
-		"message": "pong",
-	})
-}

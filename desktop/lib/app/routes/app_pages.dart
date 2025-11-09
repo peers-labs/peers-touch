@@ -1,12 +1,12 @@
 import 'package:get/get.dart';
 
-import '../../features/home/home_binding.dart';
-import '../../features/home/view/home_page.dart';
-import '../../features/profile/profile_binding.dart';
-import '../../features/profile/view/profile_page.dart';
-import '../../features/shell/shell_binding.dart';
-import '../../features/shell/view/shell_page.dart';
-import 'app_routes.dart';
+import 'package:peers_touch_desktop/features/home/home_binding.dart';
+import 'package:peers_touch_desktop/features/home/view/home_page.dart';
+import 'package:peers_touch_desktop/features/profile/profile_binding.dart';
+import 'package:peers_touch_desktop/features/profile/view/profile_page.dart';
+import 'package:peers_touch_desktop/features/shell/shell_binding.dart';
+import 'package:peers_touch_desktop/features/shell/view/shell_page.dart';
+import 'package:peers_touch_desktop/app/routes/app_routes.dart';
 
 class AppPages {
   static final pages = <GetPage<dynamic>>[
