@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 
-import '../../../app/routes/app_routes.dart';
-import '../../../core/components/common_button.dart';
-import '../controller/home_controller.dart';
+import 'package:peers_touch_desktop/app/routes/app_routes.dart';
+import 'package:peers_touch_desktop/core/components/common_button.dart';
+import 'package:peers_touch_desktop/features/home/controller/home_controller.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -12,17 +13,26 @@ class HomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = Get.find<HomeController>();
     return Scaffold(
-      appBar: AppBar(title: Text('home'.tr)),
+      appBar: AppBar(
+        title: Text('home'.tr),
+        actions: [
+          IconButton(
+            tooltip: 'increment',
+            icon: const Icon(Icons.add),
+            onPressed: controller.increment,
+          ),
+        ],
+      ),
       body: Obx(
         () => Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(UIKit.spaceLg(context)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('${controller.count.value}'),
-              const SizedBox(height: 12),
+              SizedBox(height: UIKit.spaceMd(context)),
               ...controller.feed.map((e) => Text(e)),
-              const SizedBox(height: 24),
+              SizedBox(height: UIKit.spaceXl(context)),
               CommonButton(
                 text: 'Go Profile',
                 onPressed: () => Get.toNamed(AppRoutes.profile),
@@ -31,10 +41,8 @@ class HomePage extends StatelessWidget {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: controller.increment,
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: null,
+      // 桌面/Web 环境下移除 FAB，避免未布局命中测试异常；将操作移至 AppBar actions。
     );
   }
 }

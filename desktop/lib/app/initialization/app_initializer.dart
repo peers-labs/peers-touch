@@ -1,8 +1,9 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get_storage/get_storage.dart';
 
-import '../../core/services/logging_service.dart';
-import '../../core/utils/window_options_manager.dart';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_desktop/core/utils/window_options_manager.dart';
 
 /// Application initializer
 /// Responsible for managing all asynchronous initialization operations, belongs to application-level core configuration
@@ -25,7 +26,7 @@ class AppInitializer {
     try {
       // Ensure Flutter binding is initialized
       WidgetsFlutterBinding.ensureInitialized();
-      
+
       // Initialize logging system (this is the first initialization step)
       LoggingService.initialize();
       LoggingService.info('Starting application initialization...');

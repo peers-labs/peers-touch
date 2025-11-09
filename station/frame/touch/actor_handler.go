@@ -24,32 +24,32 @@ type ActorHandlerInfo struct {
 
 // GetActorHandlers returns all actor handler configurations
 func GetActorHandlers() []ActorHandlerInfo {
-	return []ActorHandlerInfo{
-		{
-			RouterURL: RouterURLActorSignUP,
-			Handler:   ActorSignup,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("Actor")},
-		},
-		{
-			RouterURL: RouterURLActorLogin,
-			Handler:   ActorLogin,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("Actor")},
-		},
-		{
-			RouterURL: RouterURLActorProfile,
-			Handler:   GetActorProfile,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("Actor")},
-		},
-		{
-			RouterURL: RouterURLActorProfile,
-			Handler:   UpdateActorProfile,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("Actor")},
-		},
-	}
+    return []ActorHandlerInfo{
+        {
+            RouterURL: RouterURLActorSignUP,
+            Handler:   ActorSignup,
+            Method:    server.POST,
+            Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
+        },
+        {
+            RouterURL: RouterURLActorLogin,
+            Handler:   ActorLogin,
+            Method:    server.POST,
+            Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
+        },
+        {
+            RouterURL: RouterURLActorProfile,
+            Handler:   GetActorProfile,
+            Method:    server.GET,
+            Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
+        },
+        {
+            RouterURL: RouterURLActorProfile,
+            Handler:   UpdateActorProfile,
+            Method:    server.POST,
+            Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
+        },
+    }
 }
 
 // Handler implementations

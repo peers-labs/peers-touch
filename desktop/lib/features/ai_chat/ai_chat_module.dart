@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
-import './ai_provider_settings.dart';
+import 'package:peers_touch_desktop/features/ai_chat/ai_provider_settings.dart';
 import 'package:peers_touch_desktop/features/ai_chat/ai_chat_binding.dart';
 import 'package:peers_touch_desktop/features/ai_chat/view/ai_chat_page.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
@@ -23,6 +23,7 @@ class AIChatModule {
       isHead: true,    // 头部区域
       order: 100,      // 头部区域内的排序
       contentBuilder: (context) => const AIChatPage(),
+      toDIsplayPageTitle: false,
     ));
     
     // 注册AI Provider设置到全局设置管理器

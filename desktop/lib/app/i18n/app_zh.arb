@@ -26,4 +26,35 @@
   "openaiBaseUrlPlaceholder": "请输入OpenAI基础URL",
   "defaultModel": "默认模型",
   "defaultModelDescription": "选择默认使用的AI模型"
+  ,
+  "chatSearchSessionsPlaceholder": "搜索会话",
+  "chatNewConversation": "新建对话",
+  "chatSessionActions": "会话操作",
+  "rename": "重命名",
+  "delete": "删除",
+  "chatTopicHistory": "历史主题",
+  "chatAddTopic": "新增主题",
+  "chatTopicActions": "主题操作",
+  "aiModelLabel": "模型：",
+  "toggleTopicPanel": "显示/隐藏主题面板（Ctrl+Shift+T）",
+  "sharePlaceholder": "分享（占位）",
+  "layoutTogglePlaceholder": "布局切换（占位）",
+  "moreMenuPlaceholder": "更多菜单（占位）",
+  "sendingIndicator": "发送中...",
+  "chatDefaultTitle": "Just Chat",
+  "renameSessionTitle": "重命名会话",
+  "renameTopicTitle": "重命名主题",
+  "inputNewNamePlaceholder": "输入新名称",
+  "cancel": "取消",
+  "confirm": "确定",
+  "deleteSessionTitle": "删除会话",
+  "deleteSessionConfirm": "确认删除会话 {sessionTitle} 及其消息？",
+  "@deleteSessionConfirm": {
+    "placeholders": {
+      "sessionTitle": {
+        "type": "String",
+        "example": "我的对话"
+      }
+    }
+  }
 }

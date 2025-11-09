@@ -1,12 +1,12 @@
 import 'package:dio/dio.dart';
 
-import 'interceptors/auth_interceptor.dart';
-import 'interceptors/retry_interceptor.dart';
-import 'interceptors/token_refresh_interceptor.dart';
-import '../storage/secure_storage.dart';
-import '../network/api_exception.dart';
-import 'network_status_service.dart';
-import 'token_refresh_handler.dart';
+import 'package:peers_touch_desktop/core/network/interceptors/auth_interceptor.dart';
+import 'package:peers_touch_desktop/core/network/interceptors/retry_interceptor.dart';
+import 'package:peers_touch_desktop/core/network/interceptors/token_refresh_interceptor.dart';
+import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_desktop/core/network/api_exception.dart';
+import 'package:peers_touch_desktop/core/network/network_status_service.dart';
+import 'package:peers_touch_desktop/core/network/token_refresh_handler.dart';
 
 class ApiClient {
   final Dio dio;
