@@ -57,4 +57,8 @@
       }
     }
   }
+  ,
+  "saveAsTopic": "保存为主题",
+  "topicSaved": "已保存为主题",
+  "topicAlreadySaved": "本会话已保存该主题"
 }

@@ -32,7 +32,8 @@ class ShellController extends GetxController {
   void onInit() {
     super.onInit();
     // 初始化右侧面板状态
-    isRightPanelVisible.value = false;
+    // 默认显示右侧折叠栏，由其自身按钮控制展开/收起
+    isRightPanelVisible.value = true;
     
     // Ensure right panel width is properly initialized with valid bounds
     rightPanelWidth.value = UIKit.rightPanelWidth.clamp(UIKit.rightPanelMinWidth, UIKit.rightPanelMaxWidth);

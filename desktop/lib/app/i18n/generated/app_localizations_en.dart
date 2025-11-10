@@ -156,4 +156,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String deleteSessionConfirm(String sessionTitle) {
     return 'Delete conversation $sessionTitle and all messages?';
   }
+
+  @override
+  String get saveAsTopic => 'Save as topic';
+
+  @override
+  String get topicSaved => 'Saved as a topic';
+
+  @override
+  String get topicAlreadySaved => 'Already saved for this conversation';
 }

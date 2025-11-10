@@ -8,6 +8,8 @@ class TopicPanel extends StatelessWidget {
   final ValueChanged<int> onDeleteTopic;
   final ValueChanged<int>? onSelectTopic;
   final ValueChanged<int>? onRenameTopic;
+  // 闪动高亮的项索引
+  final int? flashIndex;
   const TopicPanel({
     super.key,
     required this.topics,
@@ -15,6 +17,7 @@ class TopicPanel extends StatelessWidget {
     required this.onDeleteTopic,
     this.onSelectTopic,
     this.onRenameTopic,
+    this.flashIndex,
   });
 
   @override
@@ -55,41 +58,49 @@ class TopicPanel extends StatelessWidget {
               ),
               itemBuilder: (context, index) {
                 final t = topics[index];
-                return ListTile(
-                  title: Text(t),
-                  onTap: onSelectTopic != null
-                      ? () => onSelectTopic!(index)
-                      : null,
-                  trailing: ExcludeSemantics(
-                    child: PopupMenuButton<String>(
-                      tooltip: AppLocalizations.of(context).chatTopicActions,
-                      onSelected: (value) {
-                        switch (value) {
-                          case 'rename':
-                            if (onRenameTopic != null) onRenameTopic!(index);
-                            break;
-                          case 'delete':
-                            onDeleteTopic(index);
-                            break;
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          value: 'rename',
-                          child: Text(AppLocalizations.of(context).rename),
+                final shouldHighlight = flashIndex != null && flashIndex == index;
+                final highlightColor = shouldHighlight
+                    ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
+                    : Colors.transparent;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  color: highlightColor,
+                  child: ListTile(
+                    title: Text(t),
+                    onTap: onSelectTopic != null
+                        ? () => onSelectTopic!(index)
+                        : null,
+                    trailing: ExcludeSemantics(
+                      child: PopupMenuButton<String>(
+                        tooltip: AppLocalizations.of(context).chatTopicActions,
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'rename':
+                              if (onRenameTopic != null) onRenameTopic!(index);
+                              break;
+                            case 'delete':
+                              onDeleteTopic(index);
+                              break;
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: 'rename',
+                            child: Text(AppLocalizations.of(context).rename),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Text(AppLocalizations.of(context).delete),
+                          ),
+                        ],
+                        icon: Icon(
+                          Icons.more_horiz,
+                          color: UIKit.textSecondary(context),
                         ),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Text(AppLocalizations.of(context).delete),
-                        ),
-                      ],
-                      icon: Icon(
-                        Icons.more_horiz,
-                        color: UIKit.textSecondary(context),
                       ),
                     ),
+                    dense: true,
                   ),
-                  dense: true,
                 );
               },
             ),

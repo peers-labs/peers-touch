@@ -13,20 +13,31 @@ class ChatInputBar extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final VoidCallback onSend;
   final bool isSending;
+  // 注入模型选择
+  final List<String> models;
+  final String currentModel;
+  final ValueChanged<String> onModelChanged;
+  // Provider 分组（按提供商显示模型分组）
+  final Map<String, List<String>>? groupedModelsByProvider;
+
   const ChatInputBar({
     super.key,
     required this.controller,
     required this.onChanged,
     required this.onSend,
     required this.isSending,
+    required this.models,
+    required this.currentModel,
+    required this.onModelChanged,
+    this.groupedModelsByProvider,
   });
 
   @override
   Widget build(BuildContext context) {
     final storage = Get.find<LocalStorage>();
     final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
-    final model = Get.find<AIChatController>().currentModel.value;
-    final cap = CapabilityResolver.resolve(provider: provider, modelId: model);
+    // 能力基于注入的当前模型计算
+    final cap = CapabilityResolver.resolve(provider: provider, modelId: currentModel);
 
     return Padding(
       padding: EdgeInsets.all(UIKit.spaceMd(context)),
@@ -39,6 +50,10 @@ class ChatInputBar extends StatelessWidget {
         },
         onTextChanged: onChanged,
         externalTextController: controller,
+        models: models,
+        currentModel: currentModel,
+        onModelChanged: onModelChanged,
+        groupedModelsByProvider: groupedModelsByProvider,
       ),
     );
   }
