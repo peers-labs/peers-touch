@@ -57,4 +57,8 @@
       }
     }
   }
+  ,
+  "saveAsTopic": "Save as topic",
+  "topicSaved": "Saved as a topic",
+  "topicAlreadySaved": "Already saved for this conversation"
 }

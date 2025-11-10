@@ -391,6 +391,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delete conversation {sessionTitle} and all messages?'**
   String deleteSessionConfirm(String sessionTitle);
+
+  /// No description provided for @saveAsTopic.
+  ///
+  /// In en, this message translates to:
+  /// **'Save as topic'**
+  String get saveAsTopic;
+
+  /// No description provided for @topicSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved as a topic'**
+  String get topicSaved;
+
+  /// No description provided for @topicAlreadySaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Already saved for this conversation'**
+  String get topicAlreadySaved;
 }
 
 class _AppLocalizationsDelegate

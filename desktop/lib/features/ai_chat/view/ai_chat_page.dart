@@ -11,6 +11,7 @@ import 'package:peers_touch_desktop/features/ai_chat/widgets/chat_input_bar.dart
 import 'package:peers_touch_desktop/features/ai_chat/widgets/topic_panel.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
 class AIChatPage extends GetView<AIChatController> {
   const AIChatPage({super.key});
@@ -79,8 +80,6 @@ class AIChatPage extends GetView<AIChatController> {
           children: [
               // 顶部工具栏（在闭包内直接读取 Rx 值，避免 GetX 误用提示）
               Obx(() {
-                final models = controller.models.toList();
-                final current = controller.currentModel.value;
                 final sending = controller.isSending.value;
                 // 计算标题为当前会话标题
                 String headerTitle = AppLocalizations.of(ctx).chatDefaultTitle;
@@ -89,57 +88,55 @@ class AIChatPage extends GetView<AIChatController> {
                   final match = controller.sessions.where((e) => e.id == sid);
                   if (match.isNotEmpty) headerTitle = match.first.title;
                 }
+                // 确保右侧面板内容在首次进入时已注入（默认折叠）
+                final shell = Get.find<ShellController>();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (shell.rightPanelBuilder.value == null) {
+                    shell.openRightPanelWithOptions(
+                      (bctx) => Obx(() => TopicPanel(
+                        topics: controller.topics.toList(),
+                        onAddTopic: () => controller.addTopic(),
+                        onDeleteTopic: controller.removeTopicAt,
+                        onSelectTopic: controller.selectTopicAt,
+                        onRenameTopic: (int index) async {
+                          final old = controller.topics[index];
+                          final textController = TextEditingController(text: old);
+                          final newTitle = await showDialog<String>(
+                            context: bctx,
+                            builder: (dctx) => AlertDialog(
+                              title: Text(AppLocalizations.of(dctx).renameTopicTitle),
+                              content: TextField(
+                                controller: textController,
+                                decoration: InputDecoration(hintText: AppLocalizations.of(dctx).inputNewNamePlaceholder),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(dctx).pop(null),
+                                  child: Text(AppLocalizations.of(dctx).cancel),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.of(dctx).pop(textController.text.trim()),
+                                  child: Text(AppLocalizations.of(dctx).confirm),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (newTitle != null && newTitle.isNotEmpty) {
+                            controller.renameTopic(index, newTitle);
+                          }
+                        },
+                        // 闪动索引从控制器读取
+                        flashIndex: controller.flashTopicIndex.value,
+                      )),
+                      width: UIKit.rightPanelWidth,
+                      showCollapseButton: true,
+                      clearCenter: false,
+                      collapsedByDefault: true,
+                    );
+                  }
+                });
                 return AIChatHeaderBar(
                   title: headerTitle,
-                  models: models,
-                  currentModel: current,
-                  onModelChanged: controller.setModel,
-                  onToggleTopicPanel: () {
-                    final shell = Get.find<ShellController>();
-                    // 若面板已打开则关闭；否则按需注入 TopicPanel
-                    if (shell.isRightPanelVisible.value) {
-                      shell.closeRightPanel();
-                    } else {
-                      shell.openRightPanelWithOptions(
-                        (ctx) => TopicPanel(
-                          topics: controller.topics.toList(),
-                          onAddTopic: () => controller.addTopic(),
-                          onDeleteTopic: controller.removeTopicAt,
-                          onSelectTopic: null,
-                          onRenameTopic: (int index) async {
-                            final old = controller.topics[index];
-                            final textController = TextEditingController(text: old);
-                            final newTitle = await showDialog<String>(
-                              context: ctx,
-                              builder: (dctx) => AlertDialog(
-                                title: Text(AppLocalizations.of(dctx).renameTopicTitle),
-                                content: TextField(
-                                  controller: textController,
-                                  decoration: InputDecoration(hintText: AppLocalizations.of(dctx).inputNewNamePlaceholder),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.of(dctx).pop(null),
-                                    child: Text(AppLocalizations.of(dctx).cancel),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => Navigator.of(dctx).pop(textController.text.trim()),
-                                    child: Text(AppLocalizations.of(dctx).confirm),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (newTitle != null && newTitle.isNotEmpty) {
-                              controller.renameTopic(index, newTitle);
-                            }
-                          },
-                        ),
-                        width: UIKit.rightPanelWidth,
-                        showCollapseButton: true,
-                        clearCenter: false,
-                      );
-                    }
-                  },
                   isSending: sending,
                   onNewChat: controller.newChat,
                 );
@@ -175,12 +172,29 @@ class AIChatPage extends GetView<AIChatController> {
                 );
               }),
               // 输入框
-              Obx(() => ChatInputBar(
-                    controller: controller.inputController,
-                    onChanged: controller.setInput,
-                    onSend: controller.send,
-                    isSending: controller.isSending.value,
-                  )),
+              Obx(() {
+                // 读取响应式模型数据以触发重建
+                final models = controller.models.toList();
+                final current = controller.currentModel.value;
+                // Provider 分组：读取 ProviderController 中的列表
+                Map<String, List<String>> grouped = {};
+                if (Get.isRegistered<ProviderController>()) {
+                  final pc = Get.find<ProviderController>();
+                  grouped = Map.fromEntries(
+                    pc.providers.map((p) => MapEntry(p.name, p.models)),
+                  );
+                }
+                return ChatInputBar(
+                  controller: controller.inputController,
+                  onChanged: controller.setInput,
+                  onSend: controller.send,
+                  isSending: controller.isSending.value,
+                  models: models,
+                  currentModel: current,
+                  onModelChanged: controller.setModel,
+                  groupedModelsByProvider: grouped,
+                );
+              }),
           ],
         ),
       ),
