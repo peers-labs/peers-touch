@@ -154,25 +154,13 @@ class SettingPage extends StatelessWidget {
               ),
             ),
             
-            // 设置项列表（避免在此处使用嵌套Obx，直接由外层Obx驱动）
+            // 渲染自定义页面或默认设置项列表
             Expanded(
-              child: Builder(builder: (context) {
-                // 根据 provider_type 过滤可见项
-                final providerItem = currentSection.items.firstWhere(
-                  (i) => i.id == 'provider_type',
-                  orElse: () => const SettingItem(id: 'provider_type', title: '', type: SettingItemType.select, value: 'OpenAI'),
-                );
-                final providerName = providerItem.value?.toString() ?? 'OpenAI';
-                bool isVisible(SettingItem i) {
-                  if (i.id == 'provider_type' || i.id == 'ai_provider_header') return true;
-                  // 迁移：将“连接测试”“拉取模型”改为内联按钮，这里隐藏其独立项
-                  if (i.id == 'fetch_models' || i.id == 'test_connection') return false;
-                  final id = i.id.toLowerCase();
-                  if (id.startsWith('openai_')) return providerName == 'OpenAI';
-                  if (id.startsWith('ollama_')) return providerName == 'Ollama';
-                  return true; // 其他通用项始终可见
-                }
-                final visibleItems = currentSection.items.where(isVisible).toList();
+              child: currentSection.page ?? Builder(builder: (context) {
+                // 使用 isVisible 回调来过滤可见项，移除硬编码逻辑
+                final visibleItems = currentSection.items
+                    .where((item) => item.isVisible?.call(currentSection.items) ?? true)
+                    .toList();
                 return ListView.builder(
                   padding: EdgeInsets.symmetric(horizontal: UIKit.spaceXl(context)),
                   itemCount: visibleItems.length,
@@ -226,6 +214,8 @@ class SettingPage extends StatelessWidget {
         return _buildSelectItem(context, sectionId, item, theme);
       case SettingItemType.textInput:
         return _buildTextInputItem(context, sectionId, item, theme);
+      case SettingItemType.password:
+        return _buildTextInputItem(context, sectionId, item, theme); // Reuse text input for now
       case SettingItemType.button:
         return _buildButtonItem(context, sectionId, item, theme);
       case SettingItemType.divider:
@@ -397,37 +387,53 @@ class SettingPage extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Obx(() {
-                  final isBackend = item.id == 'backend_url';
-                  final verified = isBackend ? controller.backendVerified.value : true;
-                  final OutlineInputBorder normalBorder = UIKit.inputOutlineBorder(context);
-                  final OutlineInputBorder focusedBorder = UIKit.inputFocusedBorder(context);
-                  final OutlineInputBorder transparentBorder = OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.transparent, width: UIKit.dividerThickness),
-                    borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-                  );
-                  return TextField(
-                    controller: controller.getTextController(sectionId, item.id, item.value?.toString()),
-                    decoration: InputDecoration(
-                      hintText: _itemPlaceholder(l, item),
-                      hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
-                      filled: true,
-                      fillColor: UIKit.inputFillLight(context),
-                      border: verified ? normalBorder : transparentBorder,
-                      enabledBorder: verified ? normalBorder : transparentBorder,
-                      focusedBorder: verified ? focusedBorder : transparentBorder,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: UIKit.spaceSm(context),
-                        vertical: UIKit.spaceSm(context),
+                child: item.id == 'backend_url'
+                    ? Obx(() {
+                        final verified = controller.backendVerified.value;
+                        final outlineBorder = verified ? UIKit.inputOutlineBorder(context) : UIKit.transparentBorder(context);
+                        return TextField(
+                          controller: controller.getTextController(sectionId, item.id, item.value?.toString()),
+                          decoration: InputDecoration(
+                            hintText: _itemPlaceholder(l, item),
+                            hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
+                            filled: true,
+                            fillColor: UIKit.inputFillLight(context),
+                            border: outlineBorder,
+                            enabledBorder: outlineBorder,
+                            focusedBorder: UIKit.inputFocusedBorder(context),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: UIKit.spaceSm(context),
+                              vertical: UIKit.spaceSm(context),
+                            ),
+                          ),
+                          style: TextStyle(color: tokens.textPrimary),
+                          onChanged: (value) {
+                            controller.updateSettingValue(sectionId, item.id, value);
+                            item.onChanged?.call(value);
+                          },
+                        );
+                      })
+                    : TextField(
+                        controller: controller.getTextController(sectionId, item.id, item.value?.toString()),
+                        decoration: InputDecoration(
+                          hintText: _itemPlaceholder(l, item),
+                          hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
+                          filled: true,
+                          fillColor: UIKit.inputFillLight(context),
+                          border: UIKit.inputOutlineBorder(context),
+                          enabledBorder: UIKit.inputOutlineBorder(context),
+                          focusedBorder: UIKit.inputFocusedBorder(context),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: UIKit.spaceSm(context),
+                            vertical: UIKit.spaceSm(context),
+                          ),
+                        ),
+                        style: TextStyle(color: tokens.textPrimary),
+                        onChanged: (value) {
+                          controller.updateSettingValue(sectionId, item.id, value);
+                          item.onChanged?.call(value);
+                        },
                       ),
-                    ),
-                    style: TextStyle(color: tokens.textPrimary),
-                    onChanged: (value) {
-                      controller.updateSettingValue(sectionId, item.id, value);
-                      item.onChanged?.call(value);
-                    },
-                  );
-                }),
               ),
               if (item.id == 'backend_url') ...[
                 SizedBox(width: UIKit.spaceSm(context)),

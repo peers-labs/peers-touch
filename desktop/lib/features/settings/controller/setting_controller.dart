@@ -222,6 +222,10 @@ class SettingController extends GetxController {
     sections.value = loadedSections;
   }
 
+  void refreshSections() {
+    sections.refresh();
+  }
+
   void _loadPersistedValues(List<SettingSection> targetSections) {
     for (final section in targetSections) {
       for (var i = 0; i < section.items.length; i++) {

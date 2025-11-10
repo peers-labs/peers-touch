@@ -6,6 +6,7 @@ enum SettingItemType {
   toggle,         // 开关
   select,         // 下拉选择
   textInput,      // 文本输入
+  password,       // 密码输入
   button,         // 按钮
   divider,        // 分割线
 }
@@ -22,6 +23,7 @@ class SettingItem {
   final String? placeholder;   // 用于textInput类型
   final VoidCallback? onTap;
   final ValueChanged<dynamic>? onChanged;
+  final bool Function(List<SettingItem> allItems)? isVisible;
 
   const SettingItem({
     required this.id,
@@ -34,6 +36,7 @@ class SettingItem {
     this.placeholder,
     this.onTap,
     this.onChanged,
+    this.isVisible,
   });
 
   Map<String, dynamic> toJson() => {
@@ -65,12 +68,14 @@ class SettingSection {
   final String title;
   final IconData? icon;
   final List<SettingItem> items;
+  final Widget? page;
 
   const SettingSection({
     required this.id,
     required this.title,
     this.icon,
-    required this.items,
+    this.items = const [],
+    this.page,
   });
 
   Map<String, dynamic> toJson() => {
