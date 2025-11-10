@@ -34,6 +34,7 @@ class AIProviderSettings {
           final selectedModelKey = v == 'Ollama' ? AIConstants.selectedModelOllama : AIConstants.selectedModelOpenAI;
           final selectedModel = storage.get<String>(selectedModelKey);
           controller.updateSettingValue('module_ai_provider', 'model_selection', selectedModel);
+          controller.refreshSections(); // 刷新整个设置页面以触发 isVisible 的重新计算
         },
       ),
       SettingItem(
@@ -41,13 +42,14 @@ class AIProviderSettings {
         title: 'OpenAI API密钥',
         description: '设置OpenAI API访问密钥',
         icon: Icons.key,
-        type: SettingItemType.textInput,
-        value: '',
+        type: SettingItemType.password,
+        value: Get.find<LocalStorage>().get<String>(AIConstants.openaiApiKey) ?? '',
         placeholder: '请输入OpenAI API密钥',
         onChanged: (value) {
           final storage = Get.find<LocalStorage>();
           storage.set(AIConstants.openaiApiKey, value ?? '');
         },
+        isVisible: (allItems) => allItems.firstWhere((i) => i.id == 'provider_type').value == 'OpenAI',
       ),
       SettingItem(
         id: 'openai_base_url',
@@ -60,28 +62,10 @@ class AIProviderSettings {
         onChanged: (value) {
           final storage = Get.find<LocalStorage>();
           storage.set(AIConstants.openaiBaseUrl, value ?? AIConstants.defaultOpenAIBaseUrl);
-          // 自动拉取模型并更新默认模型列表
-          Future.microtask(() async {
-            final controller = Get.find<SettingController>();
-            final service = AIServiceFactory.fromName('OpenAI');
-            try {
-              final models = await service.fetchModels();
-              controller.updateSettingOptions('module_ai_provider', 'model_selection', models);
-              final current = controller.getCurrentSection()?.items.firstWhere((i) => i.id == 'model_selection').value?.toString();
-              if (current != null && !models.contains(current)) {
-                controller.setItemError('module_ai_provider', 'model_selection', '当前选择的模型不在最新列表中');
-              } else {
-                controller.setItemError('module_ai_provider', 'model_selection', null);
-              }
-              if (models.isNotEmpty && (current == null || !models.contains(current))) {
-                controller.updateSettingValue('module_ai_provider', 'model_selection', models.first);
-                storage.set(AIConstants.selectedModelOpenAI, models.first);
-              }
-            } catch (_) {}
-          });
         },
+        isVisible: (allItems) => allItems.firstWhere((i) => i.id == 'provider_type').value == 'OpenAI',
       ),
-      // Ollama 配置项（仅在选择 Ollama 时显示）
+      // Ollama 配置项
       SettingItem(
         id: 'ollama_base_url',
         title: 'Ollama 接口代理地址',
@@ -93,26 +77,8 @@ class AIProviderSettings {
         onChanged: (value) {
           final storage = Get.find<LocalStorage>();
           storage.set(AIConstants.ollamaBaseUrl, value ?? 'http://localhost:11434');
-          // 自动拉取模型并更新默认模型列表
-          Future.microtask(() async {
-            final controller = Get.find<SettingController>();
-            final service = AIServiceFactory.fromName('Ollama');
-            try {
-              final models = await service.fetchModels();
-              controller.updateSettingOptions('module_ai_provider', 'model_selection', models);
-              final current = controller.getCurrentSection()?.items.firstWhere((i) => i.id == 'model_selection').value?.toString();
-              if (current != null && !models.contains(current)) {
-                controller.setItemError('module_ai_provider', 'model_selection', '当前选择的模型不在最新列表中');
-              } else {
-                controller.setItemError('module_ai_provider', 'model_selection', null);
-              }
-              if (models.isNotEmpty && (current == null || !models.contains(current))) {
-                controller.updateSettingValue('module_ai_provider', 'model_selection', models.first);
-                storage.set(AIConstants.selectedModelOllama, models.first);
-              }
-            } catch (_) {}
-          });
         },
+        isVisible: (allItems) => allItems.firstWhere((i) => i.id == 'provider_type').value == 'Ollama',
       ),
       SettingItem(
         id: 'ollama_client_side_mode',
