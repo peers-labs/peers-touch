@@ -138,6 +138,44 @@ class UIKit {
     return _lighten(base, 0.06);
   }
 
+  // 统一主要按钮样式
+  static ButtonStyle primaryButtonStyle(BuildContext context) {
+    final theme = Theme.of(context);
+    return ElevatedButton.styleFrom(
+      backgroundColor: theme.colorScheme.primary,
+      foregroundColor: theme.colorScheme.onPrimary,
+      minimumSize: const Size(buttonMinWidthSm, controlHeightMd),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(radiusMd(context)),
+      ),
+    );
+  }
+
+  // 透明边框
+  static OutlineInputBorder transparentBorder(BuildContext context) {
+    return OutlineInputBorder(
+      borderSide: const BorderSide(color: Colors.transparent, width: dividerThickness),
+      borderRadius: BorderRadius.circular(radiusSm(context)),
+    );
+  }
+
+  // 统一输入框样式
+  static InputDecoration inputDecoration(BuildContext context) {
+    final tokens = _lobe(context)!;
+    return InputDecoration(
+      filled: true,
+      fillColor: inputFillLight(context),
+      border: inputOutlineBorder(context),
+      enabledBorder: inputOutlineBorder(context),
+      focusedBorder: inputFocusedBorder(context),
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: spaceSm(context),
+        vertical: spaceSm(context),
+      ),
+      hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
+    );
+  }
+
   // 通用朴素边框（未聚焦/启用）
   static OutlineInputBorder inputOutlineBorder(BuildContext context) {
     return OutlineInputBorder(
