@@ -156,4 +156,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String deleteSessionConfirm(String sessionTitle) {
     return '确认删除会话 $sessionTitle 及其消息？';
   }
+
+  @override
+  String get saveAsTopic => '保存为主题';
+
+  @override
+  String get topicSaved => '已保存为主题';
+
+  @override
+  String get topicAlreadySaved => '本会话已保存该主题';
 }
