@@ -1,7 +1,7 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
 
 /// AI服务提供商控制器
 class ProviderController extends GetxController {
@@ -59,7 +59,6 @@ class ProviderController extends GetxController {
         sourceType: sourceType,
         settings: {
           'baseUrl': baseUrl ?? _getDefaultBaseUrl(sourceType),
-          'models': _getDefaultModels(sourceType),
         },
         config: {
           'temperature': 0.7,
@@ -184,6 +183,17 @@ class ProviderController extends GetxController {
     // TODO: 实现安全的密钥存储
     await Get.find<SecureStorage>().set('provider_key_$providerId', apiKey);
   }
+
+  /// 更新（保存）API密钥（公开方法，供设置面板调用）
+  Future<void> updateApiKey(String providerId, String apiKey) async {
+    try {
+      await _saveApiKey(providerId, apiKey);
+      Get.snackbar('成功', 'API Key 已更新');
+    } catch (e) {
+      Get.snackbar('错误', '更新 API Key 失败: $e');
+      rethrow;
+    }
+  }
   
   /// 获取API密钥
   Future<String?> _getApiKey(String providerId) async {
@@ -212,19 +222,4 @@ class ProviderController extends GetxController {
     }
   }
   
-  /// 获取默认模型列表
-  List<String> _getDefaultModels(String sourceType) {
-    switch (sourceType.toLowerCase()) {
-      case 'openai':
-        return ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo'];
-      case 'ollama':
-        return ['llama2', 'mistral', 'codellama'];
-      case 'anthropic':
-        return ['claude-3-sonnet', 'claude-3-opus'];
-      case 'google':
-        return ['gemini-pro', 'gemini-pro-vision'];
-      default:
-        return ['gpt-3.5-turbo'];
-    }
-  }
 }

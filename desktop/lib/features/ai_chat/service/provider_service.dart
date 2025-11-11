@@ -1,8 +1,8 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/network/api_client.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
 
 /// AI服务提供商管理服务
 class ProviderService {
@@ -133,26 +133,12 @@ class ProviderService {
     }
   }
   
-  /// 获取提供商的模型列表
+  /// 获取提供商的模型列表（统一入口：AIServiceFactory.fromProvider）
   Future<List<String>> fetchProviderModels(Provider provider) async {
     try {
-      // 根据提供商类型调用不同的API
-      final response = await _apiClient.get(
-        '${provider.baseUrl}/models',
-        options: null, // 使用默认选项
-      );
-      
-      if (response.statusCode == 200) {
-        final data = response.data;
-        if (data is Map && data['data'] is List) {
-          return (data['data'] as List)
-              .map((model) => model['id']?.toString() ?? '')
-              .where((id) => id.isNotEmpty)
-              .toList();
-        }
-      }
-      
-      return [];
+      final service = AIServiceFactory.fromProvider(provider);
+      final models = await service.fetchModels();
+      return models;
     } catch (e) {
       return [];
     }
@@ -176,7 +162,6 @@ class ProviderService {
       sourceType: sourceType,
       settings: {
         'baseUrl': _getDefaultBaseUrl(sourceType),
-        'models': _getDefaultModels(sourceType),
       },
       config: {
         'temperature': 0.7,
@@ -207,19 +192,4 @@ class ProviderService {
     }
   }
   
-  /// 获取默认模型列表
-  List<String> _getDefaultModels(String sourceType) {
-    switch (sourceType.toLowerCase()) {
-      case 'openai':
-        return ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo'];
-      case 'ollama':
-        return ['llama2', 'mistral', 'codellama'];
-      case 'anthropic':
-        return ['claude-3-sonnet', 'claude-3-opus'];
-      case 'google':
-        return ['gemini-pro', 'gemini-pro-vision'];
-      default:
-        return ['gpt-3.5-turbo'];
-    }
-  }
 }

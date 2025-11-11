@@ -2,8 +2,8 @@ import 'package:get/get.dart';
 
 import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_desktop/core/network/network_status_service.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
+import 'package:peers_touch_desktop/core/storage/storage_service.dart';
 import 'package:peers_touch_desktop/features/shared/services/user_status_service.dart';
 
 /// Application dependency injection binding
@@ -20,6 +20,17 @@ class InitialBinding extends Bindings {
   void _registerStorageServices() {
     Get.put<LocalStorage>(LocalStorage(), permanent: true);
     Get.put<SecureStorage>(SecureStorage(), permanent: true);
+
+    // 路由解析与本地缓存
+    Get.put<RouteProvider>(ConventionalRouteProvider(), permanent: true);
+    Get.put<StorageCache>(StorageCache(), permanent: true);
+
+    // 存储驱动与服务（插件化：同时注册本地与云端驱动，由 Resolver 选择）
+    Get.put<HttpStorageDriver>(HttpStorageDriver(), permanent: true);
+    Get.put<LocalStorageDriver>(LocalStorageDriver(), permanent: true);
+    Get.put<StorageDriverResolver>(StorageDriverResolver(), permanent: true);
+    Get.put<StorageSyncService>(StorageSyncService(), permanent: true);
+    Get.put<StorageService>(StorageService(), permanent: true);
   }
   
   /// Register network services

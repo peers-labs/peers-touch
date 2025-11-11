@@ -1,6 +1,7 @@
 import 'ai_service.dart';
 import 'openai_service.dart';
 import 'ollama_service.dart';
+import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 
 /// AI服务提供商类型
 enum AIProviderType {
@@ -29,6 +30,20 @@ class AIServiceFactory {
       case 'openai':
       default:
         return createService(AIProviderType.openai);
+    }
+  }
+
+  /// 根据 Provider 实例创建对应服务（使用实例级配置覆盖）
+  static AIService fromProvider(Provider provider) {
+    switch (provider.sourceType.toLowerCase()) {
+      case 'ollama':
+        return OllamaService(baseUrlOverride: provider.baseUrl);
+      case 'openai':
+      default:
+        return OpenAIService(
+          apiKeyOverride: provider.apiKey,
+          baseUrlOverride: provider.baseUrl,
+        );
     }
   }
 

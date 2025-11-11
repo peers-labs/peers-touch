@@ -1,7 +1,6 @@
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
-import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
 
 class AIChatBinding extends Bindings {

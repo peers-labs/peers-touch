@@ -3,12 +3,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_attachment.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
 // 保存主题操作的结果状态
 enum SaveTopicStatus {
@@ -65,8 +66,10 @@ class AIChatController extends GetxController {
     inputController.addListener(() {
       inputText.value = inputController.text;
     });
-    _initModels();
+    // 先加载持久化状态，确保 selectedSessionId / session.modelId 就绪
     _loadPersistedState();
+    // 再异步拉取模型；加载完成后不盲目覆盖已有的 currentModel
+    _initModels();
   }
 
   @override
@@ -87,7 +90,18 @@ class AIChatController extends GetxController {
 
   void createSession({String title = 'Just Chat'}) {
     final id = _genId();
-    final session = ChatSession(id: id, title: title, createdAt: DateTime.now(), lastActiveAt: DateTime.now());
+    // 新建会话默认绑定当前模型（若可用），否则绑定默认模型
+    final defaultModel = (currentModel.value.isNotEmpty
+            ? currentModel.value
+            : (models.isNotEmpty ? models.first : AIConstants.defaultOpenAIModel));
+    final session = ChatSession(
+      id: id,
+      title: title,
+      createdAt: DateTime.now(),
+      lastActiveAt: DateTime.now(),
+      modelId: defaultModel,
+      avatarBase64: null,
+    );
     sessions.add(session);
     _sessionStore[id] = <ChatMessage>[];
     selectSession(id);
@@ -104,6 +118,18 @@ class AIChatController extends GetxController {
     }
     messages.assignAll(list);
     storage.set(AIConstants.chatSelectedSessionId, id);
+    // 切换当前模型到该会话绑定的模型（不依赖 models 是否已加载）
+    final s = sessions.firstWhereOrNull((e) => e.id == id);
+    if (s != null) {
+      final candidate = s.modelId ?? '';
+      if (candidate.isNotEmpty) {
+        currentModel.value = candidate;
+      } else {
+        // 不存在或未设置，降级为全局首选或默认（不依赖 models）
+        final preferred = storage.get<String>(AIConstants.selectedModel) ?? AIConstants.defaultOpenAIModel;
+        currentModel.value = preferred.isNotEmpty ? preferred : AIConstants.defaultOpenAIModel;
+      }
+    }
   }
 
   void addTopic([String? title]) {
@@ -136,6 +162,8 @@ class AIChatController extends GetxController {
         title: newTitle,
         createdAt: s.createdAt,
         lastActiveAt: s.lastActiveAt,
+        modelId: s.modelId,
+        avatarBase64: s.avatarBase64,
       );
       sessions.refresh();
       _persistSessions();
@@ -160,11 +188,57 @@ class AIChatController extends GetxController {
     }
   }
 
+  /// 拖拽重排会话列表，并持久化顺序
+  void reorderSessions(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= sessions.length) return;
+    if (newIndex < 0 || newIndex > sessions.length) return;
+    // 向后拖拽时，newIndex 指向目标后的位置
+    if (newIndex > oldIndex) newIndex -= 1;
+    final item = sessions.removeAt(oldIndex);
+    sessions.insert(newIndex, item);
+    sessions.refresh();
+    _persistSessions();
+  }
+
   Future<void> _initModels() async {
     clearError();
     try {
-      final fetched = await service.fetchModels();
-      models.assignAll(fetched);
+      // 1) 优先使用 ProviderController 中已保存的模型，避免每次进入都要点击 Fetch
+      List<String> initial = const [];
+      if (Get.isRegistered<ProviderController>()) {
+        try {
+          final pc = Get.find<ProviderController>();
+          final prov = pc.currentProvider.value ?? (pc.providers.isNotEmpty ? pc.providers.first : null);
+          if (prov != null && prov.models.isNotEmpty) {
+            initial = prov.models;
+          }
+        } catch (_) {}
+      }
+
+      if (initial.isNotEmpty) {
+        models.assignAll(initial);
+      } else {
+        // 2) 若没有已保存模型，则拉取一次并持久化到 Provider
+        final fetched = await service.fetchModels();
+        models.assignAll(fetched);
+        if (Get.isRegistered<ProviderController>()) {
+          try {
+            final pc = Get.find<ProviderController>();
+            final prov = pc.currentProvider.value ?? (pc.providers.isNotEmpty ? pc.providers.first : null);
+            if (prov != null) {
+              final settings = Map<String, dynamic>.from(prov.settings ?? {});
+              settings['models'] = fetched;
+              settings['modelsUpdatedAt'] = DateTime.now().toIso8601String();
+              await pc.updateProvider(prov.copyWith(
+                settings: settings,
+                updatedAt: DateTime.now().toUtc(),
+              ));
+            }
+          } catch (_) {}
+        }
+      }
+
+      // 3) 选择当前模型：优先最近选择，其次首选项或首个
       final preferred = storage.get<String>(AIConstants.selectedModel) ?? AIConstants.defaultOpenAIModel;
       currentModel.value = models.contains(preferred) && preferred.isNotEmpty
           ? preferred
@@ -340,7 +414,27 @@ class AIChatController extends GetxController {
   }
 
   void setModel(String model) {
+    // 更新当前选择会话的模型绑定
+    final sid = selectedSessionId.value;
+    if (sid != null) {
+      final idx = sessions.indexWhere((s) => s.id == sid);
+      if (idx != -1) {
+        final s = sessions[idx];
+        sessions[idx] = ChatSession(
+          id: s.id,
+          title: s.title,
+          createdAt: s.createdAt,
+          lastActiveAt: s.lastActiveAt,
+          modelId: model,
+          avatarBase64: s.avatarBase64,
+        );
+        sessions.refresh();
+        _persistSessions();
+      }
+    }
+    // 更新当前模型用于即时发送
     currentModel.value = model;
+    // 仍然记录为全局最近使用，便于新建会话默认值
     storage.set(AIConstants.selectedModel, model);
   }
 
@@ -411,6 +505,26 @@ class AIChatController extends GetxController {
         title: s.title,
         createdAt: s.createdAt,
         lastActiveAt: DateTime.now(),
+        modelId: s.modelId,
+        avatarBase64: s.avatarBase64,
+      );
+      sessions.refresh();
+      _persistSessions();
+    }
+  }
+
+  /// 更新会话头像（base64），并持久化
+  void setSessionAvatar(String id, String? avatarBase64) {
+    final idx = sessions.indexWhere((s) => s.id == id);
+    if (idx != -1) {
+      final s = sessions[idx];
+      sessions[idx] = ChatSession(
+        id: s.id,
+        title: s.title,
+        createdAt: s.createdAt,
+        lastActiveAt: s.lastActiveAt,
+        modelId: s.modelId,
+        avatarBase64: avatarBase64,
       );
       sessions.refresh();
       _persistSessions();
@@ -509,5 +623,19 @@ class AIChatController extends GetxController {
       // 若右侧面板已注入但处于折叠态，则展开以便用户看到闪动提示
       shell.expandRightPanel();
     } catch (_) {}
+  }
+
+  /// 获取某会话的最后一条消息文本（懒加载，不会触发界面跳转）
+  String getLastMessagePreview(String id) {
+    var list = _sessionStore[id];
+    if (list == null) {
+      list = _loadMessagesForSession(id);
+      _sessionStore[id] = list;
+    }
+    if (list.isEmpty) return '';
+    final last = list.last;
+    final text = last.content.trim();
+    if (text.isEmpty) return '';
+    return text.length > 32 ? '${text.substring(0, 32)}…' : text;
   }
 }

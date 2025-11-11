@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'ai_service.dart';
@@ -12,8 +12,13 @@ import 'ai_service.dart';
 class OllamaService implements AIService {
   final LocalStorage _storage = Get.find<LocalStorage>();
 
+  // 实例级覆盖：用于 Provider 实例打通
+  final String? baseUrlOverride;
+
+  OllamaService({this.baseUrlOverride});
+
   Dio get _dio {
-    final baseUrl = _storage.get<String>(AIConstants.ollamaBaseUrl) ?? 'http://localhost:11434';
+    final baseUrl = baseUrlOverride ?? (_storage.get<String>(AIConstants.ollamaBaseUrl) ?? 'http://localhost:11434');
     return Dio(BaseOptions(
       baseUrl: baseUrl,
       headers: {
@@ -26,7 +31,7 @@ class OllamaService implements AIService {
 
   @override
   bool get isConfigured {
-    final baseUrl = _storage.get<String>(AIConstants.ollamaBaseUrl) ?? '';
+    final baseUrl = baseUrlOverride ?? (_storage.get<String>(AIConstants.ollamaBaseUrl) ?? '');
     return baseUrl.isNotEmpty;
   }
 

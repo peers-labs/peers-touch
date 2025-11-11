@@ -1,5 +1,7 @@
 // 基础存储接口
-import '../../entities/base/entity_base.dart';
+import 'package:peers_touch_desktop/core/models/entity_base.dart';
+// 让依赖此接口的模块也能访问 DataEntity 等类型
+export 'package:peers_touch_desktop/core/models/entity_base.dart';
 
 /// 查询条件
 class QueryCondition {
