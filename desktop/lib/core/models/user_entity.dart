@@ -1,5 +1,5 @@
 // 用户数据实体
-import '../base/entity_base.dart';
+import 'package:peers_touch_desktop/core/models/entity_base.dart';
 
 /// 用户数据实体
 class UserEntity extends BaseSyncableEntity {

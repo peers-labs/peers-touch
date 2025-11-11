@@ -1,11 +1,11 @@
 // 存储工厂类
-import '../entities/user/user_entity.dart';
-import '../entities/session/session_entity.dart';
+import 'package:peers_touch_desktop/core/models/user_entity.dart';
+import 'package:peers_touch_desktop/core/models/session_entity.dart';
 import '../interfaces/local/local_storage_interface.dart';
 import '../interfaces/network/network_storage_interface.dart';
 import '../interfaces/composite/composite_storage_interface.dart';
 import '../interfaces/base/storage_interface.dart';
-import '../entities/base/data_entity.dart';
+import 'package:peers_touch_desktop/core/models/entity_base.dart';
 import '../implementations/local/get_storage_adapter.dart';
 import '../implementations/network/http_storage_adapter.dart';
 import '../implementations/composite/offline_first_strategy.dart';

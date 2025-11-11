@@ -1,10 +1,9 @@
 // 存储模块主导出文件
 
-// 导出实体层
-export 'entities/base/entity_base.dart' hide SyncStatus, SyncableEntity;
-export 'entities/base/syncable_entity.dart';
-export 'entities/user/user_entity.dart';
-export 'entities/session/session_entity.dart';
+// 导出实体层（迁移到 core/models）
+export 'package:peers_touch_desktop/core/models/entity_base.dart';
+export 'package:peers_touch_desktop/core/models/user_entity.dart';
+export 'package:peers_touch_desktop/core/models/session_entity.dart';
 
 // 导出接口层
 export 'interfaces/base/storage_interface.dart';
