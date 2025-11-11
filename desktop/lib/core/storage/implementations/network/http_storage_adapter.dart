@@ -3,8 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../interfaces/network/network_storage_interface.dart';
 import '../../interfaces/base/storage_interface.dart';
-import '../../entities/base/data_entity.dart';
-import '../../entities/base/syncable_entity.dart';
+import 'package:peers_touch_desktop/core/models/entity_base.dart';
 
 /// HTTP网络存储适配器
 class HttpStorageAdapter<T extends DataEntity> implements NetworkStorageAdapter<T> {
@@ -141,9 +140,9 @@ class HttpStorageAdapter<T extends DataEntity> implements NetworkStorageAdapter<
     entities = _filterEntities(entities, params.conditions);
     entities = _sortEntities(entities, params.sortConditions);
     
-    final start = params.offset;
-    final end = start + params.limit;
-    return entities.sublist(start, end.clamp(0, entities.length));
+    final start = params.offset ?? 0;
+    final end = start + (params.limit ?? entities.length);
+    return entities.sublist(start, end.clamp(0, entities.length).toInt());
   }
   
   @override
@@ -298,9 +297,9 @@ class HttpStorageAdapter<T extends DataEntity> implements NetworkStorageAdapter<
     if (value == null) return false;
     
     switch (condition.operator) {
-      case QueryOperator.equals:
+      case QueryOperator.equal:
         return value == condition.value;
-      case QueryOperator.notEquals:
+      case QueryOperator.notEqual:
         return value != condition.value;
       case QueryOperator.greaterThan:
         return value > condition.value;
@@ -312,6 +311,18 @@ class HttpStorageAdapter<T extends DataEntity> implements NetworkStorageAdapter<
         return value.toString().startsWith(condition.value.toString());
       case QueryOperator.endsWith:
         return value.toString().endsWith(condition.value.toString());
+      case QueryOperator.between:
+        final range = condition.value;
+        if (range is List && range.length == 2) {
+          final min = range[0];
+          final max = range[1];
+          if (value is Comparable && min is Comparable && max is Comparable &&
+              value.runtimeType == min.runtimeType && value.runtimeType == max.runtimeType) {
+            return (value as Comparable).compareTo(min) >= 0 &&
+                   (value as Comparable).compareTo(max) <= 0;
+          }
+        }
+        return false;
     }
   }
   

@@ -3,8 +3,7 @@ import '../../interfaces/composite/composite_storage_interface.dart';
 import '../../interfaces/local/local_storage_interface.dart';
 import '../../interfaces/network/network_storage_interface.dart';
 import '../../interfaces/base/storage_interface.dart';
-import '../../entities/base/data_entity.dart';
-import '../../entities/base/syncable_entity.dart';
+import 'package:peers_touch_desktop/core/models/entity_base.dart';
 
 /// 离线优先存储策略
 class OfflineFirstStrategy<T extends DataEntity> implements CompositeStorageStrategy<T> {

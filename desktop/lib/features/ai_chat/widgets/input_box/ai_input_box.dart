@@ -2,6 +2,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/attachment_tray.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/controller/ai_input_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/model_capability.dart';
@@ -24,6 +26,11 @@ class AIInputBox extends StatelessWidget {
   final ValueChanged<String>? onModelChanged;
   // 按 Provider 分组的模型选择（可选）
   final Map<String, List<String>>? groupedModelsByProvider;
+
+  // 跟随按钮的锚点（用于弹窗定位）
+  final GlobalKey _providerBtnKey = GlobalKey();
+  // 测量整体输入框高度，用于弹窗最大高度计算
+  final GlobalKey _aiBoxKey = GlobalKey();
 
   AIInputBox({
     super.key,
@@ -48,6 +55,7 @@ class AIInputBox extends StatelessWidget {
 
     // 一体化输入框：内部包含文本输入、工具栏与发送按钮
     return Container(
+      key: _aiBoxKey,
       decoration: BoxDecoration(
         border: Border.all(color: borderColor),
         borderRadius: radius,
@@ -114,8 +122,8 @@ class AIInputBox extends StatelessWidget {
           // 工具栏与发送按钮（位于同一边框内）
           Row(
             children: [
-              // 模型选择按钮（改为下拉面板，不弹窗）
-              _providerMenuButton(context),
+              // 模型选择按钮（改为切换内联面板）
+              _providerMenuButton(context, ctrl),
               const SizedBox(width: 8),
               _toolbar(context, ctrl),
               // 保存为主题按钮（位于右侧发送按钮前）
@@ -142,6 +150,7 @@ class AIInputBox extends StatelessWidget {
               _sendCompositeButton(context, ctrl),
             ],
           ),
+          // Provider/Model 面板改为锚定弹窗，内联面板不再显示
           // 附件托盘置于内部底部
           const SizedBox(height: 6),
           AttachmentTray(controller: ctrl),
@@ -150,23 +159,63 @@ class AIInputBox extends StatelessWidget {
     );
   }
 
-  // 模型选择下拉面板按钮
-  Widget _providerMenuButton(BuildContext context) {
+  // 模型选择面板按钮（切换内联菜单）
+  Widget _providerMenuButton(BuildContext context, AiInputController ctrl) {
     final theme = Theme.of(context);
-    final menuController = MenuController();
-    return MenuAnchor(
-      controller: menuController,
-      // 在图标上方 4 像素处展开
-      alignmentOffset: const Offset(0, -4),
-      menuChildren: [
-        _buildProviderMenuContent(context),
-      ],
-      child: IconButton(
-        tooltip: '选择模型',
-        icon: Icon(Icons.public, color: theme.colorScheme.primary),
-        onPressed: () => menuController.open(),
-      ),
+    return IconButton(
+      key: _providerBtnKey,
+      tooltip: '选择模型',
+      icon: Icon(Icons.public, color: theme.colorScheme.primary),
+      onPressed: () {
+        if (ctrl.isProviderMenuOpen.value) {
+          ctrl.closeProviderMenuOverlay();
+        } else {
+          // 动态计算宽度与最大高度
+          final Size menuSize = _computeMenuSize(context);
+          ctrl.openProviderMenuOverlay(
+            context,
+            _providerBtnKey,
+            (ctx) => _buildProviderMenuContent(ctx, menuWidth: menuSize.width, menuMaxHeight: menuSize.height),
+            menuWidth: menuSize.width,
+            menuMaxHeight: menuSize.height,
+          );
+        }
+      },
     );
+  }
+
+  // 计算弹窗宽度（基于最长模型名+20%两侧再乘以黄金比例0.618）与最大高度（ai-input-box高度/0.618）
+  Size _computeMenuSize(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextStyle style = theme.textTheme.bodyMedium ?? const TextStyle(fontSize: 14);
+    final Map<String, List<String>> grouped = groupedModelsByProvider ?? {};
+    double longest = 120; // 基线，避免过窄
+    for (final entry in grouped.entries) {
+      // provider 名称也参与测量，但通常模型名更长
+      longest = _measureTextWidth(entry.key, style).clamp(longest, double.infinity);
+      for (final m in entry.value) {
+        final w = _measureTextWidth(m, style);
+        if (w > longest) longest = w;
+      }
+    }
+    // 两侧各20%长度，共40%，再乘以0.618 收敛宽度，最后夹紧范围
+    double computedWidth = longest * 1.3 * 0.618; // 略收窄
+    computedWidth = computedWidth.clamp(240.0, 420.0);
+
+    // 获取输入框整体高度，最大高度设置为其 1/0.618 倍（约1.618倍）
+    final double boxHeight = _aiBoxKey.currentContext?.size?.height ?? 280.0;
+    // 降低最大高度上限，避免弹出层过高
+    final double maxHeight = (boxHeight / 0.75).clamp(220.0, 360.0);
+    return Size(computedWidth, maxHeight);
+  }
+
+  double _measureTextWidth(String text, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout(minWidth: 0, maxWidth: double.infinity);
+    return tp.size.width + 24; // 预留少量左右内容间距
   }
 
   // 圆形内嵌发送按钮（靠右）
@@ -268,14 +317,15 @@ class AIInputBox extends StatelessWidget {
   // 右侧与发送按钮并排的发送设置菜单
   Widget _sendSettingsButton(BuildContext context, AiInputController ctrl) {
     final color = Theme.of(context).colorScheme.onSurfaceVariant;
-    return PopupMenuButton<String>(
-      tooltip: '发送设置',
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'enter', child: Text('按 Enter 发送')),
-        PopupMenuItem(value: 'ctrlEnter', child: Text('按 Ctrl+Enter 发送')),
-      ],
-      onSelected: ctrl.setSendMode,
-      icon: Icon(Icons.keyboard_alt_outlined, color: color),
+    final current = ctrl.sendMode.value;
+    final next = current == 'enter' ? 'ctrlEnter' : 'enter';
+    final tip = current == 'enter' ? '按 Enter 发送' : '按 Ctrl+Enter 发送';
+    return Tooltip(
+      message: '$tip（点击切换）',
+      child: IconButton(
+        icon: Icon(Icons.keyboard_alt_outlined, color: color),
+        onPressed: () => ctrl.setSendMode(next),
+      ),
     );
   }
 
@@ -364,9 +414,10 @@ class AIInputBox extends StatelessWidget {
     onSendDraft(draft);
   }
 
-  // 下拉面板显示 Provider/Model 选择（锚定在按钮处）
-  Future<void> _showProviderModelMenuAt(BuildContext context, Offset globalPos) async {
-    final ThemeData theme = Theme.of(context);
+  // 内联 Provider/Model 菜单（采用布局，不使用弹窗/绝对定位）
+  Widget _buildProviderMenuInline(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.extension<LobeTokens>();
     final textTheme = theme.textTheme;
     final grouped = groupedModelsByProvider ?? {};
     final List<_ProviderEntry> entries = grouped.entries
@@ -378,42 +429,27 @@ class AIInputBox extends StatelessWidget {
               models: e.value,
             ))
         .toList();
-
-    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final RelativeRect position = RelativeRect.fromLTRB(
-      globalPos.dx,
-      globalPos.dy,
-      overlay.size.width - globalPos.dx,
-      overlay.size.height - globalPos.dy,
-    );
-
-    await showMenu<void>(
-      context: context,
-      // 将菜单整体上移 4 像素，避免覆盖图标
-      position: RelativeRect.fromLTRB(
-        position.left,
-        position.top - 4,
-        position.right,
-        position.bottom,
-      ),
-      items: [
-        PopupMenuItem<void>(
-          enabled: false,
-          padding: EdgeInsets.zero,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 460),
-            child: Material(
-              color: theme.colorScheme.surface,
-              child: _buildProviderMenuScrollableTree(context, entries, textTheme, theme),
-            ),
-          ),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 300, maxWidth: 560, maxHeight: 360),
+      child: Container(
+        decoration: BoxDecoration(
+          color: tokens?.bgLevel1 ?? theme.colorScheme.surface,
+          border: Border.all(color: UIKit.dividerColor(context)),
+          borderRadius: BorderRadius.circular(UIKit.radiusLg(context)),
         ),
-      ],
+        child: _buildProviderMenuScrollableTree(
+          context,
+          entries,
+          textTheme,
+          theme,
+          useTokens: true,
+        ),
+      ),
     );
   }
 
-  // 构建菜单内容（无折叠，树状展示，可滚动）
-  Widget _buildProviderMenuContent(BuildContext context) {
+  // 构建菜单内容（无折叠，树状展示，可滚动），去边框，使用动态宽高
+  Widget _buildProviderMenuContent(BuildContext context, {required double menuWidth, required double menuMaxHeight}) {
     final ThemeData theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final grouped = groupedModelsByProvider ?? {};
@@ -427,10 +463,17 @@ class AIInputBox extends StatelessWidget {
             ))
         .toList();
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 520, maxHeight: 460),
-      child: Material(
-        color: theme.colorScheme.surface,
-        child: _buildProviderMenuScrollableTree(context, entries, textTheme, theme),
+      constraints: BoxConstraints(
+        minWidth: menuWidth,
+        maxWidth: menuWidth,
+        maxHeight: menuMaxHeight,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: _buildProviderMenuScrollableTree(context, entries, textTheme, theme, useTokens: true),
       ),
     );
   }
@@ -440,19 +483,22 @@ class AIInputBox extends StatelessWidget {
     List<_ProviderEntry> entries,
     TextTheme textTheme,
     ThemeData theme,
+    {bool useTokens = false}
   ) {
+    final tokens = theme.extension<LobeTokens>();
+    final dividerColor = (tokens?.divider ?? theme.dividerColor).withOpacity(0.12);
     return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           for (final e in entries) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
                   _providerLogo(context, e),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(e.name, style: textTheme.bodyMedium)),
+                  Expanded(child: Text(e.name, style: textTheme.titleSmall)),
                   Icon(Icons.settings_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
                   const SizedBox(width: 8),
                   Icon(Icons.chevron_right, size: 18, color: theme.colorScheme.onSurfaceVariant),
@@ -472,25 +518,36 @@ class AIInputBox extends StatelessWidget {
                 InkWell(
                   onTap: () {
                     onModelChanged?.call(m);
-                    // 使用 MenuAnchor 时不需要 pop；使用 showMenu 时会自动关闭。
+                    try { Get.find<AiInputController>(tag: 'ai-input-box').closeProviderMenuOverlay(); } catch (_) {}
                   },
+                  borderRadius: BorderRadius.circular(8),
                   child: Padding(
-                    padding: const EdgeInsets.only(left: 54, right: 8, top: 6, bottom: 6),
-                    child: Row(
-                      children: [
-                        Icon(
-                          currentModel == m ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                          size: 18,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text(m, style: textTheme.bodySmall)),
-                      ],
+                    padding: const EdgeInsets.only(left: 54, right: 12, top: 8, bottom: 8),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: currentModel == m
+                            ? (tokens?.menuSelected ?? theme.colorScheme.primary.withOpacity(0.08))
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            currentModel == m ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                            size: 18,
+                            color: currentModel == m
+                                ? (tokens?.brandAccent ?? theme.colorScheme.primary)
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(child: Text(m, style: textTheme.bodyMedium)),
+                        ],
+                      ),
                     ),
                   ),
                 ),
             ],
-            const Divider(height: 1),
+            Divider(height: 1, color: dividerColor, indent: 16, endIndent: 16),
           ],
         ],
       ),

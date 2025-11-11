@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:peers_touch_desktop/core/network/interceptors/auth_interceptor.dart';
 import 'package:peers_touch_desktop/core/network/interceptors/retry_interceptor.dart';
 import 'package:peers_touch_desktop/core/network/interceptors/token_refresh_interceptor.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/core/network/api_exception.dart';
 import 'package:peers_touch_desktop/core/network/network_status_service.dart';
 import 'package:peers_touch_desktop/core/network/token_refresh_handler.dart';

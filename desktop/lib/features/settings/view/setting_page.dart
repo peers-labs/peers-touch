@@ -8,7 +8,7 @@ import 'package:peers_touch_desktop/features/settings/controller/setting_control
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';

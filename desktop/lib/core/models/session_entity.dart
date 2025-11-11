@@ -1,5 +1,5 @@
 // 会话数据实体
-import '../base/entity_base.dart';
+import 'package:peers_touch_desktop/core/models/entity_base.dart';
 
 /// 消息类型枚举
 enum MessageType {

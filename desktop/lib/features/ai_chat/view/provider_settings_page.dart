@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/create_provider_dialog.dart';
@@ -67,24 +68,11 @@ class ProviderSettingsPage extends GetView<ProviderController> {
   Widget _buildSearchAndAdd(BuildContext context, LobeTokens tokens) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              decoration: UIKit.inputDecoration(context).copyWith(
-                hintText: 'Search Providers...',
-                prefixIcon: const Icon(Icons.search),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => _showAddProviderDialog(context, tokens),
-            tooltip: 'Add Provider',
-            style: UIKit.primaryButtonStyle(context),
-          ),
-        ],
+      child: FrameActionCombo(
+        hintText: '搜索助手',
+        prefixIcon: Icons.search,
+        onAction: () => _showAddProviderDialog(context, tokens),
+        actionIcon: Icons.add,
       ),
     );
   }

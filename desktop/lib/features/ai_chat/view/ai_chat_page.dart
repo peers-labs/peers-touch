@@ -12,6 +12,8 @@ import 'package:peers_touch_desktop/features/ai_chat/widgets/topic_panel.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:convert';
 
 class AIChatPage extends GetView<AIChatController> {
   const AIChatPage({super.key});
@@ -24,6 +26,8 @@ class AIChatPage extends GetView<AIChatController> {
             sessions: controller.sessions.toList(),
             selectedId: controller.selectedSessionId.value,
             onSelectSession: controller.selectSession,
+            onReorder: controller.reorderSessions,
+            lastMessageGetter: controller.getLastMessagePreview,
             onRenameSession: (ChatSession s) async {
               final textController = TextEditingController(text: s.title);
               final newTitle = await showDialog<String>(
@@ -70,6 +74,45 @@ class AIChatPage extends GetView<AIChatController> {
               );
               if (ok == true) {
                 controller.deleteSession(s.id);
+              }
+            },
+            onChangeAvatar: (ChatSession s) async {
+              // 选择图片并预览后确认
+              final result = await FilePicker.platform.pickFiles(
+                type: FileType.image,
+                allowMultiple: false,
+                withData: true,
+              );
+              if (result == null || result.files.isEmpty) return;
+              final file = result.files.first;
+              final bytes = file.bytes;
+              if (bytes == null) return;
+              final b64 = base64Encode(bytes);
+              final ok = await showDialog<bool>(
+                context: ctx,
+                builder: (dctx) {
+                  return AlertDialog(
+                    title: Text('预览头像'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(56),
+                          child: Image.memory(bytes, width: 112, height: 112, fit: BoxFit.cover),
+                        ),
+                        SizedBox(height: UIKit.spaceSm(dctx)),
+                        Text(file.name, style: Theme.of(dctx).textTheme.bodySmall),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.of(dctx).pop(false), child: Text(AppLocalizations.of(dctx).cancel)),
+                      TextButton(onPressed: () => Navigator.of(dctx).pop(true), child: Text(AppLocalizations.of(dctx).confirm)),
+                    ],
+                  );
+                },
+              );
+              if (ok == true) {
+                controller.setSessionAvatar(s.id, b64);
               }
             },
           )),

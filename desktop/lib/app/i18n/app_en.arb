@@ -27,9 +27,9 @@
   "defaultModel": "Default Model",
   "defaultModelDescription": "Choose the default AI model"
   ,
-  "chatSearchSessionsPlaceholder": "Search conversations",
+  "chatSearchSessionsPlaceholder": "Search assistants",
   "chatNewConversation": "New Chat",
-  "chatSessionActions": "Conversation actions",
+  "chatSessionActions": "Assistant actions",
   "rename": "Rename",
   "delete": "Delete",
   "chatTopicHistory": "Topic History",
@@ -42,13 +42,13 @@
   "moreMenuPlaceholder": "More menu (placeholder)",
   "sendingIndicator": "Sending...",
   "chatDefaultTitle": "Just Chat",
-  "renameSessionTitle": "Rename Conversation",
+  "renameSessionTitle": "Rename Assistant",
   "renameTopicTitle": "Rename Topic",
   "inputNewNamePlaceholder": "Enter new name",
   "cancel": "Cancel",
   "confirm": "Confirm",
-  "deleteSessionTitle": "Delete Conversation",
-  "deleteSessionConfirm": "Delete conversation {sessionTitle} and all messages?",
+  "deleteSessionTitle": "Delete Assistant",
+  "deleteSessionConfirm": "Delete assistant {sessionTitle} and all messages?",
   "@deleteSessionConfirm": {
     "placeholders": {
       "sessionTitle": {

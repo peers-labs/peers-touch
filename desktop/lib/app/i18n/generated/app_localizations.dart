@@ -263,7 +263,7 @@ abstract class AppLocalizations {
   /// No description provided for @chatSearchSessionsPlaceholder.
   ///
   /// In en, this message translates to:
-  /// **'Search conversations'**
+  /// **'Search assistants'**
   String get chatSearchSessionsPlaceholder;
 
   /// No description provided for @chatNewConversation.
@@ -275,7 +275,7 @@ abstract class AppLocalizations {
   /// No description provided for @chatSessionActions.
   ///
   /// In en, this message translates to:
-  /// **'Conversation actions'**
+  /// **'Assistant actions'**
   String get chatSessionActions;
 
   /// No description provided for @rename.
@@ -353,7 +353,7 @@ abstract class AppLocalizations {
   /// No description provided for @renameSessionTitle.
   ///
   /// In en, this message translates to:
-  /// **'Rename Conversation'**
+  /// **'Rename Assistant'**
   String get renameSessionTitle;
 
   /// No description provided for @renameTopicTitle.
@@ -383,13 +383,13 @@ abstract class AppLocalizations {
   /// No description provided for @deleteSessionTitle.
   ///
   /// In en, this message translates to:
-  /// **'Delete Conversation'**
+  /// **'Delete Assistant'**
   String get deleteSessionTitle;
 
   /// No description provided for @deleteSessionConfirm.
   ///
   /// In en, this message translates to:
-  /// **'Delete conversation {sessionTitle} and all messages?'**
+  /// **'Delete assistant {sessionTitle} and all messages?'**
   String deleteSessionConfirm(String sessionTitle);
 
   /// No description provided for @saveAsTopic.

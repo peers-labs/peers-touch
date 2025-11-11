@@ -90,13 +90,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get defaultModelDescription => '选择默认使用的AI模型';
 
   @override
-  String get chatSearchSessionsPlaceholder => '搜索会话';
+  String get chatSearchSessionsPlaceholder => '搜索助手';
 
   @override
   String get chatNewConversation => '新建对话';
 
   @override
-  String get chatSessionActions => '会话操作';
+  String get chatSessionActions => '助手操作';
 
   @override
   String get rename => '重命名';
@@ -135,7 +135,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatDefaultTitle => 'Just Chat';
 
   @override
-  String get renameSessionTitle => '重命名会话';
+  String get renameSessionTitle => '重命名助手';
 
   @override
   String get renameTopicTitle => '重命名主题';
@@ -150,11 +150,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get confirm => '确定';
 
   @override
-  String get deleteSessionTitle => '删除会话';
+  String get deleteSessionTitle => '删除助手';
 
   @override
   String deleteSessionConfirm(String sessionTitle) {
-    return '确认删除会话 $sessionTitle 及其消息？';
+    return '确认删除助手 $sessionTitle 及其消息？';
   }
 
   @override

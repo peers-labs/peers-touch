@@ -2,18 +2,24 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'ai_service.dart';
 
 /// OpenAI服务实现
 class OpenAIService implements AIService {
   final LocalStorage _storage = Get.find<LocalStorage>();
+
+  // 可选的实例级覆盖配置（用于 Provider 实例打通）
+  final String? apiKeyOverride;
+  final String? baseUrlOverride;
+
+  OpenAIService({this.apiKeyOverride, this.baseUrlOverride});
   
   /// 获取配置的Dio实例
   Dio get _dio {
-    final apiKey = _storage.get<String>(AIConstants.openaiApiKey) ?? '';
-    final baseUrl = _storage.get<String>(AIConstants.openaiBaseUrl) ?? AIConstants.defaultOpenAIBaseUrl;
+    final apiKey = apiKeyOverride ?? (_storage.get<String>(AIConstants.openaiApiKey) ?? '');
+    final baseUrl = baseUrlOverride ?? (_storage.get<String>(AIConstants.openaiBaseUrl) ?? AIConstants.defaultOpenAIBaseUrl);
     
     return Dio(BaseOptions(
       baseUrl: baseUrl,
@@ -29,7 +35,7 @@ class OpenAIService implements AIService {
   /// 检查配置是否有效
   @override
   bool get isConfigured {
-    final apiKey = _storage.get<String>(AIConstants.openaiApiKey) ?? '';
+    final apiKey = apiKeyOverride ?? (_storage.get<String>(AIConstants.openaiApiKey) ?? '');
     return apiKey.isNotEmpty;
   }
   

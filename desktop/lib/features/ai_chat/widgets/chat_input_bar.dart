@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/ai_input_box.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
@@ -39,6 +39,12 @@ class ChatInputBar extends StatelessWidget {
     // 能力基于注入的当前模型计算
     final cap = CapabilityResolver.resolve(provider: provider, modelId: currentModel);
 
+    // 为 Provider 分组添加兜底映射，避免菜单出现空白
+    final Map<String, List<String>> groupedFallback =
+        (groupedModelsByProvider != null && groupedModelsByProvider!.isNotEmpty)
+            ? groupedModelsByProvider!
+            : ((models != null && models!.isNotEmpty) ? {provider: models!} : {});
+
     return Padding(
       padding: EdgeInsets.all(UIKit.spaceMd(context)),
       child: AIInputBox(
@@ -53,7 +59,7 @@ class ChatInputBar extends StatelessWidget {
         models: models,
         currentModel: currentModel,
         onModelChanged: onModelChanged,
-        groupedModelsByProvider: groupedModelsByProvider,
+        groupedModelsByProvider: groupedFallback,
       ),
     );
   }

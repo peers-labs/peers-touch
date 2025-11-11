@@ -90,13 +90,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get defaultModelDescription => 'Choose the default AI model';
 
   @override
-  String get chatSearchSessionsPlaceholder => 'Search conversations';
+  String get chatSearchSessionsPlaceholder => 'Search assistants';
 
   @override
   String get chatNewConversation => 'New Chat';
 
   @override
-  String get chatSessionActions => 'Conversation actions';
+  String get chatSessionActions => 'Assistant actions';
 
   @override
   String get rename => 'Rename';
@@ -135,7 +135,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatDefaultTitle => 'Just Chat';
 
   @override
-  String get renameSessionTitle => 'Rename Conversation';
+  String get renameSessionTitle => 'Rename Assistant';
 
   @override
   String get renameTopicTitle => 'Rename Topic';
@@ -150,11 +150,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get confirm => 'Confirm';
 
   @override
-  String get deleteSessionTitle => 'Delete Conversation';
+  String get deleteSessionTitle => 'Delete Assistant';
 
   @override
   String deleteSessionConfirm(String sessionTitle) {
-    return 'Delete conversation $sessionTitle and all messages?';
+    return 'Delete assistant $sessionTitle and all messages?';
   }
 
   @override
