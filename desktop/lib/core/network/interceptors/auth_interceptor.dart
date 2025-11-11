@@ -4,6 +4,7 @@ import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 
 class AuthInterceptor extends Interceptor {
   final SecureStorage secureStorage;
+
   AuthInterceptor({required this.secureStorage});
 
   @override

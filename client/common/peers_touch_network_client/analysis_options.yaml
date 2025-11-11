@@ -1,0 +1,39 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    - '**/*.g.dart'
+    - '**/*.freezed.dart'
+    - 'build/**'
+
+linter:
+  rules:
+    # 代码风格规则
+    - always_declare_return_types
+    - always_use_package_imports
+    - avoid_empty_else
+    - avoid_print
+    - avoid_renaming_method_parameters
+    - avoid_return_types_on_setters
+    - avoid_single_cascade_in_expression_statements
+    - avoid_unused_constructor_parameters
+    - camel_case_types
+    - constant_identifier_names
+    - empty_catches
+    - empty_constructor_bodies
+    - library_names
+    - library_prefixes
+    - non_constant_identifier_names
+    - omit_local_variable_types
+    - prefer_final_fields
+    - prefer_final_locals
+    - prefer_interpolation_to_compose_strings
+    - prefer_is_empty
+    - prefer_is_not_empty
+    - slash_for_doc_comments
+    - type_init_formals
+    - unnecessary_brace_in_string_interps
+    - unnecessary_const
+    - unnecessary_new
+    - unrelated_type_equality_checks
+    - valid_regexps
