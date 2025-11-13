@@ -1,0 +1,17 @@
+name: peers_touch_model
+description: Shared data models for Peers-touch, reusable by desktop and mobile applications.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.1.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  equatable: ^2.0.5
+  meta: ^1.11.0
+
+dev_dependencies:
+  lints: ^3.0.0
+  test: ^1.24.0

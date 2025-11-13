@@ -1,7 +1,8 @@
 import 'package:get/get.dart';
+import 'package:peers_touch_storage/peers_touch_storage.dart';
+import 'package:peers_touch_desktop/core/storage/storage_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 
 /// AI服务提供商控制器
 class ProviderController extends GetxController {
@@ -91,7 +92,17 @@ class ProviderController extends GetxController {
       );
       
       await _providerService.saveProvider(updatedProvider);
-      await loadProviders();
+
+      // Manually update the provider in the list
+      final index = providers.indexWhere((p) => p.id == updatedProvider.id);
+      if (index != -1) {
+        providers[index] = updatedProvider;
+      }
+
+      // Manually update the current provider if it is the one being edited
+      if (currentProvider.value?.id == updatedProvider.id) {
+        currentProvider.value = updatedProvider;
+      }
       Get.snackbar('成功', '提供商更新成功');
     } catch (e) {
       Get.snackbar('错误', '更新提供商失败: $e');
@@ -102,9 +113,8 @@ class ProviderController extends GetxController {
   Future<void> deleteProvider(String providerId) async {
     try {
       await _providerService.deleteProvider(providerId, 'default');
-      await _deleteApiKey(providerId);
+      // await _deleteApiKey(providerId); // TODO: 钥匙串权限修复前，暂时跳过密钥删除
       await loadProviders();
-      Get.snackbar('成功', '提供商删除成功');
     } catch (e) {
       Get.snackbar('错误', '删除提供商失败: $e');
     }
@@ -116,11 +126,15 @@ class ProviderController extends GetxController {
       await _providerService.setCurrentProvider(providerId);
       selectedProviderId.value = providerId;
       
-      // 重新加载当前提供商
-      final current = await _providerService.getCurrentProvider();
-      currentProvider.value = current;
-      
-      Get.snackbar('成功', '当前提供商已切换');
+      // 优先从内存中的 providers 列表获取提供商
+      final providerFromList = providers.firstWhereOrNull((p) => p.id == providerId);
+      if (providerFromList != null) {
+        currentProvider.value = providerFromList;
+      } else {
+        // 如果内存中没有，再从数据库获取
+        final current = await _providerService.getCurrentProvider();
+        currentProvider.value = current;
+      }
     } catch (e) {
       Get.snackbar('错误', '切换提供商失败: $e');
     }
@@ -158,6 +172,28 @@ class ProviderController extends GetxController {
   }
   
   /// 获取提供商的模型列表
+  Future<void> addModelToProvider(String providerId, Map<String, dynamic> model) async {
+    final index = providers.indexWhere((p) => p.id == providerId);
+    if (index != -1) {
+      final updatedSettings = {
+        ...providers[index].settings ?? {},
+        'models': [...(providers[index].settings?['models'] as List<dynamic>? ?? []), model['id']],
+        'modelsMetadata': {
+          ...(providers[index].settings?['modelsMetadata'] as Map<String, dynamic>? ?? {}),
+          model['id']: model,
+        },
+      };
+      final updatedProvider = providers[index].copyWith(
+        settings: updatedSettings,
+      );
+      providers[index] = updatedProvider;
+      if (currentProvider.value?.id == providerId) {
+        currentProvider.value = updatedProvider;
+      }
+      await _providerService.saveProvider(updatedProvider);
+    }
+  }
+
   Future<List<String>> fetchProviderModels(String providerId) async {
     try {
       final provider = providers.firstWhere((p) => p.id == providerId);

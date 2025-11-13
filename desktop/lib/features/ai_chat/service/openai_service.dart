@@ -13,15 +13,17 @@ class OpenAIService implements AIService {
   // 可选的实例级覆盖配置（用于 Provider 实例打通）
   final String? apiKeyOverride;
   final String? baseUrlOverride;
+  final String? endpoint;
+  final String? defaultModel;
 
-  OpenAIService({this.apiKeyOverride, this.baseUrlOverride});
+  OpenAIService({this.apiKeyOverride, this.baseUrlOverride, this.endpoint, this.defaultModel});
   
   /// 获取配置的Dio实例
   Dio get _dio {
     final apiKey = apiKeyOverride ?? (_storage.get<String>(AIConstants.openaiApiKey) ?? '');
     final baseUrl = baseUrlOverride ?? (_storage.get<String>(AIConstants.openaiBaseUrl) ?? AIConstants.defaultOpenAIBaseUrl);
     
-    return Dio(BaseOptions(
+    final dio = Dio(BaseOptions(
       baseUrl: baseUrl,
       headers: {
         'Authorization': 'Bearer $apiKey',
@@ -30,6 +32,20 @@ class OpenAIService implements AIService {
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 60),
     ));
+    
+    // 添加请求拦截器记录完整URL
+    dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        final fullUrl = '${options.baseUrl}${options.path}';
+        LoggingService.debug('=== 完整API请求URL ===');
+        LoggingService.debug('URL: $fullUrl');
+        LoggingService.debug('请求方法: ${options.method}');
+        LoggingService.debug('====================');
+        return handler.next(options);
+      },
+    ));
+    
+    return dio;
   }
   
   /// 检查配置是否有效
@@ -44,6 +60,13 @@ class OpenAIService implements AIService {
   Future<List<String>> fetchModels() async {
     if (!isConfigured) {
       throw Exception('OpenAI API密钥未配置');
+    }
+
+    // 检查是否为ByteDance-Kimi2
+    final isByteDanceKimi = baseUrlOverride?.contains('bytedance') ?? false;
+    if (isByteDanceKimi) {
+      // ByteDance-Kimi2不支持模型列表端点，直接返回已知模型
+      return [defaultModel ?? 'ep-20251014145207-5xzgh'];
     }
 
     try {
@@ -77,16 +100,17 @@ class OpenAIService implements AIService {
     }
     
     final selectedModel = model ??
+        defaultModel ??
         _storage.get<String>(AIConstants.selectedModelOpenAI) ??
         _storage.get<String>(AIConstants.selectedModel) ??
         AIConstants.defaultOpenAIModel;
     final selectedTemperature = temperature ?? double.tryParse(_storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString()) ?? AIConstants.defaultTemperature;
     
     try {
-      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
-      final response = await _dio.post(
-        '/v1/chat/completions',
-        data: {
+        final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
+        final resolvedEndpoint = endpoint ?? '/v1/chat/completions';
+        final fullUrl = '${_dio.options.baseUrl}$resolvedEndpoint';
+        final requestData = {
           'model': selectedModel,
           'messages': [
             {'role': 'system', 'content': systemPrompt},
@@ -98,11 +122,24 @@ class OpenAIService implements AIService {
           'temperature': selectedTemperature,
           'max_tokens': AIConstants.defaultMaxTokens,
           'stream': true,
-        },
-        options: Options(
-          responseType: ResponseType.stream,
-        ),
-      );
+        };
+        
+        // 记录请求详情
+        LoggingService.debug('=== AI API 请求详情 ===');
+        LoggingService.debug('URL: $fullUrl');
+        LoggingService.debug('Headers:');
+        LoggingService.debug('  Authorization: Bearer ${_dio.options.headers['Authorization'].toString().substring(0, 10)}...'); // 只显示部分API Key
+        LoggingService.debug('  Content-Type: ${_dio.options.headers['Content-Type']}');
+        LoggingService.debug('请求参数: ${json.encode(requestData)}');
+        LoggingService.debug('========================');
+        
+        final response = await _dio.post(
+          resolvedEndpoint,
+          data: requestData,
+          options: Options(
+            responseType: ResponseType.stream,
+          ),
+        );
       
       final stream = response.data as ResponseBody;
       
@@ -145,16 +182,17 @@ class OpenAIService implements AIService {
     }
     
     final selectedModel = model ??
+        defaultModel ??
         _storage.get<String>(AIConstants.selectedModelOpenAI) ??
         _storage.get<String>(AIConstants.selectedModel) ??
         AIConstants.defaultOpenAIModel;
     final selectedTemperature = temperature ?? double.tryParse(_storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString()) ?? AIConstants.defaultTemperature;
     
     try {
-      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
-      final response = await _dio.post(
-        '/v1/chat/completions',
-        data: {
+        final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
+        final resolvedEndpoint = endpoint ?? '/v1/chat/completions';
+        final fullUrl = '${_dio.options.baseUrl}$resolvedEndpoint';
+        final requestData = {
           'model': selectedModel,
           'messages': [
             {'role': 'system', 'content': systemPrompt},
@@ -165,8 +203,21 @@ class OpenAIService implements AIService {
           ],
           'temperature': selectedTemperature,
           'max_tokens': AIConstants.defaultMaxTokens,
-        },
-      );
+        };
+        
+        // 记录请求详情
+        LoggingService.debug('=== AI API 请求详情 ===');
+        LoggingService.debug('URL: $fullUrl');
+        LoggingService.debug('Headers:');
+        LoggingService.debug('  Authorization: Bearer ${_dio.options.headers['Authorization'].toString().substring(0, 10)}...'); // 只显示部分API Key
+        LoggingService.debug('  Content-Type: ${_dio.options.headers['Content-Type']}');
+        LoggingService.debug('请求参数: ${json.encode(requestData)}');
+        LoggingService.debug('========================');
+        
+        final response = await _dio.post(
+          resolvedEndpoint,
+          data: requestData,
+        );
       
       final content = response.data['choices'][0]['message']['content'];
       return content ?? '';
@@ -181,6 +232,13 @@ class OpenAIService implements AIService {
   Future<bool> testConnection() async {
     if (!isConfigured) {
       return false;
+    }
+    
+    // 检查是否为ByteDance-Kimi2
+    final isByteDanceKimi = baseUrlOverride?.contains('bytedance') ?? false;
+    if (isByteDanceKimi) {
+      // ByteDance-Kimi2不支持模型列表端点，直接返回成功
+      return true;
     }
     
     try {

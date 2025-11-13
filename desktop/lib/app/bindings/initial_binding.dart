@@ -5,6 +5,7 @@ import 'package:peers_touch_desktop/core/network/network_status_service.dart';
 import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/core/storage/storage_service.dart';
 import 'package:peers_touch_desktop/features/shared/services/user_status_service.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 
 /// Application dependency injection binding
 /// Focuses on GetX dependency injection registration and management
@@ -49,5 +50,6 @@ class InitialBinding extends Bindings {
   /// Register business services
   void _registerBusinessServices() {
     Get.put<UserStatusService>(UserStatusService(), permanent: true);
+    Get.put<ProviderService>(ProviderService(), permanent: true);
   }
 }

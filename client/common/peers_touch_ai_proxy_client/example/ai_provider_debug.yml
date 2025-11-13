@@ -1,0 +1,8 @@
+gdpa:
+  model:
+    gdpa-kimi:
+      protocol: openai
+      proxy_url: https://ark-cn-beijing.bytedance.net/api/v3
+      name: ep-20251014145207-5xzgh
+      display: Kimi
+      api_key: ff8733f3-2dd4-4f42-80f6-ac9f6550fc6e  # 可以在这里配置API Key，如果为空则使用环境变量

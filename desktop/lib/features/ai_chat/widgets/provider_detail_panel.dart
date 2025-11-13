@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:math';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/add_model_dialog.dart';
 
 class ProviderDetailPanel extends StatefulWidget {
   final Provider provider;
@@ -16,33 +21,43 @@ class ProviderDetailPanel extends StatefulWidget {
 }
 
 class _ProviderDetailPanelState extends State<ProviderDetailPanel> {
-  final List<String> _models = [];
-  DateTime? _lastFetchAt;
-  // 待保存的编辑值
-  String? _pendingName;
-  String? _pendingBaseUrl;
-  String? _pendingApiKey;
-  double? _pendingTemperature;
-  double? _pendingMaxTokens;
+  late final TextEditingController _nameController;
+  late final TextEditingController _baseUrlController;
+  late final TextEditingController _apiKeyController;
+  bool _isPasswordVisible = false;
+  String? _selectedModel;
+  bool _isCheckingConnection = false;
+  String? _connectionStatus;
+  bool _isConnectionSuccess = false;
 
   @override
   void initState() {
     super.initState();
-    // 初始加载：从 Provider 的已保存设置中读取模型与更新时间
-    final saved = widget.provider.models;
-    if (saved.isNotEmpty) {
-      _models
-        ..clear()
-        ..addAll(saved);
+    _nameController = TextEditingController(text: widget.provider.name);
+    _baseUrlController = TextEditingController(text: widget.provider.baseUrl);
+    _apiKeyController = TextEditingController(text: widget.provider.keyVaults);
+    // 初始化默认模型
+    _selectedModel = widget.provider.models.firstOrNull;
+  }
+
+  @override
+  void didUpdateWidget(covariant ProviderDetailPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.provider != oldWidget.provider) {
+      _nameController.text = widget.provider.name;
+      _baseUrlController.text = widget.provider.baseUrl ?? '';
+      _apiKeyController.text = widget.provider.keyVaults ?? '';
+      // 更新模型选择
+      _selectedModel = widget.provider.models.firstOrNull;
     }
-    final updatedAtStr = widget.provider.settings?['modelsUpdatedAt']?.toString();
-    if (updatedAtStr != null && updatedAtStr.isNotEmpty) {
-      try {
-        _lastFetchAt = DateTime.parse(updatedAtStr);
-      } catch (_) {
-        _lastFetchAt = null;
-      }
-    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _baseUrlController.dispose();
+    _apiKeyController.dispose();
+    super.dispose();
   }
 
   @override
@@ -51,147 +66,74 @@ class _ProviderDetailPanelState extends State<ProviderDetailPanel> {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
 
     return Scaffold(
-      backgroundColor: tokens.bgLevel2,
-      appBar: AppBar(
-        backgroundColor: tokens.bgLevel2,
-        elevation: 0,
-        title: Text(widget.provider.name, style: TextStyle(color: tokens.textPrimary)),
-        actions: [
-          Tooltip(
-            message: '保存更改',
-            child: IconButton(
-              icon: const Icon(Icons.save),
-              onPressed: () async {
-                final controller = Get.find<ProviderController>();
-                // 合并 settings 与 config
-                final newSettings = Map<String, dynamic>.from(widget.provider.settings ?? {});
-                if (_pendingBaseUrl != null && _pendingBaseUrl!.isNotEmpty) {
-                  newSettings['baseUrl'] = _pendingBaseUrl;
-                }
-                final newConfig = Map<String, dynamic>.from(widget.provider.config ?? {});
-                if (_pendingTemperature != null) {
-                  newConfig['temperature'] = _pendingTemperature;
-                }
-                if (_pendingMaxTokens != null) {
-                  newConfig['maxTokens'] = _pendingMaxTokens!.round();
-                }
-                var updated = widget.provider.copyWith(
-                  name: _pendingName ?? widget.provider.name,
-                  settings: newSettings,
-                  config: newConfig,
-                  updatedAt: DateTime.now().toUtc(),
-                );
-                await controller.updateProvider(updated);
-                // API Key 单独写入安全存储
-                if (_pendingApiKey != null && _pendingApiKey!.isNotEmpty) {
-                  await controller.updateApiKey(widget.provider.id, _pendingApiKey!);
-                }
-              },
-            ),
-          ),
-        ],
-        automaticallyImplyLeading: false,
-      ),
+      backgroundColor: tokens.bgLevel1,
       body: Padding(
-        padding: EdgeInsets.all(UIKit.spaceLg(context)),
+        padding: const EdgeInsets.all(16.0),
         child: ListView(
           children: [
+            _buildSectionHeader(context, widget.provider, controller, tokens),
+            const SizedBox(height: 16),
             _buildSection(
               context,
-              'Basic Configuration',
-              [
-                _buildTextField(context, 'Provider Name', widget.provider.name, (value) {
-                  _pendingName = value;
-                }, tokens),
-                const SizedBox(height: 16),
-                _buildTextField(context, 'Base URL', widget.provider.baseUrl ?? '', (value) {
-                  _pendingBaseUrl = value;
-                }, tokens),
-                const SizedBox(height: 16),
-                _buildTextField(context, 'API Key', '••••••••', (value) {
-                  _pendingApiKey = value;
-                }, tokens, obscureText: true),
-              ],
+              '接口代理地址',
+              '必须包含 http(s)://，如果不是本地部署，则不能为空',
+              _buildTextField(
+                context,
+                'Base URL',
+                _baseUrlController,
+                (value) {
+                  final updatedSettings = Map<String, dynamic>.from(widget.provider.settings ?? {});
+                  updatedSettings['baseUrl'] = value;
+                  final updatedProvider = widget.provider.copyWith(settings: updatedSettings);
+                  controller.updateProvider(updatedProvider);
+                },
+                tokens,
+              ),
               tokens,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             _buildSection(
               context,
-              'Advanced Configuration',
-              [
-                _buildSlider(context, 'Temperature', widget.provider.config?['temperature'] ?? 0.7, 0.0, 2.0, (value) {
-                  setState(() {
-                    _pendingTemperature = value;
-                  });
-                }, tokens),
-                const SizedBox(height: 16),
-                _buildSlider(context, 'Max Tokens', (widget.provider.config?['maxTokens'] ?? 2048).toDouble(), 100, 8192, (value) {
-                  setState(() {
-                    _pendingMaxTokens = value;
-                  });
-                }, tokens),
-              ],
-              tokens,
-            ),
-            const SizedBox(height: 24),
-            _buildSection(
-              context,
-              'Model Management',
-              [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Available Models',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(color: tokens.textPrimary),
-                      ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_lastFetchAt != null)
-                          Text(
-                            '上次刷新：${_formatTime(_lastFetchAt!)}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textSecondary),
-                          ),
-                        const SizedBox(width: 12),
-                        _squareActionButton(
-                          context,
-                          icon: Icons.refresh,
-                          tooltip: 'Fetch Models',
-                          onTap: () async {
-                            final service = AIServiceFactory.fromProvider(widget.provider);
-                            final models = await service.fetchModels();
-                            // 持久化到 Provider.settings
-                            final controller = Get.find<ProviderController>();
-                            final settings = Map<String, dynamic>.from(widget.provider.settings ?? {});
-                            settings['models'] = models;
-                            settings['modelsUpdatedAt'] = DateTime.now().toIso8601String();
-                            final updated = widget.provider.copyWith(
-                              settings: settings,
-                              updatedAt: DateTime.now().toUtc(),
-                            );
-                            await controller.updateProvider(updated);
-                            setState(() {
-                              _models
-                                ..clear()
-                                ..addAll(models);
-                              _lastFetchAt = DateTime.now();
-                            });
-                            if (models.isNotEmpty) {
-                              Get.snackbar('成功', '已拉取 ${models.length} 个模型并保存');
-                            } else {
-                              Get.snackbar('提示', '未获取到模型');
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
+              'API Key',
+              '请填写你的API Key',
+              _buildTextField(
+                context,
+                'API Key',
+                _apiKeyController,
+                (value) {
+                  final updatedProvider = widget.provider.copyWith(keyVaults: value);
+                  controller.updateProvider(updatedProvider);
+                },
+                tokens,
+                obscureText: !_isPasswordVisible,
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                    color: tokens.textSecondary,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _isPasswordVisible = !_isPasswordVisible;
+                    });
+                  },
                 ),
-                const SizedBox(height: 16),
-                _buildModelList(context, tokens),
-              ],
+              ),
+              tokens,
+            ),
+            const SizedBox(height: 16),
+            _buildSection(
+              context,
+              '连接检测',
+              '检测Provider配置是否正确',
+              _buildConnectivityCheck(context, controller, tokens),
+              tokens,
+            ),
+            const SizedBox(height: 16),
+            _buildSection(
+              context,
+              '模型列表',
+              '默认展示的模型列表',
+              _buildModelList(context, controller, tokens),
               tokens,
             ),
           ],
@@ -200,128 +142,348 @@ class _ProviderDetailPanelState extends State<ProviderDetailPanel> {
     );
   }
 
-  Widget _buildModelList(BuildContext context, LobeTokens tokens) {
-    if (_models.isEmpty) {
-      return Container(
-        padding: EdgeInsets.all(UIKit.spaceSm(context)),
-        decoration: BoxDecoration(
-          color: tokens.bgLevel3,
-          borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-          border: Border.all(color: UIKit.dividerColor(context), width: UIKit.dividerThickness),
+  Widget _buildSectionHeader(BuildContext context, Provider provider, ProviderController controller, LobeTokens tokens) {
+    return Row(
+      children: [
+        Icon(_getProviderIcon(provider.sourceType), size: 32, color: tokens.textPrimary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            provider.name,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: tokens.textPrimary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
-        child: Text('暂无模型数据，点击右侧按钮拉取', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textSecondary)),
-      );
-    }
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.bgLevel3,
-        borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-        border: Border.all(color: UIKit.dividerColor(context), width: UIKit.dividerThickness),
-      ),
-      child: ListView.separated(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: _models.length,
-        separatorBuilder: (_, __) => Divider(height: 1, thickness: 1, color: UIKit.dividerColor(context)),
-        itemBuilder: (_, i) {
-          final m = _models[i];
-          return ListTile(
-            dense: true,
-            title: Text(m, style: TextStyle(color: tokens.textPrimary)),
-            leading: const Icon(Icons.smart_toy_outlined, size: 18),
-          );
-        },
-      ),
+        Switch(
+          value: provider.enabled,
+          onChanged: (value) {
+            final updatedProvider = provider.copyWith(enabled: value);
+            controller.updateProvider(updatedProvider);
+          },
+        ),
+        const SizedBox(width: 8),
+        TextButton(
+          onPressed: () => _showDeleteConfirmation(context, controller, provider),
+          style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
+          child: const Text('删除'),
+        ),
+      ],
     );
   }
 
-  String _formatTime(DateTime dt) {
-    final h = dt.hour.toString().padLeft(2, '0');
-    final m = dt.minute.toString().padLeft(2, '0');
-    final s = dt.second.toString().padLeft(2, '0');
-    return '$h:$m:$s';
-  }
-
-  // 统一为搜索框后的方形风格按钮
-  Widget _squareActionButton(
-    BuildContext context, {
-    required IconData icon,
-    required VoidCallback? onTap,
-    String? tooltip,
-  }) {
-    final theme = Theme.of(context);
-    final tokens = theme.extension<LobeTokens>();
-    final bg = tokens?.bgLevel3 ?? theme.colorScheme.surface;
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-            border: Border.all(color: UIKit.dividerColor(context), width: UIKit.dividerThickness),
-          ),
-          child: Center(
-            child: Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ),
-      ),
+  void _showDeleteConfirmation(BuildContext context, ProviderController controller, Provider provider) {
+    Get.defaultDialog(
+      title: '删除服务商',
+      middleText: '你确定要删除 "${provider.name}" 吗？此操作不可逆。',
+      textConfirm: '删除',
+      textCancel: '取消',
+      confirmTextColor: Colors.white,
+      buttonColor: Theme.of(context).colorScheme.error,
+      onConfirm: () {
+        controller.deleteProvider(provider.id);
+        Get.back(); // close dialog
+      },
     );
   }
 
-  Widget _buildSection(BuildContext context, String title, List<Widget> children, LobeTokens tokens) {
+  Widget _buildSection(BuildContext context, String title, String subtitle, Widget content, LobeTokens tokens) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: tokens.textPrimary, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 16),
-        ...children,
+        const SizedBox(height: 4),
+        Text(subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textSecondary)),
+        const SizedBox(height: 12),
+        content,
       ],
     );
   }
 
-  Widget _buildTextField(BuildContext context, String label, String initialValue, ValueChanged<String> onChanged, LobeTokens tokens, {bool obscureText = false}) {
+  Widget _buildTextField(BuildContext context, String label, TextEditingController controller, ValueChanged<String> onChanged, LobeTokens tokens, {bool obscureText = false, Widget? suffixIcon}) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscureText,
+      style: TextStyle(color: tokens.textPrimary),
+      decoration: UIKit.inputDecoration(context).copyWith(
+        hintText: '输入$label',
+        suffixIcon: suffixIcon,
+      ),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _buildConnectivityCheck(BuildContext context, ProviderController controller, LobeTokens tokens) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: tokens.textSecondary)),
-        const SizedBox(height: 8),
-        TextFormField(
-          initialValue: initialValue,
-          obscureText: obscureText,
-          style: TextStyle(color: tokens.textPrimary),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: tokens.bgLevel3,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-              borderSide: BorderSide.none,
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: _selectedModel ?? widget.provider.models.firstOrNull,
+                decoration: UIKit.inputDecoration(context).copyWith(
+                  hintText: '选择模型',
+                  prefixIcon: const Icon(Icons.model_training, size: 18),
+                ),
+                items: widget.provider.models.map((model) {
+                  return DropdownMenuItem(
+                    value: model,
+                    child: Text(model, style: TextStyle(color: tokens.textPrimary)),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedModel = value;
+                  });
+                },
+                dropdownColor: tokens.bgLevel2,
+                style: TextStyle(color: tokens.textPrimary),
+              ),
+            ),
+            const SizedBox(width: 12),
+            ElevatedButton.icon(
+              onPressed: _isCheckingConnection ? null : _checkConnection,
+              icon: _isCheckingConnection 
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.check_circle_outline, size: 18),
+              label: Text(_isCheckingConnection ? '检测中...' : '检测'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tokens.brandAccent,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        if (_connectionStatus != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _isConnectionSuccess 
+                ? Colors.green.withOpacity(0.1) 
+                : Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _isConnectionSuccess ? Colors.green : Colors.red,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _isConnectionSuccess ? Icons.check_circle : Icons.error_outline,
+                  color: _isConnectionSuccess ? Colors.green : Colors.red,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _connectionStatus!,
+                    style: TextStyle(
+                      color: _isConnectionSuccess ? Colors.green : Colors.red,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          onChanged: onChanged,
-        ),
+        ],
       ],
     );
   }
 
-  Widget _buildSlider(BuildContext context, String label, double value, double min, double max, ValueChanged<double> onChanged, LobeTokens tokens) {
+  Future<void> _checkConnection() async {
+    if (_selectedModel == null) {
+      setState(() {
+        _connectionStatus = '请先选择一个模型';
+        _isConnectionSuccess = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isCheckingConnection = true;
+      _connectionStatus = null;
+    });
+
+    try {
+      // OpenAI协议连接检测
+      final baseUrl = _baseUrlController.text.trim();
+      final apiKey = _apiKeyController.text.trim();
+      
+      if (baseUrl.isEmpty || apiKey.isEmpty) {
+        setState(() {
+          _connectionStatus = 'Base URL和API Key不能为空';
+          _isConnectionSuccess = false;
+          _isCheckingConnection = false;
+        });
+        return;
+      }
+
+      // 构建Chat Completion API的请求URL用于连接检测
+      Uri uri;
+      String chatCompletionPath;
+      
+      // 根据提供商类型设置正确的聊天补全路径
+      if (widget.provider.sourceType.toLowerCase() == 'bytedance-kimi2') {
+        chatCompletionPath = 'chat/completions'; // ByteDance-Kimi2不需要/v1前缀，并且路径不应以/开头，否则会替换整个baseUrl路径
+      } else {
+        chatCompletionPath = '/v1/chat/completions'; // 其他提供商使用标准路径
+      }
+      
+      // 允许通过配置完全自定义聊天补全端点URL
+      if (widget.provider.config?.containsKey('chat_completion_endpoint') ?? false) {
+        // 使用完全自定义的URL
+        uri = Uri.parse(widget.provider.config!['chat_completion_endpoint'] as String);
+      } else {
+        // 使用基础URL拼接聊天补全路径
+        uri = Uri.parse(baseUrl).resolve(chatCompletionPath);
+      }
+      
+      // 打印详细调试信息
+      print('=== ${widget.provider.sourceType} 连接检测URL构造详情 ===');
+      print('基础URL: $baseUrl');
+      print('聊天补全路径: $chatCompletionPath');
+      print('构造的完整URL: ${uri.toString()}');
+      print('URL组成部分:');
+      print('  Scheme: ${uri.scheme}');
+      print('  Host: ${uri.host}');
+      print('  Port: ${uri.port}');
+      print('  Path: ${uri.path}');
+      print('====================================');
+      
+      // 发送聊天补全请求进行连接检测 (使用构造的正确URL)
+      final requestBody = json.encode({
+        'model': _selectedModel,
+        'messages': [
+          {'role': 'system', 'content': '你是人工智能助手'},
+          {'role': 'user', 'content': '连接测试'}
+        ]
+      });
+      
+      // 记录请求详情
+      LoggingService.debug('=== ByteDance-Kimi2 请求详情 ===');
+      LoggingService.debug('URL: ${uri.toString()}');
+      LoggingService.debug('Headers:');
+      LoggingService.debug('  Authorization: Bearer ${apiKey.substring(0, 10)}...'); // 只显示部分API Key
+      LoggingService.debug('  Content-Type: application/json');
+      LoggingService.debug('请求体: $requestBody');
+      LoggingService.debug('=============================');
+      
+      final response = await http.post(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+        body: requestBody,
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        // 解析聊天补全响应数据
+        final data = json.decode(response.body);
+        
+        // 检查响应是否包含choices
+        if (data.containsKey('choices') && data['choices'] is List && data['choices'].isNotEmpty) {
+          setState(() {
+            _connectionStatus = '连接成功！Provider配置正确，模型 $_selectedModel 可用。';
+            _isConnectionSuccess = true;
+            _isCheckingConnection = false;
+          });
+        } else {
+          setState(() {
+            _connectionStatus = '连接成功，但响应格式不符合预期。';
+            _isConnectionSuccess = false;
+            _isCheckingConnection = false;
+          });
+        }
+      } else if (response.statusCode == 401) {
+        setState(() {
+          _connectionStatus = '连接失败：API Key无效或缺失。';
+          _isConnectionSuccess = false;
+          _isCheckingConnection = false;
+        });
+      } else {
+        setState(() {
+          // 显示完整错误信息以便诊断
+          _connectionStatus = '连接失败：HTTP ${response.statusCode} - ${response.reasonPhrase}\nURL: ${uri.toString()}\n响应内容: ${response.body.substring(0, min(200, response.body.length))}';
+          _isConnectionSuccess = false;
+          _isCheckingConnection = false;
+        });
+      }
+      
+    } catch (e) {
+      setState(() {
+        _connectionStatus = '连接失败：${e.toString()}';
+        _isConnectionSuccess = false;
+        _isCheckingConnection = false;
+      });
+    }
+  }
+
+  Widget _buildModelList(BuildContext context, ProviderController controller, LobeTokens tokens) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: tokens.textSecondary)),
-        Slider(
-          value: value,
-          min: min,
-          max: max,
-          divisions: (max - min).toInt(),
-          label: value.toStringAsFixed(2),
-          onChanged: onChanged,
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                decoration: UIKit.inputDecoration(context).copyWith(
+                  hintText: '搜索模型...',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: () => _showAddModelDialog(context),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add Model'),
+            ),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: () => controller.fetchProviderModels(widget.provider.id),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Fetch models'),
+            ),
+          ],
         ),
+        const SizedBox(height: 12),
+        Column(
+              children: widget.provider.models.map((model) => CheckboxListTile(
+                    title: Text(model, style: TextStyle(color: tokens.textPrimary)),
+                    value: true, // TODO: Implement model selection
+                    onChanged: (value) {},
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                  )).toList(),
+            ),
       ],
     );
+  }
+
+  void _showAddModelDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AddModelDialog(provider: widget.provider),
+    );
+  }
+
+  IconData _getProviderIcon(String sourceType) {
+    switch (sourceType.toLowerCase()) {
+      case 'openai':
+        return Icons.smart_toy_outlined;
+      case 'ollama':
+        return Icons.computer_outlined;
+      case 'anthropic':
+        return Icons.psychology_outlined;
+      case 'google':
+        return Icons.android_outlined;
+      default:
+        return Icons.cloud_outlined;
+    }
   }
 }
