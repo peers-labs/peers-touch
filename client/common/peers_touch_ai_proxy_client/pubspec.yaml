@@ -1,0 +1,17 @@
+name: peers_touch_ai_proxy_client
+description: AI Provider Proxy Client for Peers-touch, supporting multiple AI providers with unified interface.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.1.0 <4.0.0'
+
+dependencies:
+  http: ^1.2.0
+  meta: ^1.11.0
+  yaml: ^3.1.2
+  equatable: ^2.0.5
+
+dev_dependencies:
+  lints: ^3.0.0
+  test: ^1.24.0

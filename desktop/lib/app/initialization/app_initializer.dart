@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:logging/logging.dart';
 
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/core/utils/window_options_manager.dart';
@@ -28,7 +29,7 @@ class AppInitializer {
       WidgetsFlutterBinding.ensureInitialized();
 
       // Initialize logging system (this is the first initialization step)
-      LoggingService.initialize();
+      LoggingService.initialize(level: Level.ALL);
       LoggingService.info('Starting application initialization...');
       
       // Initialize GetStorage

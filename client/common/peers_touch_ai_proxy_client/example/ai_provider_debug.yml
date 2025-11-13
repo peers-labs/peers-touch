@@ -1,0 +1,8 @@
+gdpa:
+  model:
+    gdpa-kimi:
+      protocol: openai
+      proxy_url: https://***REDACTED_INTERNAL_HOST***/api/v3
+      name: ep-20251014145207-5xzgh
+      display: Kimi
+      api_key: ***REDACTED_ARK_API_KEY***  # 可以在这里配置API Key，如果为空则使用环境变量

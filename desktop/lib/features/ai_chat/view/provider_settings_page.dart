@@ -38,7 +38,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
                 children: [
                   _buildSearchAndAdd(context, tokens),
                   Expanded(
-                    child: _buildProviderList(context, controller, tokens),
+                    child: Obx(() => _buildProviderList(context, controller, tokens)),
                   ),
                 ],
               ),
@@ -67,7 +67,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
 
   Widget _buildSearchAndAdd(BuildContext context, LobeTokens tokens) {
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(12.0),
       child: FrameActionCombo(
         hintText: '搜索助手',
         prefixIcon: Icons.search,
@@ -82,7 +82,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
     final disabledProviders = controller.providers.where((p) => !p.enabled).toList();
 
     return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       children: [
         if (enabledProviders.isNotEmpty)
           ..._buildProviderGroup(context, 'Enabled', enabledProviders, controller, tokens),
@@ -101,20 +101,27 @@ class ProviderSettingsPage extends GetView<ProviderController> {
   ) {
     return [
       Padding(
-        padding: const EdgeInsets.only(left: 16.0, top: 16.0, bottom: 8.0),
+        padding: const EdgeInsets.only(left: 16.0, top: 12.0, bottom: 6.0),
         child: Text(title, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: tokens.textTertiary)),
       ),
       ...providers.map((provider) {
-        return Obx(() => ListTile(
-              leading: Icon(_getProviderIcon(provider.sourceType), color: tokens.textSecondary, size: 20),
-              title: Text(provider.name, style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
-              selected: controller.currentProvider.value?.id == provider.id,
-              selectedTileColor: tokens.menuSelected,
-              onTap: () => controller.setCurrentProvider(provider.id),
-              trailing: provider.enabled ? const Icon(Icons.circle, color: Colors.green, size: 10) : null,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(UIKit.radiusSm(context))),
-              dense: true,
-            ));
+        final isSelected = controller.currentProvider.value?.id == provider.id;
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: isSelected ? tokens.brandAccent.withOpacity(0.2) : Colors.transparent,
+            borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
+          ),
+          child: ListTile(
+            leading: Icon(_getProviderIcon(provider.sourceType), color: tokens.textSecondary, size: 18),
+            title: Text(provider.name, style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
+            onTap: () => controller.setCurrentProvider(provider.id),
+            trailing: provider.enabled ? const Icon(Icons.circle, color: Colors.green, size: 10) : null,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(UIKit.radiusSm(context))),
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          ),
+        );
       }).toList(),
     ];
   }
@@ -124,21 +131,21 @@ class ProviderSettingsPage extends GetView<ProviderController> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.cloud_off_outlined, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
+          const Icon(Icons.cloud_off_outlined, size: 56, color: Colors.grey),
+          const SizedBox(height: 12),
           Text(
             'No AI providers configured',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(color: tokens.textSecondary),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             'Add your first AI service provider to get started',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: tokens.textTertiary),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           ElevatedButton.icon(
             onPressed: () => _showAddProviderDialog(context, tokens),
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.add, size: 18),
             label: const Text('Add Provider'),
             style: UIKit.primaryButtonStyle(context),
           ),

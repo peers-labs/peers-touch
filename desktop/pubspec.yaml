@@ -47,6 +47,8 @@ dependencies:
   connectivity_plus: ^7.0.0
   peers_touch_storage:
     path: ../client/common/peers_touch_storage
+  peers_touch_model:
+    path: ../client/common/peers_touch_model
 
 dev_dependencies:
   flutter_test:
