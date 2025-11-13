@@ -39,11 +39,26 @@ class AIServiceFactory {
       case 'ollama':
         return OllamaService(baseUrlOverride: provider.baseUrl);
       case 'openai':
+        return OpenAIService(
+            apiKeyOverride: provider.apiKey,
+            baseUrlOverride: provider.baseUrl,
+            defaultModel: provider.models.isNotEmpty ? provider.models.first : 'gpt-3.5-turbo',
+            endpoint: '/v1/chat/completions',
+          );
+      case 'bytedance-kimi2':
+        return OpenAIService(
+            apiKeyOverride: provider.apiKey,
+            baseUrlOverride: provider.baseUrl,
+            defaultModel: provider.models.isNotEmpty ? provider.models.first : 'ep-20251014145207-5xzgh',
+            endpoint: '/chat/completions', // ByteDance-Kimi2的端点不包含/v1
+          );
       default:
         return OpenAIService(
-          apiKeyOverride: provider.apiKey,
-          baseUrlOverride: provider.baseUrl,
-        );
+            apiKeyOverride: provider.apiKey,
+            baseUrlOverride: provider.baseUrl,
+            defaultModel: provider.models.isNotEmpty ? provider.models.first : 'ep-20251014145207-5xzgh',
+            endpoint: '/v1/chat/completions',
+          );
     }
   }
 

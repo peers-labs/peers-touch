@@ -71,50 +71,17 @@ class AIInputBox extends StatelessWidget {
             final hint = ctrl.sendMode.value == 'enter'
                 ? '按 Enter 发送，按 Ctrl+Enter 换行'
                 : '按 Ctrl+Enter 发送，按 Enter 换行';
-            return Focus(
-              canRequestFocus: false,
-              onKeyEvent: (node, event) {
-                if (event is! KeyDownEvent) return KeyEventResult.ignored;
-                // 只在文本框处于焦点时响应
-                if (!ctrl.textFocusNode.hasFocus) return KeyEventResult.ignored;
-                final isEnter = event.logicalKey == LogicalKeyboardKey.enter;
-                if (!isEnter) return KeyEventResult.ignored;
-                final pressed = RawKeyboard.instance.keysPressed;
-                final isCtrl = pressed.contains(LogicalKeyboardKey.controlLeft) ||
-                    pressed.contains(LogicalKeyboardKey.controlRight);
-                final mode = ctrl.sendMode.value;
-                final shouldSend = (mode == 'enter' && !isCtrl) || (mode == 'ctrlEnter' && isCtrl);
-                if (!shouldSend) return KeyEventResult.ignored;
-                _triggerSend(context, ctrl);
-                if (mode == 'enter') {
-                  // 移除因回车产生的换行（若发生）
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    final sel = tc.selection;
-                    final text = tc.text;
-                    if (sel.start > 0 && sel.start <= text.length) {
-                      final int i = sel.start;
-                      if (text[i - 1] == '\n') {
-                        final newText = text.replaceRange(i - 1, i, '');
-                        tc.text = newText;
-                        tc.selection = TextSelection.collapsed(offset: i - 1);
-                      }
-                    }
-                  });
-                }
-                return KeyEventResult.handled;
-              },
-              child: TextField(
-                controller: tc,
-                focusNode: ctrl.textFocusNode,
-                minLines: 2,
-                maxLines: 8,
-                onChanged: onTextChanged,
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                  hintText: hint,
-                  contentPadding: EdgeInsets.zero,
-                ),
+            return TextField(
+              controller: tc,
+              focusNode: ctrl.textFocusNode,
+              minLines: 2,
+              maxLines: 8,
+              onChanged: onTextChanged,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                hintText: hint,
+                contentPadding: EdgeInsets.zero,
               ),
             );
           }),
