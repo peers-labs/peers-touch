@@ -11,6 +11,7 @@ dependencies:
   crypto: ^3.0.3
   uuid: ^4.2.0
   json_annotation: ^4.8.1
+  dart_tun: ^0.1.0  # TUN接口支持（可选）
 
 dev_dependencies:
   test: ^1.24.0

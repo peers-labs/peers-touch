@@ -1,6 +1,5 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_storage/peers_touch_storage.dart';
-import 'package:peers_touch_desktop/core/storage/storage_service.dart';
 
 /// 封装存储层的依赖注册，确保可幂等调用
 class StorageModule {
@@ -25,8 +24,8 @@ class StorageModule {
     if (!Get.isRegistered<StorageDriver>()) {
       Get.put<StorageDriver>(HttpStorageDriver(), permanent: true);
     }
-    if (!Get.isRegistered<StorageService>()) {
-      Get.put<StorageService>(StorageService(), permanent: true);
+    if (!Get.isRegistered<HybridStorageService>()) {
+      Get.put<HybridStorageService>(HybridStorageService(), permanent: true);
     }
   }
 }

@@ -12,6 +12,7 @@ export 'src/models/provider_config.dart';
 // Provider implementations
 export 'src/providers/openai_client.dart';
 export 'src/providers/ollama_client.dart';
+export 'src/providers/deepseek_client.dart';
 
 // Manager and utilities
 export 'src/managers/ai_provider_manager.dart';
