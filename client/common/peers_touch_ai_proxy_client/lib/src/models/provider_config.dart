@@ -2,6 +2,7 @@
 enum AIProviderType {
   openai,
   ollama,
+  deepseek,
   claude,
   gemini,
 }

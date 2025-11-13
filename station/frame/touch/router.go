@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	RoutersNameManagement  = "management"
-	RoutersNameActivityPub = "activitypub"
-	RoutersNameWellKnown   = ".well-known"
-	RoutersNameActor       = "actor"
-	RoutersNamePeer        = "peer"
+    RoutersNameManagement  = "management"
+    RoutersNameActivityPub = "activitypub"
+    RoutersNameWellKnown   = ".well-known"
+    RoutersNameActor       = "actor"
+    RoutersNamePeer        = "peer"
+    RoutersNameMessage     = "message"
 )
 
 // Router is a server handler that can be registered with a server.
@@ -44,21 +45,23 @@ func CommonAccessControlWrapper(routerFamilyName string) server.Wrapper {
 
 			// Check if the router family is enabled based on its name
 			var isEnabled bool
-			switch routerFamilyName {
-			case RoutersNameManagement:
-				isEnabled = routerConfig.Management
-			case RoutersNameActivityPub:
-				isEnabled = routerConfig.ActivityPub
-			case RoutersNameWellKnown:
-				isEnabled = routerConfig.WellKnown
-			case RoutersNameActor:
-				isEnabled = routerConfig.User
-			case RoutersNamePeer:
-				isEnabled = routerConfig.Peer
-			default:
-				log.Warnf(r.Context(), "Unknown router family: %s", routerFamilyName)
-				isEnabled = false
-			}
+        switch routerFamilyName {
+        case RoutersNameManagement:
+            isEnabled = routerConfig.Management
+        case RoutersNameActivityPub:
+            isEnabled = routerConfig.ActivityPub
+        case RoutersNameWellKnown:
+            isEnabled = routerConfig.WellKnown
+        case RoutersNameActor:
+            isEnabled = routerConfig.User
+        case RoutersNamePeer:
+            isEnabled = routerConfig.Peer
+        case RoutersNameMessage:
+            isEnabled = routerConfig.Message
+        default:
+            log.Warnf(r.Context(), "Unknown router family: %s", routerFamilyName)
+            isEnabled = false
+        }
 
 			if !isEnabled {
 				log.Warnf(r.Context(), "Router family %s is disabled by configuration", routerFamilyName)
@@ -88,15 +91,16 @@ func wrapHandler(handlerName string, configCheck func(*RouterConfig) bool, handl
 
 // Routers returns server options with touch handlers
 func Routers() []option.Option {
-	routers := make([]server.Routers, 0)
-	routers = append(routers, NewManageRouter())
-	routers = append(routers, NewActivityPubRouter())
-	routers = append(routers, NewWellKnownRouter())
-	routers = append(routers, NewActorRouter())
-	routers = append(routers, NewPeerRouter())
-	return []option.Option{
-		server.WithRouters(routers...),
-	}
+    routers := make([]server.Routers, 0)
+    routers = append(routers, NewManageRouter())
+    routers = append(routers, NewActivityPubRouter())
+    routers = append(routers, NewWellKnownRouter())
+    routers = append(routers, NewActorRouter())
+    routers = append(routers, NewPeerRouter())
+    routers = append(routers, NewMessageRouter())
+    return []option.Option{
+        server.WithRouters(routers...),
+    }
 }
 
 func convertRouterToServerHandler(r Router) server.Handler {

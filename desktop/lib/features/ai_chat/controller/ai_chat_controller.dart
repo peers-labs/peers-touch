@@ -6,8 +6,8 @@ import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_attachment.dart';
+import 'package:peers_touch_desktop/features/ai_chat/domain/models/ai_composer_draft.dart';
+import 'package:peers_touch_desktop/features/ai_chat/domain/models/ai_attachment.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 

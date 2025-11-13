@@ -5,6 +5,7 @@ import '../models/chat_models.dart';
 import '../models/provider_config.dart';
 import '../providers/openai_client.dart';
 import '../providers/ollama_client.dart';
+import '../providers/deepseek_client.dart';
 
 /// AI 提供商管理器
 class AIProviderManager {
@@ -74,6 +75,35 @@ class AIProviderManager {
     );
 
     final provider = OllamaClient(config);
+    registerProvider(id, provider);
+  }
+
+  /// 创建并注册 DeepSeek 提供商
+  void registerDeepSeekProvider({
+    required String id,
+    required String name,
+    required String baseUrl,
+    String? apiKey,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? parameters,
+    bool enabled = true,
+    int timeout = 30000,
+    int maxRetries = 3,
+  }) {
+    final config = ProviderConfig(
+      id: id,
+      type: AIProviderType.deepseek,
+      name: name,
+      baseUrl: baseUrl,
+      apiKey: apiKey,
+      headers: headers,
+      parameters: parameters,
+      enabled: enabled,
+      timeout: timeout,
+      maxRetries: maxRetries,
+    );
+
+    final provider = DeepSeekClient(config);
     registerProvider(id, provider);
   }
 

@@ -17,6 +17,13 @@ func init() {
 			// ActivityPub models
 			&ActivityPubActor{}, &ActivityPubActivity{}, &ActivityPubObject{},
 			&ActivityPubFollow{}, &ActivityPubLike{}, &ActivityPubCollection{},
+			&Conversation{},
+			&ConvMember{},
+			&Message{},
+			&Attachment{},
+			&Receipt{},
+			&Reaction{},
+			&KeyEpoch{},
 		)
 		if err != nil {
 			panic(fmt.Errorf("auto migrate failed: %v", err))
