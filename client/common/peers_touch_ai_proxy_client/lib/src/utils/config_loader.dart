@@ -109,6 +109,8 @@ class ConfigLoader {
         return AIProviderType.openai;
       case 'ollama':
         return AIProviderType.ollama;
+      case 'deepseek':
+        return AIProviderType.deepseek;
       default:
         return AIProviderType.openai; // 默认为OpenAI
     }

@@ -3,7 +3,6 @@ import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_desktop/core/network/network_status_service.dart';
 import 'package:peers_touch_storage/peers_touch_storage.dart';
-import 'package:peers_touch_desktop/core/storage/storage_service.dart';
 import 'package:peers_touch_desktop/features/shared/services/user_status_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 
@@ -31,7 +30,7 @@ class InitialBinding extends Bindings {
     Get.put<LocalStorageDriver>(LocalStorageDriver(), permanent: true);
     Get.put<StorageDriverResolver>(StorageDriverResolver(), permanent: true);
     Get.put<StorageSyncService>(StorageSyncService(), permanent: true);
-    Get.put<StorageService>(StorageService(), permanent: true);
+    Get.put<HybridStorageService>(HybridStorageService(), permanent: true);
   }
   
   /// Register network services

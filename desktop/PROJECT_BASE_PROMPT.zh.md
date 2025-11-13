@@ -71,10 +71,8 @@ lib/
 │   │   ├── app_theme.dart           # 主题配置（light/dark模式，含颜色、字体）
 │   │   └── app_styles.dart          # 全局样式常量（padding: 16, radius: 8）
 │   │
-│   ├── bindings/                  # 依赖注入绑定
+│   └── bindings/                  # 依赖注入绑定
 │       └── initial_binding.dart     # 全局初始化绑定（注册ApiClient、Storage等）
-│   └── initialization/            # 应用初始化
-│       └── app_initializer.dart     # 应用初始化类（负责初始化所有全局服务）
 │
 ├── core/                          # 全局通用能力（跨模块复用，无业务关联）
 │   ├── components/                # 通用UI组件（纯展示，无业务逻辑）
@@ -119,7 +117,7 @@ lib/
 │           └── mesh_client.dart     # 并网客户端（发送/接收数据）
 │
 ├── features/                      # 业务模块（按功能内聚，独立可拆）
-│   ├── shared/                    # 业务级共享（跨业务模块复用），带业务状态的，非 Core 功能的共享类型都放这里
+│   ├── shared/                    # 业务级共享（跨业务模块复用）
 │   │   ├── models/                  # 业务共享模型
 │   │   │   └── chat_message.dart    # 聊天消息模型（在首页、聊天页都用）
 │   │   └── services/                # 业务共享服务
@@ -176,9 +174,6 @@ features/下的模块目录名必须是业务语义（如chat/、settings/，而
         * 禁止包含业务逻辑（如 “计算价格” 应放在 Controller，而非 Model）。
     * 引用
         * import 禁止使用相对路径（如import '../models/chat_message.dart'），必须使用绝对路径（如import 'package:peers_touch/models/chat_message.dart'）。
-    * 代码实体
-        * 所有可穷举的类型，必须定义为enum（如消息类型、用户角色等）。
-        * 所有代码注册的语言，都必须用英文
 * 特殊模块处理规范
     * 多语言（i18n）：
         * 语言包必须放在app/i18n/，键值对需通过locale_keys.dart的常量引用（避免硬编码字符串）。
@@ -199,6 +194,8 @@ features/下的模块目录名必须是业务语义（如chat/、settings/，而
     * 控制器逻辑可独立测试（依赖通过Get.put注入，便于 Mock）。
     * 视图纯渲染，无需测试（或仅测试 UI 结构）。
 
-## 其它Prompt
+## 其他约束
 
-其它非Base级的Prompt在 './PROMPTs' 目录下
+### 模块及其它Prompt
+
+位于”./PROMPTs“目录下，存放了我们项目的UI风格及模块主体设计。你要绝对参考。

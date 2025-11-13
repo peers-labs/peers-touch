@@ -1,6 +1,5 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_storage/peers_touch_storage.dart';
-import 'package:peers_touch_desktop/core/storage/storage_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 
