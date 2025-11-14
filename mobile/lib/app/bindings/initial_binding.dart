@@ -7,6 +7,6 @@ class InitialBinding extends Bindings {
   void dependencies() {
     // Register global services
     Get.put<ApiClient>(ApiClient(), permanent: true);
-    Get.put<LocalStorage>(LocalStorage(), permanent: true);
+    Get.put<StorageService>(StorageService(), permanent: true);
   }
 }

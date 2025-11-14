@@ -155,14 +155,18 @@ class ProviderSettingsPage extends GetView<ProviderController> {
   }
 
   void _showAddProviderDialog(BuildContext context, LobeTokens tokens) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
+    Get.dialog(
+      Dialog(
         backgroundColor: tokens.bgLevel2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(UIKit.radiusLg(context)),
         ),
-        child: const CreateProviderForm(),
+        child: CreateProviderDialog(
+          onCreated: (String value) {
+            Get.back();
+            controller.loadProviders();
+          },
+        ),
       ),
     );
   }

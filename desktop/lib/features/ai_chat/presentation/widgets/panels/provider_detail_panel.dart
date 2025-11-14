@@ -327,12 +327,8 @@ class _ProviderDetailPanelState extends State<ProviderDetailPanel> {
       Uri uri;
       String chatCompletionPath;
       
-      // 根据提供商类型设置正确的聊天补全路径
-      if (widget.provider.sourceType.toLowerCase() == 'bytedance-kimi2') {
-        chatCompletionPath = 'chat/completions'; // ByteDance-Kimi2不需要/v1前缀，并且路径不应以/开头，否则会替换整个baseUrl路径
-      } else {
-        chatCompletionPath = '/v1/chat/completions'; // 其他提供商使用标准路径
-      }
+      // 使用标准聊天补全路径
+      chatCompletionPath = '/chat/completions';
       
       // 允许通过配置完全自定义聊天补全端点URL
       if (widget.provider.config?.containsKey('chat_completion_endpoint') ?? false) {
@@ -365,7 +361,7 @@ class _ProviderDetailPanelState extends State<ProviderDetailPanel> {
       });
       
       // 记录请求详情
-      LoggingService.debug('=== ByteDance-Kimi2 请求详情 ===');
+      LoggingService.debug('=== AI 请求详情 ===');
       LoggingService.debug('URL: ${uri.toString()}');
       LoggingService.debug('Headers:');
       LoggingService.debug('  Authorization: Bearer ${apiKey.substring(0, 10)}...'); // 只显示部分API Key
@@ -453,13 +449,32 @@ class _ProviderDetailPanelState extends State<ProviderDetailPanel> {
         ),
         const SizedBox(height: 12),
         Column(
-              children: widget.provider.models.map((model) => CheckboxListTile(
-                    title: Text(model, style: TextStyle(color: tokens.textPrimary)),
-                    value: true, // TODO: Implement model selection
-                    onChanged: (value) {},
-                    dense: true,
-                    controlAffinity: ListTileControlAffinity.leading,
-                  )).toList(),
+              children: widget.provider.models.map((model) {
+                    // 获取模型元数据
+                    final modelsMetadata = widget.provider.settings?['modelsMetadata'] as Map<String, dynamic>?;
+                    final modelMeta = modelsMetadata?[model] as Map<String, dynamic>?;
+                    final displayName = modelMeta?['name'] ?? model;
+                    return CheckboxListTile(
+                      title: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(displayName, style: TextStyle(
+                            color: tokens.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold
+                          )),
+                          Text(model, style: TextStyle(
+                            color: tokens.textSecondary,
+                            fontSize: 12
+                          )),
+                        ],
+                      ),
+                      value: true, // TODO: Implement model selection
+                      onChanged: (value) {},
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                    );
+                  }).toList(),
             ),
       ],
     );

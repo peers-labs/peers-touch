@@ -2,7 +2,6 @@ import 'package:get/get.dart';
 
 import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_desktop/core/network/network_status_service.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/shared/services/user_status_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 
@@ -18,8 +17,8 @@ class InitialBinding extends Bindings {
   
   /// Register storage services
   void _registerStorageServices() {
-    Get.put<LocalStorage>(LocalStorage(), permanent: true);
-    Get.put<SecureStorage>(SecureStorage(), permanent: true);
+    Get.put<StorageService>(StorageService(), permanent: true);
+    Get.put<SecureStorageService>(SecureStorageService(), permanent: true);
 
     // 路由解析与本地缓存
     Get.put<RouteProvider>(ConventionalRouteProvider(), permanent: true);
@@ -27,7 +26,7 @@ class InitialBinding extends Bindings {
 
     // 存储驱动与服务（插件化：同时注册本地与云端驱动，由 Resolver 选择）
     Get.put<HttpStorageDriver>(HttpStorageDriver(), permanent: true);
-    Get.put<LocalStorageDriver>(LocalStorageDriver(), permanent: true);
+    Get.put<StorageServiceDriver>(StorageServiceDriver(), permanent: true);
     Get.put<StorageDriverResolver>(StorageDriverResolver(), permanent: true);
     Get.put<StorageSyncService>(StorageSyncService(), permanent: true);
     Get.put<HybridStorageService>(HybridStorageService(), permanent: true);
@@ -38,7 +37,7 @@ class InitialBinding extends Bindings {
     Get.put<NetworkStatusService>(NetworkStatusService(), permanent: true);
     Get.put<ApiClient>(
         ApiClient(
-          secureStorage: Get.find<SecureStorage>(),
+          secureStorage: Get.find<SecureStorageService>(),
           networkStatusService: Get.find<NetworkStatusService>(),
           // tokenRefreshHandler: null, // Can be injected when real refresh interface is connected
         ),

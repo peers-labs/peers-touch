@@ -79,23 +79,23 @@ class _AddModelDialogState extends State<AddModelDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Create Custom AI Model', style: Theme.of(context).textTheme.headlineSmall),
+                Text('创建自定义AI模型', style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 20),
                 TextFormField(
                   controller: _modelIdController,
-                  decoration: InputDecoration(
-                    labelText: 'Model ID *',
-                    hintText: 'e.g., gpt-4o or claude-3-5-sonnet',
+                  decoration: UIKit.inputDecoration(context).copyWith(
+                    labelText: '模型ID *',
+                    hintText: '例如：gpt-4o 或 claude-3-5-sonnet',
                     border: OutlineInputBorder(),
                   ),
-                  validator: (value) => value?.isEmpty ?? true ? 'Model ID is required' : null,
+                  validator: (value) => value?.isEmpty ?? true ? '模型ID不能为空' : null,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _displayNameController,
-                  decoration: InputDecoration(
-                    labelText: 'Model Display Name',
-                    hintText: 'e.g., ChatGPT, GPT-4, etc.',
+                  decoration: UIKit.inputDecoration(context).copyWith(
+                    labelText: '模型显示名称',
+                    hintText: '例如：ChatGPT、GPT-4等',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -103,7 +103,7 @@ class _AddModelDialogState extends State<AddModelDialog> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Maximum Context'),
+                    Text('最大上下文长度'),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -118,11 +118,11 @@ class _AddModelDialogState extends State<AddModelDialog> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: TextFormField(
-                            controller: _contextSizeController,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(),
-                            ),
+                    controller: _contextSizeController,
+                    keyboardType: TextInputType.number,
+                    decoration: UIKit.inputDecoration(context).copyWith(
+                      border: OutlineInputBorder(),
+                    ),
                           ),
                         ),
                       ],
@@ -130,50 +130,50 @@ class _AddModelDialogState extends State<AddModelDialog> {
                   ],
                 ),
                 const SizedBox(height: 24),
-                Text('Support for Tools', style: Theme.of(context).textTheme.titleMedium),
+                Text('工具支持', style: Theme.of(context).textTheme.titleMedium),
                 CheckboxListTile(
-                  title: Text('Enable tool usage capabilities'),
-                  subtitle: Text('Allows the model to use plugins and tools'),
+                  title: Text('启用工具使用能力'),
+                  subtitle: Text('允许模型使用插件和工具'),
                   value: _supportTool,
                   onChanged: (value) => setState(() => _supportTool = value ?? false),
                 ),
                 CheckboxListTile(
-                  title: Text('Support Vision'),
-                  subtitle: Text('Enables image upload capabilities'),
+                  title: Text('支持视觉能力'),
+                  subtitle: Text('启用图片上传功能'),
                   value: _supportVision,
                   onChanged: (value) => setState(() => _supportVision = value ?? false),
                 ),
                 CheckboxListTile(
-                  title: Text('Support Deep Thinking'),
-                  subtitle: Text('Enables advanced reasoning capabilities'),
+                  title: Text('支持深度思考'),
+                  subtitle: Text('启用高级推理能力'),
                   value: _supportDeepThinking,
                   onChanged: (value) => setState(() => _supportDeepThinking = value ?? false),
                 ),
                 CheckboxListTile(
-                  title: Text('Supports Web Search'),
-                  subtitle: Text('Enables built-in web search functionality'),
+                  title: Text('支持网络搜索'),
+                  subtitle: Text('启用内置网络搜索功能'),
                   value: _supportWebSearch,
                   onChanged: (value) => setState(() => _supportWebSearch = value ?? false),
                 ),
                 CheckboxListTile(
-                  title: Text('Supports Image Generation'),
-                  subtitle: Text('Enables text-to-image capabilities'),
+                  title: Text('支持图片生成'),
+                  subtitle: Text('启用文本转图片功能'),
                   value: _supportImageGeneration,
                   onChanged: (value) => setState(() => _supportImageGeneration = value ?? false),
                 ),
                 CheckboxListTile(
-                  title: Text('Supports Video Recognition'),
-                  subtitle: Text('Enables video content analysis'),
+                  title: Text('支持视频识别'),
+                  subtitle: Text('启用视频内容分析功能'),
                   value: _supportVideoRecognition,
                   onChanged: (value) => setState(() => _supportVideoRecognition = value ?? false),
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  decoration: InputDecoration(
-                    labelText: 'Model Type',
+                  decoration: UIKit.inputDecoration(context).copyWith(
+                    labelText: '模型类型',
                     border: OutlineInputBorder(),
                   ),
-                  items: ['Chat', 'Completion', 'Embedding', 'Image', 'Audio']
+                  items: ['聊天', '补全', '嵌入', '图像', '音频']
                       .map((type) => DropdownMenuItem(value: type, child: Text(type)))
                       .toList(),
                   onChanged: (value) => setState(() => _modelType = value),
@@ -184,13 +184,13 @@ class _AddModelDialogState extends State<AddModelDialog> {
                   children: [
                     TextButton(
                       onPressed: () => Get.back(),
-                      child: const Text('Cancel'),
+                      child: const Text('取消'),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
                       onPressed: _submitForm,
                       style: UIKit.primaryButtonStyle(context),
-                      child: const Text('OK'),
+                      child: const Text('确定'),
                     ),
                   ],
                 ),

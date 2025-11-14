@@ -1,6 +1,6 @@
 import 'package:get_storage/get_storage.dart';
 
-class LocalStorage {
+class StorageService {
   final GetStorage _box = GetStorage();
 
   T? get<T>(String key) => _box.read<T>(key);

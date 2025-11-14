@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/chat/controller/chat_list_controller.dart';
+import 'package:peers_touch_desktop/features/chat/controller/chat_thread_controller.dart';
 
 class ConversationList extends StatelessWidget {
   const ConversationList({super.key});

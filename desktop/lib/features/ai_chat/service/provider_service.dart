@@ -1,6 +1,5 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/network/api_client.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
 
@@ -9,8 +8,8 @@ class ProviderService {
   static const String _providersKey = 'ai_providers';
   static const String _currentProviderKey = 'current_ai_provider';
   
-  final LocalStorage _localStorage = Get.find<LocalStorage>();
-  final SecureStorage _secureStorage = Get.find<SecureStorage>();
+  final StorageService _localStorage = Get.find<StorageService>();
+  final SecureStorageService _secureStorage = Get.find<SecureStorageService>();
   final ApiClient _apiClient = Get.find<ApiClient>();
   
   /// 获取所有提供商

@@ -2,15 +2,14 @@ import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart' as dio;
 import 'package:peers_touch_desktop/core/network/api_client.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 
 /// PeersAdmin 控制器：负责读取后端地址、执行管理与 Peer 相关请求
 class PeersAdminController extends GetxController {
   final ApiClient apiClient;
-  final LocalStorage localStorage;
-  final SecureStorage secureStorage;
+  final StorageService localStorage;
+  final SecureStorageService secureStorage;
 
   PeersAdminController({
     required this.apiClient,
@@ -59,7 +58,7 @@ class PeersAdminController extends GetxController {
     final url = localStorage.get<String>('settings:global_business:backend_url') ?? '';
     backendUrl.value = _normalizeBaseUrl(url);
 
-    // 令牌：settings:global_business:auth_token（敏感，存 SecureStorage）
+    // 令牌：settings:global_business:auth_token（敏感，存 SecureStorageService）
     try {
       final authToken = await secureStorage.get('settings:global_business:auth_token');
       if (authToken != null && authToken.isNotEmpty) {
