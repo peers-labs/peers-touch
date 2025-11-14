@@ -1,5 +1,4 @@
 import 'package:get/get.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 
@@ -216,7 +215,7 @@ class ProviderController extends GetxController {
   /// 保存API密钥
   Future<void> _saveApiKey(String providerId, String apiKey) async {
     // TODO: 实现安全的密钥存储
-    await Get.find<SecureStorage>().set('provider_key_$providerId', apiKey);
+    await Get.find<SecureStorageService>().set('provider_key_$providerId', apiKey);
   }
 
   /// 更新（保存）API密钥（公开方法，供设置面板调用）
@@ -233,12 +232,12 @@ class ProviderController extends GetxController {
   /// 获取API密钥
   Future<String?> _getApiKey(String providerId) async {
     // TODO: 实现安全的密钥获取
-    return await Get.find<SecureStorage>().get('provider_key_$providerId');
+    return await Get.find<SecureStorageService>().get('provider_key_$providerId');
   }
   
   /// 删除API密钥
   Future<void> _deleteApiKey(String providerId) async {
-    await Get.find<SecureStorage>().remove('provider_key_$providerId');
+    await Get.find<SecureStorageService>().remove('provider_key_$providerId');
   }
   
   /// 获取默认基础URL

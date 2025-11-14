@@ -1,12 +1,11 @@
 import 'package:dio/dio.dart';
 
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/core/network/token_refresh_handler.dart';
 
 class TokenRefreshInterceptor extends Interceptor {
   final Dio dio;
-  final SecureStorage secureStorage;
+  final SecureStorageService secureStorage;
   final TokenRefreshHandler refreshHandler;
 
   TokenRefreshInterceptor({

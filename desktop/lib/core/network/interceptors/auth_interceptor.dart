@@ -1,9 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 
 class AuthInterceptor extends Interceptor {
-  final SecureStorage secureStorage;
+  final SecureStorageService secureStorage;
 
   AuthInterceptor({required this.secureStorage});
 

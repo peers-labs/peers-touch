@@ -6,11 +6,11 @@
 library peers_touch_model;
 
 // Base entity definitions
-export 'src/models/entity_base.dart';
+export 'src/models/base.dart';
 
 // Core entity models
-export 'src/models/user_entity.dart';
-export 'src/models/session_entity.dart';
+export 'src/models/user.dart';
+export 'src/models/session.dart';
 
 // Supporting models
 export 'src/models/actor_base.dart';
