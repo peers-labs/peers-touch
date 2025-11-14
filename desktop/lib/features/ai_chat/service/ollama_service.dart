@@ -3,14 +3,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'ai_service.dart';
 
 /// Ollama 服务实现
 class OllamaService implements AIService {
-  final LocalStorage _storage = Get.find<LocalStorage>();
+  final StorageService _storage = Get.find<StorageService>();
 
   // 实例级覆盖：用于 Provider 实例打通
   final String? baseUrlOverride;

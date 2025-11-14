@@ -55,8 +55,8 @@ dependencies:
   sqflite: ^2.3.3+1
   path: ^1.8.3
   crypto: ^3.0.3
-  peers_touch_storage:
-    path: ../client/common/peers_touch_storage
+  peers_touch_base:
+    path: ../client/common/peers_touch_base
 
 
 dev_dependencies:

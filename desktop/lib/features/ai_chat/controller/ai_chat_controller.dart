@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
 import 'package:peers_touch_desktop/features/ai_chat/domain/models/ai_composer_draft.dart';
@@ -35,7 +34,7 @@ class ChatMessage {
 
 class AIChatController extends GetxController {
   final AIService service;
-  final LocalStorage storage;
+  final StorageService storage;
 
   AIChatController({required this.service, required this.storage});
 

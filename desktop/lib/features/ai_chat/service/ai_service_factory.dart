@@ -39,25 +39,24 @@ class AIServiceFactory {
       case 'ollama':
         return OllamaService(baseUrlOverride: provider.baseUrl);
       case 'openai':
+        if (provider.models.isEmpty) {
+          throw Exception('OpenAI provider has no models configured');
+        }
         return OpenAIService(
             apiKeyOverride: provider.apiKey,
             baseUrlOverride: provider.baseUrl,
-            defaultModel: provider.models.isNotEmpty ? provider.models.first : 'gpt-3.5-turbo',
-            endpoint: '/v1/chat/completions',
+            defaultModel: provider.models.first,
+            endpoint: '/chat/completions',
           );
-      case 'bytedance-kimi2':
+        default:
+        if (provider.models.isEmpty) {
+          throw Exception('Provider has no models configured');
+        }
         return OpenAIService(
             apiKeyOverride: provider.apiKey,
             baseUrlOverride: provider.baseUrl,
-            defaultModel: provider.models.isNotEmpty ? provider.models.first : 'ep-20251014145207-5xzgh',
-            endpoint: '/chat/completions', // ByteDance-Kimi2的端点不包含/v1
-          );
-      default:
-        return OpenAIService(
-            apiKeyOverride: provider.apiKey,
-            baseUrlOverride: provider.baseUrl,
-            defaultModel: provider.models.isNotEmpty ? provider.models.first : 'ep-20251014145207-5xzgh',
-            endpoint: '/v1/chat/completions',
+            defaultModel: provider.models.first,
+            endpoint: '/chat/completions',
           );
     }
   }

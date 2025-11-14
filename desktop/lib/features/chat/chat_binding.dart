@@ -1,5 +1,4 @@
 import 'package:get/get.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/chat/application/backends/social_backend_adapter.dart';
 import 'package:peers_touch_desktop/features/chat/application/services/chat_service.dart';
 import 'package:peers_touch_desktop/features/chat/controller/chat_list_controller.dart';

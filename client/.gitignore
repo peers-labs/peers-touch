@@ -1,1 +1,8 @@
 .dart_tool/
+.vscode/
+
+android/
+macos/
+linux/
+ios/
+windows/

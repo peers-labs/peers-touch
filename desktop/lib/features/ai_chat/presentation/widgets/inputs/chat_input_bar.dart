@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/presentation/widgets/inputs/input_box/ai_input_box.dart';
 import 'package:peers_touch_desktop/features/ai_chat/domain/models/ai_composer_draft.dart';
@@ -34,7 +33,7 @@ class ChatInputBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final storage = Get.find<LocalStorage>();
+    final storage = Get.find<StorageService>();
     final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
     // 能力基于注入的当前模型计算
     final cap = CapabilityResolver.resolve(provider: provider, modelId: currentModel);

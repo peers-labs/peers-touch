@@ -6,7 +6,6 @@ import 'package:peers_touch_desktop/features/ai_chat/ai_chat_module.dart';
 import 'package:peers_touch_desktop/features/profile/profile_module.dart';
 import 'package:peers_touch_desktop/features/peers_admin/peers_admin_module.dart';
 import 'package:peers_touch_desktop/features/chat/chat_module.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 
 class ShellBinding extends Bindings {
   @override
@@ -29,7 +28,7 @@ class ShellBinding extends Bindings {
     // 启动后尝试触发一次本地->云端同步（根据设置与模式）
     Future.microtask(() async {
       try {
-        final sync = Get.find<StorageSyncService>();
+        final sync = Get.find<StorageService>();
         await sync.syncAllIfEnabled();
       } catch (_) {}
     });

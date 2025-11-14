@@ -3,14 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:peers_touch_desktop/core/services/setting_manager.dart';
-import 'package:peers_touch_storage/peers_touch_storage.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
 
 class SettingController extends GetxController {
   final SettingManager _settingManager = SettingManager();
-  late final LocalStorage _localStorage;
-  late final SecureStorage _secureStorage;
+  late final StorageService _localStorage;
+  late final SecureStorageService _secureStorage;
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, String?> _itemErrors = {};
   // 后端地址测试相关状态
@@ -29,8 +28,8 @@ class SettingController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    _localStorage = Get.find<LocalStorage>();
-    _secureStorage = Get.find<SecureStorage>();
+    _localStorage = Get.find<StorageService>();
+    _secureStorage = Get.find<SecureStorageService>();
     _initializeSettings();
   }
   
