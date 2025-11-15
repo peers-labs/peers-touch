@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/storage"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/storage"
 )
 
 const _perm = 0644

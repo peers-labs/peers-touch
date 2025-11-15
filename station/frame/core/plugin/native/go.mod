@@ -1,12 +1,12 @@
-module github.com/peers-touch/peers-touch/station/frame/core/plugin/native
+module github.com/peers-labs/peers-touch/station/frame/core/plugin/native
 
 go 1.24.0
 
 replace (
-	github.com/peers-touch/peers-touch/station/frame => ../../../
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/logger/logrus => ../../../core/plugin/logger/logrus
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/server/hertz => ../../../core/plugin/server/hertz
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite => ../../../core/plugin/store/rds/sqlite
+	github.com/peers-labs/peers-touch/station/frame => ../../../
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus => ../../../core/plugin/logger/logrus
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/server/hertz => ../../../core/plugin/server/hertz
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite => ../../../core/plugin/store/rds/sqlite
 )
 
 require (
@@ -21,7 +21,7 @@ require (
 	github.com/libp2p/go-libp2p-record v0.3.1
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/multiformats/go-multihash v0.2.3
-	github.com/peers-touch/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
+	github.com/peers-labs/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
 	github.com/pion/logging v0.2.4
 	github.com/pion/turn/v4 v4.1.1
 	github.com/stretchr/testify v1.10.0

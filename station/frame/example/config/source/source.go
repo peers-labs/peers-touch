@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/config"
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source/file"
+	"github.com/peers-labs/peers-touch/station/frame/core/config"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/file"
 )
 
 type source struct {

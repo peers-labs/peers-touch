@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/config"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin"
-	"github.com/peers-touch/peers-touch/station/frame/core/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
+	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 )
 
 var configOptions struct {

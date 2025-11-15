@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/model"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/model"
 	"gorm.io/gorm"
 )
 

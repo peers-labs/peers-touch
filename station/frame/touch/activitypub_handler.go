@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/peers-touch/peers-touch/station/frame/core/server"
-	"github.com/peers-touch/peers-touch/station/frame/touch/activitypub"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 )
 
 // ActivityPubHandlerInfo represents a single handler's information

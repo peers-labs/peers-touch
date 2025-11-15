@@ -7,9 +7,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/app/subserver/ai-box/db/models"
-	aiboxpb "github.com/peers-touch/peers-touch/station/app/subserver/ai-box/proto_gen/v1/peers_touch_station/ai_box"
-	"github.com/peers-touch/peers-touch/station/frame/core/types"
+	"github.com/peers-labs/peers-touch/station/app/subserver/ai-box/db/models"
+	aiboxpb "github.com/peers-labs/peers-touch/station/app/subserver/ai-box/proto_gen/v1/peers_touch_station/ai_box"
+	"github.com/peers-labs/peers-touch/station/frame/core/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )

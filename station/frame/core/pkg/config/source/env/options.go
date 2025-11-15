@@ -3,8 +3,8 @@ package env
 import (
 	"strings"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source"
 )
 
 type strippedPrefixKey struct{}

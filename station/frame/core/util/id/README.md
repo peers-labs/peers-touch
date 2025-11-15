@@ -14,7 +14,7 @@ A comprehensive ID generation system for Go applications that supports multiple 
 ## Quick Start
 
 ```go
-import "github.com/peers-touch/peers-touch/station/frame/core/util/id"
+import "github.com/peers-labs/peers-touch/station/frame/core/util/id"
 
 // Numeric IDs
 numericID := id.NextID(id.WithSonyflake())

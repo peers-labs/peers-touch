@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/client"
-	"github.com/peers-touch/peers-touch/station/frame/core/codec"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	native "github.com/peers-touch/peers-touch/station/frame/core/plugin/native/transport"
-	"github.com/peers-touch/peers-touch/station/frame/core/registry"
-	"github.com/peers-touch/peers-touch/station/frame/core/transport"
+	"github.com/peers-labs/peers-touch/station/frame/core/client"
+	"github.com/peers-labs/peers-touch/station/frame/core/codec"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	native "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/transport"
+	"github.com/peers-labs/peers-touch/station/frame/core/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"

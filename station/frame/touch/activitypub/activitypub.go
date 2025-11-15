@@ -5,9 +5,9 @@ import (
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/store"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model/actor"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/actor"
 )
 
 // HandleInboxActivity handles incoming ActivityPub activities

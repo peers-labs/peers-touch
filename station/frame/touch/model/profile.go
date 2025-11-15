@@ -3,7 +3,7 @@ package model
 import (
 	"regexp"
 
-	"github.com/peers-touch/peers-touch/station/frame/touch/model/db"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 // ProfileGetResponse represents the response for getting actor profile

@@ -3,7 +3,7 @@ package file
 import (
 	"strings"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/encoder"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/encoder"
 )
 
 func format(p string, e encoder.Encoder) string {

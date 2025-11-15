@@ -1,14 +1,14 @@
 package actor
 
 import (
-	"github.com/peers-touch/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/config"
 )
 
 func init() {
 	config.RegisterOptions(&ymlOptions)
 }
 
-// see github.com/peers-touch/peers-touch/station/frameexample/helloworld/conf/actor_*.yml
+// see github.com/peers-labs/peers-touch/station/frameexample/helloworld/conf/actor_*.yml
 var ymlOptions struct {
 	Peers struct {
 		Actor struct {

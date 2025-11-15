@@ -1,7 +1,7 @@
 package store
 
 import (
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
 )
 
 type storeOptionsKey struct{}

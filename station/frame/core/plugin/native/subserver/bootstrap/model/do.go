@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/id"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
 	"gorm.io/gorm"
 )
 

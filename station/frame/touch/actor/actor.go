@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/store"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/id"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model/db"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
 )
 

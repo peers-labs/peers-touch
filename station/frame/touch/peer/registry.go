@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/registry"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/registry"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 // RegisterRegistryEndpoints 注册节点注册中心相关的路由端点

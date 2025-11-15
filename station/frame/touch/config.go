@@ -1,9 +1,9 @@
 package touch
 
 import (
-	cfg "github.com/peers-touch/peers-touch/station/frame/core/config"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/touch/util"
+	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/touch/util"
 )
 
 var (
@@ -26,12 +26,12 @@ type TouchConfig struct {
 
 // RouterConfig controls which routers are enabled
 type RouterConfig struct {
-    Management  bool `json:"management" pconf:"management" yaml:"management"`
-    ActivityPub bool `json:"activitypub" pconf:"activitypub" yaml:"activitypub"`
-    WellKnown   bool `json:"wellknown" pconf:"wellknown" yaml:"wellknown"`
-    User        bool `json:"user" pconf:"user" yaml:"user"`
-    Peer        bool `json:"peer" pconf:"peer" yaml:"peer"`
-    Message     bool `json:"message" pconf:"message" yaml:"message"`
+	Management  bool `json:"management" pconf:"management" yaml:"management"`
+	ActivityPub bool `json:"activitypub" pconf:"activitypub" yaml:"activitypub"`
+	WellKnown   bool `json:"wellknown" pconf:"wellknown" yaml:"wellknown"`
+	User        bool `json:"user" pconf:"user" yaml:"user"`
+	Peer        bool `json:"peer" pconf:"peer" yaml:"peer"`
+	Message     bool `json:"message" pconf:"message" yaml:"message"`
 }
 
 // SecurityConfig holds security-related configuration

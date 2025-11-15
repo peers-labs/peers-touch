@@ -6,10 +6,10 @@ import (
 	"runtime"
 	"testing"
 
-	cfg "github.com/peers-touch/peers-touch/station/frame/core/config"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source/file"
-	"github.com/peers-touch/peers-touch/station/frame/core/store"
+	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/file"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/stretchr/testify/assert"
 )
 

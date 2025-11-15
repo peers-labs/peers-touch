@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/cmd"
-	cfg "github.com/peers-touch/peers-touch/station/frame/core/config"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source"
-	cliSource "github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source/cli"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source/file"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source/memory"
+	"github.com/peers-labs/peers-touch/station/frame/core/cmd"
+	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source"
+	cliSource "github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/cli"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/file"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/memory"
 )
 
 var (

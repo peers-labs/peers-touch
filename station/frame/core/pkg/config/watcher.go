@@ -3,8 +3,8 @@ package config
 import (
 	"bytes"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/loader"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/reader"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/loader"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/reader"
 )
 
 // Watcher is the config watcher

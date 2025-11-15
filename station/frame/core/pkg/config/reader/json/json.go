@@ -5,10 +5,10 @@ import (
 	"time"
 
 	"dario.cat/mergo"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/encoder"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/encoder/json"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/reader"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/encoder"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/encoder/json"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/reader"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source"
 )
 
 type jsonReader struct {

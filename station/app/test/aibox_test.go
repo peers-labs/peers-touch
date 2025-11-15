@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/peers-touch/peers-touch/station/app/subserver/ai-box"
+	"github.com/peers-labs/peers-touch/station/app/subserver/ai-box"
 )
 
 // TestAgentCRUD 测试Agent的CRUD操作

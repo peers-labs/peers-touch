@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/peers-touch/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 // PeerHandlerInfo represents a single handler's information

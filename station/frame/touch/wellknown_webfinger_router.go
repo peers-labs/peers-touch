@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model"
-	"github.com/peers-touch/peers-touch/station/frame/touch/webfinger"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/webfinger"
 )
 
 func Webfinger(c context.Context, ctx *app.RequestContext) {

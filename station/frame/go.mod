@@ -1,4 +1,4 @@
-module github.com/peers-touch/peers-touch/station/frame
+module github.com/peers-labs/peers-touch/station/frame
 
 go 1.23.10
 

@@ -1,6 +1,6 @@
 package actor
 
-import "github.com/peers-touch/peers-touch/station/frame/core/option"
+import "github.com/peers-labs/peers-touch/station/frame/core/option"
 
 type actorOptionKey struct{}
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 // Add session structure

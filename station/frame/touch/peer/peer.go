@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/node"
-	"github.com/peers-touch/peers-touch/station/frame/core/registry"
-	"github.com/peers-touch/peers-touch/station/frame/core/store"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model/db"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 // SetPeerAddr saves the peer address data to the database.

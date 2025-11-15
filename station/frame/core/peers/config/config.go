@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	cfg "github.com/peers-touch/peers-touch/station/frame/core/config"
-	lg "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	pp "github.com/peers-touch/peers-touch/station/frame/core/node"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin"
-	ser "github.com/peers-touch/peers-touch/station/frame/core/server"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/log"
+	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
+	lg "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	pp "github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
+	ser "github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
 )
 
 var (

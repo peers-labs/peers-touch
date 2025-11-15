@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/types"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/types"
 )
 
 // Example demonstrates basic mDNS usage with hashicorp/mdns integration

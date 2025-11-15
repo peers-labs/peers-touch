@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"gorm.io/gorm"
 )
 

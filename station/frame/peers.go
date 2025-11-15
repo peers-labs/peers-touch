@@ -4,11 +4,11 @@ import (
 	"context"
 	"sync"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/node"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin"
-	"github.com/peers-touch/peers-touch/station/frame/object"
-	"github.com/peers-touch/peers-touch/station/frame/touch"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
+	"github.com/peers-labs/peers-touch/station/frame/object"
+	"github.com/peers-labs/peers-touch/station/frame/touch"
 )
 
 type Peer interface {

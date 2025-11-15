@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/touch/model/db"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 // SessionStore defines the interface for session storage
