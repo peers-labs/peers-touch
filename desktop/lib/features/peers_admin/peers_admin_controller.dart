@@ -8,13 +8,13 @@ import 'package:peers_touch_desktop/features/shell/controller/shell_controller.d
 /// PeersAdmin 控制器：负责读取后端地址、执行管理与 Peer 相关请求
 class PeersAdminController extends GetxController {
   final ApiClient apiClient;
-  final StorageService localStorage;
-  final SecureStorageService secureStorage;
+  final StorageService localStorageService;
+  final SecureStorageService secureStorageService;
 
   PeersAdminController({
     required this.apiClient,
-    required this.localStorage,
-    required this.secureStorage,
+    required this.localStorageService,
+    required this.secureStorageService,
   });
 
   // 后端地址（从设置中读取）
@@ -55,14 +55,14 @@ class PeersAdminController extends GetxController {
   /// 从设置读取 backend_url 和 auth_token，并同步到运行时（包括拦截器读取的 token_key）
   Future<void> _syncSettingsToRuntime() async {
     // 后端地址存储键：settings:global_business:backend_url
-    final url = localStorage.get<String>('settings:global_business:backend_url') ?? '';
+    final url = localStorageService.get<String>('settings:global_business:backend_url') ?? '';
     backendUrl.value = _normalizeBaseUrl(url);
 
     // 令牌：settings:global_business:auth_token（敏感，存 SecureStorageService）
     try {
-      final authToken = await secureStorage.get('settings:global_business:auth_token');
+      final authToken = await secureStorageService.get('settings:global_business:auth_token');
       if (authToken != null && authToken.isNotEmpty) {
-        await secureStorage.set(StorageKeys.tokenKey, authToken);
+        await secureStorageService.set(StorageServiceKeys.tokenKey, authToken);
       }
     } catch (_) {
       // ignore

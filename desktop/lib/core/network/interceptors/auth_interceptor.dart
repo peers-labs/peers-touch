@@ -2,14 +2,14 @@ import 'package:dio/dio.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 
 class AuthInterceptor extends Interceptor {
-  final SecureStorageService secureStorage;
+  final SecureStorageService secureStorageService;
 
-  AuthInterceptor({required this.secureStorage});
+  AuthInterceptor({required this.secureStorageService});
 
   @override
   Future<void> onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
     try {
-      final token = await secureStorage.get(StorageKeys.tokenKey);
+      final token = await secureStorageService.get(StorageServiceKeys.tokenKey);
       if (token != null && token.isNotEmpty) {
         options.headers['Authorization'] = 'Bearer $token';
       }

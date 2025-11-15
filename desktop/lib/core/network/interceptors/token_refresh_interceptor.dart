@@ -5,12 +5,12 @@ import 'package:peers_touch_desktop/core/network/token_refresh_handler.dart';
 
 class TokenRefreshInterceptor extends Interceptor {
   final Dio dio;
-  final SecureStorageService secureStorage;
+  final SecureStorageService secureStorageService;
   final TokenRefreshHandler refreshHandler;
 
   TokenRefreshInterceptor({
     required this.dio,
-    required this.secureStorage,
+    required this.secureStorageService,
     required this.refreshHandler,
   });
 
@@ -21,7 +21,7 @@ class TokenRefreshInterceptor extends Interceptor {
     if (status == 401 && (opts.extra['retryAfterRefresh'] != true)) {
       opts.extra['retryAfterRefresh'] = true;
       try {
-        final refreshToken = await secureStorage.get(StorageKeys.refreshTokenKey);
+        final refreshToken = await secureStorageService.get(StorageServiceKeys.refreshTokenKey);
         if (refreshToken == null) {
           return handler.next(err);
         }
@@ -29,8 +29,8 @@ class TokenRefreshInterceptor extends Interceptor {
         if (newPair == null) {
           return handler.next(err);
         }
-        await secureStorage.set(StorageKeys.tokenKey, newPair.accessToken);
-        await secureStorage.set(StorageKeys.refreshTokenKey, newPair.refreshToken);
+        await secureStorageService.set(StorageServiceKeys.tokenKey, newPair.accessToken);
+        await secureStorageService.set(StorageServiceKeys.refreshTokenKey, newPair.refreshToken);
 
         // Attach new access token header and retry original request
         opts.headers = Map<String, dynamic>.from(opts.headers);

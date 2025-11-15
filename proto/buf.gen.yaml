@@ -1,9 +1,0 @@
-version: v2
-
-plugins:
-  - local: protoc-gen-go
-    out: ../peers-touch/station/frame/touch/proto_gen
-    opt: paths=source_relative
-  - local: protoc-gen-go-grpc
-    out: ../peers-touch/station/frame/touch/proto_gen
-    opt: paths=source_relative

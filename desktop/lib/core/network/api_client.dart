@@ -9,11 +9,11 @@ import 'package:peers_touch_desktop/core/network/token_refresh_handler.dart';
 
 class ApiClient {
   final Dio dio;
-  final SecureStorageService? secureStorage;
+  final SecureStorageService? secureStorageService;
   final NetworkStatusService? networkStatusService;
   final TokenRefreshHandler? tokenRefreshHandler;
 
-  ApiClient({this.secureStorage, this.networkStatusService, this.tokenRefreshHandler})
+  ApiClient({this.secureStorageService, this.networkStatusService, this.tokenRefreshHandler})
       : dio = Dio(
           BaseOptions(
             connectTimeout: const Duration(seconds: 30),
@@ -21,15 +21,15 @@ class ApiClient {
           ),
         ) {
     dio.interceptors.add(LogInterceptor(responseBody: false));
-    if (secureStorage != null) {
-      dio.interceptors.add(AuthInterceptor(secureStorage: secureStorage!));
+    if (secureStorageService != null) {
+      dio.interceptors.add(AuthInterceptor(secureStorageService: secureStorageService!));
     }
     dio.interceptors.add(RetryInterceptor(dio: dio, networkStatusService: networkStatusService));
-    if (secureStorage != null && tokenRefreshHandler != null) {
+    if (secureStorageService != null && tokenRefreshHandler != null) {
       dio.interceptors.add(
         TokenRefreshInterceptor(
           dio: dio,
-          secureStorage: secureStorage!,
+          secureStorageService: secureStorageService!,
           refreshHandler: tokenRefreshHandler!,
         ),
       );

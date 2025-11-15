@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
-import 'package:get_storage/get_storage.dart';
+import 'package:peers_touch_base/storage.dart';
 import 'package:logging/logging.dart';
 
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
@@ -32,9 +32,7 @@ class AppInitializer {
       LoggingService.initialize(level: Level.ALL);
       LoggingService.info('Starting application initialization...');
       
-      // Initialize GetStorage
-      await GetStorage.init();
-      LoggingService.info('Local storage initialized');
+
       
       // Initialize window manager
       await WindowOptionsManager.initializeWindowManager();

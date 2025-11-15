@@ -62,7 +62,7 @@ class ProfileController extends GetxController {
         // Delete existing file first to ensure clean copy
         final existingFile = File(imagePath);
         if (await existingFile.exists()) {
-          await existingFile.delete();
+          await existingFile.remove();
         }
         
         // Copy the picked image to our app directory
