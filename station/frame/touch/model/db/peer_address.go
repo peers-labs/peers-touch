@@ -1,6 +1,6 @@
 package db
 
-import "github.com/peers-touch/peers-touch/station/frame/core/registry"
+import "github.com/peers-labs/peers-touch/station/frame/core/registry"
 
 type PeerAddrType = string
 

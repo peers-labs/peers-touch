@@ -5,9 +5,9 @@ import (
 	"crypto/tls"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/codec"
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/codec"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
 )
 
 type Options struct {

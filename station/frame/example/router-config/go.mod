@@ -4,9 +4,9 @@ go 1.23.10
 
 toolchain go1.24.6
 
-replace github.com/peers-touch/peers-touch/station/frame => ../..
+replace github.com/peers-labs/peers-touch/station/frame => ../..
 
-require github.com/peers-touch/peers-touch/station/frame v0.0.0-00010101000000-000000000000
+require github.com/peers-labs/peers-touch/station/frame v0.0.0-00010101000000-000000000000
 
 require (
 	dario.cat/mergo v1.0.1 // indirect

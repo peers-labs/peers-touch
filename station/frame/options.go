@@ -1,8 +1,8 @@
 package peers
 
 import (
-	"github.com/peers-touch/peers-touch/station/frame/core/node"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
 )
 
 type NewService func(rootOpts *option.Options, opts ...option.Option) node.Node

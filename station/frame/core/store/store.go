@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"gorm.io/gorm"
 )
 

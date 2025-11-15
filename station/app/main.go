@@ -3,17 +3,17 @@ package main
 import (
 	"context"
 
-	aibox "github.com/peers-touch/peers-touch/station/app/subserver/ai-box"
-	peers "github.com/peers-touch/peers-touch/station/frame"
-	"github.com/peers-touch/peers-touch/station/frame/core/debug/actuator"
-	"github.com/peers-touch/peers-touch/station/frame/core/node"
-	"github.com/peers-touch/peers-touch/station/frame/core/server"
+	aibox "github.com/peers-labs/peers-touch/station/app/subserver/ai-box"
+	peers "github.com/peers-labs/peers-touch/station/frame"
+	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
 	// default plugins
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native/registry"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/postgres"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite"
 )
 
 func main() {

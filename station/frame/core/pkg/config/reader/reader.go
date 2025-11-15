@@ -4,7 +4,7 @@ package reader
 import (
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source"
 )
 
 // Reader is an interface for merging changesets

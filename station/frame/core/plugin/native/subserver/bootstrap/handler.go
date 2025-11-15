@@ -6,9 +6,9 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/model"
-	"github.com/peers-touch/peers-touch/station/frame/touch"
-	pm "github.com/peers-touch/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch"
+	pm "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 // listPeerInfos processes the HTTP request and returns peer info

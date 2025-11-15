@@ -7,11 +7,11 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol"
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/server"
-	"github.com/peers-touch/peers-touch/station/frame/touch/actor"
-	"github.com/peers-touch/peers-touch/station/frame/touch/auth"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
+	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 // ActorHandlerInfo represents a single handler's information
@@ -24,32 +24,32 @@ type ActorHandlerInfo struct {
 
 // GetActorHandlers returns all actor handler configurations
 func GetActorHandlers() []ActorHandlerInfo {
-    return []ActorHandlerInfo{
-        {
-            RouterURL: RouterURLActorSignUP,
-            Handler:   ActorSignup,
-            Method:    server.POST,
-            Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
-        },
-        {
-            RouterURL: RouterURLActorLogin,
-            Handler:   ActorLogin,
-            Method:    server.POST,
-            Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
-        },
-        {
-            RouterURL: RouterURLActorProfile,
-            Handler:   GetActorProfile,
-            Method:    server.GET,
-            Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
-        },
-        {
-            RouterURL: RouterURLActorProfile,
-            Handler:   UpdateActorProfile,
-            Method:    server.POST,
-            Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
-        },
-    }
+	return []ActorHandlerInfo{
+		{
+			RouterURL: RouterURLActorSignUP,
+			Handler:   ActorSignup,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
+		},
+		{
+			RouterURL: RouterURLActorLogin,
+			Handler:   ActorLogin,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
+		},
+		{
+			RouterURL: RouterURLActorProfile,
+			Handler:   GetActorProfile,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
+		},
+		{
+			RouterURL: RouterURLActorProfile,
+			Handler:   UpdateActorProfile,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
+		},
+	}
 }
 
 // Handler implementations

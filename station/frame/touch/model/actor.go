@@ -3,7 +3,7 @@ package model
 import (
 	"strings"
 
-	"github.com/peers-touch/peers-touch/station/frame/touch/util"
+	"github.com/peers-labs/peers-touch/station/frame/touch/util"
 )
 
 type WebFingerResource string

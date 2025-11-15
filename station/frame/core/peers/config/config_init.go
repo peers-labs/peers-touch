@@ -5,14 +5,14 @@ import (
 	"os"
 	"strings"
 
-	cfg "github.com/peers-touch/peers-touch/station/frame/core/config"
-	"github.com/peers-touch/peers-touch/station/frame/core/node"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source"
-	cliSource "github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source/cli"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source/file"
-	uf "github.com/peers-touch/peers-touch/station/frame/core/util/file"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/log"
+	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source"
+	cliSource "github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/cli"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/file"
+	uf "github.com/peers-labs/peers-touch/station/frame/core/util/file"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
 	yaml "gopkg.in/yaml.v2"
 )
 

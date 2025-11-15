@@ -3,7 +3,7 @@ package json
 import (
 	"testing"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source"
 )
 
 func TestReader(t *testing.T) {

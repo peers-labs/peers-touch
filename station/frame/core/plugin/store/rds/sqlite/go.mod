@@ -1,13 +1,13 @@
-module github.com/peers-touch/peers-touch/station/frame/core/store/rds/sqlite
+module github.com/peers-labs/peers-touch/station/frame/core/store/rds/sqlite
 
 go 1.23.10
 
 toolchain go1.24.0
 
-replace github.com/peers-touch/peers-touch/station/frame => ./../../../../..
+replace github.com/peers-labs/peers-touch/station/frame => ./../../../../..
 
 require (
-	github.com/peers-touch/peers-touch/station/frame v0.0.0-20250319154115-dcf7e4a01b62
+	github.com/peers-labs/peers-touch/station/frame v0.0.0-20250319154115-dcf7e4a01b62
 	gorm.io/driver/sqlite v1.5.7
 )
 

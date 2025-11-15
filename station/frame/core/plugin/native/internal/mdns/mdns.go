@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/mdns"
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/types"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/types"
 )
 
 // Default constants following project conventions

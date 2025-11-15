@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/reader"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/log"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/reader"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
 )
 
 // Loader manages loading sources
