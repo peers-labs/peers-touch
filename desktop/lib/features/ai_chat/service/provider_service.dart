@@ -8,14 +8,14 @@ class ProviderService {
   static const String _providersKey = 'ai_providers';
   static const String _currentProviderKey = 'current_ai_provider';
   
-  final StorageService _localStorage = Get.find<StorageService>();
-  final SecureStorageService _secureStorage = Get.find<SecureStorageService>();
+  final StorageService _localStorageService = Get.find<StorageService>();
+  final SecureStorageService _secureStorageService = Get.find<SecureStorageService>();
   final ApiClient _apiClient = Get.find<ApiClient>();
   
   /// 获取所有提供商
   Future<List<Provider>> getProviders() async {
     try {
-      final providersData = _localStorage.get<List>(_providersKey) ?? [];
+      final providersData = _localStorageService.get<List>(_providersKey) ?? [];
       return providersData.map((data) => Provider.fromJson(data)).toList();
     } catch (e) {
       return [];
@@ -25,7 +25,7 @@ class ProviderService {
   /// 获取当前提供商
   Future<Provider?> getCurrentProvider() async {
     try {
-      final currentId = _localStorage.get<String>(_currentProviderKey);
+      final currentId = _localStorageService.get<String>(_currentProviderKey);
       if (currentId == null) return null;
       
       final providers = await getProviders();
@@ -55,12 +55,12 @@ class ProviderService {
       
       // 保存到本地存储
       final providersJson = providers.map((p) => p.toJson()).toList();
-      _localStorage.set(_providersKey, providersJson);
+      _localStorageService.set(_providersKey, providersJson);
       
       // 如果是当前提供商，更新当前提供商
-      final currentId = _localStorage.get<String>(_currentProviderKey);
+      final currentId = _localStorageService.get<String>(_currentProviderKey);
       if (currentId == provider.id) {
-        _localStorage.set(_currentProviderKey, provider.id);
+        _localStorageService.set(_currentProviderKey, provider.id);
       }
     } catch (e) {
       throw Exception('Failed to save provider: $e');
@@ -74,12 +74,12 @@ class ProviderService {
       providers.removeWhere((p) => p.id == providerId && p.peersUserId == userId);
       
       final providersJson = providers.map((p) => p.toJson()).toList();
-      _localStorage.set(_providersKey, providersJson);
+      _localStorageService.set(_providersKey, providersJson);
       
       // 如果删除的是当前提供商，清除当前提供商
-      final currentId = _localStorage.get<String>(_currentProviderKey);
+      final currentId = _localStorageService.get<String>(_currentProviderKey);
       if (currentId == providerId) {
-        _localStorage.remove(_currentProviderKey);
+        _localStorageService.remove(_currentProviderKey);
       }
     } catch (e) {
       throw Exception('Failed to delete provider: $e');
@@ -95,7 +95,7 @@ class ProviderService {
         orElse: () => throw Exception('Provider not found'),
       );
       
-      _localStorage.set(_currentProviderKey, providerId);
+      _localStorageService.set(_currentProviderKey, providerId);
       
       // 更新访问时间
       final updatedProvider = provider.copyWith(

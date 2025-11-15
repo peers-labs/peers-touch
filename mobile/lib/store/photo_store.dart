@@ -705,7 +705,7 @@ class PhotoStore implements BaseStore<PhotoData> {
 
   @override
   Future<void> deleteLocal(String id) async {
-    await delete(id);
+    await remove(id);
   }
 
   @override
@@ -713,7 +713,7 @@ class PhotoStore implements BaseStore<PhotoData> {
     if (_database == null) return;
 
     try {
-      await _database!.delete(_tableName);
+      await _database!.remove(_tableName);
       appLogger.info('Cleared all local photos');
     } catch (e) {
       appLogger.error('Error clearing local photos: $e');
@@ -771,10 +771,10 @@ class PhotoStore implements BaseStore<PhotoData> {
   }
 
   // Missing methods implementation
-  Future<void> delete(String id) async {
+  Future<void> remove(String id) async {
     final db = _database;
     if (db != null) {
-      await db.delete(_tableName, where: 'id = ?', whereArgs: [id]);
+      await db.remove(_tableName, where: 'id = ?', whereArgs: [id]);
     }
   }
 
