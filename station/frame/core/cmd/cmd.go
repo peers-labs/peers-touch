@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/cli"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/cli"
 )
 
 type Cmd interface {

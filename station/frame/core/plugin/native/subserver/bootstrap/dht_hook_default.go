@@ -5,7 +5,7 @@ import (
 
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
 func init() {

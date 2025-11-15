@@ -14,8 +14,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/transport"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
 const (

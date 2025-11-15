@@ -1,10 +1,10 @@
 package source
 
 import (
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/cli"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/encoder"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/encoder/json"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/cli"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/encoder"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/encoder/json"
 )
 
 type sourceOptionsKey struct{}

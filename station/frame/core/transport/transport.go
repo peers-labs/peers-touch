@@ -1,7 +1,7 @@
 // Package transport is an interface for synchronous connection based communication
 package transport
 
-import "github.com/peers-touch/peers-touch/station/frame/core/option"
+import "github.com/peers-labs/peers-touch/station/frame/core/option"
 
 // Transport is an interface which is used for communication between
 // services. It uses connection based socket send/recv semantics and

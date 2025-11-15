@@ -3,7 +3,7 @@ package config
 import (
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/reader"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/reader"
 )
 
 type value struct{}

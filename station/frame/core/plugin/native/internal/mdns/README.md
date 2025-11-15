@@ -16,8 +16,8 @@ import (
     "context"
     "log"
     
-    "github.com/peers-touch/peers-touch/station/frame/core/internal/mdns"
-    "github.com/peers-touch/peers-touch/station/frame/core/types"
+    "github.com/peers-labs/peers-touch/station/frame/core/internal/mdns"
+    "github.com/peers-labs/peers-touch/station/frame/core/types"
 )
 
 func main() {

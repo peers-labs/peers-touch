@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/store"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
 // Default durations for tokens and sessions

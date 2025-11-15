@@ -1,3 +1,3 @@
-module github.com/peers-touch/peers-touch/station
+module github.com/peers-labs/peers-touch/station
 
 go 1.22.0

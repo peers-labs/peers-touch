@@ -4,13 +4,13 @@ import (
 	"context"
 	_ "embed"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/server"
-	"github.com/peers-touch/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 
-	"github.com/peers-touch/peers-touch/station/app/subserver/ai-box/db/models"
-	aiboxpb "github.com/peers-touch/peers-touch/station/app/subserver/ai-box/proto_gen/v1/peers_touch_station/ai_box"
+	"github.com/peers-labs/peers-touch/station/app/subserver/ai-box/db/models"
+	aiboxpb "github.com/peers-labs/peers-touch/station/app/subserver/ai-box/proto_gen/v1/peers_touch_station/ai_box"
 )
 
 //go:embed db/models/init.sql

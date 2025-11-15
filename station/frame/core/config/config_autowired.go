@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
 var (

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
 )
 
 func initKeys(sOpts *node.Options) error {

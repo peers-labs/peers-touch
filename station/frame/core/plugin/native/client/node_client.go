@@ -3,8 +3,8 @@ package client
 import (
 	"context"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/client"
-	"github.com/peers-touch/peers-touch/station/frame/core/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/client"
+	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 )
 
 // NodeClient extends the basic client interface with node discovery capabilities

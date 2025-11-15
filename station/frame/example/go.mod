@@ -1,11 +1,11 @@
-module github.com/peers-touch/peers-touch/station/frameexample
+module github.com/peers-labs/peers-touch/station/frameexample
 
 go 1.24.0
 
 replace (
-	github.com/peers-touch/peers-touch/station/frame => ../
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/native => ../core/plugin/native
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite => ../core/plugin/store/rds/sqlite
+	github.com/peers-labs/peers-touch/station/frame => ../
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/native => ../core/plugin/native
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite => ../core/plugin/store/rds/sqlite
 )
 
 require (
@@ -14,8 +14,8 @@ require (
 	github.com/libp2p/go-libp2p v0.43.0
 	github.com/libp2p/go-libp2p-kad-dht v0.34.0
 	github.com/libp2p/go-libp2p-record v0.3.1
-	github.com/peers-touch/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/native v0.0.0-00010101000000-000000000000
+	github.com/peers-labs/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/native v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -101,7 +101,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite v0.0.0
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite v0.0.0
 	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect

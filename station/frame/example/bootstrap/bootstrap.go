@@ -5,18 +5,18 @@ import (
 
 	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/peers-touch/peers-touch/station/frame"
-	"github.com/peers-touch/peers-touch/station/frame/core/debug/actuator"
-	log "github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/node"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin/native/registry"
-	"github.com/peers-touch/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame"
+	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
+	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native/registry"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native/store"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/store"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite"
 )
 
 func main() {
