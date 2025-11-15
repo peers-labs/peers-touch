@@ -8,8 +8,8 @@ import 'package:peers_touch_desktop/features/settings/model/setting_search_resul
 
 class SettingController extends GetxController {
   final SettingManager _settingManager = SettingManager();
-  late final StorageService _localStorage;
-  late final SecureStorageService _secureStorage;
+  late final StorageService _localStorageService;
+  late final SecureStorageService _secureStorageService;
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, String?> _itemErrors = {};
   // 后端地址测试相关状态
@@ -28,8 +28,8 @@ class SettingController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    _localStorage = Get.find<StorageService>();
-    _secureStorage = Get.find<SecureStorageService>();
+    _localStorageService = Get.find<StorageService>();
+    _secureStorageService = Get.find<SecureStorageService>();
     _initializeSettings();
   }
   
@@ -112,9 +112,9 @@ class SettingController extends GetxController {
     final key = _storageKey(sectionId, itemId);
     final useSecure = _isSensitive(itemId);
     if (useSecure && value is String) {
-      _secureStorage.set(key, value);
+      _secureStorageService.set(key, value);
     } else {
-      _localStorage.set(key, value);
+      _localStorageService.set(key, value);
     }
   }
 
@@ -232,7 +232,7 @@ class SettingController extends GetxController {
         dynamic stored;
         if (_isSensitive(item.id)) {
           // 异步从安全存储读取
-          _secureStorage.get(key).then((s) {
+          _secureStorageService.get(key).then((s) {
             if (s != null) {
               final idx = targetSections.indexWhere((sec) => sec.id == section.id);
               if (idx != -1) {
@@ -261,7 +261,7 @@ class SettingController extends GetxController {
             }
           });
         } else {
-          stored = _localStorage.get<dynamic>(key);
+          stored = _localStorageService.get<dynamic>(key);
           if (stored != null) {
             section.items[i] = SettingItem(
               id: item.id,

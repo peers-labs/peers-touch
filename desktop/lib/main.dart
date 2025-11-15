@@ -10,11 +10,7 @@ import 'app/routes/app_routes.dart';
 import 'app/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
 
-void main() async {
-  final initialized = await AppInitializer.init();
-  if (!initialized) {
-    return;
-  }
+void main() {
   runApp(const App());
 }
 
@@ -26,21 +22,6 @@ class App extends StatefulWidget {
 }
 
 class _AppState extends State<App> {
-  bool _absorbing = true;
-
-  @override
-  void initState() {
-    super.initState();
-    // Allow pointer events only after the first frame to avoid early hit tests
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        setState(() {
-          _absorbing = false;
-        });
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
@@ -54,13 +35,13 @@ class _AppState extends State<App> {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: AppLocalizations.supportedLocales,
-      initialBinding: InitialBinding(),
+      initialBinding: BindingsBuilder(() {
+        Get.put(ApiClient());
+      }),
       getPages: AppPages.pages,
       initialRoute: AppRoutes.shell,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      // Globally absorb pointer events until the first frame is rendered
-      builder: (context, child) => AbsorbPointer(absorbing: _absorbing, child: child ?? const SizedBox.shrink()),
     );
   }
 }
