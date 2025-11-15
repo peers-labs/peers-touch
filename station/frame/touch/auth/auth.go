@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/store"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model/db"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 // AuthMethod represents different authentication methods

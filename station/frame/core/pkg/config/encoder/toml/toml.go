@@ -4,7 +4,7 @@ import (
 	"bytes"
 
 	"github.com/BurntSushi/toml"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/encoder"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/encoder"
 )
 
 type tomlEncoder struct{}

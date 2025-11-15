@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/id"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
 )
 
 func main() {

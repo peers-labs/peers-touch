@@ -1,24 +1,24 @@
-module github.com/peers-touch/peers-touch/station/app
+module github.com/peers-labs/peers-touch/station/app
 
 go 1.24.0
 
 toolchain go1.24.6
 
 replace (
-	github.com/peers-touch/peers-touch/station/frame => ../../station/frame
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/native => ../../station/frame/core/plugin/native
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/native/store => ../../station/frame/core/plugin/native/store
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/postgres => ../../station/frame/core/plugin/store/rds/postgres
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite => ../../station/frame/core/plugin/store/rds/sqlite
+	github.com/peers-labs/peers-touch/station/frame => ../../station/frame
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/native => ../../station/frame/core/plugin/native
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/native/store => ../../station/frame/core/plugin/native/store
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres => ../../station/frame/core/plugin/store/rds/postgres
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite => ../../station/frame/core/plugin/store/rds/sqlite
 )
 
 require (
 	github.com/cloudwego/hertz v0.9.5
 	github.com/libp2p/go-libp2p v0.43.0
-	github.com/peers-touch/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/native v0.0.0-00010101000000-000000000000
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/postgres v0.0.0-00010101000000-000000000000
-	github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
+	github.com/peers-labs/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/native v0.0.0-00010101000000-000000000000
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres v0.0.0-00010101000000-000000000000
+	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
 	github.com/pgvector/pgvector-go v0.3.0
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.7

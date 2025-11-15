@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/ring"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/ring"
 )
 
 // Should stream from OS

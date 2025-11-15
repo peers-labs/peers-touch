@@ -1,24 +1,24 @@
 package logrus
 
 import (
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
 )
 
 type Options struct {
-    logger.Options
-    Formatter logrus.Formatter
-    // Flag for whether to log caller info (off by default)
-    ReportCaller    bool
-    SplitLevel      bool
-    WithoutKey      bool
-    WithoutQuote    bool
-    TimestampFormat string
-    // Package filtering
-    IncludePackages []string
-    ExcludePackages []string
-    // Exit Function to call when FatalLevel log
-    ExitFunc func(int)
+	logger.Options
+	Formatter logrus.Formatter
+	// Flag for whether to log caller info (off by default)
+	ReportCaller    bool
+	SplitLevel      bool
+	WithoutKey      bool
+	WithoutQuote    bool
+	TimestampFormat string
+	// Package filtering
+	IncludePackages []string
+	ExcludePackages []string
+	// Exit Function to call when FatalLevel log
+	ExitFunc func(int)
 }
 
 type formatterKey struct{}
@@ -56,21 +56,21 @@ func WithoutQuote(w bool) logger.Option {
 }
 
 func TimestampFormat(format string) logger.Option {
-    return logger.SetOption(timestampFormat{}, format)
+	return logger.SetOption(timestampFormat{}, format)
 }
 
 // warning to use this option. because logrus doest not open CallerDepth option
 // this will only print this package
 func ReportCaller(r bool) logger.Option {
-    return logger.SetOption(reportCallerKey{}, r)
+	return logger.SetOption(reportCallerKey{}, r)
 }
 
 // IncludePackages sets allowed package patterns (prefix or "*" suffix supported)
 func IncludePackages(pkgs ...string) logger.Option {
-    return logger.SetOption(includePackagesKey{}, pkgs)
+	return logger.SetOption(includePackagesKey{}, pkgs)
 }
 
 // ExcludePackages sets denied package patterns (prefix or "*" suffix supported)
 func ExcludePackages(pkgs ...string) logger.Option {
-    return logger.SetOption(excludePackagesKey{}, pkgs)
+	return logger.SetOption(excludePackagesKey{}, pkgs)
 }

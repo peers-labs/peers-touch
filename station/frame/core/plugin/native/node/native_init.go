@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/client"
-	"github.com/peers-touch/peers-touch/station/frame/core/config"
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin"
-	"github.com/peers-touch/peers-touch/station/frame/core/registry"
-	"github.com/peers-touch/peers-touch/station/frame/core/server"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/log"
+	"github.com/peers-labs/peers-touch/station/frame/core/client"
+	"github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
+	"github.com/peers-labs/peers-touch/station/frame/core/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
 )
 
 // Init initialises options. Additionally, it calls cmd.Init

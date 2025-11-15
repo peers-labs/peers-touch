@@ -1,7 +1,7 @@
 package native
 
 import (
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/pion/logging"
 )
 

@@ -5,15 +5,15 @@ import (
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/peers-touch/peers-touch/station/frame"
-	"github.com/peers-touch/peers-touch/station/frame/core/debug/actuator"
-	"github.com/peers-touch/peers-touch/station/frame/core/node"
-	"github.com/peers-touch/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame"
+	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native/registry"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/native/store"
-	_ "github.com/peers-touch/peers-touch/station/frame/core/plugin/store/rds/sqlite"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/store"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite"
 )
 
 // helloRouterURL implements server.RouterURL for hello endpoints

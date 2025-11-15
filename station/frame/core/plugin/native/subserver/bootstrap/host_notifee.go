@@ -6,8 +6,8 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/model"
 )
 
 var (

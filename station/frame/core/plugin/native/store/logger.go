@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )

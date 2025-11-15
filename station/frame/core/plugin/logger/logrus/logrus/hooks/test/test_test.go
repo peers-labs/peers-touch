@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
 	"github.com/stretchr/testify/assert"
 )
 

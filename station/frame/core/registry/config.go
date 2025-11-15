@@ -3,8 +3,8 @@ package registry
 import (
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
 // TURNAuthMethod defines the type of TURN authentication

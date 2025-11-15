@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/modern-go/reflect2"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/loader"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/reader"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/storage"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/storage/file"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/log"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/loader"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/reader"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/storage"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/storage/file"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
 )
 
 // Config is an interface abstraction for dynamic configuration

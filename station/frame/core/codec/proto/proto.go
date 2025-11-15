@@ -5,7 +5,7 @@ import (
 	"io"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/peers-touch/peers-touch/station/frame/core/codec"
+	"github.com/peers-labs/peers-touch/station/frame/core/codec"
 )
 
 func init() {

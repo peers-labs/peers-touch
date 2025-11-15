@@ -3,9 +3,9 @@ package loader
 import (
 	"context"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/reader/json"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/reader/json"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/reader"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/reader"
 )
 
 type Options struct {

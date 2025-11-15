@@ -5,7 +5,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
 )
 
 type optionsKey struct{}

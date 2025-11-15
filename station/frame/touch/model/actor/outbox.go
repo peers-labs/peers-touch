@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	o "github.com/peers-touch/peers-touch/station/frame/object"
-	ap "github.com/peers-touch/peers-touch/station/frame/vendors/activitypub"
+	o "github.com/peers-labs/peers-touch/station/frame/object"
+	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 )
 
 // Outbox represents an actor's outbox collection for sending activities

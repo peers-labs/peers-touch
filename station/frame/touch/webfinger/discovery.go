@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	cfg "github.com/peers-touch/peers-touch/station/frame/core/config"
-	"github.com/peers-touch/peers-touch/station/frame/touch/model"
+	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 // DiscoverUser discovers a user by WebFinger resource and returns a WebFinger response

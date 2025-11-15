@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/debug/log"
+	"github.com/peers-labs/peers-touch/station/frame/core/debug/log"
 )
 
 func TestLogger(t *testing.T) {

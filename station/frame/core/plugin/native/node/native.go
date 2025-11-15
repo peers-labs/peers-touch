@@ -7,15 +7,15 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/client"
-	"github.com/peers-touch/peers-touch/station/frame/core/cmd"
-	"github.com/peers-touch/peers-touch/station/frame/core/logger"
-	"github.com/peers-touch/peers-touch/station/frame/core/node"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/peers/config"
-	"github.com/peers-touch/peers-touch/station/frame/core/registry"
-	"github.com/peers-touch/peers-touch/station/frame/core/server"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/log"
+	"github.com/peers-labs/peers-touch/station/frame/core/client"
+	"github.com/peers-labs/peers-touch/station/frame/core/cmd"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/peers/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
 )
 
 var (

@@ -4,7 +4,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/types"
+	"github.com/peers-labs/peers-touch/station/frame/core/types"
 )
 
 // Option configures a mDNS service

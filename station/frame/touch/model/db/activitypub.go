@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/util/id"
-	o "github.com/peers-touch/peers-touch/station/frame/object"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
+	o "github.com/peers-labs/peers-touch/station/frame/object"
 	"gorm.io/gorm"
 )
 

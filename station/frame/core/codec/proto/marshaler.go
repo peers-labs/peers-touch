@@ -5,7 +5,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/oxtoacart/bpool"
-	"github.com/peers-touch/peers-touch/station/frame/core/codec"
+	"github.com/peers-labs/peers-touch/station/frame/core/codec"
 )
 
 // create buffer pool with 16 instances each preallocated with 256 bytes.

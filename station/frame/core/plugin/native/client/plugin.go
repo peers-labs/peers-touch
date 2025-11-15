@@ -1,10 +1,10 @@
 package client
 
 import (
-	"github.com/peers-touch/peers-touch/station/frame/core/client"
-	"github.com/peers-touch/peers-touch/station/frame/core/config"
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/plugin"
+	"github.com/peers-labs/peers-touch/station/frame/core/client"
+	"github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
 )
 
 var options struct {

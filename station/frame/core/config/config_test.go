@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/source/memory"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/memory"
 )
 
 var (

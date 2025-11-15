@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/peers-touch/peers-touch/station/frame/core/option"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config"
-	"github.com/peers-touch/peers-touch/station/frame/core/pkg/config/reader"
-	"github.com/peers-touch/peers-touch/station/frame/core/util/log"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/reader"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
 )
 
 var (
