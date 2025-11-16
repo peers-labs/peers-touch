@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:peers_touch_network_client/src/core/stun/stun_config.dart';
-import 'package:peers_touch_network_client/src/core/stun/stun_client.dart';
-import 'package:peers_touch_network_client/src/core/stun/stun_types.dart';
-import 'package:peers_touch_network_client/src/core/stun/stun_peer_info.dart';
-import 'package:peers_touch_network_client/src/core/stun/tun_manager.dart';
+import 'package:peers_touch_base/network/core/stun/stun_config.dart';
+import 'package:peers_touch_base/network/core/stun/stun_client.dart';
+import 'package:peers_touch_base/network/core/stun/stun_types.dart';
+import 'package:peers_touch_base/network/core/stun/stun_peer_info.dart';
+import 'package:peers_touch_base/network/core/stun/tun_manager.dart';
 
 /// NAT类型枚举
 enum NatType {

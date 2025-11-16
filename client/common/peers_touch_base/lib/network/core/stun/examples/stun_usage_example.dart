@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:peers_touch_network_client/src/core/stun/stun.dart';
+import 'package:peers_touch_base/network/core/stun/stun.dart';
 
 /// STUN/TUN穿透功能使用示例
 class StunUsageExample {

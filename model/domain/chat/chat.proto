@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package peers_touch.model.core.v1;
+
+import "google/protobuf/timestamp.proto";
+import "domain/core/core.proto"; // Import Actor from core.proto
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/model;model";
+
+// ChatSession: 聊天会话
+message ChatSession {
+  string id = 1;
+  string topic = 2;
+  repeated string participant_ids = 3;
+  google.protobuf.Timestamp last_message_at = 4;
+  string last_message_snippet = 5;
+}
+
+// Message: 聊天消息
+message Message {
+  string id = 1;
+  string session_id = 2;
+  string sender_id = 3;
+  string content = 4;
+  google.protobuf.Timestamp sent_at = 5;
+}
+
+// Friend: 好友关系
+message Friend {
+  Actor user = 1;
+  enum FriendshipStatus {
+    PENDING = 0;
+    ACCEPTED = 1;
+    BLOCKED = 2;
+  }
+  FriendshipStatus status = 2;
+  google.protobuf.Timestamp friendship_created_at = 3;
+}
