@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:intl/intl.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 
@@ -28,15 +29,14 @@ class _MessageListViewState extends State<MessageListView> {
     }
   }
 
-  @override
-  void didUpdateWidget(covariant MessageListView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.messages.length != oldWidget.messages.length) {
-      // 新消息抵达后滚动到底部
-      SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+String _formatMessageTime(DateTime dt) {
+    final now = DateTime.now();
+    if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+      return DateFormat.Hm().format(dt); // 今天：HH:mm
+    } else if (now.difference(dt).inDays == 1) {
+      return '昨天 ${DateFormat.Hm().format(dt)}';
     } else {
-      // 流式内容变化也尝试保持到底部
-      SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
+      return DateFormat('yyyy/MM/dd HH:mm').format(dt);
     }
   }
 
@@ -51,19 +51,41 @@ class _MessageListViewState extends State<MessageListView> {
       itemBuilder: (_, i) {
         final m = widget.messages[i];
         final isUser = m.role == 'user';
-        return Align(
-          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            margin: EdgeInsets.symmetric(vertical: UIKit.spaceSm(context)),
-            padding: EdgeInsets.all(UIKit.spaceMd(context)),
-            decoration: BoxDecoration(
-              color: isUser
-                  ? UIKit.userBubbleBg(context)
-                  : UIKit.assistantBubbleBg(context),
-              borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
+        bool showTimestamp = false;
+        if (i == 0) {
+          showTimestamp = true;
+        } else {
+          final prev = widget.messages[i - 1];
+          if (m.createdAt.difference(prev.createdAt).inMinutes > 5) {
+            showTimestamp = true;
+          }
+        }
+
+        return Column(
+          children: [
+            if (showTimestamp)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: UIKit.spaceMd(context)),
+                child: Text(
+                  _formatMessageTime(m.createdAt),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            Align(
+              alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                margin: EdgeInsets.symmetric(vertical: UIKit.spaceSm(context)),
+                padding: EdgeInsets.all(UIKit.spaceMd(context)),
+                decoration: BoxDecoration(
+                  color: isUser
+                      ? UIKit.userBubbleBg(context)
+                      : UIKit.assistantBubbleBg(context),
+                  borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
+                ),
+                child: Text(m.content),
+              ),
             ),
-            child: Text(m.content),
-          ),
+          ],
         );
       },
     );

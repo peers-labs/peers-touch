@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:yaml/yaml.dart';
 
@@ -59,7 +58,8 @@ class ConfigLoader {
                   );
                   providers.add(provider);
                 } catch (e) {
-                  print('解析配置失败: $serviceName.$modelKey.$modelName - $e');
+                  // 解析配置失败，跳过此模型
+                  // 在forEach中不能使用continue，直接忽略错误即可
                 }
               }
             });
@@ -87,7 +87,7 @@ class ConfigLoader {
     final providerType = _getProviderType(protocol);
     
     // 生成唯一ID
-    final id = '${serviceName}_${modelKey}_${modelName}';
+    final id = '${serviceName}_${modelKey}_$modelName';
     
     return ProviderConfig(
       id: id,

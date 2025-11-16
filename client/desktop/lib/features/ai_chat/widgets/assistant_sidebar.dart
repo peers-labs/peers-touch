@@ -4,6 +4,8 @@ import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
 
+import 'package:intl/intl.dart';
+
 class AssistantSidebar extends StatelessWidget {
   final VoidCallback onNewChat;
   final List<ChatSession> sessions;
@@ -68,45 +70,32 @@ class AssistantSidebar extends StatelessWidget {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            s.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                        // 暂时屏蔽弹出菜单的语义，规避 AXTree 更新报错
-                        ExcludeSemantics(
-                          child: PopupMenuButton<String>(
-                            tooltip: AppLocalizations.of(context).chatSessionActions,
-                            onSelected: (value) {
-                              switch (value) {
-                                case 'rename':
-                                  onRenameSession(s);
-                                  break;
-                                case 'delete':
-                                  onDeleteSession(s);
-                                  break;
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              PopupMenuItem(
-                                value: 'rename',
-                                child: Text(AppLocalizations.of(context).rename),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                s.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium,
                               ),
-                              PopupMenuItem(
-                                value: 'delete',
-                                child: Text(AppLocalizations.of(context).delete),
-                              ),
+                              if (s.lastMessage != null)
+                                Text(
+                                  s.lastMessage!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: UIKit.textSecondary(context),
+                                      ),
+                                ),
                             ],
-                            icon: Icon(
-                              selected ? Icons.more_vert : Icons.more_horiz,
-                              color: selected
-                                  ? Theme.of(context).colorScheme.primary
-                                  : UIKit.textSecondary(context),
-                            ),
                           ),
                         ),
+                        if (s.lastActiveAt != null)
+                          Text(
+                            formatDateTime(s.lastActiveAt!),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                       ],
                     ),
                   ),
@@ -117,5 +106,19 @@ class AssistantSidebar extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+String formatDateTime(DateTime dt) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final date = DateTime(dt.year, dt.month, dt.day);
+
+  if (date == today) {
+    return DateFormat.Hm().format(dt);
+  } else if (today.difference(date).inDays == 1) {
+    return '昨天';
+  } else {
+    return DateFormat('yy/MM/dd').format(dt);
   }
 }

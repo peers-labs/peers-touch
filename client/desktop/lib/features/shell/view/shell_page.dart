@@ -185,11 +185,12 @@ class ShellPage extends StatelessWidget {
   Widget _buildTailMenuArea(BuildContext context, ShellController controller, ThemeData theme) {
     final tokens = theme.extension<WeChatTokens>()!;
     final tailItems = PrimaryMenuManager.getTailList();
-    
+
     return Container(
       height: UIKit.avatarBlockHeight, // 固定高度
       color: tokens.bgLevel2, // 尾部区域背景色
-      child: Column(
+      child: ListView(
+        padding: EdgeInsets.zero,
         children: tailItems.map((item) {
           final isSelected = controller.currentMenuItem.value?.id == item.id;
           return _buildMenuIcon(context, item, isSelected, controller, theme);
