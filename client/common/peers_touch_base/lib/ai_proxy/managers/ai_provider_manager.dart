@@ -17,9 +17,7 @@ class AIProviderManager {
     _providers[id] = provider;
     
     // 如果没有默认提供商，设置第一个注册的为默认
-    if (_defaultProviderId == null) {
-      _defaultProviderId = id;
-    }
+    _defaultProviderId ??= id;
   }
 
   /// 创建并注册 OpenAI 提供商
