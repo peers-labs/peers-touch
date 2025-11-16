@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:peers_touch_network_client/src/core/stun/stun_config.dart';
-import 'package:peers_touch_network_client/src/core/stun/stun_client.dart';
-import 'package:peers_touch_network_client/src/core/stun/stun_peer_info.dart';
-import 'package:peers_touch_network_client/src/core/stun/stun_types.dart';
-import 'package:peers_touch_network_client/src/core/stun/tun_manager.dart';
-import 'package:peers_touch_network_client/src/core/stun/hole_punching.dart';
+import 'package:peers_touch_base/network/core/stun/stun_config.dart';
+import 'package:peers_touch_base/network/core/stun/stun_client.dart';
+import 'package:peers_touch_base/network/core/stun/stun_peer_info.dart';
+import 'package:peers_touch_base/network/core/stun/stun_types.dart';
+import 'package:peers_touch_base/network/core/stun/tun_manager.dart';
+import 'package:peers_touch_base/network/core/stun/hole_punching.dart';
 
 /// STUN穿透管理器
 /// 

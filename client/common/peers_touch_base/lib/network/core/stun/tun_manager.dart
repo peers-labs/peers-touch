@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:peers_touch_network_client/src/core/stun/stun_client.dart';
-import 'package:peers_touch_network_client/src/core/stun/stun_config.dart';
-import 'package:peers_touch_network_client/src/core/stun/stun_peer_info.dart';
+import 'package:peers_touch_base/network/core/stun/stun_client.dart';
+import 'package:peers_touch_base/network/core/stun/stun_config.dart';
+import 'package:peers_touch_base/network/core/stun/stun_peer_info.dart';
 
 /// TUN接口抽象
 abstract class TunInterface {
