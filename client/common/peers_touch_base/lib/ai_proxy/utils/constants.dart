@@ -1,11 +1,11 @@
 /// AI 提供商常量定义
 class AIConstants {
   // OpenAI 默认配置
-  static const String openaiBaseUrl = 'https://api.openai.com';
+  static const String openaiDefaultBaseUrl = 'https://api.openai.com/v1';
   static const String openaiDefaultModel = 'gpt-3.5-turbo';
   
   // Ollama 默认配置
-  static const String ollamaBaseUrl = 'http://localhost:11434';
+  static const String ollamaDefaultBaseUrl = 'http://localhost:11434';
   static const String ollamaDefaultModel = 'llama2';
   
   // 默认超时时间（毫秒）
@@ -68,4 +68,22 @@ class AIConstants {
   static const double defaultTemperature = 0.7;
   static const int defaultMaxTokens = 1000;
   static const double defaultTopP = 1.0;
+  
+  // 存储键
+  static const String providerType = 'ai_provider_type';
+  static const String openaiApiKey = 'openai_api_key';
+  static const String openaiBaseUrl = 'openai_base_url';
+  static const String ollamaBaseUrl = 'ollama_base_url';
+  static const String ollamaClientSideMode = 'ollama_client_side_mode';
+  static const String selectedModel = 'ai_selected_model';
+  static const String selectedModelOpenAI = 'ai_selected_model_openai';
+  static const String selectedModelOllama = 'ai_selected_model_ollama';
+  static const String temperature = 'ai_temperature';
+  static const String enableStreaming = 'ai_enable_streaming';
+  static const String chatShowTopicPanel = 'chat_show_topic_panel';
+  static const String chatTopics = 'chat_topics';
+  static const String chatSessions = 'chat_sessions';
+  static const String chatSelectedSessionId = 'chat_selected_session_id';
+  static const String chatSessionTopicMap = 'chat_session_topic_map';
+  static const String chatMessagesPrefix = 'chat_messages_';
 }

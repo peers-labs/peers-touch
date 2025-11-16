@@ -4,6 +4,7 @@ class ChatSession {
   final DateTime createdAt;
   final DateTime? lastActiveAt;
   final String? lastMessage;
+  
   ChatSession({
     required this.id,
     required this.title,
@@ -29,4 +30,20 @@ class ChatSession {
             : null,
         lastMessage: json['lastMessage'] as String?,
       );
+  
+  ChatSession copyWith({
+    String? id,
+    String? title,
+    DateTime? createdAt,
+    DateTime? lastActiveAt,
+    String? lastMessage,
+  }) {
+    return ChatSession(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      createdAt: createdAt ?? this.createdAt,
+      lastActiveAt: lastActiveAt ?? this.lastActiveAt,
+      lastMessage: lastMessage ?? this.lastMessage,
+    );
+  }
 }

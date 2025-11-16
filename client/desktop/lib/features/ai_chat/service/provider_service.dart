@@ -10,7 +10,6 @@ class ProviderService {
   static const String _currentProviderKey = 'current_ai_provider';
   
   final LocalStorage _localStorage = Get.find<LocalStorage>();
-  final SecureStorage _secureStorage = Get.find<SecureStorage>();
   final ApiClient _apiClient = Get.find<ApiClient>();
   
   /// 获取所有提供商

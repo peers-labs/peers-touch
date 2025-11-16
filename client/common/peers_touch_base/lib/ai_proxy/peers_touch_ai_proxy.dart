@@ -1,4 +1,4 @@
-/// Exports for the AI Proxy library.
+// Exports for the AI Proxy library.
 
 // Core client
 export 'ai_provider_client_proxy.dart';

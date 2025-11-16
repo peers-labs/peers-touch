@@ -19,16 +19,19 @@ enum SaveTopicStatus {
 class ChatMessage {
   final String role; // 'user' | 'assistant'
   String content;
-  ChatMessage({required this.role, required this.content});
+  final DateTime createdAt;
+  ChatMessage({required this.role, required this.content, required this.createdAt});
 
   Map<String, dynamic> toJson() => {
         'role': role,
         'content': content,
+        'createdAt': createdAt.toIso8601String(),
       };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
-        role: json['role'] as String,
-        content: json['content'] as String,
+        role: json['role'] as String? ?? 'user',
+        content: json['content'] as String? ?? '',
+        createdAt: DateTime.parse(json['createdAt'] as String? ?? DateTime.now().toIso8601String()),
       );
 }
 
@@ -52,7 +55,10 @@ class AIChatController extends GetxController {
   final currentTopic = Rx<String?>(null);
   // 当前需要闪动提示的 Topic 索引（-1 表示不闪动）
   final flashTopicIndex = (-1).obs;
-  late final TextEditingController inputController;
+  // 输入控制器，在声明时初始化，避免 late 变量重复初始化的问题
+  late final TextEditingController inputController = TextEditingController()..addListener(() {
+    inputText.value = inputController.text;
+  });
   final Map<String, List<ChatMessage>> _sessionStore = {}; // 每会话的消息存储
   // 会话到已保存主题的映射
   Map<String, String> _sessionTopicMap = {};
@@ -60,11 +66,6 @@ class AIChatController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    inputController = TextEditingController();
-    // 保持输入框与响应式文本同步（避免重建导致光标跳动）
-    inputController.addListener(() {
-      inputText.value = inputController.text;
-    });
     _initModels();
     _loadPersistedState();
   }
@@ -136,6 +137,7 @@ class AIChatController extends GetxController {
         title: newTitle,
         createdAt: s.createdAt,
         lastActiveAt: s.lastActiveAt,
+        lastMessage: s.lastMessage,
       );
       sessions.refresh();
       _persistSessions();
@@ -202,7 +204,7 @@ class AIChatController extends GetxController {
       sid = selectedSessionId.value;
     }
     final list = _sessionStore[sid!]!;
-    final userMsg = ChatMessage(role: 'user', content: text);
+    final userMsg = ChatMessage(role: 'user', content: text, createdAt: DateTime.now());
     messages.add(userMsg);
     list.add(userMsg);
     inputController.clear();
@@ -212,7 +214,7 @@ class AIChatController extends GetxController {
 
     if (enableStreaming) {
       // 预先放入一条空助手消息，随后增量填充
-      final assistant = ChatMessage(role: 'assistant', content: '');
+      final assistant = ChatMessage(role: 'assistant', content: '', createdAt: DateTime.now());
       messages.add(assistant);
       list.add(assistant);
       try {
@@ -239,7 +241,7 @@ class AIChatController extends GetxController {
           model: currentModel.value.isNotEmpty ? currentModel.value : null,
           temperature: temperature,
         );
-        final assistant = ChatMessage(role: 'assistant', content: reply);
+        final assistant = ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now());
         messages.add(assistant);
         list.add(assistant);
         _persistMessagesForSession(sid);
@@ -273,7 +275,7 @@ class AIChatController extends GetxController {
     final list = _sessionStore[sid!]!;
 
     // 添加用户消息（仅展示文本，附件不在消息列表中显示）
-    final userMsg = ChatMessage(role: 'user', content: text);
+    final userMsg = ChatMessage(role: 'user', content: text, createdAt: DateTime.now());
     messages.add(userMsg);
     list.add(userMsg);
     inputController.clear();
@@ -297,7 +299,7 @@ class AIChatController extends GetxController {
     }
 
     if (enableStreaming) {
-      final assistant = ChatMessage(role: 'assistant', content: '');
+      final assistant = ChatMessage(role: 'assistant', content: '', createdAt: DateTime.now());
       messages.add(assistant);
       list.add(assistant);
       try {
@@ -327,7 +329,7 @@ class AIChatController extends GetxController {
           openAIContent: openAIContent,
           imagesBase64: imagesBase64,
         );
-        final assistant = ChatMessage(role: 'assistant', content: reply);
+        final assistant = ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now());
         messages.add(assistant);
         list.add(assistant);
         _persistMessagesForSession(sid);
@@ -352,9 +354,10 @@ class AIChatController extends GetxController {
     // topics
     final rawTopics = storage.get<List<dynamic>>(AIConstants.chatTopics);
     if (rawTopics != null) {
-      topics.assignAll(rawTopics.map((e) => e.toString()));
+      // 使用 microtask 避免在 onInit 中直接修改 RxList 触发构建错误
+      Future.microtask(() => topics.assignAll(rawTopics.map((e) => e.toString())));
     } else {
-      topics.assignAll(['默认主题']);
+      Future.microtask(() => topics.assignAll(['默认主题']));
     }
     // 会话-主题映射
     final mapRaw = storage.get<Map<String, dynamic>>(AIConstants.chatSessionTopicMap);
@@ -368,17 +371,20 @@ class AIChatController extends GetxController {
           .whereType<Map<String, dynamic>>()
           .map((m) => ChatSession.fromJson(m))
           .toList();
-      sessions.assignAll(parsed);
-      // 选择
-      final sid = storage.get<String>(AIConstants.chatSelectedSessionId);
-      if (sid != null && parsed.any((s) => s.id == sid)) {
-        selectSession(sid);
-      } else {
-        selectSession(parsed.first.id);
-      }
+      // 使用 microtask 避免在 onInit 中直接修改 RxList 触发构建错误
+      Future.microtask(() {
+        sessions.assignAll(parsed);
+        // 选择
+        final sid = storage.get<String>(AIConstants.chatSelectedSessionId);
+        if (sid != null && parsed.any((s) => s.id == sid)) {
+          selectSession(sid);
+        } else {
+          selectSession(parsed.first.id);
+        }
+      });
     } else {
-      // 初始化默认会话
-      createSession();
+      // 使用 microtask 避免在 onInit 中直接修改 RxList 触发构建错误
+      Future.microtask(() => createSession());
     }
   }
 
@@ -411,6 +417,7 @@ class AIChatController extends GetxController {
         title: s.title,
         createdAt: s.createdAt,
         lastActiveAt: DateTime.now(),
+        lastMessage: msgs.isNotEmpty ? msgs.last.content : null,
       );
       sessions.refresh();
       _persistSessions();
