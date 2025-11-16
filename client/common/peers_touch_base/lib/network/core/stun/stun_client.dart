@@ -4,8 +4,8 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:peers_touch_network_client/src/core/stun/stun_config.dart';
-import 'package:peers_touch_network_client/src/core/stun/stun_types.dart';
+import 'package:peers_touch_base/network/core/stun/stun_config.dart';
+import 'package:peers_touch_base/network/core/stun/stun_types.dart';
 
 /// STUN客户端核心实现
 class StunClient {

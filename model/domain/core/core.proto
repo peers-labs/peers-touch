@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package peers_touch.model.core.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/model;model";
+
+// Actor: 核心用户/实体
+message Actor {
+  string id = 1;
+  string name = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// Peer: 对等节点
+message Peer {
+  string peer_id = 1;
+  repeated string multiaddrs = 2;
+}
+
+// Profile: 用户的详细资料
+message Profile {
+  string actor_id = 1;
+  string bio = 2;
+  map<string, string> fields = 3;
+}

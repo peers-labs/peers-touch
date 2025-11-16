@@ -1,0 +1,54 @@
+import 'dart:convert';
+import 'package:drift/drift.dart';
+import 'package:peers_touch_base/storage/connection/connection.dart';
+
+part 'kv_database.g.dart';
+
+/// A table to store generic key-value pairs.
+class KeyValueItems extends Table {
+  /// The key for the stored value.
+  TextColumn get key => text()();
+
+  /// The stored value, as a string.
+  TextColumn get value => text()();
+
+  @override
+  Set<Column> get primaryKey => {key};
+}
+
+@DriftDatabase(tables: [KeyValueItems])
+class KvDatabase extends _$KvDatabase {
+  KvDatabase() : super(openConnection('kv_storage.db'));
+
+  @override
+  int get schemaVersion => 1;
+
+  /// Writes a key-value pair.
+  Future<void> set<T>(String key, T value) {
+    final serialized = value is String ? value : jsonEncode(value);
+    return into(keyValueItems).insertOnConflictUpdate(
+      KeyValueItemsCompanion.insert(key: key, value: serialized),
+    );
+  }
+
+  /// Reads a value by its key.
+  Future<T?> get<T>(String key) async {
+    final result = await (select(keyValueItems)..where((t) => t.key.equals(key))).getSingleOrNull();
+    if (result == null) return null;
+
+    if (T == String) {
+      return result.value as T?;
+    }
+    return jsonDecode(result.value) as T?;
+  }
+
+  /// Removes a key-value pair.
+  Future<void> remove(String key) {
+    return (delete(keyValueItems)..where((t) => t.key.equals(key))).go();
+  }
+
+  /// Clears all key-value pairs.
+  Future<void> clear() {
+    return delete(keyValueItems).go();
+  }
+}
