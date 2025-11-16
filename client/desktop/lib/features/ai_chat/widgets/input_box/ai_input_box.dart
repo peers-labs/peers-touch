@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -216,9 +218,6 @@ class AIInputBox extends StatelessWidget {
   Widget _toolbar(BuildContext context, AiInputController ctrl) {
     final color = Theme.of(context).colorScheme.onSurfaceVariant;
     return Obx(() {
-      // Explicitly read observables so Obx has reactive dependencies
-      final _attachmentsLen = ctrl.attachments.length;
-      final _sendMode = ctrl.sendMode.value;
       // Use computed flags based on current state
       final canImg = capability.supportsImageInput && ctrl.canAttachImage;
       final canFile = capability.supportsFileInput && ctrl.canAttachFile;
@@ -229,12 +228,7 @@ class AIInputBox extends StatelessWidget {
         children: [
           IconButton(
             tooltip: capability.supportsImageInput ? '添加图片' : '当前模型不支持图片输入',
-            onPressed: canImg
-                ? () {
-                    // 这里先放一个占位：添加一个 1x1 像素占位图片，避免引入文件选择依赖。
-                    ctrl.addImage(Uint8List.fromList([0]));
-                  }
-                : null,
+            onPressed: canImg ? () => _pickImage(ctrl) : null,
             icon: Icon(Icons.image_outlined, color: color),
           ),
           IconButton(
@@ -522,6 +516,20 @@ class AIInputBox extends StatelessWidget {
         return 'https://avatars.githubusercontent.com/u/139070193?s=64&v=4';
       default:
         return null;
+    }
+  }
+
+  /// 从文件选择器添加图片
+  Future<void> _pickImage(AiInputController ctrl) async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+    );
+
+    if (result != null && result.files.single.path != null) {
+      final file = File(result.files.single.path!);
+      final bytes = await file.readAsBytes();
+      ctrl.addImage(bytes);
     }
   }
 

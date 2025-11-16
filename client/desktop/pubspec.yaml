@@ -45,6 +45,10 @@ dependencies:
   get_storage: ^2.1.1
   flutter_secure_storage: ^9.0.0
   connectivity_plus: ^7.0.0
+  
+  # Local packages
+  peers_touch_base:
+    path: ../common/peers_touch_base
 
 dev_dependencies:
   flutter_test:

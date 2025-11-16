@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 
-	aibox "github.com/peers-labs/peers-touch/station/app/subserver/ai-box"
 	peers "github.com/peers-labs/peers-touch/station/frame"
 	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
@@ -27,7 +26,7 @@ func main() {
 		node.Name("peers-touch-station"),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("/debug")),
 		// Use the new router pattern for station endpoints
-		server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
+		// server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
 	)
 	if err != nil {
 		panic(err)
