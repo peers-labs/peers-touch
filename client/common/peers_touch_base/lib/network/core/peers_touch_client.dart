@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import '../config/peers_touch_config.dart';
-import '../exceptions/exceptions.dart';
-import '../models/peer_info.dart';
+import 'package:peers_touch_base/network//config/peers_touch_config.dart';
+import 'package:peers_touch_base/network/exceptions/exceptions.dart';
+import 'package:peers_touch_base/network/models/peer_info.dart';
 
 /// Main client class for Peers-touch network
 class PeersTouchClient {

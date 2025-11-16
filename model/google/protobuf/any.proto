@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package google.protobuf;
+
+option go_package = "google.golang.org/protobuf/types/known/anypb";
+
+// `Any` contains an arbitrary serialized protocol buffer message along with a
+// URL that describes the type of the serialized message.
+message Any {
+  // A URL/resource name that uniquely identifies the type of the serialized
+  // protocol buffer message. This string must contain at least one "/" character.
+  // The last segment of the URL's path must represent the fully qualified
+  // name of the type (as in `path/google.protobuf.Duration`).
+  string type_url = 1;
+
+  // Must be a valid serialized protocol buffer of the above specified type.
+  bytes value = 2;
+}
