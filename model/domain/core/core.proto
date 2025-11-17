@@ -4,7 +4,7 @@ package peers_touch.model.core.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/peers-labs/peers-touch/station/frame/model;model";
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
 // Actor: 核心用户/实体
 message Actor {

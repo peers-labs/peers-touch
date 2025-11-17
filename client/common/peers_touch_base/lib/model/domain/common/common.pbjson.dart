@@ -14,19 +14,19 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
-@$core.Deprecated('Use pageInfoDescriptor instead')
-const PageInfo$json = {
-  '1': 'PageInfo',
+@$core.Deprecated('Use pageQueryDescriptor instead')
+const PageQuery$json = {
+  '1': 'PageQuery',
   '2': [
     {'1': 'page_number', '3': 1, '4': 1, '5': 5, '10': 'pageNumber'},
     {'1': 'page_size', '3': 2, '4': 1, '5': 5, '10': 'pageSize'},
   ],
 };
 
-/// Descriptor for `PageInfo`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List pageInfoDescriptor = $convert.base64Decode(
-    'CghQYWdlSW5mbxIfCgtwYWdlX251bWJlchgBIAEoBVIKcGFnZU51bWJlchIbCglwYWdlX3Npem'
-    'UYAiABKAVSCHBhZ2VTaXpl');
+/// Descriptor for `PageQuery`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List pageQueryDescriptor = $convert.base64Decode(
+    'CglQYWdlUXVlcnkSHwoLcGFnZV9udW1iZXIYASABKAVSCnBhZ2VOdW1iZXISGwoJcGFnZV9zaX'
+    'plGAIgASgFUghwYWdlU2l6ZQ==');
 
 @$core.Deprecated('Use pageDataDescriptor instead')
 const PageData$json = {

@@ -21,7 +21,7 @@ class AIChatPage extends GetView<AIChatController> {
     return ShellThreePane(
       leftBuilder: (ctx) => Obx(() => AssistantSidebar(
             onNewChat: controller.newChat,
-            sessions: controller.sessions.toList(),
+            sessions: controller.sessions,
             selectedId: controller.selectedSessionId.value,
             onSelectSession: controller.selectSession,
             onRenameSession: (ChatSession s) async {
@@ -171,30 +171,32 @@ class AIChatPage extends GetView<AIChatController> {
                   ),
                 );
               }),
-              // 输入框
-              Obx(() {
-                // 读取响应式模型数据以触发重建
-                final models = controller.models.toList();
-                final current = controller.currentModel.value;
-                // Provider 分组：读取 ProviderController 中的列表
-                Map<String, List<String>> grouped = {};
-                if (Get.isRegistered<ProviderController>()) {
-                  final pc = Get.find<ProviderController>();
-                  grouped = Map.fromEntries(
-                    pc.providers.map((p) => MapEntry(p.name, p.models)),
+              Flexible(
+                flex: 0,
+                child: Obx(() {
+                  // 读取响应式模型数据以触发重建
+                  final models = controller.models.toList();
+                  final current = controller.currentModel.value;
+                  // Provider 分组：读取 ProviderController 中的列表
+                  Map<String, List<String>> grouped = {};
+                  if (Get.isRegistered<ProviderController>()) {
+                    final pc = Get.find<ProviderController>();
+                    grouped = Map.fromEntries(
+                      pc.providers.map((p) => MapEntry(p.name, p.models)),
+                    );
+                  }
+                  return ChatInputBar(
+                    controller: controller.inputController,
+                    onChanged: controller.setInput,
+                    onSend: controller.send,
+                    isSending: controller.isSending.value,
+                    models: models,
+                    currentModel: current,
+                    onModelChanged: controller.setModel,
+                    groupedModelsByProvider: grouped,
                   );
-                }
-                return ChatInputBar(
-                  controller: controller.inputController,
-                  onChanged: controller.setInput,
-                  onSend: controller.send,
-                  isSending: controller.isSending.value,
-                  models: models,
-                  currentModel: current,
-                  onModelChanged: controller.setModel,
-                  groupedModelsByProvider: grouped,
-                );
-              }),
+                }),
+              ),
           ],
         ),
       ),
