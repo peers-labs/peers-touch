@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
-import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat_session.pb.dart';
 
 import 'package:intl/intl.dart';
 

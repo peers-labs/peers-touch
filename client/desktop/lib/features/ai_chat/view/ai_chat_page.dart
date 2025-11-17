@@ -1,10 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_proxy_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/assistant_sidebar.dart';
-import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat_session.pb.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/header_toolbar.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/message_list_view.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/chat_input_bar.dart';
@@ -13,8 +14,23 @@ import 'package:peers_touch_desktop/features/shell/controller/shell_controller.d
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
-class AIChatPage extends GetView<AIChatController> {
+class AIChatPage extends GetView<AIChatProxyController> {
   const AIChatPage({super.key});
+
+  /// 从提供商设置中提取模型列表
+  List<String> _extractModelsFromSettings(String settings) {
+    try {
+      if (settings.isEmpty) return [];
+      final Map<String, dynamic> settingsMap = jsonDecode(settings);
+      final models = settingsMap['models'];
+      if (models is List) {
+        return models.map((m) => m.toString()).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -182,7 +198,11 @@ class AIChatPage extends GetView<AIChatController> {
                   if (Get.isRegistered<ProviderController>()) {
                     final pc = Get.find<ProviderController>();
                     grouped = Map.fromEntries(
-                      pc.providers.map((p) => MapEntry(p.name, p.models)),
+                      pc.providers.map((p) {
+                        // 从settings中解析模型列表
+                        final models = _extractModelsFromSettings(p.settings);
+                        return MapEntry(p.name, models);
+                      }),
                     );
                   }
                   return ChatInputBar(

@@ -1,4 +1,8 @@
-/// 聊天消息角色
+// 导出 protobuf 模型
+export 'package:peers_touch_base/model/domain/ai_box/chat_message.pb.dart';
+export 'package:peers_touch_base/model/domain/ai_box/message_attachment.pb.dart';
+
+// 角色枚举映射
 enum ChatRole {
   system,
   user,
@@ -6,49 +10,7 @@ enum ChatRole {
   tool,
 }
 
-/// 聊天消息
-class ChatMessage {
-  final ChatRole role;
-  final String content;
-  final String? name;
-  final List<ToolCall>? toolCalls;
-  final String? toolCallId;
-
-  const ChatMessage({
-    required this.role,
-    required this.content,
-    this.name,
-    this.toolCalls,
-    this.toolCallId,
-  });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'role': role.name,
-      'content': content,
-      if (name != null) 'name': name,
-      if (toolCalls != null) 'tool_calls': toolCalls!.map((e) => e.toJson()).toList(),
-      if (toolCallId != null) 'tool_call_id': toolCallId,
-    };
-  }
-
-  factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    return ChatMessage(
-      role: ChatRole.values.firstWhere(
-        (e) => e.name == json['role'],
-        orElse: () => ChatRole.user,
-      ),
-      content: json['content'] ?? '',
-      name: json['name'],
-      toolCalls: json['tool_calls'] != null
-          ? (json['tool_calls'] as List).map((e) => ToolCall.fromJson(e)).toList()
-          : null,
-      toolCallId: json['tool_call_id'],
-    );
-  }
-}
-
-/// 工具调用
+// 工具调用类（protobuf 中没有对应的模型）
 class ToolCall {
   final String id;
   final String type;
@@ -77,7 +39,7 @@ class ToolCall {
   }
 }
 
-/// 聊天完成请求
+// 聊天完成请求
 class ChatCompletionRequest {
   final String model;
   final List<ChatMessage> messages;
@@ -110,7 +72,7 @@ class ChatCompletionRequest {
   Map<String, dynamic> toJson() {
     return {
       'model': model,
-      'messages': messages.map((e) => e.toJson()).toList(),
+      'messages': messages.map((e) => e.writeToJson()).toList(),
       if (temperature != null) 'temperature': temperature,
       if (maxTokens != null) 'max_tokens': maxTokens,
       if (topP != null) 'top_p': topP,
