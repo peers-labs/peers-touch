@@ -7,7 +7,7 @@
 
 ### 参考LobeChat的实现
 - **数据库**: PostgreSQL (支持pgvector插件用于RAG)
-- **ORM框架**: Drizzle ORM
+- **ORM框架**: GORM ORM
 - **迁移策略**: 程序化迁移，构建时自动执行
 - **架构模式**: 客户端(IndexedDB/PGLite) + 服务端(PostgreSQL)双模式
 
@@ -34,7 +34,7 @@ ChatMessage (1) ←→ (N) MessageAttachment
 ```protobuf
 message ChatSession {
   string id = 1;                    // 唯一标识符
-  string title = 2;               // 会话标题
+  string title = 2;                 // 会话标题
   string description = 3;           // 会话描述
   string avatar = 4;                // 头像URL
   string background_color = 5;      // 背景色
@@ -62,25 +62,25 @@ message ChatMessage {
   string id = 1;                    // 唯一标识符
   string session_id = 2;            // 会话ID
   string topic_id = 3;               // 话题ID（可选）
-  
+  string model_name = 4;            // 使用的模型
   // 消息内容
-  string role = 4;                   // 角色: user/assistant/system
-  string content = 5;                // 消息内容
-  string error_json = 6;             // 错误信息JSON
+  string role = 5;                   // 角色: user/assistant/system
+  string content = 6;                // 消息内容
+  string error_json = 7;             // 错误信息JSON
   
   // 多模态支持
-  repeated MessageAttachment attachments = 7;  // 附件列表
-  string images_json = 8;            // 图片数据JSON
+  repeated MessageAttachment attachments = 8;  // 附件列表
+  string images_json = 9;            // 图片数据JSON
   
   // 元数据
-  string metadata_json = 9;           // 元数据JSON（工具调用、推理等）
-  string plugin_json = 10;            // 插件调用JSON
-  string tool_calls_json = 11;        // 工具调用JSON
-  string reasoning_json = 12;         // 推理过程JSON
+  string metadata_json = 10;           // 元数据JSON（工具调用、推理等）
+  string plugin_json = 11;            // 插件调用JSON
+  string tool_calls_json = 12;        // 工具调用JSON
+  string reasoning_json = 13;         // 推理过程JSON
   
   // 时间戳
-  int64 created_at = 13;              // 创建时间
-  int64 updated_at = 14;              // 更新时间
+  int64 created_at = 14;              // 创建时间
+  int64 updated_at = 15;              // 更新时间
 }
 ```
 
@@ -153,6 +153,7 @@ CREATE TABLE messages (
   id VARCHAR(36) PRIMARY KEY,
   session_id VARCHAR(36) NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   topic_id VARCHAR(36) REFERENCES topics(id) ON DELETE SET NULL,
+  model_name VARCHAR(100),
   role VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
   content TEXT,
   error_json JSONB,
@@ -210,23 +211,20 @@ CREATE INDEX idx_attachments_message_id ON attachments(message_id);
 CREATE INDEX idx_attachments_type ON attachments(type);
 ```
 
-## gRPC服务接口设计
+## http 接口设计
 
-### ChatSessionService（会话服务）
-```protobuf
-service ChatSessionService {
-  // 会话管理
-  rpc CreateSession(CreateSessionRequest) returns (ChatSession);
-  rpc GetSession(GetSessionRequest) returns (ChatSession);
-  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
-  rpc UpdateSession(UpdateSessionRequest) returns (ChatSession);
-  rpc DeleteSession(DeleteSessionRequest) returns (google.protobuf.Empty);
+### ChatSessionService（会话服务接口）
+
+```
+  POST CreateSession(CreateSessionRequest) returns (PeersResponse.ChatSession);
+  GET GetSession(GetSessionRequest) returns (PeersResponse.ChatSession);
+  GET ListSessions(ListSessionsRequest) returns (PeersResponse.ListSessionsResponse);
+  POST UpdateSession(UpdateSessionRequest) returns (PeersResponse.ChatSession);
+  POST DeleteSession(DeleteSessionRequest) returns (PeersResponse);
   
-  // 会话状态管理
-  rpc PinSession(PinSessionRequest) returns (google.protobuf.Empty);
-  rpc UnpinSession(UnpinSessionRequest) returns (google.protobuf.Empty);
-  rpc ArchiveSession(ArchiveSessionRequest) returns (google.protobuf.Empty);
-}
+  POST PinSession(PinSessionRequest) returns (PeersResponse);
+  POST UnpinSession(UnpinSessionRequest) returns (PeersResponse);
+  POST ArchiveSession(ArchiveSessionRequest) returns (PeersResponse);
 
 message CreateSessionRequest {
   string title = 1;
@@ -246,26 +244,23 @@ message ListSessionsRequest {
 }
 ```
 
+-----
+第一阶段到此结束
+-----
+
 ### ChatMessageService（消息服务）
 ```protobuf
-service ChatMessageService {
-  // 消息发送（支持流式响应）
-  rpc SendMessage(SendMessageRequest) returns (stream MessageResponse);
-  rpc SendMessageUnary(SendMessageRequest) returns (MessageResponse);
+  // 保存消息，目录AI会话消息都是由客户端直接向AI Provider发送请求，
+  // 服务端当下只负责将记录保存到数据库中的messages表中。
+  rpc SaveMessage(SendMessageRequest) returns (stream MessageResponse);
   
   // 消息历史
   rpc GetMessageHistory(GetMessageHistoryRequest) returns (MessageHistoryResponse);
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
   
   // 消息管理
-  rpc UpdateMessage(UpdateMessageRequest) returns (ChatMessage);
   rpc DeleteMessage(DeleteMessageRequest) returns (google.protobuf.Empty);
-  rpc RegenerateMessage(RegenerateMessageRequest) returns (stream MessageResponse);
   
-  // 附件管理
-  rpc UploadAttachment(UploadAttachmentRequest) returns (UploadAttachmentResponse);
-  rpc DeleteAttachment(DeleteAttachmentRequest) returns (google.protobuf.Empty);
-}
 
 message SendMessageRequest {
   string session_id = 1;

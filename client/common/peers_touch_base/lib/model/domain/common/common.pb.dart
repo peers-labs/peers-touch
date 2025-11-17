@@ -19,9 +19,9 @@ import '../../google/protobuf/any.pb.dart' as $0;
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
-/// PageInfo: API请求中的分页参数
-class PageInfo extends $pb.GeneratedMessage {
-  factory PageInfo({
+/// PageQuery: API请求中的分页参数
+class PageQuery extends $pb.GeneratedMessage {
+  factory PageQuery({
     $core.int? pageNumber,
     $core.int? pageSize,
   }) {
@@ -31,17 +31,17 @@ class PageInfo extends $pb.GeneratedMessage {
     return result;
   }
 
-  PageInfo._();
+  PageQuery._();
 
-  factory PageInfo.fromBuffer($core.List<$core.int> data,
+  factory PageQuery.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory PageInfo.fromJson($core.String json,
+  factory PageQuery.fromJson($core.String json,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'PageInfo',
+      _omitMessageNames ? '' : 'PageQuery',
       package: const $pb.PackageName(
           _omitMessageNames ? '' : 'peers_touch.model.common.v1'),
       createEmptyInstance: create)
@@ -50,22 +50,22 @@ class PageInfo extends $pb.GeneratedMessage {
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  PageInfo clone() => deepCopy();
+  PageQuery clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  PageInfo copyWith(void Function(PageInfo) updates) =>
-      super.copyWith((message) => updates(message as PageInfo)) as PageInfo;
+  PageQuery copyWith(void Function(PageQuery) updates) =>
+      super.copyWith((message) => updates(message as PageQuery)) as PageQuery;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static PageInfo create() => PageInfo._();
+  static PageQuery create() => PageQuery._();
   @$core.override
-  PageInfo createEmptyInstance() => create();
+  PageQuery createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static PageInfo getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PageInfo>(create);
-  static PageInfo? _defaultInstance;
+  static PageQuery getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PageQuery>(create);
+  static PageQuery? _defaultInstance;
 
   @$pb.TagNumber(1)
   $core.int get pageNumber => $_getIZ(0);
