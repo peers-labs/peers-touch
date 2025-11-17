@@ -5,25 +5,25 @@ package peers_touch.model.common.v1;
 import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/peers-labs/peers-touch/station/frame/model;model";
+option go_package = "github.com/peers-labs/peers-touch/station/frame/core/types;types";
 
-// PageInfo: API请求中的分页参数
-message PageInfo {
+// PageQuery: API请求中的分页参数
+message PageQuery {
   int32 page_number = 1; // The page number to retrieve, 1-based.
   int32 page_size = 2;   // The number of items to retrieve per page.
 }
 
-// PageData: 通用列表响应，对应原 PageData<T>
+// PageData: 通用列表响应
 message PageData {
   int64 total = 1;
   int32 no = 2;
 }
 
-// SuccessResponse: 通用API成功响应外层结构
-message SuccessResponse {
+// PeersResponse: 通用API成功响应外层结构
+message PeersResponse {
   string code = 1; // e.g., "200"
   string msg = 2;
-  google.protobuf.Any data = 3;
+  google.protobuf.Any data = 3; // data or error
 }
 
 // Error: 标准化错误信息

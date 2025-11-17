@@ -5,7 +5,7 @@ package peers_touch.model.core.v1;
 import "google/protobuf/timestamp.proto";
 import "domain/core/core.proto"; // Import Actor from core.proto
 
-option go_package = "github.com/peers-labs/peers-touch/station/frame/model;model";
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
 // ChatSession: 聊天会话
 message ChatSession {
