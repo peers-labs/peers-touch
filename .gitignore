@@ -32,3 +32,6 @@ logs/
 *.temp
 /client/common/peers_touch_ai_proxy_client/lib/src/example/ai_provider_debug.yml
 /model/env.bat
+
+# Dart tool
+**/.dart_tool
