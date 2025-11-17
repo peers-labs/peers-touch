@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
-import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
+import 'package:peers_touch_base/model/domain/ai_box/ai_box.pb.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/create_provider_dialog.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/provider_detail_panel.dart';
 
@@ -107,7 +107,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
   List<Widget> _buildProviderGroup(
     BuildContext context,
     String title,
-    List<Provider> providers,
+    List<AiProvider> providers,
     ProviderController controller,
     LobeTokens tokens,
   ) {

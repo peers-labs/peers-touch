@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat_message.pb.dart';
 
 class MessageListView extends StatefulWidget {
   final List<ChatMessage> messages;
@@ -52,11 +52,14 @@ String _formatMessageTime(DateTime dt) {
         final m = widget.messages[i];
         final isUser = m.role == 'user';
         bool showTimestamp = false;
+        // 将protobuf Int64时间戳转换为DateTime
+        final createdAt = DateTime.fromMillisecondsSinceEpoch(m.createdAt.toInt());
         if (i == 0) {
           showTimestamp = true;
         } else {
           final prev = widget.messages[i - 1];
-          if (m.createdAt.difference(prev.createdAt).inMinutes > 5) {
+          final prevCreatedAt = DateTime.fromMillisecondsSinceEpoch(prev.createdAt.toInt());
+          if (createdAt.difference(prevCreatedAt).inMinutes > 5) {
             showTimestamp = true;
           }
         }
@@ -67,7 +70,7 @@ String _formatMessageTime(DateTime dt) {
               Padding(
                 padding: EdgeInsets.symmetric(vertical: UIKit.spaceMd(context)),
                 child: Text(
-                  _formatMessageTime(m.createdAt),
+                  _formatMessageTime(createdAt),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
