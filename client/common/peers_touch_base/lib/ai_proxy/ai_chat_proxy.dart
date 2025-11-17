@@ -5,6 +5,8 @@ import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/constants.dart';
 import 'models/chat_session.dart';
 import 'interfaces/ai_service.dart';
+import 'package:fixnum/fixnum.dart' as $fixnum;
+import 'package:peers_touch_base/model/domain/ai_box/chat_session.pb.dart' as $1;
 
 // 保存主题操作的结果状态
 enum SaveTopicStatus {
@@ -48,7 +50,7 @@ class AIChatProxy extends ChangeNotifier {
   final ValueNotifier<bool> isSending = ValueNotifier(false);
   final ValueNotifier<String?> error = ValueNotifier(null);
   final ValueNotifier<bool> showTopicPanel = ValueNotifier(false);
-  final ValueNotifier<List<ChatSession>> sessions = ValueNotifier([]);
+  final ValueNotifier<List<$1.ChatSession>> sessions = ValueNotifier([]);
   final ValueNotifier<String?> selectedSessionId = ValueNotifier(null);
   final ValueNotifier<List<String>> topics = ValueNotifier([]);
   final ValueNotifier<String?> currentTopic = ValueNotifier(null);
@@ -80,11 +82,13 @@ class AIChatProxy extends ChangeNotifier {
 
   Future<void> createSession({String title = 'Just Chat'}) async {
     final id = _genId();
-    final session = ChatSession(
+    final now = DateTime.now();
+    final session = $1.ChatSession(
       id: id, 
       title: title, 
-      createdAt: DateTime.now(), 
-      lastActiveAt: DateTime.now()
+      description: '',
+      createdAt: $fixnum.Int64(now.millisecondsSinceEpoch),
+      updatedAt: $fixnum.Int64(now.millisecondsSinceEpoch),
     );
     sessions.value = [...sessions.value, session];
     _sessionStore[id] = <ChatMessage>[];
@@ -130,14 +134,14 @@ class AIChatProxy extends ChangeNotifier {
   Future<void> renameSession(String id, String newTitle) async {
     final idx = sessions.value.indexWhere((s) => s.id == id);
     if (idx != -1) {
-      final newSessions = List<ChatSession>.from(sessions.value);
+      final newSessions = List<$1.ChatSession>.from(sessions.value);
       final s = newSessions[idx];
-      newSessions[idx] = ChatSession(
+      newSessions[idx] = $1.ChatSession(
         id: s.id,
         title: newTitle,
+        description: s.description,
         createdAt: s.createdAt,
-        lastActiveAt: s.lastActiveAt,
-        lastMessage: s.lastMessage,
+        updatedAt: s.updatedAt,
       );
       sessions.value = newSessions;
       await _persistSessions();
@@ -201,8 +205,8 @@ class AIChatProxy extends ChangeNotifier {
     final rawSessions = await _storage.get<List<dynamic>>(AIConstants.chatSessions);
     if (rawSessions != null && rawSessions.isNotEmpty) {
       final parsed = rawSessions
-          .whereType<Map<String, dynamic>>()
-          .map((m) => ChatSession.fromJson(m))
+          .whereType<String>()
+          .map((jsonStr) => $1.ChatSession.fromJson(jsonStr))
           .toList();
       sessions.value = parsed;
       
@@ -219,7 +223,7 @@ class AIChatProxy extends ChangeNotifier {
   }
 
   Future<void> _persistSessions() async {
-    final data = sessions.value.map((s) => s.toJson()).toList();
+    final data = sessions.value.map((s) => s.writeToJson()).toList();
     await _storage.set(AIConstants.chatSessions, data);
     if (selectedSessionId.value != null) {
       await _storage.set(AIConstants.chatSelectedSessionId, selectedSessionId.value);
@@ -242,14 +246,14 @@ class AIChatProxy extends ChangeNotifier {
     // 更新最后活跃时间
     final idx = sessions.value.indexWhere((s) => s.id == id);
     if (idx != -1) {
-      final newSessions = List<ChatSession>.from(sessions.value);
+      final newSessions = List<$1.ChatSession>.from(sessions.value);
       final s = newSessions[idx];
-      newSessions[idx] = ChatSession(
+      newSessions[idx] = $1.ChatSession(
         id: s.id,
         title: s.title,
+        description: msgs.isNotEmpty ? msgs.last.content : s.description,
         createdAt: s.createdAt,
-        lastActiveAt: DateTime.now(),
-        lastMessage: msgs.isNotEmpty ? msgs.last.content : null,
+        updatedAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch),
       );
       sessions.value = newSessions;
       await _persistSessions();
@@ -290,7 +294,13 @@ class AIChatProxy extends ChangeNotifier {
     // 兜底使用当前会话标题或时间戳
     final sid = selectedSessionId.value;
     if (sid != null) {
-      final s = sessions.value.firstWhere((e) => e.id == sid, orElse: () => ChatSession(id: '', title: '', createdAt: DateTime.now(), lastActiveAt: DateTime.now()));
+      final s = sessions.value.firstWhere((e) => e.id == sid, orElse: () => $1.ChatSession(
+        id: '', 
+        title: '', 
+        description: '',
+        createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch),
+        updatedAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch),
+      ));
       if (s.title.isNotEmpty) return s.title;
     }
     final now = DateTime.now();

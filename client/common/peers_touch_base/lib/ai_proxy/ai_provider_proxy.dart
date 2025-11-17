@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:peers_touch_base/storage/service/ai_provider.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'models/provider.dart';
+import 'package:fixnum/fixnum.dart' as $fixnum;
+import 'package:peers_touch_base/model/domain/ai_box/ai_box.pb.dart' as $0;
 
 /// AI服务提供商代理 - 包含所有非视图业务逻辑
 class AIProviderProxy {
@@ -9,8 +11,8 @@ class AIProviderProxy {
   final SecureStorageService _secureStorage;
   
   // 状态管理
-  final ValueNotifier<List<Provider>> providers = ValueNotifier([]);
-  final ValueNotifier<Provider?> currentProvider = ValueNotifier(null);
+  final ValueNotifier<List<AiProvider>> providers = ValueNotifier([]);
+  final ValueNotifier<AiProvider?> currentProvider = ValueNotifier(null);
   final ValueNotifier<bool> isLoading = ValueNotifier(false);
   final ValueNotifier<String> selectedProviderId = ValueNotifier('');
   
@@ -52,7 +54,7 @@ class AIProviderProxy {
     final now = DateTime.now().toUtc();
     final providerId = '${sourceType.toLowerCase()}-${now.millisecondsSinceEpoch}';
     
-    final newProvider = Provider(
+    final newProvider = AiProvider(
       id: providerId,
       name: name,
       peersUserId: 'default', // TODO: 获取当前用户ID
@@ -67,9 +69,9 @@ class AIProviderProxy {
         'temperature': 0.7,
         'maxTokens': 2048,
       },
-      accessedAt: now,
-      createdAt: now,
-      updatedAt: now,
+      accessedAt: $0.Timestamp.fromDateTime(now),
+      createdAt: $0.Timestamp.fromDateTime(now),
+      updatedAt: $0.Timestamp.fromDateTime(now),
     );
     
     await _providerService.saveProvider(newProvider);
@@ -83,10 +85,23 @@ class AIProviderProxy {
   }
   
   /// 更新提供商
-  Future<void> updateProvider(Provider provider) async {
-    final updatedProvider = provider.copyWith(
-      updatedAt: DateTime.now().toUtc(),
-    );
+  Future<void> updateProvider(AiProvider provider) async {
+    final updatedProvider = AiProvider()
+      ..id = provider.id
+      ..name = provider.name
+      ..peersUserId = provider.peersUserId
+      ..sort = provider.sort
+      ..enabled = provider.enabled
+      ..checkModel = provider.checkModel
+      ..logo = provider.logo
+      ..description = provider.description
+      ..keyVaults = provider.keyVaults
+      ..sourceType = provider.sourceType
+      ..settings = provider.settings
+      ..config = provider.config
+      ..accessedAt = provider.accessedAt
+      ..createdAt = provider.createdAt
+      ..updatedAt = $0.Timestamp.fromDateTime(DateTime.now().toUtc());
     
     await _providerService.saveProvider(updatedProvider);
     await loadProviders();
@@ -120,9 +135,22 @@ class AIProviderProxy {
       }
       
       // 创建临时提供商用于测试
-      final testProvider = provider.copyWith(
-        keyVaults: apiKey,
-      );
+      final testProvider = AiProvider()
+        ..id = provider.id
+        ..name = provider.name
+        ..peersUserId = provider.peersUserId
+        ..sort = provider.sort
+        ..enabled = provider.enabled
+        ..checkModel = provider.checkModel
+        ..logo = provider.logo
+        ..description = provider.description
+        ..keyVaults = apiKey
+        ..sourceType = provider.sourceType
+        ..settings = provider.settings
+        ..config = provider.config
+        ..accessedAt = provider.accessedAt
+        ..createdAt = provider.createdAt
+        ..updatedAt = provider.updatedAt;
       
       return await _providerService.testProviderConnection(testProvider);
     } catch (e) {
@@ -141,9 +169,22 @@ class AIProviderProxy {
       }
       
       // 创建临时提供商用于获取模型
-      final testProvider = provider.copyWith(
-        keyVaults: apiKey,
-      );
+      final testProvider = AiProvider()
+        ..id = provider.id
+        ..name = provider.name
+        ..peersUserId = provider.peersUserId
+        ..sort = provider.sort
+        ..enabled = provider.enabled
+        ..checkModel = provider.checkModel
+        ..logo = provider.logo
+        ..description = provider.description
+        ..keyVaults = apiKey
+        ..sourceType = provider.sourceType
+        ..settings = provider.settings
+        ..config = provider.config
+        ..accessedAt = provider.accessedAt
+        ..createdAt = provider.createdAt
+        ..updatedAt = provider.updatedAt;
       
       return await _providerService.fetchProviderModels(testProvider);
     } catch (e) {
