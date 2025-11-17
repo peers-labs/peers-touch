@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_proxy_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/ai_input_box.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/capability/capability_resolver.dart';
@@ -46,7 +46,7 @@ class ChatInputBar extends StatelessWidget {
         isSending: isSending,
         onSendDraft: (AiComposerDraft draft) {
           // 保持旧的 onSend 行为以兼容：同时调用 controller 的富内容发送
-          Get.find<AIChatController>().sendDraft(draft);
+          Get.find<AIChatProxyController>().sendDraft(draft);
         },
         onTextChanged: onChanged,
         externalTextController: controller,
