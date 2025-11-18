@@ -1,1 +1,0 @@
-export 'package:peers_touch_base/model/domain/ai_box/ai_box.pb.dart';
