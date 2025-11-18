@@ -8,9 +8,8 @@ import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/attachmen
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/controller/ai_input_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/model_capability.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_proxy_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_base/ai_proxy/ai_chat_proxy.dart' as base_proxy;
 
 typedef SendDraftCallback = void Function(AiComposerDraft draft);
 
@@ -127,11 +126,11 @@ class AIInputBox extends StatelessWidget {
                 message: AppLocalizations.of(context).saveAsTopic,
                 child: IconButton(
                   icon: const Icon(Icons.save_outlined),
-                  onPressed: () async {
+                  onPressed: () {
                     try {
-                      final c = Get.find<AIChatProxyController>();
-                      final status = await c.saveCurrentChatAsTopic();
-                      final text = status == base_proxy.SaveTopicStatus.createdNew
+                      final c = Get.find<AIChatController>();
+                      final status = c.saveCurrentChatAsTopic();
+                      final text = status == SaveTopicStatus.createdNew
                           ? AppLocalizations.of(context).topicSaved
                           : AppLocalizations.of(context).topicAlreadySaved;
                       ScaffoldMessenger.of(context).showSnackBar(
