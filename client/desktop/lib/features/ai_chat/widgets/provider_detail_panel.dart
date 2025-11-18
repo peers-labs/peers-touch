@@ -3,10 +3,10 @@ import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
-import 'package:peers_touch_base/model/domain/ai_box/ai_box.pb.dart';
+import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 
 class ProviderDetailPanel extends StatelessWidget {
-  final AiProvider provider;
+  final Provider provider;
 
   const ProviderDetailPanel({super.key, required this.provider});
 
@@ -33,7 +33,7 @@ class ProviderDetailPanel extends StatelessWidget {
               [
                 _buildTextField(context, 'Provider Name', provider.name, (value) {}, tokens),
                 const SizedBox(height: 16),
-                _buildTextField(context, 'Base URL', provider.settings, (value) {}, tokens),
+                _buildTextField(context, 'Base URL', provider.baseUrl ?? '', (value) {}, tokens),
                 const SizedBox(height: 16),
                 _buildTextField(context, 'API Key', '••••••••', (value) {}, tokens, obscureText: true),
               ],
@@ -44,9 +44,9 @@ class ProviderDetailPanel extends StatelessWidget {
               context,
               'Advanced Configuration',
               [
-                _buildSlider(context, 'Temperature', 0.7, 0.0, 2.0, (value) {}, tokens),
+                _buildSlider(context, 'Temperature', provider.config?['temperature'] ?? 0.7, 0.0, 2.0, (value) {}, tokens),
                 const SizedBox(height: 16),
-                _buildSlider(context, 'Max Tokens', 2048.0, 100, 8192, (value) {}, tokens),
+                _buildSlider(context, 'Max Tokens', (provider.config?['maxTokens'] ?? 2048).toDouble(), 100, 8192, (value) {}, tokens),
               ],
               tokens,
             ),
