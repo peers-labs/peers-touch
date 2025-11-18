@@ -19,8 +19,10 @@ class ProviderConfig {
   final bool enabled;
   final int timeout;
   final int maxRetries;
+  String? settings;
+  String? config;
 
-  const ProviderConfig({
+  ProviderConfig({
     required this.id,
     required this.type,
     required this.name,
@@ -31,6 +33,8 @@ class ProviderConfig {
     this.enabled = true,
     this.timeout = 30000,
     this.maxRetries = 3,
+    this.settings,
+    this.config,
   });
 
   Map<String, dynamic> toJson() {

@@ -25,11 +25,15 @@ if [ ! -d "$GO_OUT" ]; then
     mkdir -p "$GO_OUT"
 fi
 
-# Find all .proto files, excluding ai_box_message.proto
-PROTO_FILES=$(find "$PROTO_ROOT/domain" -name "*.proto" -not -path "*/ai_box/ai_box_message.proto")
+# Find all .proto files for Dart generation (domain files and google protobuf files, exclude ai_box_message.proto)
+DART_PROTO_FILES=$(find "$PROTO_ROOT/domain" -name "*.proto" -not -path "*/ai_box/ai_box_message.proto")
+# Add google protobuf files explicitly
+DART_PROTO_FILES="$DART_PROTO_FILES $PROTO_ROOT/google/protobuf/struct.proto"
+DART_PROTO_FILES="$DART_PROTO_FILES $PROTO_ROOT/google/protobuf/any.proto"
+DART_PROTO_FILES="$DART_PROTO_FILES $PROTO_ROOT/google/protobuf/timestamp.proto"
 
-if [ -z "$PROTO_FILES" ]; then
-    echo "No .proto files found. Exiting."
+if [ -z "$DART_PROTO_FILES" ]; then
+    echo "No .proto files found for Dart. Exiting."
     exit 0
 fi
 
@@ -37,13 +41,17 @@ fi
 if [ -n "$PROTOC_GEN_DART_PLUGIN" ]; then
     PLUGIN="--plugin=protoc-gen-dart=$PROTOC_GEN_DART_PLUGIN"
     echo "Running protoc for Dart with plugin..."
-    protoc $PLUGIN --dart_out="$DART_OUT" -I"$PROTO_ROOT" $PROTO_FILES
+    protoc $PLUGIN --dart_out="$DART_OUT" -I"$PROTO_ROOT" $DART_PROTO_FILES
 else
     echo "Running protoc for Dart..."
-    protoc --dart_out="$DART_OUT" -I"$PROTO_ROOT" $PROTO_FILES
+    protoc --dart_out="$DART_OUT" -I"$PROTO_ROOT" $DART_PROTO_FILES
 fi
 
+# Protobuf 5.1.0+ supports toProto3Json natively
+
+GO_PROTO_FILES=$(find "$PROTO_ROOT/domain" -name "*.proto" -not -path "*/ai_box/ai_box_message.proto")
+
 echo "Running protoc for Go..."
-protoc --go_out="$GO_OUT" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$PROTO_ROOT" $PROTO_FILES
+protoc --go_out="$GO_OUT" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$PROTO_ROOT" $GO_PROTO_FILES
 
 echo "Protobuf code generation complete."

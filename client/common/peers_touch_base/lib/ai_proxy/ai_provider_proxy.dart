@@ -1,8 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:peers_touch_base/storage/service/ai_provider.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
-import 'models/provider.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:fixnum/fixnum.dart' as $fixnum;
+import 'dart:convert';
 import 'package:peers_touch_base/model/domain/ai_box/ai_box.pb.dart' as $0;
 
 /// AI服务提供商代理 - 包含所有非视图业务逻辑
@@ -11,8 +12,8 @@ class AIProviderProxy {
   final SecureStorageService _secureStorage;
   
   // 状态管理
-  final ValueNotifier<List<AiProvider>> providers = ValueNotifier([]);
-  final ValueNotifier<AiProvider?> currentProvider = ValueNotifier(null);
+  final ValueNotifier<List<Provider>> providers = ValueNotifier([]);
+  final ValueNotifier<Provider?> currentProvider = ValueNotifier(null);
   final ValueNotifier<bool> isLoading = ValueNotifier(false);
   final ValueNotifier<String> selectedProviderId = ValueNotifier('');
   
@@ -54,21 +55,21 @@ class AIProviderProxy {
     final now = DateTime.now().toUtc();
     final providerId = '${sourceType.toLowerCase()}-${now.millisecondsSinceEpoch}';
     
-    final newProvider = AiProvider(
+    final newProvider = Provider(
       id: providerId,
       name: name,
       peersUserId: 'default', // TODO: 获取当前用户ID
       sort: providers.value.length,
       enabled: true,
       sourceType: sourceType,
-      settings: {
+      settingsJson: jsonEncode({
         'baseUrl': baseUrl ?? _getDefaultBaseUrl(sourceType),
         'models': _getDefaultModels(sourceType),
-      },
-      config: {
+      }),
+      configJson: jsonEncode({
         'temperature': 0.7,
         'maxTokens': 2048,
-      },
+      }),
       accessedAt: $0.Timestamp.fromDateTime(now),
       createdAt: $0.Timestamp.fromDateTime(now),
       updatedAt: $0.Timestamp.fromDateTime(now),
@@ -85,8 +86,8 @@ class AIProviderProxy {
   }
   
   /// 更新提供商
-  Future<void> updateProvider(AiProvider provider) async {
-    final updatedProvider = AiProvider()
+  Future<void> updateProvider(Provider provider) async {
+    final updatedProvider = Provider()
       ..id = provider.id
       ..name = provider.name
       ..peersUserId = provider.peersUserId
@@ -97,11 +98,11 @@ class AIProviderProxy {
       ..description = provider.description
       ..keyVaults = provider.keyVaults
       ..sourceType = provider.sourceType
-      ..settings = provider.settings
-      ..config = provider.config
+      ..settingsJson = provider.settingsJson
+      ..configJson = provider.configJson
       ..accessedAt = provider.accessedAt
       ..createdAt = provider.createdAt
-      ..updatedAt = $0.Timestamp.fromDateTime(DateTime.now().toUtc());
+      ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
     
     await _providerService.saveProvider(updatedProvider);
     await loadProviders();
@@ -135,7 +136,7 @@ class AIProviderProxy {
       }
       
       // 创建临时提供商用于测试
-      final testProvider = AiProvider()
+      final testProvider = Provider()
         ..id = provider.id
         ..name = provider.name
         ..peersUserId = provider.peersUserId
@@ -146,8 +147,8 @@ class AIProviderProxy {
         ..description = provider.description
         ..keyVaults = apiKey
         ..sourceType = provider.sourceType
-        ..settings = provider.settings
-        ..config = provider.config
+        ..settingsJson = provider.settingsJson
+        ..configJson = provider.configJson
         ..accessedAt = provider.accessedAt
         ..createdAt = provider.createdAt
         ..updatedAt = provider.updatedAt;
@@ -169,7 +170,7 @@ class AIProviderProxy {
       }
       
       // 创建临时提供商用于获取模型
-      final testProvider = AiProvider()
+      final testProvider = Provider()
         ..id = provider.id
         ..name = provider.name
         ..peersUserId = provider.peersUserId
@@ -180,8 +181,8 @@ class AIProviderProxy {
         ..description = provider.description
         ..keyVaults = apiKey
         ..sourceType = provider.sourceType
-        ..settings = provider.settings
-        ..config = provider.config
+        ..settingsJson = provider.settingsJson
+        ..configJson = provider.configJson
         ..accessedAt = provider.accessedAt
         ..createdAt = provider.createdAt
         ..updatedAt = provider.updatedAt;

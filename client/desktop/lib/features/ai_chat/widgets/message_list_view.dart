@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_base/model/domain/ai_box/chat_message.pb.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat_models.pb.dart';
 
 class MessageListView extends StatefulWidget {
   final List<ChatMessage> messages;
