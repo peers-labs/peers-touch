@@ -1,2 +1,2 @@
-export 'ai_proxy/peers_touch_ai_proxy.dart';
+export 'ai_proxy/providers/provider_manager.dart';
 export 'storage/local_storage.dart';

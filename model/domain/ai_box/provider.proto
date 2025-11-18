@@ -54,5 +54,5 @@ message ProviderInfo {
   string source_type = 5;
   bool enabled = 6;
   // 提供给客户端用于动态生成配置表单的JSON Schema
-  string config_schema_json = 7;
+  string schema_json = 7;
 }
