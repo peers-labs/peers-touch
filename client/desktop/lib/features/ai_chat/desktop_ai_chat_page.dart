@@ -1,11 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/storage/service/ai_provider.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_base/ai_proxy/ai_chat_proxy.dart';
 import 'package:peers_touch_base/ai_proxy/ai_provider_proxy.dart';
-import 'package:peers_touch_base/ai_proxy/models/provider.dart' as proxy_provider;
-import 'package:peers_touch_base/ai_proxy/models/provider_config.dart';
+import 'package:peers_touch_base/model/domain/ai_box/ai_box.pb.dart' as proxy_provider;
+import 'package:peers_touch_base/model/domain/ai_box/provider_config.pb.dart';
 import 'package:peers_touch_base/ai_proxy/providers/openai_client.dart';
 import 'package:peers_touch_base/ai_proxy/providers/ollama_client.dart';
 import 'package:peers_touch_base/ai_proxy/providers/deepseek_client.dart';
@@ -34,24 +35,66 @@ class _DesktopAIChatPageState extends State<DesktopAIChatPage> {
     _inputController = TextEditingController();
   }
   
-  /// 将Provider转换为ProviderConfig
-  ProviderConfig _convertToProviderConfig(proxy_provider.Provider provider, String apiKey) {
+  /// 将protobuf Provider转换为ProviderConfig
+  ProviderConfig _providerToConfig(proxy_provider.Provider provider, String apiKey) {
+    // 解析settings和config JSON字符串
+    Map<String, dynamic> settings = {};
+    Map<String, dynamic> config = {};
+    
+    try {
+      if (provider.settings.isNotEmpty) {
+        settings = Map<String, dynamic>.from(json.decode(provider.settings));
+      }
+      if (provider.config.isNotEmpty) {
+        config = Map<String, dynamic>.from(json.decode(provider.config));
+      }
+    } catch (e) {
+      // 如果JSON解析失败，使用默认值
+      settings = {};
+      config = {};
+    }
+    
     return ProviderConfig(
       id: provider.id,
       type: _parseProviderType(provider.sourceType),
       name: provider.name,
-      baseUrl: provider.config?['baseUrl'] ?? '',
+      baseUrl: config['baseUrl'] ?? settings['baseUrl'] ?? '',
       apiKey: apiKey,
-      headers: provider.config?['headers'] != null 
-          ? Map<String, dynamic>.from(provider.config!['headers'])
+      headers: config['headers'] != null 
+          ? Map<String, dynamic>.from(config['headers'])
           : null,
-      parameters: provider.config?['parameters'] != null
-          ? Map<String, dynamic>.from(provider.config!['parameters'])
+      parameters: config['parameters'] != null
+          ? Map<String, dynamic>.from(config['parameters'])
           : null,
       enabled: provider.enabled,
-      timeout: provider.config?['timeout'] ?? 30000,
-      maxRetries: provider.config?['maxRetries'] ?? 3,
+      timeout: config['timeout'] ?? 30000,
+      maxRetries: config['maxRetries'] ?? 3,
     );
+  }
+  
+  /// 创建AI服务实例
+  AIService? _createAIService(proxy_provider.Provider provider, String apiKey) {
+    AIProvider? aiProvider;
+    
+    // 将protobuf Provider转换为ProviderConfig
+    final config = _providerToConfig(provider, apiKey);
+    
+    switch (config.type) {
+      case AIProviderType.openai:
+        aiProvider = OpenAIClient(config);
+        break;
+      case AIProviderType.ollama:
+        aiProvider = OllamaClient(config);
+        break;
+      case AIProviderType.deepseek:
+        aiProvider = DeepSeekClient(config);
+        break;
+      // 可以添加其他提供商类型
+      default:
+        return null;
+    }
+    
+    return AIServiceAdapter(aiProvider);
   }
   
   /// 解析提供商类型
@@ -70,29 +113,6 @@ class _DesktopAIChatPageState extends State<DesktopAIChatPage> {
       default:
         return AIProviderType.openai;
     }
-  }
-  
-  /// 创建AI服务实例
-  AIService? _createAIService(proxy_provider.Provider provider, String apiKey) {
-    final config = _convertToProviderConfig(provider, apiKey);
-    AIProvider? aiProvider;
-    
-    switch (config.type) {
-      case AIProviderType.openai:
-        aiProvider = OpenAIClient(config);
-        break;
-      case AIProviderType.ollama:
-        aiProvider = OllamaClient(config);
-        break;
-      case AIProviderType.deepseek:
-        aiProvider = DeepSeekClient(config);
-        break;
-      // 可以添加其他提供商类型
-      default:
-        return null;
-    }
-    
-    return AIServiceAdapter(aiProvider);
   }
   
   void _initializeProxies() {

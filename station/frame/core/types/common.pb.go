@@ -76,7 +76,7 @@ func (x *PageQuery) GetPageSize() int32 {
 	return 0
 }
 
-// PageData: 通用列表响应，对应原 PageData<T>
+// PageData: 通用列表响应
 type PageData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Total         int64                  `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
@@ -129,30 +129,30 @@ func (x *PageData) GetNo() int32 {
 	return 0
 }
 
-// SuccessResponse: 通用API成功响应外层结构
-type SuccessResponse struct {
+// PeersResponse: 通用API成功响应外层结构
+type PeersResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"` // e.g., "200"
 	Msg           string                 `protobuf:"bytes,2,opt,name=msg,proto3" json:"msg,omitempty"`
-	Data          *anypb.Any             `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	Data          *anypb.Any             `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"` // data or error
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SuccessResponse) Reset() {
-	*x = SuccessResponse{}
+func (x *PeersResponse) Reset() {
+	*x = PeersResponse{}
 	mi := &file_domain_common_common_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SuccessResponse) String() string {
+func (x *PeersResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SuccessResponse) ProtoMessage() {}
+func (*PeersResponse) ProtoMessage() {}
 
-func (x *SuccessResponse) ProtoReflect() protoreflect.Message {
+func (x *PeersResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_domain_common_common_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -164,26 +164,26 @@ func (x *SuccessResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SuccessResponse.ProtoReflect.Descriptor instead.
-func (*SuccessResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use PeersResponse.ProtoReflect.Descriptor instead.
+func (*PeersResponse) Descriptor() ([]byte, []int) {
 	return file_domain_common_common_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *SuccessResponse) GetCode() string {
+func (x *PeersResponse) GetCode() string {
 	if x != nil {
 		return x.Code
 	}
 	return ""
 }
 
-func (x *SuccessResponse) GetMsg() string {
+func (x *PeersResponse) GetMsg() string {
 	if x != nil {
 		return x.Msg
 	}
 	return ""
 }
 
-func (x *SuccessResponse) GetData() *anypb.Any {
+func (x *PeersResponse) GetData() *anypb.Any {
 	if x != nil {
 		return x.Data
 	}
@@ -254,8 +254,8 @@ const file_domain_common_common_proto_rawDesc = "" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\"0\n" +
 	"\bPageData\x12\x14\n" +
 	"\x05total\x18\x01 \x01(\x03R\x05total\x12\x0e\n" +
-	"\x02no\x18\x02 \x01(\x05R\x02no\"a\n" +
-	"\x0fSuccessResponse\x12\x12\n" +
+	"\x02no\x18\x02 \x01(\x05R\x02no\"_\n" +
+	"\rPeersResponse\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x10\n" +
 	"\x03msg\x18\x02 \x01(\tR\x03msg\x12(\n" +
 	"\x04data\x18\x03 \x01(\v2\x14.google.protobuf.AnyR\x04data\"5\n" +
@@ -277,14 +277,14 @@ func file_domain_common_common_proto_rawDescGZIP() []byte {
 
 var file_domain_common_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_domain_common_common_proto_goTypes = []any{
-	(*PageQuery)(nil),       // 0: peers_touch.model.common.v1.PageQuery
-	(*PageData)(nil),        // 1: peers_touch.model.common.v1.PageData
-	(*SuccessResponse)(nil), // 2: peers_touch.model.common.v1.SuccessResponse
-	(*Error)(nil),           // 3: peers_touch.model.common.v1.Error
-	(*anypb.Any)(nil),       // 4: google.protobuf.Any
+	(*PageQuery)(nil),     // 0: peers_touch.model.common.v1.PageQuery
+	(*PageData)(nil),      // 1: peers_touch.model.common.v1.PageData
+	(*PeersResponse)(nil), // 2: peers_touch.model.common.v1.PeersResponse
+	(*Error)(nil),         // 3: peers_touch.model.common.v1.Error
+	(*anypb.Any)(nil),     // 4: google.protobuf.Any
 }
 var file_domain_common_common_proto_depIdxs = []int32{
-	4, // 0: peers_touch.model.common.v1.SuccessResponse.data:type_name -> google.protobuf.Any
+	4, // 0: peers_touch.model.common.v1.PeersResponse.data:type_name -> google.protobuf.Any
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name

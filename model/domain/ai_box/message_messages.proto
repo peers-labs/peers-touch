@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package peers_touch.model.ai_box.v1;
+
+import "domain/ai_box/chat.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model;model";
+
+// SendMessage
+message SendMessageRequest {
+  string session_id = 1;
+  string topic_id = 2;
+  string content = 3;
+  repeated MessageAttachment attachments = 4;
+  string metadata_json = 5;
+  bool stream = 6; // True for streaming response
+}
+
+// ListMessages
+message ListMessagesRequest {
+    string session_id = 1;
+    string topic_id = 2;
+    int32 page_size = 3;
+    string page_token = 4;
+}
+
+message ListMessagesResponse {
+    repeated ChatMessage messages = 1;
+    string next_page_token = 2;
+}

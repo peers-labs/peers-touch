@@ -41,9 +41,9 @@ const PageData$json = {
 final $typed_data.Uint8List pageDataDescriptor = $convert.base64Decode(
     'CghQYWdlRGF0YRIUCgV0b3RhbBgBIAEoA1IFdG90YWwSDgoCbm8YAiABKAVSAm5v');
 
-@$core.Deprecated('Use successResponseDescriptor instead')
-const SuccessResponse$json = {
-  '1': 'SuccessResponse',
+@$core.Deprecated('Use peersResponseDescriptor instead')
+const PeersResponse$json = {
+  '1': 'PeersResponse',
   '2': [
     {'1': 'code', '3': 1, '4': 1, '5': 9, '10': 'code'},
     {'1': 'msg', '3': 2, '4': 1, '5': 9, '10': 'msg'},
@@ -58,10 +58,10 @@ const SuccessResponse$json = {
   ],
 };
 
-/// Descriptor for `SuccessResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List successResponseDescriptor = $convert.base64Decode(
-    'Cg9TdWNjZXNzUmVzcG9uc2USEgoEY29kZRgBIAEoCVIEY29kZRIQCgNtc2cYAiABKAlSA21zZx'
-    'IoCgRkYXRhGAMgASgLMhQuZ29vZ2xlLnByb3RvYnVmLkFueVIEZGF0YQ==');
+/// Descriptor for `PeersResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List peersResponseDescriptor = $convert.base64Decode(
+    'Cg1QZWVyc1Jlc3BvbnNlEhIKBGNvZGUYASABKAlSBGNvZGUSEAoDbXNnGAIgASgJUgNtc2cSKA'
+    'oEZGF0YRgDIAEoCzIULmdvb2dsZS5wcm90b2J1Zi5BbnlSBGRhdGE=');
 
 @$core.Deprecated('Use errorDescriptor instead')
 const Error$json = {

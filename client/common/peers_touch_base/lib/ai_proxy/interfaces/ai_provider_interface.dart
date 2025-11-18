@@ -1,5 +1,6 @@
-import '../models/chat_models.dart';
-import '../models/provider_config.dart';
+import 'package:peers_touch_base/model/domain/ai_box/ai_models.pb.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 
 /// AI 提供商错误类型
 enum AIProviderErrorType {
@@ -32,16 +33,13 @@ class AIProviderException implements Exception {
 /// AI 提供商接口
 abstract class AIProvider {
   /// 获取提供商配置
-  ProviderConfig get config;
+  Provider get provider;
 
-  /// 获取提供商类型
-  AIProviderType get type;
-
-  /// 检查连接状态
+ 
   Future<bool> checkConnection();
 
   /// 获取可用模型列表
-  Future<List<ModelInfo>> listModels();
+  Future<List<AiModelInfo>> listModels();
 
   /// 聊天补全
   Future<ChatCompletionResponse> chatCompletion(ChatCompletionRequest request);
@@ -50,7 +48,7 @@ abstract class AIProvider {
   Stream<ChatCompletionResponse> chatCompletionStream(ChatCompletionRequest request);
 
   /// 更新配置
-  void updateConfig(ProviderConfig newConfig);
+  void updateConfig(Provider updateProvider);
 
   /// 关闭连接
   Future<void> close();
@@ -59,8 +57,5 @@ abstract class AIProvider {
 /// AI 提供商工厂接口
 abstract class AIProviderFactory {
   /// 创建提供商
-  AIProvider createProvider(ProviderConfig config);
-
-  /// 支持的提供商类型
-  List<AIProviderType> get supportedTypes;
+  AIProvider createProvider(Provider config);
 }
