@@ -1,27 +1,29 @@
 import 'package:peers_touch_base/peers_touch_base.dart';
+import 'package:peers_touch_base/model/domain/ai_box/ai_box.pb.dart';
+import 'dart:convert';
 
 /// AI提供商存储服务接口
 abstract class AIProviderStorageService {
   /// 获取所有提供商
-  Future<List<Provider>> getProviders();
+  Future<List<AiProvider>> getProviders();
   
   /// 保存提供商
-  Future<void> saveProvider(Provider provider);
+  Future<void> saveProvider(AiProvider provider);
   
   /// 删除提供商
   Future<void> deleteProvider(String providerId, String userId);
   
   /// 获取当前提供商
-  Future<Provider?> getCurrentProvider();
+  Future<AiProvider?> getCurrentProvider();
   
   /// 设置当前提供商
   Future<void> setCurrentProvider(String providerId);
   
   /// 测试提供商连接
-  Future<bool> testProviderConnection(Provider provider);
+  Future<bool> testProviderConnection(AiProvider provider);
   
   /// 获取提供商模型列表
-  Future<List<String>> fetchProviderModels(Provider provider);
+  Future<List<String>> fetchProviderModels(AiProvider provider);
 }
 
 /// AI提供商存储服务实现
@@ -32,18 +34,18 @@ class AIProviderStorageServiceImpl implements AIProviderStorageService {
       : _localStorage = localStorage;
   
   @override
-  Future<List<Provider>> getProviders() async {
+  Future<List<AiProvider>> getProviders() async {
     final providersData = await _localStorage.get<List<dynamic>>('ai_providers');
     if (providersData == null) return [];
     
     return providersData
         .whereType<Map<String, dynamic>>()
-        .map((json) => Provider.fromJson(json))
+        .map((json) => AiProvider.fromJson(jsonEncode(json)))
         .toList();
   }
   
   @override
-  Future<void> saveProvider(Provider provider) async {
+  Future<void> saveProvider(AiProvider provider) async {
     final providers = await getProviders();
     final existingIndex = providers.indexWhere((p) => p.id == provider.id);
     
@@ -54,7 +56,7 @@ class AIProviderStorageServiceImpl implements AIProviderStorageService {
     }
     
     await _localStorage.set('ai_providers', 
-        providers.map((p) => p.toJson()).toList());
+        providers.map((p) => p.writeToJson()).toList());
   }
   
   @override
@@ -66,15 +68,18 @@ class AIProviderStorageServiceImpl implements AIProviderStorageService {
   }
   
   @override
-  Future<Provider?> getCurrentProvider() async {
+  Future<AiProvider?> getCurrentProvider() async {
     final currentProviderId = await _localStorage.get<String>('current_ai_provider');
     if (currentProviderId == null) return null;
     
     final providers = await getProviders();
-    return providers.firstWhere(
-      (p) => p.id == currentProviderId,
-      orElse: () => throw Exception('Provider not found'),
-    );
+    try {
+      return providers.firstWhere(
+        (p) => p.id == currentProviderId,
+      );
+    } catch (e) {
+      return null;
+    }
   }
   
   @override
@@ -83,14 +88,14 @@ class AIProviderStorageServiceImpl implements AIProviderStorageService {
   }
   
   @override
-  Future<bool> testProviderConnection(Provider provider) async {
+  Future<bool> testProviderConnection(AiProvider provider) async {
     // 这里应该调用实际的AI服务进行连接测试
     // 暂时返回true作为占位符
     return true;
   }
   
   @override
-  Future<List<String>> fetchProviderModels(Provider provider) async {
+  Future<List<String>> fetchProviderModels(AiProvider provider) async {
     // 这里应该调用实际的AI服务获取模型列表
     // 暂时返回默认模型列表作为占位符
     switch (provider.sourceType.toLowerCase()) {

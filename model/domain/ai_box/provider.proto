@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package peers_touch.model.ai_box.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model;model";
+
+// =================================================
+// 1. Provider (Domain Model)
+// 核心领域模型，与数据库结构对齐，是系统内部的权威表示。
+// =================================================
+message Provider {
+  string id = 1;                      // 唯一ID
+  string name = 2;                    // 显示名称
+  string peers_user_id = 3;           // 关联的用户ID
+  int32 sort = 4;                     // 排序
+  bool enabled = 5;                   // 是否启用
+  string check_model = 6;             // 用于连接检查的模型
+  string logo = 7;                    // Logo URL
+  string description = 8;             // 描述
+  string key_vaults = 9;              // 【敏感】API密钥或其他凭证的安全存储引用
+  string source_type = 10;            // 提供商类型 (e.g."custom")
+  string settings_json = 11;          // JSON 字符串。元数据配置，如provider sdk的类型，openai。
+  string config_json = 12;            // JSON 字符串。运行时配置，如enableXXX
+  google.protobuf.Timestamp accessed_at = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+}
+
+// =================================================
+// 2. ProviderView (View Model)
+// 用于UI展示的轻量级模型，仅包含渲染提供商列表或卡片所需的数据。
+// =================================================
+message ProviderView {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string logo = 4;
+  string source_type = 5;
+  bool enabled = 6;
+  string display_status = 7; // 用于UI展示的派生状态 (e.g., "Connected", "Needs Config")
+}
+
+// =================================================
+// 3. ProviderInfo (API Model / DTO)
+// 用于客户端-服务端通信，隐藏了敏感信息和内部状态。
+// =================================================
+message ProviderInfo {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string logo = 4;
+  string source_type = 5;
+  bool enabled = 6;
+  // 提供给客户端用于动态生成配置表单的JSON Schema
+  string config_schema_json = 7;
+}

@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package peers_touch.model.ai_box.v1;
+
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model;model";
+
+// 聊天会话
+message ChatSession {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string avatar = 4;
+  string background_color = 5;
+  string provider_id = 6;
+  string user_id = 7;
+  string model_name = 8;
+  bool pinned = 9;
+  string group = 10;
+  int64 created_at = 11;
+  int64 updated_at = 12;
+  map<string, string> meta = 13;
+  string config_json = 14;
+}
+
+// 消息附件
+message MessageAttachment {
+  string id = 1;
+  string message_id = 2;
+  string name = 3;
+  int64 size = 4;
+  string type = 5;
+  string url = 6;
+  string metadata_json = 7;
+  int64 created_at = 8;
+}
+
+// 聊天消息
+message ChatMessage {
+  string id = 1;
+  string session_id = 2;
+  string topic_id = 3;
+  string model_name = 4;
+  ChatRole role = 5; // e.g., "user", "assistant", "system"
+  string content = 6;
+  string error_json = 7;
+  repeated MessageAttachment attachments = 8;
+  string images_json = 9;
+  string metadata_json = 10;
+  string plugin_json = 11;
+  string tool_calls_json = 12;
+  string reasoning_json = 13;
+  int64 created_at = 14;
+  int64 updated_at = 15;
+}
+
+// 聊天主题
+message ChatTopic {
+  string id = 1;
+  string session_id = 2;
+  string title = 3;
+  string description = 4;
+  int32 message_count = 5;
+  string first_message_id = 6;
+  string last_message_id = 7;
+  int64 created_at = 8;
+  int64 updated_at = 9;
+}
+
+// 角色枚举映射
+enum ChatRole {
+  CHAT_ROLE_UNSPECIFIED = 0;
+  CHAT_ROLE_SYSTEM = 1;
+  CHAT_ROLE_USER = 2;
+  CHAT_ROLE_ASSISTANT = 3;
+  CHAT_ROLE_TOOL = 4;
+}
+
+// 工具调用类
+message ToolCall {
+  string id = 1;
+  string type = 2;
+  google.protobuf.Struct function = 3;
+}
+
+// 聊天完成请求
+message ChatCompletionRequest {
+  string model = 1;
+  repeated ChatMessage messages = 2;
+  optional double temperature = 3;
+  optional int32 max_tokens = 4;
+  optional double top_p = 5;
+  optional int32 n = 6;
+  optional bool stream = 7;
+  repeated string stop = 8;
+  optional double presence_penalty = 9;
+  optional double frequency_penalty = 10;
+  google.protobuf.Struct logit_bias = 11;
+  optional string user = 12;
+}
+
+// 聊天选择
+message ChatChoice {
+  int32 index = 1;
+  ChatMessage message = 2;
+  optional string finish_reason = 3;
+  optional double logprobs = 4;
+}
+
+// 使用统计
+message Usage {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens = 3;
+}
+
+// 聊天完成响应
+message ChatCompletionResponse {
+  string id = 1;
+  string object = 2;
+  int64 created = 3;
+  string model = 4;
+  repeated ChatChoice choices = 5;
+  Usage usage = 6;
+}

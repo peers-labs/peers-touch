@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package peers_touch.model.ai_box.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model;model";
+
+// 访问控制
+message AccessControl {
+  string id = 1;
+  string user_id = 2;
+  string provider_id = 3;
+  string model_name = 4;
+  bool allowed = 5;
+  int64 created_at = 6;
+  int64 updated_at = 7;
+}

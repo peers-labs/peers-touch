@@ -86,7 +86,7 @@ class PageQuery extends $pb.GeneratedMessage {
   void clearPageSize() => $_clearField(2);
 }
 
-/// PageData: 通用列表响应，对应原 PageData<T>
+/// PageData: 通用列表响应
 class PageData extends $pb.GeneratedMessage {
   factory PageData({
     $fixnum.Int64? total,
@@ -153,9 +153,9 @@ class PageData extends $pb.GeneratedMessage {
   void clearNo() => $_clearField(2);
 }
 
-/// SuccessResponse: 通用API成功响应外层结构
-class SuccessResponse extends $pb.GeneratedMessage {
-  factory SuccessResponse({
+/// PeersResponse: 通用API成功响应外层结构
+class PeersResponse extends $pb.GeneratedMessage {
+  factory PeersResponse({
     $core.String? code,
     $core.String? msg,
     $0.Any? data,
@@ -167,17 +167,17 @@ class SuccessResponse extends $pb.GeneratedMessage {
     return result;
   }
 
-  SuccessResponse._();
+  PeersResponse._();
 
-  factory SuccessResponse.fromBuffer($core.List<$core.int> data,
+  factory PeersResponse.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory SuccessResponse.fromJson($core.String json,
+  factory PeersResponse.fromJson($core.String json,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'SuccessResponse',
+      _omitMessageNames ? '' : 'PeersResponse',
       package: const $pb.PackageName(
           _omitMessageNames ? '' : 'peers_touch.model.common.v1'),
       createEmptyInstance: create)
@@ -187,23 +187,23 @@ class SuccessResponse extends $pb.GeneratedMessage {
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  SuccessResponse clone() => deepCopy();
+  PeersResponse clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  SuccessResponse copyWith(void Function(SuccessResponse) updates) =>
-      super.copyWith((message) => updates(message as SuccessResponse))
-          as SuccessResponse;
+  PeersResponse copyWith(void Function(PeersResponse) updates) =>
+      super.copyWith((message) => updates(message as PeersResponse))
+          as PeersResponse;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static SuccessResponse create() => SuccessResponse._();
+  static PeersResponse create() => PeersResponse._();
   @$core.override
-  SuccessResponse createEmptyInstance() => create();
+  PeersResponse createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static SuccessResponse getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<SuccessResponse>(create);
-  static SuccessResponse? _defaultInstance;
+  static PeersResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<PeersResponse>(create);
+  static PeersResponse? _defaultInstance;
 
   @$pb.TagNumber(1)
   $core.String get code => $_getSZ(0);
