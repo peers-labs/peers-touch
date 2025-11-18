@@ -1,5 +1,5 @@
 import 'package:get/get.dart';
-import 'package:peers_touch_base/model/domain/ai_box/ai_box.pb.dart';
+import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 
@@ -8,8 +8,8 @@ class ProviderController extends GetxController {
   final ProviderService _providerService = ProviderService();
   
   // 状态变量
-  final providers = <AiProvider>[].obs;
-  final currentProvider = Rx<AiProvider?>(null);
+  final providers = <Provider>[].obs;
+  final currentProvider = Rx<Provider?>(null);
   final isLoading = false.obs;
   final selectedProviderId = ''.obs;
   

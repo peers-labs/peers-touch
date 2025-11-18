@@ -127,25 +127,8 @@ class ShellThreePane extends StatelessWidget {
 
   Widget _wrapScroll(BuildContext context, Widget child, PaneProps props) {
     final padding = props.padding ?? EdgeInsets.zero;
-    Widget content = Padding(padding: padding, child: child);
-
-    // Apply vertical scrolling
-    if (props.scrollPolicy != ScrollPolicy.none) {
-      content = SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        child: content,
-      );
-    }
-
-    // Apply horizontal scrolling
-    if (props.horizontalPolicy != ScrollPolicy.none) {
-      content = SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: content,
-      );
-    }
-
-    return content;
+    // 简化包装：暂时移除滚动与约束逻辑，仅应用内边距，避免在复杂嵌套场景下产生未布局错误。
+    return Padding(padding: padding, child: child);
   }
 }
 
