@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:peers_touch_base/ai_proxy/providers/provider_manager.dart';
 import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
@@ -11,6 +12,7 @@ class ProviderService {
   
   final LocalStorage _localStorage = Get.find<LocalStorage>();
   final ApiClient _apiClient = Get.find<ApiClient>();
+  final ProviderManager _providerManager = Get.find<ProviderManager>();
   
   /// 获取所有提供商
   Future<List<Provider>> getProviders() async {
@@ -19,6 +21,15 @@ class ProviderService {
       return providersData.map((data) => Provider.fromJson(data)).toList();
     } catch (e) {
       return [];
+    }
+  }
+
+  /// 保存提供商（新）
+  Future<void> saveProviderNew(Provider provider) async {
+    try {
+      await _providerManager.createProvider(provider as dynamic);
+    } catch (e) {
+      throw Exception('Failed to save provider new: $e');
     }
   }
   
@@ -102,6 +113,7 @@ class ProviderService {
         accessedAt: DateTime.now().toUtc(),
       );
       await saveProvider(updatedProvider);
+      await saveProviderNew(updatedProvider);
     } catch (e) {
       throw Exception('Failed to set current provider: $e');
     }
