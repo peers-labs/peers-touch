@@ -6,7 +6,7 @@ import 'package:peers_touch_base/constants.dart';
 import 'models/chat_session.dart';
 import 'interfaces/ai_service.dart';
 import 'package:fixnum/fixnum.dart' as $fixnum;
-import 'package:peers_touch_base/model/domain/ai_box/chat_session.pb.dart' as $1;
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 
 // 保存主题操作的结果状态
 enum SaveTopicStatus {
@@ -14,12 +14,12 @@ enum SaveTopicStatus {
   alreadySaved,
 }
 
-class ChatMessage {
+class LocalChatMessage {
   final String role; // 'user' | 'assistant'
   String content;
   final DateTime createdAt;
   
-  ChatMessage({
+  LocalChatMessage({
     required this.role, 
     required this.content, 
     required this.createdAt
@@ -31,7 +31,7 @@ class ChatMessage {
         'createdAt': createdAt.toIso8601String(),
       };
 
-  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+  factory LocalChatMessage.fromJson(Map<String, dynamic> json) => LocalChatMessage(
         role: json['role'] as String? ?? 'user',
         content: json['content'] as String? ?? '',
         createdAt: DateTime.parse(json['createdAt'] as String? ?? DateTime.now().toIso8601String()),
@@ -43,20 +43,20 @@ class AIChatProxy extends ChangeNotifier {
   final LocalStorage _storage;
   
   // 状态管理
-  final ValueNotifier<List<ChatMessage>> messages = ValueNotifier([]);
+  final ValueNotifier<List<LocalChatMessage>> messages = ValueNotifier([]);
   final ValueNotifier<List<String>> models = ValueNotifier([]);
   final ValueNotifier<String> currentModel = ValueNotifier('');
   final ValueNotifier<String> inputText = ValueNotifier('');
   final ValueNotifier<bool> isSending = ValueNotifier(false);
   final ValueNotifier<String?> error = ValueNotifier(null);
   final ValueNotifier<bool> showTopicPanel = ValueNotifier(false);
-  final ValueNotifier<List<$1.ChatSession>> sessions = ValueNotifier([]);
+  final ValueNotifier<List<ChatSession>> sessions = ValueNotifier([]);
   final ValueNotifier<String?> selectedSessionId = ValueNotifier(null);
   final ValueNotifier<List<String>> topics = ValueNotifier([]);
   final ValueNotifier<String?> currentTopic = ValueNotifier(null);
   final ValueNotifier<int> flashTopicIndex = ValueNotifier(-1);
   
-  final Map<String, List<ChatMessage>> _sessionStore = {}; // 每会话的消息存储
+  final Map<String, List<LocalChatMessage>> _sessionStore = {}; // 每会话的消息存储
   Map<String, String> _sessionTopicMap = {}; // 会话到已保存主题的映射
 
   AIChatProxy({
@@ -83,7 +83,7 @@ class AIChatProxy extends ChangeNotifier {
   Future<void> createSession({String title = 'Just Chat'}) async {
     final id = _genId();
     final now = DateTime.now();
-    final session = $1.ChatSession(
+    final session = ChatSession(
       id: id, 
       title: title, 
       description: '',
@@ -91,7 +91,7 @@ class AIChatProxy extends ChangeNotifier {
       updatedAt: $fixnum.Int64(now.millisecondsSinceEpoch),
     );
     sessions.value = [...sessions.value, session];
-    _sessionStore[id] = <ChatMessage>[];
+    _sessionStore[id] = <LocalChatMessage>[];
     await selectSession(id);
     await _persistSessions();
   }
@@ -134,9 +134,9 @@ class AIChatProxy extends ChangeNotifier {
   Future<void> renameSession(String id, String newTitle) async {
     final idx = sessions.value.indexWhere((s) => s.id == id);
     if (idx != -1) {
-      final newSessions = List<$1.ChatSession>.from(sessions.value);
+      final newSessions = List<ChatSession>.from(sessions.value);
       final s = newSessions[idx];
-      newSessions[idx] = $1.ChatSession(
+      newSessions[idx] = ChatSession(
         id: s.id,
         title: newTitle,
         description: s.description,
@@ -206,7 +206,7 @@ class AIChatProxy extends ChangeNotifier {
     if (rawSessions != null && rawSessions.isNotEmpty) {
       final parsed = rawSessions
           .whereType<String>()
-          .map((jsonStr) => $1.ChatSession.fromJson(jsonStr))
+          .map((jsonStr) => ChatSession.fromJson(jsonStr))
           .toList();
       sessions.value = parsed;
       
@@ -239,16 +239,16 @@ class AIChatProxy extends ChangeNotifier {
   }
 
   Future<void> _persistMessagesForSession(String id) async {
-    final msgs = _sessionStore[id] ?? <ChatMessage>[];
+    final msgs = _sessionStore[id] ?? <LocalChatMessage>[];
     final data = msgs.map((m) => m.toJson()).toList();
     await _storage.set('${AIConstants.chatMessagesPrefix}$id', data);
     
     // 更新最后活跃时间
     final idx = sessions.value.indexWhere((s) => s.id == id);
     if (idx != -1) {
-      final newSessions = List<$1.ChatSession>.from(sessions.value);
+      final newSessions = List<ChatSession>.from(sessions.value);
       final s = newSessions[idx];
-      newSessions[idx] = $1.ChatSession(
+      newSessions[idx] = ChatSession(
         id: s.id,
         title: s.title,
         description: msgs.isNotEmpty ? msgs.last.content : s.description,
@@ -260,12 +260,12 @@ class AIChatProxy extends ChangeNotifier {
     }
   }
 
-  Future<List<ChatMessage>> _loadMessagesForSession(String id) async {
+  Future<List<LocalChatMessage>> _loadMessagesForSession(String id) async {
     final raw = await _storage.get<List<dynamic>>('${AIConstants.chatMessagesPrefix}$id');
-    if (raw == null) return <ChatMessage>[];
+    if (raw == null) return <LocalChatMessage>[];
     return raw
         .whereType<Map<String, dynamic>>()
-        .map((m) => ChatMessage.fromJson(m))
+        .map((m) => LocalChatMessage.fromJson(m))
         .toList();
   }
 
@@ -279,7 +279,7 @@ class AIChatProxy extends ChangeNotifier {
   // 从当前聊天派生一个合适的主题标题
   String _deriveTopicTitle() {
     // 取最近一条用户消息作为标题摘要
-    ChatMessage? lastUser;
+    LocalChatMessage? lastUser;
     for (var i = messages.value.length - 1; i >= 0; i--) {
       if (messages.value[i].role == 'user') {
         lastUser = messages.value[i];
@@ -294,7 +294,7 @@ class AIChatProxy extends ChangeNotifier {
     // 兜底使用当前会话标题或时间戳
     final sid = selectedSessionId.value;
     if (sid != null) {
-      final s = sessions.value.firstWhere((e) => e.id == sid, orElse: () => $1.ChatSession(
+      final s = sessions.value.firstWhere((e) => e.id == sid, orElse: () => ChatSession(
         id: '', 
         title: '', 
         description: '',
@@ -371,7 +371,7 @@ class AIChatProxy extends ChangeNotifier {
       sid = selectedSessionId.value;
     }
     final list = _sessionStore[sid!]!;
-    final userMsg = ChatMessage(role: 'user', content: text, createdAt: DateTime.now());
+    final userMsg = LocalChatMessage(role: 'user', content: text, createdAt: DateTime.now());
     
     // 更新消息列表
     messages.value = [...messages.value, userMsg];
@@ -381,7 +381,7 @@ class AIChatProxy extends ChangeNotifier {
 
     if (enableStream) {
       // 预先放入一条空助手消息，随后增量填充
-      final assistant = ChatMessage(role: 'assistant', content: '', createdAt: DateTime.now());
+      final assistant = LocalChatMessage(role: 'assistant', content: '', createdAt: DateTime.now());
       messages.value = [...messages.value, assistant];
       list.add(assistant);
       
@@ -394,7 +394,7 @@ class AIChatProxy extends ChangeNotifier {
           assistant.content += chunk;
           messages.value = List.from(messages.value); // This will trigger ValueNotifier
           // 同步存储列表刷新
-          _sessionStore[sid] = List<ChatMessage>.from(messages.value);
+          _sessionStore[sid] = List<LocalChatMessage>.from(messages.value);
           await _persistMessagesForSession(sid);
         }
       } catch (e) {
@@ -409,7 +409,7 @@ class AIChatProxy extends ChangeNotifier {
           model: model ?? (currentModel.value.isNotEmpty ? currentModel.value : null),
           temperature: temp,
         );
-        final assistant = ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now());
+        final assistant = LocalChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now());
         messages.value = [...messages.value, assistant];
         list.add(assistant);
         await _persistMessagesForSession(sid);

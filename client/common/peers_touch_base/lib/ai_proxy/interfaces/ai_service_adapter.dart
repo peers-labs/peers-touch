@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'ai_service.dart';
 import 'ai_provider_interface.dart';
-import '../models/chat_models.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 
 /// AI服务适配器 - 将AIProvider适配为AIService接口
 class AIServiceAdapter implements AIService {
@@ -17,7 +17,7 @@ class AIServiceAdapter implements AIService {
   }) async {
     final request = ChatCompletionRequest(
       messages: [
-        ChatMessage(role: ChatRole.user, content: message),
+        ChatMessage(role: ChatRole.CHAT_ROLE_USER, content: message),
       ],
       model: model ?? 'gpt-3.5-turbo',
       temperature: temperature ?? 0.7,
@@ -36,7 +36,7 @@ class AIServiceAdapter implements AIService {
   }) async* {
     final request = ChatCompletionRequest(
       messages: [
-        ChatMessage(role: ChatRole.user, content: message),
+        ChatMessage(role: ChatRole.CHAT_ROLE_USER, content: message),
       ],
       model: model ?? 'gpt-3.5-turbo',
       temperature: temperature ?? 0.7,

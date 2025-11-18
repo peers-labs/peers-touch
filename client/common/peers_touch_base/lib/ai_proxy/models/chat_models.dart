@@ -1,6 +1,5 @@
-// 导出 protobuf 模型
-export 'package:peers_touch_base/model/domain/ai_box/chat_message.pb.dart';
-export 'package:peers_touch_base/model/domain/ai_box/message_attachment.pb.dart';
+export 'package:peers_touch_base/model/domain/ai_box/chat_models.pb.dart';
+export 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 
 // 角色枚举映射
 enum ChatRole {

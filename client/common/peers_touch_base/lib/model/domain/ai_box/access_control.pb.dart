@@ -17,20 +17,25 @@ import 'package:protobuf/protobuf.dart' as $pb;
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
+/// 访问控制
 class AccessControl extends $pb.GeneratedMessage {
   factory AccessControl({
+    $core.String? id,
     $core.String? userId,
-    $core.Iterable<$core.String>? roles,
-    $core.Iterable<$core.MapEntry<$core.String, $core.bool>>? permissions,
-    $fixnum.Int64? grantedAt,
-    $fixnum.Int64? expiresAt,
+    $core.String? providerId,
+    $core.String? modelName,
+    $core.bool? allowed,
+    $fixnum.Int64? createdAt,
+    $fixnum.Int64? updatedAt,
   }) {
     final result = create();
+    if (id != null) result.id = id;
     if (userId != null) result.userId = userId;
-    if (roles != null) result.roles.addAll(roles);
-    if (permissions != null) result.permissions.addEntries(permissions);
-    if (grantedAt != null) result.grantedAt = grantedAt;
-    if (expiresAt != null) result.expiresAt = expiresAt;
+    if (providerId != null) result.providerId = providerId;
+    if (modelName != null) result.modelName = modelName;
+    if (allowed != null) result.allowed = allowed;
+    if (createdAt != null) result.createdAt = createdAt;
+    if (updatedAt != null) result.updatedAt = updatedAt;
     return result;
   }
 
@@ -48,15 +53,13 @@ class AccessControl extends $pb.GeneratedMessage {
       package: const $pb.PackageName(
           _omitMessageNames ? '' : 'peers_touch.model.ai_box.v1'),
       createEmptyInstance: create)
-    ..aOS(1, _omitFieldNames ? '' : 'userId')
-    ..pPS(2, _omitFieldNames ? '' : 'roles')
-    ..m<$core.String, $core.bool>(3, _omitFieldNames ? '' : 'permissions',
-        entryClassName: 'AccessControl.PermissionsEntry',
-        keyFieldType: $pb.PbFieldType.OS,
-        valueFieldType: $pb.PbFieldType.OB,
-        packageName: const $pb.PackageName('peers_touch.model.ai_box.v1'))
-    ..aInt64(4, _omitFieldNames ? '' : 'grantedAt')
-    ..aInt64(5, _omitFieldNames ? '' : 'expiresAt')
+    ..aOS(1, _omitFieldNames ? '' : 'id')
+    ..aOS(2, _omitFieldNames ? '' : 'userId')
+    ..aOS(3, _omitFieldNames ? '' : 'providerId')
+    ..aOS(4, _omitFieldNames ? '' : 'modelName')
+    ..aOB(5, _omitFieldNames ? '' : 'allowed')
+    ..aInt64(6, _omitFieldNames ? '' : 'createdAt')
+    ..aInt64(7, _omitFieldNames ? '' : 'updatedAt')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -79,37 +82,67 @@ class AccessControl extends $pb.GeneratedMessage {
   static AccessControl? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.String get userId => $_getSZ(0);
+  $core.String get id => $_getSZ(0);
   @$pb.TagNumber(1)
-  set userId($core.String value) => $_setString(0, value);
+  set id($core.String value) => $_setString(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasUserId() => $_has(0);
+  $core.bool hasId() => $_has(0);
   @$pb.TagNumber(1)
-  void clearUserId() => $_clearField(1);
+  void clearId() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  $pb.PbList<$core.String> get roles => $_getList(1);
+  $core.String get userId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set userId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasUserId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearUserId() => $_clearField(2);
 
   @$pb.TagNumber(3)
-  $pb.PbMap<$core.String, $core.bool> get permissions => $_getMap(2);
+  $core.String get providerId => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set providerId($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasProviderId() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearProviderId() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $fixnum.Int64 get grantedAt => $_getI64(3);
+  $core.String get modelName => $_getSZ(3);
   @$pb.TagNumber(4)
-  set grantedAt($fixnum.Int64 value) => $_setInt64(3, value);
+  set modelName($core.String value) => $_setString(3, value);
   @$pb.TagNumber(4)
-  $core.bool hasGrantedAt() => $_has(3);
+  $core.bool hasModelName() => $_has(3);
   @$pb.TagNumber(4)
-  void clearGrantedAt() => $_clearField(4);
+  void clearModelName() => $_clearField(4);
 
   @$pb.TagNumber(5)
-  $fixnum.Int64 get expiresAt => $_getI64(4);
+  $core.bool get allowed => $_getBF(4);
   @$pb.TagNumber(5)
-  set expiresAt($fixnum.Int64 value) => $_setInt64(4, value);
+  set allowed($core.bool value) => $_setBool(4, value);
   @$pb.TagNumber(5)
-  $core.bool hasExpiresAt() => $_has(4);
+  $core.bool hasAllowed() => $_has(4);
   @$pb.TagNumber(5)
-  void clearExpiresAt() => $_clearField(5);
+  void clearAllowed() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $fixnum.Int64 get createdAt => $_getI64(5);
+  @$pb.TagNumber(6)
+  set createdAt($fixnum.Int64 value) => $_setInt64(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasCreatedAt() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearCreatedAt() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $fixnum.Int64 get updatedAt => $_getI64(6);
+  @$pb.TagNumber(7)
+  set updatedAt($fixnum.Int64 value) => $_setInt64(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasUpdatedAt() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearUpdatedAt() => $_clearField(7);
 }
 
 const $core.bool _omitFieldNames =

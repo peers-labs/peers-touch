@@ -4,12 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:peers_touch_base/ai_proxy/interfaces/ai_provider_interface.dart';
 import 'package:peers_touch_base/ai_proxy/managers/ai_provider_manager.dart';
 import 'package:peers_touch_base/ai_proxy/managers/provider_config_manager.dart';
-import 'package:peers_touch_base/ai_proxy/models/chat_models.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_base/ai_proxy/providers/deepseek_client.dart';
 import 'package:peers_touch_base/ai_proxy/providers/ollama_client.dart';
 import 'package:peers_touch_base/ai_proxy/providers/openai_client.dart';
 
-import 'models/provider_config.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 
 /// A proxy client for interacting with AI providers.
 ///
@@ -33,7 +33,7 @@ class AIProviderClientProxy {
 
   /// A notifier for the list of currently available (and enabled) providers.
   /// UI components can listen to this to display the list of providers.
-  final ValueNotifier<List<ProviderConfig>> availableProviders = ValueNotifier([]);
+  final ValueNotifier<List<Provider>> availableProviders = ValueNotifier([]);
 
   /// A notifier for the connection status of each provider.
   /// The key is the provider ID, and the value is true if connected, false otherwise.
@@ -41,7 +41,7 @@ class AIProviderClientProxy {
 
   /// A notifier for the list of models available for each provider.
   /// The key is the provider ID, and the value is a list of [ModelInfo].
-  final ValueNotifier<Map<String, List<ModelInfo>>> models = ValueNotifier({});
+  final ValueNotifier<Map<String, List<dynamic>>> models = ValueNotifier({});
 
   /// Initializes the proxy.
   ///
@@ -77,17 +77,17 @@ class AIProviderClientProxy {
   }
 
   /// Performs a non-streaming chat completion request.
-  Future<ChatCompletionResponse> chat({
+  Future<dynamic> chat({
     required String providerId,
-    required ChatCompletionRequest request,
+    required dynamic request,
   }) {
     return _providerManager.chatCompletionWithProvider(providerId, request);
   }
 
   /// Performs a streaming chat completion request.
-  Stream<ChatCompletionResponse> chatStream({
+  Stream<dynamic> chatStream({
     required String providerId,
-    required ChatCompletionRequest request,
+    required dynamic request,
   }) {
     return _providerManager.chatCompletionStreamWithProvider(providerId, request);
   }
@@ -99,7 +99,7 @@ class AIProviderClientProxy {
       if (provider == null) return;
 
       final modelList = await provider.listModels();
-      final currentModels = Map<String, List<ModelInfo>>.from(models.value);
+      final currentModels = Map<String, List<dynamic>>.from(models.value);
       currentModels[providerId] = modelList;
       models.value = currentModels;
     } catch (e) {
@@ -128,13 +128,13 @@ class AIProviderClientProxy {
   }
 
   /// Creates an [AIProvider] instance from a [ProviderConfig].
-  AIProvider? _createProviderFromConfig(ProviderConfig config) {
-    switch (config.type) {
-      case AIProviderType.openai:
+  AIProvider? _createProviderFromConfig(Provider config) {
+    switch (config.sourceType) {
+      case 'openai':
         return OpenAIClient(config);
-      case AIProviderType.ollama:
+      case 'ollama':
         return OllamaClient(config);
-      case AIProviderType.deepseek:
+      case 'deepseek':
         return DeepSeekClient(config);
       // Add other provider types here
       default:

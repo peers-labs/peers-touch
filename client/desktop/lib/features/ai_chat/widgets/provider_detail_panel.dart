@@ -33,7 +33,7 @@ class ProviderDetailPanel extends StatelessWidget {
               [
                 _buildTextField(context, 'Provider Name', provider.name, (value) {}, tokens),
                 const SizedBox(height: 16),
-                _buildTextField(context, 'Base URL', provider.baseUrl ?? '', (value) {}, tokens),
+                _buildTextField(context, 'Base URL', provider.settings, (value) {}, tokens),
                 const SizedBox(height: 16),
                 _buildTextField(context, 'API Key', '••••••••', (value) {}, tokens, obscureText: true),
               ],
@@ -44,9 +44,9 @@ class ProviderDetailPanel extends StatelessWidget {
               context,
               'Advanced Configuration',
               [
-                _buildSlider(context, 'Temperature', provider.config?['temperature'] ?? 0.7, 0.0, 2.0, (value) {}, tokens),
+                _buildSlider(context, 'Temperature', 0.7, 0.0, 2.0, (value) {}, tokens),
                 const SizedBox(height: 16),
-                _buildSlider(context, 'Max Tokens', (provider.config?['maxTokens'] ?? 2048).toDouble(), 100, 8192, (value) {}, tokens),
+                _buildSlider(context, 'Max Tokens', 2048.0, 100, 8192, (value) {}, tokens),
               ],
               tokens,
             ),

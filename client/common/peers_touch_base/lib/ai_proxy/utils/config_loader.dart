@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:yaml/yaml.dart';
 
-import '../models/provider_config.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider_config.pb.dart';
 
 /// 配置加载器
 class ConfigLoader {

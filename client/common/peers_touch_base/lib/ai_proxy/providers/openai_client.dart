@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 
 import '../interfaces/ai_provider_interface.dart';
-import '../models/chat_models.dart';
-import '../models/provider_config.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat_models.pb.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider_config.pb.dart';
 
 /// OpenAI 客户端实现
 class OpenAIClient implements AIProvider {

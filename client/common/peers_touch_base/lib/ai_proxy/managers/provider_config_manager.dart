@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:peers_touch_base/ai_proxy/models/provider_config.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider_config.pb.dart';
 import 'package:yaml/yaml.dart';
 
 /// Manages the configuration of AI providers.
