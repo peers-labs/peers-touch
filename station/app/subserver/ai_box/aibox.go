@@ -9,8 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/ai-box/db/models"
-	aiboxpb "github.com/peers-labs/peers-touch/station/app/subserver/ai-box/proto_gen/v1/peers_touch_station/ai_box"
+	"github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model"
 )
 
 //go:embed db/models/init.sql
@@ -55,7 +54,7 @@ func (s *aiBoxSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if err != nil {
 		return err
 	}
-	if err = rds.AutoMigrate(&models.Provider{}); err != nil {
+	if err = rds.AutoMigrate(&models.Pro{}); err != nil {
 		return err
 	}
 

@@ -2,15 +2,15 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/ai-box/db/models"
-	aiboxpb "github.com/peers-labs/peers-touch/station/app/subserver/ai-box/proto_gen/v1/peers_touch_station/ai_box"
+	dbModel "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/db/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/types"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )
 
@@ -25,26 +25,25 @@ func NewProviderService(db *gorm.DB) *ProviderService {
 }
 
 // CreateProvider 创建提供商
-func (s *ProviderService) CreateProvider(ctx context.Context, req *aiboxpb.CreateProviderRequest) (*aiboxpb.AiProvider, error) {
-	// 获取用户ID (从context中获取)
-	userID := getUserIDFromContext(ctx)
-	if userID == "" {
-		return nil, fmt.Errorf("user ID not found in context")
+func (s *ProviderService) CreateProvider(ctx context.Context, req *model.Provider) (*model.Provider, error) {
+	// todo userid
+	encryptedKeyVaults, err := encryptKeyVaults(req.KeyVaults)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt key vaults: %w", err)
 	}
 
-	provider := &models.Provider{
+	provider := &dbModel.Provider{
 		ID:          generateProviderID(),
 		Name:        req.Name,
-		PeersUserID: userID,
 		Description: req.Description,
 		Logo:        req.Logo,
-		Sort:        0,    // 默认排序
-		Enabled:     true, // 默认启用
-		CheckModel:  "",   // 默认检测模型
-		SourceType:  "",   // 默认源类型
-		KeyVaults:   "",   // 默认密钥配置
-		Settings:    "{}", // 默认设置
-		Config:      "{}", // 默认配置
+		Sort:        0,                // 默认排序
+		Enabled:     true,             // 默认启用
+		CheckModel:  "",               // 默认检测模型
+		SourceType:  "",               // 默认源类型
+		KeyVaults:   encryptedKeyVaults, // 默认密钥配置
+		Settings:    []byte(req.SettingsJson), // 默认设置
+		Config:      []byte(req.ConfigJson),   // 默认配置
 		AccessedAt:  time.Now(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -54,49 +53,34 @@ func (s *ProviderService) CreateProvider(ctx context.Context, req *aiboxpb.Creat
 		return nil, fmt.Errorf("failed to create provider: %w", err)
 	}
 
-	return s.convertToProto(provider), nil
+	// todo 暂时原样返回
+	return req, nil
 }
 
 // UpdateProvider 更新提供商
-func (s *ProviderService) UpdateProvider(ctx context.Context, req *aiboxpb.UpdateProviderRequest) (*aiboxpb.AiProvider, error) {
-	userID := getUserIDFromContext(ctx)
-	if userID == "" {
-		return nil, fmt.Errorf("user ID not found in context")
-	}
+func (s *ProviderService) UpdateProvider(ctx context.Context, req *model.Provider) (*model.Provider, error) {
+	// todo userid
 
-	var provider models.Provider
-	if err := s.db.Where("id = ? AND peers_user_id = ?", req.Id, userID).First(&provider).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+	var provider model.Provider
+	if err := s.db.Where("id = ?", req.Id).First(&provider).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("provider not found")
 		}
 		return nil, fmt.Errorf("failed to find provider: %w", err)
 	}
 
-	log.Printf("Before update - Provider %s config: %s", req.Id, provider.Config)
-
 	// 更新字段
-	if req.DisplayName != nil {
-		provider.Name = *req.DisplayName
+	if req.Name != "" {
+		provider.Name = req.Name
 	}
-	if req.Description != nil {
-		provider.Description = *req.Description
-	}
-	if req.Logo != nil {
-		provider.Logo = *req.Logo
-	}
-	if req.Enabled != nil {
-		provider.Enabled = *req.Enabled
-	}
-	// FIX: Handle config field properly
-	if req.Config != nil {
-		configBytes, err := json.Marshal(req.Config)
+
+	if req.KeyVaults != "" {
+		encryptedKeyVaults, err := encryptKeyVaults(req.KeyVaults)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal config: %w", err)
+			return nil, fmt.Errorf("failed to encrypt key vaults: %w", err)
 		}
-		provider.Config = string(configBytes)
-		log.Printf("Updated provider config for %s: %s", req.Id, string(configBytes))
+		provider.KeyVaults = encryptedKeyVaults
 	}
-	provider.UpdatedAt = time.Now()
 
 	if err := s.db.Save(&provider).Error; err != nil {
 		return nil, fmt.Errorf("failed to update provider: %w", err)
@@ -104,17 +88,18 @@ func (s *ProviderService) UpdateProvider(ctx context.Context, req *aiboxpb.Updat
 
 	log.Printf("After update - Provider %s config: %s", req.Id, provider.Config)
 
-	return s.convertToProto(&provider), nil
+	return req, nil
 }
 
 // DeleteProvider 删除提供商
 func (s *ProviderService) DeleteProvider(ctx context.Context, providerID string) error {
-	userID := getUserIDFromContext(ctx)
+	// TODO: get user id
+	userID := ""
 	if userID == "" {
 		return fmt.Errorf("user ID not found in context")
 	}
 
-	result := s.db.Where("id = ? AND peers_user_id = ?", providerID, userID).Delete(&models.Provider{})
+	result := s.db.Where("id = ? AND peers_user_id = ?", providerID, userID).Delete(&model.Provider{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete provider: %w", result.Error)
 	}
@@ -126,13 +111,14 @@ func (s *ProviderService) DeleteProvider(ctx context.Context, providerID string)
 }
 
 // GetProvider 获取提供商
-func (s *ProviderService) GetProvider(ctx context.Context, providerID string) (*aiboxpb.AiProvider, error) {
-	userID := getUserIDFromContext(ctx)
+func (s *ProviderService) GetProvider(ctx context.Context, providerID string) (*model.Provider, error) {
+	// TODO: get user id
+	userID := ""
 	if userID == "" {
 		return nil, fmt.Errorf("user ID not found in context")
 	}
 
-	var provider models.Provider
+	var provider model.Provider
 	if err := s.db.Where("id = ? AND peers_user_id = ?", providerID, userID).First(&provider).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("provider not found")
@@ -140,18 +126,23 @@ func (s *ProviderService) GetProvider(ctx context.Context, providerID string) (*
 		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}
 
+	decryptedKeyVaults, err := decryptKeyVaults(provider.KeyVaults)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt key vaults: %w", err)
+	}
+	provider.KeyVaults = decryptedKeyVaults
+
 	return s.convertToProto(&provider), nil
-}
 
 // ListProviders 列出提供商
 func (s *ProviderService) ListProviders(ctx context.Context, query types.PageQuery, enabledOnly bool) (*types.PageData, error) {
-	userID := getUserIDFromContext(ctx)
+	// TODO: get user id
+	userID := ""
 	if userID == "" {
 		return nil, fmt.Errorf("user ID not found in context")
 	}
 
-	var providers []*models.Provider
-	var total int32
+	var providers []*model.Provider
 
 	dbQuery := s.db.Where("peers_user_id = ?", userID)
 	if enabledOnly {
@@ -160,93 +151,45 @@ func (s *ProviderService) ListProviders(ctx context.Context, query types.PageQue
 
 	// 获取总数
 	var total64 int64
-	if err := dbQuery.Model(&models.Provider{}).Count(&total64).Error; err != nil {
+	if err := dbQuery.Model(&model.Provider{}).Count(&total64).Error; err != nil {
 		return nil, fmt.Errorf("failed to count providers: %w", err)
 	}
-	total = int32(total64)
 
 	// 获取分页数据
-	offset := (query.Page - 1) * query.Size
-	if err := dbQuery.Limit(int(query.Size)).Offset(int(offset)).Find(&providers).Error; err != nil {
+	offset := (query.PageNumber - 1) * query.PageSize
+	if err := dbQuery.Limit(int(query.PageSize)).Offset(int(offset)).Find(&providers).Error; err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
 
-	// 转换为proto
+	// 转换为req provider
 	protoProviders := make([]interface{}, len(providers))
-	for i, provider := range providers {
-		protoProviders[i] = s.convertToProto(provider)
+	for i, p := range providers {
+		protoProviders[i] = s.convertToProto(p)
 	}
 
 	return &types.PageData{
-		Total: total,
+		Total: total64,
 		List:  protoProviders,
 	}, nil
 }
 
-// TestProvider 测试提供商连接
-func (s *ProviderService) TestProvider(ctx context.Context, providerID string) (bool, string, error) {
-	provider, err := s.GetProvider(ctx, providerID)
-	if err != nil {
-		return false, "", err
-	}
-
-	// 这里可以添加实际的连接测试逻辑
-	// 例如调用提供商的API进行测试
-	switch provider.Name {
-	case "openai":
-		return testOpenAIConnection(provider)
-	case "anthropic":
-		return testAnthropicConnection(provider)
-	case "ollama":
-		return testOllamaConnection(provider)
-	default:
-		return false, "Provider type not implemented for testing", nil
-	}
-}
-
-// convertToProto 转换为proto格式
-func (s *ProviderService) convertToProto(provider *models.Provider) *aiboxpb.AiProvider {
-	// FIX: Properly unmarshal config from database
-	var config aiboxpb.ProviderConfig
-	if provider.Config != "" && provider.Config != "{}" {
-		if err := json.Unmarshal([]byte(provider.Config), &config); err != nil {
-			// If unmarshal fails, use default values
-			config = aiboxpb.ProviderConfig{
-				ApiKey:     "",
-				Endpoint:   "",
-				ProxyUrl:   "",
-				Timeout:    30,
-				MaxRetries: 3,
-			}
-		}
-	} else {
-		// Default config if empty
-		config = aiboxpb.ProviderConfig{
-			ApiKey:     "",
-			Endpoint:   "",
-			ProxyUrl:   "",
-			Timeout:    30,
-			MaxRetries: 3,
-		}
-	}
-
-	return &aiboxpb.AiProvider{
+func (s *ProviderService) convertToProto(provider *dbModel.Provider) *model.Provider {
+	return &model.Provider{
 		Id:          provider.ID,
 		Name:        provider.Name,
-		DisplayName: provider.Name, // 使用name作为displayName
-		Enabled:     provider.Enabled,
-		Description: provider.Description,
-		Logo:        provider.Logo,
+		PeersUserId: provider.PeersUserID,
 		Sort:        int32(provider.Sort),
-		Config: &aiboxpb.ProviderConfig{
-			ApiKey:     config.ApiKey, // 正确返回从数据库读取的api_key
-			Endpoint:   config.Endpoint,
-			ProxyUrl:   config.ProxyUrl,
-			Timeout:    config.Timeout,
-			MaxRetries: config.MaxRetries,
-		},
-		CreatedAt: timestamppb.New(provider.CreatedAt),
-		UpdatedAt: timestamppb.New(provider.UpdatedAt),
+		Enabled:     provider.Enabled,
+		CheckModel:  provider.CheckModel,
+		Logo:        provider.Logo,
+		Description: provider.Description,
+		KeyVaults:   provider.KeyVaults,
+		SourceType:  provider.SourceType,
+		SettingsJson: string(provider.Settings),
+		ConfigJson:   string(provider.Config),
+		AccessedAt:  provider.AccessedAt.Unix(),
+		CreatedAt:   provider.CreatedAt.Unix(),
+		UpdatedAt:   provider.UpdatedAt.Unix(),
 	}
 }
 
@@ -255,26 +198,16 @@ func generateProviderID() string {
 	return fmt.Sprintf("provider_%d", time.Now().UnixNano())
 }
 
-// getUserIDFromContext 从context获取用户ID
-func getUserIDFromContext(ctx context.Context) string {
-	// 这里应该从context中获取用户ID
-	// 开发阶段默认使用与种子数据一致的用户ID
-	// TODO: 从鉴权中间件提取真实用户ID
-	return "default_user"
+// TODO: 实现实际的加密逻辑
+func encryptKeyVaults(plainText string) (string, error) {
+	return base64.StdEncoding.EncodeToString([]byte(plainText)), nil
 }
 
-// 测试函数实现
-func testOpenAIConnection(provider *aiboxpb.AiProvider) (bool, string, error) {
-	// 实现OpenAI连接测试逻辑
-	return true, "OpenAI connection test not implemented", nil
-}
-
-func testAnthropicConnection(provider *aiboxpb.AiProvider) (bool, string, error) {
-	// 实现Anthropic连接测试逻辑
-	return true, "Anthropic connection test not implemented", nil
-}
-
-func testOllamaConnection(provider *aiboxpb.AiProvider) (bool, string, error) {
-	// 实现Ollama连接测试逻辑
-	return true, "Ollama connection test not implemented", nil
+// TODO: 实现实际的解密逻辑
+func decryptKeyVaults(cipherText string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(cipherText)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }

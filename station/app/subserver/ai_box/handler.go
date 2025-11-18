@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/peers-labs/peers-touch/station/app/subserver/ai-box/service"
+	"github.com/peers-labs/peers-touch/station/app/subserver/ai_box/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/core/types"
 )
@@ -108,8 +108,8 @@ func (s *aiBoxSubServer) handleListProviders(c context.Context, ctx *app.Request
 	svc := service.NewProviderService(rds)
 
 	pg := types.PageQuery{
-		Page: 1,
-		Size: 10,
+		PageNumber: 1,
+		PageSize:   10,
 	}
 	err = ctx.BindQuery(&pg)
 	if err != nil {
