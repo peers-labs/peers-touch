@@ -1,11 +1,10 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_proxy_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/assistant_sidebar.dart';
-import 'package:peers_touch_base/model/domain/ai_box/chat_session.pb.dart';
+import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/header_toolbar.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/message_list_view.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/chat_input_bar.dart';
@@ -14,30 +13,15 @@ import 'package:peers_touch_desktop/features/shell/controller/shell_controller.d
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
-class AIChatPage extends GetView<AIChatProxyController> {
+class AIChatPage extends GetView<AIChatController> {
   const AIChatPage({super.key});
-
-  /// 从提供商设置中提取模型列表
-  List<String> _extractModelsFromSettings(String settings) {
-    try {
-      if (settings.isEmpty) return [];
-      final Map<String, dynamic> settingsMap = jsonDecode(settings);
-      final models = settingsMap['models'];
-      if (models is List) {
-        return models.map((m) => m.toString()).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     return ShellThreePane(
       leftBuilder: (ctx) => Obx(() => AssistantSidebar(
             onNewChat: controller.newChat,
-            sessions: controller.sessions,
+            sessions: controller.sessions.toList(),
             selectedId: controller.selectedSessionId.value,
             onSelectSession: controller.selectSession,
             onRenameSession: (ChatSession s) async {
@@ -187,36 +171,30 @@ class AIChatPage extends GetView<AIChatProxyController> {
                   ),
                 );
               }),
-              Flexible(
-                flex: 0,
-                child: Obx(() {
-                  // 读取响应式模型数据以触发重建
-                  final models = controller.models.toList();
-                  final current = controller.currentModel.value;
-                  // Provider 分组：读取 ProviderController 中的列表
-                  Map<String, List<String>> grouped = {};
-                  if (Get.isRegistered<ProviderController>()) {
-                    final pc = Get.find<ProviderController>();
-                    grouped = Map.fromEntries(
-                      pc.providers.map((p) {
-                        // 从settings中解析模型列表
-                        final models = _extractModelsFromSettings(p.settings);
-                        return MapEntry(p.name, models);
-                      }),
-                    );
-                  }
-                  return ChatInputBar(
-                    controller: controller.inputController,
-                    onChanged: controller.setInput,
-                    onSend: controller.send,
-                    isSending: controller.isSending.value,
-                    models: models,
-                    currentModel: current,
-                    onModelChanged: controller.setModel,
-                    groupedModelsByProvider: grouped,
+              // 输入框
+              Obx(() {
+                // 读取响应式模型数据以触发重建
+                final models = controller.models.toList();
+                final current = controller.currentModel.value;
+                // Provider 分组：读取 ProviderController 中的列表
+                Map<String, List<String>> grouped = {};
+                if (Get.isRegistered<ProviderController>()) {
+                  final pc = Get.find<ProviderController>();
+                  grouped = Map.fromEntries(
+                    pc.providers.map((p) => MapEntry(p.name, p.models)),
                   );
-                }),
-              ),
+                }
+                return ChatInputBar(
+                  controller: controller.inputController,
+                  onChanged: controller.setInput,
+                  onSend: controller.send,
+                  isSending: controller.isSending.value,
+                  models: models,
+                  currentModel: current,
+                  onModelChanged: controller.setModel,
+                  groupedModelsByProvider: grouped,
+                );
+              }),
           ],
         ),
       ),

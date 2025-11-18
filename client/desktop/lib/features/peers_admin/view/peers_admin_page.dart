@@ -109,7 +109,7 @@ class PeersAdminPage extends StatelessWidget {
         SizedBox(height: UIKit.spaceSm(context)),
         _backendHint(context, controller, tokens),
         SizedBox(height: UIKit.spaceMd(context)),
-        Expanded(child: _resultArea(context, controller, tokens)),
+        _resultArea(context, controller, tokens),
       ],
     );
   }
