@@ -41,7 +41,9 @@ void main() async {
 
   // The bootstrap node from the go-libp2p example
   var bootstrapNodeAddr = MultiAddr(
-      '/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBQWCWr1Z7kWHbCDqgUY8rvMybxA9bYXou4a1SpDLymN5');
+      '/ip4/104.131.131.82/tcp/4001/p2p/12D3KooWBQWCWr1Z7kWHbCDqgUY8rvMybxA9bYXou4a1SpDLymN5');
+
+      //       '/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBQWCWr1Z7kWHbCDqgUY8rvMybxA9bYXou4a1SpDLymN5'
 
   try {
     // 5. Connect to the bootstrap node
