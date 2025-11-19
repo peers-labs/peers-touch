@@ -16,8 +16,7 @@ import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/proto.dar
 
 import 'package:meta/meta.dart'; // For @visibleForTesting
 import 'package:logging/logging.dart';
-
-import 'package:synchronized/synchronized.dart';
+import 'package:async/async.dart' as async;
 import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart'; // For Protocols class
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/util.dart' show isRelayAddress; // For isRelayAddress
 
@@ -55,11 +54,11 @@ class RelayFinder {
   StreamController<void>? _stopController;
   Completer<void>? _backgroundCompleter;
 
-  final Lock _candidateMx = Lock();
+  final _candidateMx = async.Mutex();
   final Map<PeerId, Candidate> _candidates = {};
   final Map<PeerId, DateTime> _backoff = {};
 
-  final Lock _relayMx = Lock();
+  final _relayMx = async.Mutex();
   final Map<PeerId, Reservation> _relays = {};
 
   List<MultiAddr> _cachedAddrs = [];
@@ -125,23 +124,35 @@ class RelayFinder {
     _isRunning = false;
   }
 
-  void _initMetrics() {
+  void _initMetrics() async {
     metricsTracer.desiredReservations(config.desiredRelays);
-    _relayMx.synchronized(() {
+    await _relayMx.acquire();
+    try {
       metricsTracer.reservationOpened(_relays.length);
-    });
-    _candidateMx.synchronized(() {
+    } finally {
+      _relayMx.release();
+    }
+    await _candidateMx.acquire();
+    try {
       metricsTracer.candidateAdded(_candidates.length);
-    });
+    } finally {
+      _candidateMx.release();
+    }
   }
 
-  void _resetMetrics() {
-     _relayMx.synchronized(() {
+  void _resetMetrics() async {
+    await _relayMx.acquire();
+    try {
       metricsTracer.reservationEnded(_relays.length);
-    });
-    _candidateMx.synchronized(() {
+    } finally {
+      _relayMx.release();
+    }
+    await _candidateMx.acquire();
+    try {
       metricsTracer.candidateRemoved(_candidates.length);
-    });
+    } finally {
+      _candidateMx.release();
+    }
     metricsTracer.relayAddressCount(0);
     metricsTracer.scheduledWorkUpdated(ScheduledWorkTimes.initial());
   }
@@ -262,7 +273,13 @@ class RelayFinder {
     await for (var _ in peerSourceRateLimiter.takeUntil(stopSignal)) {
       if (currentPeerStream != null) continue;
 
-      int numCandidates = await _candidateMx.synchronized(() => _candidates.length);
+      int numCandidates = 0;
+      await _candidateMx.acquire();
+      try {
+        numCandidates = _candidates.length;
+      } finally {
+        _candidateMx.release();
+      }
       if (numCandidates < config.minCandidates) {
         _log.fine('RelayFinder: Need more candidates ($numCandidates < ${config.minCandidates}), calling peer source for up to ${config.maxCandidates} peers');
         metricsTracer.candidateLoopState(CandidateLoopState.peerSourceRateLimited);
@@ -271,12 +288,24 @@ class RelayFinder {
         currentPeerSubscription = currentPeerStream?.listen(
           (addrInfo) async {
             _log.fine('RelayFinder: Received candidate from peer source: ${addrInfo.id.toBase58()}');
-            bool isOnBackoff = await _candidateMx.synchronized(() => _backoff.containsKey(addrInfo.id));
+            bool isOnBackoff = false;
+            await _candidateMx.acquire();
+            try {
+              isOnBackoff = _backoff.containsKey(addrInfo.id);
+            } finally {
+              _candidateMx.release();
+            }
             if (isOnBackoff) {
               _log.fine('RelayFinder: Candidate ${addrInfo.id.toBase58()} is on backoff, skipping');
               return;
             }
-            int currentNumCandidates = await _candidateMx.synchronized(() => _candidates.length);
+            int currentNumCandidates = 0;
+            await _candidateMx.acquire();
+            try {
+              currentNumCandidates = _candidates.length;
+            } finally {
+              _candidateMx.release();
+            }
             if (currentNumCandidates >= config.maxCandidates) {
               _log.fine('RelayFinder: Already have enough candidates ($currentNumCandidates >= ${config.maxCandidates}), skipping');
               return;
@@ -326,14 +355,21 @@ class RelayFinder {
   }
   
   Future<bool> _handleNewNode(AddrInfo addrInfo) async {
-    bool isRelayInUse = await _relayMx.synchronized(() => _isUsingRelay(addrInfo.id));
+    bool isRelayInUse = false;
+    await _relayMx.acquire();
+    try {
+      isRelayInUse = _isUsingRelay(addrInfo.id);
+    } finally {
+      _relayMx.release();
+    }
     if (isRelayInUse) return false;
 
     try {
       final supportsV2 = await _tryNode(addrInfo).timeout(const Duration(seconds: 20));
       metricsTracer.candidateChecked(supportsV2);
       if (supportsV2) {
-        await _candidateMx.synchronized(() {
+        await _candidateMx.acquire();
+        try {
           if (_candidates.length < config.maxCandidates) {
             _addCandidate(Candidate(
               added: config.clock.now(),
@@ -343,7 +379,9 @@ class RelayFinder {
           } else {
             return false;
           }
-        });
+        } finally {
+          _candidateMx.release();
+        }
         return true;
       }
     } catch (e) {
@@ -385,35 +423,66 @@ class RelayFinder {
   }
 
   Future<void> _maybeConnectToRelay() async {
-    int numActiveRelays = await _relayMx.synchronized(() => _relays.length);
+    int numActiveRelays = 0;
+    await _relayMx.acquire();
+    try {
+      numActiveRelays = _relays.length;
+    } finally {
+      _relayMx.release();
+    }
     if (numActiveRelays >= config.desiredRelays) return;
 
-    bool canConnect = await _candidateMx.synchronized(() {
+    bool canConnect = false;
+    await _candidateMx.acquire();
+    try {
       if (_relays.isEmpty && _candidates.length < config.minCandidates && config.clock.since(_bootTime) < config.bootDelay) {
-        return false;
+        canConnect = false;
+      } else {
+        canConnect = _candidates.isNotEmpty;
       }
-      return _candidates.isNotEmpty;
-    });
+    } finally {
+      _candidateMx.release();
+    }
 
     if (!canConnect) return;
 
-    List<Candidate> selectedCandidates = await _candidateMx.synchronized(() => _selectCandidates());
+    List<Candidate> selectedCandidates = [];
+    await _candidateMx.acquire();
+    try {
+      selectedCandidates = _selectCandidates();
+    } finally {
+      _candidateMx.release();
+    }
 
     for (var cand in selectedCandidates) {
       PeerId id = cand.addrInfo.id;
-      bool usingThisRelay = await _relayMx.synchronized(() => _isUsingRelay(id));
+      bool usingThisRelay = false;
+      await _relayMx.acquire();
+      try {
+        usingThisRelay = _isUsingRelay(id);
+      } finally {
+        _relayMx.release();
+      }
       if (usingThisRelay) {
-        await _candidateMx.synchronized(() => _removeCandidate(id));
+        await _candidateMx.acquire();
+        try {
+          _removeCandidate(id);
+        } finally {
+          _candidateMx.release();
+        }
         _notifyMaybeNeedNewCandidates();
         continue;
       }
 
       try {
         final rsvp = await _connectToRelay(cand).timeout(const Duration(seconds: 15));
-        await _relayMx.synchronized(() {
+        await _relayMx.acquire();
+        try {
           _relays[id] = rsvp;
           numActiveRelays = _relays.length;
-        });
+        } finally {
+          _relayMx.release();
+        }
         _notifyMaybeNeedNewCandidates();
         host.connManager.protect(id, autorelayTag);
         _clearCachedAddrsAndSignalAddressChange(); // Clear cached addresses and trigger address update
@@ -433,37 +502,58 @@ class RelayFinder {
       try {
         await host.connect(candidate.addrInfo).timeout(const Duration(seconds:10));
       } catch (e) {
-        await _candidateMx.synchronized(() => _removeCandidate(id));
+        await _candidateMx.acquire();
+      try {
+        _removeCandidate(id);
+      } finally {
+        _candidateMx.release();
+      }
         throw Exception('Failed to connect before reserving: $e');
       }
     }
 
-    await _candidateMx.synchronized(() {
+    await _candidateMx.acquire();
+    try {
       _backoff[id] = config.clock.now();
-    });
+    } finally {
+      _candidateMx.release();
+    }
 
     Reservation rsvp;
     try {
       final circuitClient = CircuitV2Client(host: host, upgrader: this.upgrader, connManager: host.connManager); // Changed Client to CircuitV2Client
       rsvp = await circuitClient.reserve(candidate.addrInfo.id).timeout(const Duration(seconds:10));
     } catch (e) {
-      await _candidateMx.synchronized(() => _removeCandidate(id));
+      await _candidateMx.acquire();
+      try {
+        _removeCandidate(id);
+      } finally {
+        _candidateMx.release();
+      }
       rethrow;
     }
     
-    await _candidateMx.synchronized(() => _removeCandidate(id));
+    await _candidateMx.acquire();
+    try {
+      _removeCandidate(id);
+    } finally {
+      _candidateMx.release();
+    }
     return rsvp;
   }
 
   Future<void> _refreshReservations(DateTime now) async {
     List<PeerId> toRefresh = [];
-    await _relayMx.synchronized(() {
+    await _relayMx.acquire();
+    try {
       _relays.forEach((peerId, rsvp) {
         if (now.add(rsvpExpirationSlack).isAfter(rsvp.expire)) {
           toRefresh.add(peerId);
         }
       });
-    });
+    } finally {
+      _relayMx.release();
+    }
 
     if (toRefresh.isEmpty) {
       return;
@@ -475,13 +565,17 @@ class RelayFinder {
     List<Future<void>> refreshFutures = toRefresh.map((peerId) async {
       try {
         final newRsvp = await client.reserve(peerId).timeout(const Duration(seconds:10));
-        await _relayMx.synchronized(() {
+        await _relayMx.acquire();
+        try {
           _relays[peerId] = newRsvp;
           metricsTracer.reservationRequestFinished(true, null); 
           anyChange = true;
-        });
+        } finally {
+          _relayMx.release();
+        }
       } catch (e) {
-        await _relayMx.synchronized(() {
+        await _relayMx.acquire();
+        try {
           if (_relays.containsKey(peerId)) {
              _relays.remove(peerId);
              host.connManager.unprotect(peerId, autorelayTag);
@@ -489,7 +583,9 @@ class RelayFinder {
           }
           metricsTracer.reservationRequestFinished(true, e is Exception ? e : Exception(e.toString()));
           anyChange = true; 
-        });
+        } finally {
+          _relayMx.release();
+        }
       }
     }).toList();
 
@@ -597,10 +693,11 @@ class RelayFinder {
   bool _isUsingRelay(PeerId p) => _relays.containsKey(p);
 
   void _addCandidate(Candidate cand) {
-    if (!_candidates.containsKey(cand.addrInfo.id)) {
-      metricsTracer.candidateAdded(1);
+    if (_candidates.containsKey(cand.addrInfo.id)) {
+      return;
     }
     _candidates[cand.addrInfo.id] = cand;
+    metricsTracer.candidateAdded(1);
   }
 
   void _removeCandidate(PeerId id) {

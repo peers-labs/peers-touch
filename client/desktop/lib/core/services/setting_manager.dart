@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 
 /// 设置项注册器接口
@@ -114,7 +115,7 @@ class SettingManager implements SettingRegistry {
           description: '设置后端服务地址',
           icon: Icons.cloud_queue,
           type: SettingItemType.textInput,
-          value: 'http://localhost:8080',
+          value: HttpServiceLocator().baseUrl,
           placeholder: '请输入后端服务地址',
         ),
         SettingItem(

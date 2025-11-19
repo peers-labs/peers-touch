@@ -30,6 +30,11 @@ class HttpServiceImpl implements IHttpService {
     ]);
   }
 
+  /// 更新基础URL
+  void setBaseUrl(String newBaseUrl) {
+    _dio.options.baseUrl = newBaseUrl;
+  }
+
   @override
   Future<T> get<T>(
     String path, {
