@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 
@@ -126,6 +127,44 @@ class SettingManager implements SettingRegistry {
           type: SettingItemType.textInput,
           value: '',
           placeholder: '请输入认证令牌',
+        ),
+      ],
+    ));
+
+    // 高级设计分区
+    registerSection(SettingSection(
+      id: 'advanced_design',
+      title: '高级设计',
+      icon: Icons.design_services,
+      items: [
+        SettingItem(
+          id: 'clear_data',
+          title: '清空数据',
+          description: '清除所有本地存储数据',
+          icon: Icons.delete_forever,
+          type: SettingItemType.button,
+          onTap: () {
+            Get.dialog(
+              AlertDialog(
+                title: const Text('确认'),
+                content: const Text('您确定要清空所有本地数据吗？此操作不可逆。'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Get.back(),
+                    child: const Text('取消'),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      await LocalStorage().clearAll();
+                      Get.back(); // Close the dialog
+                      Get.snackbar('成功', '所有本地数据已清空。');
+                    },
+                    child: const Text('确认'),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ],
     ));

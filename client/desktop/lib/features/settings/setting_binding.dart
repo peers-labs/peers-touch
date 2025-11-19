@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
 import 'package:peers_touch_desktop/core/services/setting_manager.dart';
+import 'package:peers_touch_desktop/features/ai_chat/ai_provider_settings.dart';
 
 class SettingsBinding extends Bindings {
   @override
@@ -12,5 +13,8 @@ class SettingsBinding extends Bindings {
     if (!Get.isRegistered<SettingController>()) {
       Get.lazyPut<SettingController>(() => SettingController(), fenix: true);
     }
+    
+    // 注册AI Provider设置到全局设置系统
+  //  AIProviderSettings.registerToGlobalSettings();
   }
 }
