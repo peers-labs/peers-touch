@@ -91,7 +91,7 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	}
 	opts = append(opts, registry.WithConnectTimeout(connectTimeout))
 	opts = append(opts, WithBootstrapEnable(configOptions.Peers.Service.Registry.Native.BootstrapEnable))
-	opts = append(opts, WithBootstrapEnable(configOptions.Peers.Service.Registry.Native.BootstrapToSelf))
+	// opts = append(opts, WithBootstrapEnable(configOptions.Peers.Service.Registry.Native.BootstrapToSelf))
 	opts = append(opts, WithBootstrapListenAddrs(configOptions.Peers.Service.Registry.Native.BootstrapListenAddrs...))
 
 	opts = append(opts, WithMDNSEnable(configOptions.Peers.Service.Registry.Native.MDNSEnable))

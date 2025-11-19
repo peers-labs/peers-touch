@@ -7,3 +7,4 @@ environment:
 dependencies:
   peers_touch_base:
     path: ../../
+  dart_bs58: ^1.0.1
