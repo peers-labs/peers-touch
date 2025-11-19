@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:async/async.dart' as async;
+
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:logging/logging.dart';
-import 'package:synchronized/synchronized.dart';
 
 import '../../../core/network/conn.dart';
 import '../../../core/network/rcmgr.dart' show StreamScope, ScopeStat, ResourceScopeSpan, ResourceScope, StreamManagementScope;
@@ -42,7 +43,7 @@ class SwarmStream implements P2PStream<Uint8List> {
   bool _scopeCleanedUp = false;
 
   /// Lock for closed state
-  final Lock _closedLock = Lock();
+  final _closedLock = async.Mutex();
 
   /// Creates a new SwarmStream
   SwarmStream({
@@ -114,7 +115,8 @@ class SwarmStream implements P2PStream<Uint8List> {
 
   @override
   Future<void> close() async {
-    await _closedLock.synchronized(() async {
+    await _closedLock.acquire();
+    try {
       if (_isClosed) return;
       _isClosed = true;
       _logger.fine('Closing stream $_id');
@@ -137,7 +139,9 @@ class SwarmStream implements P2PStream<Uint8List> {
       // Let SwarmConn handle its own cleanup without additional scope cleanup
       await _conn.removeStream(this);
       _logger.fine('Stream $_id closed and removed from connection');
-    });
+    } finally {
+      _closedLock.release();
+    }
   }
 
   @override
@@ -158,7 +162,8 @@ class SwarmStream implements P2PStream<Uint8List> {
 
   @override
   Future<void> reset() async {
-    await _closedLock.synchronized(() async {
+    await _closedLock.acquire();
+    try {
       if (_isClosed) return;
       _isClosed = true; // Mark as closed immediately
       _logger.fine('Resetting stream $_id');
@@ -181,7 +186,9 @@ class SwarmStream implements P2PStream<Uint8List> {
       // Let SwarmConn handle its own cleanup without additional scope cleanup
       await _conn.removeStream(this);
       _logger.fine('Stream $_id reset and removed from connection');
-    });
+    } finally {
+      _closedLock.release();
+    }
   }
 
   @override

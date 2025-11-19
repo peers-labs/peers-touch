@@ -12,7 +12,6 @@ class ProviderSettingsPage extends GetView<ProviderController> {
 
   @override
   Widget build(BuildContext context) {
-    Get.put(ProviderController());
     final tokens = Theme.of(context).extension<LobeTokens>()!;
 
     return Scaffold(

@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/foundation.dart';
 import 'package:get_storage/get_storage.dart';
 
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/core/utils/window_options_manager.dart';
+import 'package:peers_touch_desktop/core/network/network_initializer.dart';
 
 /// Application initializer
 /// Responsible for managing all asynchronous initialization operations, belongs to application-level core configuration
@@ -30,15 +30,19 @@ class AppInitializer {
       // Initialize logging system (this is the first initialization step)
       LoggingService.initialize();
       LoggingService.info('Starting application initialization...');
-      
+
       // Initialize GetStorage
       await GetStorage.init();
       LoggingService.info('Local storage initialized');
-      
+
       // Initialize window manager
       await WindowOptionsManager.initializeWindowManager();
       LoggingService.info('Window manager initialized');
-      
+
+      // Initialize network service
+      NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
+      LoggingService.info('Network service initialized with base URL: http://localhost:18080');
+
       _isInitialized = true;
       LoggingService.info('Application initialization completed successfully');
       return true;

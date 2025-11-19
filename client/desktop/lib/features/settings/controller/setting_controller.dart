@@ -1,12 +1,14 @@
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'dart:convert';
 import 'package:peers_touch_desktop/core/services/setting_manager.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 class SettingController extends GetxController {
   final SettingManager _settingManager = SettingManager();
@@ -180,22 +182,23 @@ class SettingController extends GetxController {
   /// 规范化后端基础地址，自动补全协议与默认地址
   String _normalizeBaseUrl(String input) {
     final trimmed = input.trim();
-    if (trimmed.isEmpty) return 'http://localhost:8080';
+    if (trimmed.isEmpty) return HttpServiceLocator().baseUrl;
     final hasScheme = trimmed.startsWith('http://') || trimmed.startsWith('https://');
     final url = hasScheme ? trimmed : 'http://$trimmed';
     try {
       final uri = Uri.parse(url);
-      if (uri.scheme.isEmpty) return 'http://localhost:8080';
+      if (uri.scheme.isEmpty) return 'http://localhost:18080';
       return url;
     } catch (_) {
-      return 'http://localhost:8080';
+      return 'http://localhost:18080';
     }
   }
 
   /// 测试后端地址指定 path（Ping/Health），结果通过通知栏展示
   Future<void> testBackendAddress(String baseUrlInput) async {
     final base = _normalizeBaseUrl(baseUrlInput);
-    final path = backendTestPath.value == 'Health' ? '/management/health' : '/management/ping';
+    // we now only support the health endpoint.
+    final path = backendTestPath.value == 'Health' ? '/management/health' : '/management/health';
     final Uri fullUri = Uri.parse(base).resolve(path);
     try {
       final dio = Dio(BaseOptions(
@@ -208,6 +211,7 @@ class SettingController extends GetxController {
       Get.snackbar('地址测试', '成功：$dataText');
     } catch (e) {
       backendVerified.value = false;
+      LoggingService.warning('地址测试', '失败：$e');
       Get.snackbar('地址测试', '失败：$e');
     }
   }

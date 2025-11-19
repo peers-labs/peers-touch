@@ -1,0 +1,9 @@
+name: libp2p_example
+description: A simple libp2p client example.
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  peers_touch_base:
+    path: ../../
