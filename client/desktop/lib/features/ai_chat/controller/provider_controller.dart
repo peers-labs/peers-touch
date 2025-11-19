@@ -76,6 +76,16 @@ class ProviderController extends GetxController {
       if (apiKey != null && apiKey.isNotEmpty) {
         await _saveApiKey(providerId, apiKey);
       }
+
+      // 获取模型列表并更新
+      final models = await fetchProviderModels(providerId);
+      final updatedProvider = newProvider.copyWith(
+        settings: {
+          ...newProvider.settings!,
+          'models': models,
+        },
+      );
+      await _providerService.saveProvider(updatedProvider);
       
       await loadProviders();
       Get.snackbar('成功', '提供商添加成功');

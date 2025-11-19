@@ -4,7 +4,9 @@ import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
+import 'package:peers_touch_desktop/core/services/setting_manager.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
 /// AI Provider设置模块 - 演示业务模块设置注入
 class AIProviderSettings {
@@ -178,6 +180,38 @@ class AIProviderSettings {
         },
       ),
       SettingItem(
+        id: 'delete_provider',
+        title: '删除提供商',
+        description: '删除当前选定的提供商',
+        icon: Icons.delete,
+        type: SettingItemType.button,
+        onTap: () async {
+          final result = await Get.dialog<bool>(
+            AlertDialog(
+              title: const Text('确认删除'),
+              content: const Text('您确定要删除此提供商吗？'),
+              actions: [
+                TextButton(
+                  onPressed: () => Get.back(result: false),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () => Get.back(result: true),
+                  child: const Text('删除'),
+                ),
+              ],
+            ),
+          );
+
+          if (result == true) {
+            final providerController = Get.find<ProviderController>();
+            final storage = Get.find<LocalStorage>();
+            final providerId = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+            await providerController.deleteProvider(providerId);
+          }
+        },
+      ),
+      SettingItem(
         id: 'temperature',
         title: '温度参数',
         description: '设置AI回复的随机性（0-1）',
@@ -209,11 +243,5 @@ class AIProviderSettings {
         },
       ),
     ];
-  }
-  
-  /// 注册AI Provider设置到全局设置管理器
-  static void registerToGlobalSettings() {
-    // 这个函数将在AI Chat模块注册时调用
-    // 通过SettingController注册到全局设置中
   }
 }

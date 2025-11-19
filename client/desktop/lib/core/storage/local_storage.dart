@@ -16,4 +16,8 @@ class LocalStorage {
   Future<void> remove(String key) async {
     await _box.remove(key);
   }
+
+  Future<void> clearAll() async {
+    await _box.erase();
+  }
 }
