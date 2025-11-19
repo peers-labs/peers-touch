@@ -6,6 +6,7 @@ import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'package:peers_touch_desktop/core/network/network_initializer.dart';
 
 /// PeersAdmin 控制器：负责读取后端地址、执行管理与 Peer 相关请求
 class PeersAdminController extends GetxController {
@@ -32,7 +33,12 @@ class PeersAdminController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    _syncSettingsToRuntime();
+    // 添加baseurl变化监听器
+    backendUrl.listen((newUrl) {
+      if (newUrl.isNotEmpty) {
+        NetworkInitializer.updateBaseUrl(newUrl);
+      }
+    });
   }
 
   /// 切换当前分区
