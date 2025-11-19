@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
-import 'package:dcid/dcid.dart';
+import 'package:dcid/dcid.dart' as cid_lib;
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/routing/options.dart';
@@ -27,7 +27,7 @@ abstract class ContentProviding {
   /// Provide adds the given cid to the content routing system. If 'true' is
   /// passed, it also announces it, otherwise it is just kept in the local
   /// accounting of which objects are being provided.
-  Future<void> provide(CID cid, bool announce);
+  Future<void> provide(cid_lib.CID cid, bool announce);
 }
 
 /// ContentDiscovery is able to retrieve providers for a given CID using the Routing system.
@@ -35,7 +35,7 @@ abstract class ContentDiscovery {
   /// Search for peers who are able to provide a given key
   /// 
   /// When count is 0, this method will return an unbounded number of results.
-  Stream<AddrInfo> findProvidersAsync(CID cid, int count);
+  Stream<AddrInfo> findProvidersAsync(cid_lib.CID cid, int count);
 }
 
 /// ContentRouting is a value provider layer of indirection. It is used to find

@@ -30,6 +30,9 @@ dependencies:
   uuid: ^4.4.0
   buffer: ^1.2.0
   async: ^2.11.0
+  bs58: ^1.0.2
+  dart_multihash: ^1.0.1
+  dcid: ^1.0.0
 
 dev_dependencies:
   flutter_test:

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
-import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
+import 'dart:convert';
+import 'package:fixnum/fixnum.dart' as $fixnum;
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 
 import 'package:intl/intl.dart';
 
@@ -79,21 +81,36 @@ class AssistantSidebar extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
-                              if (s.lastMessage != null)
-                                Text(
-                                  s.lastMessage!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: UIKit.textSecondary(context),
-                                      ),
-                                ),
+                              // 从 meta 中解析 lastMessage
+                              Builder(
+                                builder: (context) {
+                                  final lastMessageJson = s.meta['lastMessage'];
+                                  if (lastMessageJson != null && lastMessageJson.isNotEmpty) {
+                                    try {
+                                      final lastMessageMap = jsonDecode(lastMessageJson) as Map<String, dynamic>;
+                                      final content = lastMessageMap['content'] as String?;
+                                      if (content != null && content.isNotEmpty) {
+                                        return Text(
+                                          content,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                color: UIKit.textSecondary(context),
+                                              ),
+                                        );
+                                      }
+                                    } catch (_) {}
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
                             ],
                           ),
                         ),
-                        if (s.lastActiveAt != null)
+                        // 使用 updatedAt 作为最后活跃时间
+                        if (s.updatedAt != $fixnum.Int64(0))
                           Text(
-                            formatDateTime(s.lastActiveAt!),
+                            formatDateTime(DateTime.fromMillisecondsSinceEpoch(s.updatedAt.toInt())),
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                       ],

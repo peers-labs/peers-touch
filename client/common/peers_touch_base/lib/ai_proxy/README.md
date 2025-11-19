@@ -27,7 +27,7 @@ AI Proxy 模块是 Peers Touch 项目中的 AI 服务代理层，负责统一管
 ```
 应用层
     ↓
-AiBoxClientModeService.chat()
+AiBoxService.chat()
     ↓
 适配器选择提供商
     ↓

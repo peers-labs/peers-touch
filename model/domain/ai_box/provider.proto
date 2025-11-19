@@ -6,6 +6,15 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model;model";
 
+// Provider类型映射
+enum ProviderType {
+  openai = 0;
+  ollama = 1;
+  deepseek = 2;
+  custom = 1001;
+}
+
+
 // =================================================
 // 1. Provider (Domain Model)
 // 核心领域模型，与数据库结构对齐，是系统内部的权威表示。
