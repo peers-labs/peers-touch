@@ -3,9 +3,9 @@
 /// This is a port of the Go implementation from go-libp2p/p2p/host/eventbus/opts.go
 /// to Dart, using native Dart idioms.
 
+import 'package:stack_trace/stack_trace.dart';
 import 'dart:async';
 import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
-import 'package:stack_trace/stack_trace.dart';
 import 'basic.dart';
 import 'metrics.dart';
 

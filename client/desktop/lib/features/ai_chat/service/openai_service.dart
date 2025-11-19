@@ -41,7 +41,7 @@ class OpenAIService implements AIService {
     }
 
     try {
-      final response = await _dio.get('/v1/models');
+      final response = await _dio.get('/models');
       final data = response.data;
       if (data is Map<String, dynamic> && data['data'] is List) {
         final list = (data['data'] as List)
@@ -79,7 +79,7 @@ class OpenAIService implements AIService {
     try {
       final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
       final response = await _dio.post(
-        '/v1/chat/completions',
+        '/chat/completions',
         data: {
           'model': selectedModel,
           'messages': [
@@ -147,7 +147,7 @@ class OpenAIService implements AIService {
     try {
       final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
       final response = await _dio.post(
-        '/v1/chat/completions',
+        '/chat/completions',
         data: {
           'model': selectedModel,
           'messages': [
@@ -178,7 +178,7 @@ class OpenAIService implements AIService {
     }
     
     try {
-      await _dio.get('/v1/models');
+      await _dio.get('/models');
       return true;
     } catch (e) {
       LoggingService.warning('OpenAI连接测试失败', e);

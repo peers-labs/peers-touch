@@ -218,6 +218,9 @@ class AIInputBox extends StatelessWidget {
   Widget _toolbar(BuildContext context, AiInputController ctrl) {
     final color = Theme.of(context).colorScheme.onSurfaceVariant;
     return Obx(() {
+      // Force dependency on attachments to ensure Obx rebuilds
+      final _ = ctrl.attachments.length;
+
       // Use computed flags based on current state
       final canImg = capability.supportsImageInput && ctrl.canAttachImage;
       final canFile = capability.supportsFileInput && ctrl.canAttachFile;
