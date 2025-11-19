@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
-import 'package:peers_touch_desktop/features/ai_chat/model/chat_session.dart';
+import 'package:peers_touch_base/ai_proxy/service/ai_box_service_factory.dart';
+import 'package:peers_touch_base/ai_proxy/adapter/ai_proxy_adapter.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat.pbenum.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_attachment.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
@@ -16,30 +20,11 @@ enum SaveTopicStatus {
   alreadySaved,
 }
 
-class ChatMessage {
-  final String role; // 'user' | 'assistant'
-  String content;
-  final DateTime createdAt;
-  ChatMessage({required this.role, required this.content, required this.createdAt});
-
-  Map<String, dynamic> toJson() => {
-        'role': role,
-        'content': content,
-        'createdAt': createdAt.toIso8601String(),
-      };
-
-  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
-        role: json['role'] as String? ?? 'user',
-        content: json['content'] as String? ?? '',
-        createdAt: DateTime.parse(json['createdAt'] as String? ?? DateTime.now().toIso8601String()),
-      );
-}
-
 class AIChatController extends GetxController {
   final AIService service;
   final LocalStorage storage;
 
-  AIChatController({required this.service, required this.storage});
+  AIChatController({required this.service, required this.storage,});
 
   // 状态
   final messages = <ChatMessage>[].obs;
@@ -88,7 +73,8 @@ class AIChatController extends GetxController {
 
   void createSession({String title = 'Just Chat'}) {
     final id = _genId();
-    final session = ChatSession(id: id, title: title, createdAt: DateTime.now(), lastActiveAt: DateTime.now());
+    final session = ChatSession(id: id, title: title, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch), 
+    updatedAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
     sessions.add(session);
     _sessionStore[id] = <ChatMessage>[];
     selectSession(id);
@@ -136,11 +122,11 @@ class AIChatController extends GetxController {
         id: s.id,
         title: newTitle,
         createdAt: s.createdAt,
-        lastActiveAt: s.lastActiveAt,
-        lastMessage: s.lastMessage,
+       updatedAt: s.createdAt,
       );
       sessions.refresh();
       _persistSessions();
+         _persistMessagesForSession(s.id);
     }
   }
 
@@ -204,7 +190,7 @@ class AIChatController extends GetxController {
       sid = selectedSessionId.value;
     }
     final list = _sessionStore[sid!]!;
-    final userMsg = ChatMessage(role: 'user', content: text, createdAt: DateTime.now());
+    final userMsg = ChatMessage(role: ChatRole.CHAT_ROLE_USER, content: text, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
     messages.add(userMsg);
     list.add(userMsg);
     inputController.clear();
@@ -212,22 +198,43 @@ class AIChatController extends GetxController {
     isSending.value = true;
     clearError();
 
+    // 获取 AI 服务实例（工厂内部管理adapter，外部无需关心）
+    final aiService = AiBoxServiceFactory.getService();
+
+    // 构建聊天历史记录
+    final chatHistory = messages.map((msg) {
+      return ChatMessage(
+        role: msg.role == ChatRole.CHAT_ROLE_USER  ? ChatRole.CHAT_ROLE_USER : ChatRole.CHAT_ROLE_ASSISTANT,
+        content: msg.content,
+        createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch),
+      );
+    }).toList();
+
+    // 构建请求
+    final request = ChatCompletionRequest(
+      messages: chatHistory,
+      model: currentModel.value.isNotEmpty ? currentModel.value : AIConstants.defaultOpenAIModel,
+      temperature: temperature,
+      stream: enableStreaming,
+    );
+
     if (enableStreaming) {
       // 预先放入一条空助手消息，随后增量填充
-      final assistant = ChatMessage(role: 'assistant', content: '', createdAt: DateTime.now());
+      final assistant = ChatMessage(role: ChatRole.CHAT_ROLE_ASSISTANT, content: '', createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
       messages.add(assistant);
       list.add(assistant);
       try {
-        await for (final chunk in service.sendMessageStream(
-          message: text,
-          model: currentModel.value.isNotEmpty ? currentModel.value : null,
-          temperature: temperature,
-        )) {
-          assistant.content += chunk;
-          messages.refresh();
-          // 同步存储列表刷新
-          _sessionStore[sid] = List<ChatMessage>.from(messages);
-          _persistMessagesForSession(sid);
+        await for (final response in aiService.chat(request)) {
+          if (response.choices.isNotEmpty) {
+            final message = response.choices.first.message?.content ?? '';
+            if (message.isNotEmpty) {
+              assistant.content += message;
+              messages.refresh();
+              // 同步存储列表刷新
+              _sessionStore[sid] = List<ChatMessage>.from(messages);
+              _persistMessagesForSession(sid);
+            }
+          }
         }
       } catch (e) {
         error.value = '发送失败：$e';
@@ -236,12 +243,9 @@ class AIChatController extends GetxController {
       }
     } else {
       try {
-        final reply = await service.sendMessage(
-          message: text,
-          model: currentModel.value.isNotEmpty ? currentModel.value : null,
-          temperature: temperature,
-        );
-        final assistant = ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now());
+        final response = await aiService.chatSync(request);
+        final reply = response.choices.first.message?.content ?? '';
+        final assistant = ChatMessage(role: ChatRole.CHAT_ROLE_ASSISTANT, content: reply, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
         messages.add(assistant);
         list.add(assistant);
         _persistMessagesForSession(sid);
@@ -275,7 +279,7 @@ class AIChatController extends GetxController {
     final list = _sessionStore[sid!]!;
 
     // 添加用户消息（仅展示文本，附件不在消息列表中显示）
-    final userMsg = ChatMessage(role: 'user', content: text, createdAt: DateTime.now());
+    final userMsg = ChatMessage(role: ChatRole.CHAT_ROLE_USER, content: text, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
     messages.add(userMsg);
     list.add(userMsg);
     inputController.clear();
@@ -299,7 +303,7 @@ class AIChatController extends GetxController {
     }
 
     if (enableStreaming) {
-      final assistant = ChatMessage(role: 'assistant', content: '', createdAt: DateTime.now());
+      final assistant = ChatMessage(role: ChatRole.CHAT_ROLE_ASSISTANT, content: '', createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
       messages.add(assistant);
       list.add(assistant);
       try {
@@ -329,7 +333,7 @@ class AIChatController extends GetxController {
           openAIContent: openAIContent,
           imagesBase64: imagesBase64,
         );
-        final assistant = ChatMessage(role: 'assistant', content: reply, createdAt: DateTime.now());
+        final assistant = ChatMessage(role: ChatRole.CHAT_ROLE_ASSISTANT, content: reply, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
         messages.add(assistant);
         list.add(assistant);
         _persistMessagesForSession(sid);
@@ -369,7 +373,7 @@ class AIChatController extends GetxController {
     if (rawSessions != null && rawSessions.isNotEmpty) {
       final parsed = rawSessions
           .whereType<Map<String, dynamic>>()
-          .map((m) => ChatSession.fromJson(m))
+          .map((m) => ChatSession.create()..mergeFromProto3Json(m))
           .toList();
       // 使用 microtask 避免在 onInit 中直接修改 RxList 触发构建错误
       Future.microtask(() {
@@ -389,7 +393,7 @@ class AIChatController extends GetxController {
   }
 
   void _persistSessions() {
-    final data = sessions.map((s) => s.toJson()).toList();
+    final data = sessions.map((s) => s.toProto3Json()).toList();
     storage.set(AIConstants.chatSessions, data);
     if (selectedSessionId.value != null) {
       storage.set(AIConstants.chatSelectedSessionId, selectedSessionId.value);
@@ -406,19 +410,20 @@ class AIChatController extends GetxController {
 
   void _persistMessagesForSession(String id) {
     final msgs = _sessionStore[id] ?? <ChatMessage>[];
-    final data = msgs.map((m) => m.toJson()).toList();
+    final data = msgs.map((m) => m.toProto3Json()).toList();
     storage.set('${AIConstants.chatMessagesPrefix}$id', data);
     // 更新最后活跃时间
     final idx = sessions.indexWhere((s) => s.id == id);
     if (idx != -1) {
       final s = sessions[idx];
-      sessions[idx] = ChatSession(
-        id: s.id,
-        title: s.title,
-        createdAt: s.createdAt,
-        lastActiveAt: DateTime.now(),
-        lastMessage: msgs.isNotEmpty ? msgs.last.content : null,
-      );
+      final newMeta = Map<String, String>.from(s.meta);
+      if (msgs.isNotEmpty) {
+        newMeta['lastMessage'] = jsonEncode(msgs.last.toProto3Json());
+      }
+      sessions[idx] = s.rebuild((s) => s
+        ..updatedAt = $fixnum.Int64(DateTime.now().millisecondsSinceEpoch)
+        ..meta.clear()
+        ..meta.addAll(newMeta));
       sessions.refresh();
       _persistSessions();
     }
@@ -427,10 +432,18 @@ class AIChatController extends GetxController {
   List<ChatMessage> _loadMessagesForSession(String id) {
     final raw = storage.get<List<dynamic>>('${AIConstants.chatMessagesPrefix}$id');
     if (raw == null) return <ChatMessage>[];
-    return raw
-        .whereType<Map<String, dynamic>>()
-        .map((m) => ChatMessage.fromJson(m))
-        .toList();
+    return raw.whereType<Map<String, dynamic>>().map((m) {
+      final role = m['role'] as String?;
+      final content = m['content'] as String?;
+      final createdAt = m['createdAt'] as String?;
+      return ChatMessage(
+        role: role == 'user' ? ChatRole.CHAT_ROLE_USER : ChatRole.CHAT_ROLE_ASSISTANT,
+        content: content ?? '',
+        createdAt: createdAt != null
+            ? $fixnum.Int64.parseInt(createdAt)
+            : $fixnum.Int64(DateTime.now().millisecondsSinceEpoch),
+      );
+    }).toList();
   }
 
   // 选择 Topic（仅更新当前选择，暂不影响消息）

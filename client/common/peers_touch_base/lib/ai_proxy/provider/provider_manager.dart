@@ -200,7 +200,7 @@ class ProviderManager {
       case ProviderType.deepseek:
         return 'deepseek-chat';
       case ProviderType.custom:
-        return 'gpt-3.5-turbo';
+        return 'custom-model';
     }
   }
 
@@ -214,35 +214,27 @@ class ProviderManager {
       case ProviderType.deepseek:
         return 'DeepSeek';
       case ProviderType.custom:
-        return 'Custom Provider';
+        return 'Custom';
     }
   }
 
   /// 获取Provider Logo
   String _getProviderLogo(ProviderType type) {
-    switch (type) {
-      case ProviderType.openai:
-        return 'https://cdn.jsdelivr.net/npm/@lobehub/icons@1.37.1/icons/openai.svg';
-      case ProviderType.ollama:
-        return 'https://cdn.jsdelivr.net/npm/@lobehub/icons@1.37.1/icons/ollama.svg';
-      case ProviderType.deepseek:
-        return 'https://cdn.jsdelivr.net/npm/@lobehub/icons@1.37.1/icons/deepseek.svg';
-      case ProviderType.custom:
-        return 'https://cdn.jsdelivr.net/npm/@lobehub/icons@1.37.1/icons/openai.svg';
-    }
+    // 这里可以返回默认的logo图片路径
+    return '';
   }
 
   /// 获取Provider描述
   String _getProviderDescription(ProviderType type) {
     switch (type) {
       case ProviderType.openai:
-        return 'OpenAI GPT models';
+        return 'OpenAI official provider';
       case ProviderType.ollama:
-        return 'Local Ollama models';
+        return 'Ollama local provider';
       case ProviderType.deepseek:
-        return 'DeepSeek AI models';
+        return 'DeepSeek provider';
       case ProviderType.custom:
-        return 'Custom OpenAI-compatible provider';
+        return 'Custom OpenAI compatible provider';
     }
   }
 }
