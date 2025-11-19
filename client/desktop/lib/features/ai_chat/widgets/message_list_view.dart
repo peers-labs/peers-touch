@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 
 class MessageListView extends StatefulWidget {
   final List<ChatMessage> messages;
@@ -50,13 +50,15 @@ String _formatMessageTime(DateTime dt) {
       itemCount: widget.messages.length,
       itemBuilder: (_, i) {
         final m = widget.messages[i];
-        final isUser = m.role == 'user';
+        final isUser = m.role == ChatRole.CHAT_ROLE_USER;
         bool showTimestamp = false;
         if (i == 0) {
           showTimestamp = true;
         } else {
           final prev = widget.messages[i - 1];
-          if (m.createdAt.difference(prev.createdAt).inMinutes > 5) {
+          final currentTime = DateTime.fromMillisecondsSinceEpoch(m.createdAt.toInt());
+          final prevTime = DateTime.fromMillisecondsSinceEpoch(prev.createdAt.toInt());
+          if (currentTime.difference(prevTime).inMinutes > 5) {
             showTimestamp = true;
           }
         }
@@ -67,7 +69,7 @@ String _formatMessageTime(DateTime dt) {
               Padding(
                 padding: EdgeInsets.symmetric(vertical: UIKit.spaceMd(context)),
                 child: Text(
-                  _formatMessageTime(m.createdAt),
+                  _formatMessageTime(DateTime.fromMillisecondsSinceEpoch(m.createdAt.toInt())),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),

@@ -1,8 +1,7 @@
 import 'package:get/get.dart';
-import 'package:peers_touch_base/ai_proxy/providers/provider_manager.dart';
+import 'package:peers_touch_base/ai_proxy/provider/provider_manager.dart';
 import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
 
 /// AI服务提供商管理服务

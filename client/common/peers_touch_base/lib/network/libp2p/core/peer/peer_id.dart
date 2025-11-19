@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 import 'package:bs58/bs58.dart';
-import 'package:dcid/dcid.dart' as cid_lib; // Added alias
+import 'package:dcid/dcid.dart' as cid_lib;
 import 'package:peers_touch_base/network/libp2p/core/routing/routing.dart';
-import 'package:dart_multihash/dart_multihash.dart';
+import 'package:dart_multihash/dart_multihash.dart' as dart_multihash;
 import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as key_generator;
 import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
 import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart';
@@ -23,13 +23,13 @@ class PeerId {
 
     // If key is small enough, use identity multihash
     if (keyBytes.length <= _maxInlineKeyLength) {
-      final identityMultihash = Multihash.encode('identity', keyBytes);
+      final identityMultihash = dart_multihash.Multihash.encode('identity', keyBytes);
       _multihash = identityMultihash.toBytes();
       return;
     }
 
     // Otherwise use SHA2-256
-    final sha256Multihash = Multihash.encode('sha2-256', keyBytes);
+    final sha256Multihash = dart_multihash.Multihash.encode('sha2-256', keyBytes);
     _multihash = sha256Multihash.toBytes();
   }
 
@@ -61,7 +61,7 @@ class PeerId {
       if (s.startsWith('1')) { // Legacy base58 encoded identity multihash
         try {
           final bytes = base58.decode(s);
-          Multihash.decode(bytes); // Validates if it's a proper multihash
+          dart_multihash.Multihash.decode(bytes); // Validates if it's a proper multihash
           return Uint8List.fromList(bytes);
         } catch (err) {
           throw FormatException('Failed to parse legacy base58 peer ID "$s": $err');
@@ -110,13 +110,13 @@ class PeerId {
 
     // If key is small enough, use identity multihash
     if (keyBytes.length <= _maxInlineKeyLength) {
-      final identityMultihash = Multihash.encode('identity', keyBytes);
+      final identityMultihash = dart_multihash.Multihash.encode('identity', keyBytes);
       _multihash = identityMultihash.toBytes();
       return;
     }
 
     // Otherwise use SHA2-256
-    final sha256Multihash = Multihash.encode('sha2-256', keyBytes);
+    final sha256Multihash = dart_multihash.Multihash.encode('sha2-256', keyBytes);
     _multihash = sha256Multihash.toBytes();
   }
 
@@ -124,7 +124,7 @@ class PeerId {
   static PeerId fromMultihash(Uint8List bytes) {
     // Validate that the bytes are a valid multihash
     try {
-      Multihash.decode(bytes);
+      dart_multihash.Multihash.decode(bytes);
       return PeerId(bytes);
     } catch (e) {
       throw FormatException('Invalid multihash: $e');
@@ -157,7 +157,7 @@ class PeerId {
       if (bytesStr is String) {
         try {
           final bytes = base58.decode(bytesStr);
-          Multihash.decode(bytes); // Validate it's a multihash
+          dart_multihash.Multihash.decode(bytes); // Validate it's a multihash
           return Uint8List.fromList(bytes);
         } catch (e) {
           throw FormatException('Invalid PeerId JSON: failed to decode "bytes" field "$bytesStr": $e');
@@ -237,7 +237,7 @@ class PeerId {
   @override
   Future<PublicKey?> extractPublicKey() async {
     try {
-      final decoded = Multihash.decode(_multihash ?? Uint8List.fromList([]));
+      final decoded = dart_multihash.Multihash.decode(_multihash ?? Uint8List.fromList([]));
       // Only identity multihash contains the public key
       if (decoded.code != 0x00) { // 0x00 is the code for identity
         return null;
@@ -257,7 +257,7 @@ class PeerId {
   @override
   bool isValid() {
     try {
-      Multihash.decode(_multihash ?? Uint8List.fromList([00]));
+      dart_multihash.Multihash.decode(_multihash ?? Uint8List.fromList([00]));
       return _multihash?.isNotEmpty ?? false;
     } catch (e) {
       return false;

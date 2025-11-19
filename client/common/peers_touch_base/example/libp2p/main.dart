@@ -13,6 +13,7 @@ import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/limiter.dart';
+import 'package:synchronized/synchronized.dart';
 
 void main() async {
   // 1. Create a Config object
@@ -22,11 +23,12 @@ void main() async {
   final keyPair = await crypto_ed25519.generateEd25519KeyPair();
 
   // 3. Apply options to the config
+  final resourceManager = ResourceManagerImpl();
   await config.apply([
-    Libp2p.resourceManager(ResourceManagerImpl()),
+    Libp2p.resourceManager(resourceManager),
     Libp2p.identity(keyPair),
     Libp2p.listenAddrs([MultiAddr('/ip4/0.0.0.0/tcp/0')]),
-    Libp2p.transport(TCPTransport()),
+    Libp2p.transport(TCPTransport(resourceManager: resourceManager)),
     Libp2p.security(await NoiseSecurity.create(keyPair)),
     defaultMuxers, // Use the default Yamux muxer
   ]);
@@ -39,7 +41,7 @@ void main() async {
 
   // The bootstrap node from the go-libp2p example
   var bootstrapNodeAddr = MultiAddr(
-      '/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ');
+      '/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBQWCWr1Z7kWHbCDqgUY8rvMybxA9bYXou4a1SpDLymN5');
 
   try {
     // 5. Connect to the bootstrap node
