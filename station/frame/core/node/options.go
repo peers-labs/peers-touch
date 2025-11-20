@@ -38,12 +38,13 @@ type Options struct {
 	PrivateKey string
 	PublicKey  string
 
-	ClientOptions   ClientOptions
-	ServerOptions   ServerOptions
-	StoreOptions    StoreOptions
-	RegistryOptions RegistryOptions
-	ConfigOptions   ConfigOptions
-	LoggerOptions   LoggerOptions
+	ClientOptions    ClientOptions
+	ServerOptions    ServerOptions
+	StoreOptions     StoreOptions
+	RegistryOptions  RegistryOptions
+	ConfigOptions    ConfigOptions
+	LoggerOptions    LoggerOptions
+	TransportOptions TransportOptions
 
 	Client    client.Client
 	Server    server.Server
@@ -74,6 +75,8 @@ type RegistryOptions []option.Option
 type ConfigOptions []option.Option
 
 type LoggerOptions []logger.Option
+
+type TransportOptions []option.Option
 
 func Name(c string) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
