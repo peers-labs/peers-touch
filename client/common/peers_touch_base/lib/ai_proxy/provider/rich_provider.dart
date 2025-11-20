@@ -100,6 +100,27 @@ class RichProvider {
   List<RichModel> getModelsByCapability(String capability) =>
       models.where((m) => m.supportsCapability(capability)).toList();
 
+  /// 获取支持的模型ID列表
+  List<String> getSupportedModels() {
+    return models.map((m) => m.id).toList();
+  }
+
+  /// 测试连接（简单实现，实际应该调用具体的API测试）
+  Future<bool> testConnection() async {
+    // 简单的实现：检查是否有API密钥和有效模型
+    if (_apiKey.isEmpty) {
+      return false;
+    }
+    
+    if (!isValid || !hasAvailableModels) {
+      return false;
+    }
+    
+    // 这里可以添加实际的API调用测试
+    // 暂时返回true，表示配置看起来是有效的
+    return true;
+  }
+
   ChatClient createChatClient(String modelId) {
     if (!isValid) {
       throw InvalidProviderConfigException('Provider配置无效', providerId: id);

@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
-import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as base;
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart';
 
@@ -32,8 +32,9 @@ class ProviderManager {
   final AiBoxLocalStorageService _localStorage;
   
   // 本地缓存
-  final Map<String, base.Provider> _providers = {};
+  final Map<String, Provider> _providers = {};
   String? _defaultProviderId;
+  String? _currentProviderId;
 
   ProviderManager({
     required AiBoxService aiBoxService,
@@ -43,7 +44,7 @@ class ProviderManager {
 
   /// 创建新的Provider（仅本地，不保存到后台）
   /// 支持类型: openai, ollama, deepseek, custom
-  base.Provider newProvider(ProviderType type, String url, String apiKey) {
+  Provider newProvider(ProviderType type, String url, String apiKey) {
     final id = _generateProviderId();
     final now = DateTime.now();
     
@@ -54,7 +55,7 @@ class ProviderManager {
       'model': _getDefaultModel(type),
     };
 
-    return base.Provider(
+    return Provider(
       id: id,
       name: _getProviderName(type),
       peersUserId: '', // 将由后台填充
@@ -77,13 +78,13 @@ class ProviderManager {
   }
 
   /// 创建Provider并保存到远程和本地
-  Future<base.Provider> createProvider(base.Provider provider) async {
+  Future<Provider> createProvider(Provider provider) async {
     try {
       // 1. 先保存到远程
       final createdProvider = await _aiBoxService.createProvider(provider);
       
       // 2. 再保存到本地
-      await _localStorage.saveProvider(_providerToMap(createdProvider));
+      await _localStorage.saveProvider(createdProvider);
       
       // 3. 更新本地缓存
       _providers[createdProvider.id] = createdProvider;
@@ -91,18 +92,18 @@ class ProviderManager {
       // 4. 如果是第一个Provider，设为默认
       if (_providers.length == 1) {
         _defaultProviderId = createdProvider.id;
-        await _localStorage.setDefaultProvider(createdProvider.id);
+        await _localStorage.setDefaultProviderId(createdProvider.id);
       }
       
       return createdProvider;
     } catch (remoteError) {
       // 远程失败时，只保存到本地（离线模式）
-      await _localStorage.saveProvider(_providerToMap(provider));
+      await _localStorage.saveProvider(provider);
       _providers[provider.id] = provider;
       
       if (_providers.length == 1) {
         _defaultProviderId = provider.id;
-        await _localStorage.setDefaultProvider(provider.id);
+        await _localStorage.setDefaultProviderId(provider.id);
       }
       
       throw ProviderSyncException('远程保存失败，已保存到本地', remoteError);
@@ -110,7 +111,7 @@ class ProviderManager {
   }
 
   /// 根据ID获取Provider
-  Future<base.Provider?> getProvider(String id) async {
+  Future<Provider?> getProvider(String id) async {
     // 1. 先检查本地缓存
     if (_providers.containsKey(id)) {
       return _providers[id];
@@ -129,24 +130,26 @@ class ProviderManager {
       return remoteProvider;
     } catch (remoteError) {
       // 5. 远程失败时，从本地存储获取
-      final localProvider = await _localStorage.getProvider(id);
-      if (localProvider != null) {
-        _providers[id] = localProvider;
+      final localProviderMap = await _localStorage.getProvider(id);
+      if (localProviderMap != null) {
+        final provider = _mapToProvider(localProviderMap);
+        _providers[id] = provider;
+        return provider;
       }
       
-      return localProvider;
+      return null;
     }
   }
 
   /// 获取所有Provider
-  Future<List<base.Provider>> listProviders() async {
+  Future<List<Provider>> listProviders() async {
     try {
       // 1. 优先从远程获取最新数据
       final remoteProviders = await _aiBoxService.listProviders();
       
       // 2. 更新本地存储
       for (final provider in remoteProviders) {
-        await _localStorage.saveProvider(_providerToMap(provider));
+        await _localStorage.saveProvider(provider);
       }
       
       // 3. 更新本地缓存
@@ -176,13 +179,13 @@ class ProviderManager {
   }
 
   /// 更新Provider
-  Future<base.Provider> updateProvider(base.Provider provider) async {
+  Future<Provider> updateProvider(Provider provider) async {
     try {
       // 1. 先更新到远程
       final updatedProvider = await _aiBoxService.updateProvider(provider);
       
       // 2. 再更新到本地
-      await _localStorage.saveProvider(_providerToMap(updatedProvider));
+      await _localStorage.saveProvider(updatedProvider);
       
       // 3. 更新本地缓存
       _providers[updatedProvider.id] = updatedProvider;
@@ -190,7 +193,7 @@ class ProviderManager {
       return updatedProvider;
     } catch (remoteError) {
       // 4. 远程失败时，只更新到本地
-      await _localStorage.saveProvider(_providerToMap(provider));
+      await _localStorage.saveProvider(provider);
       _providers[provider.id] = provider;
       
       throw ProviderSyncException('远程更新失败，已更新到本地', remoteError);
@@ -212,16 +215,16 @@ class ProviderManager {
       // 4. 如果删除的是默认Provider，清空默认设置
       if (_defaultProviderId == id) {
         _defaultProviderId = null;
-        await _localStorage.setDefaultProvider('');
+        await _localStorage.setDefaultProviderId('');
       }
     } catch (remoteError) {
-      // 5. 远程失败时，只删除本地
+      // 远程失败时，只删除本地
       await _localStorage.deleteProvider(id);
       _providers.remove(id);
       
       if (_defaultProviderId == id) {
         _defaultProviderId = null;
-        await _localStorage.setDefaultProvider('');
+        await _localStorage.setDefaultProviderId('');
       }
       
       throw ProviderSyncException('远程删除失败，已从本地删除', remoteError);
@@ -238,28 +241,75 @@ class ProviderManager {
     }
     
     _defaultProviderId = id;
-    await _localStorage.setDefaultProvider(id);
+    await _localStorage.setDefaultProviderId(id);
   }
 
   /// 获取默认Provider
-  Future<base.Provider?> getDefaultProvider() async {
+  Future<Provider?> getDefaultProvider() async {
+    // 如果缓存中没有默认Provider ID，尝试从本地存储获取
     if (_defaultProviderId == null) {
-      // 尝试从本地存储获取当前默认Provider
-      final allProviders = await _localStorage.getAllProviders();
-      final defaultProviderMap = allProviders.firstWhere(
-        (p) => p['isDefault'] == true,
-        orElse: () => allProviders.isNotEmpty ? allProviders.first : null,
-      );
-      
-      if (defaultProviderMap != null) {
-        final provider = _mapToProvider(defaultProviderMap);
-        _defaultProviderId = provider.id;
-        return provider;
-      }
-      return null;
+      _defaultProviderId = await _localStorage.getDefaultProviderId();
     }
     
-    return _providers[_defaultProviderId];
+    // 如果还是没有，获取第一个Provider作为默认
+    if (_defaultProviderId == null && _providers.isNotEmpty) {
+      _defaultProviderId = _providers.values.first.id;
+      await _localStorage.setDefaultProviderId(_defaultProviderId!);
+    }
+    
+    if (_defaultProviderId != null) {
+      // 确保Provider存在于缓存中
+      if (!_providers.containsKey(_defaultProviderId)) {
+        final provider = await getProvider(_defaultProviderId!);
+        if (provider != null) {
+          return provider;
+        }
+      } else {
+        return _providers[_defaultProviderId];
+      }
+    }
+    
+    return null;
+  }
+
+  /// 设置当前Provider
+  Future<void> setCurrentProvider(String id) async {
+    if (!_providers.containsKey(id) && id.isNotEmpty) {
+      final provider = await getProvider(id);
+      if (provider == null) {
+        throw Exception('Provider not found: $id');
+      }
+    }
+    
+    _currentProviderId = id;
+    await _localStorage.setCurrentProviderId(id);
+  }
+
+  /// 获取当前Provider
+  Future<Provider?> getCurrentProvider() async {
+    // 如果缓存中没有当前Provider ID，尝试从本地存储获取
+    if (_currentProviderId == null) {
+      _currentProviderId = await _localStorage.getCurrentProviderId();
+    }
+    
+    // 如果当前Provider ID为空，返回默认Provider
+    if (_currentProviderId == null || _currentProviderId!.isEmpty) {
+      return await getDefaultProvider();
+    }
+    
+    if (_currentProviderId != null && _currentProviderId!.isNotEmpty) {
+      // 确保Provider存在于缓存中
+      if (!_providers.containsKey(_currentProviderId)) {
+        final provider = await getProvider(_currentProviderId!);
+        if (provider != null) {
+          return provider;
+        }
+      } else {
+        return _providers[_currentProviderId];
+      }
+    }
+    
+    return null;
   }
 
   /// 从远程和本地初始化所有Provider
@@ -270,7 +320,7 @@ class ProviderManager {
       
       // 2. 更新本地存储
       for (final provider in remoteProviders) {
-        await _localStorage.saveProvider(_providerToMap(provider));
+        await _localStorage.saveProvider(provider);
       }
       
       // 3. 更新本地缓存
@@ -280,18 +330,7 @@ class ProviderManager {
       }
       
       // 4. 设置默认Provider
-      final allProviders = await _localStorage.getAllProviders();
-      final defaultProviderMap = allProviders.firstWhere(
-        (p) => p['isDefault'] == true,
-        orElse: () => allProviders.isNotEmpty ? allProviders.first : null,
-      );
-      
-      if (defaultProviderMap != null) {
-        _defaultProviderId = defaultProviderMap['id'];
-      } else if (_providers.isNotEmpty) {
-        _defaultProviderId = _providers.values.first.id;
-        await _localStorage.setDefaultProvider(_defaultProviderId!);
-      }
+      await getDefaultProvider();
     } catch (e) {
       // 5. 远程失败时，从本地存储初始化
       final localProviderMaps = await _localStorage.getAllProviders();
@@ -302,14 +341,8 @@ class ProviderManager {
         _providers[provider.id] = provider;
       }
       
-      final defaultProviderMap = localProviderMaps.firstWhere(
-        (p) => p['isDefault'] == true,
-        orElse: () => localProviderMaps.isNotEmpty ? localProviderMaps.first : null,
-      );
-      
-      if (defaultProviderMap != null) {
-        _defaultProviderId = defaultProviderMap['id'];
-      }
+      // 设置默认Provider
+      await getDefaultProvider();
       
       throw ProviderSyncException('远程初始化失败，已从本地初始化', e);
     }
@@ -371,80 +404,6 @@ class ProviderManager {
     }
   }
 
-  /// 数据同步方法 - 同步远程和本地Provider数据
-  Future<List<base.Provider>> syncProviders() async {
-    try {
-      // 1. 获取本地Provider数据
-      final localProviders = await _localStorage.getProviders();
-      
-      // 2. 获取远程Provider数据
-      final remoteProviders = await _aiBoxService.listProviders();
-      
-      // 3. 使用数据同步服务解决冲突
-      final syncedProviders = await _dataSyncService.syncProviders(
-        localProviders: localProviders,
-        remoteProviders: remoteProviders,
-      );
-      
-      // 4. 更新本地存储
-      for (final provider in syncedProviders) {
-        await _localStorage.saveProvider(provider);
-      }
-      
-      // 5. 更新本地缓存
-      _providers.clear();
-      for (final provider in syncedProviders) {
-        _providers[provider.id] = provider;
-      }
-      
-      return syncedProviders;
-    } catch (e) {
-      throw ProviderSyncException('数据同步失败', e);
-    }
-  }
-
-  /// 检查数据一致性
-  Future<Map<String, dynamic>> checkDataConsistency() async {
-    try {
-      final localProviders = await _localStorage.getProviders();
-      final remoteProviders = await _aiBoxService.listProviders();
-      
-      return await _dataSyncService.checkConsistency(
-        localProviders: localProviders,
-        remoteProviders: remoteProviders,
-        localSessions: [], // 这里可以传入Chat会话数据
-        remoteSessions: [],
-      );
-    } catch (e) {
-      return {
-        'success': false,
-        'message': '一致性检查失败: $e',
-        'error': e,
-      };
-    }
-  }
-
-  /// 强制同步到远程（用于离线模式下的数据同步）
-  Future<void> forceSyncToRemote() async {
-    try {
-      final localProviders = await _localStorage.getProviders();
-      
-      for (final provider in localProviders) {
-        try {
-          // 检查Provider是否已存在于远程
-          await _aiBoxService.getProvider(provider.id);
-          // 如果存在，更新远程数据
-          await _aiBoxService.updateProvider(provider);
-        } catch (e) {
-          // 如果不存在，创建新的远程Provider
-          await _aiBoxService.createProvider(provider);
-        }
-      }
-    } catch (e) {
-      throw ProviderSyncException('强制同步到远程失败', e);
-    }
-  }
-
   /// 获取同步状态
   Future<Map<String, dynamic>> getSyncStatus() async {
     try {
@@ -477,31 +436,9 @@ class ProviderManager {
     }
   }
 
-  /// 将Protobuf Provider转换为Map
-  Map<String, dynamic> _providerToMap(base.Provider provider) {
-    return {
-      'id': provider.id,
-      'name': provider.name,
-      'peersUserId': provider.peersUserId,
-      'sort': provider.sort,
-      'enabled': provider.enabled,
-      'checkModel': provider.checkModel,
-      'logo': provider.logo,
-      'description': provider.description,
-      'keyVaults': provider.keyVaults,
-      'sourceType': provider.sourceType,
-      'settingsJson': provider.settingsJson,
-      'configJson': provider.configJson,
-      'accessedAt': provider.accessedAt.toDateTime().millisecondsSinceEpoch,
-      'createdAt': provider.createdAt.toDateTime().millisecondsSinceEpoch,
-      'updatedAt': provider.updatedAt.toDateTime().millisecondsSinceEpoch,
-      'isDefault': false, // 默认值，会在设置默认Provider时更新
-    };
-  }
-
   /// 将Map转换为Protobuf Provider
-  base.Provider _mapToProvider(Map<String, dynamic> map) {
-    return base.Provider(
+  Provider _mapToProvider(Map<String, dynamic> map) {
+    return Provider(
       id: map['id'] ?? '',
       name: map['name'] ?? '',
       peersUserId: map['peersUserId'] ?? '',

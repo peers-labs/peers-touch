@@ -1,7 +1,8 @@
 import 'dart:convert';
 
 import 'package:get/get.dart';
-import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as base;
+import 'package:logging/logging.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
@@ -11,8 +12,8 @@ class ProviderController extends GetxController {
   final ProviderService _providerService = ProviderService();
   
   // 状态变量
-  final providers = <base.Provider>[].obs;
-  final currentProvider = Rx<base.Provider?>(null);
+  final providers = <Provider>[].obs;
+  final currentProvider = Rx<Provider?>(null);
   final isLoading = false.obs;
   final selectedProviderId = ''.obs;
   
@@ -53,7 +54,7 @@ class ProviderController extends GetxController {
       final now = DateTime.now().toUtc();
       final providerId = '${sourceType.toLowerCase()}-${now.millisecondsSinceEpoch}';
       
-      final newProvider = base.Provider(
+      final newProvider = Provider(
         id: providerId,
         name: name,
         peersUserId: 'default', // TODO: 获取当前用户ID
@@ -100,7 +101,7 @@ class ProviderController extends GetxController {
   }
   
   /// 更新提供商
-  Future<void> updateProvider(base.Provider provider) async {
+  Future<void> updateProvider(Provider provider) async {
     try {
       final updatedProvider = provider.rebuild((b) => b
         ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()));
