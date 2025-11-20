@@ -7,9 +7,8 @@ import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_service_factory.dart';
-import 'package:peers_touch_base/ai_proxy/adapter/ai_proxy_adapter.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
-import 'package:peers_touch_base/model/domain/ai_box/chat.pbenum.dart';
+
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_attachment.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
@@ -199,38 +198,24 @@ class AIChatController extends GetxController {
     clearError();
 
     // 获取 AI 服务实例（工厂内部管理adapter，外部无需关心）
-    final aiService = AiBoxServiceFactory.getService();
-
-    // 构建聊天历史记录
-    final chatHistory = messages.map((msg) {
-      return ChatMessage(
-        role: msg.role == ChatRole.CHAT_ROLE_USER  ? ChatRole.CHAT_ROLE_USER : ChatRole.CHAT_ROLE_ASSISTANT,
-        content: msg.content,
-        createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch),
-      );
-    }).toList();
-
-    // 构建请求
-    final request = ChatCompletionRequest(
-      messages: chatHistory,
-      model: currentModel.value.isNotEmpty ? currentModel.value : AIConstants.defaultOpenAIModel,
-      temperature: temperature,
-      stream: enableStreaming,
-    );
+    final aiBoxFacadeService = AiBoxServiceFactory.createFacadeService();
 
     if (enableStreaming) {
-      // 预先放入一条空助手消息，随后增量填充
       final assistant = ChatMessage(role: ChatRole.CHAT_ROLE_ASSISTANT, content: '', createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
       messages.add(assistant);
       list.add(assistant);
       try {
-        await for (final response in aiService.chat(request)) {
+        await for (final response in aiBoxFacadeService.sendMessageStream(
+          providerId: 'default', // TODO: 需要从当前provider获取
+          message: text,
+          model: currentModel.value.isNotEmpty ? currentModel.value : null,
+          temperature: temperature,
+        )) {
           if (response.choices.isNotEmpty) {
-            final message = response.choices.first.message?.content ?? '';
+            final message = response.choices.first.message.content;
             if (message.isNotEmpty) {
               assistant.content += message;
               messages.refresh();
-              // 同步存储列表刷新
               _sessionStore[sid] = List<ChatMessage>.from(messages);
               _persistMessagesForSession(sid);
             }
@@ -243,8 +228,13 @@ class AIChatController extends GetxController {
       }
     } else {
       try {
-        final response = await aiService.chatSync(request);
-        final reply = response.choices.first.message?.content ?? '';
+        final response = await aiBoxFacadeService.sendMessage(
+          providerId: 'default', // TODO: 需要从当前provider获取
+          message: text,
+          model: currentModel.value.isNotEmpty ? currentModel.value : null,
+          temperature: temperature,
+        );
+        final reply = response.choices.first.message.content;
         final assistant = ChatMessage(role: ChatRole.CHAT_ROLE_ASSISTANT, content: reply, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
         messages.add(assistant);
         list.add(assistant);
@@ -458,7 +448,7 @@ class AIChatController extends GetxController {
     // 取最近一条用户消息作为标题摘要
     ChatMessage? lastUser;
     for (var i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role == 'user') {
+      if (messages[i].role == ChatRole.CHAT_ROLE_USER) {
         lastUser = messages[i];
         break;
       }

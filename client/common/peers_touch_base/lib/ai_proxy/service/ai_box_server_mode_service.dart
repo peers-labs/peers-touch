@@ -11,4 +11,14 @@ class AiBoxServerModeService implements IAiBoxService {
   Future<ChatCompletionResponse> chatSync(ChatCompletionRequest request) {
     throw UnimplementedError('Server mode is not implemented yet.');
   }
+
+  @override
+  Future<List<String>> getModels(String providerId) {
+    throw UnimplementedError('Server mode is not implemented yet.');
+  }
+
+  @override
+  Future<bool> testConnection(String providerId) {
+    throw UnimplementedError('Server mode is not implemented yet.');
+  }
 }

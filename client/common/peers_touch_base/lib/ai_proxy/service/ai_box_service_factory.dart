@@ -2,7 +2,7 @@ import 'package:peers_touch_base/ai_proxy/adapter/ai_proxy_adapter.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_client_mode_service.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_server_mode_service.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_service.dart';
-import 'package:peers_touch_base/network/dio/http_service.dart';
+import 'package:peers_touch_base/ai_proxy/service/ai_box_facade_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_impl.dart';
 import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart' as frame;
 
@@ -28,7 +28,7 @@ class AiBoxServiceFactory {
   static IAiBoxService getService({
     AiBoxMode mode = AiBoxMode.client,
     String? baseUrl,
-    IHttpService? httpService,
+    HttpServiceImpl? httpService,
   }) {
     switch (mode) {
       case AiBoxMode.client:
@@ -44,5 +44,10 @@ class AiBoxServiceFactory {
         // throw UnimplementedError('Server mode is not implemented yet.');
         return AiBoxServerModeService();
     }
+  }
+
+  /// 创建AI Box门面服务（包含provider管理、模型管理、聊天功能）
+  static AiBoxFacadeService createFacadeService() {
+    return AiBoxFacadeService();
   }
 }
