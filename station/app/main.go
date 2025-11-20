@@ -11,6 +11,7 @@ import (
 	// default plugins
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite"
 )
@@ -25,6 +26,7 @@ func main() {
 		node.WithPrivateKey("private.pem"),
 		node.Name("peers-touch-station"),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("/debug")),
+		server.WithSubServer("station", bootstrap.NewBootstrapServer),
 		// Use the new router pattern for station endpoints
 		// server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
 	)
