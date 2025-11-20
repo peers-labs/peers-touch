@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 
 /// AI Box本地存储服务
 /// 统管管理、消息、topic等业务存储逻辑
@@ -15,29 +16,39 @@ class AiBoxLocalStorageService {
   /// 获取所有Provider
   Future<List<Map<String, dynamic>>> getAllProviders() async {
     try {
-      final providersJson = await _localStorage.get('ai_box_providers');
-      if (providersJson == null) return [];
-      
-      final List<dynamic> providersList = json.decode(providersJson);
+      final List<dynamic>? providersList = await _localStorage.get<List<dynamic>>('ai_box_providers');
+      if (providersList == null) return [];
       return providersList.cast<Map<String, dynamic>>();
     } catch (e) {
       throw StorageException('获取Provider列表失败: $e');
     }
   }
 
+  /// 根据ID获取Provider
+  Future<Map<String, dynamic>?> getProvider(String providerId) async {
+    try {
+      final providers = await getAllProviders();
+      final provider = providers.firstWhere((p) => p['id'] == providerId, orElse: () => {});
+      return provider.isEmpty ? null : provider;
+    } catch (e) {
+      throw StorageException('获取Provider失败: $e');
+    }
+  }
+
   /// 保存Provider
-  Future<void> saveProvider(Map<String, dynamic> provider) async {
+  Future<void> saveProvider(Provider provider) async {
     try {
       final List<Map<String, dynamic>> providers = await getAllProviders();
-      final existingIndex = providers.indexWhere((p) => p['id'] == provider['id']);
+      final existingIndex = providers.indexWhere((p) => p['id'] == provider.id);
       
+      final mapProvider =  _providerToMap(provider);
       if (existingIndex != -1) {
-        providers[existingIndex] = provider;
+        providers[existingIndex] = _providerToMap(provider);
       } else {
-        providers.add(provider);
+        providers.add(mapProvider);
       }
       
-      await _localStorage.set('ai_box_providers', json.encode(providers));
+      await _localStorage.set('ai_box_providers', providers);
     } catch (e) {
       throw StorageException('保存Provider失败: $e');
     }
@@ -48,22 +59,27 @@ class AiBoxLocalStorageService {
     try {
       final List<Map<String, dynamic>> providers = await getAllProviders();
       providers.removeWhere((p) => p['id'] == providerId);
-      await _localStorage.set('ai_box_providers', json.encode(providers));
+      await _localStorage.set('ai_box_providers', providers);
     } catch (e) {
       throw StorageException('删除Provider失败: $e');
     }
   }
 
-  /// 设置默认Provider
-  Future<void> setDefaultProvider(String providerId) async {
+  /// 获取默认Provider ID
+  Future<String?> getDefaultProviderId() async {
     try {
-      final List<Map<String, dynamic>> providers = await getAllProviders();
-      for (var provider in providers) {
-        provider['isDefault'] = provider['id'] == providerId;
-      }
-      await _localStorage.set('ai_box_providers', json.encode(providers));
+      return await _localStorage.get<String>('ai_box_default_provider_id');
     } catch (e) {
-      throw StorageException('设置默认Provider失败: $e');
+      throw StorageException('获取默认Provider ID失败: $e');
+    }
+  }
+
+  /// 设置默认Provider ID
+  Future<void> setDefaultProviderId(String providerId) async {
+    try {
+      await _localStorage.set('ai_box_default_provider_id', providerId);
+    } catch (e) {
+      throw StorageException('设置默认Provider ID失败: $e');
     }
   }
 
@@ -249,6 +265,27 @@ class AiBoxLocalStorageService {
     } catch (e) {
       throw StorageException('获取同步状态失败: $e');
     }
+  }
+
+    /// 将Protobuf Provider转换为Map
+  Map<String, dynamic> _providerToMap(Provider provider) {
+    return {
+      'id': provider.id,
+      'name': provider.name,
+      'peersUserId': provider.peersUserId,
+      'sort': provider.sort,
+      'enabled': provider.enabled,
+      'checkModel': provider.checkModel,
+      'logo': provider.logo,
+      'description': provider.description,
+      'keyVaults': provider.keyVaults,
+      'sourceType': provider.sourceType,
+      'settingsJson': provider.settingsJson,
+      'configJson': provider.configJson,
+      'accessedAt': provider.accessedAt.toDateTime().millisecondsSinceEpoch,
+      'createdAt': provider.createdAt.toDateTime().millisecondsSinceEpoch,
+      'updatedAt': provider.updatedAt.toDateTime().millisecondsSinceEpoch,
+    };
   }
 }
 

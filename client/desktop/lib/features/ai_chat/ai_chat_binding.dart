@@ -1,9 +1,5 @@
 import 'package:get/get.dart';
 
-import 'package:peers_touch_base/ai_proxy/adapter/ai_proxy_adapter.dart';
-import 'package:peers_touch_base/ai_proxy/provider/provider_manager.dart';
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
@@ -24,10 +20,6 @@ class AIChatBinding extends Bindings {
         ),
         permanent: true,
       );
-    }
-
-    if (!Get.isRegistered<ProviderManager>()) {
-      Get.put(ProviderManager(aiBoxService: AiBoxService(httpService: HttpServiceLocator().httpService)));
     }
 
     if (!Get.isRegistered<ProviderController>()) {
