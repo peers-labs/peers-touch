@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
@@ -34,6 +35,7 @@ type libp2pTransport struct {
 	opts        transport.Options
 	protocolID  protocol.ID
 	initialized bool
+	mtx         sync.Mutex
 }
 
 type libp2pSocket struct {
@@ -72,6 +74,13 @@ func NewTransport(opts ...option.Option) transport.Transport {
 }
 
 func (t *libp2pTransport) Init(opts ...option.Option) error {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+
+	if t.initialized {
+		return nil
+	}
+
 	for _, o := range opts {
 		t.opts.Apply(o)
 	}

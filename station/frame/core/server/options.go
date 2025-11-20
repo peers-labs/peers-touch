@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
 // region server options
@@ -38,6 +39,8 @@ type Options struct {
 	// ReadyChan is a channel that will be closed when the server is ready
 	// it's used to signal the main process that the server is ready
 	ReadyChan chan interface{}
+
+	Transport transport.Transport
 }
 
 // WithAddress sets the server address
@@ -111,6 +114,12 @@ func WithSubServer(name string, newFunc func(opts ...option.Option) Subserver, s
 func WithReadyChan(c chan interface{}) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.ReadyChan = c
+	})
+}
+
+func WithTransport(t transport.Transport) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		opts.Transport = t
 	})
 }
 
