@@ -10,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
+	native2 "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/transport"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
@@ -89,6 +90,13 @@ func (s *native) initComponents(ctx context.Context) error {
 		return err
 	}
 
+	// TODO init transport with option
+	// It's important to note that libp2p transport is used by default.
+	// Transport handles libp2p host for the communication between nodes.
+	// It should be able to send and receive messages.
+	// It should also be able to handle the connection establishment and disconnection.
+	transportLibp2p := native2.NewTransport()
+
 	// init registry
 	if s.opts.Registry == nil {
 		registryName := config.Get("peers.registry.name").String(plugin.NativePluginName)
@@ -131,7 +139,7 @@ func (s *native) initComponents(ctx context.Context) error {
 			}
 		}
 	}
-	if err := s.opts.Server.Init(s.opts.ServerOptions...); err != nil {
+	if err := s.opts.Server.Init(append([]option.Option{server.WithTransport(transportLibp2p)}, s.opts.ServerOptions...)...); err != nil {
 		return err
 	}
 
@@ -149,7 +157,7 @@ func (s *native) initComponents(ctx context.Context) error {
 		s.opts.Client = plugin.ClientPlugins[clientName].New()
 	}
 
-	if err := s.opts.Client.Init(append([]option.Option{client.Registry(s.opts.Registry)}, s.opts.ClientOptions...)...); err != nil {
+	if err := s.opts.Client.Init(append([]option.Option{client.Transport(transportLibp2p), client.Registry(s.opts.Registry)}, s.opts.ClientOptions...)...); err != nil {
 		return err
 	}
 
