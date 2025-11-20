@@ -9,6 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
 const (
@@ -47,6 +48,12 @@ type StorePlugin interface {
 	Plugin
 	Options() []option.Option
 	New(...option.Option) store.Store
+}
+
+type TransportPlugin interface {
+	Plugin
+	Options() []option.Option
+	New(...option.Option) transport.Transport
 }
 
 type RegistryPlugin interface {
