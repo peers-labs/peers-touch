@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -182,7 +184,16 @@ class AIChatPage extends GetView<AIChatController> {
                 if (Get.isRegistered<ProviderController>()) {
                   final pc = Get.find<ProviderController>();
                   grouped = Map.fromEntries(
-                    pc.providers.map((p) => MapEntry(p.name, p.models)),
+                    pc.providers.map((p) {
+                      // 从settingsJson中解析模型列表
+                      final settings = p.settingsJson.isNotEmpty 
+                          ? jsonDecode(p.settingsJson) as Map<String, dynamic>
+                          : {};
+                      final providerModels = (settings['models'] as List<dynamic>? ?? [])
+                          .whereType<String>()
+                          .toList();
+                      return MapEntry(p.name, providerModels);
+                    }),
                   );
                 }
                 return ChatInputBar(

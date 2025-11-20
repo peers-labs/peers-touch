@@ -14,6 +14,22 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
+@$core.Deprecated('Use providerTypeDescriptor instead')
+const ProviderType$json = {
+  '1': 'ProviderType',
+  '2': [
+    {'1': 'openai', '2': 0},
+    {'1': 'ollama', '2': 1},
+    {'1': 'deepseek', '2': 2},
+    {'1': 'custom', '2': 1001},
+  ],
+};
+
+/// Descriptor for `ProviderType`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List providerTypeDescriptor = $convert.base64Decode(
+    'CgxQcm92aWRlclR5cGUSCgoGb3BlbmFpEAASCgoGb2xsYW1hEAESDAoIZGVlcHNlZWsQAhILCg'
+    'ZjdXN0b20Q6Qc=');
+
 @$core.Deprecated('Use providerDescriptor instead')
 const Provider$json = {
   '1': 'Provider',
@@ -101,13 +117,7 @@ const ProviderInfo$json = {
     {'1': 'logo', '3': 4, '4': 1, '5': 9, '10': 'logo'},
     {'1': 'source_type', '3': 5, '4': 1, '5': 9, '10': 'sourceType'},
     {'1': 'enabled', '3': 6, '4': 1, '5': 8, '10': 'enabled'},
-    {
-      '1': 'config_schema_json',
-      '3': 7,
-      '4': 1,
-      '5': 9,
-      '10': 'configSchemaJson'
-    },
+    {'1': 'schema_json', '3': 7, '4': 1, '5': 9, '10': 'schemaJson'},
   ],
 };
 
@@ -115,5 +125,5 @@ const ProviderInfo$json = {
 final $typed_data.Uint8List providerInfoDescriptor = $convert.base64Decode(
     'CgxQcm92aWRlckluZm8SDgoCaWQYASABKAlSAmlkEhIKBG5hbWUYAiABKAlSBG5hbWUSIAoLZG'
     'VzY3JpcHRpb24YAyABKAlSC2Rlc2NyaXB0aW9uEhIKBGxvZ28YBCABKAlSBGxvZ28SHwoLc291'
-    'cmNlX3R5cGUYBSABKAlSCnNvdXJjZVR5cGUSGAoHZW5hYmxlZBgGIAEoCFIHZW5hYmxlZBIsCh'
-    'Jjb25maWdfc2NoZW1hX2pzb24YByABKAlSEGNvbmZpZ1NjaGVtYUpzb24=');
+    'cmNlX3R5cGUYBSABKAlSCnNvdXJjZVR5cGUSGAoHZW5hYmxlZBgGIAEoCFIHZW5hYmxlZBIfCg'
+    'tzY2hlbWFfanNvbhgHIAEoCVIKc2NoZW1hSnNvbg==');
