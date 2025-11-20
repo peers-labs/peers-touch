@@ -7,6 +7,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/codec"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
 // region server options
@@ -31,7 +32,8 @@ const (
 type Options struct {
 	*option.Options
 
-	Registry registry.Registry
+	Registry  registry.Registry
+	Transport transport.Transport
 
 	// Default Call Options
 	CallOptions CallOptions
@@ -47,6 +49,12 @@ func WithInit() option.Option {
 func Registry(r registry.Registry) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.Registry = r
+	})
+}
+
+func Transport(t transport.Transport) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.Transport = t
 	})
 }
 
