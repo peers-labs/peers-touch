@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/features/ai_chat/model/provider.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as base;
+import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 
@@ -8,8 +11,8 @@ class ProviderController extends GetxController {
   final ProviderService _providerService = ProviderService();
   
   // 状态变量
-  final providers = <Provider>[].obs;
-  final currentProvider = Rx<Provider?>(null);
+  final providers = <base.Provider>[].obs;
+  final currentProvider = Rx<base.Provider?>(null);
   final isLoading = false.obs;
   final selectedProviderId = ''.obs;
   
@@ -50,24 +53,25 @@ class ProviderController extends GetxController {
       final now = DateTime.now().toUtc();
       final providerId = '${sourceType.toLowerCase()}-${now.millisecondsSinceEpoch}';
       
-      final newProvider = Provider(
+      final newProvider = base.Provider(
         id: providerId,
         name: name,
         peersUserId: 'default', // TODO: 获取当前用户ID
         sort: providers.length,
         enabled: true,
         sourceType: sourceType,
-        settings: {
+        checkModel: _getDefaultModels(sourceType).first,
+        settingsJson: jsonEncode({
           'baseUrl': baseUrl ?? _getDefaultBaseUrl(sourceType),
           'models': _getDefaultModels(sourceType),
-        },
-        config: {
+        }),
+        configJson: jsonEncode({
           'temperature': 0.7,
           'maxTokens': 2048,
-        },
-        accessedAt: now,
-        createdAt: now,
-        updatedAt: now,
+        }),
+        accessedAt: Timestamp.fromDateTime(now),
+        createdAt: Timestamp.fromDateTime(now),
+        updatedAt: Timestamp.fromDateTime(now),
       );
       
       await _providerService.saveProvider(newProvider);
@@ -79,12 +83,13 @@ class ProviderController extends GetxController {
 
       // 获取模型列表并更新
       final models = await fetchProviderModels(providerId);
-      final updatedProvider = newProvider.copyWith(
-        settings: {
-          ...newProvider.settings!,
-          'models': models,
-        },
-      );
+      final settings = jsonDecode(newProvider.settingsJson) as Map<String, dynamic>;
+      settings['models'] = models;
+      
+      final updatedProvider = newProvider.rebuild((b) => b
+        ..settingsJson = jsonEncode(settings)
+        ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()));
+      
       await _providerService.saveProvider(updatedProvider);
       
       await loadProviders();
@@ -95,11 +100,10 @@ class ProviderController extends GetxController {
   }
   
   /// 更新提供商
-  Future<void> updateProvider(Provider provider) async {
+  Future<void> updateProvider(base.Provider provider) async {
     try {
-      final updatedProvider = provider.copyWith(
-        updatedAt: DateTime.now().toUtc(),
-      );
+      final updatedProvider = provider.rebuild((b) => b
+        ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()));
       
       await _providerService.saveProvider(updatedProvider);
       await loadProviders();
@@ -112,7 +116,7 @@ class ProviderController extends GetxController {
   /// 删除提供商
   Future<void> deleteProvider(String providerId) async {
     try {
-      await _providerService.deleteProvider(providerId, 'default');
+      await _providerService.deleteProvider(providerId);
       await _deleteApiKey(providerId);
       await loadProviders();
       Get.snackbar('成功', '提供商删除成功');
@@ -149,9 +153,11 @@ class ProviderController extends GetxController {
       }
       
       // 创建临时提供商用于测试
-      final testProvider = provider.copyWith(
-        keyVaults: apiKey,
-      );
+      final settings = jsonDecode(provider.settingsJson) as Map<String, dynamic>;
+      settings['apiKey'] = apiKey;
+      
+      final testProvider = provider.rebuild((b) => b
+        ..settingsJson = jsonEncode(settings));
       
       isLoading.value = true;
       final isConnected = await _providerService.testProviderConnection(testProvider);
@@ -179,9 +185,11 @@ class ProviderController extends GetxController {
       }
       
       // 创建临时提供商用于获取模型
-      final testProvider = provider.copyWith(
-        keyVaults: apiKey,
-      );
+      final settings = jsonDecode(provider.settingsJson) as Map<String, dynamic>;
+      settings['apiKey'] = apiKey;
+      
+      final testProvider = provider.rebuild((b) => b
+        ..settingsJson = jsonEncode(settings));
       
       return await _providerService.fetchProviderModels(testProvider);
     } catch (e) {
