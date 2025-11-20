@@ -4,8 +4,8 @@ import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
-import 'package:peers_touch_desktop/core/services/setting_manager.dart';
-import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
+
+import 'package:peers_touch_base/ai_proxy/service/ai_box_service_factory.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
 /// AI Provider设置模块 - 演示业务模块设置注入
@@ -124,14 +124,11 @@ class AIProviderSettings {
         onTap: () async {
           final storage = Get.find<LocalStorage>();
           final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
-          final service = AIServiceFactory.fromName(provider);
-          if (!service.isConfigured) {
-            Get.snackbar('提示', provider == 'Ollama' ? '请先配置 Ollama 接口地址' : '请先配置 OpenAI API 密钥');
-            return;
-          }
+          final aiBoxFacadeService = AiBoxServiceFactory.createFacadeService();
+          
           try {
             Get.snackbar('拉取模型', '从 $provider 拉取模型列表...');
-            final models = await service.fetchModels();
+            final models = await aiBoxFacadeService.getProviderModels(provider);
             final controller = Get.find<SettingController>();
             // 更新下拉选项
             controller.updateSettingOptions('module_ai_provider', 'model_selection', models);
@@ -165,10 +162,10 @@ class AIProviderSettings {
         onTap: () async {
           final storage = Get.find<LocalStorage>();
           final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
-          final service = AIServiceFactory.fromName(provider);
+          final aiBoxFacadeService = AiBoxServiceFactory.createFacadeService();
           try {
             Get.snackbar('连接测试', '开始测试 $provider 连接...');
-            final ok = await service.testConnection();
+            final ok = await aiBoxFacadeService.testProviderConnection(provider);
             if (ok) {
               Get.snackbar('连接测试', '$provider 连接正常');
             } else {

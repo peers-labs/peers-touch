@@ -177,10 +177,6 @@ class ProviderSettingsPage extends GetView<ProviderController> {
         return Icons.smart_toy_outlined;
       case 'ollama':
         return Icons.computer_outlined;
-      case 'anthropic':
-        return Icons.psychology_outlined;
-      case 'google':
-        return Icons.android_outlined;
       default:
         return Icons.cloud_outlined;
     }

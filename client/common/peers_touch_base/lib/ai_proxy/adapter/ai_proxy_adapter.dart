@@ -23,4 +23,13 @@ class AiProxyAdapter {
     }
     return null;
   }
+
+  RichProvider? getProvider(String providerId) {
+    for (final provider in _providers) {
+      if (provider.id == providerId) {
+        return provider;
+      }
+    }
+    return null;
+  }
 }

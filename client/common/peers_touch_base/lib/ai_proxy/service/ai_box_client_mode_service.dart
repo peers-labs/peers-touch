@@ -53,4 +53,36 @@ class AiBoxClientModeService implements IAiBoxService {
       throw e;
     }
   }
+
+  @override
+  Future<List<String>> getModels(String providerId) async {
+    try {
+      // 通过adapter获取provider，然后获取其支持的模型列表
+      final provider = _adapter.getProvider(providerId);
+      if (provider == null) {
+        throw Exception('Provider "$providerId" not found.');
+      }
+      
+      // 返回provider支持的模型列表
+      return provider.getSupportedModels();
+    } catch (e) {
+      throw e;
+    }
+  }
+
+  @override
+  Future<bool> testConnection(String providerId) async {
+    try {
+      // 通过adapter获取provider
+      final provider = _adapter.getProvider(providerId);
+      if (provider == null) {
+        return false;
+      }
+      
+      // 使用provider的测试连接功能
+      return await provider.testConnection();
+    } catch (e) {
+      return false;
+    }
+  }
 }
