@@ -10,7 +10,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
-	native2 "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/transport"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
@@ -95,7 +94,23 @@ func (s *native) initComponents(ctx context.Context) error {
 	// Transport handles libp2p host for the communication between nodes.
 	// It should be able to send and receive messages.
 	// It should also be able to handle the connection establishment and disconnection.
-	transportLibp2p := native2.NewTransport()
+	if s.opts.Transport == nil {
+		transportName := config.Get("peers.node.transport.name").String(plugin.NativePluginName)
+		if len(transportName) > 0 {
+			if plugin.TransportPlugins[transportName] == nil {
+				logger.Errorf(ctx, "transport %s not found, use native by default", transportName)
+				transportName = plugin.NativePluginName
+			}
+		}
+		logger.Infof(ctx, "initial transport's name is: %s", transportName)
+		transportPlugin := plugin.TransportPlugins[transportName]
+		s.opts.Transport = transportPlugin.New()
+		s.opts.TransportOptions = append(s.opts.TransportOptions, transportPlugin.Options()...)
+	}
+
+	if err := s.opts.Transport.Init(s.opts.TransportOptions...); err != nil {
+		return err
+	}
 
 	// init registry
 	if s.opts.Registry == nil {
@@ -139,7 +154,7 @@ func (s *native) initComponents(ctx context.Context) error {
 			}
 		}
 	}
-	if err := s.opts.Server.Init(append([]option.Option{server.WithTransport(transportLibp2p)}, s.opts.ServerOptions...)...); err != nil {
+	if err := s.opts.Server.Init(append([]option.Option{server.WithTransport(s.opts.Transport)}, s.opts.ServerOptions...)...); err != nil {
 		return err
 	}
 
@@ -157,7 +172,7 @@ func (s *native) initComponents(ctx context.Context) error {
 		s.opts.Client = plugin.ClientPlugins[clientName].New()
 	}
 
-	if err := s.opts.Client.Init(append([]option.Option{client.Transport(transportLibp2p), client.Registry(s.opts.Registry)}, s.opts.ClientOptions...)...); err != nil {
+	if err := s.opts.Client.Init(append([]option.Option{client.Transport(s.opts.Transport), client.Registry(s.opts.Registry)}, s.opts.ClientOptions...)...); err != nil {
 		return err
 	}
 

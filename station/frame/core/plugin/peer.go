@@ -9,4 +9,5 @@ var (
 	StorePlugins     = map[string]StorePlugin{}
 	RegistryPlugins  = map[string]RegistryPlugin{}
 	SubserverPlugins = map[string]SubserverPlugin{}
+	TransportPlugins = map[string]TransportPlugin{}
 )

@@ -5,6 +5,11 @@ peers:
   config:
     hierarchy-merge: true
   node:
+    transport:
+      name: native
+      native:
+        
+        
     server:
       name: hertz
       address: :18080
