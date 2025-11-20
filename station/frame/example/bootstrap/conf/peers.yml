@@ -32,9 +32,6 @@ peers:
           password: free
       native:
         mdns-enable: true
-        bootstrap-enable: true
         libp2p-identity-key-file: client.key
-        bootstrap-listen-addrs:
-          - /ip4/0.0.0.0/tcp/33333
         bootstrap-nodes:
           -

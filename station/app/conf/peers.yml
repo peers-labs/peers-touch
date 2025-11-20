@@ -21,8 +21,5 @@ peers:
       interval: 180s
       native:
         mdns-enable: true
-        bootstrap-enable: true
-        bootstrap-listen-addr:
-          - /ip4/0.0.0.0/tcp/4001
         bootstrap-nodes:
           - /ip4/127.0.0.1/tcp/5001/p2p/12D3KooWDcXKxox7pJQWo8Yww3KLgFaxES1VpRfnmnnCMJwZzgns

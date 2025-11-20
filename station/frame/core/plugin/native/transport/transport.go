@@ -138,16 +138,19 @@ func (t *libp2pTransport) Dial(addr string, opts ...transport.DialOption) (trans
 		return nil, fmt.Errorf("invalid multiaddr: %w", err)
 	}
 
-	// Extract peer ID
-	peerID, err := peer.IDFromP2PAddr(maddr)
+	// Extract addr info and peer ID
+	addrInfo, err := peer.AddrInfoFromP2pAddr(maddr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid peer ID: %w", err)
+		return nil, fmt.Errorf("invalid peer multiaddr: %w", err)
 	}
 
 	// Apply dial options
 	dialOpts := &transport.DialOptions{}
 	for _, o := range opts {
 		o(dialOpts)
+	}
+	if dialOpts.Context == nil {
+		dialOpts.Context = context.Background()
 	}
 
 	// Determine timeout (default to 30 seconds if not specified)
@@ -157,21 +160,16 @@ func (t *libp2pTransport) Dial(addr string, opts ...transport.DialOption) (trans
 	}
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(dialOpts.Context, timeout)
 	defer cancel()
 
 	// Connect to peer
-	addrInfo := peer.AddrInfo{
-		ID:    peerID,
-		Addrs: []multiaddr.Multiaddr{maddr},
-	}
-
-	if err := t.host.Connect(ctx, addrInfo); err != nil {
+	if err = t.host.Connect(ctx, *addrInfo); err != nil {
 		return nil, fmt.Errorf("failed to connect to peer: %w", err)
 	}
 
 	// Open stream
-	stream, err := t.host.NewStream(ctx, peerID, t.protocolID)
+	stream, err := t.host.NewStream(ctx, addrInfo.ID, t.protocolID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open stream: %w", err)
 	}
@@ -179,7 +177,7 @@ func (t *libp2pTransport) Dial(addr string, opts ...transport.DialOption) (trans
 	return &libp2pClient{
 		host:       t.host,
 		protocolID: t.protocolID,
-		remotePeer: peerID,
+		remotePeer: addrInfo.ID,
 		remoteAddr: maddr,
 		stream:     stream,
 	}, nil

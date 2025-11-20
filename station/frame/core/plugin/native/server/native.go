@@ -7,10 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/transport"
+)
+
+var (
+	_ server.Server = (*Server)(nil)
 )
 
 // Server is a golang native web server based on net/http.
@@ -20,14 +24,19 @@ type Server struct {
 	warmupLk   sync.RWMutex
 	httpServer *http.Server
 	mux        *http.ServeMux
-	libp2pHost host.Host
 	once       sync.Once
+
+	transport transport.Transport
 }
 
 func (s *Server) Init(option ...option.Option) (err error) {
 	err = s.BaseServer.Init(option...)
 	if err != nil {
 		return err
+	}
+
+	if s.transport == nil {
+		panic("transport is necessary")
 	}
 
 	return err

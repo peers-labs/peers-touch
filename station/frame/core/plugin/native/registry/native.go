@@ -147,23 +147,6 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		libp2p.EnableRelay(),
 	)
 
-	if r.extOpts.bootstrapEnable {
-		// Define the listen address
-		// todo, port user-defined
-		addrs := r.extOpts.bootstrapListenAddrs
-		if len(addrs) == 0 {
-			addrs = append(addrs, "/ip4/0.0.0.0/tcp/4001")
-		}
-
-		for _, addr := range addrs {
-			listenAddr, err := multiaddr.NewMultiaddr(addr)
-			if err != nil {
-				panic(err)
-			}
-			hostOptions = append(hostOptions, libp2p.ListenAddrs(listenAddr))
-		}
-	}
-
 	// Initialize libp2p host
 	h, err := libp2p.New(
 		hostOptions...,
@@ -414,7 +397,7 @@ func (r *nativeRegistry) Register(ctx context.Context, registration *registry.Re
 	}
 
 	doNow := make(chan struct{})
-	go func() {
+	go func(registration *registry.Registration, regOpts *registry.RegisterOptions) {
 		ticker := time.NewTicker(r.options.Interval)
 		defer ticker.Stop()
 
@@ -436,7 +419,7 @@ func (r *nativeRegistry) Register(ctx context.Context, registration *registry.Re
 				return
 			}
 		}
-	}()
+	}(registration, regOpts)
 
 	doNow <- struct{}{}
 	return nil

@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 /// Opens a persistent database connection.
@@ -27,7 +26,12 @@ class DriftConnectionManager {
     }
 
     final newConnection = LazyDatabase(() async {
-      final dbFolder = await getApplicationDocumentsDirectory();
+      // 使用当前工作目录作为数据库存储位置
+      final currentDir = Directory.current;
+      final dbFolder = Directory(p.join(currentDir.path, 'data'));
+      if (!await dbFolder.exists()) {
+        await dbFolder.create(recursive: true);
+      }
       final file = File(p.join(dbFolder.path, dbName));
       return NativeDatabase(file);
     });

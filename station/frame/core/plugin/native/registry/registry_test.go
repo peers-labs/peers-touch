@@ -47,7 +47,6 @@ func TestNativeRegistry_Init_WithMDNS(t *testing.T) {
 		registry.WithStore(&mockStore{}),
 		registry.WithPrivateKey("test-private-key"),
 		WithMDNSEnable(true),
-		WithBootstrapEnable(false), // Disable bootstrap for this test
 		WithLibp2pIdentityKeyFile("test.key"),
 	}
 
@@ -55,31 +54,9 @@ func TestNativeRegistry_Init_WithMDNS(t *testing.T) {
 	// We expect this to fail due to missing key file, but we can verify the options are set
 	assert.Error(t, err) // Expected due to missing key file
 	assert.True(t, reg.extOpts.mdnsEnable)
-	assert.False(t, reg.extOpts.bootstrapEnable)
 }
 
-func TestNativeRegistry_Init_WithBootstrap(t *testing.T) {
-	ctx := context.Background()
-	reg := NewRegistry(option.WithRootCtx(ctx)).(*nativeRegistry)
-
-	// Create test options with bootstrap enabled
-	opts := []option.Option{
-		option.WithRootCtx(ctx),
-		registry.WithStore(&mockStore{}),
-		registry.WithPrivateKey("test-private-key"),
-		WithMDNSEnable(false),
-		WithBootstrapEnable(true),
-		WithLibp2pIdentityKeyFile("test.key"),
-		WithBootstrapListenAddrs("/ip4/0.0.0.0/tcp/4001"),
-	}
-
-	err := reg.Init(ctx, opts...)
-	// We expect this to fail due to missing key file, but we can verify the options are set
-	assert.Error(t, err) // Expected due to missing key file
-	assert.False(t, reg.extOpts.mdnsEnable)
-	assert.True(t, reg.extOpts.bootstrapEnable)
-	assert.Contains(t, reg.extOpts.bootstrapListenAddrs, "/ip4/0.0.0.0/tcp/4001")
-}
+// Removed: bootstrap enable/listen addrs are no longer part of registry options
 
 func TestNativeRegistry_Init_WithTURN(t *testing.T) {
 	ctx := context.Background()
@@ -102,7 +79,6 @@ func TestNativeRegistry_Init_WithTURN(t *testing.T) {
 		registry.WithPrivateKey("test-private-key"),
 		registry.WithTurnConfig(turnConfig),
 		WithMDNSEnable(false),
-		WithBootstrapEnable(false),
 		WithLibp2pIdentityKeyFile("test.key"),
 	}
 
@@ -134,9 +110,7 @@ func TestNativeRegistry_AllDiscoveryMechanisms(t *testing.T) {
 		registry.WithPrivateKey("test-private-key"),
 		registry.WithTurnConfig(turnConfig),
 		WithMDNSEnable(true),
-		WithBootstrapEnable(true),
 		WithLibp2pIdentityKeyFile("test.key"),
-		WithBootstrapListenAddrs("/ip4/0.0.0.0/tcp/4001"),
 		WithBootstrapNodes([]string{"/ip4/127.0.0.1/tcp/5001/p2p/12D3KooWR1QjveRKiKMQYQHHbzykFmLRrqHrcrWpBwro8t7mSKwg"}),
 	}
 
@@ -146,11 +120,9 @@ func TestNativeRegistry_AllDiscoveryMechanisms(t *testing.T) {
 
 	// Verify all discovery mechanisms are configured
 	assert.True(t, reg.extOpts.mdnsEnable, "mDNS should be enabled")
-	assert.True(t, reg.extOpts.bootstrapEnable, "Bootstrap should be enabled")
 	assert.True(t, reg.options.TurnConfig.Enabled, "TURN should be enabled")
 
 	// Verify configuration details
-	assert.Contains(t, reg.extOpts.bootstrapListenAddrs, "/ip4/0.0.0.0/tcp/4001")
 	assert.Len(t, reg.extOpts.bootstrapNodes, 1)
 	assert.Equal(t, "stun.l.google.com:19302", reg.options.TurnConfig.ServerAddresses[0])
 }
@@ -178,58 +150,39 @@ func TestNativeRegistry_BootstrapStatusTracking(t *testing.T) {
 
 func TestNativeRegistry_DiscoveryMechanismOptions(t *testing.T) {
 	tests := []struct {
-		name              string
-		mdnsEnable        bool
-		bootstrapEnable   bool
-		turnEnabled       bool
-		expectedMDNS      bool
-		expectedBootstrap bool
-		expectedTURN      bool
+		name         string
+		mdnsEnable   bool
+		turnEnabled  bool
+		expectedMDNS bool
+		expectedTURN bool
 	}{
 		{
-			name:              "All disabled",
-			mdnsEnable:        false,
-			bootstrapEnable:   false,
-			turnEnabled:       false,
-			expectedMDNS:      false,
-			expectedBootstrap: false,
-			expectedTURN:      false,
+			name:         "All disabled",
+			mdnsEnable:   false,
+			turnEnabled:  false,
+			expectedMDNS: false,
+			expectedTURN: false,
 		},
 		{
-			name:              "Only mDNS enabled",
-			mdnsEnable:        true,
-			bootstrapEnable:   false,
-			turnEnabled:       false,
-			expectedMDNS:      true,
-			expectedBootstrap: false,
-			expectedTURN:      false,
+			name:         "Only mDNS enabled",
+			mdnsEnable:   true,
+			turnEnabled:  false,
+			expectedMDNS: true,
+			expectedTURN: false,
 		},
 		{
-			name:              "Only bootstrap enabled",
-			mdnsEnable:        false,
-			bootstrapEnable:   true,
-			turnEnabled:       false,
-			expectedMDNS:      false,
-			expectedBootstrap: true,
-			expectedTURN:      false,
+			name:         "Only TURN enabled",
+			mdnsEnable:   false,
+			turnEnabled:  true,
+			expectedMDNS: false,
+			expectedTURN: true,
 		},
 		{
-			name:              "Only TURN enabled",
-			mdnsEnable:        false,
-			bootstrapEnable:   false,
-			turnEnabled:       true,
-			expectedMDNS:      false,
-			expectedBootstrap: false,
-			expectedTURN:      true,
-		},
-		{
-			name:              "All enabled",
-			mdnsEnable:        true,
-			bootstrapEnable:   true,
-			turnEnabled:       true,
-			expectedMDNS:      true,
-			expectedBootstrap: true,
-			expectedTURN:      true,
+			name:         "Both enabled",
+			mdnsEnable:   true,
+			turnEnabled:  true,
+			expectedMDNS: true,
+			expectedTURN: true,
 		},
 	}
 
@@ -254,7 +207,6 @@ func TestNativeRegistry_DiscoveryMechanismOptions(t *testing.T) {
 				registry.WithPrivateKey("test-private-key"),
 				registry.WithTurnConfig(turnConfig),
 				WithMDNSEnable(tt.mdnsEnable),
-				WithBootstrapEnable(tt.bootstrapEnable),
 				WithLibp2pIdentityKeyFile("test.key"),
 			}
 
@@ -263,7 +215,6 @@ func TestNativeRegistry_DiscoveryMechanismOptions(t *testing.T) {
 			reg.extOpts = reg.options.ExtOptions.(*options)
 
 			assert.Equal(t, tt.expectedMDNS, reg.extOpts.mdnsEnable)
-			assert.Equal(t, tt.expectedBootstrap, reg.extOpts.bootstrapEnable)
 			assert.Equal(t, tt.expectedTURN, reg.options.TurnConfig.Enabled)
 		})
 	}

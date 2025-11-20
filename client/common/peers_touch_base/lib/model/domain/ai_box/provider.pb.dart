@@ -18,6 +18,8 @@ import '../../google/protobuf/timestamp.pb.dart' as $0;
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
+export 'provider.pbenum.dart';
+
 /// =================================================
 /// 1. Provider (Domain Model)
 /// 核心领域模型，与数据库结构对齐，是系统内部的权威表示。
@@ -396,7 +398,7 @@ class ProviderInfo extends $pb.GeneratedMessage {
     $core.String? logo,
     $core.String? sourceType,
     $core.bool? enabled,
-    $core.String? configSchemaJson,
+    $core.String? schemaJson,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -405,7 +407,7 @@ class ProviderInfo extends $pb.GeneratedMessage {
     if (logo != null) result.logo = logo;
     if (sourceType != null) result.sourceType = sourceType;
     if (enabled != null) result.enabled = enabled;
-    if (configSchemaJson != null) result.configSchemaJson = configSchemaJson;
+    if (schemaJson != null) result.schemaJson = schemaJson;
     return result;
   }
 
@@ -429,7 +431,7 @@ class ProviderInfo extends $pb.GeneratedMessage {
     ..aOS(4, _omitFieldNames ? '' : 'logo')
     ..aOS(5, _omitFieldNames ? '' : 'sourceType')
     ..aOB(6, _omitFieldNames ? '' : 'enabled')
-    ..aOS(7, _omitFieldNames ? '' : 'configSchemaJson')
+    ..aOS(7, _omitFieldNames ? '' : 'schemaJson')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -507,13 +509,13 @@ class ProviderInfo extends $pb.GeneratedMessage {
 
   /// 提供给客户端用于动态生成配置表单的JSON Schema
   @$pb.TagNumber(7)
-  $core.String get configSchemaJson => $_getSZ(6);
+  $core.String get schemaJson => $_getSZ(6);
   @$pb.TagNumber(7)
-  set configSchemaJson($core.String value) => $_setString(6, value);
+  set schemaJson($core.String value) => $_setString(6, value);
   @$pb.TagNumber(7)
-  $core.bool hasConfigSchemaJson() => $_has(6);
+  $core.bool hasSchemaJson() => $_has(6);
   @$pb.TagNumber(7)
-  void clearConfigSchemaJson() => $_clearField(7);
+  void clearSchemaJson() => $_clearField(7);
 }
 
 const $core.bool _omitFieldNames =

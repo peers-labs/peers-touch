@@ -22,6 +22,59 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Provider类型映射
+type ProviderType int32
+
+const (
+	ProviderType_openai   ProviderType = 0
+	ProviderType_ollama   ProviderType = 1
+	ProviderType_deepseek ProviderType = 2
+	ProviderType_custom   ProviderType = 1001
+)
+
+// Enum value maps for ProviderType.
+var (
+	ProviderType_name = map[int32]string{
+		0:    "openai",
+		1:    "ollama",
+		2:    "deepseek",
+		1001: "custom",
+	}
+	ProviderType_value = map[string]int32{
+		"openai":   0,
+		"ollama":   1,
+		"deepseek": 2,
+		"custom":   1001,
+	}
+)
+
+func (x ProviderType) Enum() *ProviderType {
+	p := new(ProviderType)
+	*p = x
+	return p
+}
+
+func (x ProviderType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProviderType) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_ai_box_provider_proto_enumTypes[0].Descriptor()
+}
+
+func (ProviderType) Type() protoreflect.EnumType {
+	return &file_domain_ai_box_provider_proto_enumTypes[0]
+}
+
+func (x ProviderType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProviderType.Descriptor instead.
+func (ProviderType) EnumDescriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{0}
+}
+
 // =================================================
 // 1. Provider (Domain Model)
 // 核心领域模型，与数据库结构对齐，是系统内部的权威表示。
@@ -291,9 +344,9 @@ type ProviderInfo struct {
 	SourceType  string                 `protobuf:"bytes,5,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"`
 	Enabled     bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	// 提供给客户端用于动态生成配置表单的JSON Schema
-	ConfigSchemaJson string `protobuf:"bytes,7,opt,name=config_schema_json,json=configSchemaJson,proto3" json:"config_schema_json,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	SchemaJson    string `protobuf:"bytes,7,opt,name=schema_json,json=schemaJson,proto3" json:"schema_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProviderInfo) Reset() {
@@ -368,9 +421,9 @@ func (x *ProviderInfo) GetEnabled() bool {
 	return false
 }
 
-func (x *ProviderInfo) GetConfigSchemaJson() string {
+func (x *ProviderInfo) GetSchemaJson() string {
 	if x != nil {
-		return x.ConfigSchemaJson
+		return x.SchemaJson
 	}
 	return ""
 }
@@ -412,7 +465,7 @@ const file_domain_ai_box_provider_proto_rawDesc = "" +
 	"\vsource_type\x18\x05 \x01(\tR\n" +
 	"sourceType\x12\x18\n" +
 	"\aenabled\x18\x06 \x01(\bR\aenabled\x12%\n" +
-	"\x0edisplay_status\x18\a \x01(\tR\rdisplayStatus\"\xd1\x01\n" +
+	"\x0edisplay_status\x18\a \x01(\tR\rdisplayStatus\"\xc4\x01\n" +
 	"\fProviderInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -420,8 +473,16 @@ const file_domain_ai_box_provider_proto_rawDesc = "" +
 	"\x04logo\x18\x04 \x01(\tR\x04logo\x12\x1f\n" +
 	"\vsource_type\x18\x05 \x01(\tR\n" +
 	"sourceType\x12\x18\n" +
-	"\aenabled\x18\x06 \x01(\bR\aenabled\x12,\n" +
-	"\x12config_schema_json\x18\a \x01(\tR\x10configSchemaJsonBLZJgithub.com/peers-labs/peers-touch/station/app/subserver/ai_box/model;modelb\x06proto3"
+	"\aenabled\x18\x06 \x01(\bR\aenabled\x12\x1f\n" +
+	"\vschema_json\x18\a \x01(\tR\n" +
+	"schemaJson*A\n" +
+	"\fProviderType\x12\n" +
+	"\n" +
+	"\x06openai\x10\x00\x12\n" +
+	"\n" +
+	"\x06ollama\x10\x01\x12\f\n" +
+	"\bdeepseek\x10\x02\x12\v\n" +
+	"\x06custom\x10\xe9\aBLZJgithub.com/peers-labs/peers-touch/station/app/subserver/ai_box/model;modelb\x06proto3"
 
 var (
 	file_domain_ai_box_provider_proto_rawDescOnce sync.Once
@@ -435,17 +496,19 @@ func file_domain_ai_box_provider_proto_rawDescGZIP() []byte {
 	return file_domain_ai_box_provider_proto_rawDescData
 }
 
+var file_domain_ai_box_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_domain_ai_box_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_domain_ai_box_provider_proto_goTypes = []any{
-	(*Provider)(nil),              // 0: peers_touch.model.ai_box.v1.Provider
-	(*ProviderView)(nil),          // 1: peers_touch.model.ai_box.v1.ProviderView
-	(*ProviderInfo)(nil),          // 2: peers_touch.model.ai_box.v1.ProviderInfo
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(ProviderType)(0),             // 0: peers_touch.model.ai_box.v1.ProviderType
+	(*Provider)(nil),              // 1: peers_touch.model.ai_box.v1.Provider
+	(*ProviderView)(nil),          // 2: peers_touch.model.ai_box.v1.ProviderView
+	(*ProviderInfo)(nil),          // 3: peers_touch.model.ai_box.v1.ProviderInfo
+	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
 }
 var file_domain_ai_box_provider_proto_depIdxs = []int32{
-	3, // 0: peers_touch.model.ai_box.v1.Provider.accessed_at:type_name -> google.protobuf.Timestamp
-	3, // 1: peers_touch.model.ai_box.v1.Provider.created_at:type_name -> google.protobuf.Timestamp
-	3, // 2: peers_touch.model.ai_box.v1.Provider.updated_at:type_name -> google.protobuf.Timestamp
+	4, // 0: peers_touch.model.ai_box.v1.Provider.accessed_at:type_name -> google.protobuf.Timestamp
+	4, // 1: peers_touch.model.ai_box.v1.Provider.created_at:type_name -> google.protobuf.Timestamp
+	4, // 2: peers_touch.model.ai_box.v1.Provider.updated_at:type_name -> google.protobuf.Timestamp
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -463,13 +526,14 @@ func file_domain_ai_box_provider_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_ai_box_provider_proto_rawDesc), len(file_domain_ai_box_provider_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_domain_ai_box_provider_proto_goTypes,
 		DependencyIndexes: file_domain_ai_box_provider_proto_depIdxs,
+		EnumInfos:         file_domain_ai_box_provider_proto_enumTypes,
 		MessageInfos:      file_domain_ai_box_provider_proto_msgTypes,
 	}.Build()
 	File_domain_ai_box_provider_proto = out.File
