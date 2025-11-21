@@ -109,7 +109,7 @@ func (s *native) initComponents(ctx context.Context) error {
 	}
 
 	if err := s.opts.Transport.Init(s.opts.TransportOptions...); err != nil {
-		return err
+		return fmt.Errorf("init transport err: %s", err)
 	}
 
 	// init registry

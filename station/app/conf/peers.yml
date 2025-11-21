@@ -8,8 +8,7 @@ peers:
     transport:
       name: native
       native:
-        
-        
+        enable-relay: true
     server:
       name: hertz
       address: :18080

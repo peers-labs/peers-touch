@@ -2,27 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/create_provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/request_format.dart';
 
-class CreateProviderForm extends StatefulWidget {
+class CreateProviderForm extends StatelessWidget {
   const CreateProviderForm({super.key});
-
-  @override
-  State<CreateProviderForm> createState() => _CreateProviderFormState();
-}
-
-class _CreateProviderFormState extends State<CreateProviderForm> {
-  final _formKey = GlobalKey<FormState>();
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
+    final controller = Get.put(CreateProviderController());
 
     return Container(
       width: 600, // Set a fixed width for the dialog content
       padding: EdgeInsets.all(UIKit.spaceLg(context)),
       child: Form(
-        key: _formKey,
+        key: controller.formKey,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,18 +50,18 @@ class _CreateProviderFormState extends State<CreateProviderForm> {
                     // Basic Information
                     Text('Basic Information', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: tokens.textPrimary)),
                     const SizedBox(height: 16),
-                    _buildTextField(context, label: 'Provider ID', hint: 'Suggested all lowercase, e.g., openai, cann...', isRequired: true),
-                    _buildTextField(context, label: 'Provider Name', hint: 'Please enter the display name of the provider', isRequired: true),
-                    _buildTextField(context, label: 'Provider Description', hint: 'Provider description (optional)'),
-                    _buildTextField(context, label: 'Provider Logo', hint: 'https://logo-url'),
+                    _buildTextField(context, controller: controller.idController, label: 'Provider ID', hint: 'Suggested all lowercase, e.g., openai, cann...', isRequired: true),
+                    _buildTextField(context, controller: controller.nameController, label: 'Provider Name', hint: 'Please enter the display name of the provider', isRequired: true),
+                    _buildTextField(context, controller: controller.descriptionController, label: 'Provider Description', hint: 'Provider description (optional)'),
+                    _buildTextField(context, controller: controller.logoController, label: 'Provider Logo', hint: 'https://logo-url'),
                     const SizedBox(height: 24),
 
                     // Configuration Information
                     Text('Configuration Information', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: tokens.textPrimary)),
                     const SizedBox(height: 16),
-                    _buildDropdownField(context, label: 'Request Format', hint: 'openai/anthropic/azureai/ollama/...', isRequired: true),
-                    _buildTextField(context, label: 'Proxy URL', hint: 'https://xxxx-proxy.com/v1', isRequired: true),
-                    _buildTextField(context, label: 'API Key', hint: 'Please enter your API Key', obscureText: true),
+                    _buildDropdownField(context, controller: controller, label: 'Request Format', hint: 'openai/anthropic/azureai/ollama/...', isRequired: true),
+                    _buildTextField(context, controller: controller.proxyUrlController, label: 'Proxy URL', hint: 'https://xxxx-proxy.com/v1', isRequired: true),
+                    _buildTextField(context, controller: controller.apiKeyController, label: 'API Key', hint: 'Please enter your API Key', obscureText: true),
                   ],
                 ),
               ),
@@ -77,12 +72,7 @@ class _CreateProviderFormState extends State<CreateProviderForm> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  if (_formKey.currentState!.validate()) {
-                    // TODO: Implement create logic
-                    Get.back();
-                  }
-                },
+                onPressed: controller.createProvider,
                 style: UIKit.primaryButtonStyle(context)?.copyWith(
                   padding: MaterialStateProperty.all(const EdgeInsets.symmetric(vertical: 20)),
                 ),
@@ -95,7 +85,7 @@ class _CreateProviderFormState extends State<CreateProviderForm> {
     );
   }
 
-  Widget _buildTextField(BuildContext context, {required String label, required String hint, bool isRequired = false, bool obscureText = false}) {
+  Widget _buildTextField(BuildContext context, {required TextEditingController controller, required String label, required String hint, bool isRequired = false, bool obscureText = false}) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
@@ -111,6 +101,7 @@ class _CreateProviderFormState extends State<CreateProviderForm> {
           ),
           const SizedBox(height: 8),
           TextFormField(
+            controller: controller,
             obscureText: obscureText,
             style: TextStyle(color: tokens.textPrimary),
             decoration: UIKit.inputDecoration(context).copyWith(
@@ -128,7 +119,7 @@ class _CreateProviderFormState extends State<CreateProviderForm> {
     );
   }
 
-  Widget _buildDropdownField(BuildContext context, {required String label, required String hint, bool isRequired = false}) {
+  Widget _buildDropdownField(BuildContext context, {required CreateProviderController controller, required String label, required String hint, bool isRequired = false}) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
     final formats = RequestFormat.supportedFormats;
 
@@ -145,7 +136,8 @@ class _CreateProviderFormState extends State<CreateProviderForm> {
             style: TextStyle(fontWeight: FontWeight.w500, color: tokens.textPrimary),
           ),
           const SizedBox(height: 8),
-          DropdownButtonFormField<RequestFormatType>(
+          Obx(() => DropdownButtonFormField<RequestFormatType>(
+            value: controller.requestFormat.value,
             decoration: UIKit.inputDecoration(context).copyWith(
               hintText: hint,
             ),
@@ -162,7 +154,9 @@ class _CreateProviderFormState extends State<CreateProviderForm> {
                 ),
               );
             }).toList(),
-            onChanged: (value) {},
+            onChanged: (value) {
+              controller.requestFormat.value = value;
+            },
             icon: Icon(Icons.arrow_drop_down, color: tokens.textSecondary),
             validator: (value) {
               if (isRequired && value == null) {
@@ -170,7 +164,7 @@ class _CreateProviderFormState extends State<CreateProviderForm> {
               }
               return null;
             },
-          ),
+          )),
         ],
       ),
     );

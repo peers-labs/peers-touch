@@ -1,4 +1,4 @@
-import 'package:uuid/uuid.dart';
+import 'package:uuid/uuid.dart'; // Moved to top
 import 'dart:async';
 import 'dart:typed_data';
 
