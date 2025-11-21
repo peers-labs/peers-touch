@@ -10,6 +10,10 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 )
 
+var (
+	Wrapper = option.NewWrapper[Options]()
+)
+
 type Options struct {
 	*option.Options
 
@@ -47,29 +51,20 @@ type ListenOption func(l *Listener)
 
 type DialOption func(*DialOptions)
 
-var (
-	wrapperKey = "transport-options-wrapper"
-	wrapper    = option.NewWrapper(wrapperKey, NewOptions)
-)
-
-func NewOptions(o *option.Options) *Options {
-	return &Options{Options: o}
-}
-
 func Addrs(addrs ...string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
+	return Wrapper.Wrap(func(o *Options) {
 		o.Addrs = addrs
 	})
 }
 
 func Secure(b bool) option.Option {
-	return wrapper.Wrap(func(o *Options) {
+	return Wrapper.Wrap(func(o *Options) {
 		o.Secure = b
 	})
 }
 
 func Timeout(t string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
+	return Wrapper.Wrap(func(o *Options) {
 		d, err := time.ParseDuration(t)
 		if err != nil {
 			return

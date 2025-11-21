@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:synchronized/synchronized.dart';
-
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:logging/logging.dart';
+import 'package:synchronized/synchronized.dart';
 
 import '../../../core/network/conn.dart';
 import '../../../core/network/rcmgr.dart' show StreamScope, ScopeStat, ResourceScopeSpan, ResourceScope, StreamManagementScope;
@@ -43,7 +42,7 @@ class SwarmStream implements P2PStream<Uint8List> {
   bool _scopeCleanedUp = false;
 
   /// Lock for closed state
-  final _closedLock = Lock();
+  final Lock _closedLock = Lock();
 
   /// Creates a new SwarmStream
   SwarmStream({

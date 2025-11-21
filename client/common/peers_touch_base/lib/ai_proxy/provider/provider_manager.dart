@@ -247,9 +247,7 @@ class ProviderManager {
   /// 获取默认Provider
   Future<Provider?> getDefaultProvider() async {
     // 如果缓存中没有默认Provider ID，尝试从本地存储获取
-    if (_defaultProviderId == null) {
-      _defaultProviderId = await _localStorage.getDefaultProviderId();
-    }
+    _defaultProviderId ??= await _localStorage.getDefaultProviderId();
     
     // 如果还是没有，获取第一个Provider作为默认
     if (_defaultProviderId == null && _providers.isNotEmpty) {
@@ -282,15 +280,12 @@ class ProviderManager {
     }
     
     _currentProviderId = id;
-    await _localStorage.setCurrentProviderId(id);
   }
 
   /// 获取当前Provider
   Future<Provider?> getCurrentProvider() async {
     // 如果缓存中没有当前Provider ID，尝试从本地存储获取
-    if (_currentProviderId == null) {
-      _currentProviderId = await _localStorage.getCurrentProviderId();
-    }
+    _currentProviderId ??= await _localStorage.getDefaultProviderId();
     
     // 如果当前Provider ID为空，返回默认Provider
     if (_currentProviderId == null || _currentProviderId!.isEmpty) {
