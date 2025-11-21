@@ -13,7 +13,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
@@ -32,7 +31,7 @@ var (
 
 type libp2pTransport struct {
 	host        host.Host
-	opts        transport.Options
+	opts        *transport.Options
 	protocolID  protocol.ID
 	initialized bool
 	mtx         sync.Mutex
@@ -64,10 +63,7 @@ func NewTransport(opts ...option.Option) transport.Transport {
 	t := &libp2pTransport{
 		protocolID:  DefaultProtocolID,
 		initialized: false,
-	}
-
-	for _, o := range opts {
-		t.opts.Apply(o)
+		opts:        transport.GetOptions(opts...),
 	}
 
 	return t
@@ -91,10 +87,9 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 		libp2p.EnableHolePunching(),
 	}
 
-	// Add relay configuration (EnableAutoRelay is deprecated)
-	libp2pOpts = append(libp2pOpts, libp2p.EnableAutoRelay(
-		autorelay.WithStaticRelays(nil), // You can provide static relays here
-	))
+	if t.opts.ExtOptions.(*options).EnableRelay {
+		libp2pOpts = append(libp2pOpts, libp2p.EnableRelay())
+	}
 
 	// Convert string addresses to multiaddr.Multiaddr
 	if len(t.opts.Addrs) > 0 {
@@ -133,7 +128,7 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 }
 
 func (t *libp2pTransport) Options() transport.Options {
-	return t.opts
+	return *t.opts
 }
 
 func (t *libp2pTransport) Dial(addr string, opts ...transport.DialOption) (transport.Client, error) {
