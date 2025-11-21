@@ -51,8 +51,75 @@ type options struct {
 	mdnsEnable bool
 }
 
-var (
-	Wrapper = option.NewWrapper[options]()
-)
-
 // WithBootstrapNodes set the private bootstrap nodes for the registry plugin.
+func WithBootstrapNodes(bootstraps []string) option.Option {
+	return wrapOptions(func(o *options) {
+		for _, bootstrap := range bootstraps {
+			// some short strings are used for placeholder or just is an empty dash(-).
+			if len(bootstrap) < 10 {
+				log.Infof(context.Background(), "bootstrap node[%s] is too short, ignoring bootstrap node", bootstrap)
+				continue
+			}
+
+			addr, err := multiaddr.NewMultiaddr(bootstrap)
+			if err != nil {
+				panic(err)
+			}
+			o.bootstrapNodes = append(o.bootstrapNodes, addr)
+		}
+	})
+}
+
+// WithRelayNodes set the private relay nodes for the registry plugin.
+func WithRelayNodes(relayNodes []string) option.Option {
+	return wrapOptions(func(o *options) {
+		for _, bootstrap := range relayNodes {
+			addr, err := multiaddr.NewMultiaddr(bootstrap)
+			if err != nil {
+				panic(err)
+			}
+			o.relayNodes = append(o.relayNodes, addr)
+		}
+	})
+}
+
+func WithMDNSEnable(enableMDNS bool) option.Option {
+	return wrapOptions(func(o *options) {
+		o.mdnsEnable = enableMDNS
+	})
+}
+
+func WithRunningMode(mod modeOpt) option.Option {
+	return wrapOptions(func(o *options) {
+		o.runMode = mod
+	})
+}
+
+func WithBootstrapNodeRetryTimes(times int) option.Option {
+	return wrapOptions(func(o *options) {
+		o.bootstrapNodeRetryTimes = times
+	})
+}
+
+func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
+	return wrapOptions(func(o *options) {
+		o.bootstrapRefreshInterval = interval
+	})
+}
+
+func WithLibp2pIdentityKeyFile(keyFile string) option.Option {
+	return wrapOptions(func(o *options) {
+		o.libp2pIdentityKeyFile = keyFile
+	})
+}
+
+func wrapOptions(f func(o *options)) option.Option {
+	return registry.OptionWrapper.Wrap(func(o *registry.Options) {
+		if o.ExtOptions == nil {
+			o.ExtOptions = &options{
+				Options: o,
+			}
+		}
+		f(o.ExtOptions.(*options))
+	})
+}

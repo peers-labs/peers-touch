@@ -58,6 +58,8 @@ type mdnsDiscoveryStats struct {
 
 type nativeRegistry struct {
 	options *registry.Options
+	// extended options
+	extOpts *options
 
 	store store.Store
 	peers map[string]*Peer
@@ -107,6 +109,7 @@ func NewRegistry(opts ...option.Option) registry.Registry {
 
 func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error {
 	r.options.Apply(opts...)
+	r.extOpts = r.options.ExtOptions.(*options)
 
 	if r.options.Store == nil {
 		return errors.New("store is required for native registry. ")
@@ -130,7 +133,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	var hostOptions []libp2p.Option
 
 	// Load or generate private key
-	identityKey, err := loadOrGenerateKey(r.options.ExtOptions.(*options).libp2pIdentityKeyFile)
+	identityKey, err := loadOrGenerateKey(r.extOpts.libp2pIdentityKeyFile)
 	if err != nil {
 		return fmt.Errorf("failed to load private key[%s]: %v", r.options.PrivateKey, err)
 	}
@@ -160,7 +163,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 
 	// Create DHT instance in server mode
 	r.dht, err = dht.New(ctx, h,
-		dht.Mode(r.options.ExtOptions.(*options).runMode),
+		dht.Mode(r.extOpts.runMode),
 		// Isolate network namespace via /peers-touch
 		dht.ProtocolPrefix(networkId),
 		dht.Validator(
@@ -175,9 +178,9 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		),
 		dht.BootstrapPeersFunc(func() []peer.AddrInfo {
 			// Start with configured bootstrap nodes and default peers
-			bootstrapNodes := append(r.options.ExtOptions.(*options).bootstrapNodes, dht.DefaultBootstrapPeers...)
+			bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
 			// Add mDNS-discovered bootstrap nodes if mDNS is enabled
-			if r.options.ExtOptions.(*options).mdnsEnable {
+			if r.extOpts.mdnsEnable {
 				r.mdnsBootstrapLock.RLock()
 				mdnsBootstrapNodes := make([]multiaddr.Multiaddr, len(r.mdnsDiscoveredBootstrapNodes))
 				copy(mdnsBootstrapNodes, r.mdnsDiscoveredBootstrapNodes)
@@ -224,7 +227,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	// todo init relay nodes
 
 	// Init MDNS with new internal mDNS service
-	if r.options.ExtOptions.(*options).mdnsEnable {
+	if r.extOpts.mdnsEnable {
 		logger.Infof(ctx, "[Registry] mDNS node enabled for peer discovery")
 
 		// Create new mDNS service with registry namespace
@@ -791,7 +794,7 @@ func (r *nativeRegistry) beforeRegister(ctx context.Context, registration *regis
 }
 
 func (r *nativeRegistry) bootstrap(ctx context.Context) {
-	ticker := time.NewTicker(r.options.ExtOptions.(*options).bootstrapRefreshInterval)
+	ticker := time.NewTicker(r.extOpts.bootstrapRefreshInterval)
 	defer ticker.Stop()
 
 	logger.Infof(ctx, "bootstrap peer: %s", r.host.ID().String())
@@ -1002,7 +1005,7 @@ func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *Peer) ([]byte
 
 func (r *nativeRegistry) isBootstrapNode(id peer.ID) bool {
 	// Check both custom and default bootstrap nodes
-	allNodes := append(r.options.ExtOptions.(*options).bootstrapNodes, dht.DefaultBootstrapPeers...)
+	allNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
 	for _, addr := range allNodes {
 		pi, err := peer.AddrInfoFromP2pAddr(addr)
 		if err != nil {
