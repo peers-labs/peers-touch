@@ -13,26 +13,36 @@ var (
 
 type TransportConfig struct {
 	Peers struct {
-		Transport struct {
-			Name    string   `json:"name" pconf:"name"`
-			Addrs   []string `json:"addrs" pconf:"addrs"`
-			Secure  bool     `json:"secure" pconf:"secure"`
-			Timeout string   `json:"timeout" pconf:"timeout"`
-		} `json:"transport" pconf:"transport"`
+		Node struct {
+			Transport struct {
+				Name   string   `json:"name" pconf:"name"`
+				Addrs  []string `json:"addrs" pconf:"addrs"`
+				Native struct {
+					EnableRelay bool `json:"enable-relay" pconf:"enable-relay"`
+				} `json:"native" pconf:"native"`
+
+				Secure  bool   `json:"secure" pconf:"secure"`
+				Timeout string `json:"timeout" pconf:"timeout"`
+			} `json:"transport" pconf:"transport"`
+		} `json:"node" pconf:"node"`
 	} `json:"peers" pconf:"peers"`
 }
 
 func (c *TransportConfig) Options() []option.Option {
 	var opts []option.Option
 
-	if len(c.Peers.Transport.Addrs) > 0 {
-		opts = append(opts, transport.Addrs(c.Peers.Transport.Addrs...))
+	if len(c.Peers.Node.Transport.Addrs) > 0 {
+		opts = append(opts, transport.Addrs(c.Peers.Node.Transport.Addrs...))
 	}
 
-	opts = append(opts, transport.Secure(c.Peers.Transport.Secure))
+	opts = append(opts, transport.Secure(c.Peers.Node.Transport.Secure))
 
-	if len(c.Peers.Transport.Timeout) > 0 {
-		opts = append(opts, transport.Timeout(c.Peers.Transport.Timeout))
+	if len(c.Peers.Node.Transport.Timeout) > 0 {
+		opts = append(opts, transport.Timeout(c.Peers.Node.Transport.Timeout))
+	}
+
+	if c.Peers.Node.Transport.Native.EnableRelay {
+		opts = append(opts, EnableRelay())
 	}
 
 	return opts
@@ -49,7 +59,7 @@ func (p *nativeTransportPlugin) Options() []option.Option {
 }
 
 func (p *nativeTransportPlugin) New(opts ...option.Option) transport.Transport {
-	return NewTransport()
+	return NewTransport(append(p.Options(), opts...)...)
 }
 
 func init() {

@@ -45,11 +45,7 @@ final Logger _logger = Logger('Config');
 ///
 /// This is *not* a stable interface. Use the options defined in the root
 /// package.
-  class Config {
-  ResourceManager? resourceManager;
-
-  Config({this.resourceManager});
-
+class Config {
   /// The identifier this node will send to other peers when
   /// identifying itself, e.g. via the identify protocol.
   String? userAgent;
@@ -171,22 +167,16 @@ final Logger _logger = Logger('Config');
     peerstore.keyBook.addPrivKey(localPeerId, this.peerKey!.privateKey);
     peerstore.keyBook.addPubKey(localPeerId, this.peerKey!.publicKey);
     
-                ResourceManager rm;
-    if (resourceManager != null) {
-      rm = resourceManager!;
-    } else {
-      final Limiter limiter = FixedLimiter();
-      rm = ResourceManagerImpl(limiter: limiter);
-    }
-
-    final BasicUpgrader upgrader = BasicUpgrader(resourceManager: rm);
+    final Limiter limiter = FixedLimiter(); // Or use a Limiter from Config if added later
+    final ResourceManager resourceManager = ResourceManagerImpl(limiter: limiter);
+    final BasicUpgrader upgrader = BasicUpgrader(resourceManager: resourceManager);
 
     // Instantiate Swarm
     final Swarm swarm = Swarm(
       host: null, // Will be set later by _createHost via swarm.setHost()
       localPeer: localPeerId,
       peerstore: peerstore,
-      resourceManager: rm,
+      resourceManager: resourceManager,
       upgrader: upgrader,
       config: this, // Pass the Config instance itself
       transports: transports, // From this.transports
@@ -555,9 +545,8 @@ class Libp2p {
     return Config();
   }
 
-    static Option resourceManager(ResourceManager rm) {
-    return (config) => config.resourceManager = rm;
-  }
+  /// Creates a new libp2p node with the given options.
+  /// 
   /// This is a convenience method that creates a new Config, applies the options,
   /// and calls newNode() on the Config.
   static Future<Host> new_(List<Option> options) async {

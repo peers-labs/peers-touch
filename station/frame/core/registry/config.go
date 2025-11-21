@@ -96,14 +96,4 @@ func WithISDefault() option.Option {
 	})
 }
 
-type registryOptionsKey struct{}
-
-var OptionWrapper = option.NewWrapper[Options](registryOptionsKey{}, func(options *option.Options) *Options {
-	return &Options{
-		Options: options,
-	}
-})
-
-func GetPluginRegions(opts ...option.Option) *Options {
-	return option.GetOptions(opts...).Ctx().Value(registryOptionsKey{}).(*Options)
-}
+var OptionWrapper = option.NewWrapper[Options]()
