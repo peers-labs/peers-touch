@@ -25,6 +25,17 @@ const (
 	ModeAutoServer = dht.ModeAutoServer
 )
 
+func wrapOptions(f func(o *options)) option.Option {
+	return registry.OptionWrapper.Wrap(func(o *registry.Options) {
+		if o.ExtOptions == nil {
+			o.ExtOptions = &options{
+				Options: o,
+			}
+		}
+		f(o.ExtOptions.(*options))
+	})
+}
+
 type options struct {
 	*registry.Options
 
@@ -110,16 +121,5 @@ func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
 func WithLibp2pIdentityKeyFile(keyFile string) option.Option {
 	return wrapOptions(func(o *options) {
 		o.libp2pIdentityKeyFile = keyFile
-	})
-}
-
-func wrapOptions(f func(o *options)) option.Option {
-	return registry.OptionWrapper.Wrap(func(o *registry.Options) {
-		if o.ExtOptions == nil {
-			o.ExtOptions = &options{
-				Options: o,
-			}
-		}
-		f(o.ExtOptions.(*options))
 	})
 }

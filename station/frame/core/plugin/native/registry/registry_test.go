@@ -211,8 +211,8 @@ func TestNativeRegistry_DiscoveryMechanismOptions(t *testing.T) {
 			}
 
 			// Apply options to verify they are set correctly
-			reg.options = registry.GetPluginRegions(opts...)
-			reg.extOpts = reg.options.ExtOptions.(*options)
+			reg.options = registry.GetOptions(opts...)
+			reg.extOpts = reg.options.ExtendOptions.(*options)
 
 			assert.Equal(t, tt.expectedMDNS, reg.extOpts.mdnsEnable)
 			assert.Equal(t, tt.expectedTURN, reg.options.TurnConfig.Enabled)

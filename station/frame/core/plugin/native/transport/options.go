@@ -6,6 +6,17 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
+func wrapOptions(f func(o *options)) option.Option {
+	return transport.OptionWrapper.Wrap(func(o *transport.Options) {
+		if o.ExtOptions == nil {
+			o.ExtOptions = &options{
+				Options: o,
+			}
+		}
+		f(o.ExtOptions.(*options))
+	})
+}
+
 // options is the extended options for the native transport plugin.
 type options struct {
 	*transport.Options
@@ -20,20 +31,16 @@ type options struct {
 	Multiplexers []string
 }
 
-var (
-	Wrapper = option.NewWrapper[options]()
-)
-
 // EnableRelay enables the use of circuit relay.
 func EnableRelay() option.Option {
-	return Wrapper.Wrap(func(o *options) {
+	return wrapOptions(func(o *options) {
 		o.EnableRelay = true
 	})
 }
 
 // WithStaticRelays sets the static relay nodes for the transport.
 func WithStaticRelays(relays []string) option.Option {
-	return Wrapper.Wrap(func(o *options) {
+	return wrapOptions(func(o *options) {
 		for _, r := range relays {
 			addr, err := multiaddr.NewMultiaddr(r)
 			if err != nil {
@@ -48,7 +55,7 @@ func WithStaticRelays(relays []string) option.Option {
 // WithSecurityTransports sets the security transports to use.
 // Valid options are "noise" and "tls".
 func WithSecurityTransports(transports []string) option.Option {
-	return Wrapper.Wrap(func(o *options) {
+	return wrapOptions(func(o *options) {
 		o.SecurityTransports = append(o.SecurityTransports, transports...)
 	})
 }
@@ -56,7 +63,7 @@ func WithSecurityTransports(transports []string) option.Option {
 // WithMultiplexers sets the stream multiplexers to use.
 // Valid options are "yamux" and "mplex".
 func WithMultiplexers(multiplexers []string) option.Option {
-	return Wrapper.Wrap(func(o *options) {
+	return wrapOptions(func(o *options) {
 		o.Multiplexers = append(o.Multiplexers, multiplexers...)
 	})
 }
