@@ -17,7 +17,7 @@ class AiProxyAdapter {
 
   RichProvider? getProviderForModel(String modelName) {
     for (final provider in _providers) {
-      if (provider.models.any((model) => model.name == modelName)) {
+      if (provider.models.any((model) => model.id == modelName)) {
         return provider;
       }
     }

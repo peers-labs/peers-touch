@@ -6,14 +6,8 @@ import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.
 
 // 使用新的本地存储服务
 import '../service/ai_box_local_storage_service.dart';
+import 'i_provider_manager.dart';
 
-/// Provider类型枚举
-enum ProviderType {
-  openai,
-  ollama,
-  deepseek,
-  custom, // 其他OpenAI兼容类型
-}
 
 /// Provider同步异常
 class ProviderSyncException implements Exception {
@@ -27,7 +21,7 @@ class ProviderSyncException implements Exception {
 }
 
 /// Provider管理器 - 支持双写策略和数据同步
-class ProviderManager {
+class ProviderManager implements IProviderManager {
   final AiBoxService _aiBoxService;
   final AiBoxLocalStorageService _localStorage;
   
@@ -362,6 +356,8 @@ class ProviderManager {
         return 'deepseek-chat';
       case ProviderType.custom:
         return 'custom-model';
+      default:
+        return 'default-model';
     }
   }
 
@@ -376,6 +372,8 @@ class ProviderManager {
         return 'DeepSeek';
       case ProviderType.custom:
         return 'Custom';
+      default:
+        return 'Unknown Provider';
     }
   }
 
@@ -396,6 +394,8 @@ class ProviderManager {
         return 'DeepSeek provider';
       case ProviderType.custom:
         return 'Custom OpenAI compatible provider';
+      default:
+        return 'Unknown provider type';
     }
   }
 
