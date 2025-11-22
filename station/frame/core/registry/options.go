@@ -1,6 +1,73 @@
 package registry
 
-import "time"
+import (
+	"time"
+
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
+)
+
+type registryOptionsKey struct{}
+
+var OptionWrapper = option.NewWrapper[Options](registryOptionsKey{}, func(options *option.Options) *Options {
+	return &Options{
+		Options:       options,
+		ExtendOptions: &option.ExtendOptions{},
+	}
+})
+
+func GetOptions(opts ...option.Option) *Options {
+	return option.GetOptions(opts...).Ctx().Value(registryOptionsKey{}).(*Options)
+}
+
+// Options is the options for the registry plugin.
+type Options struct {
+	*option.Options
+	*option.ExtendOptions
+
+	IsDefault      bool
+	PrivateKey     string
+	Interval       time.Duration
+	ConnectTimeout time.Duration
+	TurnConfig     *TURNAuthConfig
+	Store          store.Store
+}
+
+func WithInterval(dur time.Duration) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.Interval = dur
+	})
+}
+
+func WithConnectTimeout(dur time.Duration) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.ConnectTimeout = dur
+	})
+}
+
+func WithPrivateKey(privateKey string) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.PrivateKey = privateKey
+	})
+}
+
+func WithTurnConfig(turnConfig TURNAuthConfig) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.TurnConfig = &turnConfig
+	})
+}
+
+func WithStore(store store.Store) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.Store = store
+	})
+}
+
+func WithISDefault() option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.IsDefault = true
+	})
+}
 
 // RegisterOption registration options - supports multi-namespace and V2 philosophy
 type RegisterOption func(*RegisterOptions)

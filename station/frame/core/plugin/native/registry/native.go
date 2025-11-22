@@ -96,7 +96,7 @@ func NewRegistry(opts ...option.Option) registry.Registry {
 
 	regInstance = &nativeRegistry{
 		peers:   make(map[string]*Peer),
-		options: registry.GetPluginRegions(opts...),
+		options: registry.GetOptions(opts...),
 		// bootstrapNodesStatus initialization removed
 		mdnsDiscoveredBootstrapNodes: make([]multiaddr.Multiaddr, 0),
 		mdnsStats: &mdnsDiscoveryStats{

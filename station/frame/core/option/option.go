@@ -32,8 +32,6 @@ var (
 type Options struct {
 	ctx context.Context
 
-	ExtOptions any
-
 	options []Option
 }
 
@@ -70,6 +68,10 @@ func (o *Options) AppendCtx(key interface{}, value interface{}) {
 
 	o.ctx = context.WithValue(o.ctx, key, value)
 	return
+}
+
+type ExtendOptions struct {
+	ExtOptions any
 }
 
 type Option func(o *Options)
