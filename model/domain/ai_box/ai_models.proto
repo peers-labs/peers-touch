@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package peers_touch.model.ai_box.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model;model";
+
+// =================================================
+// 1. AiModel (Domain Model)
+// 核心领域模型，与数据库 ai_models 表结构对齐。
+// =================================================
+message AiModel {
+  string id = 1;                      // 唯一ID
+  string display_name = 2;            // 模型显示名称
+  string description = 3;             // 描述
+  string organization = 4;            // 提供模型的组织
+  bool enabled = 5;                   // 是否启用
+  string provider_id = 6;             // 所属提供商ID
+  string type = 7;                    // 模型类型 (e.g., 'chat', 'text-embedding')
+  int32 sort = 8;                     // 排序
+  string user_id = 9;                 // 关联的用户ID (如果是自定义模型)
+  string pricing_json = 10;           // 定价信息 (JSON 字符串)
+  string parameters_json = 11;        // 模型默认参数 (JSON 字符串)
+  string config_json = 12;            // 【敏感】模型的特定配置 (JSON 字符串)
+  string abilities_json = 13;         // 模型能力描述 (JSON 字符串)
+  int32 context_window_tokens = 14;   // 上下文窗口大小
+  string source = 15;                 // 模型来源 (e.g., "system", "user")
+  string released_at = 16;            // 发布日期 (e.g., "2023-01")
+  google.protobuf.Timestamp accessed_at = 17;
+  google.protobuf.Timestamp created_at = 18;
+  google.protobuf.Timestamp updated_at = 19;
+}
+
+// =================================================
+// 2. AiModelView (View Model)
+// 用于UI展示的轻量级模型，例如在模型选择下拉列表中。
+// =================================================
+message AiModelView {
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+  string organization = 4;
+  string provider_id = 5;
+  string type = 6;
+  int32 context_window_tokens = 7;
+  bool enabled = 8;
+  string abilities_json = 9; // 用于UI展示模型能力标签
+}
+
+// =================================================
+// 3. AiModelInfo (API Model / DTO)
+// 用于客户端-服务端通信，隐藏敏感或内部信息。
+// =================================================
+message AiModelInfo {
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+  string organization = 4;
+  string provider_id = 5;
+  string type = 6;
+  int32 context_window_tokens = 7;
+  bool enabled = 8;
+  string abilities_json = 9;
+  string pricing_json = 10;
+  // 为模型特定参数提供JSON Schema，用于动态生成设置UI
+  string parameters_schema_json = 11;
+}
