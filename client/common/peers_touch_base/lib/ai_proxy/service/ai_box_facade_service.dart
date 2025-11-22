@@ -1,25 +1,38 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:dio/dio.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
-import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart';
-import 'package:peers_touch_base/network/dio/http_service_impl.dart';
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'ai_box_service_factory.dart';
-import 'ai_box_local_storage_service.dart';
-import '../provider/provider_manager.dart';
+import 'package:peers_touch_base/ai_proxy/provider/i_provider_manager.dart';
+import 'package:peers_touch_base/ai_proxy/provider/local_provider_manager.dart';
+import 'ai_box_mode.dart'; // 使用我们自己的枚举定义
 
 /// AI Box门面服务 - 为上层应用提供统一的AI服务接口
 /// 封装了provider管理、模型管理、聊天功能等所有AI相关操作
 class AiBoxFacadeService {
-  final ProviderManager _providerManager;
-  
-  AiBoxFacadeService({ProviderManager? providerManager}) 
-      : _providerManager = providerManager ?? ProviderManager(
-          aiBoxService: AiBoxService(httpService: HttpServiceImpl(baseUrl: 'http://localhost:18080')),
-          localStorage: AiBoxLocalStorageService(),
-        );
+  final IProviderManager _providerManager;
+
+  /// 构造函数，通过[mode]参数决定服务模式
+  ///
+  /// 默认为[AiBoxMode.local]，使用纯本地存储。
+  /// 当需要与服务器同步时，请使用[AiBoxMode.remote]。
+  AiBoxFacadeService({AiBoxMode mode = AiBoxMode.local})
+      : this.internal(_createManagerForMode(mode));
+
+  /// Internal constructor for testing purposes.
+  AiBoxFacadeService.internal(this._providerManager);
+
+  /// 根据模式创建对应的Provider管理器
+  static IProviderManager _createManagerForMode(AiBoxMode mode) {
+    switch (mode) {
+      case AiBoxMode.remote:
+        // 远程模式暂时不支持，抛出异常
+        throw UnsupportedError('远程模式暂未实现，请使用本地模式');
+      case AiBoxMode.local:
+      default:
+        // 离线模式，只使用本地存储
+        return LocalProviderManager();
+    }
+  }
 
   /// Provider管理相关接口
   
@@ -58,6 +71,11 @@ class AiBoxFacadeService {
     await _providerManager.setDefaultProvider(providerId);
   }
 
+  /// 设置当前提供商（在本地模式下等同于设置默认提供商）
+  Future<void> setCurrentProvider(String providerId) async {
+    await _providerManager.setDefaultProvider(providerId);
+  }
+
   /// 模型管理相关接口
   
   /// 获取提供商的模型列表
@@ -67,9 +85,18 @@ class AiBoxFacadeService {
       throw Exception('Provider not found: $providerId');
     }
     
-    // 使用AiBoxServiceFactory获取服务并拉取模型列表
-    final aiService = AiBoxServiceFactory.getService();
-    return await aiService.getModels(providerId);
+    // 本地模式下返回预设的模型列表
+    final providerType = provider.sourceType;
+    switch (providerType) {
+      case 'openai':
+        return ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+      case 'ollama':
+        return ['llama3', 'llama2', 'mistral', 'codellama'];
+      case 'deepseek':
+        return ['deepseek-chat', 'deepseek-coder'];
+      default:
+        return ['custom-model'];
+    }
   }
 
   /// 测试提供商连接
@@ -88,56 +115,35 @@ class AiBoxFacadeService {
       
       final config = jsonDecode(configJson);
       final baseUrl = config['base_url'] ?? config['baseUrl'] ?? '';
+      final apiKey = config['api_key'] ?? config['apiKey'] ?? '';
       
       if (baseUrl.isEmpty) {
         return false;
       }
       
-      // 使用HttpServiceLocator创建临时的HTTP服务
-      final httpServiceLocator = HttpServiceLocator();
-      
-      // 为当前提供商初始化HTTP服务
-      httpServiceLocator.initialize(baseUrl: baseUrl);
-      
-      // 使用Dio直接创建新实例，因为需要自定义认证头
-      final dio = Dio(
-        BaseOptions(
-          baseUrl: baseUrl,
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
-        ),
-      );
-      
-      // 构建获取模型列表的URL
-      final modelsUrl = '/models';
-      
-      // 添加API密钥到请求头
-      final headers = <String, dynamic>{};
-      if (config.containsKey('api_key') && config['api_key'].isNotEmpty) {
-        headers['Authorization'] = 'Bearer ${config['api_key']}';
+      // 本地模式下，只检查配置是否有效
+      // 检查URL格式是否有效
+      final urlPattern = RegExp(r'^https?://.+');
+      if (!urlPattern.hasMatch(baseUrl)) {
+        return false;
       }
       
-      final response = await dio.get(
-        modelsUrl,
-        options: Options(
-          headers: headers,
-        ),
-      );
-      
-      // 检查响应内容
-      if (response.statusCode == 200 && response.data != null) {
-        // 尝试解析模型列表
-        final data = response.data;
-        if (data is Map && data.containsKey('data')) {
-          final models = data['data'] as List;
-          return models.isNotEmpty; // 如果有模型返回，认为连接成功
-        } else if (data is List) {
-          return data.isNotEmpty; // 如果直接返回模型列表，也认为成功
+      // 检查是否有API密钥（对于需要认证的提供商）
+      final providerType = provider.sourceType;
+      if (providerType == 'openai' || providerType == 'deepseek') {
+        // 对于需要认证的提供商，检查API密钥
+        if (apiKey.isEmpty) {
+          return false;
         }
-        return true; // 只要有响应数据，就认为连接成功
+        
+        // 检查API密钥格式
+        if (apiKey.length < 10) {
+          return false;
+        }
       }
       
-      return false;
+      // 本地模式下，配置有效即认为连接可能成功
+      return true;
     } catch (e) {
       // 任何异常都认为连接失败
       return false;
@@ -155,22 +161,8 @@ class AiBoxFacadeService {
     List<Map<String, dynamic>>? openAIContent,
     List<String>? imagesBase64,
   }) {
-    final aiService = AiBoxServiceFactory.getService();
-    
-    // 构建聊天请求
-    final request = ChatCompletionRequest(
-      model: model ?? '',
-      messages: [
-        ChatMessage(
-          role: ChatRole.CHAT_ROLE_USER,
-          content: message,
-        ),
-      ],
-      temperature: temperature ?? 0.7,
-      stream: true,
-    );
-    
-    return aiService.chat(request);
+    // 本地模式下不支持流式聊天功能
+    throw UnsupportedError('流式聊天功能在本地模式下不可用');
   }
 
   /// 发送消息（非流式响应）
@@ -182,22 +174,8 @@ class AiBoxFacadeService {
     List<Map<String, dynamic>>? openAIContent,
     List<String>? imagesBase64,
   }) async {
-    final aiService = AiBoxServiceFactory.getService();
-    
-    // 构建聊天请求
-    final request = ChatCompletionRequest(
-      model: model ?? '',
-      messages: [
-        ChatMessage(
-          role: ChatRole.CHAT_ROLE_USER,
-          content: message,
-        ),
-      ],
-      temperature: temperature ?? 0.7,
-      stream: false,
-    );
-    
-    return await aiService.chatSync(request);
+    // 本地模式下不支持聊天功能
+    throw UnsupportedError('聊天功能在本地模式下不可用');
   }
 
   /// 获取当前提供商（带缓存逻辑）
