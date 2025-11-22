@@ -83,6 +83,24 @@ class AiBoxLocalStorageService {
     }
   }
 
+  /// 获取当前Provider ID
+  Future<String?> getCurrentProviderId() async {
+    try {
+      return await _localStorage.get<String>('ai_box_current_provider_id');
+    } catch (e) {
+      throw StorageException('获取当前Provider ID失败: $e');
+    }
+  }
+
+  /// 设置当前Provider ID
+  Future<void> setCurrentProviderId(String providerId) async {
+    try {
+      await _localStorage.set('ai_box_current_provider_id', providerId);
+    } catch (e) {
+      throw StorageException('设置当前Provider ID失败: $e');
+    }
+  }
+
   /// 消息管理相关存储方法
   
   /// 获取会话历史

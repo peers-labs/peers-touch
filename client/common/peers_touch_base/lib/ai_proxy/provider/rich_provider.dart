@@ -15,14 +15,51 @@ final Map<String, ChatClientCreator> _clientRegistry = {
       OpenAiChatClient(apiKey: apiKey),
 };
 
+List<RichModel> parseModelsFromJson(String json, String providerId) {
+  if (json.isEmpty) return [];
+  try {
+    final config = jsonDecode(json);
+    final modelsData = config['models'] as List<dynamic>? ?? [];
+
+    return modelsData.map((modelData) {
+      final capabilitiesData =
+          (modelData['capabilities'] as List<dynamic>? ?? []).map((e) => e.toString()).toSet();
+      return RichModel(
+        id: modelData['id'] ?? '',
+        providerId: providerId,
+        name: modelData['name'] ?? '',
+        description: modelData['description'] ?? '',
+        capabilities: capabilitiesData,
+      );
+    }).toList();
+  } catch (e) {
+    // 使用异常而不是print，让调用者决定如何处理
+    throw InvalidModelsException(
+      '解析模型配置失败: $e',
+      providerId: providerId,
+    );
+  }
+}
+
+String parseApiKey(String settingsJson) {
+  if (settingsJson.isEmpty) return '';
+  try {
+    final settings = jsonDecode(settingsJson);
+    return settings['apiKey'] ?? '';
+  } catch (e) {
+    // 返回空字符串而不是抛出异常，允许没有API密钥的情况
+    return '';
+  }
+}
+
 class RichProvider {
   final pb.Provider _rawProvider;
   final List<RichModel> models;
   final String _apiKey;
 
   RichProvider(this._rawProvider)
-      : models = _parseModelsFromJson(_rawProvider.configJson, _rawProvider.id),
-        _apiKey = _parseApiKey(_rawProvider.settingsJson) {
+      : models = parseModelsFromJson(_rawProvider.configJson, _rawProvider.id),
+        _apiKey = parseApiKey(_rawProvider.settingsJson) {
     _validateConfiguration();
   }
 

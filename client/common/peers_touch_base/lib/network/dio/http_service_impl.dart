@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:peers_touch_base/foundation.dart' if (dart.library.ui) 'package:flutter/foundation.dart';
 import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/network/dio/interceptors/auth_interceptor.dart';
 import 'package:peers_touch_base/network/dio/interceptors/error_interceptor.dart';
