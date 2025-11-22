@@ -1,12 +1,5 @@
 package registry
 
-import (
-	"time"
-
-	"github.com/peers-labs/peers-touch/station/frame/core/option"
-	"github.com/peers-labs/peers-touch/station/frame/core/store"
-)
-
 // TURNAuthMethod defines the type of TURN authentication
 type TURNAuthMethod string
 
@@ -46,64 +39,4 @@ type OAuthAuth struct {
 	TokenEndpoint string `json:"token_endpoint,omitempty" pconf:"token-endpoint"` // Optional: Endpoint to refresh the token
 	ClientID      string `json:"client_id,omitempty" pconf:"client-id"`           // Optional: OAuth client ID (for token refresh)
 	ClientSecret  string `json:"client_secret,omitempty" pconf:"client-secret"`   // Optional: OAuth client secret (for token refresh)
-}
-
-// Options is the options for the registry plugin.
-type Options struct {
-	*option.Options
-
-	IsDefault      bool
-	PrivateKey     string
-	Interval       time.Duration
-	ConnectTimeout time.Duration
-	TurnConfig     *TURNAuthConfig
-	Store          store.Store
-}
-
-func WithInterval(dur time.Duration) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.Interval = dur
-	})
-}
-
-func WithConnectTimeout(dur time.Duration) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.ConnectTimeout = dur
-	})
-}
-
-func WithPrivateKey(privateKey string) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.PrivateKey = privateKey
-	})
-}
-
-func WithTurnConfig(turnConfig TURNAuthConfig) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.TurnConfig = &turnConfig
-	})
-}
-
-func WithStore(store store.Store) option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.Store = store
-	})
-}
-
-func WithISDefault() option.Option {
-	return OptionWrapper.Wrap(func(o *Options) {
-		o.IsDefault = true
-	})
-}
-
-type registryOptionsKey struct{}
-
-var OptionWrapper = option.NewWrapper[Options](registryOptionsKey{}, func(options *option.Options) *Options {
-	return &Options{
-		Options: options,
-	}
-})
-
-func GetPluginRegions(opts ...option.Option) *Options {
-	return option.GetOptions(opts...).Ctx().Value(registryOptionsKey{}).(*Options)
 }

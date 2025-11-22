@@ -10,12 +10,22 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 )
 
-var (
-	Wrapper = option.NewWrapper[Options]()
-)
+type transportOptionsKey struct{}
+
+var OptionWrapper = option.NewWrapper[Options](transportOptionsKey{}, func(options *option.Options) *Options {
+	return &Options{
+		Options:       options,
+		ExtendOptions: &option.ExtendOptions{},
+	}
+})
+
+func GetOptions(opts ...option.Option) *Options {
+	return option.GetOptions(opts...).Ctx().Value(transportOptionsKey{}).(*Options)
+}
 
 type Options struct {
 	*option.Options
+	*option.ExtendOptions
 
 	// Codec is the codec interface to use where headers are not supported
 	// by the transport and the entire payload must be encoded
@@ -52,19 +62,19 @@ type ListenOption func(l *Listener)
 type DialOption func(*DialOptions)
 
 func Addrs(addrs ...string) option.Option {
-	return Wrapper.Wrap(func(o *Options) {
+	return OptionWrapper.Wrap(func(o *Options) {
 		o.Addrs = addrs
 	})
 }
 
 func Secure(b bool) option.Option {
-	return Wrapper.Wrap(func(o *Options) {
+	return OptionWrapper.Wrap(func(o *Options) {
 		o.Secure = b
 	})
 }
 
 func Timeout(t string) option.Option {
-	return Wrapper.Wrap(func(o *Options) {
+	return OptionWrapper.Wrap(func(o *Options) {
 		d, err := time.ParseDuration(t)
 		if err != nil {
 			return

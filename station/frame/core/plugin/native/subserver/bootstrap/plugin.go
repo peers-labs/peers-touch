@@ -53,7 +53,12 @@ func (p *bootstrap) Options() []option.Option {
 		}
 	}
 
-	opts = append(opts, WithDHTRefreshInterval(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.DHTRefreshInterval*time.Second))
+	dhtRefreshInterval := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.DHTRefreshInterval
+	if dhtRefreshInterval == 0 {
+		dhtRefreshInterval = 30
+	}
+	opts = append(opts, WithDHTRefreshInterval(dhtRefreshInterval*time.Second))
+	
 	return opts
 }
 

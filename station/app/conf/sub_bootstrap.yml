@@ -1,0 +1,6 @@
+peers:
+  node:
+    server:
+      subserver:
+        bootstrap:
+          enabled: true
