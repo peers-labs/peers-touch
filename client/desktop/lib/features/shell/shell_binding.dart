@@ -1,7 +1,6 @@
 import 'package:get/get.dart';
 import 'controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/settings/settings_module.dart';
-// 同步注册 AIChat 模块示例
 import 'package:peers_touch_desktop/features/ai_chat/ai_chat_module.dart';
 import 'package:peers_touch_desktop/features/profile/profile_module.dart';
 import 'package:peers_touch_desktop/features/peers_admin/peers_admin_module.dart';

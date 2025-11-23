@@ -1,38 +1,110 @@
 syntax = "proto3";
 
-package peers_touch.model.core.v1;
+package peers_touch.model.chat.v1;
 
 import "google/protobuf/timestamp.proto";
-import "domain/core/core.proto"; // Import Actor from core.proto
+import "domain/core/core.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
-// ChatSession: 聊天会话
+// 聊天会话
 message ChatSession {
   string id = 1;
   string topic = 2;
   repeated string participant_ids = 3;
   google.protobuf.Timestamp last_message_at = 4;
   string last_message_snippet = 5;
+  SessionType type = 6;
+  bool is_pinned = 7;
+  int64 unread_count = 8;
+  map<string, string> metadata = 9;
 }
 
-// Message: 聊天消息
-message Message {
+// 聊天消息
+message ChatMessage {
   string id = 1;
   string session_id = 2;
   string sender_id = 3;
   string content = 4;
   google.protobuf.Timestamp sent_at = 5;
+  MessageType type = 6;
+  MessageStatus status = 7;
+  string encrypted_content = 8;  // 加密内容
+  repeated MessageAttachment attachments = 9;
+  map<string, string> metadata = 10;
 }
 
-// Friend: 好友关系
+// 消息附件
+message MessageAttachment {
+  string id = 1;
+  string name = 2;
+  int64 size = 3;
+  string type = 4;
+  string url = 5;
+  string thumbnail_url = 6;
+  map<string, string> metadata = 7;
+}
+
+// 好友关系
 message Friend {
-  Actor user = 1;
-  enum FriendshipStatus {
-    PENDING = 0;
-    ACCEPTED = 1;
-    BLOCKED = 2;
-  }
+  peers_touch.model.core.v1.Actor user = 1;
   FriendshipStatus status = 2;
   google.protobuf.Timestamp friendship_created_at = 3;
+  string public_key = 4;  // 用于端到端加密
+  map<string, string> metadata = 5;
+}
+
+// 好友请求
+message FriendRequest {
+  string id = 1;
+  string sender_id = 2;
+  string receiver_id = 3;
+  string message = 4;
+  FriendRequestStatus status = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp responded_at = 7;
+}
+
+// 会话类型
+enum SessionType {
+  SESSION_TYPE_UNSPECIFIED = 0;
+  SESSION_TYPE_DIRECT = 1;    // 私聊
+  SESSION_TYPE_GROUP = 2;     // 群聊
+}
+
+// 消息类型
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  MESSAGE_TYPE_TEXT = 1;          // 文本
+  MESSAGE_TYPE_IMAGE = 2;         // 图片
+  MESSAGE_TYPE_FILE = 3;          // 文件
+  MESSAGE_TYPE_LOCATION = 4;      // 位置
+  MESSAGE_TYPE_SYSTEM = 5;        // 系统消息
+}
+
+// 消息状态
+enum MessageStatus {
+  MESSAGE_STATUS_UNSPECIFIED = 0;
+  MESSAGE_STATUS_SENDING = 1;     // 发送中
+  MESSAGE_STATUS_SENT = 2;        // 已发送
+  MESSAGE_STATUS_DELIVERED = 3;   // 已送达
+  MESSAGE_STATUS_FAILED = 4;      // 发送失败
+}
+
+// 好友关系状态
+enum FriendshipStatus {
+  FRIENDSHIP_STATUS_UNSPECIFIED = 0;
+  FRIENDSHIP_STATUS_PENDING = 1;   // 待接受
+  FRIENDSHIP_STATUS_ACCEPTED = 2;  // 已接受
+  FRIENDSHIP_STATUS_BLOCKED = 3;   // 已屏蔽
+  FRIENDSHIP_STATUS_REMOVED = 4;   // 已删除
+}
+
+// 好友请求状态
+enum FriendRequestStatus {
+  FRIEND_REQUEST_STATUS_UNSPECIFIED = 0;
+  FRIEND_REQUEST_STATUS_PENDING = 1;   // 待处理
+  FRIEND_REQUEST_STATUS_ACCEPTED = 2;  // 已接受
+  FRIEND_REQUEST_STATUS_REJECTED = 3;  // 已拒绝
+  FRIEND_REQUEST_STATUS_EXPIRED = 4;   // 已过期
 }

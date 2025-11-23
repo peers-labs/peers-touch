@@ -9,6 +9,7 @@ peers:
       name: native
       native:
         enable-relay: true
+        libp2p-identity-key-file: .keys/transport.identity.key
     server:
       name: hertz
       address: :18080

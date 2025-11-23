@@ -5,10 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"crypto/rand"
+
 	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -28,6 +34,11 @@ var (
 	_ transport.Listener  = &libp2pListener{}
 	_ transport.Socket    = &libp2pSocket{}
 )
+
+type LibP2pTransport interface {
+	transport.Transport
+	Host() host.Host
+}
 
 type libp2pTransport struct {
 	host        host.Host
@@ -59,7 +70,8 @@ type libp2pClient struct {
 }
 
 // NewTransport creates a new libp2p transport
-func NewTransport(opts ...option.Option) transport.Transport {
+func NewTransport(opts ...option.Option) LibP2pTransport {
+	// Create transport - just like registry does, use GetOptions directly
 	t := &libp2pTransport{
 		protocolID:  DefaultProtocolID,
 		initialized: false,
@@ -81,13 +93,20 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 		t.opts.Apply(o)
 	}
 
-	// Create libp2p host with proper configuration
 	libp2pOpts := []libp2p.Option{
 		libp2p.EnableNATService(),
 		libp2p.EnableHolePunching(),
 	}
 
-	if t.opts.ExtOptions.(*options).EnableRelay {
+	// Safely get extended options
+	var extOpts *options
+	if t.opts.ExtOptions != nil {
+		if opts, ok := t.opts.ExtOptions.(*options); ok {
+			extOpts = opts
+		}
+	}
+
+	if extOpts != nil && extOpts.EnableRelay {
 		libp2pOpts = append(libp2pOpts, libp2p.EnableRelay())
 	}
 
@@ -116,7 +135,16 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 	// Enable ping node for connectivity checking
 	libp2pOpts = append(libp2pOpts, libp2p.Ping(true))
 
-	// Create the host
+	if ext, ok := t.opts.ExtOptions.(*options); ok {
+		if len(ext.libp2pIdentityKeyFile) > 0 {
+			key, err := loadOrGenerateKey(ext.libp2pIdentityKeyFile)
+			if err != nil {
+				return fmt.Errorf("failed to load identity key: %w", err)
+			}
+			libp2pOpts = append(libp2pOpts, libp2p.Identity(key))
+		}
+	}
+
 	h, err := libp2p.New(libp2pOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to create libp2p host: %w", err)
@@ -223,6 +251,10 @@ func (t *libp2pTransport) Close() error {
 		return t.host.Close()
 	}
 	return nil
+}
+
+func (t *libp2pTransport) Host() host.Host {
+	return t.host
 }
 
 func (t *libp2pTransport) String() string {
@@ -397,4 +429,54 @@ func writeUint32(w io.Writer, v uint32) error {
 	buf[3] = byte(v)
 	_, err := w.Write(buf[:])
 	return err
+}
+
+// DialAddr builds a dialable multiaddr for a native transport instance
+// It returns "<listen-multiaddr>/p2p/<peerID>"
+func DialAddr(t transport.Transport) (string, error) {
+	tt, ok := t.(*libp2pTransport)
+	if !ok {
+		return "", fmt.Errorf("not a native libp2p transport")
+	}
+	if tt.host == nil {
+		return "", fmt.Errorf("transport not initialized")
+	}
+	addrs := tt.host.Addrs()
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("no listen addresses")
+	}
+	return addrs[0].String() + "/p2p/" + tt.host.ID().String(), nil
+}
+
+func loadOrGenerateKey(keyFilePath string) (crypto.PrivKey, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	}
+	absKeyPath, err := filepath.Abs(keyFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path of key file: %w", err)
+	}
+	relPath, err := filepath.Rel(wd, absKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("key file path is not under the working directory: %w", err)
+	}
+	if strings.HasPrefix(relPath, "..") {
+		return nil, fmt.Errorf("key file path is not under the working directory")
+	}
+	if data, err := os.ReadFile(keyFilePath); err == nil {
+		return crypto.UnmarshalPrivateKey(data)
+	}
+	privKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	data, err := crypto.MarshalPrivateKey(privKey)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(keyFilePath, data, 0600); err != nil {
+		return nil, err
+	}
+	return privKey, nil
 }

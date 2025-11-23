@@ -6,7 +6,7 @@ import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.
 
 // 使用新的本地存储服务
 import '../service/ai_box_local_storage_service.dart';
-import 'i_provider_manager.dart';
+import 'provider_manager_interface.dart';
 
 
 /// Provider同步异常
@@ -29,6 +29,7 @@ class ProviderManager implements IProviderManager {
   final Map<String, Provider> _providers = {};
   String? _defaultProviderId;
   String? _currentProviderId;
+  final Map<String, String> _sessionCurrentProviderIds = {};
 
   ProviderManager({
     required AiBoxService aiBoxService,
@@ -276,6 +277,18 @@ class ProviderManager implements IProviderManager {
     _currentProviderId = id;
   }
 
+  /// 设置会话级当前Provider
+  Future<void> setCurrentProviderForSession(String sessionId, String id) async {
+    if (!_providers.containsKey(id) && id.isNotEmpty) {
+      final provider = await getProvider(id);
+      if (provider == null) {
+        throw Exception('Provider not found: $id');
+      }
+    }
+    _sessionCurrentProviderIds[sessionId] = id;
+    await _localStorage.setSessionCurrentProviderId(sessionId, id);
+  }
+
   /// 获取当前Provider
   Future<Provider?> getCurrentProvider() async {
     // 如果缓存中没有当前Provider ID，尝试从本地存储获取
@@ -298,6 +311,25 @@ class ProviderManager implements IProviderManager {
       }
     }
     
+    return null;
+  }
+
+  /// 获取会话级当前Provider
+  Future<Provider?> getCurrentProviderForSession(String sessionId) async {
+    // 优先使用缓存
+    var id = _sessionCurrentProviderIds[sessionId];
+    id ??= await _localStorage.getSessionCurrentProviderId(sessionId);
+    if (id == null || id.isEmpty) {
+      return await getDefaultProvider();
+    }
+    if (!_providers.containsKey(id)) {
+      final provider = await getProvider(id);
+      if (provider != null) {
+        return provider;
+      }
+    } else {
+      return _providers[id];
+    }
     return null;
   }
 
