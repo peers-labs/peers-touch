@@ -155,6 +155,10 @@ class CreateProviderForm extends StatelessWidget {
               );
             }).toList(),
             onChanged: (value) {
+              if (value != null) {
+                final selectedFormat = formats.firstWhere((format) => format.type == value);
+                controller.proxyUrlController.text = selectedFormat.defaultUrl;
+              }
               controller.requestFormat.value = value;
             },
             icon: Icon(Icons.arrow_drop_down, color: tokens.textSecondary),

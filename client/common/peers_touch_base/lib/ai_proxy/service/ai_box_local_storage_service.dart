@@ -101,6 +101,24 @@ class AiBoxLocalStorageService {
     }
   }
 
+  /// 获取会话级当前Provider ID
+  Future<String?> getSessionCurrentProviderId(String sessionId) async {
+    try {
+      return await _localStorage.get<String>('ai_box_current_provider_id:$sessionId');
+    } catch (e) {
+      throw StorageException('获取会话当前Provider ID失败: $e');
+    }
+  }
+
+  /// 设置会话级当前Provider ID
+  Future<void> setSessionCurrentProviderId(String sessionId, String providerId) async {
+    try {
+      await _localStorage.set('ai_box_current_provider_id:$sessionId', providerId);
+    } catch (e) {
+      throw StorageException('设置会话当前Provider ID失败: $e');
+    }
+  }
+
   /// 消息管理相关存储方法
   
   /// 获取会话历史
@@ -287,23 +305,7 @@ class AiBoxLocalStorageService {
 
     /// 将Protobuf Provider转换为Map
   Map<String, dynamic> _providerToMap(Provider provider) {
-    return {
-      'id': provider.id,
-      'name': provider.name,
-      'peersUserId': provider.peersUserId,
-      'sort': provider.sort,
-      'enabled': provider.enabled,
-      'checkModel': provider.checkModel,
-      'logo': provider.logo,
-      'description': provider.description,
-      'keyVaults': provider.keyVaults,
-      'sourceType': provider.sourceType,
-      'settingsJson': provider.settingsJson,
-      'configJson': provider.configJson,
-      'accessedAt': provider.accessedAt.toDateTime().millisecondsSinceEpoch,
-      'createdAt': provider.createdAt.toDateTime().millisecondsSinceEpoch,
-      'updatedAt': provider.updatedAt.toDateTime().millisecondsSinceEpoch,
-    };
+    return provider.toProto3Json() as Map<String, dynamic>;
   }
 }
 

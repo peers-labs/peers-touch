@@ -2,22 +2,26 @@ import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart' as dio;
 import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_desktop/core/services/network_discovery/libp2p_network_service.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/core/network/network_initializer.dart';
+import 'package:peers_touch_desktop/features/peers_admin/model/libp2p_test_result.dart';
 
 /// PeersAdmin 控制器：负责读取后端地址、执行管理与 Peer 相关请求
 class PeersAdminController extends GetxController {
   final ApiClient apiClient;
   final LocalStorage localStorage;
   final SecureStorage secureStorage;
+  final Libp2pNetworkService libp2pNetworkService;
 
   PeersAdminController({
     required this.apiClient,
     required this.localStorage,
     required this.secureStorage,
+    required this.libp2pNetworkService,
   });
 
   // 后端地址（从设置中读取）
@@ -285,5 +289,38 @@ class PeersAdminController extends GetxController {
       if (email != null && email.isNotEmpty) 'email': email,
       if (whatsUp != null && whatsUp.isNotEmpty) 'whats_up': whatsUp,
     });
+  }
+
+  // ---------------- Libp2p 网络工具 ----------------
+  final libp2pConnectivityResult = Rxn<Libp2pTestResult>();
+  final libp2pBootstrapResult = Rxn<Libp2pTestResult>();
+  final isTestingLibp2p = false.obs;
+
+  Future<void> testLibp2pConnectivity(String address) async {
+    isTestingLibp2p.value = true;
+    libp2pConnectivityResult.value = null;
+    
+    try {
+      final result = await libp2pNetworkService.testConnectivity(address);
+      libp2pConnectivityResult.value = Libp2pTestResult.success(result);
+    } catch (e) {
+      libp2pConnectivityResult.value = Libp2pTestResult.failure('连接测试失败: $e');
+    } finally {
+      isTestingLibp2p.value = false;
+    }
+  }
+
+  Future<void> testBootstrapDiscovery(String bootstrapAddress) async {
+    isTestingLibp2p.value = true;
+    libp2pBootstrapResult.value = null;
+    
+    try {
+      final result = await libp2pNetworkService.testBootstrapDiscovery(bootstrapAddress);
+      libp2pBootstrapResult.value = Libp2pTestResult.success(result);
+    } catch (e) {
+      libp2pBootstrapResult.value = Libp2pTestResult.failure('引导发现测试失败: $e');
+    } finally {
+      isTestingLibp2p.value = false;
+    }
   }
 }

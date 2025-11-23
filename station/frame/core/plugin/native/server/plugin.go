@@ -42,7 +42,7 @@ func (n *nativeServerPlugin) Options() []option.Option {
 
 func (n *nativeServerPlugin) New(opts ...option.Option) server.Server {
 	opts = append(opts, n.Options()...)
-	return NewServerV2(opts...)
+	return NewServer(opts...)
 }
 
 func init() {

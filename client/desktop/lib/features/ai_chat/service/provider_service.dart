@@ -1,16 +1,16 @@
 import 'dart:convert';
 
 import 'package:get/get.dart';
-import 'package:peers_touch_base/ai_proxy/service/ai_box_service_factory.dart';
+import 'package:peers_touch_base/ai_proxy/service/ai_box_facade_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 
 /// AI服务提供商管理服务
-class ProviderService {
-  static const String _currentProviderKey = 'current_ai_provider';
+class ProviderService extends GetxService {
+  late final AiBoxFacadeService _aiBoxFacadeService;
 
-  late final _aiBoxFacadeService = AiBoxServiceFactory.createFacadeService();
+  ProviderService({AiBoxFacadeService? aiBoxFacadeService})
+      : _aiBoxFacadeService = aiBoxFacadeService ?? Get.find();
 
   /// 获取所有提供商
   Future<List<Provider>> getProviders() async {
@@ -21,51 +21,30 @@ class ProviderService {
     }
   }
 
-  /// 保存提供商（新）
-  Future<void> saveProviderNew(Provider provider) async {
+  /// 创建提供商
+  Future<void> createProvider(Provider provider) async {
     try {
       await _aiBoxFacadeService.createProvider(provider);
     } catch (e) {
-      throw Exception('Failed to save provider new: $e');
+      throw Exception('Failed to create provider: $e');
+    }
+  }
+
+  /// 更新提供商
+  Future<void> updateProvider(Provider provider) async {
+    try {
+      await _aiBoxFacadeService.updateProvider(provider);
+    } catch (e) {
+      throw Exception('Failed to update provider: $e');
     }
   }
 
   /// 获取当前提供商
   Future<Provider?> getCurrentProvider() async {
-    try { 
-        // 如果没有设置当前提供商，尝试获取默认提供商
-        final defaultProvider = await _aiBoxFacadeService.getDefaultProvider();
-        if (defaultProvider != null) {
-          return defaultProvider;
-        }
-
-        // 如果也没有默认提供商，返回第一个启用的提供商
-        final providers = await getProviders();
-        return providers.firstWhere(
-          (p) => p.enabled,
-          orElse: () => providers.isNotEmpty
-              ? providers.first
-              : throw Exception('No provider found'),
-        );
+    try {
+      return await _aiBoxFacadeService.getCurrentProvider();
     } catch (e) {
       return null;
-    }
-  }
-
-  /// 保存提供商
-  Future<void> saveProvider(Provider provider) async {
-    try {
-      // 检查是否已存在
-      final existingProvider = await _aiBoxFacadeService.getProvider(provider.id);
-      if (existingProvider != null) {
-        // 更新现有提供商
-        await _aiBoxFacadeService.updateProvider(provider);
-      } else {
-        // 创建新提供商
-        await _aiBoxFacadeService.createProvider(provider);
-      }
-    } catch (e) {
-      throw Exception('Failed to save provider: $e');
     }
   }
 
@@ -81,18 +60,27 @@ class ProviderService {
   /// 设置当前提供商
   Future<void> setCurrentProvider(String providerId) async {
     try {
-      final provider = await _aiBoxFacadeService.getProvider(providerId);
-      if (provider == null) {
-        throw Exception('Provider not found');
-      }
-
-      // 更新访问时间
-      final updatedProvider = provider.rebuild(
-        (b) => b..accessedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
-      );
-      await saveProvider(updatedProvider);
+      await _aiBoxFacadeService.setCurrentProvider(providerId);
     } catch (e) {
       throw Exception('Failed to set current provider: $e');
+    }
+  }
+
+  /// 获取会话级当前提供商
+  Future<Provider?> getCurrentProviderForSession(String sessionId) async {
+    try {
+      return await _aiBoxFacadeService.getCurrentProviderForSession(sessionId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// 设置会话级当前提供商
+  Future<void> setCurrentProviderForSession(String sessionId, String providerId) async {
+    try {
+      await _aiBoxFacadeService.setCurrentProviderForSession(sessionId, providerId);
+    } catch (e) {
+      throw Exception('Failed to set session current provider: $e');
     }
   }
 

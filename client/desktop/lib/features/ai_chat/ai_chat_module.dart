@@ -15,9 +15,7 @@ class AIChatModule {
     // 注册依赖绑定
     AIChatBinding().dependencies();
 
-    // 注册提供商服务到全局依赖注入
-    Get.lazyPut<ProviderService>(() => ProviderService(), fenix: true);
-    Get.lazyPut<ProviderController>(() => ProviderController(), fenix: true);
+
 
     // 注册到头部区域（业务功能）
     PrimaryMenuManager.registerItem(PrimaryMenuItem(
