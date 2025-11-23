@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
-import 'package:peers_touch_desktop/features/peers_admin/peers_admin_controller.dart';
+import 'package:peers_touch_desktop/features/peers_admin/model/libp2p_test_result.dart';
+import 'package:peers_touch_desktop/features/peers_admin/controller/peers_admin_controller.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 
 class PeersAdminPage extends StatelessWidget {
@@ -39,6 +40,7 @@ class PeersAdminPage extends StatelessWidget {
       ('activitypub', 'ActivityPub', Icons.public),
       ('wellknown', 'Well-Known', Icons.info_outline),
       ('actor', 'Actor', Icons.person_outline),
+      ('libp2p', 'Peers-Touch网络工具', Icons.network_check),
     ];
     return Obx(() {
       final current = controller.currentSection.value;
@@ -85,6 +87,8 @@ class PeersAdminPage extends StatelessWidget {
           return _centerWellKnown(context, controller, tokens);
         case 'actor':
           return _centerActor(context, controller, tokens);
+        case 'libp2p':
+          return _centerLibp2p(context, controller, tokens);
         default:
           return _centerPlaceholder(context, controller, tokens, title: 'overview');
       }
@@ -432,6 +436,131 @@ class PeersAdminPage extends StatelessWidget {
           )),
         ],
       ),
+    );
+  }
+
+  // Libp2p 网络工具页
+  Widget _centerLibp2p(BuildContext context, PeersAdminController controller, WeChatTokens tokens) {
+    final libp2pAddressController = TextEditingController();
+    final bootstrapAddressController = TextEditingController();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Peers-Touch 网络工具', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+        SizedBox(height: UIKit.spaceMd(context)),
+        
+        // Libp2p 地址连接测试
+        Card(
+          child: Padding(
+            padding: EdgeInsets.all(UIKit.spaceMd(context)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Libp2p 地址连接测试', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                SizedBox(height: UIKit.spaceSm(context)),
+                TextField(
+                  controller: libp2pAddressController,
+                  decoration: InputDecoration(
+                    labelText: '输入 libp2p 地址',
+                    hintText: '/ip4/127.0.0.1/tcp/4001/p2p/Qm...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SizedBox(height: UIKit.spaceSm(context)),
+                Obx(() => ElevatedButton(
+                  onPressed: controller.isTestingLibp2p.value ? null : () {
+                    final address = libp2pAddressController.text.trim();
+                    if (address.isNotEmpty) {
+                      controller.testLibp2pConnectivity(address);
+                    }
+                  },
+                  child: controller.isTestingLibp2p.value 
+                      ? CircularProgressIndicator()
+                      : Text('测试连接'),
+                )),
+                SizedBox(height: UIKit.spaceSm(context)),
+                Obx(() => controller.libp2pConnectivityResult.value != null
+                    ? _buildLibp2pResult(controller.libp2pConnectivityResult.value!, tokens)
+                    : SizedBox.shrink()),
+              ],
+            ),
+          ),
+        ),
+        
+        SizedBox(height: UIKit.spaceMd(context)),
+        
+        // Bootstrap 引导发现测试
+        Card(
+          child: Padding(
+            padding: EdgeInsets.all(UIKit.spaceMd(context)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Bootstrap 引导发现测试', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                SizedBox(height: UIKit.spaceSm(context)),
+                TextField(
+                  controller: bootstrapAddressController,
+                  decoration: InputDecoration(
+                    labelText: '输入 bootstrap 地址',
+                    hintText: '/ip4/127.0.0.1/tcp/4001/p2p/Qm...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SizedBox(height: UIKit.spaceSm(context)),
+                Obx(() => ElevatedButton(
+                  onPressed: controller.isTestingLibp2p.value ? null : () {
+                    final address = bootstrapAddressController.text.trim();
+                    if (address.isNotEmpty) {
+                      controller.testBootstrapDiscovery(address);
+                    }
+                  },
+                  child: controller.isTestingLibp2p.value 
+                      ? CircularProgressIndicator()
+                      : Text('测试引导发现'),
+                )),
+                SizedBox(height: UIKit.spaceSm(context)),
+                Obx(() => controller.libp2pBootstrapResult.value != null
+                    ? _buildLibp2pResult(controller.libp2pBootstrapResult.value!, tokens)
+                    : SizedBox.shrink()),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLibp2pResult(Libp2pTestResult result, WeChatTokens tokens) {
+    return Builder(
+      builder: (context) {
+        return Container(
+          padding: EdgeInsets.all(UIKit.spaceSm(context)),
+          decoration: BoxDecoration(
+            color: result.success ? Colors.green.shade100 : Colors.red.shade100,
+            borderRadius: BorderRadius.circular(tokens.radiusSm),
+            border: Border.all(color: result.success ? Colors.green : Colors.red),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                result.success ? '成功' : '失败',
+                style: TextStyle(
+                  color: result.success ? Colors.green : Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: UIKit.spaceXs(context)),
+              Text(result.message, style: TextStyle(color: tokens.textPrimary)),
+              if (result.details != null) ...[
+                SizedBox(height: UIKit.spaceXs(context)),
+                Text(result.details!, style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
+              ],
+            ],
+          ),
+        );
+      }
     );
   }
 }

@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
-import 'package:peers_touch_base/ai_proxy/provider/provider_manager.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/request_format.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 
 class CreateProviderController extends GetxController {
-  final ProviderManager _providerManager = Get.find();
+  final ProviderService _providerService = Get.find();
 
   final formKey = GlobalKey<FormState>();
 
@@ -56,7 +57,8 @@ class CreateProviderController extends GetxController {
         createdAt: Timestamp.fromDateTime(now.toUtc()),
         updatedAt: Timestamp.fromDateTime(now.toUtc()),
       );
-      await _providerManager.createProvider(provider);
+      await _providerService.createProvider(provider);
+      Get.find<ProviderController>().loadProviders();
       Get.back();
     }
   }

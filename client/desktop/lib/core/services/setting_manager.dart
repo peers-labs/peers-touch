@@ -134,7 +134,7 @@ class SettingManager implements SettingRegistry {
     // 高级设计分区
     registerSection(SettingSection(
       id: 'advanced_design',
-      title: '高级设计',
+      title: '高级设置',
       icon: Icons.design_services,
       items: [
         SettingItem(

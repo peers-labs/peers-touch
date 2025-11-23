@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 
 import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_desktop/core/network/network_status_service.dart';
+import 'package:peers_touch_desktop/core/services/network_discovery/libp2p_network_service.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/features/shared/services/user_status_service.dart';
@@ -25,6 +26,7 @@ class InitialBinding extends Bindings {
   /// Register network services
   void _registerNetworkServices() {
     Get.put<NetworkStatusService>(NetworkStatusService(), permanent: true);
+    Get.put<Libp2pNetworkService>(Libp2pNetworkService(), permanent: true);
     Get.put<ApiClient>(
         ApiClient(
           secureStorage: Get.find<SecureStorage>(),
