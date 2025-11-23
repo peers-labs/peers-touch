@@ -1,5 +1,6 @@
-# Set paths
-$ProjectRoot = (Get-Item -Path "..").FullName
+# Set paths (based on script location)
+$ScriptRoot = $PSScriptRoot
+$ProjectRoot = (Get-Item -Path "$ScriptRoot\..").FullName
 $ProtoRoot = "$ProjectRoot\model"
 $DartOut = "$ProjectRoot\client\common\peers_touch_base\lib\model"
 $GoOut = "$ProjectRoot\station"
@@ -31,7 +32,7 @@ if ($protoFiles.Count -eq 0) {
 
 # Run protoc for Dart using dart pub global run
 Write-Output "Running protoc for Dart..."
-$env:PATH = "$env:PATH;$env:USERPROFILE\AppData\Local\Pub\Cache\bin"
+$env:PATH = "$env:PATH;$env:USERPROFILE\AppData\Local\Pub\Cache\bin;$HOME\.pub-cache\bin"
 protoc --dart_out=grpc:"$DartOut" -I"$ProtoRoot" $protoFiles
 
 if ($LASTEXITCODE -ne 0) {

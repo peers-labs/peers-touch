@@ -20,7 +20,13 @@ var OptionWrapper = option.NewWrapper[Options](transportOptionsKey{}, func(optio
 })
 
 func GetOptions(opts ...option.Option) *Options {
-	return option.GetOptions(opts...).Ctx().Value(transportOptionsKey{}).(*Options)
+	// Use OptionWrapper to safely get or create transport options
+	options := option.GetOptions(opts...)
+	if options.Ctx().Value(transportOptionsKey{}) == nil {
+		// If transport options don't exist, create them using the wrapper
+		return OptionWrapper.NewFunc(options)
+	}
+	return options.Ctx().Value(transportOptionsKey{}).(*Options)
 }
 
 type Options struct {
@@ -80,5 +86,11 @@ func Timeout(t string) option.Option {
 			return
 		}
 		o.Timeout = d
+	})
+}
+
+func Context(ctx context.Context) option.Option {
+	return OptionWrapper.Wrap(func(o *Options) {
+		o.Context = ctx
 	})
 }

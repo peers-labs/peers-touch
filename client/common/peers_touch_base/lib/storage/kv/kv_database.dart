@@ -18,7 +18,13 @@ class KeyValueItems extends Table {
 
 @DriftDatabase(tables: [KeyValueItems])
 class KvDatabase extends _$KvDatabase {
-  KvDatabase() : super(openConnection('kv_storage.db'));
+  static final KvDatabase _instance = KvDatabase._internal();
+
+  factory KvDatabase() {
+    return _instance;
+  }
+
+  KvDatabase._internal() : super(openConnection('kv_storage.db'));
 
   @override
   int get schemaVersion => 1;
@@ -26,6 +32,7 @@ class KvDatabase extends _$KvDatabase {
   /// Writes a key-value pair.
   Future<void> set<T>(String key, T value) {
     final serialized = value is String ? value : jsonEncode(value);
+    print('[KvDatabase] set: key=$key, value=$serialized');
     return into(keyValueItems).insertOnConflictUpdate(
       KeyValueItemsCompanion.insert(key: key, value: serialized),
     );
@@ -34,6 +41,7 @@ class KvDatabase extends _$KvDatabase {
   /// Reads a value by its key.
   Future<T?> get<T>(String key) async {
     final result = await (select(keyValueItems)..where((t) => t.key.equals(key))).getSingleOrNull();
+    print('[KvDatabase] get: key=$key, result=${result?.value}');
     if (result == null) return null;
 
     if (T == String) {

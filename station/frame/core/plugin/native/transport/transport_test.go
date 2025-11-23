@@ -1,9 +1,11 @@
 package native
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
@@ -19,6 +21,8 @@ type testEnv struct {
 
 func setupServer(t *testing.T) *testEnv {
 	t.Helper()
+	// Set root context first
+	option.GetOptions(option.WithRootCtx(context.Background()))
 	srv := NewTransport()
 	if err := srv.Init(); err != nil {
 		t.Fatal(err)
@@ -65,6 +69,10 @@ func setupServer(t *testing.T) *testEnv {
 
 func setupClient(t *testing.T, env *testEnv) {
 	t.Helper()
+	// Set root context for client too
+	option.GetOptions(option.WithRootCtx(context.Background()))
+	// Reset global transport addrs for client to avoid self-dial
+	option.GetOptions(transport.Addrs())
 	cli := NewTransport()
 	if err := cli.Init(); err != nil {
 		t.Fatal(err)
