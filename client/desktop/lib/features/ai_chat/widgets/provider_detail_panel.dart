@@ -30,12 +30,28 @@ class ProviderDetailPanel extends StatelessWidget {
         title: Text(provider.name, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
         automaticallyImplyLeading: false,
         actions: [
-          Obx(() => Switch(
-                value: provider.enabled, // This should be driven by controller state
-                onChanged: (value) {
-                  // TODO: Implement provider enable/disable logic
-                },
-              )),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return Obx(() {
+                // 从控制器获取当前 provider 的启用状态
+                final providers = Get.find<ProviderController>().providers;
+                final isEnabled = providers.isNotEmpty
+                    ? providers.firstWhere((p) => p.id == provider.id,
+                        orElse: () => provider).enabled
+                    : provider.enabled;
+                
+                return SizedBox(
+                  width: constraints.maxWidth > 400 ? null : 60,
+                  child: Switch(
+                    value: isEnabled,
+                    onChanged: (value) {
+                      // TODO: Implement provider enable/disable logic
+                    },
+                  ),
+                );
+              });
+            },
+          ),
           const SizedBox(width: 16),
         ],
       ),

@@ -4,3 +4,5 @@ peers:
       subserver:
         bootstrap:
           enabled: true
+          listen-addrs:
+            -
