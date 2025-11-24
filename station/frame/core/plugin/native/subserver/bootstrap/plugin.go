@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/multiformats/go-multiaddr"
@@ -41,6 +42,19 @@ func (p *bootstrap) Options() []option.Option {
 	opts = append(opts, WithEnabled(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Enabled))
 	opts = append(opts, WithListenAddrs(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.ListenAddrs))
 
+	// Add EnableMDNS option from configuration
+	opts = append(opts, WithMDNS(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.EnableMDNS))
+
+	// Add IdentityKey option from configuration if provided
+	if bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey != "" {
+		// Load private key from the file path
+		privKey, err := loadOrGenerateKey(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey)
+		if err != nil {
+			panic(fmt.Errorf("failed to load identity key from %s: %w", bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey, err))
+		}
+		opts = append(opts, WithIdentityKey(privKey))
+	}
+
 	if len(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.BootstrapNodes) != 0 {
 		nodes := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.BootstrapNodes
 		for i := range nodes {
@@ -58,7 +72,7 @@ func (p *bootstrap) Options() []option.Option {
 		dhtRefreshInterval = 30
 	}
 	opts = append(opts, WithDHTRefreshInterval(dhtRefreshInterval*time.Second))
-	
+
 	return opts
 }
 
