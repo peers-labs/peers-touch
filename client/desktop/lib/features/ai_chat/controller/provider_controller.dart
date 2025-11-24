@@ -17,6 +17,11 @@ class ProviderController extends GetxController {
   final isLoading = false.obs;
   final selectedProviderId = ''.obs;
 
+  // UI状态
+  final isApiKeyObscured = true.obs;
+  final isClientRequestMode = false.obs;
+  final currentModels = <String>[].obs;
+
   @override
   void onInit() {
     super.onInit();
@@ -47,6 +52,11 @@ class ProviderController extends GetxController {
     } finally {
       isLoading.value = false;
     }
+  }
+
+  /// 切换API密钥可见性
+  void toggleApiKeyVisibility() {
+    isApiKeyObscured.value = !isApiKeyObscured.value;
   }
 
   /// 更新提供商

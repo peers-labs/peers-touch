@@ -89,45 +89,52 @@ class ProviderSettingsPage extends GetView<ProviderController> {
   }
 
   Widget _buildProviderList(BuildContext context, ProviderController controller, LobeTokens tokens) {
-    final enabledProviders = controller.providers.where((p) => p.enabled).toList();
-    final disabledProviders = controller.providers.where((p) => !p.enabled).toList();
+    final controller = Get.find<ProviderController>();
+    final tokens = Theme.of(context).extension<LobeTokens>()!;
 
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      children: [
-        if (enabledProviders.isNotEmpty)
-          ..._buildProviderGroup(context, 'Enabled', enabledProviders, controller, tokens),
-        if (disabledProviders.isNotEmpty)
-          ..._buildProviderGroup(context, 'Disabled', disabledProviders, controller, tokens),
-      ],
+    return Obx(() {
+      final enabledProviders = controller.providers.where((p) => p.enabled).toList();
+      final disabledProviders = controller.providers.where((p) => !p.enabled).toList();
+
+      return ListView(
+        children: [
+          _buildSectionHeader(context, 'Enabled', tokens),
+          ...enabledProviders.map((p) => _buildProviderTile(context, controller, p, tokens)),
+          const SizedBox(height: 16),
+          _buildSectionHeader(context, 'Disabled', tokens),
+          ...disabledProviders.map((p) => _buildProviderTile(context, controller, p, tokens)),
+        ],
+      );
+    });
+  }
+
+  Widget _buildSectionHeader(BuildContext context, String title, LobeTokens tokens) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, bottom: 8, top: 8),
+      child: Text(title, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textSecondary)),
     );
   }
 
-  List<Widget> _buildProviderGroup(
-    BuildContext context,
-    String title,
-    List<base.Provider> providers,
-    ProviderController controller,
-    LobeTokens tokens,
-  ) {
-    return [
-      Padding(
-        padding: const EdgeInsets.only(left: 16.0, top: 16.0, bottom: 8.0),
-        child: Text(title, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: tokens.textTertiary)),
-      ),
-      ...providers.map((provider) {
-        return Obx(() => ListTile(
-              leading: Icon(_getProviderIcon(provider.sourceType), color: tokens.textSecondary, size: 20),
-              title: Text(provider.name, style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
-              selected: controller.currentProvider.value?.id == provider.id,
-              selectedTileColor: tokens.menuSelected,
-              onTap: () => controller.setCurrentProvider(provider.id),
-              trailing: provider.enabled ? const Icon(Icons.circle, color: Colors.green, size: 10) : null,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(UIKit.radiusSm(context))),
-              dense: true,
-            ));
-      }).toList(),
-    ];
+  Widget _buildProviderTile(BuildContext context, ProviderController controller, base.Provider provider, LobeTokens tokens) {
+    return Obx(() => ListTile(
+          leading: Icon(_getProviderIcon(provider.sourceType), size: 24),
+          title: Text(provider.name, style: Theme.of(context).textTheme.bodyMedium),
+          trailing: provider.enabled
+              ? Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
+                )
+              : null,
+          selected: controller.currentProvider.value?.id == provider.id,
+          selectedTileColor: tokens.menuSelected,
+          onTap: () {
+            controller.setCurrentProvider(provider.id);
+          },
+        ));
   }
 
   Widget _buildEmptyState(BuildContext context, LobeTokens tokens) {
