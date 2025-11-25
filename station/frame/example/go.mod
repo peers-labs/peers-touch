@@ -1,6 +1,8 @@
 module github.com/peers-labs/peers-touch/station/frameexample
 
-go 1.24.0
+go 1.24.6
+
+toolchain go1.24.10
 
 replace (
 	github.com/peers-labs/peers-touch/station/frame => ../
@@ -11,9 +13,10 @@ replace (
 require (
 	github.com/cloudwego/hertz v0.9.5
 	github.com/hashicorp/mdns v1.0.6
-	github.com/libp2p/go-libp2p v0.43.0
+	github.com/libp2p/go-libp2p v0.45.0
 	github.com/libp2p/go-libp2p-kad-dht v0.34.0
 	github.com/libp2p/go-libp2p-record v0.3.1
+	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/peers-labs/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/native v0.0.0-00010101000000-000000000000
 )
@@ -21,7 +24,6 @@ require (
 require (
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
-	github.com/multiformats/go-multiaddr v0.16.1 // indirect
 	golang.org/x/time v0.12.0 // indirect
 )
 
@@ -77,7 +79,7 @@ require (
 	github.com/libp2p/go-libp2p-kbucket v0.7.0 // indirect
 	github.com/libp2p/go-libp2p-routing-helpers v0.7.5 // indirect
 	github.com/libp2p/go-msgio v0.3.0 // indirect
-	github.com/libp2p/go-netroute v0.2.2 // indirect
+	github.com/libp2p/go-netroute v0.3.0 // indirect
 	github.com/libp2p/go-reuseport v0.4.0 // indirect
 	github.com/libp2p/go-yamux/v5 v5.0.1 // indirect
 	github.com/marten-seemann/tcp v0.0.0-20210406111302-dfbc87cc63fd // indirect
@@ -128,7 +130,7 @@ require (
 	github.com/prometheus/common v0.65.0 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
-	github.com/quic-go/quic-go v0.54.0 // indirect
+	github.com/quic-go/quic-go v0.55.0 // indirect
 	github.com/quic-go/webtransport-go v0.9.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.6 // indirect
 	github.com/sony/sonyflake v1.2.1 // indirect

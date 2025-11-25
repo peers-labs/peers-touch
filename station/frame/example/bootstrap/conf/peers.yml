@@ -1,5 +1,8 @@
 peers:
   includes: store.yml, turn.yml, bootstrap.yml
+  logger:
+    name: slogrus
+    level: info
   run-mode: 2
   config:
     hierarchy-merge: true

@@ -1,0 +1,7 @@
+peers:
+  logger:
+    name: slogrus
+    level: info
+    persistence:
+       enabled: true
+       dir: /var/log/peers-touch
