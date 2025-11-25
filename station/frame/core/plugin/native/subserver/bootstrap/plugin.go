@@ -23,6 +23,7 @@ var bootstrapOptions struct {
 						ListenAddrs        []string      `pconf:"listen-addrs"`
 						BootstrapNodes     []string      `pconf:"bootstrap-nodes"`
 						DHTRefreshInterval time.Duration `pconf:"dht-refresh-interval"`
+						Libp2pInsecure     bool          `pconf:"libp2p-insecure"`
 					} `pconf:"bootstrap"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
@@ -44,6 +45,7 @@ func (p *bootstrap) Options() []option.Option {
 
 	// Add EnableMDNS option from configuration
 	opts = append(opts, WithMDNS(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.EnableMDNS))
+	opts = append(opts, WithLibp2pInsecure(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Libp2pInsecure))
 
 	// Add IdentityKey option from configuration if provided
 	if bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey != "" {
@@ -52,7 +54,9 @@ func (p *bootstrap) Options() []option.Option {
 		if err != nil {
 			panic(fmt.Errorf("failed to load identity key from %s: %w", bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey, err))
 		}
+		// Set both IdentityKey (for options visibility) and PrivateKey (used by host creation)
 		opts = append(opts, WithIdentityKey(privKey))
+		opts = append(opts, WithPrivateKey(privKey))
 	}
 
 	if len(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.BootstrapNodes) != 0 {

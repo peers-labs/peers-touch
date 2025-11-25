@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,7 +14,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
+	yamux "github.com/libp2p/go-libp2p/p2p/muxer/yamux"
+	multiaddr "github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/internal/mdns"
@@ -130,9 +133,17 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) (err error
 
 	doNow := make(chan struct{})
 	boot := func() {
-		logger.Infof(ctx, "peers-touch bootstrap server's id: %s", s.host.ID().String())
-		logger.Infof(ctx, `peers-touch bootstrap server is listening on : 
-			%s`, joinForPrintLineByLine("----", s.host.Addrs()))
+		p2pAddrs, _ := peer.AddrInfoToP2pAddrs(&peer.AddrInfo{ID: s.host.ID(), Addrs: s.host.Addrs()})
+		var dialList []string
+		for _, a := range p2pAddrs {
+			dialList = append(dialList, a.String())
+		}
+		s.addrs = dialList
+		logger.Infof(ctx, "bootstrap id=%s dht.refresh=%s mdns.enabled=%v", s.host.ID().String(), s.opts.DHTRefreshInterval, s.opts.EnableMDNS)
+		logger.Infof(ctx, `bootstrap listen_raw:
+            %s`, joinForPrintLineByLine("----", s.host.Addrs()))
+		logger.Infof(ctx, `bootstrap dial_addrs:
+            %s`, joinForPrintLineByLine("----", p2pAddrs))
 		if errIn := s.dht.Bootstrap(ctx); errIn != nil {
 			logger.Errorf(ctx, "failed to bootstrap peers: %v", errIn)
 		}
@@ -217,12 +228,9 @@ func (s *SubServer) Status() server.Status {
 func (s *SubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
-			bootstrapRouterURL{name: "list-peers", url: "/sub-bootstrap/list-peers"},
-			s.listPeerInfos,
-		),
-		server.NewHandler(
-			bootstrapRouterURL{name: "query-dht-peer", url: "/sub-bootstrap/query-dht-peer"},
-			s.queryDHTPeer,
+			bootstrapRouterURL{name: "bootstrap-info", url: "/sub-bootstrap/info"},
+			s.info,
+			server.WithMethod(server.GET),
 		),
 	}
 }
@@ -267,6 +275,9 @@ func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, er
 		if err != nil {
 			return nil, nil, fmt.Errorf("generate key pair: %w", err)
 		}
+
+		// Ensure Yamux multiplexer is enabled for stream multiplexing
+		hostOptions = append(hostOptions, libp2p.Muxer(yamux.ID, yamux.DefaultTransport))
 		hostOptions = append(hostOptions, libp2p.Identity(priv))
 	}
 
@@ -286,6 +297,15 @@ func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, er
 		hostOptions = append(hostOptions, libp2p.ListenAddrs(addrs...))
 	}
 
+	// Optional insecure security for testing (set LIBP2P_INSECURE=true)
+	if strings.EqualFold(os.Getenv("LIBP2P_INSECURE"), "true") {
+		hostOptions = append(hostOptions, libp2p.NoSecurity)
+		logger.Warnf(ctx, "[Bootstrap] Using NO-SECURITY transport for testing")
+	} else {
+		// Use default security (Noise/TLS as provided by go-libp2p)
+		hostOptions = append(hostOptions, libp2p.DefaultSecurity)
+	}
+
 	// Create libp2p host
 	h, err := libp2p.New(hostOptions...)
 	if err != nil {
@@ -300,7 +320,12 @@ func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, er
 	}
 
 	logger.Infof(ctx, "Created bootstrap host: %s", h.ID())
-	logger.Infof(ctx, "Bootstrap listening on addresses: %v", h.Addrs())
+	logger.Infof(ctx, `Bootstrap listen_raw:
+        %s`, joinForPrintLineByLine("----", h.Addrs()))
+	p2pAddrs, _ := peer.AddrInfoToP2pAddrs(&peer.AddrInfo{ID: h.ID(), Addrs: h.Addrs()})
+	logger.Infof(ctx, `Bootstrap dial_addrs:
+        %s`, joinForPrintLineByLine("----", p2pAddrs))
 
 	return h, dhtInstance, nil
 }
+

@@ -84,13 +84,13 @@ func (m metadata) Value(k string) string {
 	return ""
 }
 
-type Service struct {
+type Node struct {
 	Name   string `json:"name" pconf:"name"`
 	Server Server `json:"server" pconf:"server"`
 }
 
-func (s *Service) Options() []option.Option {
-	var opts serviceOpts
+func (s *Node) Options() []option.Option {
+	var opts nodeOpts
 
 	if len(s.Name) > 0 {
 		opts = append(opts, pp.Name(s.Name))
@@ -99,9 +99,9 @@ func (s *Service) Options() []option.Option {
 	return opts
 }
 
-type serviceOpts []option.Option
+type nodeOpts []option.Option
 
-func (s serviceOpts) opts() pp.Options {
+func (s nodeOpts) opts() pp.Options {
 	opts := pp.Options{}
 	for _, o := range s {
 		opts.Apply(o)
@@ -226,6 +226,6 @@ type PeersConfig struct {
 		Registry Registry `json:"registry" pconf:"registry"`
 		Client   Client   `json:"client" pconf:"client"`
 		Logger   Logger   `json:"logger" pconf:"logger"`
-		Service  Service  `json:"node" pconf:"node"`
+		Service  Node     `json:"node" pconf:"node"`
 	} `json:"peers" pconf:"peers"`
 }

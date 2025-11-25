@@ -4,5 +4,6 @@ peers:
       subserver:
         bootstrap:
           enabled: true
+          libp2p-insecure: true
           listen-addrs:
-            -
+            - /ip4/0.0.0.0/tcp/4001
