@@ -1,7 +1,7 @@
 peers:
   # array. extra config files should be inited together, files that in the same dir with peers.yml.
   includes:
-  service:
+  node:
     id:
     name:
     client:

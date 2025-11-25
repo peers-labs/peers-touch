@@ -25,7 +25,7 @@ type Options struct {
 	ListenAddrs        []string
 	BootstrapNodes     []multiaddr.Multiaddr
 	DHTRefreshInterval time.Duration
-
+	Libp2pInsecure     bool
 	// Private host configuration
 	PrivateKey       crypto.PrivKey
 	ListenMultiAddrs []multiaddr.Multiaddr
@@ -70,6 +70,12 @@ func WithDHTRefreshInterval(dhtRefreshInterval time.Duration) option.Option {
 func WithPrivateKey(key crypto.PrivKey) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.PrivateKey = key
+	})
+}
+
+func WithLibp2pInsecure(libp2pInsecure bool) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.Libp2pInsecure = libp2pInsecure
 	})
 }
 

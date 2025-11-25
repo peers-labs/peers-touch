@@ -1,14 +1,15 @@
 package bootstrap
 
 import (
-	"context"
-	"fmt"
+    "context"
+    "fmt"
+    "net/http"
 
-	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/model"
-	"github.com/peers-labs/peers-touch/station/frame/touch"
-	pm "github.com/peers-labs/peers-touch/station/frame/touch/model"
+    "github.com/cloudwego/hertz/pkg/app"
+    "github.com/libp2p/go-libp2p/core/peer"
+    "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap/model"
+    "github.com/peers-labs/peers-touch/station/frame/touch"
+    pm "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 // listPeerInfos processes the HTTP request and returns peer info
@@ -80,8 +81,44 @@ func (s *SubServer) queryDHTPeer(c context.Context, ctx *app.RequestContext) {
 		addrs = append(addrs, addr.String())
 	}
 
-	touch.SuccessResponse(ctx, "DHT peer query successful", map[string]interface{}{
-		"peer_id":   peerInfo.ID.String(),
-		"addresses": addrs,
-	})
+    touch.SuccessResponse(ctx, "DHT peer query successful", map[string]interface{}{
+        "peer_id":   peerInfo.ID.String(),
+        "addresses": addrs,
+    })
+}
+
+// info returns the bootstrap server basic information for testing
+// Response:
+// {
+//   "peer_id": "12D3Koo...",
+//   "listen_addrs_raw": ["/ip4/127.0.0.1/tcp/4001"],
+//   "dial_addrs": ["/ip4/127.0.0.1/tcp/4001/p2p/12D3Koo..."],
+//   "mdns_enabled": true,
+//   "dht_mode": "server"
+// }
+func (s *SubServer) info(c context.Context, ctx *app.RequestContext) {
+    // Collect raw listen addresses
+    var rawAddrs []string
+    for _, a := range s.host.Addrs() {
+        rawAddrs = append(rawAddrs, a.String())
+    }
+
+    // Use cached dial addrs if available, otherwise derive on the fly
+    var dialAddrs []string
+    if len(s.addrs) > 0 {
+        dialAddrs = s.addrs
+    } else {
+        p2pAddrs, _ := peer.AddrInfoToP2pAddrs(&peer.AddrInfo{ID: s.host.ID(), Addrs: s.host.Addrs()})
+        for _, a := range p2pAddrs {
+            dialAddrs = append(dialAddrs, a.String())
+        }
+    }
+
+    ctx.JSON(http.StatusOK, map[string]interface{}{
+        "peer_id":          s.host.ID().String(),
+        "listen_addrs_raw": rawAddrs,
+        "dial_addrs":       dialAddrs,
+        "mdns_enabled":     s.opts.EnableMDNS,
+        "dht_mode":         "server",
+    })
 }
