@@ -5,10 +5,83 @@ import '../controller/chat_controller.dart';
 class ChatPage extends GetView<ChatController> {
   const ChatPage({Key? key}) : super(key: key);
 
+  void _showDebugDialog(BuildContext context) {
+    controller.fetchDebugStats();
+    Get.dialog(
+      AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.bug_report),
+            const SizedBox(width: 8),
+            const Text('Debug Information'),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () => controller.fetchDebugStats(),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 400,
+          child: Obx(() {
+            if (controller.isFetchingStats.value) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final stats = controller.debugStats;
+            return SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildInfoRow('Local Peer ID', controller.selfPeerId.value),
+                  _buildInfoRow('Signaling URL', controller.signalingUrl.value),
+                  const Divider(),
+                  const Text('Backend Stats:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  if (stats.isEmpty)
+                    const Text('No stats available (check connection)')
+                  else
+                    ...stats.entries.map((e) => _buildInfoRow(e.key, e.value.toString())).toList(),
+                ],
+              ),
+            );
+          }),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$label: ', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Expanded(child: SelectableText(value)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('WebRTC Chat')),
+      appBar: AppBar(
+        title: const Text('WebRTC Chat'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            onPressed: () => _showDebugDialog(context),
+            tooltip: 'Debug Info',
+          ),
+        ],
+      ),
       body: Column(
         children: [
           // Config area

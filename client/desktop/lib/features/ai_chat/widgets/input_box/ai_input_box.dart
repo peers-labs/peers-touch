@@ -3,12 +3,15 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/attachment_tray.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/controller/ai_input_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/model_capability.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/view/provider_settings_page.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 
 typedef SendDraftCallback = void Function(AiComposerDraft draft);
@@ -158,8 +161,8 @@ class AIInputBox extends StatelessWidget {
     final menuController = MenuController();
     return MenuAnchor(
       controller: menuController,
-      // 在图标上方 4 像素处展开
-      alignmentOffset: const Offset(0, -4),
+      // 在图标上方 12 像素处展开，避免重叠
+      alignmentOffset: const Offset(0, -12),
       menuChildren: [
         _buildProviderMenuContent(context),
       ],
@@ -236,25 +239,20 @@ class AIInputBox extends StatelessWidget {
           ),
           IconButton(
             tooltip: capability.supportsFileInput ? '添加文件' : '当前模型不支持文件输入',
-            onPressed: canFile
-                ? () {
-                    ctrl.addFile(Uint8List.fromList([0, 1, 2]), mime: 'text/plain', name: 'dummy.txt');
-                  }
-                : null,
+            onPressed: canFile ? () => _pickFile(ctrl) : null,
             icon: Icon(Icons.attach_file, color: color),
           ),
           IconButton(
-            tooltip: capability.supportsAudioInput ? '录音' : '当前模型不支持音频输入',
-            onPressed: canAudio
-                ? () {
-                    ctrl.addAudio(Uint8List.fromList([0, 1]));
-                  }
-                : null,
+            tooltip: capability.supportsAudioInput ? '添加音频' : '当前模型不支持音频输入',
+            onPressed: canAudio ? () => _pickAudio(ctrl) : null,
             icon: Icon(Icons.mic_none, color: color),
           ),
           IconButton(
             tooltip: '清空输入',
-            onPressed: () => ctrl.clearAll(),
+            onPressed: () {
+              ctrl.clearAll();
+              externalTextController?.clear();
+            },
             icon: Icon(Icons.backspace, color: color),
           ),
         ],
@@ -442,23 +440,50 @@ class AIInputBox extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          const SizedBox(height: 8),
           for (final e in entries) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
                   _providerLogo(context, e),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(e.name, style: textTheme.bodyMedium)),
-                  Icon(Icons.settings_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 8),
-                  Icon(Icons.chevron_right, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                  Expanded(
+                    child: Text(
+                      e.name,
+                      style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: () {
+                      final ctl = Get.find<ProviderController>();
+                      ctl.setCurrentProvider(e.id);
+                      Get.dialog(
+                        Dialog(
+                          insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: const SizedBox(
+                              width: 1000,
+                              height: 700,
+                              child: ProviderSettingsPage(),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(4.0),
+                      child: Icon(Icons.settings_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
                 ],
               ),
             ),
             if (e.models.isEmpty)
               Padding(
-                padding: const EdgeInsets.only(left: 54, right: 16, bottom: 12),
+                padding: const EdgeInsets.only(left: 16, bottom: 12),
                 child: Text(
                   'No enabled model. Please go to settings to enable.',
                   style: textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -469,32 +494,52 @@ class AIInputBox extends StatelessWidget {
                 InkWell(
                   onTap: () {
                     onModelChanged?.call(m);
-                    // 使用 MenuAnchor 时不需要 pop；使用 showMenu 时会自动关闭。
+                    // 关闭菜单
+                    if (Navigator.canPop(context)) {
+                      Navigator.pop(context);
+                    }
                   },
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 54, right: 8, top: 6, bottom: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    margin: const EdgeInsets.only(left: 16, right: 16, bottom: 2),
+                    decoration: BoxDecoration(
+                      color: currentModel == m ? theme.colorScheme.primaryContainer.withOpacity(0.2) : null,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                     child: Row(
                       children: [
+                        const SizedBox(width: 32), // Indent to align with text
                         Icon(
                           currentModel == m ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                          size: 18,
-                          color: theme.colorScheme.primary,
+                          size: 16,
+                          color: currentModel == m ? theme.colorScheme.primary : theme.colorScheme.outline,
                         ),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(m, style: textTheme.bodySmall)),
+                        Expanded(child: Text(m, style: textTheme.bodyMedium)),
                       ],
                     ),
                   ),
                 ),
             ],
-            const Divider(height: 1),
+            const SizedBox(height: 4),
+            if (e != entries.last)
+              const Divider(height: 1, indent: 16, endIndent: 16),
+            const SizedBox(height: 4),
           ],
+          const SizedBox(height: 8),
         ],
       ),
     );
   }
 
   Widget _providerLogo(BuildContext context, _ProviderEntry e) {
+    final assetPath = _assetLogoFor(e.sourceType);
+    if (assetPath != null) {
+      return ClipOval(
+        child: SvgPicture.asset(assetPath, width: 28, height: 28),
+      );
+    }
+
     final url = e.logoUrl ?? _defaultLogoFor(e.sourceType);
     if (url == null || url.isEmpty) {
       return const CircleAvatar(child: Icon(Icons.apartment, size: 18));
@@ -504,6 +549,14 @@ class AIInputBox extends StatelessWidget {
         return const CircleAvatar(child: Icon(Icons.apartment, size: 18));
       }),
     );
+  }
+
+  String? _assetLogoFor(String sourceType) {
+    final s = sourceType.toLowerCase();
+    if (['openai', 'anthropic', 'google', 'ollama', 'azure', 'cloudflare', 'qwen', 'volcengine'].contains(s)) {
+      return 'assets/icons/ai-chat/$s.svg';
+    }
+    return null;
   }
 
   String? _defaultLogoFor(String sourceType) {
@@ -533,6 +586,35 @@ class AIInputBox extends StatelessWidget {
       final file = File(result.files.single.path!);
       final bytes = await file.readAsBytes();
       ctrl.addImage(bytes);
+    }
+  }
+
+  /// 从文件选择器添加文件
+  Future<void> _pickFile(AiInputController ctrl) async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      allowMultiple: false,
+    );
+
+    if (result != null && result.files.single.path != null) {
+      final file = File(result.files.single.path!);
+      final bytes = await file.readAsBytes();
+      // 使用默认 mime type，后续可优化
+      ctrl.addFile(bytes, mime: 'application/octet-stream', name: result.files.single.name);
+    }
+  }
+
+  /// 从文件选择器添加音频
+  Future<void> _pickAudio(AiInputController ctrl) async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      allowMultiple: false,
+    );
+
+    if (result != null && result.files.single.path != null) {
+      final file = File(result.files.single.path!);
+      final bytes = await file.readAsBytes();
+      ctrl.addAudio(bytes);
     }
   }
 
