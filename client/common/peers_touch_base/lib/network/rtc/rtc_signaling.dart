@@ -20,6 +20,17 @@ class RTCSignalingService {
     return json.decode(text) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>?> getStats() async {
+    try {
+      final resp = await HttpClient().getUrl(Uri.parse('$baseUrl/chat/stats')).then((r)=>r.close());
+      if (resp.statusCode != 200) return null;
+      final text = await resp.transform(const Utf8Decoder()).join();
+      return json.decode(text) as Map<String, dynamic>;
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>?> newSession(String a, String b) async {
     final body = json.encode({'a': a, 'b': b});
     final req = await HttpClient().postUrl(Uri.parse('$baseUrl/chat/session/new'));
