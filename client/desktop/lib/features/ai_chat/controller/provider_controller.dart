@@ -6,6 +6,8 @@ import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/capability/capability_resolver.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/model_capability.dart';
 
 /// AI服务提供商控制器
 class ProviderController extends GetxController {
@@ -221,6 +223,24 @@ class ProviderController extends GetxController {
           ? (jsonDecode(provider.settingsJson) as Map<String, dynamic>)
           : {};
       settings['models'] = models;
+
+      // Inject capabilities
+      final capabilities = <String, Map<String, dynamic>>{};
+      for (final model in models) {
+        final cap = CapabilityResolver.resolve(provider: provider.sourceType, modelId: model);
+        capabilities[model] = {
+          'supportsText': cap.supportsText,
+          'supportsImageInput': cap.supportsImageInput,
+          'supportsFileInput': cap.supportsFileInput,
+          'supportsAudioInput': cap.supportsAudioInput,
+          'supportsStreaming': cap.supportsStreaming,
+          'maxImages': cap.maxImages,
+          'maxFiles': cap.maxFiles,
+          'maxAudio': cap.maxAudio,
+        };
+      }
+      settings['modelCapabilities'] = capabilities;
+
       final updated = (provider.deepCopy() as Provider)
             ..settingsJson = jsonEncode(settings)
             ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as base;
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
@@ -400,7 +401,7 @@ class ProviderDetailPanel extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.apps, size: 24, color: tokens.brandAccent), // Placeholder icon
+          _buildModelIcon(context, id, 24),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -418,5 +419,36 @@ class ProviderDetailPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildModelIcon(BuildContext context, String modelId, double size) {
+    // TODO: Support model-specific icons. Currently falling back to provider logo.
+    // If we had assets like 'assets/icons/ai-chat/models/$modelId.svg', we would load them here.
+    return _buildProviderLogo(context, size);
+  }
+
+  Widget _buildProviderLogo(BuildContext context, double size) {
+    final s = provider.sourceType.toLowerCase();
+    String? assetPath;
+    if (['openai', 'anthropic', 'google', 'ollama', 'azure', 'cloudflare', 'qwen', 'volcengine'].contains(s)) {
+      assetPath = 'assets/icons/ai-chat/$s.svg';
+    }
+
+    if (assetPath != null) {
+      return ClipOval(
+        child: SvgPicture.asset(assetPath, width: size, height: size),
+      );
+    }
+
+    final url = provider.logo;
+    if (url.isNotEmpty) {
+       return ClipOval(
+        child: Image.network(url, width: size, height: size, errorBuilder: (ctx, _, __) {
+          return Icon(Icons.apps, size: size, color: Theme.of(context).extension<LobeTokens>()!.brandAccent);
+        }),
+      );
+    }
+    
+    return Icon(Icons.apps, size: size, color: Theme.of(context).extension<LobeTokens>()!.brandAccent);
   }
 }
