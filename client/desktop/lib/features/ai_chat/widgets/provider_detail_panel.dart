@@ -27,13 +27,34 @@ class ProviderDetailPanel extends StatelessWidget {
         backgroundColor: tokens.bgLevel1,
         elevation: 0,
         centerTitle: false,
-        title: Text(provider.name, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+        title: GestureDetector(
+          onDoubleTap: () async {
+            final ctl = Get.find<ProviderController>();
+            final tc = TextEditingController(text: provider.name);
+            await showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Rename Provider'),
+                content: TextField(controller: tc, decoration: const InputDecoration(hintText: 'Enter new name')),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                  ElevatedButton(onPressed: () async { await ctl.updateProviderName(provider.id, tc.text.trim()); Navigator.of(ctx).pop(); }, child: const Text('Save')),
+                ],
+              ),
+            );
+          },
+          child: Text(provider.name, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+        ),
         automaticallyImplyLeading: false,
         actions: [
+          IconButton(
+            onPressed: () => Get.find<ProviderController>().deleteProvider(provider.id),
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Delete Provider',
+          ),
           LayoutBuilder(
             builder: (context, constraints) {
               return Obx(() {
-                // 从控制器获取当前 provider 的启用状态
                 final providers = Get.find<ProviderController>().providers;
                 final isEnabled = providers.isNotEmpty
                     ? providers.firstWhere((p) => p.id == provider.id,
@@ -45,7 +66,7 @@ class ProviderDetailPanel extends StatelessWidget {
                   child: Switch(
                     value: isEnabled,
                     onChanged: (value) {
-                      // TODO: Implement provider enable/disable logic
+                      Get.find<ProviderController>().toggleEnabled(value);
                     },
                   ),
                 );
@@ -63,24 +84,29 @@ class ProviderDetailPanel extends StatelessWidget {
               context,
               'API Key',
               'Please enter your ${provider.name} API Key',
-              Obx(() => _buildValueField(
-                    context,
-                    controller.isApiKeyObscured.value ? '••••••••••••••••••••••••' : (settings['apiKey'] ?? ''),
-                    obscureText: controller.isApiKeyObscured.value,
-                    suffixIcon: Icons.visibility,
-                    onSuffixIconTap: () => controller.toggleApiKeyVisibility(),
-                  )),
+              Obx(() {
+                final value = (settings['apiKey'] ?? '').toString();
+                return _buildEditableField(
+                  context,
+                  initialValue: value,
+                  obscureText: controller.isApiKeyObscured.value,
+                  suffixIcon: Icons.visibility,
+                  onSuffixIconTap: () => controller.toggleApiKeyVisibility(),
+                  onSubmitted: (v) => controller.updateField('apiKey', v),
+                );
+              }),
             ),
             const SizedBox(height: 24),
             _buildDetailRow(
               context,
               'API Proxy URL',
               'Must include http(s)://',
-              _buildValueField(
+              _buildEditableField(
                 context,
-                settings['proxyUrl'] ?? '',
-                suffixIcon: Icons.sync, // Placeholder icon
-                onSuffixIconTap: () {},
+                initialValue: (settings['proxyUrl'] ?? '').toString(),
+                suffixIcon: Icons.sync,
+                onSuffixIconTap: () => Get.find<ProviderController>().updateField('proxyUrl', (settings['defaultProxyUrl'] ?? settings['proxyUrl'] ?? '').toString()),
+                onSubmitted: (v) => controller.updateField('proxyUrl', v),
               ),
             ),
             const SizedBox(height: 24),
@@ -90,7 +116,7 @@ class ProviderDetailPanel extends StatelessWidget {
               context,
               'Connectivity Check',
               'Test if the API Key and proxy URL are correctly filled',
-              _buildConnectivityCheck(context, settings['checkModel'] ?? ''),
+              _buildConnectivityCheckEditable(context, provider, settings['checkModel'] ?? ''),
             ),
             const SizedBox(height: 16),
             _buildEncryptionNotice(context, tokens),
@@ -151,6 +177,36 @@ class ProviderDetailPanel extends StatelessWidget {
     );
   }
 
+  Widget _buildEditableField(BuildContext context, {required String initialValue, bool obscureText = false, IconData? suffixIcon, VoidCallback? onSuffixIconTap, required ValueChanged<String> onSubmitted}) {
+    final tokens = Theme.of(context).extension<LobeTokens>()!;
+    final controller = TextEditingController(text: initialValue);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: tokens.bgLevel2,
+        borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              obscureText: obscureText,
+              decoration: const InputDecoration(border: InputBorder.none, isDense: true),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+              onSubmitted: onSubmitted,
+            ),
+          ),
+          if (suffixIcon != null)
+            InkWell(
+              onTap: onSuffixIconTap,
+              child: Icon(suffixIcon, color: tokens.textSecondary, size: 18),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildConnectivityCheck(BuildContext context, String checkModel) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
     return Row(
@@ -167,7 +223,39 @@ class ProviderDetailPanel extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         ElevatedButton(
-          onPressed: () {},
+          onPressed: () => Get.find<ProviderController>().testProviderConnection(provider.id),
+          style: UIKit.primaryButtonStyle(context).copyWith(
+            padding: MaterialStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+          ),
+          child: const Text('Check'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConnectivityCheckEditable(BuildContext context, base.Provider provider, String checkModel) {
+    final tokens = Theme.of(context).extension<LobeTokens>()!;
+    final ctl = Get.find<ProviderController>();
+    final tc = TextEditingController(text: checkModel);
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: tokens.bgLevel2,
+              borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
+            ),
+            child: TextField(
+              controller: tc,
+              decoration: const InputDecoration(border: InputBorder.none, isDense: true),
+              onSubmitted: (v) => ctl.updateField('checkModel', v),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton(
+          onPressed: () => ctl.testProviderConnection(provider.id),
           style: UIKit.primaryButtonStyle(context).copyWith(
             padding: MaterialStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
           ),
@@ -213,7 +301,7 @@ class ProviderDetailPanel extends StatelessWidget {
         Obx(() => Switch(
               value: controller.isClientRequestMode.value,
               onChanged: (value) {
-                controller.isClientRequestMode.value = value;
+                controller.setClientRequestMode(value);
               },
             )),
       ],
@@ -221,9 +309,15 @@ class ProviderDetailPanel extends StatelessWidget {
   }
 
   Widget _buildModelManagementSection(BuildContext context, ProviderController controller, LobeTokens tokens) {
-    return DefaultTabController(
-      length: 2,
-      child: Column(
+    final provider = this.provider;
+    final settings = provider.settingsJson.isNotEmpty ? (jsonDecode(provider.settingsJson) as Map<String, dynamic>) : {};
+    final models = List<String>.from((settings['models'] ?? <String>[]) as List);
+    final enabled = List<String>.from((settings['enabledModels'] ?? <String>[]) as List);
+    return Obx(() {
+      final keyword = controller.modelSearchText.value.toLowerCase();
+      final filtered = keyword.isEmpty ? models : models.where((m) => m.toLowerCase().contains(keyword)).toList();
+      final enabledFiltered = filtered.where((m) => enabled.isEmpty ? true : enabled.contains(m)).toList();
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -233,7 +327,7 @@ class ProviderDetailPanel extends StatelessWidget {
               Row(
                 children: [
                   SizedBox(
-                    width: 150,
+                    width: 180,
                     child: TextField(
                       decoration: InputDecoration(
                         hintText: 'Search Models...',
@@ -246,11 +340,12 @@ class ProviderDetailPanel extends StatelessWidget {
                           borderSide: BorderSide.none,
                         ),
                       ),
+                      onChanged: controller.filterModels,
                     ),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
-                    onPressed: () {},
+                    onPressed: () => Get.find<ProviderController>().fetchProviderModels(provider.id),
                     icon: const Icon(Icons.sync, size: 16),
                     label: const Text('Fetch models'),
                     style: UIKit.primaryButtonStyle(context).copyWith(
@@ -258,40 +353,42 @@ class ProviderDetailPanel extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.more_horiz),
-                  ),
+                  IconButton(onPressed: () {}, icon: const Icon(Icons.more_horiz)),
                 ],
               ),
             ],
           ),
           const SizedBox(height: 16),
-          TabBar(
-            tabs: const [
-              Tab(text: 'All (1)'),
-              Tab(text: 'Chat (1)'),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: tokens.bgLevel2, borderRadius: BorderRadius.circular(UIKit.radiusSm(context))),
+                child: Text('All (${filtered.length})', style: Theme.of(context).textTheme.bodySmall),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: tokens.bgLevel2, borderRadius: BorderRadius.circular(UIKit.radiusSm(context))),
+                child: Text('Enabled (${enabledFiltered.length})', style: Theme.of(context).textTheme.bodySmall),
+              ),
             ],
-            labelColor: tokens.textPrimary,
-            unselectedLabelColor: tokens.textSecondary,
-            indicatorColor: tokens.brandAccent,
-            indicatorSize: TabBarIndicatorSize.label,
-            isScrollable: true,
           ),
           const SizedBox(height: 16),
           Text('Enabled', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textSecondary)),
           const SizedBox(height: 8),
-          _buildModelListItem(context, tokens, 'ep-20251014145207-5xzgh', 'ep-20251014145207-5xzgh', true),
-          const SizedBox(height: 32),
-          Center(
-            child: Text(
-              'More models are planned to be added, stay tuned',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textTertiary),
+          for (final m in filtered)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _buildModelListItem(context, tokens, m, m, enabled.isEmpty ? true : enabled.contains(m)),
             ),
+          const SizedBox(height: 16),
+          Center(
+            child: Text('More models are planned to be added, stay tuned', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textTertiary)),
           ),
         ],
-      ),
-    );
+      );
+    });
   }
 
   Widget _buildModelListItem(BuildContext context, LobeTokens tokens, String name, String id, bool isEnabled) {
@@ -316,7 +413,7 @@ class ProviderDetailPanel extends StatelessWidget {
           ),
           Switch(
             value: isEnabled,
-            onChanged: (value) {},
+            onChanged: (value) => Get.find<ProviderController>().toggleModelEnabled(id, value),
           ),
         ],
       ),

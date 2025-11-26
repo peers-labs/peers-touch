@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_service_factory.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 
@@ -205,8 +206,11 @@ class AIChatController extends GetxController {
       messages.add(assistant);
       list.add(assistant);
       try {
+        final providerId = Get.isRegistered<ProviderController>() && Get.find<ProviderController>().currentProvider.value != null
+            ? Get.find<ProviderController>().currentProvider.value!.id
+            : 'default';
         await for (final response in aiBoxFacadeService.sendMessageStream(
-          providerId: 'default', // TODO: 需要从当前provider获取
+          providerId: providerId,
           message: text,
           model: currentModel.value.isNotEmpty ? currentModel.value : null,
           temperature: temperature,
@@ -228,8 +232,11 @@ class AIChatController extends GetxController {
       }
     } else {
       try {
+        final providerId = Get.isRegistered<ProviderController>() && Get.find<ProviderController>().currentProvider.value != null
+            ? Get.find<ProviderController>().currentProvider.value!.id
+            : 'default';
         final response = await aiBoxFacadeService.sendMessage(
-          providerId: 'default', // TODO: 需要从当前provider获取
+          providerId: providerId,
           message: text,
           model: currentModel.value.isNotEmpty ? currentModel.value : null,
           temperature: temperature,
