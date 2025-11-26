@@ -150,18 +150,6 @@ class AIChatPage extends GetView<AIChatController> {
                 thickness: UIKit.dividerThickness,
                 color: UIKit.dividerColor(ctx),
               ),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: UIKit.spaceMd(ctx)),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => _showRegisterDialog(ctx),
-                      child: const Text('注册网络'),
-                    ),
-                  ],
-                ),
-              ),
               // 消息列表（在闭包内读取 RxList 内容）
               Flexible(
                 flex: 1,
@@ -233,41 +221,6 @@ class AIChatPage extends GetView<AIChatController> {
       centerProps: const PaneProps(
         scrollPolicy: ScrollPolicy.none,
         horizontalPolicy: ScrollPolicy.none,
-      ),
-    );
-  }
-
-  void _showRegisterDialog(BuildContext ctx) {
-    final urlController = TextEditingController(text: 'http://127.0.0.1:8080');
-    final idController = TextEditingController();
-    final roleController = TextEditingController(text: 'desktop');
-    final addrsController = TextEditingController();
-    showDialog<void>(
-      context: ctx,
-      builder: (dctx) => AlertDialog(
-        title: const Text('注册网络'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: urlController, decoration: const InputDecoration(labelText: '信令URL')),
-            TextField(controller: idController, decoration: const InputDecoration(labelText: '自身PeerId')),
-            TextField(controller: roleController, decoration: const InputDecoration(labelText: '角色(mobile/desktop)')),
-            TextField(controller: addrsController, decoration: const InputDecoration(labelText: 'Addrs(逗号分隔)')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: ()=>Navigator.of(dctx).pop(), child: const Text('取消')),
-          TextButton(onPressed: () async {
-            final svc = RTCSignalingService(urlController.text.trim());
-            await svc.registerPeer(
-              idController.text.trim(),
-              roleController.text.trim(),
-              addrsController.text.split(',').where((e)=>e.trim().isNotEmpty).toList(),
-            );
-            Navigator.of(dctx).pop();
-            ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('已注册到信令服务')));
-          }, child: const Text('注册')),
-        ],
       ),
     );
   }

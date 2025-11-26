@@ -1,11 +1,15 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_base/chat/chat.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
+import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 
 /// 移动端聊天控制器
 /// 针对移动端UI特点进行优化，支持页面导航和触摸交互
 class MobileChatController extends GetxController {
   final ChatCoreService _chatCoreService;
+  
+  // RTC Client
+  RTCClient? rtcClient;
   
   // 可观察状态
   final RxList<Friend> friends = <Friend>[].obs;
@@ -41,11 +45,38 @@ class MobileChatController extends GetxController {
         return;
       }
       final svc = RTCSignalingService(url);
+      rtcClient = RTCClient(svc, role: role, peerId: id);
+      await rtcClient!.init();
+
       await svc.registerPeer(id, role, addrs);
-      Get.snackbar('成功', '已注册到信令服务');
+      Get.snackbar('成功', '已注册到信令服务并初始化RTC');
+      
+      // Listen for rtc messages
+      rtcClient!.messages().listen((msg) {
+         Get.snackbar('RTC消息', msg);
+         // You might want to add this to the chat messages list as well
+         // messages.add(...);
+      });
+
     } catch (e) {
       Get.snackbar('错误', '注册失败: $e');
     }
+  }
+
+  Future<void> joinSession(String remotePeerId) async {
+      if (rtcClient == null) {
+         Get.snackbar('Error', 'Please register network first');
+         return;
+      }
+      try {
+          // Try to answer (join) or call?
+          // Based on requirement "join network", typically implies answering or initiating connection
+          // Let's assume we try to answer an offer from desktop if we are joining
+          await rtcClient!.answer(remotePeerId);
+          Get.snackbar('Success', 'Joined/Answered $remotePeerId');
+      } catch (e) {
+          Get.snackbar('Error', 'Join failed: $e');
+      }
   }
 
   /// 初始化聊天功能
