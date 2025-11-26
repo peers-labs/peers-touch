@@ -16,11 +16,9 @@ abstract class AIProviderTemplate {
   Provider applyDefaults(Provider p) {
     final settings = _jsonMerge(_jsonDecode(p.settingsJson), defaultSettings());
     final config = _jsonMerge(_jsonDecode(p.configJson), defaultConfig());
-    return p.rebuild((b) {
-      b
-        ..settingsJson = _jsonEncode(settings)
-        ..configJson = _jsonEncode(config);
-    });
+    return (p.deepCopy() as Provider)
+      ..settingsJson = _jsonEncode(settings)
+      ..configJson = _jsonEncode(config);
   }
 
   Map<String, dynamic> toServiceConfig(Provider p);

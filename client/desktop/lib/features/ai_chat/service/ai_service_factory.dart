@@ -12,23 +12,28 @@ enum AIProviderType {
 /// AI服务工厂
 class AIServiceFactory {
   /// 根据提供商类型创建对应的服务实例
-  static AIService createService(AIProviderType providerType) {
+  static AIService createService(AIProviderType providerType, {Map<String, dynamic>? config}) {
     switch (providerType) {
       case AIProviderType.openai:
-        return OpenAIService();
+        return OpenAIService(
+          apiKey: config?['apiKey']?.toString(),
+          baseUrl: config?['proxyUrl']?.toString() ?? config?['baseUrl']?.toString(),
+        );
       case AIProviderType.ollama:
-        return OllamaService();
+        return OllamaService(
+          baseUrl: config?['proxyUrl']?.toString() ?? config?['baseUrl']?.toString(),
+        );
     }
   }
 
   /// 根据字符串名称创建服务
-  static AIService fromName(String name) {
+  static AIService fromName(String name, {Map<String, dynamic>? config}) {
     switch (name.toLowerCase()) {
       case 'ollama':
-        return createService(AIProviderType.ollama);
+        return createService(AIProviderType.ollama, config: config);
       case 'openai':
       default:
-        return createService(AIProviderType.openai);
+        return createService(AIProviderType.openai, config: config);
     }
   }
 

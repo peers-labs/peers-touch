@@ -1,10 +1,13 @@
 package hertz
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -109,10 +112,15 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 		case http.Handler:
 			// Convert http.Handler to Hertz handler
 			hertzHandler := func(c context.Context, ctx *app.RequestContext) {
+				// Parse URL
+				rURL, _ := url.Parse(string(ctx.Request.URI().RequestURI()))
+
 				// Create http.Request from Hertz context
 				req := &http.Request{
 					Method: string(ctx.Method()),
+					URL:    rURL,
 					Header: make(http.Header),
+					Body:   io.NopCloser(bytes.NewReader(ctx.Request.Body())),
 				}
 
 				// Copy headers

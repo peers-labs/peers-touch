@@ -12,19 +12,6 @@ import 'controller/provider_controller.dart';
 class AIChatBinding extends Bindings {
   @override
   void dependencies() {
-    if (!Get.isRegistered<AIChatController>()) {
-      Get.put<AIChatController>(
-        AIChatController(
-          service: AIServiceFactory.fromName(
-            Get.find<LocalStorage>().get<String>('ai_provider_type') ??
-                'OpenAI',
-          ),
-          storage: Get.find<LocalStorage>(),
-        ),
-        permanent: true,
-      );
-    }
-
     Get.lazyPut<AiBoxFacadeService>(
       () => AiBoxFacadeService(mode: AiBoxMode.local),
       fenix: true,
@@ -32,8 +19,13 @@ class AIChatBinding extends Bindings {
     Get.lazyPut<ProviderService>(() => ProviderService(), fenix: true);
     Get.lazyPut<ProviderController>(() => ProviderController(), fenix: true);
 
-    if (!Get.isRegistered<ProviderController>()) {
-      Get.put(ProviderController());
+    if (!Get.isRegistered<AIChatController>()) {
+      Get.put<AIChatController>(
+        AIChatController(
+          storage: Get.find<LocalStorage>(),
+        ),
+        permanent: true,
+      );
     }
   }
 }
