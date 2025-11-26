@@ -9,10 +9,13 @@ import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_service_factory.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_attachment.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+
+import '../service/ai_service_factory.dart';
 
 // 保存主题操作的结果状态
 enum SaveTopicStatus {
@@ -21,10 +24,12 @@ enum SaveTopicStatus {
 }
 
 class AIChatController extends GetxController {
-  final AIService service;
   final LocalStorage storage;
+  late final ProviderController _providerController;
+  final activeService = Rx<AIService>(AIServiceFactory.defaultService);
+  AIService get service => activeService.value;
 
-  AIChatController({required this.service, required this.storage,});
+  AIChatController({required this.storage});
 
   // 状态
   final messages = <ChatMessage>[].obs;
@@ -51,8 +56,41 @@ class AIChatController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // Ensure ProviderController is available
+    if (Get.isRegistered<ProviderController>()) {
+      _providerController = Get.find<ProviderController>();
+    } else {
+      _providerController = Get.put(ProviderController());
+    }
+
+    // Listen to provider changes
+    ever(_providerController.currentProvider, (Provider? provider) {
+      _updateServiceFromProvider(provider);
+    });
+
+    // Initial update if provider is already loaded
+    if (_providerController.currentProvider.value != null) {
+      _updateServiceFromProvider(_providerController.currentProvider.value);
+    }
+
     _initModels();
     _loadPersistedState();
+  }
+
+  void _updateServiceFromProvider(Provider? provider) {
+    if (provider == null) return;
+    
+    final settings = provider.settingsJson.isNotEmpty
+        ? (jsonDecode(provider.settingsJson) as Map<String, dynamic>)
+        : <String, dynamic>{};
+    
+    final type = provider.sourceType.isNotEmpty ? provider.sourceType : 'openai';
+    
+    final newService = AIServiceFactory.fromName(type, config: settings);
+    activeService.value = newService;
+    
+    // Re-fetch models when provider changes
+    _initModels();
   }
 
   @override
@@ -417,10 +455,10 @@ class AIChatController extends GetxController {
       if (msgs.isNotEmpty) {
         newMeta['lastMessage'] = jsonEncode(msgs.last.toProto3Json());
       }
-      sessions[idx] = s.rebuild((s) => s
+      sessions[idx] = (s.deepCopy() as ChatSession)
         ..updatedAt = $fixnum.Int64(DateTime.now().millisecondsSinceEpoch)
         ..meta.clear()
-        ..meta.addAll(newMeta));
+        ..meta.addAll(newMeta);
       sessions.refresh();
       _persistSessions();
     }
