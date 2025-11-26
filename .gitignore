@@ -35,3 +35,5 @@ logs/
 
 # Dart tool
 **/.dart_tool
+
+dart_libp2p

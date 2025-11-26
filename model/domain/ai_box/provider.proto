@@ -30,8 +30,8 @@ message Provider {
   string description = 8;             // 描述
   string key_vaults = 9;              // 【敏感】API密钥或其他凭证的安全存储引用
   string source_type = 10;            // 提供商类型 (e.g."custom")
-  string settings_json = 11;          // JSON 字符串。元数据配置，如provider sdk的类型，openai。
-  string config_json = 12;            // JSON 字符串。运行时配置，如enableXXX
+  string settings_json = 11;          // JSON 字符串。连接与环境设置，描述“这个 Provider 是谁、怎么连、用什么协议”。变化频率低，偏向基础配置和端点信息。
+  string config_json = 12;            // JSON 字符串。生成参数与请求行为，描述“这次请求怎么生成、用什么采样策略”。变化更频繁，偏向模型调用的动态配置。
   google.protobuf.Timestamp accessed_at = 13;
   google.protobuf.Timestamp created_at = 14;
   google.protobuf.Timestamp updated_at = 15;

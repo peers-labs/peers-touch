@@ -56,6 +56,14 @@ class SettingController extends GetxController {
   /// 切换设置分区
   void selectSection(String sectionId) {
     selectedSection.value = sectionId;
+    final section = sections.firstWhereOrNull((s) => s.id == sectionId);
+    if (section != null) {
+      if (section.refreshOnTabSwitch && !section.keepAlive) {
+        section.onRefresh?.call();
+      } else {
+        section.onLoad?.call();
+      }
+    }
   }
   
   /// 更新搜索关键字

@@ -69,6 +69,12 @@ class SettingSection {
   final IconData? icon;
   final List<SettingItem> items;
   final Widget? page;
+  final String? panelId;
+  final bool refreshOnShow;
+  final bool refreshOnTabSwitch;
+  final bool keepAlive;
+  final Future<void> Function()? onLoad;
+  final Future<void> Function()? onRefresh;
 
   const SettingSection({
     required this.id,
@@ -76,6 +82,12 @@ class SettingSection {
     this.icon,
     this.items = const [],
     this.page,
+    this.panelId,
+    this.refreshOnShow = true,
+    this.refreshOnTabSwitch = true,
+    this.keepAlive = false,
+    this.onLoad,
+    this.onRefresh,
   });
 
   Map<String, dynamic> toJson() => {
