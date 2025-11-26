@@ -11,6 +11,10 @@ class ChatController extends GetxController {
   final targetPeerId = 'mobile-1'.obs;
   
   RTCClient? _client;
+  RTCSignalingService? _signaling;
+
+  final debugStats = <String, dynamic>{}.obs;
+  final isFetchingStats = false.obs;
   
   @override
   void onInit() {
@@ -25,6 +29,25 @@ class ChatController extends GetxController {
     super.onClose();
   }
   
+  Future<void> fetchDebugStats() async {
+    if (signalingUrl.value.isEmpty) return;
+    isFetchingStats.value = true;
+    try {
+      // Create a temporary signaling service if not initialized
+      final service = _signaling ?? RTCSignalingService(signalingUrl.value);
+      final stats = await service.getStats();
+      if (stats != null) {
+        debugStats.value = stats;
+      } else {
+        debugStats.value = {'error': 'Failed to fetch stats (Response null)'};
+      }
+    } catch (e) {
+      debugStats.value = {'error': e.toString()};
+    } finally {
+      isFetchingStats.value = false;
+    }
+  }
+
   Future<void> initChat() async {
     if (signalingUrl.value.isEmpty) {
       Get.snackbar('Error', 'Please enter Signaling URL');
@@ -32,12 +55,12 @@ class ChatController extends GetxController {
     }
     
     try {
-      final signaling = RTCSignalingService(signalingUrl.value);
-      _client = RTCClient(signaling, role: 'desktop', peerId: selfPeerId.value);
+      _signaling = RTCSignalingService(signalingUrl.value);
+      _client = RTCClient(_signaling!, role: 'desktop', peerId: selfPeerId.value);
       await _client!.init();
       
       // Register self
-      await signaling.registerPeer(selfPeerId.value, 'desktop', []);
+      await _signaling!.registerPeer(selfPeerId.value, 'desktop', []);
       Get.snackbar('Success', 'Registered as ${selfPeerId.value}');
       
       // Listen for messages

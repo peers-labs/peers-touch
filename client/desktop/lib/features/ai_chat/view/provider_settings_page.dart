@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as base;
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
@@ -128,7 +129,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
       ),
       ...providers.map((provider) {
         return Obx(() => ListTile(
-              leading: Icon(_getProviderIcon(provider.sourceType), color: tokens.textSecondary, size: 20),
+              leading: _buildProviderIcon(context, provider, 20),
               title: Text(provider.name, style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
               selected: controller.currentProvider.value?.id == provider.id,
               selectedTileColor: tokens.menuSelected,
@@ -182,14 +183,32 @@ class ProviderSettingsPage extends GetView<ProviderController> {
     );
   }
 
-  IconData _getProviderIcon(String sourceType) {
-    switch (sourceType.toLowerCase()) {
-      case 'openai':
-        return Icons.smart_toy_outlined;
-      case 'ollama':
-        return Icons.computer_outlined;
-      default:
-        return Icons.cloud_outlined;
+  Widget _buildProviderIcon(BuildContext context, base.Provider provider, double size) {
+    final s = provider.sourceType.toLowerCase();
+    String? assetPath;
+    if (['openai', 'anthropic', 'google', 'ollama', 'azure', 'cloudflare', 'qwen', 'volcengine'].contains(s)) {
+      assetPath = 'assets/icons/ai-chat/$s.svg';
     }
+
+    if (assetPath != null) {
+      return ClipOval(
+        child: SvgPicture.asset(assetPath, width: size, height: size),
+      );
+    }
+    
+    IconData iconData;
+    switch (s) {
+      case 'openai':
+        iconData = Icons.smart_toy_outlined;
+        break;
+      case 'ollama':
+        iconData = Icons.computer_outlined;
+        break;
+      default:
+        iconData = Icons.cloud_outlined;
+    }
+    
+    final tokens = Theme.of(context).extension<LobeTokens>()!;
+    return Icon(iconData, color: tokens.textSecondary, size: size);
   }
 }
