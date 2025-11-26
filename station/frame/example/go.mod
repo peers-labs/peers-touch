@@ -24,6 +24,9 @@ require (
 require (
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
+	github.com/libp2p/go-libp2p-mplex v0.11.0 // indirect
+	github.com/libp2p/go-libp2p-yamux v0.10.0 // indirect
+	github.com/libp2p/go-mplex v0.7.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 )
 

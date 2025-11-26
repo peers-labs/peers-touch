@@ -39,6 +39,20 @@ class AIChatModule {
       id: 'ai_provider',
       title: 'AI 服务商',
       page: const ProviderSettingsPage(),
+      panelId: 'ai_provider',
+      refreshOnShow: true,
+      refreshOnTabSwitch: true,
+      keepAlive: false,
+      onLoad: () async {
+        if (Get.isRegistered<ProviderController>()) {
+          await Get.find<ProviderController>().loadProviders();
+        }
+      },
+      onRefresh: () async {
+        if (Get.isRegistered<ProviderController>()) {
+          await Get.find<ProviderController>().refresh();
+        }
+      },
     ));
   }
 }
