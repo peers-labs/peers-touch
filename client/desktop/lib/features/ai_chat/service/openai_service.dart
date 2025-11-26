@@ -9,11 +9,17 @@ import 'ai_service.dart';
 /// OpenAI服务实现
 class OpenAIService implements AIService {
   final LocalStorage _storage = Get.find<LocalStorage>();
+  final String? _apiKey;
+  final String? _baseUrl;
+
+  OpenAIService({String? apiKey, String? baseUrl})
+      : _apiKey = apiKey,
+        _baseUrl = baseUrl;
   
   /// 获取配置的Dio实例
   Dio get _dio {
-    final apiKey = _storage.get<String>(AIConstants.openaiApiKey) ?? '';
-    final baseUrl = _storage.get<String>(AIConstants.openaiBaseUrl) ?? AIConstants.defaultOpenAIBaseUrl;
+    final apiKey = _apiKey ?? _storage.get<String>(AIConstants.openaiApiKey) ?? '';
+    final baseUrl = _baseUrl ?? _storage.get<String>(AIConstants.openaiBaseUrl) ?? AIConstants.defaultOpenAIBaseUrl;
     
     return Dio(BaseOptions(
       baseUrl: baseUrl,
@@ -29,7 +35,7 @@ class OpenAIService implements AIService {
   /// 检查配置是否有效
   @override
   bool get isConfigured {
-    final apiKey = _storage.get<String>(AIConstants.openaiApiKey) ?? '';
+    final apiKey = _apiKey ?? _storage.get<String>(AIConstants.openaiApiKey) ?? '';
     return apiKey.isNotEmpty;
   }
   

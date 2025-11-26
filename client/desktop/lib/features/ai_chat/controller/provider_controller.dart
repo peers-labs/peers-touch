@@ -72,11 +72,9 @@ class ProviderController extends GetxController {
           changed = true;
         }
         if (changed) {
-          final updated = p.rebuild(
-            (b) => b
-              ..settingsJson = jsonEncode(settings)
-              ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
-          );
+          final updated = (p.deepCopy() as Provider)
+            ..settingsJson = jsonEncode(settings)
+            ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
           await _providerService.updateProvider(updated);
           migrated.add(updated);
         } else {
@@ -113,9 +111,8 @@ class ProviderController extends GetxController {
   /// 更新提供商
   Future<void> updateProvider(Provider provider) async {
     try {
-      final updatedProvider = provider.rebuild(
-        (b) => b..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
-      );
+      final updatedProvider = (provider.deepCopy() as Provider)
+            ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
 
       await _providerService.updateProvider(updatedProvider);
       await loadProviders();
@@ -142,11 +139,9 @@ class ProviderController extends GetxController {
           providers.firstWhereOrNull((e) => e.id == providerId) ??
           currentProvider.value;
       if (p == null) return;
-      final updated = p.rebuild(
-        (b) => b
-          ..name = newName
-          ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
-      );
+      final updated = (p.deepCopy() as Provider)
+            ..name = newName
+            ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
       await _providerService.updateProvider(updated);
       await loadProviders();
       Get.snackbar('成功', '名称已更新');
@@ -226,11 +221,9 @@ class ProviderController extends GetxController {
           ? (jsonDecode(provider.settingsJson) as Map<String, dynamic>)
           : {};
       settings['models'] = models;
-      final updated = provider.rebuild(
-        (b) => b
-          ..settingsJson = jsonEncode(settings)
-          ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
-      );
+      final updated = (provider.deepCopy() as Provider)
+            ..settingsJson = jsonEncode(settings)
+            ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
       await _providerService.updateProvider(updated);
       await loadProviders();
       return models;
@@ -250,11 +243,9 @@ class ProviderController extends GetxController {
         ? (jsonDecode(cp.settingsJson) as Map<String, dynamic>)
         : {};
     settings[key] = value;
-    final updated = cp.rebuild(
-      (b) => b
-        ..settingsJson = jsonEncode(settings)
-        ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
-    );
+    final updated = (cp.deepCopy() as Provider)
+          ..settingsJson = jsonEncode(settings)
+          ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
     await _providerService.updateProvider(updated);
     await loadProviders();
   }
@@ -262,11 +253,9 @@ class ProviderController extends GetxController {
   Future<void> toggleEnabled(bool on) async {
     final cp = currentProvider.value;
     if (cp == null) return;
-    final updated = cp.rebuild(
-      (b) => b
-        ..enabled = on
-        ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
-    );
+    final updated = (cp.deepCopy() as Provider)
+          ..enabled = on
+          ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
     await _providerService.updateProvider(updated);
     await loadProviders();
   }
@@ -295,11 +284,9 @@ class ProviderController extends GetxController {
       enabled.remove(modelId);
     }
     settings['enabledModels'] = enabled;
-    final updated = cp.rebuild(
-      (b) => b
-        ..settingsJson = jsonEncode(settings)
-        ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
-    );
+    final updated = (cp.deepCopy() as Provider)
+          ..settingsJson = jsonEncode(settings)
+          ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
     await _providerService.updateProvider(updated);
     await loadProviders();
   }

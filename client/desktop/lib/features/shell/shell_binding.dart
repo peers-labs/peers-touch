@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import 'controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/settings/settings_module.dart';
 import 'package:peers_touch_desktop/features/ai_chat/ai_chat_module.dart';
+import 'package:peers_touch_desktop/features/chat/chat_module.dart';
 import 'package:peers_touch_desktop/features/profile/profile_module.dart';
 import 'package:peers_touch_desktop/features/peers_admin/peers_admin_module.dart';
 
@@ -13,6 +14,8 @@ class ShellBinding extends Bindings {
     SettingsModule.register();
     // 业务模块示例：AI对话（头部区域）
     AIChatModule.register();
+    // 业务模块：RTC聊天（头部区域）
+    ChatModule.register();
     // 业务模块：个人主页（头部区域，含头像块点击）
     ProfileModule.register();
     // 业务模块：Peers Admin（头部区域）

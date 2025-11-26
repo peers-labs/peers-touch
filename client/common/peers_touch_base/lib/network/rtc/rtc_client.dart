@@ -37,7 +37,7 @@ class RTCClient {
 
   Future<void> call(String remotePeerId) async {
     await _pc!.setLocalDescription(await _pc!.createOffer());
-    await signaling.postOffer('$peerId-$remotePeerId', _pc!.localDescription!.sdp!);
+    await signaling.postOffer('$peerId-$remotePeerId', _pc!.getConfiguration['sdp']!);
     // wait for answer
     String? ans;
     for (var i=0;i<60 && ans==null;i++){
@@ -61,7 +61,7 @@ class RTCClient {
     if (offer==null) return;
     await _pc!.setRemoteDescription(RTCSessionDescription(offer, 'offer'));
     await _pc!.setLocalDescription(await _pc!.createAnswer());
-    await signaling.postAnswer('$remotePeerId-$peerId', _pc!.localDescription!.sdp!);
+    await signaling.postAnswer('$remotePeerId-$peerId',  _pc!.getConfiguration['sdp']!);
     final cands = await signaling.getCandidates('$remotePeerId-$peerId');
     for (final c in cands){ await _pc!.addCandidate(RTCIceCandidate(c, '', 0)); }
   }

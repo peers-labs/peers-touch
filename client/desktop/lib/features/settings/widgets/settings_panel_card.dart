@@ -55,7 +55,7 @@ class SettingsPanelCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          child,
+          Expanded(child: child),
         ],
       ),
     );

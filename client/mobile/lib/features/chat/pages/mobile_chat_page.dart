@@ -28,6 +28,9 @@ class MobileChatPage extends GetView<MobileChatController> {
                 case 'register_network':
                   _showRegisterDialog();
                   break;
+                case 'join_session':
+                  _showJoinSessionDialog();
+                  break;
                 case 'clear_data':
                   _showClearDataDialog();
                   break;
@@ -41,6 +44,10 @@ class MobileChatPage extends GetView<MobileChatController> {
               const PopupMenuItem(
                 value: 'register_network',
                 child: Text('注册网络'),
+              ),
+              const PopupMenuItem(
+                value: 'join_session',
+                child: Text('加入会话'),
               ),
               const PopupMenuItem(
                 value: 'clear_data',
@@ -91,6 +98,23 @@ class MobileChatPage extends GetView<MobileChatController> {
         controller.selfRole.value = roleController.text;
         controller.selfAddrs.assignAll(addrsController.text.split(',').where((e)=>e.trim().isNotEmpty));
         controller.registerNetwork();
+        Get.back();
+      },
+      textCancel: '取消',
+    );
+  }
+
+  void _showJoinSessionDialog() {
+    final peerIdController = TextEditingController();
+    Get.defaultDialog(
+      title: '加入会话 (Connect)',
+      content: TextField(
+        controller: peerIdController,
+        decoration: const InputDecoration(labelText: '对方PeerId'),
+      ),
+      textConfirm: '连接',
+      onConfirm: () {
+        controller.joinSession(peerIdController.text);
         Get.back();
       },
       textCancel: '取消',

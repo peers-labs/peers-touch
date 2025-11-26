@@ -11,9 +11,12 @@ import 'ai_service.dart';
 /// Ollama 服务实现
 class OllamaService implements AIService {
   final LocalStorage _storage = Get.find<LocalStorage>();
+  final String? _baseUrl;
+
+  OllamaService({String? baseUrl}) : _baseUrl = baseUrl;
 
   Dio get _dio {
-    final baseUrl = _storage.get<String>(AIConstants.ollamaBaseUrl) ?? 'http://localhost:11434';
+    final baseUrl = _baseUrl ?? _storage.get<String>(AIConstants.ollamaBaseUrl) ?? 'http://localhost:11434';
     return Dio(BaseOptions(
       baseUrl: baseUrl,
       headers: {
@@ -26,7 +29,7 @@ class OllamaService implements AIService {
 
   @override
   bool get isConfigured {
-    final baseUrl = _storage.get<String>(AIConstants.ollamaBaseUrl) ?? '';
+    final baseUrl = _baseUrl ?? _storage.get<String>(AIConstants.ollamaBaseUrl) ?? '';
     return baseUrl.isNotEmpty;
   }
 
