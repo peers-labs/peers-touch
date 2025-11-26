@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 
@@ -16,11 +16,13 @@ class ProviderController extends GetxController {
   final currentProvider = Rx<Provider?>(null);
   final isLoading = false.obs;
   final selectedProviderId = ''.obs;
-
-  // UI状态
   final isApiKeyObscured = true.obs;
   final isClientRequestMode = false.obs;
-  final currentModels = <String>[].obs;
+  final modelSearchText = ''.obs;
+
+  String get panelId => 'ai_provider';
+
+  bool get shouldKeepAlive => false;
 
   @override
   void onInit() {
@@ -33,7 +35,55 @@ class ProviderController extends GetxController {
     isLoading.value = true;
     try {
       final loadedProviders = await _providerService.getProviders();
-      providers.assignAll(loadedProviders);
+      // 迁移旧字段到 settingsJson（api_key/base_url -> apiKey/proxyUrl/defaultProxyUrl）
+      final migrated = <Provider>[];
+      for (final p in loadedProviders) {
+        final settings = p.settingsJson.isNotEmpty
+            ? (jsonDecode(p.settingsJson) as Map<String, dynamic>)
+            : <String, dynamic>{};
+        final config = p.configJson.isNotEmpty
+            ? (jsonDecode(p.configJson) as Map<String, dynamic>)
+            : <String, dynamic>{};
+        var changed = false;
+        // requestFormat 填充
+        if ((settings['requestFormat'] ?? '').toString().isEmpty) {
+          settings['requestFormat'] = (p.sourceType.isNotEmpty
+              ? p.sourceType.toLowerCase()
+              : 'openai');
+          changed = true;
+        }
+        // apiKey 迁移
+        final legacyKey = (config['api_key'] ?? '').toString();
+        if ((settings['apiKey'] ?? '').toString().isEmpty &&
+            legacyKey.isNotEmpty) {
+          settings['apiKey'] = legacyKey;
+          changed = true;
+        }
+        // proxyUrl/defaultProxyUrl 迁移
+        final legacyUrl = (config['base_url'] ?? config['baseUrl'] ?? '')
+            .toString();
+        if (((settings['proxyUrl'] ?? '').toString().isEmpty) &&
+            legacyUrl.isNotEmpty) {
+          final cleaned = _sanitizeUrl(legacyUrl);
+          settings['proxyUrl'] = cleaned;
+          if ((settings['defaultProxyUrl'] ?? '').toString().isEmpty) {
+            settings['defaultProxyUrl'] = cleaned;
+          }
+          changed = true;
+        }
+        if (changed) {
+          final updated = p.rebuild(
+            (b) => b
+              ..settingsJson = jsonEncode(settings)
+              ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
+          );
+          await _providerService.updateProvider(updated);
+          migrated.add(updated);
+        } else {
+          migrated.add(p);
+        }
+      }
+      providers.assignAll(migrated);
 
       // 加载当前提供商（优先使用会话级）
       String? sessionId;
@@ -46,6 +96,12 @@ class ProviderController extends GetxController {
       currentProvider.value = current;
       if (current != null) {
         selectedProviderId.value = current.id;
+        final settings = current.settingsJson.isNotEmpty
+            ? (jsonDecode(current.settingsJson) as Map<String, dynamic>)
+            : {};
+        isClientRequestMode.value =
+            (Get.find<LocalStorage>().get<bool>('client_request_mode_global') ??
+            false);
       }
     } catch (e) {
       Get.snackbar('错误', '加载提供商失败: $e');
@@ -54,16 +110,12 @@ class ProviderController extends GetxController {
     }
   }
 
-  /// 切换API密钥可见性
-  void toggleApiKeyVisibility() {
-    isApiKeyObscured.value = !isApiKeyObscured.value;
-  }
-
   /// 更新提供商
   Future<void> updateProvider(Provider provider) async {
     try {
       final updatedProvider = provider.rebuild(
-          (b) => b..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()));
+        (b) => b..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
+      );
 
       await _providerService.updateProvider(updatedProvider);
       await loadProviders();
@@ -77,11 +129,29 @@ class ProviderController extends GetxController {
   Future<void> deleteProvider(String providerId) async {
     try {
       await _providerService.deleteProvider(providerId);
-      await _deleteApiKey(providerId);
       await loadProviders();
       Get.snackbar('成功', '提供商删除成功');
     } catch (e) {
       Get.snackbar('错误', '删除提供商失败: $e');
+    }
+  }
+
+  Future<void> updateProviderName(String providerId, String newName) async {
+    try {
+      final p =
+          providers.firstWhereOrNull((e) => e.id == providerId) ??
+          currentProvider.value;
+      if (p == null) return;
+      final updated = p.rebuild(
+        (b) => b
+          ..name = newName
+          ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
+      );
+      await _providerService.updateProvider(updated);
+      await loadProviders();
+      Get.snackbar('成功', '名称已更新');
+    } catch (e) {
+      Get.snackbar('错误', '更新名称失败: $e');
     }
   }
 
@@ -121,23 +191,18 @@ class ProviderController extends GetxController {
   Future<void> testProviderConnection(String providerId) async {
     try {
       final provider = providers.firstWhere((p) => p.id == providerId);
-      final apiKey = await _getApiKey(providerId);
-
-      if (apiKey == null || apiKey.isEmpty) {
+      final settings = provider.settingsJson.isNotEmpty
+          ? (jsonDecode(provider.settingsJson) as Map<String, dynamic>)
+          : {};
+      final apiKey = (settings['apiKey'] ?? '').toString();
+      if (apiKey.isEmpty) {
         Get.snackbar('错误', '请先设置API密钥');
         return;
       }
-
-      // 创建临时提供商用于测试
-      final settings = jsonDecode(provider.settingsJson) as Map<String, dynamic>;
-      settings['apiKey'] = apiKey;
-
-      final testProvider =
-          provider.rebuild((b) => b..settingsJson = jsonEncode(settings));
-
       isLoading.value = true;
-      final isConnected =
-          await _providerService.testProviderConnection(testProvider);
+      final isConnected = await _providerService.testProviderConnection(
+        provider,
+      );
 
       if (isConnected) {
         Get.snackbar('成功', '连接测试通过');
@@ -155,32 +220,101 @@ class ProviderController extends GetxController {
   Future<List<String>> fetchProviderModels(String providerId) async {
     try {
       final provider = providers.firstWhere((p) => p.id == providerId);
-      final apiKey = await _getApiKey(providerId);
-
-      if (apiKey == null || apiKey.isEmpty) {
-        return [];
-      }
-
-      // 创建临时提供商用于获取模型
-      final settings = jsonDecode(provider.settingsJson) as Map<String, dynamic>;
-      settings['apiKey'] = apiKey;
-
-      final testProvider =
-          provider.rebuild((b) => b..settingsJson = jsonEncode(settings));
-
-      return await _providerService.fetchProviderModels(testProvider);
+      final models = await _providerService.fetchProviderModels(provider);
+      if (models.isEmpty) return models;
+      final settings = provider.settingsJson.isNotEmpty
+          ? (jsonDecode(provider.settingsJson) as Map<String, dynamic>)
+          : {};
+      settings['models'] = models;
+      final updated = provider.rebuild(
+        (b) => b
+          ..settingsJson = jsonEncode(settings)
+          ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
+      );
+      await _providerService.updateProvider(updated);
+      await loadProviders();
+      return models;
     } catch (e) {
       return [];
     }
   }
 
-  /// 获取API密钥
-  Future<String?> _getApiKey(String providerId) async {
-    return await Get.find<SecureStorage>().get('provider_key_$providerId');
+  void toggleApiKeyVisibility() {
+    isApiKeyObscured.value = !isApiKeyObscured.value;
   }
 
-  /// 删除API密钥
-  Future<void> _deleteApiKey(String providerId) async {
-    await Get.find<SecureStorage>().remove('provider_key_$providerId');
+  Future<void> updateField(String key, dynamic value) async {
+    final cp = currentProvider.value;
+    if (cp == null) return;
+    final settings = cp.settingsJson.isNotEmpty
+        ? (jsonDecode(cp.settingsJson) as Map<String, dynamic>)
+        : {};
+    settings[key] = value;
+    final updated = cp.rebuild(
+      (b) => b
+        ..settingsJson = jsonEncode(settings)
+        ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
+    );
+    await _providerService.updateProvider(updated);
+    await loadProviders();
   }
+
+  Future<void> toggleEnabled(bool on) async {
+    final cp = currentProvider.value;
+    if (cp == null) return;
+    final updated = cp.rebuild(
+      (b) => b
+        ..enabled = on
+        ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
+    );
+    await _providerService.updateProvider(updated);
+    await loadProviders();
+  }
+
+  Future<void> setClientRequestMode(bool on) async {
+    isClientRequestMode.value = on;
+    await Get.find<LocalStorage>().set('client_request_mode_global', on);
+  }
+
+  void filterModels(String text) {
+    modelSearchText.value = text;
+  }
+
+  Future<void> toggleModelEnabled(String modelId, bool on) async {
+    final cp = currentProvider.value;
+    if (cp == null) return;
+    final settings = cp.settingsJson.isNotEmpty
+        ? (jsonDecode(cp.settingsJson) as Map<String, dynamic>)
+        : {};
+    final List<String> enabled = List<String>.from(
+      (settings['enabledModels'] ?? <String>[]) as List,
+    );
+    if (on) {
+      if (!enabled.contains(modelId)) enabled.add(modelId);
+    } else {
+      enabled.remove(modelId);
+    }
+    settings['enabledModels'] = enabled;
+    final updated = cp.rebuild(
+      (b) => b
+        ..settingsJson = jsonEncode(settings)
+        ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc()),
+    );
+    await _providerService.updateProvider(updated);
+    await loadProviders();
+  }
+
+  String _sanitizeUrl(String raw) {
+    var s = raw.trim();
+    if (s.startsWith('`') && s.endsWith('`')) {
+      s = s.substring(1, s.length - 1);
+    }
+    // 去除内部多余反引号与空格
+    s = s.replaceAll('`', '').trim();
+    return s;
+  }
+
+  Future<void> load() async => loadProviders();
+
+  Future<void> refresh() async => loadProviders();
 }

@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_base/chat/chat.dart';
+import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 
 /// 移动端聊天控制器
 /// 针对移动端UI特点进行优化，支持页面导航和触摸交互
@@ -16,6 +17,10 @@ class MobileChatController extends GetxController {
   final RxBool isLoading = false.obs;
   final RxBool isSending = false.obs;
   final RxString searchQuery = ''.obs;
+  final RxString signalingUrl = ''.obs;
+  final RxString selfPeerId = ''.obs;
+  final RxString selfRole = 'mobile'.obs;
+  final RxList<String> selfAddrs = <String>[].obs;
   
   MobileChatController(this._chatCoreService);
 
@@ -23,6 +28,24 @@ class MobileChatController extends GetxController {
   void onInit() {
     super.onInit();
     _initializeChat();
+  }
+
+  Future<void> registerNetwork() async {
+    try {
+      final url = signalingUrl.value;
+      final id = selfPeerId.value;
+      final role = selfRole.value;
+      final addrs = selfAddrs.toList();
+      if (url.isEmpty || id.isEmpty) {
+        Get.snackbar('错误', '请填写信令URL与自身PeerId');
+        return;
+      }
+      final svc = RTCSignalingService(url);
+      await svc.registerPeer(id, role, addrs);
+      Get.snackbar('成功', '已注册到信令服务');
+    } catch (e) {
+      Get.snackbar('错误', '注册失败: $e');
+    }
   }
 
   /// 初始化聊天功能

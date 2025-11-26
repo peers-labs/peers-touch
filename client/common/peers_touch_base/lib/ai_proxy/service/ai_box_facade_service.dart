@@ -99,23 +99,12 @@ class AiBoxFacadeService {
     }
 
     try {
-      final configJson = provider.configJson;
-      if (configJson.isEmpty) {
-        return [];
-      }
-
-      final config = jsonDecode(configJson);
-      final baseUrl = config['base_url'] ?? config['baseUrl'] ?? '';
+      final baseUrl = _getBaseUrl(provider);
       
       // 从settingsJson中获取API密钥
-      final settingsJson = provider.settingsJson;
-      String apiKey = '';
-      if (settingsJson.isNotEmpty) {
-        final settings = jsonDecode(settingsJson);
-        apiKey = settings['apiKey'] ?? settings['api_key'] ?? '';
-      }
+      final apiKey = _getApiKey(provider);
 
-      if (baseUrl.isEmpty || !Uri.tryParse(baseUrl)!.isAbsolute) {
+      if (baseUrl.isEmpty || Uri.tryParse(baseUrl) == null || !Uri.tryParse(baseUrl)!.isAbsolute) {
         return [];
       }
 
@@ -186,23 +175,12 @@ class AiBoxFacadeService {
     }
 
     try {
-      final configJson = provider.configJson;
-      if (configJson.isEmpty) {
-        return false;
-      }
-
-      final config = jsonDecode(configJson);
-      final baseUrl = config['base_url'] ?? config['baseUrl'] ?? '';
+      final baseUrl = _getBaseUrl(provider);
       
       // 从settingsJson中获取API密钥
-      final settingsJson = provider.settingsJson;
-      String apiKey = '';
-      if (settingsJson.isNotEmpty) {
-        final settings = jsonDecode(settingsJson);
-        apiKey = settings['apiKey'] ?? settings['api_key'] ?? '';
-      }
+      final apiKey = _getApiKey(provider);
 
-      if (baseUrl.isEmpty || !Uri.tryParse(baseUrl)!.isAbsolute) {
+      if (baseUrl.isEmpty || Uri.tryParse(baseUrl) == null || !Uri.tryParse(baseUrl)!.isAbsolute) {
         return false;
       }
 
@@ -223,7 +201,7 @@ class AiBoxFacadeService {
           break;
         case 'openai':
         case 'deepseek':
-          testPath = '/v1/models';
+          testPath = '/models';
           dio.options.headers['Authorization'] = 'Bearer $apiKey';
           break;
         default:
@@ -237,6 +215,46 @@ class AiBoxFacadeService {
       // 任何异常都认为连接失败
       return false;
     }
+  }
+
+  String _getBaseUrl(Provider provider) {
+    try {
+      // 优先从 settingsJson 获取
+      if (provider.settingsJson.isNotEmpty) {
+        final s = jsonDecode(provider.settingsJson);
+        var base = s['proxyUrl'] ?? s['defaultProxyUrl'] ?? s['baseUrl'] ?? '';
+        base = _sanitizeUrl(base?.toString() ?? '');
+        if (base.isNotEmpty) return base;
+      }
+      // 回退到 configJson
+      if (provider.configJson.isNotEmpty) {
+        final c = jsonDecode(provider.configJson);
+        var base = c['base_url'] ?? c['baseUrl'] ?? '';
+        base = _sanitizeUrl(base?.toString() ?? '');
+        return base;
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  String _getApiKey(Provider provider) {
+    try {
+      if (provider.settingsJson.isNotEmpty) {
+        final s = jsonDecode(provider.settingsJson);
+        final key = (s['apiKey'] ?? s['api_key'] ?? '').toString();
+        return key;
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  String _sanitizeUrl(String raw) {
+    var s = raw.trim();
+    if (s.startsWith('`') && s.endsWith('`')) {
+      s = s.substring(1, s.length - 1);
+    }
+    s = s.replaceAll('`', '').trim();
+    return s;
   }
 
   /// 聊天功能相关接口

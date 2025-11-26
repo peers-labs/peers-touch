@@ -1,8 +1,8 @@
 module router-config-example
 
-go 1.23.10
+go 1.24.6
 
-toolchain go1.24.6
+toolchain go1.24.10
 
 replace github.com/peers-labs/peers-touch/station/frame => ../..
 

@@ -25,6 +25,9 @@ class MobileChatPage extends GetView<MobileChatController> {
                 case 'add_friend':
                   _showAddFriendDialog();
                   break;
+                case 'register_network':
+                  _showRegisterDialog();
+                  break;
                 case 'clear_data':
                   _showClearDataDialog();
                   break;
@@ -34,6 +37,10 @@ class MobileChatPage extends GetView<MobileChatController> {
               const PopupMenuItem(
                 value: 'add_friend',
                 child: Text('添加好友'),
+              ),
+              const PopupMenuItem(
+                value: 'register_network',
+                child: Text('注册网络'),
               ),
               const PopupMenuItem(
                 value: 'clear_data',
@@ -59,6 +66,34 @@ class MobileChatPage extends GetView<MobileChatController> {
         child: const Icon(Icons.person_add),
         tooltip: '添加好友',
       ),
+    );
+  }
+
+  void _showRegisterDialog() {
+    final urlController = TextEditingController(text: controller.signalingUrl.value);
+    final idController = TextEditingController(text: controller.selfPeerId.value);
+    final roleController = TextEditingController(text: controller.selfRole.value);
+    final addrsController = TextEditingController(text: controller.selfAddrs.join(','));
+    Get.defaultDialog(
+      title: '注册网络',
+      content: Column(
+        children: [
+          TextField(controller: urlController, decoration: const InputDecoration(labelText: '信令URL')), 
+          TextField(controller: idController, decoration: const InputDecoration(labelText: '自身PeerId')),
+          TextField(controller: roleController, decoration: const InputDecoration(labelText: '角色(mobile/desktop)')),
+          TextField(controller: addrsController, decoration: const InputDecoration(labelText: 'Addrs(逗号分隔)')),
+        ],
+      ),
+      textConfirm: '注册',
+      onConfirm: () {
+        controller.signalingUrl.value = urlController.text;
+        controller.selfPeerId.value = idController.text;
+        controller.selfRole.value = roleController.text;
+        controller.selfAddrs.assignAll(addrsController.text.split(',').where((e)=>e.trim().isNotEmpty));
+        controller.registerNetwork();
+        Get.back();
+      },
+      textCancel: '取消',
     );
   }
 

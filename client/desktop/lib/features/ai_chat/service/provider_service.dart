@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:get/get.dart';
+import 'package:peers_touch_base/ai_proxy/provider/template/template_factory.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_facade_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
@@ -87,7 +88,12 @@ class ProviderService extends GetxService {
   /// 测试提供商连接
   Future<bool> testProviderConnection(Provider provider) async {
     try {
-      return await _aiBoxFacadeService.testProviderConnection(provider.id);
+      // 使用模板，确保默认值已应用
+      final template = AIProviderTemplateFactory.fromProvider(provider);
+      final withDefaults = template.applyDefaults(provider);
+      // 先更新远端配置，确保 settingsJson 中的 apiKey/proxyUrl 生效
+      await _aiBoxFacadeService.updateProvider(withDefaults);
+      return await _aiBoxFacadeService.testProviderConnection(withDefaults.id);
     } catch (e) {
       return false;
     }
@@ -96,7 +102,11 @@ class ProviderService extends GetxService {
   /// 获取提供商的模型列表
   Future<List<String>> fetchProviderModels(Provider provider) async {
     try {
-      return await _aiBoxFacadeService.getProviderModels(provider.id);
+      final template = AIProviderTemplateFactory.fromProvider(provider);
+      final withDefaults = template.applyDefaults(provider);
+      // 确保配置已更新到服务端
+      await _aiBoxFacadeService.updateProvider(withDefaults);
+      return await _aiBoxFacadeService.getProviderModels(withDefaults.id);
     } catch (e) {
       return [];
     }
@@ -121,7 +131,11 @@ class ProviderService extends GetxService {
       checkModel: _getDefaultModels(sourceType).first,
       settingsJson: jsonEncode({
         'baseUrl': _getDefaultBaseUrl(sourceType),
+        'proxyUrl': _getDefaultBaseUrl(sourceType),
+        'defaultProxyUrl': _getDefaultBaseUrl(sourceType),
         'models': _getDefaultModels(sourceType),
+        'apiKey': '',
+        'requestFormat': sourceType.toLowerCase(),
       }),
       configJson: jsonEncode({
         'temperature': 0.7,

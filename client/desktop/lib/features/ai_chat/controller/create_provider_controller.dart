@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
+import 'package:peers_touch_base/ai_proxy/provider/template/template_factory.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/request_format.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
@@ -36,11 +37,6 @@ class CreateProviderController extends GetxController {
   Future<void> createProvider() async {
     if (formKey.currentState!.validate()) {
       final now = DateTime.now();
-      final baseConfig = {
-        'api_key': apiKeyController.text,
-        'base_url': proxyUrlController.text,
-      };
-
       final provider = Provider(
         id: idController.text,
         name: nameController.text,
@@ -48,16 +44,33 @@ class CreateProviderController extends GetxController {
         logo: logoController.text,
         sourceType: requestFormat.value!.name,
         settingsJson: jsonEncode({
-          'provider_type': requestFormat.value!.name,
-          'api_version': 'v1',
+          'requestFormat': requestFormat.value!.name,
+          'proxyUrl': proxyUrlController.text,
+          'defaultProxyUrl': proxyUrlController.text,
+          'apiKey': apiKeyController.text,
+          'models': <String>[],
         }),
-        configJson: jsonEncode(baseConfig),
+        configJson: jsonEncode({
+          'temperature': 0.7,
+          'maxTokens': 2048,
+          'topP': 1.0,
+          'frequencyPenalty': 0.0,
+          'presencePenalty': 0.0,
+        }),
         enabled: true,
         accessedAt: Timestamp.fromDateTime(now.toUtc()),
         createdAt: Timestamp.fromDateTime(now.toUtc()),
         updatedAt: Timestamp.fromDateTime(now.toUtc()),
       );
-      await _providerService.createProvider(provider);
+      // 应用模板默认值与校验
+      final template = AIProviderTemplateFactory.fromProvider(provider);
+      final withDefaults = template.applyDefaults(provider);
+      final errs = template.validate(withDefaults);
+      if (errs.isNotEmpty) {
+        Get.snackbar('错误', errs.join('\n'));
+        return;
+      }
+      await _providerService.createProvider(withDefaults);
       Get.find<ProviderController>().loadProviders();
       Get.back();
     }

@@ -8,6 +8,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/chat"
+
 	// default plugins
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
@@ -28,6 +30,7 @@ func main() {
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("/debug")),
 		// Use the new router pattern for station endpoints
 		// server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
+		server.WithSubServer("chat", chat.NewChatSubServer),
 	)
 	if err != nil {
 		panic(err)
