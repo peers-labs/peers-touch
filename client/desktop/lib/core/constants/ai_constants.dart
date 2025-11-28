@@ -33,4 +33,5 @@ class AIConstants {
   static const String chatMessagesPrefix = 'ai_chat_messages_'; // + sessionId
   // 会话与主题的映射（sessionId -> topicTitle）
   static const String chatSessionTopicMap = 'ai_chat_session_topic_map'; // Map<String,String>
+  static const String showTokens = 'ai_show_tokens';
 }

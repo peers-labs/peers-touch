@@ -14,7 +14,6 @@ class SettingsBinding extends Bindings {
       Get.lazyPut<SettingController>(() => SettingController(), fenix: true);
     }
     
-    // 注册AI Provider设置到全局设置系统
-  //  AIProviderSettings.registerToGlobalSettings();
+    // 保持仅使用自定义页面分区“AI 服务商”，不额外注入 items 分区
   }
 }

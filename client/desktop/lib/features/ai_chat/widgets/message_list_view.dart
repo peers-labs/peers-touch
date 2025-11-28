@@ -3,6 +3,10 @@ import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:get/get.dart';
+import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
+import 'package:peers_touch_base/ai_proxy/token/token_counter.dart';
 
 class MessageListView extends StatefulWidget {
   final List<ChatMessage> messages;
@@ -75,21 +79,48 @@ String _formatMessageTime(DateTime dt) {
               ),
             Align(
               alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-              child: Container(
-                margin: EdgeInsets.symmetric(vertical: UIKit.spaceSm(context)),
-                padding: EdgeInsets.all(UIKit.spaceMd(context)),
-                decoration: BoxDecoration(
-                  color: isUser
-                      ? UIKit.userBubbleBg(context)
-                      : UIKit.assistantBubbleBg(context),
-                  borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
-                ),
-                child: Text(m.content),
+              child: Column(
+                crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    margin: EdgeInsets.symmetric(vertical: UIKit.spaceSm(context)),
+                    padding: EdgeInsets.all(UIKit.spaceMd(context)),
+                    decoration: BoxDecoration(
+                      color: UIKit.assistantBubbleBg(context),
+                      borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
+                    ),
+                    child: SelectableText(m.content),
+                  ),
+                  if ((Get.find<LocalStorage>().get<bool>(AIConstants.showTokens) ?? false))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, left: 6, right: 6),
+                      child: _TokenBadge(count: TokenCounter.countTextTokens(m.content)),
+                    ),
+                ],
               ),
             ),
           ],
         );
       },
+    );
+  }
+}
+
+class _TokenBadge extends StatelessWidget {
+  final int count;
+  const _TokenBadge({required this.count});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '$count',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
     );
   }
 }

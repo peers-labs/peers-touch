@@ -5,6 +5,7 @@ abstract class AIProviderTemplate {
   String get id;
   String get displayName;
   String get baseServiceType;
+  bool get supportsUsage => false;
 
   Map<String, dynamic> defaultSettings();
   Map<String, dynamic> defaultConfig();

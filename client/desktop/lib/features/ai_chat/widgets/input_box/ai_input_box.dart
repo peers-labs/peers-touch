@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:io';
+import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -75,6 +76,30 @@ class AIInputBox extends StatelessWidget {
                 // 只在文本框处于焦点时响应
                 if (!ctrl.textFocusNode.hasFocus) return KeyEventResult.ignored;
                 final isEnter = event.logicalKey == LogicalKeyboardKey.enter;
+                final isArrowUp = event.logicalKey == LogicalKeyboardKey.arrowUp;
+                final isArrowDown = event.logicalKey == LogicalKeyboardKey.arrowDown;
+                final tc = externalTextController ?? ctrl.textController;
+
+                // 当输入法处于组合态时，不拦截回车（允许候选上屏）
+                if (isEnter && tc.value.composing.isValid) {
+                  return KeyEventResult.ignored;
+                }
+
+                // 输入为空时，↑/↓ 切换历史消息到输入框
+                final isEmpty = (tc.text.trim().isEmpty) && ctrl.attachments.isEmpty;
+                if (isEmpty && (isArrowUp || isArrowDown)) {
+                  try {
+                    final chat = Get.find<AIChatController>();
+                    if (isArrowUp) {
+                      chat.recallPrevInput();
+                    } else {
+                      chat.recallNextInput();
+                    }
+                    return KeyEventResult.handled;
+                  } catch (_) {
+                    return KeyEventResult.ignored;
+                  }
+                }
                 if (!isEnter) return KeyEventResult.ignored;
                 final pressed = RawKeyboard.instance.keysPressed;
                 final isCtrl = pressed.contains(LogicalKeyboardKey.controlLeft) ||
@@ -310,10 +335,20 @@ class AIInputBox extends StatelessWidget {
                 Container(width: 1, height: double.infinity, color: borderColor),
                 Expanded(
                   child: InkWell(
-                    onTap: disabled ? null : () => _triggerSend(context, ctrl),
+                    onTap: () {
+                      if (!isSending) {
+                        if (!disabled) _triggerSend(context, ctrl);
+                      } else {
+                        // 中断当前发送
+                        try {
+                          final chat = Get.find<AIChatController>();
+                          chat.cancelSending();
+                        } catch (_) {}
+                      }
+                    },
                     child: Center(
                       child: isSending
-                          ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? Icon(Icons.stop_circle_outlined, color: theme.colorScheme.error)
                           : Icon(Icons.send, color: disabled ? theme.disabledColor : theme.colorScheme.primary),
                     ),
                   ),
@@ -364,15 +399,41 @@ class AIInputBox extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final grouped = groupedModelsByProvider ?? {};
-    final List<_ProviderEntry> entries = grouped.entries
-        .map((e) => _ProviderEntry(
-              id: e.key,
-              name: e.key,
-              sourceType: e.key.toLowerCase(),
-              logoUrl: null,
-              models: e.value,
-            ))
-        .toList();
+    final List<_ProviderEntry> entries = grouped.entries.map((e) {
+      // 从 ProviderController 获取真实 provider，补充 logo 与模型显示名映射
+      ProviderController? pc;
+      if (Get.isRegistered<ProviderController>()) {
+        pc = Get.find<ProviderController>();
+      }
+      String sourceType = e.key.toLowerCase();
+      String? logoUrl;
+      Map<String, String> idToDisplayName = {};
+      if (pc != null) {
+        final p = pc.providers.firstWhereOrNull((pp) => pp.name == e.key);
+        if (p != null) {
+          sourceType = p.sourceType;
+          logoUrl = p.logo.isNotEmpty ? p.logo : null;
+          try {
+            final settings = p.settingsJson.isNotEmpty
+                ? (jsonDecode(p.settingsJson) as Map<String, dynamic>)
+                : <String, dynamic>{};
+            final infos = List<dynamic>.from(settings['modelInfos'] ?? <dynamic>[]);
+            idToDisplayName = {
+              for (final info in infos.whereType<Map>())
+                (info['id']?.toString() ?? ''): (info['displayName']?.toString() ?? '')
+            }..removeWhere((k, v) => k.isEmpty);
+          } catch (_) {}
+        }
+      }
+      return _ProviderEntry(
+        id: e.key,
+        name: e.key,
+        sourceType: sourceType,
+        logoUrl: logoUrl,
+        models: e.value,
+        idToDisplayName: idToDisplayName,
+      );
+    }).toList();
 
     final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final RelativeRect position = RelativeRect.fromLTRB(
@@ -412,15 +473,40 @@ class AIInputBox extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final grouped = groupedModelsByProvider ?? {};
-    final List<_ProviderEntry> entries = grouped.entries
-        .map((e) => _ProviderEntry(
-              id: e.key,
-              name: e.key,
-              sourceType: e.key.toLowerCase(),
-              logoUrl: null,
-              models: e.value,
-            ))
-        .toList();
+    final List<_ProviderEntry> entries = grouped.entries.map((e) {
+      ProviderController? pc;
+      if (Get.isRegistered<ProviderController>()) {
+        pc = Get.find<ProviderController>();
+      }
+      String sourceType = e.key.toLowerCase();
+      String? logoUrl;
+      Map<String, String> idToDisplayName = {};
+      if (pc != null) {
+        final p = pc.providers.firstWhereOrNull((pp) => pp.name == e.key);
+        if (p != null) {
+          sourceType = p.sourceType;
+          logoUrl = p.logo.isNotEmpty ? p.logo : null;
+          try {
+            final settings = p.settingsJson.isNotEmpty
+                ? (jsonDecode(p.settingsJson) as Map<String, dynamic>)
+                : <String, dynamic>{};
+            final infos = List<dynamic>.from(settings['modelInfos'] ?? <dynamic>[]);
+            idToDisplayName = {
+              for (final info in infos.whereType<Map>())
+                (info['id']?.toString() ?? ''): (info['displayName']?.toString() ?? '')
+            }..removeWhere((k, v) => k.isEmpty);
+          } catch (_) {}
+        }
+      }
+      return _ProviderEntry(
+        id: e.key,
+        name: e.key,
+        sourceType: sourceType,
+        logoUrl: logoUrl,
+        models: e.value,
+        idToDisplayName: idToDisplayName,
+      );
+    }).toList();
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 520, maxHeight: 460),
       child: Material(
@@ -508,14 +594,29 @@ class AIInputBox extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        const SizedBox(width: 32), // Indent to align with text
+                        _providerLogo(context, e),
+                        const SizedBox(width: 8),
                         Icon(
                           currentModel == m ? Icons.radio_button_checked : Icons.radio_button_unchecked,
                           size: 16,
                           color: currentModel == m ? theme.colorScheme.primary : theme.colorScheme.outline,
                         ),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(m, style: textTheme.bodyMedium)),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                (e.idToDisplayName[m]?.isNotEmpty == true) ? e.idToDisplayName[m]! : m,
+                                style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                m,
+                                style: textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -626,6 +727,7 @@ class _ProviderEntry {
   final String sourceType;
   final String? logoUrl;
   final List<String> models;
+  final Map<String, String> idToDisplayName;
 
   _ProviderEntry({
     required this.id,
@@ -633,5 +735,6 @@ class _ProviderEntry {
     required this.sourceType,
     required this.logoUrl,
     required this.models,
+    required this.idToDisplayName,
   });
 }

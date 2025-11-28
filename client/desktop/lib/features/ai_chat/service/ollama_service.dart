@@ -55,12 +55,19 @@ class OllamaService implements AIService {
 
   /// 发送聊天消息（流式）使用 /api/generate
   @override
+  CancelHandle createCancelHandle() => _DioCancelHandle();
+
+  static CancelToken? _extractToken(CancelHandle? h) =>
+      (h is _DioCancelHandle) ? h.token : null;
+
+  @override
   Stream<String> sendMessageStream({
     required String message,
     String? model,
     double? temperature,
     List<Map<String, dynamic>>? openAIContent,
     List<String>? imagesBase64,
+    CancelHandle? cancel,
   }) async* {
     final m = model ??
         _storage.get<String>(AIConstants.selectedModelOllama) ??
@@ -83,6 +90,7 @@ class OllamaService implements AIService {
           if (imagesBase64 != null && imagesBase64.isNotEmpty) 'images': imagesBase64,
         },
         options: Options(responseType: ResponseType.stream),
+        cancelToken: _extractToken(cancel),
       );
       final body = response.data as ResponseBody;
       // 将字节流按行解码（NDJSON）
@@ -103,6 +111,10 @@ class OllamaService implements AIService {
         }
       }
     } catch (e) {
+      // 取消请求时，静默结束，不抛错
+      if (e is DioException && e.type == DioExceptionType.cancel) {
+        return;
+      }
       LoggingService.error('Ollama 发送消息失败', e);
       yield '请求失败：$e';
     }
@@ -116,6 +128,7 @@ class OllamaService implements AIService {
     double? temperature,
     List<Map<String, dynamic>>? openAIContent,
     List<String>? imagesBase64,
+    CancelHandle? cancel,
   }) async {
     final m = model ??
         _storage.get<String>(AIConstants.selectedModelOllama) ??
@@ -136,6 +149,8 @@ class OllamaService implements AIService {
           if (temperature != null) 'temperature': temperature,
           if (imagesBase64 != null && imagesBase64.isNotEmpty) 'images': imagesBase64,
         },
+        options: Options(),
+        cancelToken: _extractToken(cancel),
       );
       final data = resp.data;
       if (data is Map<String, dynamic> && data['response'] is String) {
@@ -157,4 +172,11 @@ class OllamaService implements AIService {
       return false;
     }
   }
+
+}
+
+class _DioCancelHandle implements CancelHandle {
+  final CancelToken token = CancelToken();
+  @override
+  void cancel([String? reason]) => token.cancel(reason);
 }
