@@ -53,13 +53,14 @@ class CreateProviderForm extends StatelessWidget {
                     _buildTextField(context, controller: controller.idController, label: 'Provider ID', hint: 'Suggested all lowercase, e.g., openai, cann...', isRequired: true),
                     _buildTextField(context, controller: controller.nameController, label: 'Provider Name', hint: 'Please enter the display name of the provider', isRequired: true),
                     _buildTextField(context, controller: controller.descriptionController, label: 'Provider Description', hint: 'Provider description (optional)'),
-                    _buildTextField(context, controller: controller.logoController, label: 'Provider Logo', hint: 'https://logo-url'),
+                    _buildTextField(context, controller: controller.logoController, label: 'Provider Logo (URL or SVG)', hint: '输入 logo URL 或选择预制 SVG'),
+                    _buildSvgPicker(context, controller),
                     const SizedBox(height: 24),
 
                     // Configuration Information
                     Text('Configuration Information', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: tokens.textPrimary)),
                     const SizedBox(height: 16),
-                    _buildDropdownField(context, controller: controller, label: 'Request Format', hint: 'openai/anthropic/azureai/ollama/...', isRequired: true),
+                    _buildDropdownField(context, controller: controller, label: 'Request Format', hint: 'OpenAI / Ollama', isRequired: true),
                     _buildTextField(context, controller: controller.proxyUrlController, label: 'Proxy URL', hint: 'https://xxxx-proxy.com/v1', isRequired: true),
                     _buildTextField(context, controller: controller.apiKeyController, label: 'API Key', hint: 'Please enter your API Key', obscureText: true),
                   ],
@@ -169,6 +170,43 @@ class CreateProviderForm extends StatelessWidget {
               return null;
             },
           )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSvgPicker(BuildContext context, CreateProviderController controller) {
+    final tokens = Theme.of(context).extension<LobeTokens>()!;
+    final options = const [
+      'openai.svg',
+      'openai-text.svg',
+      'ollama.svg',
+      'ollama-text.svg',
+      'anthropic.svg',
+      'azure.svg',
+      'cloudflare.svg',
+      'google.svg',
+      'qwen.svg',
+      'volcengine.svg',
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Preset SVG', style: TextStyle(fontWeight: FontWeight.w500, color: tokens.textPrimary)),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            decoration: UIKit.inputDecoration(context),
+            items: options
+                .map((e) => DropdownMenuItem<String>(value: e, child: Text(e)))
+                .toList(),
+            onChanged: (value) {
+              if (value != null && value.isNotEmpty) {
+                controller.logoController.text = value; // 直接写入可读的文件名
+              }
+            },
+          ),
         ],
       ),
     );

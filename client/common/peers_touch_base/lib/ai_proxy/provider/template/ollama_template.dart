@@ -15,6 +15,9 @@ class OllamaTemplate extends AIProviderTemplate {
   String get baseServiceType => 'Ollama';
 
   @override
+  bool get supportsUsage => true;
+
+  @override
   Map<String, dynamic> defaultSettings() => {
         'requestFormat': 'ollama',
         'defaultProxyUrl': 'http://127.0.0.1:11434',

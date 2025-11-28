@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
+import 'package:peers_touch_base/model/domain/ai_box/ai_models.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
@@ -21,6 +22,8 @@ class ProviderController extends GetxController {
   final isApiKeyObscured = true.obs;
   final isClientRequestMode = false.obs;
   final modelSearchText = ''.obs;
+  final modelTabIndex = 0.obs; // 0: All, 1: Enabled
+  final connectionStatus = 'idle'.obs; // idle|checking|success|failure
 
   String get panelId => 'ai_provider';
 
@@ -184,8 +187,8 @@ class ProviderController extends GetxController {
     }
   }
 
-  /// 测试提供商连接
-  Future<void> testProviderConnection(String providerId) async {
+  /// 测试提供商连接（静默，无全局 Loading），返回布尔结果
+  Future<bool> testProviderConnection(String providerId) async {
     try {
       final provider = providers.firstWhere((p) => p.id == providerId);
       final settings = provider.settingsJson.isNotEmpty
@@ -193,23 +196,16 @@ class ProviderController extends GetxController {
           : {};
       final apiKey = (settings['apiKey'] ?? '').toString();
       if (apiKey.isEmpty) {
-        Get.snackbar('错误', '请先设置API密钥');
-        return;
+        connectionStatus.value = 'failure';
+        return false;
       }
-      isLoading.value = true;
-      final isConnected = await _providerService.testProviderConnection(
-        provider,
-      );
-
-      if (isConnected) {
-        Get.snackbar('成功', '连接测试通过');
-      } else {
-        Get.snackbar('失败', '连接测试失败');
-      }
-    } catch (e) {
-      Get.snackbar('错误', '连接测试异常: $e');
-    } finally {
-      isLoading.value = false;
+      connectionStatus.value = 'checking';
+      final isConnected = await _providerService.testProviderConnection(provider);
+      connectionStatus.value = isConnected ? 'success' : 'failure';
+      return isConnected;
+    } catch (_) {
+      connectionStatus.value = 'failure';
+      return false;
     }
   }
 
@@ -241,6 +237,20 @@ class ProviderController extends GetxController {
       }
       settings['modelCapabilities'] = capabilities;
 
+      // 补充 modelInfos，至少包含 id 与 displayName（=id）
+      final List<dynamic> infos = List<dynamic>.from(settings['modelInfos'] ?? <dynamic>[]);
+      final existingIds = infos.whereType<Map>().map((e) => e['id']?.toString() ?? '').where((e) => e.isNotEmpty).toSet();
+      for (final mid in models) {
+        if (!existingIds.contains(mid)) {
+          infos.add({
+            'id': mid,
+            'displayName': mid,
+            'organization': provider.name,
+          });
+        }
+      }
+      settings['modelInfos'] = infos;
+
       final updated = (provider.deepCopy() as Provider)
             ..settingsJson = jsonEncode(settings)
             ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
@@ -250,6 +260,101 @@ class ProviderController extends GetxController {
     } catch (e) {
       return [];
     }
+  }
+
+  /// 手动新增模型（使用 AiModel 原型），并与现有 settingsJson 字段对齐。
+  /// 返回 true 表示成功，false 表示失败（并保留对话框）。
+  Future<bool> addManualModel(AiModel model) async {
+    // 优先使用模型携带的 providerId 定位 Provider，其次回退到 currentProvider
+    final cp = providers.firstWhereOrNull((p) => p.id == model.providerId) ?? currentProvider.value;
+    if (cp == null) return false;
+    try {
+      final settings = cp.settingsJson.isNotEmpty
+          ? (jsonDecode(cp.settingsJson) as Map<String, dynamic>)
+          : <String, dynamic>{};
+
+      // 1) models 列表（字符串）
+      final List<String> models = List<String>.from((settings['models'] ?? <String>[]) as List);
+      if (!models.contains(model.id)) {
+        models.add(model.id);
+      }
+      settings['models'] = models;
+
+      // 2) 启用列表
+      final List<String> enabled = List<String>.from((settings['enabledModels'] ?? <String>[]) as List);
+      if (model.enabled && !enabled.contains(model.id)) {
+        enabled.add(model.id);
+      }
+      settings['enabledModels'] = enabled;
+
+      // 3) 能力映射（复用 CapabilityResolver）
+      final cap = CapabilityResolver.resolve(provider: cp.sourceType, modelId: model.id);
+      final Map<String, dynamic> caps = Map<String, dynamic>.from(settings['modelCapabilities'] ?? <String, dynamic>{});
+      caps[model.id] = {
+        'supportsText': cap.supportsText,
+        'supportsImageInput': cap.supportsImageInput,
+        'supportsFileInput': cap.supportsFileInput,
+        'supportsAudioInput': cap.supportsAudioInput,
+        'supportsStreaming': cap.supportsStreaming,
+        'maxImages': cap.maxImages,
+        'maxFiles': cap.maxFiles,
+        'maxAudio': cap.maxAudio,
+      };
+      settings['modelCapabilities'] = caps;
+
+      // 4) 完整信息（强类型 AiModel 的 JSON）
+      final List<dynamic> infos = List<dynamic>.from(settings['modelInfos'] ?? <dynamic>[]);
+      final info = _aiModelToJson(model);
+      final idx = infos.indexWhere((e) => e is Map && e['id'] == model.id);
+      if (idx >= 0) {
+        infos[idx] = info;
+      } else {
+        infos.add(info);
+      }
+      settings['modelInfos'] = infos;
+
+      final updated = (cp.deepCopy() as Provider)
+            ..settingsJson = jsonEncode(settings)
+            ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
+      await _providerService.updateProvider(updated);
+      await loadProviders();
+      return true;
+    } catch (e) {
+      Get.snackbar('错误', '添加模型失败: $e');
+      return false;
+    }
+  }
+
+  Map<String, dynamic> _aiModelToJson(AiModel m) {
+    Map<String, dynamic> decodeOrEmpty(String s) {
+      if (s.isEmpty) return <String, dynamic>{};
+      try {
+        final obj = jsonDecode(s);
+        if (obj is Map) return obj.cast<String, dynamic>();
+        return <String, dynamic>{};
+      } catch (_) {
+        return <String, dynamic>{};
+      }
+    }
+
+    return {
+      'id': m.id,
+      'displayName': m.displayName,
+      'description': m.description,
+      'organization': m.organization,
+      'enabled': m.enabled,
+      'providerId': m.providerId,
+      'type': m.type,
+      'sort': m.sort,
+      'userId': m.userId,
+      'pricing': decodeOrEmpty(m.pricingJson),
+      'parameters': decodeOrEmpty(m.parametersJson),
+      'config': decodeOrEmpty(m.configJson),
+      'abilities': decodeOrEmpty(m.abilitiesJson),
+      'contextWindowTokens': m.contextWindowTokens,
+      'source': m.source,
+      'releasedAt': m.releasedAt,
+    }..removeWhere((key, value) => value == null || (value is String && value.isEmpty));
   }
 
   void toggleApiKeyVisibility() {
@@ -289,6 +394,10 @@ class ProviderController extends GetxController {
     modelSearchText.value = text;
   }
 
+  void setModelTabIndex(int index) {
+    modelTabIndex.value = index;
+  }
+
   Future<void> toggleModelEnabled(String modelId, bool on) async {
     final cp = currentProvider.value;
     if (cp == null) return;
@@ -309,6 +418,36 @@ class ProviderController extends GetxController {
           ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
     await _providerService.updateProvider(updated);
     await loadProviders();
+  }
+
+  Future<void> deleteModel(String modelId) async {
+    final cp = currentProvider.value;
+    if (cp == null) return;
+    final settings = cp.settingsJson.isNotEmpty
+        ? (jsonDecode(cp.settingsJson) as Map<String, dynamic>)
+        : {};
+    // models
+    final List<String> models = List<String>.from((settings['models'] ?? <String>[]) as List);
+    models.removeWhere((m) => m == modelId);
+    settings['models'] = models;
+    // enabledModels
+    final List<String> enabled = List<String>.from((settings['enabledModels'] ?? <String>[]) as List);
+    enabled.removeWhere((m) => m == modelId);
+    settings['enabledModels'] = enabled;
+    // capabilities
+    final Map<String, dynamic> caps = Map<String, dynamic>.from(settings['modelCapabilities'] ?? <String, dynamic>{});
+    caps.remove(modelId);
+    settings['modelCapabilities'] = caps;
+    // infos
+    final List<dynamic> infos = List<dynamic>.from(settings['modelInfos'] ?? <dynamic>[]);
+    infos.removeWhere((e) => e is Map && e['id']?.toString() == modelId);
+    settings['modelInfos'] = infos;
+    final updated = (cp.deepCopy() as Provider)
+          ..settingsJson = jsonEncode(settings)
+          ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
+    await _providerService.updateProvider(updated);
+    await loadProviders();
+    Get.snackbar('成功', '模型已删除');
   }
 
   String _sanitizeUrl(String raw) {
