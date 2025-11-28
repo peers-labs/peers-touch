@@ -1,4 +1,6 @@
 import 'dart:async';
+// 遵循 desktop/PROMPTs 规范：不在控制器层直接依赖 Dio，
+// 通过 AIService 抽象的 CancelHandle 进行取消。
 import 'dart:convert';
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:flutter/material.dart';
@@ -45,6 +47,12 @@ class AIChatController extends GetxController {
   final currentTopic = Rx<String?>(null);
   // 当前需要闪动提示的 Topic 索引（-1 表示不闪动）
   final flashTopicIndex = (-1).obs;
+  // 当前流式订阅（用于中断）
+  StreamSubscription<String>? _streamSub;
+  // 当前请求的取消令牌（用于真正终止 HTTP 连接）
+  CancelHandle? _cancelHandle;
+  // 输入历史游标（仅用户消息）
+  int _historyCursor = -1;
   // 输入控制器，在声明时初始化，避免 late 变量重复初始化的问题
   late final TextEditingController inputController = TextEditingController()..addListener(() {
     inputText.value = inputController.text;
@@ -189,14 +197,39 @@ class AIChatController extends GetxController {
   Future<void> _initModels() async {
     clearError();
     try {
-      final fetched = await service.fetchModels();
-      models.assignAll(fetched);
+      // 1) 优先使用 Provider 设置中已拉取或手动新增的模型列表
+      List<String> preset = const [];
+      if (_providerController.currentProvider.value != null) {
+        try {
+          final p = _providerController.currentProvider.value!;
+          final s = p.settingsJson.isNotEmpty
+              ? (jsonDecode(p.settingsJson) as Map<String, dynamic>)
+              : <String, dynamic>{};
+          final List<String> modelsAll = List<String>.from((s['models'] ?? const <String>[]) as List);
+          final List<String> enabled = List<String>.from((s['enabledModels'] ?? const <String>[]) as List);
+          preset = enabled.isNotEmpty ? enabled : modelsAll;
+        } catch (_) {}
+      }
+
+      List<String> fetched = const [];
+      // 2) 若预设为空，再尝试远端拉取（允许失败，不抛到 UI）
+      if (preset.isEmpty) {
+        try {
+          fetched = await service.fetchModels();
+        } catch (_) {
+          fetched = const [];
+        }
+      }
+
+      final finalList = preset.isNotEmpty ? preset : fetched;
+      models.assignAll(finalList);
+
       final preferred = storage.get<String>(AIConstants.selectedModel) ?? AIConstants.defaultOpenAIModel;
       currentModel.value = models.contains(preferred) && preferred.isNotEmpty
           ? preferred
           : (models.isNotEmpty ? models.first : AIConstants.defaultOpenAIModel);
     } catch (e) {
-      // 模型拉取失败也允许继续使用默认值
+      // 若出现不可预料异常，保底为默认模型
       currentModel.value = AIConstants.defaultOpenAIModel;
       error.value = '模型列表拉取失败：$e';
     }
@@ -227,7 +260,8 @@ class AIChatController extends GetxController {
       createSession();
       sid = selectedSessionId.value;
     }
-    final list = _sessionStore[sid!]!;
+    final sidStr = sid!;
+    final list = _sessionStore[sidStr]!;
     final userMsg = ChatMessage(role: ChatRole.CHAT_ROLE_USER, content: text, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
     messages.add(userMsg);
     list.add(userMsg);
@@ -236,58 +270,56 @@ class AIChatController extends GetxController {
     isSending.value = true;
     clearError();
 
-    // 获取 AI 服务实例（工厂内部管理adapter，外部无需关心）
-    final aiBoxFacadeService = AiBoxServiceFactory.createFacadeService();
-
     if (enableStreaming) {
       final assistant = ChatMessage(role: ChatRole.CHAT_ROLE_ASSISTANT, content: '', createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
       messages.add(assistant);
       list.add(assistant);
       try {
-        final providerId = Get.isRegistered<ProviderController>() && Get.find<ProviderController>().currentProvider.value != null
-            ? Get.find<ProviderController>().currentProvider.value!.id
-            : 'default';
-        await for (final response in aiBoxFacadeService.sendMessageStream(
-          providerId: providerId,
+        // 使用实际 AIService 的流式接口，并绑定 CancelToken
+        _cancelHandle = service.createCancelHandle();
+        final stream = service.sendMessageStream(
           message: text,
           model: currentModel.value.isNotEmpty ? currentModel.value : null,
           temperature: temperature,
-        )) {
-          if (response.choices.isNotEmpty) {
-            final message = response.choices.first.message.content;
-            if (message.isNotEmpty) {
-              assistant.content += message;
-              messages.refresh();
-              _sessionStore[sid] = List<ChatMessage>.from(messages);
-              _persistMessagesForSession(sid);
-            }
-          }
-        }
+          cancel: _cancelHandle,
+        );
+        _streamSub = stream.listen((chunk) {
+          if (chunk.isEmpty) return;
+          assistant.content += chunk;
+          messages.refresh();
+          _sessionStore[sidStr] = List<ChatMessage>.from(messages);
+          _persistMessagesForSession(sidStr);
+        }, onError: (e) {
+          error.value = '发送失败：$e';
+        }, onDone: () {
+          isSending.value = false;
+          _cancelHandle = null;
+          _streamSub = null;
+        });
       } catch (e) {
         error.value = '发送失败：$e';
       } finally {
-        isSending.value = false;
+        // 在 onDone 或 cancel 时置为 false
       }
     } else {
       try {
-        final providerId = Get.isRegistered<ProviderController>() && Get.find<ProviderController>().currentProvider.value != null
-            ? Get.find<ProviderController>().currentProvider.value!.id
-            : 'default';
-        final response = await aiBoxFacadeService.sendMessage(
-          providerId: providerId,
+        _cancelHandle = service.createCancelHandle();
+        final response = await service.sendMessage(
           message: text,
           model: currentModel.value.isNotEmpty ? currentModel.value : null,
           temperature: temperature,
+          cancel: _cancelHandle,
         );
-        final reply = response.choices.first.message.content;
+        final reply = response;
         final assistant = ChatMessage(role: ChatRole.CHAT_ROLE_ASSISTANT, content: reply, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
         messages.add(assistant);
         list.add(assistant);
-        _persistMessagesForSession(sid);
+        _persistMessagesForSession(sidStr);
       } catch (e) {
         error.value = '发送失败：$e';
       } finally {
         isSending.value = false;
+        _cancelHandle = null;
       }
     }
   }
@@ -311,7 +343,8 @@ class AIChatController extends GetxController {
       createSession();
       sid = selectedSessionId.value;
     }
-    final list = _sessionStore[sid!]!;
+    final sidStr = sid!;
+    final list = _sessionStore[sidStr]!;
 
     // 添加用户消息（仅展示文本，附件不在消息列表中显示）
     final userMsg = ChatMessage(role: ChatRole.CHAT_ROLE_USER, content: text, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
@@ -342,42 +375,94 @@ class AIChatController extends GetxController {
       messages.add(assistant);
       list.add(assistant);
       try {
-        await for (final chunk in service.sendMessageStream(
+        _cancelHandle = service.createCancelHandle();
+        final stream = service.sendMessageStream(
           message: text,
           model: currentModel.value.isNotEmpty ? currentModel.value : null,
           temperature: temperature,
           openAIContent: openAIContent,
           imagesBase64: imagesBase64,
-        )) {
+          cancel: _cancelHandle,
+        );
+        _streamSub = stream.listen((chunk) {
           assistant.content += chunk;
           messages.refresh();
-          _sessionStore[sid] = List<ChatMessage>.from(messages);
-          _persistMessagesForSession(sid);
-        }
+          _sessionStore[sidStr] = List<ChatMessage>.from(messages);
+          _persistMessagesForSession(sidStr);
+        }, onError: (e) {
+          error.value = '发送失败：$e';
+        }, onDone: () {
+          isSending.value = false;
+          _cancelHandle = null;
+          _streamSub = null;
+        });
       } catch (e) {
         error.value = '发送失败：$e';
       } finally {
-        isSending.value = false;
+        // 在 onDone 或 cancel 时置为 false
       }
     } else {
       try {
+        _cancelHandle = service.createCancelHandle();
         final reply = await service.sendMessage(
           message: text,
           model: currentModel.value.isNotEmpty ? currentModel.value : null,
           temperature: temperature,
           openAIContent: openAIContent,
           imagesBase64: imagesBase64,
+          cancel: _cancelHandle,
         );
         final assistant = ChatMessage(role: ChatRole.CHAT_ROLE_ASSISTANT, content: reply, createdAt: $fixnum.Int64(DateTime.now().millisecondsSinceEpoch));
         messages.add(assistant);
         list.add(assistant);
-        _persistMessagesForSession(sid);
+        _persistMessagesForSession(sidStr);
       } catch (e) {
         error.value = '发送失败：$e';
       } finally {
         isSending.value = false;
+        _cancelHandle = null;
       }
     }
+  }
+
+  // 取消当前发送（流式）
+  void cancelSending() {
+    try {
+      _streamSub?.cancel();
+      _cancelHandle?.cancel('User cancelled');
+    } catch (_) {}
+    _streamSub = null;
+    _cancelHandle = null;
+    isSending.value = false;
+  }
+
+  // 输入历史：将最后或上一个用户消息放入输入框
+  void recallPrevInput() {
+    final userMsgs = messages.where((m) => m.role == ChatRole.CHAT_ROLE_USER).toList();
+    if (userMsgs.isEmpty) return;
+    if (_historyCursor <= 0) {
+      _historyCursor = userMsgs.length - 1;
+    } else {
+      _historyCursor -= 1;
+    }
+    final text = userMsgs[_historyCursor].content;
+    inputController.text = text;
+    inputController.selection = TextSelection.collapsed(offset: text.length);
+  }
+
+  void recallNextInput() {
+    final userMsgs = messages.where((m) => m.role == ChatRole.CHAT_ROLE_USER).toList();
+    if (userMsgs.isEmpty) return;
+    if (_historyCursor < 0 || _historyCursor >= userMsgs.length - 1) {
+      // 若超过范围，清空并重置游标
+      _historyCursor = -1;
+      inputController.text = '';
+      return;
+    }
+    _historyCursor += 1;
+    final text = userMsgs[_historyCursor].content;
+    inputController.text = text;
+    inputController.selection = TextSelection.collapsed(offset: text.length);
   }
 
   void setModel(String model) {
@@ -468,14 +553,36 @@ class AIChatController extends GetxController {
     final raw = storage.get<List<dynamic>>('${AIConstants.chatMessagesPrefix}$id');
     if (raw == null) return <ChatMessage>[];
     return raw.whereType<Map<String, dynamic>>().map((m) {
-      final role = m['role'] as String?;
+      final r = m['role'];
+      ChatRole role;
+      if (r is String) {
+        final v = r.toLowerCase();
+        if (v == 'user' || v == 'chat_role_user' || v == '2') {
+          role = ChatRole.CHAT_ROLE_USER;
+        } else if (v == 'system' || v == 'chat_role_system' || v == '1') {
+          role = ChatRole.CHAT_ROLE_SYSTEM;
+        } else {
+          role = ChatRole.CHAT_ROLE_ASSISTANT;
+        }
+      } else if (r is num) {
+        final v = r.toInt();
+        if (v == 2) {
+          role = ChatRole.CHAT_ROLE_USER;
+        } else if (v == 1) {
+          role = ChatRole.CHAT_ROLE_SYSTEM;
+        } else {
+          role = ChatRole.CHAT_ROLE_ASSISTANT;
+        }
+      } else {
+        role = ChatRole.CHAT_ROLE_ASSISTANT;
+      }
       final content = m['content'] as String?;
-      final createdAt = m['createdAt'] as String?;
+      final createdAtStr = m['createdAt'] as String?;
       return ChatMessage(
-        role: role == 'user' ? ChatRole.CHAT_ROLE_USER : ChatRole.CHAT_ROLE_ASSISTANT,
+        role: role,
         content: content ?? '',
-        createdAt: createdAt != null
-            ? $fixnum.Int64.parseInt(createdAt)
+        createdAt: createdAtStr != null
+            ? $fixnum.Int64.parseInt(createdAtStr)
             : $fixnum.Int64(DateTime.now().millisecondsSinceEpoch),
       );
     }).toList();

@@ -65,12 +65,20 @@ class OpenAIService implements AIService {
 
   /// 发送聊天消息（流式响应）
   @override
+  CancelHandle createCancelHandle() => _DioCancelHandle();
+
+  /// 内部实现：Dio 取消令牌包装
+  static CancelToken? _extractToken(CancelHandle? h) =>
+      (h is _DioCancelHandle) ? h.token : null;
+
+  @override
   Stream<String> sendMessageStream({
     required String message,
     String? model,
     double? temperature,
     List<Map<String, dynamic>>? openAIContent,
     List<String>? imagesBase64,
+    CancelHandle? cancel,
   }) async* {
     if (!isConfigured) {
       throw Exception('OpenAI API密钥未配置');
@@ -98,10 +106,12 @@ class OpenAIService implements AIService {
           'temperature': selectedTemperature,
           'max_tokens': AIConstants.defaultMaxTokens,
           'stream': true,
+          'stream_options': {'include_usage': true},
         },
         options: Options(
           responseType: ResponseType.stream,
         ),
+        cancelToken: _extractToken(cancel),
       );
       
       final stream = response.data as ResponseBody;
@@ -126,8 +136,13 @@ class OpenAIService implements AIService {
         }
       }
     } catch (e) {
+      // 取消请求时静默结束，避免未捕获异常导致界面卡死
+      if (e is DioException && e.type == DioExceptionType.cancel) {
+        return;
+      }
       LoggingService.error('OpenAI API调用失败', e);
-      rethrow;
+      // 非取消错误不抛出，交由控制器通过完成回调复位状态
+      return;
     }
   }
   
@@ -139,6 +154,7 @@ class OpenAIService implements AIService {
     double? temperature,
     List<Map<String, dynamic>>? openAIContent,
     List<String>? imagesBase64,
+    CancelHandle? cancel,
   }) async {
     if (!isConfigured) {
       throw Exception('OpenAI API密钥未配置');
@@ -165,7 +181,10 @@ class OpenAIService implements AIService {
           ],
           'temperature': selectedTemperature,
           'max_tokens': AIConstants.defaultMaxTokens,
+          'stream': false,
         },
+        options: Options(),
+        cancelToken: _extractToken(cancel),
       );
       
       final content = response.data['choices'][0]['message']['content'];
@@ -191,4 +210,12 @@ class OpenAIService implements AIService {
       return false;
     }
   }
+
+}
+
+/// 私有类：Dio CancelToken 适配到通用 CancelHandle
+class _DioCancelHandle implements CancelHandle {
+  final CancelToken token = CancelToken();
+  @override
+  void cancel([String? reason]) => token.cancel(reason);
 }

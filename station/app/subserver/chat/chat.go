@@ -73,6 +73,7 @@ func (s *chatSubServer) Handlers() []server.Handler {
 		server.NewHandler(chatURL{name: "chat-peer-register", path: "/chat/peer/register"}, http.HandlerFunc(s.handlePeerRegister), server.WithMethod(server.POST)),
 		server.NewHandler(chatURL{name: "chat-peer-get", path: "/chat/peer/get"}, http.HandlerFunc(s.handlePeerGet), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-peers", path: "/chat/peers"}, http.HandlerFunc(s.handlePeers), server.WithMethod(server.GET)),
+		server.NewHandler(chatURL{name: "chat-stats", path: "/chat/stats"}, http.HandlerFunc(s.handleStats), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-session-new", path: "/chat/session/new"}, http.HandlerFunc(s.handleSessionNew), server.WithMethod(server.POST)),
 		server.NewHandler(chatURL{name: "chat-session-get", path: "/chat/session/get"}, http.HandlerFunc(s.handleSessionGet), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-session-offer-post", path: "/chat/session/offer"}, http.HandlerFunc(s.handleOfferPost), server.WithMethod(server.POST)),
@@ -131,6 +132,28 @@ func (s *chatSubServer) handlePeers(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (s *chatSubServer) handleStats(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	peersCount := len(s.peers)
+	sessionsCount := len(s.sessions)
+	offersCount := len(s.offers)
+	answersCount := len(s.answers)
+	candidatesCount := 0
+	for _, list := range s.candidates {
+		candidatesCount += len(list)
+	}
+	s.mu.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"peers":      peersCount,
+		"sessions":   sessionsCount,
+		"offers":     offersCount,
+		"answers":    answersCount,
+		"candidates": candidatesCount,
+		"status":     s.status,
+	})
 }
 
 type reqSessionNew struct {

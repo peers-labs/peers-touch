@@ -239,6 +239,18 @@ class AIProviderSettings {
           storage.set(AIConstants.enableStreaming, value == true);
         },
       ),
+      SettingItem(
+        id: 'show_tokens',
+        title: '显示Token计数',
+        description: '在消息气泡右下角显示Token数',
+        icon: Icons.confirmation_number,
+        type: SettingItemType.toggle,
+        value: Get.find<LocalStorage>().get<bool>(AIConstants.showTokens) ?? false,
+        onChanged: (value) {
+          final storage = Get.find<LocalStorage>();
+          storage.set(AIConstants.showTokens, value == true);
+        },
+      ),
     ];
   }
 }
