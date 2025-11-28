@@ -15,6 +15,9 @@ class OpenAITemplate extends AIProviderTemplate {
   String get baseServiceType => 'OpenAI';
 
   @override
+  bool get supportsUsage => true;
+
+  @override
   Map<String, dynamic> defaultSettings() => {
         'requestFormat': 'openai',
         'defaultProxyUrl': 'https://api.openai.com/v1',
