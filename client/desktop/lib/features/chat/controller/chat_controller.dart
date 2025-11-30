@@ -15,6 +15,7 @@ class ChatController extends GetxController {
   final peerRegistered = false.obs;
   final lastCheckSummary = ''.obs;
   final iceDetails = <String, dynamic>{}.obs;
+  final autoAnswering = false.obs;
   
   RTCClient? _client;
   RTCSignalingService? _signaling;
@@ -154,6 +155,24 @@ class ChatController extends GetxController {
       iceDetails.value = _client!.getIceInfo();
     } finally {
       checkingConnection.value = false;
+    }
+  }
+
+  Future<void> autoAnswer() async {
+    if (_client == null || _signaling == null) return;
+    autoAnswering.value = true;
+    try {
+      final sid = '${targetPeerId.value}-${selfPeerId.value}';
+      for (var i = 0; i < 30; i++) {
+        final offer = await _signaling!.getOffer(sid);
+        if (offer != null) {
+          await _client!.answer(targetPeerId.value);
+          break;
+        }
+        await Future.delayed(const Duration(seconds: 1));
+      }
+    } finally {
+      autoAnswering.value = false;
     }
   }
 }
