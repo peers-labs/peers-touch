@@ -12,6 +12,9 @@ class RTCClient {
 
   RTCPeerConnection? _pc;
   RTCDataChannel? _dc;
+  List<String> _iceServerUrls = [];
+  final List<Map<String, String>> _localCandidates = [];
+  final List<Map<String, String>> _remoteCandidates = [];
 
   RTCClient(this.signaling, {required this.role, required this.peerId, PeerConnectionFactory? pcFactory})
       : _pcFactory = pcFactory ?? createPeerConnection;
@@ -30,11 +33,24 @@ class RTCClient {
       ]
     };
     _pc = await _pcFactory(config);
+    // Cache ICE server urls for later reporting
+    try {
+      final srv = (config['iceServers'] as List?) ?? [];
+      _iceServerUrls = srv
+          .expand((e) => (e is Map && e['urls'] is List) ? (e['urls'] as List).map((u) => u.toString()) : <String>[])
+          .toList();
+    } catch (_) {}
+    _pc!.onConnectionState = (state) {
+      _connectionStateController.add(state);
+    };
     
     _pc!.onIceCandidate = (c) async {
       if (c.candidate != null) {
         // Use sessionId for candidates
         await signaling.postCandidate(sessionId, c.candidate!);
+        // Parse and store local candidate
+        final parsed = _parseCandidate(c.candidate!);
+        if (parsed.isNotEmpty) _localCandidates.add(parsed);
       }
     };
     
@@ -49,6 +65,9 @@ class RTCClient {
     _dc!.onMessage = (msg) {
        _msgController.add(msg.text); 
     };
+    _dc!.onDataChannelState = (state) {
+      _dataChannelStateController.add(state);
+    };
   }
 
   Future<void> createChannel() async {
@@ -59,8 +78,22 @@ class RTCClient {
 
   final _msgController = StreamController<String>.broadcast();
   Stream<String> messages() => _msgController.stream;
+  final _connectionStateController = StreamController<RTCPeerConnectionState>.broadcast();
+  Stream<RTCPeerConnectionState> get onConnectionState => _connectionStateController.stream;
+  final _dataChannelStateController = StreamController<RTCDataChannelState>.broadcast();
+  Stream<RTCDataChannelState> get onDataChannelState => _dataChannelStateController.stream;
 
-  Future<void> send(String text) async { await _dc?.send(RTCDataChannelMessage(text)); }
+  Future<void> send(String text) async {
+    if (_dc != null) {
+      await _dc!.send(RTCDataChannelMessage(text));
+    }
+  }
+  Future<RTCPeerConnectionState?> getConnectionState() async {
+    return _pc?.getConnectionState();
+  }
+  RTCDataChannelState? getDataChannelState() {
+    return _dc?.state;
+  }
 
   Future<void> call(String remotePeerId) async {
     final sessionId = '$peerId-$remotePeerId';
@@ -89,7 +122,9 @@ class RTCClient {
     await Future.delayed(const Duration(seconds: 2));
     final cands = await signaling.getCandidates(sessionId);
     for (final c in cands){ 
-      await _pc!.addCandidate(RTCIceCandidate(c, '', 0)); 
+      await _pc!.addCandidate(RTCIceCandidate(c, '', 0));
+      final parsed = _parseCandidate(c);
+      if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
     }
   }
 
@@ -116,8 +151,36 @@ class RTCClient {
     await Future.delayed(const Duration(seconds: 2));
     final cands = await signaling.getCandidates(sessionId);
     for (final c in cands){ 
-      await _pc!.addCandidate(RTCIceCandidate(c, '', 0)); 
+      await _pc!.addCandidate(RTCIceCandidate(c, '', 0));
+      final parsed = _parseCandidate(c);
+      if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
+    }
+  }
+
+  Map<String, dynamic> getIceInfo() {
+    return {
+      'iceServers': _iceServerUrls,
+      'localCandidates': _localCandidates,
+      'remoteCandidates': _remoteCandidates,
+    };
+  }
+
+  Map<String, String> _parseCandidate(String s){
+    try {
+      final parts = s.split(' ');
+      final ip = parts.length > 4 ? parts[4] : '';
+      final port = parts.length > 5 ? parts[5] : '';
+      String type = '';
+      String raddr = '';
+      String rport = '';
+      for (var i=0;i<parts.length;i++){
+        if (parts[i] == 'typ' && i+1 < parts.length) type = parts[i+1];
+        if (parts[i] == 'raddr' && i+1 < parts.length) raddr = parts[i+1];
+        if (parts[i] == 'rport' && i+1 < parts.length) rport = parts[i+1];
+      }
+      return {'ip': ip, 'port': port, 'type': type, 'raddr': raddr, 'rport': rport};
+    } catch (_) {
+      return {};
     }
   }
 }
-

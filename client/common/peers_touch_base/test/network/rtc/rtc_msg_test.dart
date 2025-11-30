@@ -31,23 +31,25 @@ class MockSignalingService implements RTCSignalingService {
 
   @override
   Future<void> postOffer(String sessionId, String sdp) async {
-    // print('[Signaling] Post Offer: $sessionId');
+    print('[Signaling] Post Offer: $sessionId');
     _offers[sessionId] = sdp;
   }
 
   @override
   Future<String?> getOffer(String sessionId) async {
+    print('[Signaling] Get Offer: $sessionId');
     return _offers[sessionId];
   }
 
   @override
   Future<void> postAnswer(String sessionId, String sdp) async {
-    // print('[Signaling] Post Answer: $sessionId');
+    print('[Signaling] Post Answer: $sessionId');
     _answers[sessionId] = sdp;
   }
 
   @override
   Future<String?> getAnswer(String sessionId) async {
+    print('[Signaling] Get Answer: $sessionId');
     return _answers[sessionId];
   }
 
@@ -75,12 +77,18 @@ class MockRTCDataChannel extends Fake implements RTCDataChannel {
   Function(RTCDataChannelMessage message)? _onMessage;
   MockRTCDataChannel? linkedChannel;
   final String label;
+  Function(RTCDataChannelState state)? _onState;
 
   MockRTCDataChannel(this.label);
 
   @override
   set onMessage(Function(RTCDataChannelMessage message)? callback) {
     _onMessage = callback;
+  }
+
+  @override
+  set onDataChannelState(Function(RTCDataChannelState state)? callback) {
+    _onState = callback;
   }
 
   @override
@@ -97,6 +105,7 @@ class MockRTCPeerConnection extends Fake implements RTCPeerConnection {
   
   Function(RTCDataChannel channel)? _onDataChannel;
   Function(RTCIceCandidate candidate)? _onIceCandidate;
+  Function(RTCPeerConnectionState state)? _onConnectionState;
 
   MockRTCPeerConnection({this.dataChannelToCreate, this.dataChannelToReceive});
 
@@ -108,6 +117,11 @@ class MockRTCPeerConnection extends Fake implements RTCPeerConnection {
   @override
   set onIceCandidate(Function(RTCIceCandidate candidate)? callback) {
     _onIceCandidate = callback;
+  }
+
+  @override
+  set onConnectionState(Function(RTCPeerConnectionState state)? callback) {
+    _onConnectionState = callback;
   }
 
   @override
