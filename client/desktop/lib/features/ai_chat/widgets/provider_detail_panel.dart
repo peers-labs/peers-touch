@@ -2,15 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as base;
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
-import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/add_model_dialog.dart';
 
 class ProviderDetailPanel extends StatelessWidget {
   final base.Provider provider;
@@ -116,8 +112,6 @@ class ProviderDetailPanel extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             _buildClientRequestModeSwitch(context, controller, tokens),
-            const SizedBox(height: 24),
-            _buildShowTokensSwitch(context, tokens),
             const SizedBox(height: 24),
             _buildDetailRow(
               context,
@@ -268,36 +262,6 @@ class ProviderDetailPanel extends StatelessWidget {
           ),
           child: const Text('Check'),
         ),
-        const SizedBox(width: 8),
-        Obx(() {
-          final s = ctl.connectionStatus.value;
-          switch (s) {
-            case 'checking':
-              return Row(children: [
-                const SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 6),
-                Text('Checking...', style: Theme.of(context).textTheme.bodySmall),
-              ]);
-            case 'success':
-              return Row(children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 16),
-                const SizedBox(width: 6),
-                Text('Connected', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.green)),
-              ]);
-            case 'failure':
-              return Row(children: [
-                Icon(Icons.error_outline, color: Colors.red, size: 16),
-                const SizedBox(width: 6),
-                Text('Failed', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.red)),
-              ]);
-            default:
-              return const SizedBox.shrink();
-          }
-        }),
       ],
     );
   }
@@ -345,59 +309,15 @@ class ProviderDetailPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildShowTokensSwitch(BuildContext context, LobeTokens tokens) {
-    final storage = Get.find<LocalStorage>();
-    final initial = storage.get<bool>(AIConstants.showTokens) ?? false;
-    final rx = false.obs;
-    rx.value = initial;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 200,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Show Token Counter', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text(
-                '在聊天消息下方显示 Token 胶囊',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textSecondary),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 16),
-        Obx(() => Switch(
-              value: rx.value,
-              onChanged: (v) {
-                rx.value = v;
-                storage.set(AIConstants.showTokens, v);
-              },
-            )),
-      ],
-    );
-  }
-
   Widget _buildModelManagementSection(BuildContext context, ProviderController controller, LobeTokens tokens) {
     final provider = this.provider;
     final settings = provider.settingsJson.isNotEmpty ? (jsonDecode(provider.settingsJson) as Map<String, dynamic>) : {};
     final models = List<String>.from((settings['models'] ?? <String>[]) as List);
     final enabled = List<String>.from((settings['enabledModels'] ?? <String>[]) as List);
-    final List<dynamic> infos = List<dynamic>.from(settings['modelInfos'] ?? <dynamic>[]);
-    final Map<String, String> idToDisplayName = {
-      for (final e in infos.whereType<Map>())
-        (e['id']?.toString() ?? ''): (e['displayName']?.toString() ?? '')
-    }..removeWhere((k, v) => k.isEmpty);
     return Obx(() {
       final keyword = controller.modelSearchText.value.toLowerCase();
-      final filteredBase = keyword.isEmpty ? models : models.where((m) => m.toLowerCase().contains(keyword)).toList();
-      final tab = controller.modelTabIndex.value;
-      final filtered = tab == 1
-          ? filteredBase.where((m) => enabled.isEmpty ? true : enabled.contains(m)).toList()
-          : filteredBase;
-      final allCount = filteredBase.length;
-      final enabledCount = filteredBase.where((m) => enabled.isEmpty ? true : enabled.contains(m)).length;
+      final filtered = keyword.isEmpty ? models : models.where((m) => m.toLowerCase().contains(keyword)).toList();
+      final enabledFiltered = filtered.where((m) => enabled.isEmpty ? true : enabled.contains(m)).toList();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -428,18 +348,7 @@ class ProviderDetailPanel extends StatelessWidget {
                   ElevatedButton.icon(
                     onPressed: () => Get.find<ProviderController>().fetchProviderModels(provider.id),
                     icon: const Icon(Icons.sync, size: 16),
-                    label: const Text('Fetch'),
-                    style: UIKit.primaryButtonStyle(context).copyWith(
-                      padding: MaterialStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      showDialog(context: context, builder: (_) => AddModelDialog(provider: provider));
-                    },
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Add'),
+                    label: const Text('Fetch models'),
                     style: UIKit.primaryButtonStyle(context).copyWith(
                       padding: MaterialStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
                     ),
@@ -453,30 +362,16 @@ class ProviderDetailPanel extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              GestureDetector(
-                onTap: () => controller.setModelTabIndex(0),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: controller.modelTabIndex.value == 0 ? tokens.bgLevel3 : tokens.bgLevel2,
-                    borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-                    border: Border.all(color: controller.modelTabIndex.value == 0 ? tokens.brandAccent : Colors.transparent),
-                  ),
-                  child: Text('All ($allCount)', style: Theme.of(context).textTheme.bodySmall),
-                ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: tokens.bgLevel2, borderRadius: BorderRadius.circular(UIKit.radiusSm(context))),
+                child: Text('All (${filtered.length})', style: Theme.of(context).textTheme.bodySmall),
               ),
               const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => controller.setModelTabIndex(1),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: controller.modelTabIndex.value == 1 ? tokens.bgLevel3 : tokens.bgLevel2,
-                    borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-                    border: Border.all(color: controller.modelTabIndex.value == 1 ? tokens.brandAccent : Colors.transparent),
-                  ),
-                  child: Text('Enabled ($enabledCount)', style: Theme.of(context).textTheme.bodySmall),
-                ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: tokens.bgLevel2, borderRadius: BorderRadius.circular(UIKit.radiusSm(context))),
+                child: Text('Enabled (${enabledFiltered.length})', style: Theme.of(context).textTheme.bodySmall),
               ),
             ],
           ),
@@ -486,13 +381,7 @@ class ProviderDetailPanel extends StatelessWidget {
           for (final m in filtered)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: _buildModelListItem(
-                context,
-                tokens,
-                idToDisplayName[m]?.isNotEmpty == true ? idToDisplayName[m]! : m,
-                m,
-                enabled.isEmpty ? true : enabled.contains(m),
-              ),
+              child: _buildModelListItem(context, tokens, m, m, enabled.isEmpty ? true : enabled.contains(m)),
             ),
           const SizedBox(height: 16),
           Center(
@@ -518,71 +407,24 @@ class ProviderDetailPanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                GestureDetector(
-                  onDoubleTap: () async {
-                    await Clipboard.setData(ClipboardData(text: name));
-                    Get.snackbar('成功', '已复制名称');
-                  },
-                  child: Text(name, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                ),
-                GestureDetector(
-                  onDoubleTap: () async {
-                    await Clipboard.setData(ClipboardData(text: id));
-                    Get.snackbar('成功', '已复制模型ID');
-                  },
-                  child: Text(id, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textSecondary)),
-                ),
+                Text(name, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                Text(id, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.textSecondary)),
               ],
             ),
           ),
-          Row(children: [
-            Switch(
-              value: isEnabled,
-              onChanged: (value) => Get.find<ProviderController>().toggleModelEnabled(id, value),
-            ),
-            IconButton(
-              tooltip: '删除模型',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () => Get.find<ProviderController>().deleteModel(id),
-            ),
-          ]),
+          Switch(
+            value: isEnabled,
+            onChanged: (value) => Get.find<ProviderController>().toggleModelEnabled(id, value),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildModelIcon(BuildContext context, String modelId, double size) {
-    final tokens = Theme.of(context).extension<LobeTokens>()!;
-    final s = provider.sourceType.toLowerCase();
-    String? assetPath;
-    if (s == 'openai' || s.startsWith('openai_style')) {
-      final id = modelId.toLowerCase();
-      if (id.contains('gpt-4o') || id.contains('omni') || id.contains('gpt-4.1')) {
-        assetPath = 'assets/icons/ai-chat/openai.svg';
-      } else {
-        assetPath = 'assets/icons/ai-chat/openai-text.svg';
-      }
-    } else if (s == 'ollama') {
-      final id = modelId.toLowerCase();
-      if (id.contains('llava') || id.contains('vision') || id.contains('phi-3-vision') || id.contains('llama3.2')) {
-        assetPath = 'assets/icons/ai-chat/ollama.svg';
-      } else {
-        assetPath = 'assets/icons/ai-chat/ollama-text.svg';
-      }
-    }
-
-    if (assetPath != null) {
-      return ClipOval(child: SvgPicture.asset(assetPath, width: size, height: size));
-    }
-
-    // Fallback: if provider.logo is an asset svg filename, use it
-    final logo = provider.logo;
-    if (logo.isNotEmpty && logo.toLowerCase().endsWith('.svg')) {
-      final candidate = 'assets/icons/ai-chat/${logo.trim()}';
-      return ClipOval(child: SvgPicture.asset(candidate, width: size, height: size));
-    }
-
-    return Icon(Icons.apps, size: size, color: tokens.brandAccent);
+    // TODO: Support model-specific icons. Currently falling back to provider logo.
+    // If we had assets like 'assets/icons/ai-chat/models/$modelId.svg', we would load them here.
+    return _buildProviderLogo(context, size);
   }
 
   Widget _buildProviderLogo(BuildContext context, double size) {
@@ -598,19 +440,13 @@ class ProviderDetailPanel extends StatelessWidget {
       );
     }
 
-    final logo = provider.logo;
-    if (logo.isNotEmpty) {
-      // If it's a known asset svg filename, load asset; else treat as URL
-      if (logo.toLowerCase().endsWith('.svg')) {
-        final path = 'assets/icons/ai-chat/${logo.trim()}';
-        return ClipOval(child: SvgPicture.asset(path, width: size, height: size));
-      } else {
-        return ClipOval(
-          child: Image.network(logo, width: size, height: size, errorBuilder: (ctx, _, __) {
-            return Icon(Icons.apps, size: size, color: Theme.of(context).extension<LobeTokens>()!.brandAccent);
-          }),
-        );
-      }
+    final url = provider.logo;
+    if (url.isNotEmpty) {
+       return ClipOval(
+        child: Image.network(url, width: size, height: size, errorBuilder: (ctx, _, __) {
+          return Icon(Icons.apps, size: size, color: Theme.of(context).extension<LobeTokens>()!.brandAccent);
+        }),
+      );
     }
     
     return Icon(Icons.apps, size: size, color: Theme.of(context).extension<LobeTokens>()!.brandAccent);

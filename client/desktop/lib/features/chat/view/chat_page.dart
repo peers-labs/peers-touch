@@ -132,8 +132,43 @@ class ChatPage extends GetView<ChatController> {
                           onPressed: () => controller.answer(),
                           child: const Text('Answer'),
                         ),
+                        ElevatedButton(
+                          onPressed: () => controller.checkConnection(),
+                          child: Obx(() => Text(controller.checkingConnection.value ? 'Checking...' : 'Check Connection')),
+                        ),
                       ],
                     ),
+                    const SizedBox(height: 8),
+                    Obx(() => Row(
+                      children: [
+                        Expanded(child: _buildInfoRow('Target Registered', controller.peerRegistered.value ? 'true' : 'false')),
+                        Expanded(child: _buildInfoRow('PC State', controller.connectionStatus.value)),
+                        Expanded(child: _buildInfoRow('DC State', controller.dataChannelStatus.value)),
+                      ],
+                    )),
+                    Obx(() => Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: SelectableText(controller.lastCheckSummary.value),
+                      ),
+                    )),
+                    const Divider(),
+                    Obx(() {
+                      final ice = controller.iceDetails;
+                      if (ice.isEmpty) return const SizedBox.shrink();
+                      final servers = (ice['iceServers'] as List?)?.join(', ') ?? '';
+                      final local = (ice['localCandidates'] as List?)?.map((e) => '${e['type']} ${e['ip']}:${e['port']}').join('\n') ?? '';
+                      final remote = (ice['remoteCandidates'] as List?)?.map((e) => '${e['type']} ${e['ip']}:${e['port']}').join('\n') ?? '';
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildInfoRow('ICE Servers', servers),
+                          _buildInfoRow('Local Candidates', local.isEmpty ? '-' : local),
+                          _buildInfoRow('Remote Candidates', remote.isEmpty ? '-' : remote),
+                        ],
+                      );
+                    }),
                   ],
                 ),
               ),

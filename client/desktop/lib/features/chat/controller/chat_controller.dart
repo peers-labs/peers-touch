@@ -9,6 +9,12 @@ class ChatController extends GetxController {
   final signalingUrl = ''.obs;
   final selfPeerId = 'desktop-1'.obs;
   final targetPeerId = 'mobile-1'.obs;
+  final connectionStatus = 'Unknown'.obs;
+  final dataChannelStatus = 'Unknown'.obs;
+  final checkingConnection = false.obs;
+  final peerRegistered = false.obs;
+  final lastCheckSummary = ''.obs;
+  final iceDetails = <String, dynamic>{}.obs;
   
   RTCClient? _client;
   RTCSignalingService? _signaling;
@@ -58,6 +64,14 @@ class ChatController extends GetxController {
       _signaling = RTCSignalingService(signalingUrl.value);
       _client = RTCClient(_signaling!, role: 'desktop', peerId: selfPeerId.value);
       await _client!.init();
+      _client!.onConnectionState.listen((s) {
+        final t = s.toString().split('.').last;
+        connectionStatus.value = t;
+      });
+      _client!.onDataChannelState.listen((s) {
+        final t = s.toString().split('.').last;
+        dataChannelStatus.value = t;
+      });
       
       // Register self
       await _signaling!.registerPeer(selfPeerId.value, 'desktop', []);
@@ -107,6 +121,39 @@ class ChatController extends GetxController {
       textController.clear();
     } catch (e) {
       Get.snackbar('Error', 'Send failed: $e');
+    }
+  }
+
+  Future<void> checkConnection() async {
+    if (_client == null || _signaling == null) return;
+    checkingConnection.value = true;
+    try {
+      final p = await _signaling!.getPeer(targetPeerId.value);
+      peerRegistered.value = p != null;
+      final cs = await _client!.getConnectionState();
+      if (cs != null) {
+        connectionStatus.value = cs.toString().split('.').last;
+      }
+      final ds = _client!.getDataChannelState();
+      if (ds != null) {
+        dataChannelStatus.value = ds.toString().split('.').last;
+      }
+      final sidA = '${selfPeerId.value}-${targetPeerId.value}';
+      final sidB = '${targetPeerId.value}-${selfPeerId.value}';
+      final offerA = await _signaling!.getOffer(sidA);
+      final answerA = await _signaling!.getAnswer(sidA);
+      final candA = await _signaling!.getCandidates(sidA);
+      final offerB = await _signaling!.getOffer(sidB);
+      final answerB = await _signaling!.getAnswer(sidB);
+      final candB = await _signaling!.getCandidates(sidB);
+      lastCheckSummary.value = 'peerRegistered=${peerRegistered.value}; pc=$connectionStatus; dc=$dataChannelStatus; ' 
+        'offerA=${offerA!=null}; answerA=${answerA!=null}; candA=${candA.length}; ' 
+        'offerB=${offerB!=null}; answerB=${answerB!=null}; candB=${candB.length}';
+
+      // ICE details
+      iceDetails.value = _client!.getIceInfo();
+    } finally {
+      checkingConnection.value = false;
     }
   }
 }
