@@ -15,6 +15,11 @@ class RTCClient {
   List<String> _iceServerUrls = [];
   final List<Map<String, String>> _localCandidates = [];
   final List<Map<String, String>> _remoteCandidates = [];
+  RTCIceConnectionState? _iceConnState;
+  RTCSignalingState? _signalingState;
+  RTCIceGatheringState? _iceGatheringState;
+  String? _localDescType;
+  String? _remoteDescType;
 
   RTCClient(this.signaling, {required this.role, required this.peerId, PeerConnectionFactory? pcFactory})
       : _pcFactory = pcFactory ?? createPeerConnection;
@@ -42,6 +47,19 @@ class RTCClient {
     } catch (_) {}
     _pc!.onConnectionState = (state) {
       _connectionStateController.add(state);
+      print('[RTCClient][$peerId] connectionState=$state');
+    };
+    _pc!.onIceConnectionState = (state) {
+      _iceConnState = state;
+      print('[RTCClient][$peerId] iceConnectionState=$state');
+    };
+    _pc!.onSignalingState = (state) {
+      _signalingState = state;
+      print('[RTCClient][$peerId] signalingState=$state');
+    };
+    _pc!.onIceGatheringState = (state) {
+      _iceGatheringState = state;
+      print('[RTCClient][$peerId] iceGatheringState=$state');
     };
     
     _pc!.onIceCandidate = (c) async {
@@ -51,6 +69,9 @@ class RTCClient {
         // Parse and store local candidate
         final parsed = _parseCandidate(c.candidate!);
         if (parsed.isNotEmpty) _localCandidates.add(parsed);
+        if (parsed.isNotEmpty) {
+          print('[RTCClient][$peerId] localCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+        }
       }
     };
     
@@ -64,9 +85,11 @@ class RTCClient {
     if (_dc == null) return;
     _dc!.onMessage = (msg) {
        _msgController.add(msg.text); 
+       print('[RTCClient][$peerId] recv=${msg.text}');
     };
     _dc!.onDataChannelState = (state) {
       _dataChannelStateController.add(state);
+      print('[RTCClient][$peerId] dataChannelState=$state');
     };
   }
 
@@ -74,6 +97,7 @@ class RTCClient {
     if (_pc == null) return;
     _dc = await _pc!.createDataChannel('chat', RTCDataChannelInit());
     _setupDataChannel();
+    print('[RTCClient][$peerId] dataChannel created');
   }
 
   final _msgController = StreamController<String>.broadcast();
@@ -102,6 +126,7 @@ class RTCClient {
     
     final offer = await _pc!.createOffer();
     await _pc!.setLocalDescription(offer);
+    _localDescType = offer.type;
     
     // Fix: Use offer.sdp, not getConfiguration
     await signaling.postOffer(sessionId, offer.sdp!);
@@ -115,6 +140,8 @@ class RTCClient {
     
     if (ans!=null){
       await _pc!.setRemoteDescription(RTCSessionDescription(ans, 'answer'));
+      _remoteDescType = 'answer';
+      print('[RTCClient][$peerId] remoteDescription=answer');
     }
     
     // apply candidates
@@ -125,6 +152,9 @@ class RTCClient {
       await _pc!.addCandidate(RTCIceCandidate(c, '', 0));
       final parsed = _parseCandidate(c);
       if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
+      if (parsed.isNotEmpty) {
+        print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+      }
     }
   }
 
@@ -143,6 +173,9 @@ class RTCClient {
     await _pc!.setRemoteDescription(RTCSessionDescription(offer, 'offer'));
     final answer = await _pc!.createAnswer();
     await _pc!.setLocalDescription(answer);
+    _remoteDescType = 'offer';
+    _localDescType = answer.type;
+    print('[RTCClient][$peerId] localDescription=answer');
     
     // Fix: Use answer.sdp
     await signaling.postAnswer(sessionId,  answer.sdp!);
@@ -154,14 +187,34 @@ class RTCClient {
       await _pc!.addCandidate(RTCIceCandidate(c, '', 0));
       final parsed = _parseCandidate(c);
       if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
+      if (parsed.isNotEmpty) {
+        print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+      }
     }
   }
 
   Map<String, dynamic> getIceInfo() {
+    int lh=0, ls=0, lr=0;
+    for (final c in _localCandidates) {
+      final t = c['type'];
+      if (t == 'host') lh++; else if (t == 'srflx') ls++; else if (t == 'relay') lr++;
+    }
+    int rh=0, rs=0, rr=0;
+    for (final c in _remoteCandidates) {
+      final t = c['type'];
+      if (t == 'host') rh++; else if (t == 'srflx') rs++; else if (t == 'relay') rr++;
+    }
     return {
       'iceServers': _iceServerUrls,
       'localCandidates': _localCandidates,
       'remoteCandidates': _remoteCandidates,
+      'localCounts': {'host': lh, 'srflx': ls, 'relay': lr},
+      'remoteCounts': {'host': rh, 'srflx': rs, 'relay': rr},
+      'localSdp': _localDescType,
+      'remoteSdp': _remoteDescType,
+      'iceConnState': _iceConnState?.toString(),
+      'signalingState': _signalingState?.toString(),
+      'iceGatheringState': _iceGatheringState?.toString(),
     };
   }
 
