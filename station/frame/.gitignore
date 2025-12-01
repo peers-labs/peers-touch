@@ -12,3 +12,4 @@ MANIFEST
 .vercel/
 .vscode/
 .DS_Store
+/example/rtc/rtc

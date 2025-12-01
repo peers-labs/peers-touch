@@ -64,9 +64,7 @@ class RTCClient {
     
     _pc!.onIceCandidate = (c) async {
       if (c.candidate != null) {
-        // Use sessionId for candidates
-        await signaling.postCandidate(sessionId, c.candidate!);
-        // Parse and store local candidate
+        await signaling.postCandidate(sessionId, c.candidate!, mid: c.sdpMid, mline: c.sdpMLineIndex ?? 0, from: peerId);
         final parsed = _parseCandidate(c.candidate!);
         if (parsed.isNotEmpty) _localCandidates.add(parsed);
         if (parsed.isNotEmpty) {
@@ -147,13 +145,27 @@ class RTCClient {
     // apply candidates
     // Give some time for candidates to gather
     await Future.delayed(const Duration(seconds: 2));
-    final cands = await signaling.getCandidates(sessionId);
-    for (final c in cands){ 
-      await _pc!.addCandidate(RTCIceCandidate(c, '', 0));
-      final parsed = _parseCandidate(c);
-      if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
-      if (parsed.isNotEmpty) {
-        print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+    final cands = await signaling.getCandidates(sessionId, excludeFrom: peerId);
+    for (final c in cands){
+      if (c is Map) {
+        final cand = c['candidate']?.toString() ?? '';
+        final mid = c['mid']?.toString() ?? '';
+        final mline = int.tryParse((c['mline'] ?? '0').toString()) ?? 0;
+        if (cand.isNotEmpty) {
+          await _pc!.addCandidate(RTCIceCandidate(cand, mid, mline));
+          final parsed = _parseCandidate(cand);
+          if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
+          if (parsed.isNotEmpty) {
+            print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+          }
+        }
+      } else if (c is String) {
+        await _pc!.addCandidate(RTCIceCandidate(c, '', 0));
+        final parsed = _parseCandidate(c);
+        if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
+        if (parsed.isNotEmpty) {
+          print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+        }
       }
     }
   }
@@ -182,13 +194,27 @@ class RTCClient {
     
     // apply candidates
     await Future.delayed(const Duration(seconds: 2));
-    final cands = await signaling.getCandidates(sessionId);
-    for (final c in cands){ 
-      await _pc!.addCandidate(RTCIceCandidate(c, '', 0));
-      final parsed = _parseCandidate(c);
-      if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
-      if (parsed.isNotEmpty) {
-        print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+    final cands = await signaling.getCandidates(sessionId, excludeFrom: peerId);
+    for (final c in cands){
+      if (c is Map) {
+        final cand = c['candidate']?.toString() ?? '';
+        final mid = c['mid']?.toString() ?? '';
+        final mline = int.tryParse((c['mline'] ?? '0').toString()) ?? 0;
+        if (cand.isNotEmpty) {
+          await _pc!.addCandidate(RTCIceCandidate(cand, mid, mline));
+          final parsed = _parseCandidate(cand);
+          if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
+          if (parsed.isNotEmpty) {
+            print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+          }
+        }
+      } else if (c is String) {
+        await _pc!.addCandidate(RTCIceCandidate(c, '', 0));
+        final parsed = _parseCandidate(c);
+        if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
+        if (parsed.isNotEmpty) {
+          print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+        }
       }
     }
   }
