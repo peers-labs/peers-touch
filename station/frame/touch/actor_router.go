@@ -8,6 +8,7 @@ const (
 	RouterURLActorSignUP  RouterPath = "/sign-up"
 	RouterURLActorLogin   RouterPath = "/login"
 	RouterURLActorProfile RouterPath = "/profile"
+	RouterURLActorList    RouterPath = "/list"
 )
 
 type ActorRouters struct{}
