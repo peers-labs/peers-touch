@@ -9,6 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/chat"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 
 	// default plugins
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
@@ -34,8 +35,10 @@ func main() {
 	)
 	if err != nil {
 		panic(err)
-		return
 	}
+
+	// Seed preset users into DB (idempotent)
+	_ = touchactor.SeedPresetUsers(ctx)
 
 	err = p.Start()
 	if err != nil {
