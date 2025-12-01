@@ -35,10 +35,7 @@ dependencies:
   intl: any
   flutter_launcher_icons: ^0.13.1
   http: ^1.2.0
-  photo_manager: ^3.6.2
-  photo_manager_image_provider: ^2.1.2
   path_provider: ^2.1.1
-  video_thumbnail: ^0.5.1
   logger: ^2.0.2+1
   image_picker: ^1.0.4
   shared_preferences: ^2.5.3
@@ -57,6 +54,9 @@ dependencies:
   crypto: ^3.0.3
   peers_touch_base:
     path: ../common/peers_touch_base
+  get_storage: ^2.1.1
+  dio: ^5.9.0
+  protobuf: ^5.1.0
 
 
 dev_dependencies:

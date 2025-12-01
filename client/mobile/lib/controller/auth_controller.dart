@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_mobile/l10n/app_localizations.dart';
-import 'package:peers_touch_mobile/controller/controller.dart';
+import 'package:peers_touch_mobile/services/auth_service.dart';
 
 class AuthController extends GetxController {
   // Form fields
@@ -29,10 +29,24 @@ class AuthController extends GetxController {
     // Default to login mode
     isLoginMode.value = true;
     
+    final authService = Get.find<AuthService>();
+    
     // Load saved server address if available
-    final savedServerAddress = ControllerManager.authService.serverAddress.value;
+    final savedServerAddress = authService.serverAddress.value;
     if (savedServerAddress.isNotEmpty) {
       serverAddressController.text = savedServerAddress;
+    }
+    
+    // Load saved username if available
+    final savedUsername = authService.lastUsername.value;
+    if (savedUsername.isNotEmpty) {
+      usernameController.text = savedUsername;
+    }
+    
+    // Load saved password if available
+    final savedPassword = authService.lastPassword.value;
+    if (savedPassword.isNotEmpty) {
+      passwordController.text = savedPassword;
     }
   }
 
@@ -107,115 +121,45 @@ class AuthController extends GetxController {
     return regex.hasMatch(address);
   }
 
-  String _buildApiUrl(String endpoint) {
-    String baseUrl = serverAddressController.text.trim();
-    
-    // Remove trailing slash if present
-    if (baseUrl.endsWith('/')) {
-      baseUrl = baseUrl.substring(0, baseUrl.length - 1);
-    }
-    
-    // Add leading slash to endpoint if not present
-    if (!endpoint.startsWith('/')) {
-      endpoint = '/$endpoint';
-    }
-    
-    return '$baseUrl$endpoint';
-  }
-
   Future<void> submitForm() async {
     if (!validateForm()) {
       return;
     }
 
-    isLoading.value = true;
-    
+    // Login implementation
     try {
-      // Build the correct API endpoint
-      final endpoint = isLoginMode.value ? '/user/login' : '/user/sign-up';
-      final apiUrl = _buildApiUrl(endpoint);
+      isLoading.value = true;
+      final authService = Get.find<AuthService>();
       
-      // Here you would implement actual API call
-      // For now, we'll simulate success with the correct URL
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Log the API URL for debugging (remove in production)
-      debugPrint('API URL: $apiUrl');
-      
-      // Save authentication data
-      await ControllerManager.authService.saveAuthData(
-        loggedIn: true,
-        token: 'dummy_token', // Use actual token from response in real implementation
-        user: {'username': usernameController.text},
-        serverAddr: serverAddressController.text,
+      // Save login info locally
+      await authService.saveLoginInfo(
+        username: usernameController.text.trim(),
+        password: passwordController.text,
+        serverAddr: serverAddressController.text.trim(),
       );
-      
+
       if (isLoginMode.value) {
-        _handleLoginSuccess();
+        await authService.login(
+          usernameController.text.trim(),
+          passwordController.text,
+          serverAddressController.text.trim(),
+        );
       } else {
-        _handleRegisterSuccess();
+        await authService.register(
+          usernameController.text.trim(),
+          passwordController.text,
+          serverAddressController.text.trim(),
+        );
       }
     } catch (e) {
-      _handleError(e.toString());
+      Get.snackbar(
+        'Error',
+        e.toString(),
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } finally {
       isLoading.value = false;
     }
-  }
-
-  void _handleLoginSuccess() {
-    // Save authentication data
-    ControllerManager.authService.saveAuthData(
-      loggedIn: true,
-      token: 'dummy_token', // Use actual token from response in real implementation
-      user: {'username': usernameController.text},
-      serverAddr: serverAddressController.text,
-    );
-    
-    final localizations = AppLocalizations.of(Get.context!)!;
-    Get.snackbar(
-      localizations.success,
-      localizations.loginSuccess,
-      snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.green,
-      colorText: Colors.white,
-    );
-    
-    // Navigate to home page or main app
-    Get.offAllNamed('/home');
-  }
-
-  void _handleRegisterSuccess() {
-    // Save authentication data
-    ControllerManager.authService.saveAuthData(
-      loggedIn: true,
-      token: 'dummy_token', // Use actual token from response in real implementation
-      user: {'username': usernameController.text},
-      serverAddr: serverAddressController.text,
-    );
-    
-    final localizations = AppLocalizations.of(Get.context!)!;
-    Get.snackbar(
-      localizations.success,
-      localizations.registerSuccess,
-      snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.green,
-      colorText: Colors.white,
-    );
-    
-    // Switch to login mode after successful registration
-    isLoginMode.value = true;
-    clearForm();
-  }
-
-  void _handleError(String error) {
-    final localizations = AppLocalizations.of(Get.context!)!;
-    Get.snackbar(
-      localizations.error,
-      isLoginMode.value ? localizations.loginFailed : localizations.registerFailed,
-      snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.red,
-      colorText: Colors.white,
-    );
   }
 
   void clearForm() {
