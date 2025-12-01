@@ -1,0 +1,24 @@
+peers:
+  actor:
+    preset_users:
+      - id: "https://station.local/actor/desktop-1"
+        username: "desktop-1"
+        display_name: "Desktop One"
+        inbox: "https://station.local/actor/desktop-1/inbox"
+        outbox: "https://station.local/actor/desktop-1/outbox"
+        endpoints:
+          sharedInbox: "https://station.local/inbox"
+      - id: "https://station.local/actor/mobile-1"
+        username: "mobile-1"
+        display_name: "Mobile One"
+        inbox: "https://station.local/actor/mobile-1/inbox"
+        outbox: "https://station.local/actor/mobile-1/outbox"
+        endpoints:
+          sharedInbox: "https://station.local/inbox"
+      - id: "https://station.local/actor/go-peer-1"
+        username: "go-peer-1"
+        display_name: "Go Peer"
+        inbox: "https://station.local/actor/go-peer-1/inbox"
+        outbox: "https://station.local/actor/go-peer-1/outbox"
+        endpoints:
+          sharedInbox: "https://station.local/inbox"
