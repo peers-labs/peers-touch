@@ -262,4 +262,61 @@ class RTCClient {
       return {};
     }
   }
+
+  Future<Map<String, String>> getActiveEndpoints() async {
+    try {
+      if (_pc == null) return {};
+      final reports = await _pc!.getStats();
+      dynamic selectedPair;
+      for (var r in reports) {
+        final type = (r.type ?? '').toString();
+        final values = (r.values ?? const {});
+        if (type == 'transport') {
+          final selId = values['selectedCandidatePairId'] ?? values['selectedcandidatepairid'];
+          if (selId != null) {
+            for (var rr in reports) {
+              if (rr.id == selId) { selectedPair = rr; break; }
+            }
+          }
+        }
+        if (type == 'candidate-pair') {
+          final state = (values['state'] ?? '').toString();
+          final nominated = values['nominated'] == true || values['selected'] == true;
+          if (state == 'succeeded' || nominated) {
+            selectedPair = r;
+          }
+        }
+      }
+      Map lv = const {};
+      Map rv = const {};
+      if (selectedPair != null) {
+        final v = selectedPair.values ?? const {};
+        final lId = v['localCandidateId'] ?? v['localcandidateid'];
+        final rId = v['remoteCandidateId'] ?? v['remotecandidateid'];
+        if (lId != null) {
+          for (var rr in reports) { if (rr.id == lId) { lv = rr.values ?? const {}; break; } }
+        }
+        if (rId != null) {
+          for (var rr in reports) { if (rr.id == rId) { rv = rr.values ?? const {}; break; } }
+        }
+      }
+      String lip = (lv['address'] ?? lv['ip'] ?? '').toString();
+      String lport = (lv['port'] ?? '').toString();
+      String ltype = (lv['candidateType'] ?? lv['type'] ?? '').toString();
+      String rip = (rv['address'] ?? rv['ip'] ?? '').toString();
+      String rport = (rv['port'] ?? '').toString();
+      String rtype = (rv['candidateType'] ?? rv['type'] ?? '').toString();
+      if (lip.isEmpty && _localCandidates.isNotEmpty) {
+        final c = _localCandidates.last; lip = c['ip'] ?? ''; lport = c['port'] ?? ''; ltype = c['type'] ?? ''; 
+      }
+      if (rip.isEmpty && _remoteCandidates.isNotEmpty) {
+        final c = _remoteCandidates.last; rip = c['ip'] ?? ''; rport = c['port'] ?? ''; rtype = c['type'] ?? ''; 
+      }
+      final local = lip.isEmpty ? '' : (lport.isEmpty ? lip : '$lip:$lport');
+      final remote = rip.isEmpty ? '' : (rport.isEmpty ? rip : '$rip:$rport');
+      return {'local': local.isEmpty ? '-' : '$local${ltype.isEmpty ? '' : ' ($ltype)'}', 'remote': remote.isEmpty ? '-' : '$remote${rtype.isEmpty ? '' : ' ($rtype)'}'};
+    } catch (_) {
+      return {};
+    }
+  }
 }
