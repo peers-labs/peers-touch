@@ -8,7 +8,7 @@ func init() {
 	config.RegisterOptions(&ymlOptions)
 }
 
-// see github.com/peers-labs/peers-touch/station/frameexample/helloworld/conf/actor_*.yml
+// see github.com/peers-labs/peers-touch/station/frame/example/helloworld/conf/actor_*.yml
 var ymlOptions struct {
 	Peers struct {
 		Actor struct {
