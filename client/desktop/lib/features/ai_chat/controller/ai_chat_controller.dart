@@ -9,7 +9,6 @@ import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
-import 'package:peers_touch_base/ai_proxy/service/ai_box_service_factory.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 

@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 
@@ -16,9 +17,12 @@ class ChatController extends GetxController {
   final lastCheckSummary = ''.obs;
   final iceDetails = <String, dynamic>{}.obs;
   final autoAnswering = false.obs;
+  final connectedPeers = <String>[].obs;
   
   RTCClient? _client;
   RTCSignalingService? _signaling;
+  Timer? _hb;
+  Timer? _connMonitor;
 
   final debugStats = <String, dynamic>{}.obs;
   final isFetchingStats = false.obs;
@@ -33,6 +37,11 @@ class ChatController extends GetxController {
   @override
   void onClose() {
     textController.dispose();
+    try {
+      _signaling?.unregisterPeer(selfPeerId.value);
+    } catch (_) {}
+    _hb?.cancel();
+    _connMonitor?.cancel();
     super.onClose();
   }
   
@@ -81,6 +90,19 @@ class ChatController extends GetxController {
       // Listen for messages
       _client!.messages().listen((msg) {
         messages.add("Peer: $msg");
+      });
+      _hb?.cancel();
+      _hb = Timer.periodic(const Duration(seconds: 30), (t) async {
+        try { await _signaling!.registerPeer(selfPeerId.value, 'desktop', []); } catch (_) {}
+      });
+      _connMonitor?.cancel();
+      _connMonitor = Timer.periodic(const Duration(seconds: 1), (t) {
+        final info = _client!.getIceInfo();
+        final cs = info['iceConnState']?.toString() ?? 'Unknown';
+        connectionStatus.value = cs.split('.').last;
+        final ds = _client!.getDataChannelState();
+        if (ds != null) dataChannelStatus.value = ds.toString().split('.').last;
+        iceDetails.value = info;
       });
     } catch (e) {
       Get.snackbar('Error', 'Init failed: $e');
@@ -131,14 +153,12 @@ class ChatController extends GetxController {
     try {
       final p = await _signaling!.getPeer(targetPeerId.value);
       peerRegistered.value = p != null;
-      final cs = await _client!.getConnectionState();
-      if (cs != null) {
-        connectionStatus.value = cs.toString().split('.').last;
-      }
+      final info = _client!.getIceInfo();
+      final cs = info['iceConnState']?.toString() ?? 'Unknown';
+      final sig = info['signalingState']?.toString() ?? '';
       final ds = _client!.getDataChannelState();
-      if (ds != null) {
-        dataChannelStatus.value = ds.toString().split('.').last;
-      }
+      connectionStatus.value = cs.split('.').last;
+      if (ds != null) dataChannelStatus.value = ds.toString().split('.').last;
       final sidA = '${selfPeerId.value}-${targetPeerId.value}';
       final sidB = '${targetPeerId.value}-${selfPeerId.value}';
       final offerA = await _signaling!.getOffer(sidA);
@@ -147,15 +167,33 @@ class ChatController extends GetxController {
       final offerB = await _signaling!.getOffer(sidB);
       final answerB = await _signaling!.getAnswer(sidB);
       final candB = await _signaling!.getCandidates(sidB);
+      if (offerB != null && (connectionStatus.value == 'Unknown' || connectionStatus.value == 'new' || connectionStatus.value == 'checking')) {
+        try { await _client!.answer(targetPeerId.value); } catch (_) {}
+      }
       lastCheckSummary.value = 'peerRegistered=${peerRegistered.value}; pc=$connectionStatus; dc=$dataChannelStatus; ' 
         'offerA=${offerA!=null}; answerA=${answerA!=null}; candA=${candA.length}; ' 
         'offerB=${offerB!=null}; answerB=${answerB!=null}; candB=${candB.length}';
 
       // ICE details
-      iceDetails.value = _client!.getIceInfo();
+      iceDetails.value = info;
     } finally {
       checkingConnection.value = false;
     }
+  }
+
+  Future<void> fetchConnections() async {
+    if (_signaling == null) return;
+    try {
+      final sessions = await _signaling!.getSessions(peer: selfPeerId.value);
+      final set = <String>{};
+      for (final s in sessions) {
+        final a = s['a']?.toString();
+        final b = s['b']?.toString();
+        if (a == selfPeerId.value && b != null) set.add(b);
+        if (b == selfPeerId.value && a != null) set.add(a);
+      }
+      connectedPeers.assignAll(set.toList());
+    } catch (_) {}
   }
 
   Future<void> autoAnswer() async {
