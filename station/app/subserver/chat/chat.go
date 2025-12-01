@@ -38,7 +38,7 @@ type chatSubServer struct {
 	sessions   map[string]session
 	offers     map[string]string
 	answers    map[string]string
-	candidates map[string][]string
+	candidates map[string][]candReq
 }
 
 func (s *chatSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -47,7 +47,7 @@ func (s *chatSubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.sessions = map[string]session{}
 	s.offers = map[string]string{}
 	s.answers = map[string]string{}
-	s.candidates = map[string][]string{}
+	s.candidates = map[string][]candReq{}
 	return nil
 }
 
@@ -71,9 +71,11 @@ func (s *chatSubServer) Status() server.Status { return s.status }
 func (s *chatSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(chatURL{name: "chat-peer-register", path: "/chat/peer/register"}, http.HandlerFunc(s.handlePeerRegister), server.WithMethod(server.POST)),
+		server.NewHandler(chatURL{name: "chat-peer-unregister", path: "/chat/peer/unregister"}, http.HandlerFunc(s.handlePeerUnregister), server.WithMethod(server.POST)),
 		server.NewHandler(chatURL{name: "chat-peer-get", path: "/chat/peer/get"}, http.HandlerFunc(s.handlePeerGet), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-peers", path: "/chat/peers"}, http.HandlerFunc(s.handlePeers), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-stats", path: "/chat/stats"}, http.HandlerFunc(s.handleStats), server.WithMethod(server.GET)),
+		server.NewHandler(chatURL{name: "chat-sessions", path: "/chat/sessions"}, http.HandlerFunc(s.handleSessions), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-session-new", path: "/chat/session/new"}, http.HandlerFunc(s.handleSessionNew), server.WithMethod(server.POST)),
 		server.NewHandler(chatURL{name: "chat-session-get", path: "/chat/session/get"}, http.HandlerFunc(s.handleSessionGet), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-session-offer-post", path: "/chat/session/offer"}, http.HandlerFunc(s.handleOfferPost), server.WithMethod(server.POST)),
@@ -95,6 +97,10 @@ type reqRegister struct {
 	Addrs []string `json:"addrs"`
 }
 
+type reqUnregister struct {
+	ID string `json:"id"`
+}
+
 func (s *chatSubServer) handlePeerRegister(w http.ResponseWriter, r *http.Request) {
 	var req reqRegister
 	_ = json.NewDecoder(r.Body).Decode(&req)
@@ -110,12 +116,29 @@ func (s *chatSubServer) handlePeerRegister(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(pi)
 }
 
+func (s *chatSubServer) handlePeerUnregister(w http.ResponseWriter, r *http.Request) {
+	var req reqUnregister
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.ID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	delete(s.peers, req.ID)
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *chatSubServer) handlePeerGet(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	s.mu.RLock()
 	pi, ok := s.peers[id]
 	s.mu.RUnlock()
 	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if time.Now().Unix()-pi.UpdatedAt > 60 {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -132,6 +155,20 @@ func (s *chatSubServer) handlePeers(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (s *chatSubServer) handleSessions(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("peer")
+	s.mu.RLock()
+	out := make([]session, 0, len(s.sessions))
+	for _, v := range s.sessions {
+		if q == "" || v.A == q || v.B == q {
+			out = append(out, v)
+		}
+	}
+	s.mu.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (s *chatSubServer) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -198,6 +235,9 @@ type sdpReq struct {
 type candReq struct {
 	ID        string `json:"id"`
 	Candidate string `json:"candidate"`
+	Mid       string `json:"mid,omitempty"`
+	MLine     int    `json:"mline,omitempty"`
+	From      string `json:"from,omitempty"`
 }
 
 func (s *chatSubServer) handleOfferPost(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +249,9 @@ func (s *chatSubServer) handleOfferPost(w http.ResponseWriter, r *http.Request) 
 	}
 	s.mu.Lock()
 	s.offers[req.ID] = req.SDP
+	// Reset previous negotiation artifacts to avoid mixing old ufrags/candidates
+	delete(s.answers, req.ID)
+	delete(s.candidates, req.ID)
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -258,15 +301,26 @@ func (s *chatSubServer) handleCandidatePost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	s.mu.Lock()
-	s.candidates[req.ID] = append(s.candidates[req.ID], req.Candidate)
+	s.candidates[req.ID] = append(s.candidates[req.ID], req)
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *chatSubServer) handleCandidatesGet(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
+	exclude := r.URL.Query().Get("exclude")
 	s.mu.RLock()
-	list := s.candidates[id]
+	raw := s.candidates[id]
 	s.mu.RUnlock()
-	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "candidates": list})
+	if exclude != "" {
+		filtered := make([]candReq, 0, len(raw))
+		for _, c := range raw {
+			if c.From != exclude {
+				filtered = append(filtered, c)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "candidates": filtered})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "candidates": raw})
 }
