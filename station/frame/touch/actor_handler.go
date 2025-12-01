@@ -49,6 +49,12 @@ func GetActorHandlers() []ActorHandlerInfo {
 			Method:    server.POST,
 			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
 		},
+		{
+			RouterURL: RouterURLActorList,
+			Handler:   ListActors,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(RoutersNameActor)},
+		},
 	}
 }
 
@@ -144,4 +150,15 @@ func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
 	}
 
 	SuccessResponse(ctx, "Profile updated successfully", nil)
+}
+
+// ListActors returns actors from preset configuration
+func ListActors(c context.Context, ctx *app.RequestContext) {
+	actors, err := actor.ListActors(c)
+	if err != nil {
+		log.Warnf(c, "List actors failed: %v", err)
+		FailedResponse(ctx, err)
+		return
+	}
+	SuccessResponse(ctx, "Actor list", actors)
 }
