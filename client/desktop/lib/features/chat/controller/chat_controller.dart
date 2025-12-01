@@ -103,6 +103,14 @@ class ChatController extends GetxController {
         final ds = _client!.getDataChannelState();
         if (ds != null) dataChannelStatus.value = ds.toString().split('.').last;
         iceDetails.value = info;
+        _client!.getActiveEndpoints().then((endpoints){
+          if (endpoints.isNotEmpty) {
+            final merged = Map<String, dynamic>.from(iceDetails);
+            merged['activeLocal'] = endpoints['local'];
+            merged['activeRemote'] = endpoints['remote'];
+            iceDetails.value = merged;
+          }
+        });
       });
     } catch (e) {
       Get.snackbar('Error', 'Init failed: $e');
@@ -175,6 +183,9 @@ class ChatController extends GetxController {
         'offerB=${offerB!=null}; answerB=${answerB!=null}; candB=${candB.length}';
 
       // ICE details
+      final endpoints = await _client!.getActiveEndpoints();
+      info['activeLocal'] = endpoints['local'];
+      info['activeRemote'] = endpoints['remote'];
       iceDetails.value = info;
     } finally {
       checkingConnection.value = false;

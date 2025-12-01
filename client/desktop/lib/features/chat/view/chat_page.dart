@@ -184,21 +184,23 @@ class ChatPage extends GetView<ChatController> {
                           final iceConn = ice['iceConnState']?.toString() ?? '';
                           final sig = ice['signalingState']?.toString() ?? '';
                           final gather = ice['iceGatheringState']?.toString() ?? '';
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildInfoRow('ICE Servers', servers),
-                              _buildInfoRow('Signaling', sig),
-                              _buildInfoRow('ICE Conn', iceConn),
-                              _buildInfoRow('ICE Gathering', gather),
-                              _buildInfoRow('Local SDP', localSdp.isEmpty ? '-' : localSdp),
-                              _buildInfoRow('Remote SDP', remoteSdp.isEmpty ? '-' : remoteSdp),
-                              _buildInfoRow('Local Candidates', local.isEmpty ? '-' : local),
-                              _buildInfoRow('Remote Candidates', remote.isEmpty ? '-' : remote),
-                              _buildInfoRow('Local Counts', 'host=${localCounts['host'] ?? 0}, srflx=${localCounts['srflx'] ?? 0}, relay=${localCounts['relay'] ?? 0}'),
-                              _buildInfoRow('Remote Counts', 'host=${remoteCounts['host'] ?? 0}, srflx=${remoteCounts['srflx'] ?? 0}, relay=${remoteCounts['relay'] ?? 0}'),
-                            ],
-                          );
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildInfoRow('ICE Servers', servers),
+                          _buildInfoRow('Signaling', sig),
+                          _buildInfoRow('ICE Conn', iceConn),
+                          _buildInfoRow('ICE Gathering', gather),
+                          _buildInfoRow('Active Local', (ice['activeLocal'] ?? '-').toString()),
+                          _buildInfoRow('Active Remote', (ice['activeRemote'] ?? '-').toString()),
+                          _buildInfoRow('Local SDP', localSdp.isEmpty ? '-' : localSdp),
+                          _buildInfoRow('Remote SDP', remoteSdp.isEmpty ? '-' : remoteSdp),
+                          _buildInfoRow('Local Candidates', local.isEmpty ? '-' : local),
+                          _buildInfoRow('Remote Candidates', remote.isEmpty ? '-' : remote),
+                          _buildInfoRow('Local Counts', 'host=${localCounts['host'] ?? 0}, srflx=${localCounts['srflx'] ?? 0}, relay=${localCounts['relay'] ?? 0}'),
+                          _buildInfoRow('Remote Counts', 'host=${remoteCounts['host'] ?? 0}, srflx=${remoteCounts['srflx'] ?? 0}, relay=${remoteCounts['relay'] ?? 0}'),
+                        ],
+                      );
                         }),
                       ],
                     ),
