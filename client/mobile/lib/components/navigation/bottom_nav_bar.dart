@@ -43,13 +43,6 @@ class BottomNavBar extends StatelessWidget {
           ),
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.photo),
-          label: AppLocalizationsHelper.getLocalizedString(
-            (l10n) => l10n.navPhoto,
-            'Photo',
-          ),
-        ),
-        BottomNavigationBarItem(
           icon: Icon(Icons.person),
           label: AppLocalizationsHelper.getLocalizedString(
             (l10n) => l10n.navMe,
