@@ -1,10 +1,10 @@
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:io';
-import 'dart:convert';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
+import 'package:peers_touch_base/network/dio/http_service_impl.dart';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
 
 class ChatController extends GetxController {
   final messages = <String>[].obs;
@@ -31,6 +31,8 @@ class ChatController extends GetxController {
   final debugStats = <String, dynamic>{}.obs;
   final isFetchingStats = false.obs;
   
+  HttpServiceImpl? _httpService;
+
   @override
   void onInit() {
     super.onInit();
@@ -199,19 +201,29 @@ class ChatController extends GetxController {
   Future<void> loadActors() async {
     final base = signalingUrl.value.trim();
     if (base.isEmpty) return;
+    
     loadingActors.value = true;
     try {
-      final uri = Uri.parse(base.endsWith('/') ? '${base}actor/list' : '$base/actor/list');
-      final req = await HttpClient().getUrl(uri);
-      final resp = await req.close();
-      if (resp.statusCode == 200) {
-        final text = await resp.transform(const Utf8Decoder()).join();
-        final obj = json.decode(text);
-        final data = obj is Map && obj['data'] is List ? obj['data'] as List : [];
-        actors.assignAll(data.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList());
+      // Ensure HttpService is initialized with correct base URL
+      if (_httpService == null) {
+        _httpService = HttpServiceImpl(baseUrl: base);
+      } else {
+        _httpService!.setBaseUrl(base);
       }
-    } catch (_) {}
-    loadingActors.value = false;
+
+      // Use shared library to fetch data (which includes logging)
+      final resp = await _httpService!.get<Map<String, dynamic>>('/actor/list');
+      
+      final data = resp['data'] is List ? resp['data'] as List : [];
+      actors.assignAll(data.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList());
+      
+      LoggingService.info('Loaded ${actors.length} actors from $base');
+    } catch (e, s) {
+      LoggingService.error('Failed to load actors', e, s);
+      Get.snackbar('Error', 'Failed to load actors: $e');
+    } finally {
+      loadingActors.value = false;
+    }
   }
 
   Future<void> fetchConnections() async {
