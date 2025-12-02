@@ -228,6 +228,16 @@ func (s *SubServer) Status() server.Status {
 func (s *SubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
+			bootstrapRouterURL{name: "bootstrap-info", url: "/sub-bootstrap/list"},
+			s.listPeerInfos,
+			server.WithMethod(server.GET),
+		),
+		server.NewHandler(
+			bootstrapRouterURL{name: "bootstrap-info", url: "/sub-bootstrap/dht"},
+			s.queryDHTPeer,
+			server.WithMethod(server.GET),
+		),
+		server.NewHandler(
 			bootstrapRouterURL{name: "bootstrap-info", url: "/sub-bootstrap/info"},
 			s.info,
 			server.WithMethod(server.GET),
@@ -328,4 +338,3 @@ func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, er
 
 	return h, dhtInstance, nil
 }
-
