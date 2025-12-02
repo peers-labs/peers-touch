@@ -308,7 +308,7 @@ func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, er
 	}
 
 	// Optional insecure security for testing (set LIBP2P_INSECURE=true)
-	if strings.EqualFold(os.Getenv("LIBP2P_INSECURE"), "true") {
+	if s.opts.Libp2pInsecure || strings.EqualFold(os.Getenv("LIBP2P_INSECURE"), "true") {
 		hostOptions = append(hostOptions, libp2p.NoSecurity)
 		logger.Warnf(ctx, "[Bootstrap] Using NO-SECURITY transport for testing")
 	} else {
