@@ -1,0 +1,17 @@
+name: peers_touch_ui_example
+description: Example app demonstrating peers_touch_ui components
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  peers_touch_ui:
+    path: ../
+
+flutter:
+  uses-material-design: true
+

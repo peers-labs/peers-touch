@@ -82,9 +82,19 @@ func (actor ActorSignParams) Check() error {
 }
 
 func (actor ActorLoginParams) Check() error {
-	// Validate email format
-	if err := util.ValidateEmail(actor.Email); err != nil {
+	val := strings.TrimSpace(actor.Email)
+	if val == "" {
 		return ErrActorInvalidEmail
+	}
+	if strings.Contains(val, "@") {
+		if err := util.ValidateEmail(val); err != nil {
+			return ErrActorInvalidEmail
+		}
+	} else {
+		// treat as username identifier; minimal non-empty check
+		if len(val) < 3 {
+			return ErrActorInvalidEmail
+		}
 	}
 
 	// Validate password using default pattern

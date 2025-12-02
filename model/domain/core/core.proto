@@ -3,18 +3,11 @@ syntax = "proto3";
 package peers_touch.model.core.v1;
 
 import "google/protobuf/timestamp.proto";
+import "domain/actor/actor.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
-// Actor: 核心用户/实体
-message Actor {
-  string id = 1;
-  string name = 2;
-  string display_name = 3;
-  string avatar_url = 4;
-  google.protobuf.Timestamp created_at = 5;
-  google.protobuf.Timestamp updated_at = 6;
-}
+// 注意：Actor 已迁移到 peers_touch.model.actor.v1.Actor，避免重复定义
 
 // Peer: 对等节点
 message Peer {

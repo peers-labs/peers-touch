@@ -91,8 +91,8 @@ type Provider struct {
 	Description   string                 `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"`                        // 描述
 	KeyVaults     string                 `protobuf:"bytes,9,opt,name=key_vaults,json=keyVaults,proto3" json:"key_vaults,omitempty"`           // 【敏感】API密钥或其他凭证的安全存储引用
 	SourceType    string                 `protobuf:"bytes,10,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"`       // 提供商类型 (e.g."custom")
-	SettingsJson  string                 `protobuf:"bytes,11,opt,name=settings_json,json=settingsJson,proto3" json:"settings_json,omitempty"` // JSON 字符串。元数据配置，如provider sdk的类型，openai。
-	ConfigJson    string                 `protobuf:"bytes,12,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`       // JSON 字符串。运行时配置，如enableXXX
+	SettingsJson  string                 `protobuf:"bytes,11,opt,name=settings_json,json=settingsJson,proto3" json:"settings_json,omitempty"` // JSON 字符串。连接与环境设置，描述“这个 Provider 是谁、怎么连、用什么协议”。变化频率低，偏向基础配置和端点信息。
+	ConfigJson    string                 `protobuf:"bytes,12,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`       // JSON 字符串。生成参数与请求行为，描述“这次请求怎么生成、用什么采样策略”。变化更频繁，偏向模型调用的动态配置。
 	AccessedAt    *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=accessed_at,json=accessedAt,proto3" json:"accessed_at,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
+import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import '../controller/chat_controller.dart';
 
 class ChatPage extends GetView<ChatController> {
@@ -82,8 +84,59 @@ class ChatPage extends GetView<ChatController> {
           ),
         ],
       ),
-      body: Column(
-        children: [
+      body: Obx(() {
+        final shell = Get.find<ShellController>();
+        shell.leftPaneWidth ??= 280.0.obs;
+        final leftWidth = shell.leftPaneWidth!.value;
+        return ShellThreePane(
+        leftBuilder: (ctx) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Row(
+                children: [
+                  const Text('Actors', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: () => controller.loadActors(),
+                    tooltip: 'Refresh',
+                  )
+                ],
+              ),
+            ),
+            Expanded(
+              child: Obx(() {
+                if (controller.loadingActors.value) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final list = controller.actors;
+                if (list.isEmpty) {
+                  return const Center(child: Text('No actors'));
+                }
+                return ListView.separated(
+                  itemCount: list.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (ctx, i) {
+                    final a = list[i];
+                    final name = (a['display_name'] ?? a['username'] ?? '').toString();
+                    final uname = (a['username'] ?? '').toString();
+                    final id = (a['id'] ?? '').toString();
+                    return ListTile(
+                      title: Text(name.isEmpty ? uname : name),
+                      subtitle: Text(id),
+                      onTap: () {
+                        controller.targetPeerId.value = uname;
+                      },
+                    );
+                  },
+                );
+              }),
+            ),
+          ],
+        ),
+        centerBuilder: (ctx) => Column(
+          children: [
           // Config area (scrollable)
           Expanded(
             child: Padding(
@@ -229,8 +282,12 @@ class ChatPage extends GetView<ChatController> {
               ],
             ),
           ),
-        ],
-      ),
+          ],
+        ),
+        leftWidth: leftWidth,
+        onLeftWidthChange: (w) => shell.leftPaneWidth!.value = w,
+      );
+      }),
     );
   }
 }
