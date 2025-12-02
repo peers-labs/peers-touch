@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
-import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
-import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 
 enum ScrollPolicy { none, auto, always }
 
@@ -34,6 +32,8 @@ class ShellThreePane extends StatelessWidget {
   final PaneProps leftProps;
   final PaneProps centerProps;
   final double goldenMaxRatio;
+  final double? leftWidth;
+  final ValueChanged<double>? onLeftWidthChange;
   ShellThreePane({
     super.key,
     this.leftBuilder,
@@ -41,6 +41,8 @@ class ShellThreePane extends StatelessWidget {
     this.leftProps = const PaneProps(width: 280.0, minWidth: 220.0, maxWidth: 360.0, scrollPolicy: ScrollPolicy.always),
     this.centerProps = const PaneProps(scrollPolicy: ScrollPolicy.none),
     this.goldenMaxRatio = 0.618,
+    this.leftWidth,
+    this.onLeftWidthChange,
   });
 
   static const double _handleWidth = UIKit.splitHandleWidth;
@@ -49,7 +51,6 @@ class ShellThreePane extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tokens = theme.extension<WeChatTokens>();
-    final shell = Get.find<ShellController>();
     return LayoutBuilder(
       builder: (ctx, constraints) {
         final availableW = constraints.maxWidth.isFinite
@@ -61,29 +62,23 @@ class ShellThreePane extends StatelessWidget {
         final goldenMax = availableW * goldenMaxRatio;
         final maxLeftByCenter = math.max(0.0, availableW - _handleWidth - centerMin);
         final maxLeft = math.min(maxAllowedByProps, math.min(goldenMax, maxLeftByCenter));
-        final current = shell.leftPaneWidth?.value ?? (leftProps.width ?? 280.0);
-        final clamped = current.clamp(minLeft, math.max(minLeft, maxLeft)).toDouble();
-        shell.leftPaneWidth ??= clamped.obs;
-        shell.leftPaneWidth!.value = clamped;
+        final base = (leftWidth ?? leftProps.width ?? 280.0).toDouble();
+        final clamped = base.clamp(minLeft, math.max(minLeft, maxLeft)).toDouble();
         return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (leftBuilder != null) ...[
-          Obx(() {
-            final width = shell.leftPaneWidth!.value;
-            return Container(
-                width: width,
-                decoration: BoxDecoration(
-                  // 仅使用区域底色，不再强调分界线/阴影
-                  color: tokens?.bgLevel2 ?? theme.colorScheme.surface,
-                ),
-                child: _wrapScroll(
-                  context,
-                  Builder(builder: leftBuilder!),
-                  leftProps,
-                ),
-              );
-          }),
+          Container(
+              width: clamped,
+              decoration: BoxDecoration(
+                color: tokens?.bgLevel2 ?? theme.colorScheme.surface,
+              ),
+              child: _wrapScroll(
+                context,
+                Builder(builder: leftBuilder!),
+                leftProps,
+              ),
+            ),
           // 垂直拖拽把手（受限范围），支持调节左栏宽度
           MouseRegion(
             cursor: SystemMouseCursors.resizeColumn,
@@ -92,9 +87,9 @@ class ShellThreePane extends StatelessWidget {
               onPanUpdate: (details) {
                 final dynamicMaxLeftByCenter = math.max(0.0, availableW - _handleWidth - centerMin);
                 final dynamicMaxLeft = math.max(minLeft, math.min(maxAllowedByProps, math.min(goldenMax, dynamicMaxLeftByCenter)));
-                final nextRaw = shell.leftPaneWidth!.value + details.delta.dx;
+                final nextRaw = clamped + details.delta.dx;
                 final next = nextRaw.clamp(minLeft, dynamicMaxLeft).toDouble();
-                if (next != shell.leftPaneWidth!.value) shell.leftPaneWidth!.value = next;
+                if (onLeftWidthChange != null) onLeftWidthChange!(next);
               },
               child: Container(
                 width: _handleWidth,

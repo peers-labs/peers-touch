@@ -23,56 +23,284 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type Friend_FriendshipStatus int32
+// 会话类型
+type SessionType int32
 
 const (
-	Friend_PENDING  Friend_FriendshipStatus = 0
-	Friend_ACCEPTED Friend_FriendshipStatus = 1
-	Friend_BLOCKED  Friend_FriendshipStatus = 2
+	SessionType_SESSION_TYPE_UNSPECIFIED SessionType = 0
+	SessionType_SESSION_TYPE_DIRECT      SessionType = 1 // 私聊
+	SessionType_SESSION_TYPE_GROUP       SessionType = 2 // 群聊
 )
 
-// Enum value maps for Friend_FriendshipStatus.
+// Enum value maps for SessionType.
 var (
-	Friend_FriendshipStatus_name = map[int32]string{
-		0: "PENDING",
-		1: "ACCEPTED",
-		2: "BLOCKED",
+	SessionType_name = map[int32]string{
+		0: "SESSION_TYPE_UNSPECIFIED",
+		1: "SESSION_TYPE_DIRECT",
+		2: "SESSION_TYPE_GROUP",
 	}
-	Friend_FriendshipStatus_value = map[string]int32{
-		"PENDING":  0,
-		"ACCEPTED": 1,
-		"BLOCKED":  2,
+	SessionType_value = map[string]int32{
+		"SESSION_TYPE_UNSPECIFIED": 0,
+		"SESSION_TYPE_DIRECT":      1,
+		"SESSION_TYPE_GROUP":       2,
 	}
 )
 
-func (x Friend_FriendshipStatus) Enum() *Friend_FriendshipStatus {
-	p := new(Friend_FriendshipStatus)
+func (x SessionType) Enum() *SessionType {
+	p := new(SessionType)
 	*p = x
 	return p
 }
 
-func (x Friend_FriendshipStatus) String() string {
+func (x SessionType) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (Friend_FriendshipStatus) Descriptor() protoreflect.EnumDescriptor {
+func (SessionType) Descriptor() protoreflect.EnumDescriptor {
 	return file_domain_chat_chat_proto_enumTypes[0].Descriptor()
 }
 
-func (Friend_FriendshipStatus) Type() protoreflect.EnumType {
+func (SessionType) Type() protoreflect.EnumType {
 	return &file_domain_chat_chat_proto_enumTypes[0]
 }
 
-func (x Friend_FriendshipStatus) Number() protoreflect.EnumNumber {
+func (x SessionType) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use Friend_FriendshipStatus.Descriptor instead.
-func (Friend_FriendshipStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_chat_proto_rawDescGZIP(), []int{2, 0}
+// Deprecated: Use SessionType.Descriptor instead.
+func (SessionType) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_chat_proto_rawDescGZIP(), []int{0}
 }
 
-// ChatSession: 聊天会话
+// 消息类型
+type MessageType int32
+
+const (
+	MessageType_MESSAGE_TYPE_UNSPECIFIED MessageType = 0
+	MessageType_MESSAGE_TYPE_TEXT        MessageType = 1 // 文本
+	MessageType_MESSAGE_TYPE_IMAGE       MessageType = 2 // 图片
+	MessageType_MESSAGE_TYPE_FILE        MessageType = 3 // 文件
+	MessageType_MESSAGE_TYPE_LOCATION    MessageType = 4 // 位置
+	MessageType_MESSAGE_TYPE_SYSTEM      MessageType = 5 // 系统消息
+)
+
+// Enum value maps for MessageType.
+var (
+	MessageType_name = map[int32]string{
+		0: "MESSAGE_TYPE_UNSPECIFIED",
+		1: "MESSAGE_TYPE_TEXT",
+		2: "MESSAGE_TYPE_IMAGE",
+		3: "MESSAGE_TYPE_FILE",
+		4: "MESSAGE_TYPE_LOCATION",
+		5: "MESSAGE_TYPE_SYSTEM",
+	}
+	MessageType_value = map[string]int32{
+		"MESSAGE_TYPE_UNSPECIFIED": 0,
+		"MESSAGE_TYPE_TEXT":        1,
+		"MESSAGE_TYPE_IMAGE":       2,
+		"MESSAGE_TYPE_FILE":        3,
+		"MESSAGE_TYPE_LOCATION":    4,
+		"MESSAGE_TYPE_SYSTEM":      5,
+	}
+)
+
+func (x MessageType) Enum() *MessageType {
+	p := new(MessageType)
+	*p = x
+	return p
+}
+
+func (x MessageType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MessageType) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_chat_chat_proto_enumTypes[1].Descriptor()
+}
+
+func (MessageType) Type() protoreflect.EnumType {
+	return &file_domain_chat_chat_proto_enumTypes[1]
+}
+
+func (x MessageType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MessageType.Descriptor instead.
+func (MessageType) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_chat_proto_rawDescGZIP(), []int{1}
+}
+
+// 消息状态
+type MessageStatus int32
+
+const (
+	MessageStatus_MESSAGE_STATUS_UNSPECIFIED MessageStatus = 0
+	MessageStatus_MESSAGE_STATUS_SENDING     MessageStatus = 1 // 发送中
+	MessageStatus_MESSAGE_STATUS_SENT        MessageStatus = 2 // 已发送
+	MessageStatus_MESSAGE_STATUS_DELIVERED   MessageStatus = 3 // 已送达
+	MessageStatus_MESSAGE_STATUS_FAILED      MessageStatus = 4 // 发送失败
+)
+
+// Enum value maps for MessageStatus.
+var (
+	MessageStatus_name = map[int32]string{
+		0: "MESSAGE_STATUS_UNSPECIFIED",
+		1: "MESSAGE_STATUS_SENDING",
+		2: "MESSAGE_STATUS_SENT",
+		3: "MESSAGE_STATUS_DELIVERED",
+		4: "MESSAGE_STATUS_FAILED",
+	}
+	MessageStatus_value = map[string]int32{
+		"MESSAGE_STATUS_UNSPECIFIED": 0,
+		"MESSAGE_STATUS_SENDING":     1,
+		"MESSAGE_STATUS_SENT":        2,
+		"MESSAGE_STATUS_DELIVERED":   3,
+		"MESSAGE_STATUS_FAILED":      4,
+	}
+)
+
+func (x MessageStatus) Enum() *MessageStatus {
+	p := new(MessageStatus)
+	*p = x
+	return p
+}
+
+func (x MessageStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MessageStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_chat_chat_proto_enumTypes[2].Descriptor()
+}
+
+func (MessageStatus) Type() protoreflect.EnumType {
+	return &file_domain_chat_chat_proto_enumTypes[2]
+}
+
+func (x MessageStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MessageStatus.Descriptor instead.
+func (MessageStatus) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_chat_proto_rawDescGZIP(), []int{2}
+}
+
+// 好友关系状态
+type FriendshipStatus int32
+
+const (
+	FriendshipStatus_FRIENDSHIP_STATUS_UNSPECIFIED FriendshipStatus = 0
+	FriendshipStatus_FRIENDSHIP_STATUS_PENDING     FriendshipStatus = 1 // 待接受
+	FriendshipStatus_FRIENDSHIP_STATUS_ACCEPTED    FriendshipStatus = 2 // 已接受
+	FriendshipStatus_FRIENDSHIP_STATUS_BLOCKED     FriendshipStatus = 3 // 已屏蔽
+	FriendshipStatus_FRIENDSHIP_STATUS_REMOVED     FriendshipStatus = 4 // 已删除
+)
+
+// Enum value maps for FriendshipStatus.
+var (
+	FriendshipStatus_name = map[int32]string{
+		0: "FRIENDSHIP_STATUS_UNSPECIFIED",
+		1: "FRIENDSHIP_STATUS_PENDING",
+		2: "FRIENDSHIP_STATUS_ACCEPTED",
+		3: "FRIENDSHIP_STATUS_BLOCKED",
+		4: "FRIENDSHIP_STATUS_REMOVED",
+	}
+	FriendshipStatus_value = map[string]int32{
+		"FRIENDSHIP_STATUS_UNSPECIFIED": 0,
+		"FRIENDSHIP_STATUS_PENDING":     1,
+		"FRIENDSHIP_STATUS_ACCEPTED":    2,
+		"FRIENDSHIP_STATUS_BLOCKED":     3,
+		"FRIENDSHIP_STATUS_REMOVED":     4,
+	}
+)
+
+func (x FriendshipStatus) Enum() *FriendshipStatus {
+	p := new(FriendshipStatus)
+	*p = x
+	return p
+}
+
+func (x FriendshipStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FriendshipStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_chat_chat_proto_enumTypes[3].Descriptor()
+}
+
+func (FriendshipStatus) Type() protoreflect.EnumType {
+	return &file_domain_chat_chat_proto_enumTypes[3]
+}
+
+func (x FriendshipStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FriendshipStatus.Descriptor instead.
+func (FriendshipStatus) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_chat_proto_rawDescGZIP(), []int{3}
+}
+
+// 好友请求状态
+type FriendRequestStatus int32
+
+const (
+	FriendRequestStatus_FRIEND_REQUEST_STATUS_UNSPECIFIED FriendRequestStatus = 0
+	FriendRequestStatus_FRIEND_REQUEST_STATUS_PENDING     FriendRequestStatus = 1 // 待处理
+	FriendRequestStatus_FRIEND_REQUEST_STATUS_ACCEPTED    FriendRequestStatus = 2 // 已接受
+	FriendRequestStatus_FRIEND_REQUEST_STATUS_REJECTED    FriendRequestStatus = 3 // 已拒绝
+	FriendRequestStatus_FRIEND_REQUEST_STATUS_EXPIRED     FriendRequestStatus = 4 // 已过期
+)
+
+// Enum value maps for FriendRequestStatus.
+var (
+	FriendRequestStatus_name = map[int32]string{
+		0: "FRIEND_REQUEST_STATUS_UNSPECIFIED",
+		1: "FRIEND_REQUEST_STATUS_PENDING",
+		2: "FRIEND_REQUEST_STATUS_ACCEPTED",
+		3: "FRIEND_REQUEST_STATUS_REJECTED",
+		4: "FRIEND_REQUEST_STATUS_EXPIRED",
+	}
+	FriendRequestStatus_value = map[string]int32{
+		"FRIEND_REQUEST_STATUS_UNSPECIFIED": 0,
+		"FRIEND_REQUEST_STATUS_PENDING":     1,
+		"FRIEND_REQUEST_STATUS_ACCEPTED":    2,
+		"FRIEND_REQUEST_STATUS_REJECTED":    3,
+		"FRIEND_REQUEST_STATUS_EXPIRED":     4,
+	}
+)
+
+func (x FriendRequestStatus) Enum() *FriendRequestStatus {
+	p := new(FriendRequestStatus)
+	*p = x
+	return p
+}
+
+func (x FriendRequestStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FriendRequestStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_chat_chat_proto_enumTypes[4].Descriptor()
+}
+
+func (FriendRequestStatus) Type() protoreflect.EnumType {
+	return &file_domain_chat_chat_proto_enumTypes[4]
+}
+
+func (x FriendRequestStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FriendRequestStatus.Descriptor instead.
+func (FriendRequestStatus) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_chat_proto_rawDescGZIP(), []int{4}
+}
+
+// 聊天会话
 type ChatSession struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -80,6 +308,10 @@ type ChatSession struct {
 	ParticipantIds     []string               `protobuf:"bytes,3,rep,name=participant_ids,json=participantIds,proto3" json:"participant_ids,omitempty"`
 	LastMessageAt      *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=last_message_at,json=lastMessageAt,proto3" json:"last_message_at,omitempty"`
 	LastMessageSnippet string                 `protobuf:"bytes,5,opt,name=last_message_snippet,json=lastMessageSnippet,proto3" json:"last_message_snippet,omitempty"`
+	Type               SessionType            `protobuf:"varint,6,opt,name=type,proto3,enum=peers_touch.model.chat.v1.SessionType" json:"type,omitempty"`
+	IsPinned           bool                   `protobuf:"varint,7,opt,name=is_pinned,json=isPinned,proto3" json:"is_pinned,omitempty"`
+	UnreadCount        int64                  `protobuf:"varint,8,opt,name=unread_count,json=unreadCount,proto3" json:"unread_count,omitempty"`
+	Metadata           map[string]string      `protobuf:"bytes,9,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -149,32 +381,65 @@ func (x *ChatSession) GetLastMessageSnippet() string {
 	return ""
 }
 
-// Message: 聊天消息
-type Message struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	SenderId      string                 `protobuf:"bytes,3,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
-	Content       string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
-	SentAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+func (x *ChatSession) GetType() SessionType {
+	if x != nil {
+		return x.Type
+	}
+	return SessionType_SESSION_TYPE_UNSPECIFIED
 }
 
-func (x *Message) Reset() {
-	*x = Message{}
+func (x *ChatSession) GetIsPinned() bool {
+	if x != nil {
+		return x.IsPinned
+	}
+	return false
+}
+
+func (x *ChatSession) GetUnreadCount() int64 {
+	if x != nil {
+		return x.UnreadCount
+	}
+	return 0
+}
+
+func (x *ChatSession) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+// 聊天消息
+type ChatMessage struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SessionId        string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SenderId         string                 `protobuf:"bytes,3,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
+	Content          string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
+	SentAt           *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
+	Type             MessageType            `protobuf:"varint,6,opt,name=type,proto3,enum=peers_touch.model.chat.v1.MessageType" json:"type,omitempty"`
+	Status           MessageStatus          `protobuf:"varint,7,opt,name=status,proto3,enum=peers_touch.model.chat.v1.MessageStatus" json:"status,omitempty"`
+	EncryptedContent string                 `protobuf:"bytes,8,opt,name=encrypted_content,json=encryptedContent,proto3" json:"encrypted_content,omitempty"` // 加密内容
+	Attachments      []*MessageAttachment   `protobuf:"bytes,9,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	Metadata         map[string]string      `protobuf:"bytes,10,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ChatMessage) Reset() {
+	*x = ChatMessage{}
 	mi := &file_domain_chat_chat_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Message) String() string {
+func (x *ChatMessage) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Message) ProtoMessage() {}
+func (*ChatMessage) ProtoMessage() {}
 
-func (x *Message) ProtoReflect() protoreflect.Message {
+func (x *ChatMessage) ProtoReflect() protoreflect.Message {
 	mi := &file_domain_chat_chat_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -186,59 +451,189 @@ func (x *Message) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Message.ProtoReflect.Descriptor instead.
-func (*Message) Descriptor() ([]byte, []int) {
+// Deprecated: Use ChatMessage.ProtoReflect.Descriptor instead.
+func (*ChatMessage) Descriptor() ([]byte, []int) {
 	return file_domain_chat_chat_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Message) GetId() string {
+func (x *ChatMessage) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-func (x *Message) GetSessionId() string {
+func (x *ChatMessage) GetSessionId() string {
 	if x != nil {
 		return x.SessionId
 	}
 	return ""
 }
 
-func (x *Message) GetSenderId() string {
+func (x *ChatMessage) GetSenderId() string {
 	if x != nil {
 		return x.SenderId
 	}
 	return ""
 }
 
-func (x *Message) GetContent() string {
+func (x *ChatMessage) GetContent() string {
 	if x != nil {
 		return x.Content
 	}
 	return ""
 }
 
-func (x *Message) GetSentAt() *timestamppb.Timestamp {
+func (x *ChatMessage) GetSentAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.SentAt
 	}
 	return nil
 }
 
-// Friend: 好友关系
+func (x *ChatMessage) GetType() MessageType {
+	if x != nil {
+		return x.Type
+	}
+	return MessageType_MESSAGE_TYPE_UNSPECIFIED
+}
+
+func (x *ChatMessage) GetStatus() MessageStatus {
+	if x != nil {
+		return x.Status
+	}
+	return MessageStatus_MESSAGE_STATUS_UNSPECIFIED
+}
+
+func (x *ChatMessage) GetEncryptedContent() string {
+	if x != nil {
+		return x.EncryptedContent
+	}
+	return ""
+}
+
+func (x *ChatMessage) GetAttachments() []*MessageAttachment {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
+}
+
+func (x *ChatMessage) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+// 消息附件
+type MessageAttachment struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Size          int64                  `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	Type          string                 `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	Url           string                 `protobuf:"bytes,5,opt,name=url,proto3" json:"url,omitempty"`
+	ThumbnailUrl  string                 `protobuf:"bytes,6,opt,name=thumbnail_url,json=thumbnailUrl,proto3" json:"thumbnail_url,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,7,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MessageAttachment) Reset() {
+	*x = MessageAttachment{}
+	mi := &file_domain_chat_chat_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessageAttachment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessageAttachment) ProtoMessage() {}
+
+func (x *MessageAttachment) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_chat_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessageAttachment.ProtoReflect.Descriptor instead.
+func (*MessageAttachment) Descriptor() ([]byte, []int) {
+	return file_domain_chat_chat_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *MessageAttachment) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *MessageAttachment) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *MessageAttachment) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *MessageAttachment) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *MessageAttachment) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *MessageAttachment) GetThumbnailUrl() string {
+	if x != nil {
+		return x.ThumbnailUrl
+	}
+	return ""
+}
+
+func (x *MessageAttachment) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+// 好友关系
 type Friend struct {
-	state               protoimpl.MessageState  `protogen:"open.v1"`
-	User                *model.Actor            `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
-	Status              Friend_FriendshipStatus `protobuf:"varint,2,opt,name=status,proto3,enum=peers_touch.model.core.v1.Friend_FriendshipStatus" json:"status,omitempty"`
-	FriendshipCreatedAt *timestamppb.Timestamp  `protobuf:"bytes,3,opt,name=friendship_created_at,json=friendshipCreatedAt,proto3" json:"friendship_created_at,omitempty"`
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	User                *model.Actor           `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	Status              FriendshipStatus       `protobuf:"varint,2,opt,name=status,proto3,enum=peers_touch.model.chat.v1.FriendshipStatus" json:"status,omitempty"`
+	FriendshipCreatedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=friendship_created_at,json=friendshipCreatedAt,proto3" json:"friendship_created_at,omitempty"`
+	PublicKey           string                 `protobuf:"bytes,4,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // 用于端到端加密
+	Metadata            map[string]string      `protobuf:"bytes,5,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Friend) Reset() {
 	*x = Friend{}
-	mi := &file_domain_chat_chat_proto_msgTypes[2]
+	mi := &file_domain_chat_chat_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -250,7 +645,7 @@ func (x *Friend) String() string {
 func (*Friend) ProtoMessage() {}
 
 func (x *Friend) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_chat_proto_msgTypes[2]
+	mi := &file_domain_chat_chat_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -263,7 +658,7 @@ func (x *Friend) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Friend.ProtoReflect.Descriptor instead.
 func (*Friend) Descriptor() ([]byte, []int) {
-	return file_domain_chat_chat_proto_rawDescGZIP(), []int{2}
+	return file_domain_chat_chat_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Friend) GetUser() *model.Actor {
@@ -273,11 +668,11 @@ func (x *Friend) GetUser() *model.Actor {
 	return nil
 }
 
-func (x *Friend) GetStatus() Friend_FriendshipStatus {
+func (x *Friend) GetStatus() FriendshipStatus {
 	if x != nil {
 		return x.Status
 	}
-	return Friend_PENDING
+	return FriendshipStatus_FRIENDSHIP_STATUS_UNSPECIFIED
 }
 
 func (x *Friend) GetFriendshipCreatedAt() *timestamppb.Timestamp {
@@ -287,32 +682,207 @@ func (x *Friend) GetFriendshipCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Friend) GetPublicKey() string {
+	if x != nil {
+		return x.PublicKey
+	}
+	return ""
+}
+
+func (x *Friend) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+// 好友请求
+type FriendRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SenderId      string                 `protobuf:"bytes,2,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
+	ReceiverId    string                 `protobuf:"bytes,3,opt,name=receiver_id,json=receiverId,proto3" json:"receiver_id,omitempty"`
+	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	Status        FriendRequestStatus    `protobuf:"varint,5,opt,name=status,proto3,enum=peers_touch.model.chat.v1.FriendRequestStatus" json:"status,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	RespondedAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=responded_at,json=respondedAt,proto3" json:"responded_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FriendRequest) Reset() {
+	*x = FriendRequest{}
+	mi := &file_domain_chat_chat_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FriendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FriendRequest) ProtoMessage() {}
+
+func (x *FriendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_chat_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FriendRequest.ProtoReflect.Descriptor instead.
+func (*FriendRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_chat_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *FriendRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *FriendRequest) GetSenderId() string {
+	if x != nil {
+		return x.SenderId
+	}
+	return ""
+}
+
+func (x *FriendRequest) GetReceiverId() string {
+	if x != nil {
+		return x.ReceiverId
+	}
+	return ""
+}
+
+func (x *FriendRequest) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *FriendRequest) GetStatus() FriendRequestStatus {
+	if x != nil {
+		return x.Status
+	}
+	return FriendRequestStatus_FRIEND_REQUEST_STATUS_UNSPECIFIED
+}
+
+func (x *FriendRequest) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *FriendRequest) GetRespondedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RespondedAt
+	}
+	return nil
+}
+
 var File_domain_chat_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x16domain/chat/chat.proto\x12\x19peers_touch.model.core.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16domain/core/core.proto\"\xd2\x01\n" +
+	"\x16domain/chat/chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"\xdd\x03\n" +
 	"\vChatSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05topic\x18\x02 \x01(\tR\x05topic\x12'\n" +
 	"\x0fparticipant_ids\x18\x03 \x03(\tR\x0eparticipantIds\x12B\n" +
 	"\x0flast_message_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\rlastMessageAt\x120\n" +
-	"\x14last_message_snippet\x18\x05 \x01(\tR\x12lastMessageSnippet\"\xa4\x01\n" +
-	"\aMessage\x12\x0e\n" +
+	"\x14last_message_snippet\x18\x05 \x01(\tR\x12lastMessageSnippet\x12:\n" +
+	"\x04type\x18\x06 \x01(\x0e2&.peers_touch.model.chat.v1.SessionTypeR\x04type\x12\x1b\n" +
+	"\tis_pinned\x18\a \x01(\bR\bisPinned\x12!\n" +
+	"\funread_count\x18\b \x01(\x03R\vunreadCount\x12P\n" +
+	"\bmetadata\x18\t \x03(\v24.peers_touch.model.chat.v1.ChatSession.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb2\x04\n" +
+	"\vChatMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x1b\n" +
 	"\tsender_id\x18\x03 \x01(\tR\bsenderId\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x123\n" +
-	"\asent_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\"\x96\x02\n" +
-	"\x06Friend\x124\n" +
-	"\x04user\x18\x01 \x01(\v2 .peers_touch.model.core.v1.ActorR\x04user\x12J\n" +
-	"\x06status\x18\x02 \x01(\x0e22.peers_touch.model.core.v1.Friend.FriendshipStatusR\x06status\x12N\n" +
-	"\x15friendship_created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x13friendshipCreatedAt\":\n" +
-	"\x10FriendshipStatus\x12\v\n" +
-	"\aPENDING\x10\x00\x12\f\n" +
-	"\bACCEPTED\x10\x01\x12\v\n" +
-	"\aBLOCKED\x10\x02BGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
+	"\asent_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12:\n" +
+	"\x04type\x18\x06 \x01(\x0e2&.peers_touch.model.chat.v1.MessageTypeR\x04type\x12@\n" +
+	"\x06status\x18\a \x01(\x0e2(.peers_touch.model.chat.v1.MessageStatusR\x06status\x12+\n" +
+	"\x11encrypted_content\x18\b \x01(\tR\x10encryptedContent\x12N\n" +
+	"\vattachments\x18\t \x03(\v2,.peers_touch.model.chat.v1.MessageAttachmentR\vattachments\x12P\n" +
+	"\bmetadata\x18\n" +
+	" \x03(\v24.peers_touch.model.chat.v1.ChatMessage.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xab\x02\n" +
+	"\x11MessageAttachment\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x03R\x04size\x12\x12\n" +
+	"\x04type\x18\x04 \x01(\tR\x04type\x12\x10\n" +
+	"\x03url\x18\x05 \x01(\tR\x03url\x12#\n" +
+	"\rthumbnail_url\x18\x06 \x01(\tR\fthumbnailUrl\x12V\n" +
+	"\bmetadata\x18\a \x03(\v2:.peers_touch.model.chat.v1.MessageAttachment.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xfd\x02\n" +
+	"\x06Friend\x125\n" +
+	"\x04user\x18\x01 \x01(\v2!.peers_touch.model.actor.v1.ActorR\x04user\x12C\n" +
+	"\x06status\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.FriendshipStatusR\x06status\x12N\n" +
+	"\x15friendship_created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x13friendshipCreatedAt\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x04 \x01(\tR\tpublicKey\x12K\n" +
+	"\bmetadata\x18\x05 \x03(\v2/.peers_touch.model.chat.v1.Friend.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb9\x02\n" +
+	"\rFriendRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tsender_id\x18\x02 \x01(\tR\bsenderId\x12\x1f\n" +
+	"\vreceiver_id\x18\x03 \x01(\tR\n" +
+	"receiverId\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\x12F\n" +
+	"\x06status\x18\x05 \x01(\x0e2..peers_touch.model.chat.v1.FriendRequestStatusR\x06status\x129\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12=\n" +
+	"\fresponded_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vrespondedAt*\\\n" +
+	"\vSessionType\x12\x1c\n" +
+	"\x18SESSION_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13SESSION_TYPE_DIRECT\x10\x01\x12\x16\n" +
+	"\x12SESSION_TYPE_GROUP\x10\x02*\xa5\x01\n" +
+	"\vMessageType\x12\x1c\n" +
+	"\x18MESSAGE_TYPE_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11MESSAGE_TYPE_TEXT\x10\x01\x12\x16\n" +
+	"\x12MESSAGE_TYPE_IMAGE\x10\x02\x12\x15\n" +
+	"\x11MESSAGE_TYPE_FILE\x10\x03\x12\x19\n" +
+	"\x15MESSAGE_TYPE_LOCATION\x10\x04\x12\x17\n" +
+	"\x13MESSAGE_TYPE_SYSTEM\x10\x05*\x9d\x01\n" +
+	"\rMessageStatus\x12\x1e\n" +
+	"\x1aMESSAGE_STATUS_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16MESSAGE_STATUS_SENDING\x10\x01\x12\x17\n" +
+	"\x13MESSAGE_STATUS_SENT\x10\x02\x12\x1c\n" +
+	"\x18MESSAGE_STATUS_DELIVERED\x10\x03\x12\x19\n" +
+	"\x15MESSAGE_STATUS_FAILED\x10\x04*\xb2\x01\n" +
+	"\x10FriendshipStatus\x12!\n" +
+	"\x1dFRIENDSHIP_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19FRIENDSHIP_STATUS_PENDING\x10\x01\x12\x1e\n" +
+	"\x1aFRIENDSHIP_STATUS_ACCEPTED\x10\x02\x12\x1d\n" +
+	"\x19FRIENDSHIP_STATUS_BLOCKED\x10\x03\x12\x1d\n" +
+	"\x19FRIENDSHIP_STATUS_REMOVED\x10\x04*\xca\x01\n" +
+	"\x13FriendRequestStatus\x12%\n" +
+	"!FRIEND_REQUEST_STATUS_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dFRIEND_REQUEST_STATUS_PENDING\x10\x01\x12\"\n" +
+	"\x1eFRIEND_REQUEST_STATUS_ACCEPTED\x10\x02\x12\"\n" +
+	"\x1eFRIEND_REQUEST_STATUS_REJECTED\x10\x03\x12!\n" +
+	"\x1dFRIEND_REQUEST_STATUS_EXPIRED\x10\x04BGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
 
 var (
 	file_domain_chat_chat_proto_rawDescOnce sync.Once
@@ -326,27 +896,48 @@ func file_domain_chat_chat_proto_rawDescGZIP() []byte {
 	return file_domain_chat_chat_proto_rawDescData
 }
 
-var file_domain_chat_chat_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_chat_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_domain_chat_chat_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_domain_chat_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_domain_chat_chat_proto_goTypes = []any{
-	(Friend_FriendshipStatus)(0),  // 0: peers_touch.model.core.v1.Friend.FriendshipStatus
-	(*ChatSession)(nil),           // 1: peers_touch.model.core.v1.ChatSession
-	(*Message)(nil),               // 2: peers_touch.model.core.v1.Message
-	(*Friend)(nil),                // 3: peers_touch.model.core.v1.Friend
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
-	(*model.Actor)(nil),           // 5: peers_touch.model.core.v1.Actor
+	(SessionType)(0),              // 0: peers_touch.model.chat.v1.SessionType
+	(MessageType)(0),              // 1: peers_touch.model.chat.v1.MessageType
+	(MessageStatus)(0),            // 2: peers_touch.model.chat.v1.MessageStatus
+	(FriendshipStatus)(0),         // 3: peers_touch.model.chat.v1.FriendshipStatus
+	(FriendRequestStatus)(0),      // 4: peers_touch.model.chat.v1.FriendRequestStatus
+	(*ChatSession)(nil),           // 5: peers_touch.model.chat.v1.ChatSession
+	(*ChatMessage)(nil),           // 6: peers_touch.model.chat.v1.ChatMessage
+	(*MessageAttachment)(nil),     // 7: peers_touch.model.chat.v1.MessageAttachment
+	(*Friend)(nil),                // 8: peers_touch.model.chat.v1.Friend
+	(*FriendRequest)(nil),         // 9: peers_touch.model.chat.v1.FriendRequest
+	nil,                           // 10: peers_touch.model.chat.v1.ChatSession.MetadataEntry
+	nil,                           // 11: peers_touch.model.chat.v1.ChatMessage.MetadataEntry
+	nil,                           // 12: peers_touch.model.chat.v1.MessageAttachment.MetadataEntry
+	nil,                           // 13: peers_touch.model.chat.v1.Friend.MetadataEntry
+	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
+	(*model.Actor)(nil),           // 15: peers_touch.model.actor.v1.Actor
 }
 var file_domain_chat_chat_proto_depIdxs = []int32{
-	4, // 0: peers_touch.model.core.v1.ChatSession.last_message_at:type_name -> google.protobuf.Timestamp
-	4, // 1: peers_touch.model.core.v1.Message.sent_at:type_name -> google.protobuf.Timestamp
-	5, // 2: peers_touch.model.core.v1.Friend.user:type_name -> peers_touch.model.core.v1.Actor
-	0, // 3: peers_touch.model.core.v1.Friend.status:type_name -> peers_touch.model.core.v1.Friend.FriendshipStatus
-	4, // 4: peers_touch.model.core.v1.Friend.friendship_created_at:type_name -> google.protobuf.Timestamp
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	14, // 0: peers_touch.model.chat.v1.ChatSession.last_message_at:type_name -> google.protobuf.Timestamp
+	0,  // 1: peers_touch.model.chat.v1.ChatSession.type:type_name -> peers_touch.model.chat.v1.SessionType
+	10, // 2: peers_touch.model.chat.v1.ChatSession.metadata:type_name -> peers_touch.model.chat.v1.ChatSession.MetadataEntry
+	14, // 3: peers_touch.model.chat.v1.ChatMessage.sent_at:type_name -> google.protobuf.Timestamp
+	1,  // 4: peers_touch.model.chat.v1.ChatMessage.type:type_name -> peers_touch.model.chat.v1.MessageType
+	2,  // 5: peers_touch.model.chat.v1.ChatMessage.status:type_name -> peers_touch.model.chat.v1.MessageStatus
+	7,  // 6: peers_touch.model.chat.v1.ChatMessage.attachments:type_name -> peers_touch.model.chat.v1.MessageAttachment
+	11, // 7: peers_touch.model.chat.v1.ChatMessage.metadata:type_name -> peers_touch.model.chat.v1.ChatMessage.MetadataEntry
+	12, // 8: peers_touch.model.chat.v1.MessageAttachment.metadata:type_name -> peers_touch.model.chat.v1.MessageAttachment.MetadataEntry
+	15, // 9: peers_touch.model.chat.v1.Friend.user:type_name -> peers_touch.model.actor.v1.Actor
+	3,  // 10: peers_touch.model.chat.v1.Friend.status:type_name -> peers_touch.model.chat.v1.FriendshipStatus
+	14, // 11: peers_touch.model.chat.v1.Friend.friendship_created_at:type_name -> google.protobuf.Timestamp
+	13, // 12: peers_touch.model.chat.v1.Friend.metadata:type_name -> peers_touch.model.chat.v1.Friend.MetadataEntry
+	4,  // 13: peers_touch.model.chat.v1.FriendRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
+	14, // 14: peers_touch.model.chat.v1.FriendRequest.created_at:type_name -> google.protobuf.Timestamp
+	14, // 15: peers_touch.model.chat.v1.FriendRequest.responded_at:type_name -> google.protobuf.Timestamp
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_chat_proto_init() }
@@ -359,8 +950,8 @@ func file_domain_chat_chat_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_chat_proto_rawDesc), len(file_domain_chat_chat_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   3,
+			NumEnums:      5,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

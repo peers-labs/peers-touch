@@ -25,7 +25,8 @@ class SettingPage extends StatelessWidget {
     final tokens = theme.extension<LobeTokens>()!;
 
     // 统一使用三段式骨架：左（设置导航）+ 中（设置内容）；右侧由 ShellPage 控制
-    return ShellThreePane(
+    final shell = Get.find<ShellController>();
+    return Obx(() => ShellThreePane(
       leftBuilder: (context) => _buildSettingNavigation(context, theme),
       centerBuilder: (context) => _buildSettingContent(context, theme),
       // 左侧宽度与项目常量保持一致；滚动由内部 ListView 管理，避免嵌套滚动冲突
@@ -41,7 +42,9 @@ class SettingPage extends StatelessWidget {
         scrollPolicy: ScrollPolicy.none,
         horizontalPolicy: ScrollPolicy.none,
       ),
-    );
+      leftWidth: shell.leftPaneWidth?.value ?? UIKit.secondaryNavWidth,
+      onLeftWidthChange: (w) => shell.leftPaneWidth?.value = w,
+    ));
   }
 
   Widget _buildSettingNavigation(BuildContext context, ThemeData theme) {

@@ -1,6 +1,8 @@
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 
@@ -18,6 +20,8 @@ class ChatController extends GetxController {
   final iceDetails = <String, dynamic>{}.obs;
   final autoAnswering = false.obs;
   final connectedPeers = <String>[].obs;
+  final actors = <Map<String, dynamic>>[].obs;
+  final loadingActors = false.obs;
   
   RTCClient? _client;
   RTCSignalingService? _signaling;
@@ -190,6 +194,24 @@ class ChatController extends GetxController {
     } finally {
       checkingConnection.value = false;
     }
+  }
+
+  Future<void> loadActors() async {
+    final base = signalingUrl.value.trim();
+    if (base.isEmpty) return;
+    loadingActors.value = true;
+    try {
+      final uri = Uri.parse(base.endsWith('/') ? '${base}actor/list' : '$base/actor/list');
+      final req = await HttpClient().getUrl(uri);
+      final resp = await req.close();
+      if (resp.statusCode == 200) {
+        final text = await resp.transform(const Utf8Decoder()).join();
+        final obj = json.decode(text);
+        final data = obj is Map && obj['data'] is List ? obj['data'] as List : [];
+        actors.assignAll(data.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList());
+      }
+    } catch (_) {}
+    loadingActors.value = false;
   }
 
   Future<void> fetchConnections() async {

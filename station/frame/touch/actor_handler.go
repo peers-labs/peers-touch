@@ -2,6 +2,7 @@ package touch
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // ActorHandlerInfo represents a single handler's information
@@ -119,8 +122,22 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 	// Set session cookie
 	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
 
-	// Return success response
-	SuccessResponse(ctx, "Login successful", result)
+	// Build standardized proto models
+	tokens := &modelpb.AuthTokens{
+		Token:        result.AccessToken,
+		AccessToken:  result.AccessToken,
+		RefreshToken: result.RefreshToken,
+		TokenType:    result.TokenType,
+		ExpiresAt:    timestamppb.New(result.ExpiresAt),
+	}
+	user := &modelpb.Actor{
+		Id:          toString(result.User["id"]),
+		Username:    toString(result.User["name"]),
+		DisplayName: toString(result.User["name"]),
+		Email:       toString(result.User["email"]),
+	}
+	data := &modelpb.LoginData{Tokens: tokens, SessionId: result.SessionID, User: user}
+	SuccessResponse(ctx, "Login successful", data)
 }
 
 func GetActorProfile(c context.Context, ctx *app.RequestContext) {
@@ -160,5 +177,22 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 		FailedResponse(ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "Actor list", actors)
+	// Map to proto ActorList
+	items := make([]*modelpb.Actor, 0, len(actors))
+	for _, a := range actors {
+		items = append(items, &modelpb.Actor{Id: a.ID, Username: a.Username, DisplayName: a.DisplayName, Email: a.Username, Inbox: a.Inbox, Outbox: a.Outbox, Endpoints: a.Endpoints})
+	}
+	SuccessResponse(ctx, "Actor list", &modelpb.ActorList{Items: items, Total: int64(len(items))})
+}
+
+func toString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return t
+	default:
+		return fmt.Sprintf("%v", t)
+	}
 }

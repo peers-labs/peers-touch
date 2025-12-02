@@ -5,6 +5,7 @@ import (
 	"time"
 
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/multiformats/go-multiaddr"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -60,6 +61,9 @@ type options struct {
 	// mdnsEnable is used to enable the mdns discovery for the registry plugin.
 	// default is false.
 	mdnsEnable bool
+
+	// libp2pHost must be set; registry will not create host itself
+	libp2pHost host.Host
 }
 
 // WithBootstrapNodes set the private bootstrap nodes for the registry plugin.
@@ -121,5 +125,12 @@ func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
 func WithLibp2pIdentityKeyFile(keyFile string) option.Option {
 	return wrapOptions(func(o *options) {
 		o.libp2pIdentityKeyFile = keyFile
+	})
+}
+
+// WithHost injects an external libp2p host into the registry
+func WithHost(h host.Host) option.Option {
+	return wrapOptions(func(o *options) {
+		o.libp2pHost = h
 	})
 }

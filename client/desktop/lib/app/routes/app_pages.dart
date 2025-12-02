@@ -7,9 +7,22 @@ import 'package:peers_touch_desktop/features/profile/view/profile_page.dart';
 import 'package:peers_touch_desktop/features/shell/shell_binding.dart';
 import 'package:peers_touch_desktop/features/shell/view/shell_page.dart';
 import 'package:peers_touch_desktop/app/routes/app_routes.dart';
+import 'package:peers_touch_desktop/features/auth/auth_binding.dart';
+import 'package:peers_touch_desktop/features/auth/view/login_page.dart';
+import 'package:peers_touch_desktop/features/auth/view/signup_page.dart';
 
 class AppPages {
   static final pages = <GetPage<dynamic>>[
+    GetPage(
+      name: AppRoutes.login,
+      page: () => const LoginPage(),
+      binding: AuthBinding(),
+    ),
+    GetPage(
+      name: AppRoutes.signup,
+      page: () => const SignupPage(),
+      binding: AuthBinding(),
+    ),
     GetPage(
       name: AppRoutes.shell,
       page: () => const ShellPage(),
@@ -25,5 +38,6 @@ class AppPages {
       page: () => const ProfilePage(),
       binding: ProfileBinding(),
     ),
+    
   ];
 }

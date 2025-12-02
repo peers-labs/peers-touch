@@ -50,6 +50,8 @@ dependencies:
   # Local packages
   peers_touch_base:
     path: ../common/peers_touch_base
+  peers_touch_ui:
+    path: ../common/peers_touch_ui
 
 dev_dependencies:
   flutter_test:

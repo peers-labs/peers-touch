@@ -9,7 +9,7 @@ package model
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	_ "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -22,91 +22,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Actor: 核心用户/实体
-type Actor struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	AvatarUrl     string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Actor) Reset() {
-	*x = Actor{}
-	mi := &file_domain_core_core_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Actor) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Actor) ProtoMessage() {}
-
-func (x *Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_core_core_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Actor.ProtoReflect.Descriptor instead.
-func (*Actor) Descriptor() ([]byte, []int) {
-	return file_domain_core_core_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *Actor) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *Actor) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *Actor) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
-	}
-	return ""
-}
-
-func (x *Actor) GetAvatarUrl() string {
-	if x != nil {
-		return x.AvatarUrl
-	}
-	return ""
-}
-
-func (x *Actor) GetCreatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return nil
-}
-
-func (x *Actor) GetUpdatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.UpdatedAt
-	}
-	return nil
-}
-
 // Peer: 对等节点
 type Peer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -118,7 +33,7 @@ type Peer struct {
 
 func (x *Peer) Reset() {
 	*x = Peer{}
-	mi := &file_domain_core_core_proto_msgTypes[1]
+	mi := &file_domain_core_core_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -130,7 +45,7 @@ func (x *Peer) String() string {
 func (*Peer) ProtoMessage() {}
 
 func (x *Peer) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_core_core_proto_msgTypes[1]
+	mi := &file_domain_core_core_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -143,7 +58,7 @@ func (x *Peer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Peer.ProtoReflect.Descriptor instead.
 func (*Peer) Descriptor() ([]byte, []int) {
-	return file_domain_core_core_proto_rawDescGZIP(), []int{1}
+	return file_domain_core_core_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Peer) GetPeerId() string {
@@ -172,7 +87,7 @@ type Profile struct {
 
 func (x *Profile) Reset() {
 	*x = Profile{}
-	mi := &file_domain_core_core_proto_msgTypes[2]
+	mi := &file_domain_core_core_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -184,7 +99,7 @@ func (x *Profile) String() string {
 func (*Profile) ProtoMessage() {}
 
 func (x *Profile) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_core_core_proto_msgTypes[2]
+	mi := &file_domain_core_core_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -197,7 +112,7 @@ func (x *Profile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Profile.ProtoReflect.Descriptor instead.
 func (*Profile) Descriptor() ([]byte, []int) {
-	return file_domain_core_core_proto_rawDescGZIP(), []int{2}
+	return file_domain_core_core_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Profile) GetActorId() string {
@@ -225,17 +140,7 @@ var File_domain_core_core_proto protoreflect.FileDescriptor
 
 const file_domain_core_core_proto_rawDesc = "" +
 	"\n" +
-	"\x16domain/core/core.proto\x12\x19peers_touch.model.core.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe3\x01\n" +
-	"\x05Actor\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1d\n" +
-	"\n" +
-	"avatar_url\x18\x04 \x01(\tR\tavatarUrl\x129\n" +
-	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
-	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"?\n" +
+	"\x16domain/core/core.proto\x12\x19peers_touch.model.core.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"?\n" +
 	"\x04Peer\x12\x17\n" +
 	"\apeer_id\x18\x01 \x01(\tR\x06peerId\x12\x1e\n" +
 	"\n" +
@@ -261,23 +166,19 @@ func file_domain_core_core_proto_rawDescGZIP() []byte {
 	return file_domain_core_core_proto_rawDescData
 }
 
-var file_domain_core_core_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_domain_core_core_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_domain_core_core_proto_goTypes = []any{
-	(*Actor)(nil),                 // 0: peers_touch.model.core.v1.Actor
-	(*Peer)(nil),                  // 1: peers_touch.model.core.v1.Peer
-	(*Profile)(nil),               // 2: peers_touch.model.core.v1.Profile
-	nil,                           // 3: peers_touch.model.core.v1.Profile.FieldsEntry
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(*Peer)(nil),    // 0: peers_touch.model.core.v1.Peer
+	(*Profile)(nil), // 1: peers_touch.model.core.v1.Profile
+	nil,             // 2: peers_touch.model.core.v1.Profile.FieldsEntry
 }
 var file_domain_core_core_proto_depIdxs = []int32{
-	4, // 0: peers_touch.model.core.v1.Actor.created_at:type_name -> google.protobuf.Timestamp
-	4, // 1: peers_touch.model.core.v1.Actor.updated_at:type_name -> google.protobuf.Timestamp
-	3, // 2: peers_touch.model.core.v1.Profile.fields:type_name -> peers_touch.model.core.v1.Profile.FieldsEntry
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	2, // 0: peers_touch.model.core.v1.Profile.fields:type_name -> peers_touch.model.core.v1.Profile.FieldsEntry
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_domain_core_core_proto_init() }
@@ -285,13 +186,14 @@ func file_domain_core_core_proto_init() {
 	if File_domain_core_core_proto != nil {
 		return
 	}
+	file_domain_actor_actor_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_core_core_proto_rawDesc), len(file_domain_core_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
