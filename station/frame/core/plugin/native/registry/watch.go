@@ -46,7 +46,12 @@ func (r *nativeRegistry) peerDiscoveryWatcher(ctx context.Context, callback regi
 						Namespaces: []string{"dht"},
 						Metadata:   peer.Metadata,
 					}
-					callback(&registry.Result{Action: "create", Registration: registration})
+					callback(registry.WatchEvent{
+						Type:         registry.WatchEventAdd,
+						Registration: registration,
+						Timestamp:    time.Now(),
+						Namespace:    "dht",
+					})
 				}
 			}
 
@@ -60,7 +65,12 @@ func (r *nativeRegistry) peerDiscoveryWatcher(ctx context.Context, callback regi
 				}
 				if !found {
 					delete(knownPeers, knownPeer)
-					callback(&registry.Result{Action: "delete", Registration: &registry.Registration{ID: knownPeer, Name: knownPeer, Type: "peer"}})
+					callback(registry.WatchEvent{
+						Type:         registry.WatchEventDelete,
+						Registration: &registry.Registration{ID: knownPeer, Name: knownPeer, Type: "peer"},
+						Timestamp:    time.Now(),
+						Namespace:    "dht",
+					})
 				}
 			}
 		}
@@ -93,7 +103,12 @@ func (r *nativeRegistry) connectivityWatcher(ctx context.Context, callback regis
 					for i, addr := range addrs {
 						addrStrings[i] = addr.String()
 					}
-					callback(&registry.Result{Action: "connect", Registration: &registry.Registration{ID: peerStr, Name: peerStr, Type: "peer", Namespaces: []string{"network"}, Addresses: addrStrings}})
+					callback(registry.WatchEvent{
+						Type:         registry.WatchEventUpdate,
+						Registration: &registry.Registration{ID: peerStr, Name: peerStr, Type: "peer", Namespaces: []string{"network"}, Addresses: addrStrings},
+						Timestamp:    time.Now(),
+						Namespace:    "network",
+					})
 				}
 			}
 
@@ -107,7 +122,12 @@ func (r *nativeRegistry) connectivityWatcher(ctx context.Context, callback regis
 				}
 				if !found {
 					delete(connectedPeers, connectedPeer)
-					callback(&registry.Result{Action: "disconnect", Registration: &registry.Registration{ID: connectedPeer, Name: connectedPeer, Type: "peer"}})
+					callback(registry.WatchEvent{
+						Type:         registry.WatchEventUpdate,
+						Registration: &registry.Registration{ID: connectedPeer, Name: connectedPeer, Type: "peer"},
+						Timestamp:    time.Now(),
+						Namespace:    "network",
+					})
 				}
 			}
 		}

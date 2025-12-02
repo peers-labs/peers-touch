@@ -90,7 +90,7 @@ func (j *JWTProvider) Authenticate(ctx context.Context, credentials *Credentials
 	}
 
 	// Verify password
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(credentials.Password))
+	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(credentials.Password))
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
