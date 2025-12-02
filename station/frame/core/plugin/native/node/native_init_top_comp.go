@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/peers-labs/peers-touch/station/frame/core/client"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
+	registryNative "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
@@ -127,8 +129,17 @@ func (s *native) initComponents(ctx context.Context) error {
 		s.opts.Registry = plugin.RegistryPlugins[registryName].New(registry.WithStore(s.opts.Store))
 	}
 
-	// todo, set private key in advance.
-	if err := s.opts.Registry.Init(ctx, append(s.opts.RegistryOptions, registry.WithPrivateKey(s.opts.PrivateKey))...); err != nil {
+	var sharedHost host.Host
+	if nt, ok := s.opts.Transport.(interface{ Host() host.Host }); ok {
+		sharedHost = nt.Host()
+	}
+	if sharedHost == nil {
+		return fmt.Errorf("init registry err: missing libp2p host from transport")
+	}
+	if len(s.opts.PrivateKey) == 0 {
+		return fmt.Errorf("init registry err: missing private key")
+	}
+	if err := s.opts.Registry.Init(ctx, append(s.opts.RegistryOptions, registryNative.WithHost(sharedHost), registry.WithPrivateKey(s.opts.PrivateKey))...); err != nil {
 		return fmt.Errorf("init registry err: %v", err)
 	}
 
