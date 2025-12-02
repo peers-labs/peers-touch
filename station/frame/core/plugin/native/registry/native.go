@@ -2,13 +2,6 @@ package native
 
 import (
 	"context"
-	"crypto"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -17,14 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/ipfs/boxo/ipns"
 	"github.com/ipfs/go-cid"
 	log "github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	record "github.com/libp2p/go-libp2p-record"
-	"github.com/libp2p/go-libp2p/core/crypto/pb"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -130,39 +120,18 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return errors.New("auto migrate table error: " + err.Error())
 	}
 
-	var hostOptions []libp2p.Option
-
-	// Load or generate private key
-	identityKey, err := loadOrGenerateKey(r.extOpts.libp2pIdentityKeyFile)
-	if err != nil {
-		return fmt.Errorf("failed to load private key[%s]: %v", r.options.PrivateKey, err)
+	// Use injected libp2p host; registry does not create host
+	if r.extOpts.libp2pHost == nil {
+		return fmt.Errorf("libp2p host must be injected via WithHost; none provided")
 	}
-
-	hostOptions = append(hostOptions,
-		/*		libp2p.Transport(webrtc.New),
-				libp2p.Transport(quic.NewTransport),*/
-		libp2p.Identity(identityKey),
-		libp2p.EnableNATService(),
-		libp2p.EnableHolePunching(),
-		libp2p.EnableRelay(),
-	)
-
-	// Initialize libp2p host
-	h, err := libp2p.New(
-		hostOptions...,
-	)
-
-	if err != nil {
-		return fmt.Errorf("failed to create libp2p host: %v", err)
-	}
-	r.host = h
+	r.host = r.extOpts.libp2pHost
 	notifee := &libp2pHostNotifee{
 		nativeRegistry: r,
 	}
 	r.host.Network().Notify(notifee)
 
-	// Create DHT instance in server mode
-	r.dht, err = dht.New(ctx, h,
+	// Create DHT instance in server mode using injected host
+	r.dht, err = dht.New(ctx, r.host,
 		dht.Mode(r.extOpts.runMode),
 		// Isolate network namespace via /peers-touch
 		dht.ProtocolPrefix(networkId),
@@ -172,7 +141,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 				// but we need to set them here to learn how they work,
 				// so we can customize them according to our needs in the future.
 				"pk":                                  record.PublicKeyValidator{},
-				"ipns":                                ipns.Validator{KeyBook: h.Peerstore()},
+				"ipns":                                ipns.Validator{KeyBook: r.host.Peerstore()},
 				registry.DefaultPeersNetworkNamespace: &NamespaceValidator{},
 			},
 		),
@@ -539,11 +508,6 @@ func (r *nativeRegistry) Query(ctx context.Context, opts ...registry.QueryOption
 	return r.listPeersToRegistrations(ctx, queryOpts)
 }
 
-func (r *nativeRegistry) Watch(ctx context.Context, callback registry.WatchCallback, opts ...registry.WatchOption) error {
-	// Implement DHT-based watch functionality using callback pattern
-	return errors.New("[Watch] not implemented")
-}
-
 func (r *nativeRegistry) listPeersToRegistrations(ctx context.Context, queryOpts *registry.QueryOptions) ([]*registry.Registration, error) {
 	peers, err := r.listPeers(ctx, queryOpts)
 	if err != nil {
@@ -893,115 +857,10 @@ func (r *nativeRegistry) refreshTurn(ctx context.Context) {
 // updateBootstrapStatus function removed - no longer needed since bootstrap connections
 // are handled automatically by BootstrapPeersFunc
 
-func (r *nativeRegistry) signPayload(privateKey string, data []byte) ([]byte, error) {
-	block, _ := pem.Decode([]byte(privateKey))
-	if block == nil {
-		return nil, errors.New("[signPayload] failed to parse PEM block")
-	}
-
-	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("[signPayload] failed to parse private key: %w", err)
-	}
-
-	hashed := sha256.Sum256(data)
-	return rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, hashed[:])
-}
-
 // bootstrapSuccessful function removed - no longer needed since bootstrap connections
 // are handled automatically by BootstrapPeersFunc
 
 // addListenAddr adds a new listen address to the running libp2p host.
-func (r *nativeRegistry) addListenAddr(ctx context.Context, addr string, protocol string) error {
-	var ma string
-	h, port, err := net.SplitHostPort(addr)
-	if err == nil {
-		ip := net.ParseIP(h)
-		if ip.To4() != nil {
-			ma = fmt.Sprintf("/ip4/%s/udp/%s/%s", h, port, protocol)
-		} else {
-			ma = fmt.Sprintf("/ip6/%s/udp/%s/%s", h, port, protocol)
-		}
-	}
-
-	listenAddr, err := multiaddr.NewMultiaddr(ma)
-	if err != nil {
-		return fmt.Errorf("[addListenAddr] failed to create multiaddr from string '%s': %w", ma, err)
-	}
-
-	if err := r.host.Network().Listen(listenAddr); err != nil {
-		return fmt.Errorf("[addListenAddr] failed to listen on new address[%s]: %w", listenAddr, err)
-	}
-
-	logger.Infof(ctx, "Host started listening on new address: %s", listenAddr)
-	return nil
-}
-
-func (r *nativeRegistry) unmarshalPeer(data []byte) (peerReg *Peer, err error) {
-	pk := &pb.PublicKey{}
-	if err = proto.Unmarshal(data, pk); err != nil {
-		return nil, fmt.Errorf("[unmarshalPeer] failed to unmarshal public key: %w", err)
-	}
-
-	peerReg = &Peer{}
-	err = json.Unmarshal(pk.Data, peerReg)
-	if err != nil {
-		return nil, fmt.Errorf("[unmarshalPeer] failed to unmarshal peerReg: %w", err)
-	}
-
-	return peerReg, nil
-}
-
-func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *Peer) ([]byte, error) {
-	// Add security metadata
-	peerReg.Version = "1.0"
-
-	// Sign the payload
-	dataToSign, err := json.Marshal(struct {
-		Name      string
-		Version   string
-		Timestamp time.Time
-	}{
-		Name:      peerReg.Name,
-		Version:   peerReg.Version,
-		Timestamp: time.Now(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("[marshal] marshal data for signing: %w", err)
-	}
-
-	// Sign the payload using your node's private key
-	signData, err := r.signPayload(r.options.PrivateKey, dataToSign) // Implement signing logic
-	if err != nil {
-		return nil, fmt.Errorf("[marshal] native Registry failed to sign payload: %w", err)
-	}
-	peerReg.Metadata = map[string]interface{}{
-		"signature": signData,
-		"timestamp": time.Now(),
-	}
-
-	// Serialize peerReg data
-	data, err := json.Marshal(peerReg)
-	if err != nil {
-		return nil, fmt.Errorf("[marshal] marshal peerReg: %w", err)
-	}
-
-	// Store in DHT with 5min TTL
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	pk := &pb.PublicKey{
-		Type: pb.KeyType_RSA.Enum(),
-		Data: data,
-	}
-
-	dataPk, err := proto.Marshal(pk)
-	if err != nil {
-		return nil, fmt.Errorf("[marshal] marshal pk: %w", err)
-	}
-
-	return dataPk, nil
-}
 
 func (r *nativeRegistry) isBootstrapNode(id peer.ID) bool {
 	// Check both custom and default bootstrap nodes

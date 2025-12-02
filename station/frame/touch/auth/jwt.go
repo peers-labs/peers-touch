@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -67,14 +68,25 @@ func (j *JWTProvider) Authenticate(ctx context.Context, credentials *Credentials
 		return nil, ErrInvalidCredentials
 	}
 
-	// Find user by email
+	// Find user by identifier: email or username/peers id
 	var user db.Actor
-	err := j.db.WithContext(ctx).Where("email = ?", credentials.Email).First(&user).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, ErrUserNotFound
+	q := j.db.WithContext(ctx)
+	if strings.Contains(credentials.Email, "@") {
+		err := q.Where("email = ?", credentials.Email).First(&user).Error
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, ErrUserNotFound
+			}
+			return nil, fmt.Errorf("database error: %w", err)
 		}
-		return nil, fmt.Errorf("database error: %w", err)
+	} else {
+		err := q.Where("name = ?", credentials.Email).Or("peers_actor_id = ?", credentials.Email).First(&user).Error
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, ErrUserNotFound
+			}
+			return nil, fmt.Errorf("database error: %w", err)
+		}
 	}
 
 	// Verify password

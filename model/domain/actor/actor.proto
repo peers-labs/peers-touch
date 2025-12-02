@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package peers_touch.model.actor.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+message Actor {
+  string id = 1;
+  string username = 2;
+  string display_name = 3;
+  string email = 4;
+  string inbox = 5;
+  string outbox = 6;
+  map<string, string> endpoints = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message ActorList {
+  repeated Actor items = 1;
+  int64 total = 2;
+}
