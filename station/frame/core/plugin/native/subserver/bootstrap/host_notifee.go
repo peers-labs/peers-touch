@@ -50,7 +50,9 @@ func (l libp2pHostNotifee) saveConnInfo(n network.Network, conn network.Conn, is
 		return
 	}
 
-	logger.Infof(ctx, "disconnected from peer: %s, IPv4: %s", peerInfo.PeerID, connInfo.IPv4)
+	if !isActive {
+		logger.Infof(ctx, "disconnected from peer: %s, IPv4: %s", peerInfo.PeerID, connInfo.IPv4)
+	}
 }
 
 // getIpv4AndIpv6 extracts IPv4 and IPv6 addresses from a multiaddr
