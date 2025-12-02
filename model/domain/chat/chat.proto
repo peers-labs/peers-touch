@@ -3,7 +3,7 @@ syntax = "proto3";
 package peers_touch.model.chat.v1;
 
 import "google/protobuf/timestamp.proto";
-import "domain/core/core.proto";
+import "domain/actor/actor.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
@@ -47,7 +47,7 @@ message MessageAttachment {
 
 // 好友关系
 message Friend {
-  peers_touch.model.core.v1.Actor user = 1;
+  peers_touch.model.actor.v1.Actor user = 1;
   FriendshipStatus status = 2;
   google.protobuf.Timestamp friendship_created_at = 3;
   string public_key = 4;  // 用于端到端加密

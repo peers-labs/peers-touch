@@ -12,6 +12,7 @@ import (
 type PresetActor struct {
 	ID          string            `json:"id"`
 	Username    string            `json:"username"`
+	Email       string            `json:"email"`
 	DisplayName string            `json:"display_name"`
 	Inbox       string            `json:"inbox"`
 	Outbox      string            `json:"outbox"`

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 
@@ -56,11 +57,17 @@ class _AppState extends State<App> {
       supportedLocales: AppLocalizations.supportedLocales,
       initialBinding: InitialBinding(),
       getPages: AppPages.pages,
-      initialRoute: AppRoutes.shell,
+      initialRoute: _initialRoute(),
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       // Globally absorb pointer events until the first frame is rendered
       builder: (context, child) => AbsorbPointer(absorbing: _absorbing, child: child ?? const SizedBox.shrink()),
     );
   }
+}
+
+String _initialRoute() {
+  final box = GetStorage();
+  final token = box.read<String>('auth_token');
+  return (token != null && token.isNotEmpty) ? AppRoutes.shell : AppRoutes.login;
 }
