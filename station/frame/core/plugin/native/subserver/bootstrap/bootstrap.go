@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -315,8 +317,14 @@ func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, er
 		hostOptions = append(hostOptions, libp2p.ListenAddrs(addrs...))
 	}
 
-	// Always use default secure security (Noise/TLS)
-	hostOptions = append(hostOptions, libp2p.DefaultSecurity)
+	// Optional insecure security for testing (set LIBP2P_INSECURE=true)
+	if s.opts.Libp2pInsecure || strings.EqualFold(os.Getenv("LIBP2P_INSECURE"), "true") {
+		hostOptions = append(hostOptions, libp2p.NoSecurity)
+		logger.Warnf(ctx, "[Bootstrap] Using NO-SECURITY transport for testing")
+	} else {
+		// Use default security (Noise/TLS as provided by go-libp2p)
+		hostOptions = append(hostOptions, libp2p.DefaultSecurity)
+	}
 
 	// Create libp2p host
 	h, err := libp2p.New(hostOptions...)

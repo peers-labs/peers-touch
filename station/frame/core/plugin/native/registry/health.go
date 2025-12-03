@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 )
 
 func (r *nativeRegistry) HealthCheck(ctx context.Context) error {
@@ -25,7 +26,7 @@ func (r *nativeRegistry) HealthCheck(ctx context.Context) error {
 	if err := r.dht.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("[HealthCheck] DHT bootstrap failed: %w", err)
 	}
-	testKey := fmt.Sprintf("healthcheck_%s", r.host.ID().String())
+	testKey := fmt.Sprintf("/%s/healthcheck_%s", registry.DefaultPeersNetworkNamespace, r.host.ID().String())
 	testData := []byte("healthcheck")
 	if err := r.dht.PutValue(ctx, testKey, testData); err != nil {
 		return fmt.Errorf("[HealthCheck] DHT put test failed: %w", err)

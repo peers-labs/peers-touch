@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -30,6 +31,12 @@ func (*NamespaceValidator) Validate(key string, val []byte) error {
 	}
 
 	peerID := key[len(networkNamespace)+1:]
+
+	// Allow health check keys
+	if strings.HasPrefix(peerID, "healthcheck") {
+		return nil
+	}
+
 	id, err := peer.Decode(peerID)
 	if err != nil {
 		return fmt.Errorf("invalid peer ID: %s", peerID)
