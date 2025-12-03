@@ -42,6 +42,14 @@ func (a *Adapter) Verify(ctx context.Context, identity *model.Identity, provider
 	return expected == providerID, nil
 }
 
+func (a *Adapter) Parse(ctx context.Context, input string) (string, error) {
+	prefix := fmt.Sprintf("https://%s/activitypub/", a.domain)
+	if !strings.HasPrefix(input, prefix) {
+		return "", fmt.Errorf("invalid actor URI for this domain")
+	}
+	return input, nil
+}
+
 func (a *Adapter) To(ctx context.Context, identity *model.Identity) (string, error) {
 	return a.Issue(ctx, identity)
 }
@@ -53,15 +61,15 @@ func (a *Adapter) From(ctx context.Context, providerID string) (*model.Identity,
 	if !strings.HasPrefix(providerID, prefix) {
 		return nil, fmt.Errorf("invalid actor URI for this domain")
 	}
-	
+
 	remainder := strings.TrimPrefix(providerID, prefix)
 	parts := strings.Split(remainder, "/")
 	if len(parts) < 1 {
 		return nil, fmt.Errorf("cannot extract username from actor URI")
 	}
-	
+
 	username := parts[0]
-	
+
 	// In a real implementation, we would look up the identity by username
 	// For now, we return a placeholder or error if we can't look it up without a DB
 	return nil, fmt.Errorf("lookup by username %s not implemented", username)
@@ -69,8 +77,8 @@ func (a *Adapter) From(ctx context.Context, providerID string) (*model.Identity,
 
 func (a *Adapter) Capabilities() map[string]interface{} {
 	return map[string]interface{}{
-		"version": "1.0.0",
-		"type":    "federated",
+		"version":   "1.0.0",
+		"type":      "federated",
 		"protocols": []string{"activitypub"},
 	}
 }

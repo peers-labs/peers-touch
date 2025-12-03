@@ -18,7 +18,7 @@ require (
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres v0.0.0-00010101000000-000000000000
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite v0.0.0-00010101000000-000000000000
 	google.golang.org/protobuf v1.36.10
-	gorm.io/gorm v1.30.0
+	gorm.io/gorm v1.31.1
 )
 
 require (

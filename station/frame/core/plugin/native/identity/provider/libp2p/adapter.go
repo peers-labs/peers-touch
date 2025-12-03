@@ -1,4 +1,4 @@
-package adapter
+package libp2p
 
 import (
 	"context"
@@ -11,35 +11,44 @@ import (
 
 const ProviderLibp2p = "libp2p"
 
-type Libp2pAdapter struct {
+type Adapter struct {
 }
 
-func NewLibp2pAdapter() *Libp2pAdapter {
-	return &Libp2pAdapter{}
+func NewAdapter() *Adapter {
+	return &Adapter{}
 }
 
-func (a *Libp2pAdapter) Name() string {
+func (a *Adapter) Name() string {
 	return ProviderLibp2p
 }
 
-func (a *Libp2pAdapter) Issue(ctx context.Context, identity *model.Identity) (string, error) {
+func (a *Adapter) Issue(ctx context.Context, identity *model.Identity) (string, error) {
 	// In a real implementation, this would derive a PeerID from the identity's public key
 	// For now, we'll assume the fingerprint IS the PeerID if it's compatible, or return an error
 	// This is a placeholder
 	return "", fmt.Errorf("not implemented")
 }
 
-func (a *Libp2pAdapter) Verify(ctx context.Context, identity *model.Identity, providerID string) (bool, error) {
+func (a *Adapter) Verify(ctx context.Context, identity *model.Identity, providerID string) (bool, error) {
 	// Verify if the providerID (PeerID) matches the identity
 	return false, fmt.Errorf("not implemented")
 }
 
-func (a *Libp2pAdapter) To(ctx context.Context, identity *model.Identity) (string, error) {
+func (a *Adapter) Parse(ctx context.Context, input string) (string, error) {
+	// Try to decode as PeerID
+	pid, err := peer.Decode(input)
+	if err != nil {
+		return "", err
+	}
+	return pid.String(), nil
+}
+
+func (a *Adapter) To(ctx context.Context, identity *model.Identity) (string, error) {
 	// Look up the PeerID for this identity
 	return "", fmt.Errorf("not implemented")
 }
 
-func (a *Libp2pAdapter) From(ctx context.Context, providerID string) (*model.Identity, error) {
+func (a *Adapter) From(ctx context.Context, providerID string) (*model.Identity, error) {
 	// Look up the identity for this PeerID
 	_, err := peer.Decode(providerID)
 	if err != nil {
@@ -48,12 +57,12 @@ func (a *Libp2pAdapter) From(ctx context.Context, providerID string) (*model.Ide
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (a *Libp2pAdapter) Capabilities() map[string]interface{} {
+func (a *Adapter) Capabilities() map[string]interface{} {
 	return map[string]interface{}{
 		"version": "1.0.0",
 		"type":    "p2p",
 	}
 }
 
-// Ensure Libp2pAdapter implements adapter.Adapter
-var _ adapter.Adapter = (*Libp2pAdapter)(nil)
+// Ensure Adapter implements adapter.Adapter
+var _ adapter.Adapter = (*Adapter)(nil)

@@ -17,6 +17,9 @@ type Adapter interface {
 	// Verify verifies the consistency between the core identity and the provider ID
 	Verify(ctx context.Context, identity *model.Identity, providerID string) (bool, error)
 
+	// Parse parses and normalizes the input string to a provider ID if valid
+	Parse(ctx context.Context, input string) (string, error)
+
 	// To converts a core identity to a provider ID (lookup/generation)
 	To(ctx context.Context, identity *model.Identity) (string, error)
 
