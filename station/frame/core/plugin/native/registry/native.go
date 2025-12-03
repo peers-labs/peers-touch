@@ -74,6 +74,10 @@ type nativeRegistry struct {
 	// mDNS discovery statistics
 	mdnsStatsLock sync.RWMutex
 	mdnsStats     *mdnsDiscoveryStats
+
+	bootstrapLock    sync.RWMutex
+	bootstrapActive  map[peer.ID]*bootstrapNode
+	bootstrapBackoff map[peer.ID]*bootstrapNode
 }
 
 func NewRegistry(opts ...option.Option) registry.Registry {
@@ -92,6 +96,8 @@ func NewRegistry(opts ...option.Option) registry.Registry {
 		mdnsStats: &mdnsDiscoveryStats{
 			ActivePeers: make([]string, 0),
 		},
+		bootstrapActive:  make(map[peer.ID]*bootstrapNode),
+		bootstrapBackoff: make(map[peer.ID]*bootstrapNode),
 	}
 
 	return regInstance
@@ -146,42 +152,31 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 			},
 		),
 		dht.BootstrapPeersFunc(func() []peer.AddrInfo {
-			// Start with configured bootstrap nodes and default peers
-			bootstrapNodes := append(r.extOpts.bootstrapNodes, dht.DefaultBootstrapPeers...)
-			// Add mDNS-discovered bootstrap nodes if mDNS is enabled
+			if len(r.extOpts.bootstrapNodes) > 0 {
+				for _, addr := range r.extOpts.bootstrapNodes {
+					r.addBootstrapAddr(addr)
+				}
+			}
 			if r.extOpts.mdnsEnable {
 				r.mdnsBootstrapLock.RLock()
-				mdnsBootstrapNodes := make([]multiaddr.Multiaddr, len(r.mdnsDiscoveredBootstrapNodes))
-				copy(mdnsBootstrapNodes, r.mdnsDiscoveredBootstrapNodes)
+				for _, md := range r.mdnsDiscoveredBootstrapNodes {
+					r.addBootstrapAddr(md)
+				}
 				r.mdnsBootstrapLock.RUnlock()
-
-				// Add mDNS-discovered bootstrap nodes to the list
-				for _, mdnsAddr := range mdnsBootstrapNodes {
-					// Check if already exists to avoid duplicates
-					alreadyExists := false
-					for _, existing := range bootstrapNodes {
-						if existing.Equal(mdnsAddr) {
-							alreadyExists = true
-							break
-						}
-					}
-					if !alreadyExists {
-						bootstrapNodes = append(bootstrapNodes, mdnsAddr)
-					}
-				}
 			}
-
-			var peerBootstrapNodes []peer.AddrInfo
-			for _, addr := range bootstrapNodes {
-				pi, errIn := peer.AddrInfoFromP2pAddr(addr)
-				if errIn != nil {
-					logger.Errorf(ctx, "failed to parse bootstrap node address: %s", errIn)
-					continue
+			act := r.getActiveBootstrapPeers()
+			if len(act) == 0 {
+				var peerBootstrapNodes []peer.AddrInfo
+				for _, addr := range dht.DefaultBootstrapPeers {
+					pi, errIn := peer.AddrInfoFromP2pAddr(addr)
+					if errIn != nil {
+						continue
+					}
+					peerBootstrapNodes = append(peerBootstrapNodes, *pi)
 				}
-				peerBootstrapNodes = append(peerBootstrapNodes, *pi)
+				return peerBootstrapNodes
 			}
-
-			return peerBootstrapNodes
+			return act
 		}),
 		dht.BucketSize(20),
 		// dht.OnRequestHook(dhtRequestHooksWrap),
@@ -763,7 +758,8 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 
 	logger.Infof(ctx, "bootstrap peer: %s", r.host.ID().String())
 
-	// Initial bootstrap
+	// Initial connect attempts to active peers
+	r.connectActiveBootstraps(ctx)
 	if err := r.dht.Bootstrap(ctx); err != nil {
 		logger.Errorf(ctx, "[bootstrap] failed to bootstrap peers: %v", err)
 	} else {
@@ -778,6 +774,7 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			logger.Debugf(ctx, "[bootstrap] refreshing bootstrap for peer: %s", r.host.ID().String())
+			r.connectActiveBootstraps(ctx)
 			if err := r.dht.Bootstrap(ctx); err != nil {
 				logger.Errorf(ctx, "[bootstrap] failed to refresh bootstrap: %v", err)
 			} else {
@@ -788,6 +785,31 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 		case <-ctx.Done():
 			logger.Warnf(ctx, "[bootstrap] bootstrap stopped %+v", ctx.Err())
 			return
+		}
+	}
+}
+
+func (r *nativeRegistry) connectActiveBootstraps(ctx context.Context) {
+	peers := r.getActiveBootstrapPeers()
+	for _, pi := range peers {
+		err := r.host.Connect(ctx, pi)
+		r.onBootstrapResult(pi.ID, err == nil)
+	}
+	go r.retryBackoff(ctx)
+}
+
+func (r *nativeRegistry) retryBackoff(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			for _, pi := range r.dueBackoffPeers() {
+				err := r.host.Connect(ctx, pi)
+				r.onBootstrapResult(pi.ID, err == nil)
+			}
 		}
 	}
 }
@@ -899,28 +921,7 @@ func (r *nativeRegistry) getMDNSStats() mdnsDiscoveryStats {
 
 // AddBootstrapNode adds a bootstrap node discovered via mDNS (implements mdns.Registry)
 func (r *nativeRegistry) AddBootstrapNode(pi peer.AddrInfo) {
-	r.mdnsBootstrapLock.Lock()
-	defer r.mdnsBootstrapLock.Unlock()
-
-	// Convert peer.AddrInfo to multiaddr format
-	for _, addr := range pi.Addrs {
-		// Create full multiaddr with peer ID
-		fullAddr := addr.Encapsulate(multiaddr.StringCast("/p2p/" + pi.ID.String()))
-
-		// Check if already exists to avoid duplicates
-		alreadyExists := false
-		for _, existing := range r.mdnsDiscoveredBootstrapNodes {
-			if existing.Equal(fullAddr) {
-				alreadyExists = true
-				break
-			}
-		}
-
-		if !alreadyExists {
-			r.mdnsDiscoveredBootstrapNodes = append(r.mdnsDiscoveredBootstrapNodes, fullAddr)
-			logger.Infof(context.Background(), "Added mDNS bootstrap node: %s", fullAddr.String())
-		}
-	}
+	r.addBootstrapInfo(pi)
 }
 
 // mdnsRegistryWrapper wraps nativeRegistry to implement mdns.Registry interface
