@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
+	"net"
 	"sync"
 	"time"
 
@@ -291,35 +290,44 @@ func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, er
 		hostOptions = append(hostOptions, libp2p.Identity(priv))
 	}
 
-	// Set listen addresses
+	// Set listen addresses (strict validation)
 	if len(s.opts.ListenMultiAddrs) > 0 {
+		// Validate each multiaddr is bindable on current host (allow 0.0.0.0/::)
+		for _, m := range s.opts.ListenMultiAddrs {
+			if !isBindableLocalAddr(m) {
+				return nil, nil, fmt.Errorf("invalid listen address (not local/bindable): %s", m.String())
+			}
+		}
 		hostOptions = append(hostOptions, libp2p.ListenAddrs(s.opts.ListenMultiAddrs...))
 	} else if len(s.opts.ListenAddrs) > 0 {
-		// Convert string addresses to multiaddr
+		// Convert string addresses to multiaddr and validate
 		var addrs []multiaddr.Multiaddr
 		for _, addrStr := range s.opts.ListenAddrs {
 			addr, err := multiaddr.NewMultiaddr(addrStr)
 			if err != nil {
 				return nil, nil, fmt.Errorf("parse listen address %s: %w", addrStr, err)
 			}
+			if !isBindableLocalAddr(addr) {
+				return nil, nil, fmt.Errorf("invalid listen address (not local/bindable): %s", addrStr)
+			}
 			addrs = append(addrs, addr)
 		}
 		hostOptions = append(hostOptions, libp2p.ListenAddrs(addrs...))
 	}
 
-	// Optional insecure security for testing (set LIBP2P_INSECURE=true)
-	if s.opts.Libp2pInsecure || strings.EqualFold(os.Getenv("LIBP2P_INSECURE"), "true") {
-		hostOptions = append(hostOptions, libp2p.NoSecurity)
-		logger.Warnf(ctx, "[Bootstrap] Using NO-SECURITY transport for testing")
-	} else {
-		// Use default security (Noise/TLS as provided by go-libp2p)
-		hostOptions = append(hostOptions, libp2p.DefaultSecurity)
-	}
+	// Always use default secure security (Noise/TLS)
+	hostOptions = append(hostOptions, libp2p.DefaultSecurity)
 
 	// Create libp2p host
 	h, err := libp2p.New(hostOptions...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create libp2p host: %w", err)
+	}
+
+	// Ensure host actually has listen addresses
+	if len(h.Addrs()) == 0 {
+		h.Close()
+		return nil, nil, fmt.Errorf("bootstrap host has no active listen addresses; check listen-addrs configuration")
 	}
 
 	// Create DHT instance
@@ -337,4 +345,52 @@ func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, er
         %s`, joinForPrintLineByLine("----", p2pAddrs))
 
 	return h, dhtInstance, nil
+}
+
+// isBindableLocalAddr validates a multiaddr IP component is either unspecified (0.0.0.0/::)
+// or belongs to one of the local interfaces. Ports are not checked beyond presence.
+func isBindableLocalAddr(m multiaddr.Multiaddr) bool {
+	// Extract IP protocol
+	if v, err := m.ValueForProtocol(multiaddr.P_IP4); err == nil {
+		ip := net.ParseIP(v)
+		if ip == nil {
+			return false
+		}
+		if v == "0.0.0.0" {
+			return true
+		}
+		return isLocalIP(ip)
+	}
+	if v, err := m.ValueForProtocol(multiaddr.P_IP6); err == nil {
+		ip := net.ParseIP(v)
+		if ip == nil {
+			return false
+		}
+		if v == "::" || v == "::1" {
+			return true
+		}
+		return isLocalIP(ip)
+	}
+	// If no IP component, allow (libp2p may derive defaults)
+	return true
+}
+
+func isLocalIP(ip net.IP) bool {
+	ifaces, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range ifaces {
+		var ia net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			ia = v.IP
+		case *net.IPAddr:
+			ia = v.IP
+		}
+		if ia != nil && ia.Equal(ip) {
+			return true
+		}
+	}
+	return false
 }
