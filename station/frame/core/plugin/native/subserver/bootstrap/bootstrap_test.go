@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -117,4 +118,40 @@ func TestBootstrapServer_StartAndConnect(t *testing.T) {
 	assert.NoError(t, err, "Failed to connect to bootstrap server")
 
 	t.Log("Successfully connected to bootstrap server")
+}
+
+func TestKeyPersistence(t *testing.T) {
+	// 1. Define temp key file path
+	tempKeyFile := "test_bootstrap.key"
+	defer os.Remove(tempKeyFile)
+
+	// 2. First run: Generate key
+	priv1, err := loadOrGenerateKey(tempKeyFile)
+	assert.NoError(t, err)
+	assert.NotNil(t, priv1)
+
+	// Verify file exists
+	_, err = os.Stat(tempKeyFile)
+	assert.NoError(t, err)
+
+	id1, err := peer.IDFromPrivateKey(priv1)
+	assert.NoError(t, err)
+	t.Logf("Generated PeerID 1: %s", id1)
+
+	// 3. Second run: Load key
+	priv2, err := loadOrGenerateKey(tempKeyFile)
+	assert.NoError(t, err)
+	assert.NotNil(t, priv2)
+
+	id2, err := peer.IDFromPrivateKey(priv2)
+	assert.NoError(t, err)
+	t.Logf("Loaded PeerID 2: %s", id2)
+
+	// 4. Assert keys match
+	assert.Equal(t, id1, id2, "PeerIDs should match across restarts")
+
+	// Also verify bytes match
+	bytes1, _ := priv1.Raw()
+	bytes2, _ := priv2.Raw()
+	assert.Equal(t, bytes1, bytes2)
 }

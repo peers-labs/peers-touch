@@ -48,16 +48,19 @@ func (p *bootstrap) Options() []option.Option {
 	opts = append(opts, WithLibp2pInsecure(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Libp2pInsecure))
 
 	// Add IdentityKey option from configuration if provided
-	if bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey != "" {
-		// Load private key from the file path
-		privKey, err := loadOrGenerateKey(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey)
-		if err != nil {
-			panic(fmt.Errorf("failed to load identity key from %s: %w", bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey, err))
-		}
-		// Set both IdentityKey (for options visibility) and PrivateKey (used by host creation)
-		opts = append(opts, WithIdentityKey(privKey))
-		opts = append(opts, WithPrivateKey(privKey))
+	keyPath := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey
+	if keyPath == "" {
+		keyPath = "bootstrap.key"
 	}
+
+	// Load private key from the file path
+	privKey, err := loadOrGenerateKey(keyPath)
+	if err != nil {
+		panic(fmt.Errorf("failed to load identity key from %s: %w", keyPath, err))
+	}
+	// Set both IdentityKey (for options visibility) and PrivateKey (used by host creation)
+	opts = append(opts, WithIdentityKey(privKey))
+	opts = append(opts, WithPrivateKey(privKey))
 
 	if len(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.BootstrapNodes) != 0 {
 		nodes := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.BootstrapNodes
