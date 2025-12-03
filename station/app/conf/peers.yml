@@ -27,4 +27,4 @@ peers:
       native:
         mdns-enable: true
         bootstrap-nodes:
-          - /ip6/2409:8a55:3914:bce0:6e69:1f6e:44c8:dbcf/tcp/4001/p2p/12D3KooWRA3vJh2ysp9oG8utvjgqHu6fG9Ez6UPRhh6T7Akgo3Rr
+        #  - /ip6/2409:8a55:3914:bce0:6e69:1f6e:44c8:dbcf/tcp/4001/p2p/12D3KooWQ7GxZtqudcsDAgL2eQiAZe63MDrsG18ymwNMrq1dQaSb

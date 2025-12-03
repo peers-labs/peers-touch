@@ -1,6 +1,8 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/models/actor_base.dart';
 import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
+import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:get_storage/get_storage.dart';
 
 class ProfileController extends GetxController {
   final Rx<ActorBase?> user = Rx<ActorBase?>(null);
@@ -129,5 +131,17 @@ class ProfileController extends GetxController {
         autoExpireDays: d.autoExpireDays,
       );
     }
+  }
+
+  Future<void> logout() async {
+    try {
+      await LocalStorage().remove('auth_token');
+      await LocalStorage().remove('refresh_token');
+      await LocalStorage().remove('auth_token_type');
+      await GetStorage().remove('auth_token');
+      await GetStorage().remove('refresh_token');
+      await GetStorage().remove('auth_token_type');
+    } catch (_) {}
+    Get.offAllNamed('/login');
   }
 }
