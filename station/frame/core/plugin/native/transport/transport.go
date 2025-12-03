@@ -123,14 +123,8 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 		libp2pOpts = append(libp2pOpts, libp2p.ListenAddrs(listenAddrs...))
 	}
 
-	// Add security options - fix security configuration
-	if t.opts.Secure {
-		// Use default security (no need to specify as string)
-		libp2pOpts = append(libp2pOpts, libp2p.DefaultSecurity)
-	} else {
-		// Insecure security for testing
-		libp2pOpts = append(libp2pOpts, libp2p.NoSecurity)
-	}
+	// Always use secure transport (Noise/TLS)
+	libp2pOpts = append(libp2pOpts, libp2p.DefaultSecurity)
 
 	// Enable ping node for connectivity checking
 	libp2pOpts = append(libp2pOpts, libp2p.Ping(true))

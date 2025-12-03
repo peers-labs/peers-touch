@@ -39,7 +39,7 @@ func TestNativeRegistry_NewRegistry(t *testing.T) {
 
 func TestNativeRegistry_Init_WithMDNS(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry(option.WithRootCtx(ctx)).(*nativeRegistry)
+	reg := NewRegistry(option.WithRootCtx(ctx), registry.WithStore(&mockStore{}), registry.WithPrivateKey("test-private-key")).(*nativeRegistry)
 
 	// Create test options with mDNS enabled
 	opts := []option.Option{
@@ -60,7 +60,7 @@ func TestNativeRegistry_Init_WithMDNS(t *testing.T) {
 
 func TestNativeRegistry_Init_WithTURN(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry(option.WithRootCtx(ctx)).(*nativeRegistry)
+	reg := NewRegistry(option.WithRootCtx(ctx), registry.WithStore(&mockStore{}), registry.WithPrivateKey("test-private-key")).(*nativeRegistry)
 
 	// Create test options with TURN enabled
 	turnConfig := registry.TURNAuthConfig{
@@ -91,7 +91,7 @@ func TestNativeRegistry_Init_WithTURN(t *testing.T) {
 
 func TestNativeRegistry_AllDiscoveryMechanisms(t *testing.T) {
 	ctx := context.Background()
-	reg := NewRegistry(option.WithRootCtx(ctx)).(*nativeRegistry)
+	reg := NewRegistry(option.WithRootCtx(ctx), registry.WithStore(&mockStore{}), registry.WithPrivateKey("test-private-key")).(*nativeRegistry)
 
 	// Create test options with all discovery mechanisms enabled
 	turnConfig := registry.TURNAuthConfig{
