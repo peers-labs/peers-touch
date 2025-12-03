@@ -138,6 +138,37 @@ class ProfilePage extends StatelessWidget {
                             ),
                           ],
                         ),
+                        SizedBox(height: UIKit.spaceLg(context)),
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 420),
+                            child: Container(
+                              padding: EdgeInsets.all(UIKit.spaceMd(context)),
+                              decoration: BoxDecoration(
+                                color: wx?.bgLevel1 ?? theme.colorScheme.surface,
+                                borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
+                                border: Border.all(color: UIKit.dividerColor(context), width: UIKit.dividerThickness),
+                                boxShadow: UIKit.panelShadow(context),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text('账户', style: theme.textTheme.titleMedium),
+                                  SizedBox(height: UIKit.spaceSm(context)),
+                                  ElevatedButton.icon(
+                                    onPressed: controller.logout,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: theme.colorScheme.error,
+                                      foregroundColor: theme.colorScheme.onError,
+                                    ),
+                                    icon: const Icon(Icons.logout),
+                                    label: const Text('退出登录'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),

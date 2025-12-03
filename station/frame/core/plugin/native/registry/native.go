@@ -337,6 +337,15 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		return fmt.Errorf("failed to register native registry: %w", err)
 	}
 
+	sdm := NewServiceDiscoveryManager(ctx, r)
+	if err := sdm.Start(); err != nil {
+		return fmt.Errorf("failed to start service discovery manager: %w", err)
+	}
+	go func() {
+		<-ctx.Done()
+		_ = sdm.Stop()
+	}()
+
 	return nil
 }
 
@@ -780,6 +789,10 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 			} else {
 				logger.Debugf(ctx, "[bootstrap] bootstrap refresh successful")
 			}
+			_ = r.HealthCheck(ctx)
+			stats := r.GetDiscoveryStats()
+			logger.Debugf(ctx, "[health] host=%s peers=%d rtable=%d mdns_discovered=%d mdns_bootstrap=%d mdns_connected=%d",
+				stats.HostID, stats.ConnectedPeers, stats.RoutingTableSize, stats.MDNSDiscovered, stats.MDNSBootstrapDiscovered, stats.MDNSConnectedBootstrap)
 			// Also refresh routing table periodically
 			go r.refreshRoutingTable(ctx)
 		case <-ctx.Done():
@@ -792,8 +805,15 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 func (r *nativeRegistry) connectActiveBootstraps(ctx context.Context) {
 	peers := r.getActiveBootstrapPeers()
 	for _, pi := range peers {
-		err := r.host.Connect(ctx, pi)
+		// prefer IPv4 addrs if present
+		filtered := peer.AddrInfo{ID: pi.ID, Addrs: preferIPv4Addrs(pi.Addrs)}
+		cctx, cancel := context.WithTimeout(ctx, r.options.ConnectTimeout)
+		err := r.host.Connect(cctx, filtered)
+		cancel()
 		r.onBootstrapResult(pi.ID, err == nil)
+		if err != nil {
+			logger.Warnf(ctx, "[bootstrap] connect to %s failed: %v", pi.ID.String(), err)
+		}
 	}
 	go r.retryBackoff(ctx)
 }
@@ -807,11 +827,31 @@ func (r *nativeRegistry) retryBackoff(ctx context.Context) {
 			return
 		case <-t.C:
 			for _, pi := range r.dueBackoffPeers() {
-				err := r.host.Connect(ctx, pi)
+				filtered := peer.AddrInfo{ID: pi.ID, Addrs: preferIPv4Addrs(pi.Addrs)}
+				cctx, cancel := context.WithTimeout(ctx, r.options.ConnectTimeout)
+				err := r.host.Connect(cctx, filtered)
+				cancel()
 				r.onBootstrapResult(pi.ID, err == nil)
+				if err != nil {
+					logger.Warnf(ctx, "[bootstrap] backoff retry to %s failed: %v", pi.ID.String(), err)
+				}
 			}
 		}
 	}
+}
+
+// preferIPv4Addrs filters to IPv4 addrs if available, otherwise returns original
+func preferIPv4Addrs(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+	var v4 []multiaddr.Multiaddr
+	for _, a := range addrs {
+		if _, err := a.ValueForProtocol(multiaddr.P_IP4); err == nil {
+			v4 = append(v4, a)
+		}
+	}
+	if len(v4) > 0 {
+		return v4
+	}
+	return addrs
 }
 
 func (r *nativeRegistry) refreshRoutingTable(ctx context.Context) {
