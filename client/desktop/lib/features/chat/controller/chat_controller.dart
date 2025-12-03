@@ -4,12 +4,14 @@ import 'dart:async';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 import 'package:peers_touch_base/network/dio/http_service_impl.dart';
+import 'package:peers_touch_desktop/core/network/network_initializer.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 
 class ChatController extends GetxController {
   final messages = <String>[].obs;
   final textController = TextEditingController();
   final signalingUrl = ''.obs;
+  final actorListUrl = ''.obs;
   final selfPeerId = 'desktop-1'.obs;
   final targetPeerId = 'mobile-1'.obs;
   final connectionStatus = 'Unknown'.obs;
@@ -36,8 +38,15 @@ class ChatController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    // Default URL for local testing if needed
-    signalingUrl.value = 'http://localhost:8080';
+    // Default to the base URL used during login
+    if (NetworkInitializer.currentBaseUrl.isNotEmpty) {
+      final uri = Uri.parse(NetworkInitializer.currentBaseUrl);
+      signalingUrl.value = uri.resolve('/chat').toString();
+    } else {
+      signalingUrl.value = 'http://localhost:8080/chat';
+    }
+    _updateDerivedUrls();
+    ever<String>(signalingUrl, (_) => _updateDerivedUrls());
   }
 
   @override
@@ -206,16 +215,24 @@ class ChatController extends GetxController {
     try {
       // Ensure HttpService is initialized with correct base URL
       if (_httpService == null) {
-        _httpService = HttpServiceImpl(baseUrl: base);
+        // Use server base (without /chat) for HTTP service
+        final server = Uri.parse(base).resolve('/').toString();
+        _httpService = HttpServiceImpl(baseUrl: server);
       } else {
-        _httpService!.setBaseUrl(base);
+        final server = Uri.parse(base).resolve('/').toString();
+        _httpService!.setBaseUrl(server);
       }
 
       // Use shared library to fetch data (which includes logging)
-      final resp = await _httpService!.get<Map<String, dynamic>>('/actor/list');
-      
-      final data = resp['data'] is List ? resp['data'] as List : [];
-      actors.assignAll(data.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList());
+      final resp = await _httpService!.get<Map<String, dynamic>>(actorListUrl.value);
+      List list = [];
+      final data = resp['data'];
+      if (data is List) {
+        list = data;
+      } else if (data is Map && data['items'] is List) {
+        list = data['items'] as List;
+      }
+      actors.assignAll(list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList());
       
       LoggingService.info('Loaded ${actors.length} actors from $base');
     } catch (e, s) {
@@ -224,6 +241,16 @@ class ChatController extends GetxController {
     } finally {
       loadingActors.value = false;
     }
+  }
+
+  void _updateDerivedUrls() {
+    final base = signalingUrl.value.trim();
+    if (base.isEmpty) {
+      actorListUrl.value = '';
+      return;
+    }
+    final server = Uri.parse(base).resolve('/').toString();
+    actorListUrl.value = Uri.parse(server).resolve('/actor/list').toString();
   }
 
   Future<void> fetchConnections() async {
