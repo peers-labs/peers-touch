@@ -153,6 +153,7 @@ class ChatPage extends GetView<ChatController> {
                           onChanged: (v) => controller.signalingUrl.value = v,
                           controller: TextEditingController(text: controller.signalingUrl.value),
                         ),
+                        const SizedBox(height: 8),
                         Row(
                           children: [
                             Expanded(
