@@ -10,6 +10,10 @@ import 'package:peers_touch_desktop/core/services/logging_service.dart';
 class ChatController extends GetxController {
   final messages = <String>[].obs;
   final textController = TextEditingController();
+  final signalingUrlController = TextEditingController();
+  final selfIdController = TextEditingController();
+  final targetIdController = TextEditingController();
+  
   final signalingUrl = ''.obs;
   final actorListUrl = ''.obs;
   final selfPeerId = 'desktop-1'.obs;
@@ -45,6 +49,28 @@ class ChatController extends GetxController {
     } else {
       signalingUrl.value = 'http://localhost:8080/chat';
     }
+    
+    // Initialize controllers with current values
+    signalingUrlController.text = signalingUrl.value;
+    selfIdController.text = selfPeerId.value;
+    targetIdController.text = targetPeerId.value;
+
+    // Bind controllers to observables (View -> ViewModel)
+    signalingUrlController.addListener(() => signalingUrl.value = signalingUrlController.text);
+    selfIdController.addListener(() => selfPeerId.value = selfIdController.text);
+    targetIdController.addListener(() => targetPeerId.value = targetIdController.text);
+
+    // Bind observables to controllers (ViewModel -> View)
+    ever(signalingUrl, (v) {
+      if (signalingUrlController.text != v) signalingUrlController.text = v;
+    });
+    ever(selfPeerId, (v) {
+      if (selfIdController.text != v) selfIdController.text = v;
+    });
+    ever(targetPeerId, (v) {
+      if (targetIdController.text != v) targetIdController.text = v;
+    });
+
     _updateDerivedUrls();
     ever<String>(signalingUrl, (_) => _updateDerivedUrls());
   }
@@ -52,6 +78,9 @@ class ChatController extends GetxController {
   @override
   void onClose() {
     textController.dispose();
+    signalingUrlController.dispose();
+    selfIdController.dispose();
+    targetIdController.dispose();
     try {
       _signaling?.unregisterPeer(selfPeerId.value);
     } catch (_) {}

@@ -5,6 +5,7 @@ import 'package:peers_touch_desktop/features/ai_chat/ai_chat_module.dart';
 import 'package:peers_touch_desktop/features/chat/chat_module.dart';
 import 'package:peers_touch_desktop/features/profile/profile_module.dart';
 import 'package:peers_touch_desktop/features/peers_admin/peers_admin_module.dart';
+import 'package:peers_touch_desktop/features/discovery/discovery_module.dart';
 
 class ShellBinding extends Bindings {
   @override
@@ -12,6 +13,8 @@ class ShellBinding extends Bindings {
     // 先注册系统/业务模块的一级菜单项
     // 系统模块：设置（尾部区域）
     SettingsModule.register();
+    // 业务模块：发现（头部区域）
+    DiscoveryModule.register();
     // 业务模块示例：AI对话（头部区域）
     AIChatModule.register();
     // 业务模块：RTC聊天（头部区域）

@@ -28,7 +28,7 @@ require (
 	github.com/pion/turn/v4 v4.1.3
 	github.com/stretchr/testify v1.11.1
 	gorm.io/driver/sqlite v1.6.0
-	gorm.io/gorm v1.30.0
+	gorm.io/gorm v1.31.1
 )
 
 require (

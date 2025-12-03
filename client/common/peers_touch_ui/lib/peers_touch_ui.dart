@@ -7,6 +7,7 @@ library peers_touch_ui;
 // Export AI Provider Icons
 export 'src/icons/ai_provider_icons.dart';
 export 'src/widgets/textbox.dart';
+export 'src/widgets/search_input.dart';
 export 'src/widgets/checkbox.dart';
 export 'src/widgets/dropdown.dart';
 export 'src/widgets/slider.dart';
@@ -18,6 +19,7 @@ export 'src/widgets/button.dart';
 export 'src/widgets/notice.dart';
 export 'src/widgets/card.dart';
 export 'src/widgets/tabs.dart';
+export 'src/widgets/icon_tabs.dart';
 export 'src/widgets/chip.dart';
 export 'src/widgets/donut_chart.dart';
 export 'src/widgets/line_chart.dart';
