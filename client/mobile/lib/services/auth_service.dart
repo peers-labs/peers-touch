@@ -42,6 +42,12 @@ class AuthService extends GetxService {
       final fullUrl = '$baseUrl/actor/login';
       appLogger.i('Attempting login to: $fullUrl');
       
+      // Transform username to email-like identifier if needed (matching desktop behavior)
+      var ident = username.trim();
+      if (!ident.contains('@') && ident.isNotEmpty) {
+        ident = '$ident@station.local';
+      }
+
       // Create a new Dio instance for auth requests to avoid global config interference
       // or use Get.find<ApiClient>().dio if preferred
       final dio = Dio(BaseOptions(
@@ -52,7 +58,7 @@ class AuthService extends GetxService {
       final response = await dio.post(
         fullUrl,
         data: {
-          'username': username,
+          'email': ident,
           'password': password,
         },
       );
@@ -60,8 +66,32 @@ class AuthService extends GetxService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = response.data;
         // Adapt to your actual API response structure
-        final String token = data['token'] ?? '';
-        final Map<String, dynamic> user = data['user'] is Map ? Map<String, dynamic>.from(data['user']) : {'username': username};
+        // Desktop logic for token extraction:
+        // tokensMap = data['tokens'] ?? data;
+        // token = tokensMap['token'] ?? tokensMap['access_token'] ?? ...
+        
+        String token = '';
+        Map<String, dynamic>? dmap;
+        if (data is Map) {
+           // If data has 'data' field, unwrap it (common pattern)
+           if (data.containsKey('data') && data['data'] is Map) {
+             dmap = (data['data'] as Map).cast<String, dynamic>();
+           } else {
+             dmap = data.cast<String, dynamic>();
+           }
+        }
+        
+        if (dmap != null) {
+           final tokensMap = (dmap['tokens'] is Map) ? (dmap['tokens'] as Map).cast<String, dynamic>() : dmap;
+           token = tokensMap['token']?.toString() ??
+                   tokensMap['access_token']?.toString() ??
+                   tokensMap['accessToken']?.toString() ?? '';
+        }
+
+        // User info extraction
+        final Map<String, dynamic> user = (dmap != null && dmap['user'] is Map) 
+            ? Map<String, dynamic>.from(dmap['user']) 
+            : {'username': username, 'email': ident};
         
         await saveAuthData(
           loggedIn: true,
@@ -72,9 +102,6 @@ class AuthService extends GetxService {
       }
     } catch (e) {
       appLogger.e('Login error: $e');
-      // If we want to allow offline testing or if API is not ready, 
-      // we might want to mock success here if specific credentials are used,
-      // but for now we rethrow to let the controller handle the error.
       rethrow;
     }
   }
@@ -82,8 +109,14 @@ class AuthService extends GetxService {
   Future<void> register(String username, String password, String address) async {
     try {
       final baseUrl = _normalizeUrl(address);
-      final fullUrl = '$baseUrl/api/auth/register';
+      final fullUrl = '$baseUrl/actor/sign-up';
       appLogger.i('Attempting register to: $fullUrl');
+
+      // Construct email from username if needed
+      var ident = username.trim();
+      if (!ident.contains('@') && ident.isNotEmpty) {
+        ident = '$ident@station.local';
+      }
 
       final dio = Dio(BaseOptions(
         connectTimeout: const Duration(seconds: 10),
@@ -93,22 +126,18 @@ class AuthService extends GetxService {
       final response = await dio.post(
         fullUrl,
         data: {
-          'username': username,
+          'name': username,
+          'email': ident,
           'password': password,
         },
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = response.data;
-        final String token = data['token'] ?? '';
-        final Map<String, dynamic> user = data['user'] is Map ? Map<String, dynamic>.from(data['user']) : {'username': username};
-        
-        await saveAuthData(
-          loggedIn: true,
-          token: token,
-          user: user,
-          serverAddr: baseUrl,
-        );
+         // After registration, desktop calls login automatically.
+         // Here we can just proceed to login or save data if returned.
+         // Assuming similar response structure to login if it returns token immediately.
+         // Or just call login()
+         await login(username, password, address);
       }
     } catch (e) {
       appLogger.e('Registration error: $e');

@@ -8,9 +8,12 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/peers-labs/peers-touch/station/frame/core/client"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/identity"
+	"github.com/peers-labs/peers-touch/station/frame/core/identity/adapter"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/identity/provider/libp2p"
 	registryNative "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -88,7 +91,7 @@ func (s *native) initComponents(ctx context.Context) error {
 		s.opts.Store = plugin.StorePlugins[storeName].New()
 	}
 	if err := s.opts.Store.Init(ctx, s.opts.StoreOptions...); err != nil {
-		return err
+		logger.Infof(ctx, "identity service initialized and injected")
 	}
 
 	// TODO init transport with option

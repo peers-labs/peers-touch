@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'right_panel_mode.dart';
 
 class ShellController extends GetxController {
   // 当前选中的一级菜单项
@@ -12,6 +13,10 @@ class ShellController extends GetxController {
   final isRightPanelVisible = true.obs;
   // 右侧面板折叠状态（true=折叠，false=展开）
   final isRightPanelCollapsed = true.obs;
+  // 右侧面板显示模式
+  final rightPanelMode = Rx<RightPanelMode>(RightPanelMode.cover);
+  // 右侧面板宽度模式
+  final rightPanelWidthMode = Rx<RightPanelWidthMode>(RightPanelWidthMode.fixed);
   // 右侧面板内容构建器
   final rightPanelBuilder = Rx<WidgetBuilder?>(null);
   // 右侧面板宽度（默认使用 UI 常量，可被页面覆盖）
@@ -130,6 +135,8 @@ class ShellController extends GetxController {
     bool showCollapseButton = true,
     bool clearCenter = false,
     bool collapsedByDefault = true,
+    RightPanelMode mode = RightPanelMode.cover,
+    RightPanelWidthMode widthMode = RightPanelWidthMode.fixed,
   }) {
     // Ensure width is valid and within reasonable bounds
     if (width != null && width > 0) {
@@ -141,6 +148,8 @@ class ShellController extends GetxController {
     rightPanelBuilder.value = builder;
     isRightPanelVisible.value = true;
     isRightPanelCollapsed.value = collapsedByDefault;
+    rightPanelMode.value = mode;
+    rightPanelWidthMode.value = widthMode;
     if (clearCenter) {
       currentMenuItem.value = null;
     }

@@ -2,11 +2,11 @@ package actor
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/identity"
+	"github.com/peers-labs/peers-touch/station/frame/core/identity/ptid"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
-	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
@@ -38,8 +38,11 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 
 	// Part 1: Create actor with actor's input
 	a := db.Actor{
-		Name:  actorParams.Name,
-		Email: actorParams.Email,
+		Name:        actorParams.Name,
+		Email:       actorParams.Email,
+		DisplayName: actorParams.Name, // Default display name to username
+		Type:        "Person",         // Default to Person
+		Namespace:   "peers",          // Default namespace
 	}
 
 	// hash the password before storing it
@@ -49,22 +52,17 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 		return err
 	}
 
-	// Generate peers actor ID from name
-	a.PeersActorID = generatePeersActorID(actorParams.Name)
-
-	// Ensure peers actor ID is unique
-	for {
-		var count int64
-		if err := rds.Model(&db.Actor{}).Where("peers_actor_id = ?", a.PeersActorID).Count(&count).Error; err != nil {
-			log.Warnf(c, "[SignUp] Check peers actor ID uniqueness err: %v", err)
-			return err
-		}
-		if count == 0 {
-			break
-		}
-		// Generate new peers actor ID if collision
-		a.PeersActorID = generatePeersActorID(actorParams.Name)
+	// Generate Unified Identity (PTID)
+	// Create new identity for the actor
+	// Namespace: "peers" (default)
+	// Type: TypePerson
+	createdIdentity, err := identity.CreateIdentity(c, actorParams.Name, "peers", ptid.TypePerson)
+	if err != nil {
+		log.Warnf(c, "[SignUp] Create identity err: %v", err)
+		return err
 	}
+
+	a.PeersActorID = createdIdentity.PTID
 
 	// Create the actor
 	if err = rds.Create(&a).Error; err != nil {
@@ -151,32 +149,4 @@ func Login(c context.Context, loginParams *model.ActorLoginParams) (*db.Actor, e
 func generateHash(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	return string(bytes), err
-}
-
-// generatePeersActorID generates a unique peers actor ID based on actor name
-func generatePeersActorID(name string) string {
-	// Use snowflake ID to ensure uniqueness
-	snowflakeID := id.NextID()
-
-	// Create a simple peers actor ID format: first 3 chars of name + timestamp suffix
-	prefix := ""
-	if len(name) >= 3 {
-		prefix = name[:3]
-	} else {
-		prefix = name
-	}
-
-	// Remove non-alphanumeric characters and convert to lowercase
-	cleanPrefix := ""
-	for _, r := range prefix {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			cleanPrefix += string(r)
-		}
-	}
-
-	if cleanPrefix == "" {
-		cleanPrefix = "act"
-	}
-
-	return fmt.Sprintf("%s_%d", cleanPrefix, snowflakeID%1000000)
 }

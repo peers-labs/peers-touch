@@ -15,7 +15,7 @@ func init() {
 		err := rds.AutoMigrate(
 			&Actor{}, &PeerAddress{},
 			// ActivityPub models
-			&ActivityPubActor{}, &ActivityPubActivity{}, &ActivityPubObject{},
+			&ActivityPubKey{}, &ActivityPubActivity{}, &ActivityPubObject{},
 			&ActivityPubFollow{}, &ActivityPubLike{}, &ActivityPubCollection{},
 			&Conversation{},
 			&ConvMember{},

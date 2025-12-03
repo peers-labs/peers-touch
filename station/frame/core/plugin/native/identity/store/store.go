@@ -43,6 +43,18 @@ func (s *Store) GetIdentityByPTID(ctx context.Context, ptid string) (*model.Iden
 	return &identity, nil
 }
 
+// GetIdentityByID retrieves an identity by its ID
+func (s *Store) GetIdentityByID(ctx context.Context, id uint64) (*model.Identity, error) {
+	var identity model.Identity
+	if err := s.db.WithContext(ctx).First(&identity, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &identity, nil
+}
+
 // GetIdentityByAlias retrieves an identity by one of its aliases
 func (s *Store) GetIdentityByAlias(ctx context.Context, alias string) (*model.Identity, error) {
 	var aliasRecord model.Alias

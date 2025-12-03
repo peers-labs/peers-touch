@@ -15,6 +15,9 @@ type Store interface {
 	// GetIdentityByPTID retrieves an identity by its PTID string
 	GetIdentityByPTID(ctx context.Context, ptid string) (*model.Identity, error)
 
+	// GetIdentityByID retrieves an identity by its ID
+	GetIdentityByID(ctx context.Context, id uint64) (*model.Identity, error)
+
 	// GetIdentityByAlias retrieves an identity by one of its aliases
 	GetIdentityByAlias(ctx context.Context, alias string) (*model.Identity, error)
 
@@ -42,27 +45,20 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (*model.Identity, 
 	// 2. Try to resolve via adapters (e.g., is it a PeerID?)
 	adapters := adapter.List()
 	for _, a := range adapters {
-		// First check if adapter can resolve it directly (e.g. extract info)
-		// But typically adapter.From returns a *model.Identity which might just be a partial object
-		// or it might need to look up in DB.
-		// If adapter returns a partial identity (e.g. just containing a PeerID reference),
-		// we might need to look up the binding in our DB.
+		// Check if the input is a valid ID for this provider
+		providerID, err := a.Parse(ctx, input)
+		if err != nil {
+			continue
+		}
 
-		// Let's assume adapter.From might return a full identity if it can,
-		// OR we use the provider ID to look up the binding.
+		// Try to find binding in local DB
+		binding, err := r.store.GetBinding(ctx, a.Name(), providerID)
+		if err == nil && binding != nil {
+			return r.store.GetIdentityByID(ctx, binding.IdentityID)
+		}
 
-		// Pattern A: Adapter extracts provider ID, we look up binding.
-		// Pattern B: Adapter does the lookup itself (less decoupled).
-
-		// Let's stick to the interface definition: From(ctx, providerID) (*model.Identity, error)
-		// If the adapter implementation is "stateless", it might not be able to return the full Identity
-		// unless it has access to the store too.
-
-		// To keep core simple, let's assume the adapter attempts to return a valid Identity.
-		// However, typically we want to find the binding in our local DB.
-		// So maybe we should ask the adapter to "Parse" the ID into a (Provider, ProviderID) tuple?
-		// But the interface is `From`.
-
+		// Fallback: Try to resolve remotely via adapter's From method
+		// This might return a partial identity or try to do a remote lookup
 		if identity, err := a.From(ctx, input); err == nil && identity != nil {
 			return identity, nil
 		}
