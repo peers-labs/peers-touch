@@ -7,4 +7,3 @@ peers:
           libp2p-insecure: true
           listen-addrs:
             - /ip4/0.0.0.0/tcp/4001
-            - /ip6/2409:8a55:3914:bce0:6e69:1f6e:44c8:dbcf/tcp/4001
