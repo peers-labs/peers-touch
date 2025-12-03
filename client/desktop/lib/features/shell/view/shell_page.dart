@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/app_constants.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/app_theme.dart';
@@ -30,11 +31,14 @@ class ShellPage extends StatelessWidget {
         return Scaffold(
           backgroundColor: tokens.bgLevel0,
           floatingActionButton: null,
-          body: RawKeyboardListener(
-            focusNode: FocusNode(),
-            autofocus: true,
-            onKey: controller.handleKeyEvent,
-            child: Padding(
+          body: Listener(
+            onPointerDown: (event) => _handleGlobalTap(context, controller, event),
+            behavior: HitTestBehavior.translucent,
+            child: RawKeyboardListener(
+              focusNode: FocusNode(),
+              autofocus: true,
+              onKey: controller.handleKeyEvent,
+              child: Padding(
               padding: EdgeInsets.only(
                 top: (Theme.of(context).platform == TargetPlatform.macOS)
                     ? AppConstants.macOSTitleBarHeight
@@ -52,65 +56,62 @@ class ShellPage extends StatelessWidget {
                         height: viewportH,
                         child: _buildPrimaryMenuBar(context, controller, theme),
                       ),
-                      // 主内容区 - 自适应
+                      // 主内容区 + 右侧面板（支持 Stack 叠加）
                       Expanded(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            return _buildContentArea(context, controller, theme, localizations);
-                          },
-                        ),
-                      ),
-                      // 右侧辅助面板：受父高度约束
-                      Obx(() {
-                        if (!controller.isRightPanelVisible.value) {
-                          return const SizedBox.shrink();
-                        }
-                        final bool collapsed = controller.isRightPanelCollapsed.value;
-                        final double effectiveWidth = collapsed
-                            ? UIKit.rightPanelCollapsedWidth
-                            : controller.rightPanelWidth.value;
-                        final double totalWidth = effectiveWidth + UIKit.splitHandleWidth;
-                        return SizedBox(
-                          width: totalWidth,
-                          height: viewportH,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.max,
-                            children: [
-                              MouseRegion(
-                                cursor: SystemMouseCursors.resizeColumn,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onPanUpdate: (details) {
-                                    if (controller.isRightPanelCollapsed.value) {
-                                      controller.expandRightPanel();
-                                    }
-                                    final next = (controller.rightPanelWidth.value - details.delta.dx)
-                                        .clamp(UIKit.rightPanelMinWidth, UIKit.rightPanelMaxWidth);
-                                    controller.rightPanelWidth.value = next.toDouble();
-                                  },
-                                  child: Container(
-                                    width: UIKit.splitHandleWidth,
-                                    color: Colors.transparent,
-                                    child: Center(
-                                      child: Container(
-                                        width: 2,
-                                        height: 24,
-                                        color: UIKit.dividerColor(context),
-                                      ),
-                                    ),
+                        child: Stack(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return _buildContentArea(context, controller, theme, localizations);
+                                    },
                                   ),
                                 ),
-                              ),
-                              _buildAssistantPanel(context, controller, theme),
-                            ],
-                          ),
-                        );
-                      }),
+                                // 挤压模式下的右侧面板占位
+                                Obx(() {
+                                  if (!controller.isRightPanelVisible.value || 
+                                      controller.rightPanelMode.value != RightPanelMode.squeeze) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return _buildRightPanelWrapper(context, controller, theme, viewportH);
+                                }),
+                              ],
+                            ),
+                            // 覆盖模式下的右侧面板
+                            Obx(() {
+                              if (!controller.isRightPanelVisible.value || 
+                                  controller.rightPanelMode.value != RightPanelMode.cover) {
+                                return const SizedBox.shrink();
+                              }
+                              return Positioned(
+                                right: 0,
+                                top: 0,
+                                bottom: 0,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.1),
+                                        blurRadius: 10,
+                                        offset: const Offset(-2, 0),
+                                      ),
+                                    ],
+                                  ),
+                                  child: _buildRightPanelWrapper(context, controller, theme, viewportH),
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
                     ],
                   );
                 },
               ),
             ),
+          ),
           ),
         );
       },
@@ -241,11 +242,85 @@ class ShellPage extends StatelessWidget {
     );
   }
 
+  Widget _buildRightPanelWrapper(BuildContext context, ShellController controller, ThemeData theme, double height) {
+    final bool collapsed = controller.isRightPanelCollapsed.value;
+    
+    double effectiveWidth;
+    if (collapsed) {
+      effectiveWidth = UIKit.rightPanelCollapsedWidth;
+    } else if (controller.rightPanelWidthMode.value == RightPanelWidthMode.adaptive) {
+      final viewportWidth = MediaQuery.of(context).size.width;
+      effectiveWidth = (viewportWidth * 0.618).clamp(UIKit.rightPanelMinWidth, 800.0);
+    } else {
+      effectiveWidth = controller.rightPanelWidth.value;
+    }
+
+    final double totalWidth = effectiveWidth + UIKit.splitHandleWidth;
+    return SizedBox(
+      width: totalWidth,
+      height: height,
+      child: Row(
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          MouseRegion(
+            cursor: SystemMouseCursors.resizeColumn,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanUpdate: (details) {
+                if (controller.isRightPanelCollapsed.value) {
+                  controller.expandRightPanel();
+                }
+                // 用户手动调整大小时，切换为固定宽度模式
+                if (controller.rightPanelWidthMode.value != RightPanelWidthMode.fixed) {
+                  controller.rightPanelWidthMode.value = RightPanelWidthMode.fixed;
+                  // 初始值设为当前视觉宽度
+                  controller.rightPanelWidth.value = (MediaQuery.of(context).size.width * 0.618)
+                      .clamp(UIKit.rightPanelMinWidth, MediaQuery.of(context).size.width * 0.618);
+                }
+
+                // 计算最大宽度：窗口宽度的 61.8%
+                final viewportWidth = MediaQuery.of(context).size.width;
+                final maxWidth = viewportWidth * 0.618;
+                
+                final next = (controller.rightPanelWidth.value - details.delta.dx)
+                    .clamp(UIKit.rightPanelMinWidth, maxWidth);
+                controller.rightPanelWidth.value = next.toDouble();
+              },
+              child: Container(
+                width: UIKit.splitHandleWidth,
+                color: Colors.transparent,
+                child: Center(
+                  child: Container(
+                    width: 2,
+                    height: 24,
+                    color: UIKit.dividerColor(context),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          _buildAssistantPanel(context, controller, theme),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAssistantPanel(BuildContext context, ShellController controller, ThemeData theme) {
     final tokens = theme.extension<WeChatTokens>()!;
     final builder = controller.rightPanelBuilder.value;
     final collapsed = controller.isRightPanelCollapsed.value;
-    final panelWidth = collapsed ? UIKit.rightPanelCollapsedWidth : controller.rightPanelWidth.value;
+    
+    double panelWidth;
+    if (collapsed) {
+      panelWidth = UIKit.rightPanelCollapsedWidth;
+    } else if (controller.rightPanelWidthMode.value == RightPanelWidthMode.adaptive) {
+      // 自适应模式：使用 61.8% 的视口宽度，但受最小/最大宽度限制
+      // 注意：这里为了满足“内容完整显示”的需求，我们不强制使用 UIKit.rightPanelMaxWidth
+      final viewportWidth = MediaQuery.of(context).size.width;
+      panelWidth = (viewportWidth * 0.618).clamp(UIKit.rightPanelMinWidth, 800.0);
+    } else {
+      panelWidth = controller.rightPanelWidth.value;
+    }
     
     // 展开态时检查有效宽度，折叠态下由常量宽度保证
     if (!collapsed && panelWidth <= 0) {
@@ -324,62 +399,48 @@ class ShellPage extends StatelessWidget {
     );
   }
 
-  /// 右侧面板内容采用轴感知滚动封装：
-  /// - 若子内容不是竖向滚动视图，则外层提供竖向滚动与最小高度约束；
-  /// - 若子内容不是横向滚动视图，则外层提供按需横向滚动与宽度上限（黄金分割）。
+  /// 直接构建内容，不做额外的滚动封装，让业务页面自己决定布局
   Widget _buildRightPanelScrollable(
       BuildContext context, WidgetBuilder builder, ShellController controller) {
-    return LayoutBuilder(
-      builder: (ctx, constraints) {
-        final viewportW = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : MediaQuery.of(ctx).size.width;
-        final viewportH = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : MediaQuery.of(ctx).size.height;
-        const double goldenMaxRatio = 0.618; // 额外横向空间上限比例
-
-        Widget child = Builder(builder: builder);
-        Axis? childAxis;
-        if (child is ScrollView) {
-          childAxis = child.scrollDirection;
-        }
-
-        // 竖向封装移除：避免为未知子内容提供 SingleChildScrollView 导致不受约束的高度
-        // 统一仅应用内边距，竖向滚动由各子内容自己管理
-        Widget content = Padding(padding: EdgeInsets.all(UIKit.spaceMd(context)), child: child);
-
-        // 横向封装：若子内容不是横向滚动视图，则提供外层横向滚动与宽度上限
-        if (childAxis != Axis.horizontal) {
-          final hController = ScrollController();
-          Widget horizontal = SingleChildScrollView(
-            controller: hController,
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minWidth: viewportW,
-                maxWidth: viewportW + viewportW * goldenMaxRatio,
-              ),
-              child: content,
-            ),
-          );
-          content = ScrollConfiguration(
-            behavior: const _NoGlowScrollBehavior(),
-            child: Scrollbar(controller: hController, thumbVisibility: false, child: horizontal),
-          );
-        }
-
-        return content;
-      },
+    // 直接返回构建的内容，移除强制的 Padding 和 ScrollView
+    // 这样子组件（如 DiscoveryDetailView）可以直接获取到 Panel 的准确约束
+    // 从而正确执行 Center、Expanded 等布局逻辑
+    // 
+    // 2024-05: 增加全局统一的水平间距 (UIKit.spaceXl = 24)
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: UIKit.spaceXl(context)),
+      child: Builder(builder: builder),
     );
   }
 
-}
+  void _handleGlobalTap(BuildContext context, ShellController controller, PointerDownEvent event) {
+    // 仅处理：可见 + 展开 + 覆盖模式
+    if (!controller.isRightPanelVisible.value || 
+        controller.isRightPanelCollapsed.value || 
+        controller.rightPanelMode.value != RightPanelMode.cover) {
+      return;
+    }
 
-class _NoGlowScrollBehavior extends ScrollBehavior {
-  const _NoGlowScrollBehavior();
-  @override
-  Widget buildViewportChrome(BuildContext context, Widget child, AxisDirection axisDirection) {
-    return child;
+    // 计算右侧面板的区域
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    // 计算面板当前宽度
+    double panelWidth;
+    if (controller.rightPanelWidthMode.value == RightPanelWidthMode.adaptive) {
+      panelWidth = (screenWidth * 0.618).clamp(UIKit.rightPanelMinWidth, 800.0);
+    } else {
+      panelWidth = controller.rightPanelWidth.value;
+    }
+    
+    // 加上拖拽条宽度（Positioned 的 child 是 _buildRightPanelWrapper，包含 SplitHandle）
+    final totalWidth = panelWidth + UIKit.splitHandleWidth;
+    
+    // 面板左边界
+    final panelLeft = screenWidth - totalWidth;
+
+    // 如果点击位置在面板左侧，则收起
+    if (event.position.dx < panelLeft) {
+      controller.collapseRightPanel();
+    }
   }
 }

@@ -10,36 +10,47 @@ import (
 )
 
 // ActivityPubActor represents an ActivityPub actor in the database
-type ActivityPubActor struct {
-	ID                uint64     `gorm:"primary_key;autoIncrement:false"` // Snowflake ID
-	ActivityPubID     string     `gorm:"uniqueIndex;size:512;not null"`   // ActivityPub IRI
-	Type              string     `gorm:"size:50;not null"`                // Actor type (Person, Service, etc.)
-	Name              string     `gorm:"size:255"`                        // Display name
-	PreferredUsername string     `gorm:"size:100;not null"`               // Username
-	Summary           string     `gorm:"type:text"`                       // Bio/description
-	InboxURL          string     `gorm:"size:512;not null"`               // Inbox endpoint
-	OutboxURL         string     `gorm:"size:512;not null"`               // Outbox endpoint
-	FollowersURL      string     `gorm:"size:512"`                        // Followers collection SubPath
-	FollowingURL      string     `gorm:"size:512"`                        // Following collection SubPath
-	LikedURL          string     `gorm:"size:512"`                        // Liked collection SubPath
-	PublicKeyPem      string     `gorm:"type:text"`                       // Public key for verification
-	PrivateKeyPem     string     `gorm:"type:text"`                       // Private key (for local actors)
-	IsLocal           bool       `gorm:"default:false;not null"`          // Whether this is a local actor
-	IsActive          bool       `gorm:"default:true;not null"`           // Whether the actor is active
-	LastFetched       *time.Time `gorm:"index"`                           // Last time remote actor was fetched
-	Metadata          string     `gorm:"type:json"`                       // Additional metadata as JSON
+// DEPRECATED: Use Actor + ActivityPubKey instead
+// type ActivityPubActor struct {
+// 	ID                uint64     `gorm:"primary_key;autoIncrement:false"` // Snowflake ID
+// 	ActivityPubID     string     `gorm:"uniqueIndex;size:512;not null"`   // ActivityPub IRI
+// 	Type              string     `gorm:"size:50;not null"`                // Actor type (Person, Service, etc.)
+// 	Name              string     `gorm:"size:255"`                        // Display name
+// 	PreferredUsername string     `gorm:"size:100;not null"`               // Username
+// 	Summary           string     `gorm:"type:text"`                       // Bio/description
+// 	InboxURL          string     `gorm:"size:512;not null"`               // Inbox endpoint
+// 	OutboxURL         string     `gorm:"size:512;not null"`               // Outbox endpoint
+// 	FollowersURL      string     `gorm:"size:512"`                        // Followers collection SubPath
+// 	FollowingURL      string     `gorm:"size:512"`                        // Following collection SubPath
+// 	LikedURL          string     `gorm:"size:512"`                        // Liked collection SubPath
+// 	PublicKeyPem      string     `gorm:"type:text"`                       // Public key for verification
+// 	PrivateKeyPem     string     `gorm:"type:text"`                       // Private key (for local actors)
+// 	IsLocal           bool       `gorm:"default:false;not null"`          // Whether this is a local actor
+// 	IsActive          bool       `gorm:"default:true;not null"`           // Whether the actor is active
+// 	LastFetched       *time.Time `gorm:"index"`                           // Last time remote actor was fetched
+// 	Metadata          string     `gorm:"type:json"`                       // Additional metadata as JSON
+//
+// 	CreatedAt time.Time `gorm:"created_at"`
+// 	UpdatedAt time.Time `gorm:"updated_at"`
+// }
 
-	CreatedAt time.Time `gorm:"created_at"`
-	UpdatedAt time.Time `gorm:"updated_at"`
+// ActivityPubKey stores RSA keys for local actors
+type ActivityPubKey struct {
+	ID            uint64    `gorm:"primary_key;autoIncrement:false"`
+	ActorID       uint64    `gorm:"uniqueIndex;not null"` // References touch_actor.ID
+	PublicKeyPEM  string    `gorm:"type:text"`
+	PrivateKeyPEM string    `gorm:"type:text"`
+	CreatedAt     time.Time `gorm:"created_at"`
+	UpdatedAt     time.Time `gorm:"updated_at"`
 }
 
-func (*ActivityPubActor) TableName() string {
-	return "activitypub_actors"
+func (*ActivityPubKey) TableName() string {
+	return "activitypub_keys"
 }
 
-func (a *ActivityPubActor) BeforeCreate(tx *gorm.DB) error {
-	if a.ID == 0 {
-		a.ID = id.NextID()
+func (k *ActivityPubKey) BeforeCreate(tx *gorm.DB) error {
+	if k.ID == 0 {
+		k.ID = id.NextID()
 	}
 	return nil
 }
@@ -178,21 +189,21 @@ func (c *ActivityPubCollection) BeforeCreate(tx *gorm.DB) error {
 // Helper methods for JSON marshaling/unmarshaling
 
 // SetMetadata sets the metadata field as JSON
-func (a *ActivityPubActor) SetMetadata(data interface{}) error {
+func (o *ActivityPubObject) SetMetadata(data interface{}) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	a.Metadata = string(jsonData)
+	o.Metadata = string(jsonData)
 	return nil
 }
 
-// GetMetadata gets the metadata field from JSON
-func (a *ActivityPubActor) GetMetadata(target interface{}) error {
-	if a.Metadata == "" {
+// GetMetadata retrieves the metadata field from JSON
+func (o *ActivityPubObject) GetMetadata(data interface{}) error {
+	if o.Metadata == "" {
 		return nil
 	}
-	return json.Unmarshal([]byte(a.Metadata), target)
+	return json.Unmarshal([]byte(o.Metadata), data)
 }
 
 // SetContent sets the activity content as JSON
@@ -216,22 +227,4 @@ func (a *ActivityPubActivity) GetContent() (*o.Activity, error) {
 		return nil, err
 	}
 	return &activity, nil
-}
-
-// SetMetadata sets the metadata field as JSON
-func (o *ActivityPubObject) SetMetadata(data interface{}) error {
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	o.Metadata = string(jsonData)
-	return nil
-}
-
-// GetMetadata gets the metadata field from JSON
-func (o *ActivityPubObject) GetMetadata(target interface{}) error {
-	if o.Metadata == "" {
-		return nil
-	}
-	return json.Unmarshal([]byte(o.Metadata), target)
 }

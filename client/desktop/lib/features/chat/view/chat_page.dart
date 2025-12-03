@@ -150,8 +150,7 @@ class ChatPage extends GetView<ChatController> {
                       children: [
                         TextField(
                           decoration: const InputDecoration(labelText: 'Signaling URL'),
-                          onChanged: (v) => controller.signalingUrl.value = v,
-                          controller: TextEditingController(text: controller.signalingUrl.value),
+                          controller: controller.signalingUrlController,
                         ),
                         const SizedBox(height: 8),
                         Row(
@@ -159,16 +158,14 @@ class ChatPage extends GetView<ChatController> {
                             Expanded(
                               child: TextField(
                                 decoration: const InputDecoration(labelText: 'My ID'),
-                                onChanged: (v) => controller.selfPeerId.value = v,
-                                controller: TextEditingController(text: controller.selfPeerId.value),
+                                controller: controller.selfIdController,
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: TextField(
                                 decoration: const InputDecoration(labelText: 'Target ID'),
-                                onChanged: (v) => controller.targetPeerId.value = v,
-                                controller: TextEditingController(text: controller.targetPeerId.value),
+                                controller: controller.targetIdController,
                               ),
                             ),
                           ],
