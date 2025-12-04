@@ -8,7 +8,9 @@ import 'package:peers_touch_desktop/core/services/logging_service.dart';
 class AuthController extends GetxController {
   final email = ''.obs;
   final password = ''.obs;
+  final confirmPassword = ''.obs;
   final username = ''.obs;
+  final displayName = ''.obs;
   final loading = false.obs;
   final error = RxnString();
   final presetUsers = <Map<String, dynamic>>[].obs;
@@ -119,7 +121,7 @@ class AuthController extends GetxController {
     error.value = null;
     try {
       if (!_validateSignupInputs()) {
-        error.value = '请填写有效的用户名、邮箱和密码';
+        error.value = '请填写完整信息，且密码需一致并至少8位';
         lastStatus.value = null;
         lastBody.value = null;
         loading.value = false;
@@ -148,9 +150,13 @@ class AuthController extends GetxController {
 
   bool _validateSignupInputs() {
     final nameOk = username.value.trim().isNotEmpty;
+    // displayName is optional for backend currently but required for UI
+    final dispOk = displayName.value.trim().isNotEmpty; 
     final emailText = email.value.trim();
     final emailOk = emailText.isNotEmpty && RegExp(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").hasMatch(emailText);
-    final pwdOk = password.value.trim().length >= 6;
-    return nameOk && emailOk && pwdOk;
+    final pwd = password.value.trim();
+    final pwdOk = pwd.length >= 8;
+    final confirmOk = pwd == confirmPassword.value.trim();
+    return nameOk && dispOk && emailOk && pwdOk && confirmOk;
   }
 }
