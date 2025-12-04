@@ -5,7 +5,7 @@ import 'package:get/get.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/assistant_sidebar.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';

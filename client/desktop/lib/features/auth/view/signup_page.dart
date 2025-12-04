@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import '../controller/auth_controller.dart';
 
 class SignupPage extends GetView<AuthController> {
@@ -9,6 +10,7 @@ class SignupPage extends GetView<AuthController> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context)!;
     // Darker fill color for inputs to match the reference style slightly, or just standard surface
     final inputFillColor = theme.colorScheme.surfaceVariant.withOpacity(0.3);
 
@@ -17,7 +19,7 @@ class SignupPage extends GetView<AuthController> {
         leadingWidth: 150,
         leading: TextButton.icon(
           icon: Icon(Icons.arrow_back_ios, size: 18, color: theme.colorScheme.primary),
-          label: Text('Your Privacy', style: TextStyle(color: theme.colorScheme.primary, fontSize: 16)),
+          label: Text(l10n.yourPrivacy, style: TextStyle(color: theme.colorScheme.primary, fontSize: 16)),
           onPressed: () => Get.back(),
           style: TextButton.styleFrom(padding: const EdgeInsets.only(left: 16)),
         ),
@@ -25,7 +27,7 @@ class SignupPage extends GetView<AuthController> {
           Obx(() => TextButton(
             onPressed: controller.loading.value ? null : () => controller.signup(),
             child: Text(
-              'Next', 
+              l10n.next, 
               style: TextStyle(
                 fontWeight: FontWeight.bold, 
                 fontSize: 16,
@@ -44,16 +46,16 @@ class SignupPage extends GetView<AuthController> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
             children: [
-              const Text(
-                'Create Account',
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+              Text(
+                l10n.createAccount,
+                style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 32),
 
               // Server URL
               Obx(() => _buildInput(
                 context,
-                label: 'Server URL',
+                label: l10n.serverUrl,
                 value: controller.baseUrl.value,
                 onChanged: controller.updateBaseUrl,
                 placeholder: 'https://server.url',
@@ -64,10 +66,10 @@ class SignupPage extends GetView<AuthController> {
               // Display Name
               Obx(() => _buildInput(
                 context,
-                label: 'Display Name',
+                label: l10n.displayName,
                 value: controller.displayName.value,
                 onChanged: (v) => controller.displayName.value = v,
-                placeholder: 'Display Name',
+                placeholder: l10n.displayName,
                 fillColor: inputFillColor,
               )),
               const SizedBox(height: 16),
@@ -75,10 +77,10 @@ class SignupPage extends GetView<AuthController> {
               // Username
               Obx(() => _buildInput(
                 context,
-                label: 'Username',
+                label: l10n.username,
                 value: controller.username.value,
                 onChanged: (v) => controller.username.value = v,
-                placeholder: 'Username',
+                placeholder: l10n.username,
                 prefixText: '@ ',
                 fillColor: inputFillColor,
               )),
@@ -87,10 +89,10 @@ class SignupPage extends GetView<AuthController> {
               // Email
               Obx(() => _buildInput(
                 context,
-                label: 'Email',
+                label: l10n.email,
                 value: controller.email.value,
                 onChanged: (v) => controller.email.value = v,
-                placeholder: 'Email',
+                placeholder: l10n.email,
                 fillColor: inputFillColor,
               )),
               const SizedBox(height: 16),
@@ -98,10 +100,10 @@ class SignupPage extends GetView<AuthController> {
               // Password
               Obx(() => _buildInput(
                 context,
-                label: 'Password',
+                label: l10n.password,
                 value: controller.password.value,
                 onChanged: (v) => controller.password.value = v,
-                placeholder: 'Password',
+                placeholder: l10n.password,
                 obscureText: true,
                 fillColor: inputFillColor,
               )),
@@ -110,17 +112,17 @@ class SignupPage extends GetView<AuthController> {
               // Confirm Password
               Obx(() => _buildInput(
                 context,
-                label: 'Confirm Password',
+                label: l10n.confirmPassword,
                 value: controller.confirmPassword.value,
                 onChanged: (v) => controller.confirmPassword.value = v,
-                placeholder: 'Confirm Password',
+                placeholder: l10n.confirmPassword,
                 obscureText: true,
                 fillColor: inputFillColor,
               )),
               const SizedBox(height: 8),
               
               Text(
-                'Your password needs at least eight characters',
+                l10n.passwordMinLengthHint,
                 style: TextStyle(
                   color: theme.colorScheme.onSurface.withOpacity(0.6),
                   fontSize: 13,

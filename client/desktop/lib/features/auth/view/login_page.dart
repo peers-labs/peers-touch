@@ -3,11 +3,14 @@ import 'package:get/get.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
 import '../controller/auth_controller.dart';
 
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+
 class LoginPage extends GetView<AuthController> {
   const LoginPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     return Scaffold(
       body: Center(
         child: ConstrainedBox(
@@ -19,31 +22,31 @@ class LoginPage extends GetView<AuthController> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 12),
-                Obx(() => Text(controller.authTab.value == 0 ? 'Sign in' : 'Create account', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700))),
+                Obx(() => Text(controller.authTab.value == 0 ? l.signIn : l.createAccount, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700))),
                 const SizedBox(height: 12),
-                Obx(() => Tabs(labels: const ['登录', '注册'], index: controller.authTab.value, onChanged: controller.switchTab)),
+                Obx(() => Tabs(labels: [l.loginTab, l.registerTab], index: controller.authTab.value, onChanged: controller.switchTab)),
                 const SizedBox(height: 20),
                 Obx(() => TextBox(
-                      label: 'Server URL',
+                      label: l.serverUrl,
                       value: controller.baseUrl.value,
-                      description: 'Example: http://localhost:18080',
+                      description: l.serverUrlExample,
                       onChanged: (v) => controller.updateBaseUrl(v),
                     )),
                 const SizedBox(height: 12),
                 Obx(() => controller.authTab.value == 1
                     ? TextBox(
-                        label: 'Username',
-                        description: 'Required',
+                        label: l.username,
+                        description: l.required,
                         value: controller.username.value,
-                        placeholder: 'Username',
+                        placeholder: l.username,
                         showLabel: false,
                         onChanged: (v) => controller.username.value = v,
                       )
                     : TextBox(
-                        label: 'Email',
-                        description: 'Required',
+                        label: l.email,
+                        description: l.required,
                         value: controller.email.value,
-                        placeholder: 'Email or username',
+                        placeholder: l.emailOrUsername,
                         showLabel: false,
                         onChanged: (v) => controller.email.value = v,
                       )),
@@ -51,10 +54,10 @@ class LoginPage extends GetView<AuthController> {
                     ? Padding(
                         padding: const EdgeInsets.only(top: 12.0),
                         child: TextBox(
-                          label: 'Email',
-                          description: 'Required',
+                          label: l.email,
+                          description: l.required,
                           value: controller.email.value,
-                          placeholder: 'Email',
+                          placeholder: l.email,
                           showLabel: false,
                           onChanged: (v) => controller.email.value = v,
                         ),
@@ -62,23 +65,23 @@ class LoginPage extends GetView<AuthController> {
                     : const SizedBox.shrink()),
                 const SizedBox(height: 12),
                 Obx(() => PasswordBox(
-                      label: 'Password',
-                      description: 'Required (min 6 chars)',
+                      label: l.password,
+                      description: l.requiredMinChars,
                       value: controller.password.value,
-                      placeholder: 'Password',
+                      placeholder: l.password,
                       onChanged: (v) => controller.password.value = v,
                     )),
                 const SizedBox(height: 16),
                 Obx(() => PrimaryButton(
-                      text: controller.authTab.value == 0 ? 'Sign in' : 'Sign up',
+                      text: controller.authTab.value == 0 ? l.signIn : l.signUp,
                       loading: controller.loading.value,
                       onPressed: () => controller.authTab.value == 0 ? controller.login() : controller.signup(),
                       fullWidth: true,
                     )),
                 Obx(() => controller.authTab.value == 0
-                    ? const Padding(
-                        padding: EdgeInsets.only(top: 8.0),
-                        child: TextButton(onPressed: null, child: Text('Forgot your password?')),
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: TextButton(onPressed: null, child: Text(l.forgotPassword)),
                       )
                     : const SizedBox(height: 8)),
                 const SizedBox(height: 12),
