@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'controller/shell_controller.dart';
+import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 import 'package:peers_touch_desktop/features/settings/settings_module.dart';
 import 'package:peers_touch_desktop/features/ai_chat/ai_chat_module.dart';
 import 'package:peers_touch_desktop/features/chat/chat_module.dart';
@@ -10,7 +11,9 @@ import 'package:peers_touch_desktop/features/discovery/discovery_module.dart';
 class ShellBinding extends Bindings {
   @override
   void dependencies() {
-    // 先注册系统/业务模块的一级菜单项
+    // 每次进入 Shell 前重建菜单：清空后按当前用户上下文重新注册
+    PrimaryMenuManager.clearAll();
+
     // 系统模块：设置（尾部区域）
     SettingsModule.register();
     // 业务模块：发现（头部区域）
@@ -24,7 +27,15 @@ class ShellBinding extends Bindings {
     // 业务模块：Peers Admin（头部区域）
     PeersAdminModule.register();
 
-    // 再注入 ShellController，确保其读取到已注册的菜单项
-    Get.put<ShellController>(ShellController(), permanent: true);
+    // 注入或更新 ShellController（避免重复创建）
+    if (Get.isRegistered<ShellController>()) {
+      final sc = Get.find<ShellController>();
+      final head = PrimaryMenuManager.getHeadList();
+      if (head.isNotEmpty) {
+        sc.selectMenuItem(head.first);
+      }
+    } else {
+      Get.put<ShellController>(ShellController(), permanent: true);
+    }
   }
 }

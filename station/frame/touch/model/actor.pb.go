@@ -9,7 +9,6 @@ package model
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -31,7 +30,6 @@ type Actor struct {
 	Inbox         string                 `protobuf:"bytes,5,opt,name=inbox,proto3" json:"inbox,omitempty"`
 	Outbox        string                 `protobuf:"bytes,6,opt,name=outbox,proto3" json:"outbox,omitempty"`
 	Endpoints     map[string]string      `protobuf:"bytes,7,rep,name=endpoints,proto3" json:"endpoints,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -115,13 +113,6 @@ func (x *Actor) GetEndpoints() map[string]string {
 	return nil
 }
 
-func (x *Actor) GetUpdatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.UpdatedAt
-	}
-	return nil
-}
-
 type ActorList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*Actor               `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
@@ -178,7 +169,7 @@ var File_domain_actor_actor_proto protoreflect.FileDescriptor
 
 const file_domain_actor_actor_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe3\x02\n" +
+	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\"\xa8\x02\n" +
 	"\x05Actor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
@@ -186,9 +177,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x05email\x18\x04 \x01(\tR\x05email\x12\x14\n" +
 	"\x05inbox\x18\x05 \x01(\tR\x05inbox\x12\x16\n" +
 	"\x06outbox\x18\x06 \x01(\tR\x06outbox\x12N\n" +
-	"\tendpoints\x18\a \x03(\v20.peers_touch.model.actor.v1.Actor.EndpointsEntryR\tendpoints\x129\n" +
-	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x1a<\n" +
+	"\tendpoints\x18\a \x03(\v20.peers_touch.model.actor.v1.Actor.EndpointsEntryR\tendpoints\x1a<\n" +
 	"\x0eEndpointsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Z\n" +
@@ -210,20 +199,18 @@ func file_domain_actor_actor_proto_rawDescGZIP() []byte {
 
 var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_domain_actor_actor_proto_goTypes = []any{
-	(*Actor)(nil),                 // 0: peers_touch.model.actor.v1.Actor
-	(*ActorList)(nil),             // 1: peers_touch.model.actor.v1.ActorList
-	nil,                           // 2: peers_touch.model.actor.v1.Actor.EndpointsEntry
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(*Actor)(nil),     // 0: peers_touch.model.actor.v1.Actor
+	(*ActorList)(nil), // 1: peers_touch.model.actor.v1.ActorList
+	nil,               // 2: peers_touch.model.actor.v1.Actor.EndpointsEntry
 }
 var file_domain_actor_actor_proto_depIdxs = []int32{
 	2, // 0: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
-	3, // 1: peers_touch.model.actor.v1.Actor.updated_at:type_name -> google.protobuf.Timestamp
-	0, // 2: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 1: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }

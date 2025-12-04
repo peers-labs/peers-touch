@@ -14,6 +14,7 @@ import 'package:peers_touch_desktop/features/ai_chat/widgets/message_list_view.d
 import 'package:peers_touch_desktop/features/ai_chat/widgets/chat_input_bar.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/topic_panel.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
@@ -136,6 +137,7 @@ class AIChatPage extends GetView<AIChatController> {
                       showCollapseButton: true,
                       clearCenter: false,
                       collapsedByDefault: true,
+                      mode: RightPanelMode.squeeze,
                     );
                   }
                 });

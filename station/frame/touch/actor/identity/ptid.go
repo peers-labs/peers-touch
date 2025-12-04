@@ -1,4 +1,4 @@
-package ptid
+package identity
 
 import (
 	"errors"
@@ -28,7 +28,6 @@ const (
 )
 
 var (
-	// Regex for validation
 	namespaceRegex = regexp.MustCompile(`^[a-z0-9._\-/]+$`)
 	usernameRegex  = regexp.MustCompile(`^[a-z0-9._\-]{1,32}$`)
 
@@ -45,19 +44,15 @@ func Parse(s string) (*PTID, error) {
 	if len(parts) != 7 {
 		return nil, ErrInvalidFormat
 	}
-
 	if parts[0] != "ptid" {
 		return nil, ErrInvalidFormat
 	}
-
 	if parts[1] != "v1" {
 		return nil, ErrInvalidVersion
 	}
-
 	if parts[2] != "actor" {
 		return nil, ErrInvalidFormat
 	}
-
 	id := &PTID{
 		Version:     parts[1],
 		Namespace:   parts[3],
@@ -65,11 +60,9 @@ func Parse(s string) (*PTID, error) {
 		Username:    parts[5],
 		Fingerprint: parts[6],
 	}
-
 	if err := id.Validate(); err != nil {
 		return nil, err
 	}
-
 	return id, nil
 }
 
@@ -89,25 +82,19 @@ func (id *PTID) Validate() error {
 	if id.Version != "v1" {
 		return ErrInvalidVersion
 	}
-
 	if !namespaceRegex.MatchString(id.Namespace) {
 		return ErrInvalidNamespace
 	}
-
 	switch id.Type {
 	case TypePerson, TypeGroup, TypeOrganization, TypeService, TypeApplication:
-		// valid
 	default:
 		return ErrInvalidType
 	}
-
 	if !usernameRegex.MatchString(id.Username) {
 		return ErrInvalidUsername
 	}
-
 	if id.Fingerprint == "" {
 		return errors.New("fingerprint cannot be empty")
 	}
-
 	return nil
 }
