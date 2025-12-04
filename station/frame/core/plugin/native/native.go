@@ -10,7 +10,7 @@ import (
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/turn"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/server/hertz"
-	_ "github.com/peers-labs/peers-touch/station/frame/touch/actor/identity"
+	_ "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 )
 
 func init() {
