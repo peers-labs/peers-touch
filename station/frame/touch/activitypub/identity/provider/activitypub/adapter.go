@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/peers-labs/peers-touch/station/frame/touch/actor/identity"
+	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 )
 
 const ProviderName = "activitypub"
