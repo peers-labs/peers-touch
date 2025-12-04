@@ -1,11 +1,11 @@
-package actor
+package activitypub
 
 import (
 	"context"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
-	identity "github.com/peers-labs/peers-touch/station/frame/touch/actor/identity"
+	identity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"

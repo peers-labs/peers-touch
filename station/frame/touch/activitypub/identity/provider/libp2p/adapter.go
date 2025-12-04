@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/peers-labs/peers-touch/station/frame/touch/actor/identity"
+	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 )
 
 const ProviderLibp2p = "libp2p"

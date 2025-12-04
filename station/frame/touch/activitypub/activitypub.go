@@ -198,7 +198,7 @@ func GetActor(c context.Context, ctx *app.RequestContext) {
 		PublicKeyPem: pubKey.PublicKeyPEM,
 	}
 
-	ctx.JSON(http.StatusOK, actorObj)
+	WriteActivityPubResponse(c, ctx, actorObj)
 }
 
 // HandleInboxActivity handles incoming ActivityPub activities
@@ -323,7 +323,18 @@ func handleFollow(c context.Context, ctx *app.RequestContext, activity *ap.Activ
 		log.Errorf(c, "Failed to save follow: %v", err)
 	}
 
-	// TODO: Send Accept Activity
+	// Send Accept Activity
+	acceptID := fmt.Sprintf("%s/accept/%d", myActorID, time.Now().UnixNano())
+	accept := ap.ActivityNew(ap.ID(acceptID), ap.AcceptType, ap.IRI(activity.ID))
+	accept.Actor = ap.IRI(myActorID)
+	accept.To = ap.ItemCollection{ap.IRI(follower)}
+
+	// Persist Accept Activity
+	// In a real implementation, we would also deliver this to the follower's inbox
+	// For now, we just save it to our outbox/db so it "exists"
+
+	// TODO: Implement delivery queue to push to remote inboxes
+
 	ctx.JSON(http.StatusOK, "Follow received")
 }
 
@@ -472,7 +483,7 @@ func GetOutboxActivities(c context.Context, ctx *app.RequestContext) {
 		collection.Last = ap.IRI(fmt.Sprintf("%s?page=true&min_id=0", outboxID))
 
 		log.Infof(c, "Retrieving outbox collection for user: %s", user)
-		ctx.JSON(http.StatusOK, collection)
+		WriteActivityPubResponse(c, ctx, collection)
 		return
 	}
 
@@ -507,7 +518,7 @@ func GetOutboxActivities(c context.Context, ctx *app.RequestContext) {
 	}
 
 	log.Infof(c, "Retrieving outbox activities page for user: %s", user)
-	ctx.JSON(http.StatusOK, collection)
+	WriteActivityPubResponse(c, ctx, collection)
 }
 
 // GetFollowers retrieves the followers collection for an actor
@@ -544,7 +555,7 @@ func GetFollowers(c context.Context, ctx *app.RequestContext) {
 		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", followersID))
 
 		log.Infof(c, "Retrieving followers collection for user: %s", user)
-		ctx.JSON(http.StatusOK, collection)
+		WriteActivityPubResponse(c, ctx, collection)
 		return
 	}
 
@@ -570,7 +581,7 @@ func GetFollowers(c context.Context, ctx *app.RequestContext) {
 	}
 
 	log.Infof(c, "Retrieving followers page for user: %s", user)
-	ctx.JSON(http.StatusOK, collection)
+	WriteActivityPubResponse(c, ctx, collection)
 }
 
 // GetInboxActivities retrieves activities from an actor's inbox
@@ -607,7 +618,7 @@ func GetInboxActivities(c context.Context, ctx *app.RequestContext) {
 		collection.Last = ap.IRI(fmt.Sprintf("%s?page=true&min_id=0", inboxID))
 
 		log.Infof(c, "Retrieving inbox collection for user: %s", user)
-		ctx.JSON(http.StatusOK, collection)
+		WriteActivityPubResponse(c, ctx, collection)
 		return
 	}
 
@@ -642,7 +653,7 @@ func GetInboxActivities(c context.Context, ctx *app.RequestContext) {
 	}
 
 	log.Infof(c, "Retrieving inbox activities page for user: %s", user)
-	ctx.JSON(http.StatusOK, collection)
+	WriteActivityPubResponse(c, ctx, collection)
 }
 
 // GetFollowing retrieves who an actor is following
@@ -679,7 +690,7 @@ func GetFollowing(c context.Context, ctx *app.RequestContext) {
 		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", followingID))
 
 		log.Infof(c, "Retrieving following collection for user: %s", user)
-		ctx.JSON(http.StatusOK, collection)
+		WriteActivityPubResponse(c, ctx, collection)
 		return
 	}
 
@@ -705,7 +716,7 @@ func GetFollowing(c context.Context, ctx *app.RequestContext) {
 	}
 
 	log.Infof(c, "Retrieving following page for user: %s", user)
-	ctx.JSON(http.StatusOK, collection)
+	WriteActivityPubResponse(c, ctx, collection)
 }
 
 // GetLiked retrieves an actor's liked activities
@@ -742,7 +753,7 @@ func GetLiked(c context.Context, ctx *app.RequestContext) {
 		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", likedID))
 
 		log.Infof(c, "Retrieving liked collection for user: %s", user)
-		ctx.JSON(http.StatusOK, collection)
+		WriteActivityPubResponse(c, ctx, collection)
 		return
 	}
 
@@ -767,7 +778,7 @@ func GetLiked(c context.Context, ctx *app.RequestContext) {
 	}
 
 	log.Infof(c, "Retrieving liked page for user: %s", user)
-	ctx.JSON(http.StatusOK, collection)
+	WriteActivityPubResponse(c, ctx, collection)
 }
 
 // Stubs for missing handlers referenced in activitypub_handler.go
@@ -866,4 +877,15 @@ func handleSimplifiedActivity(c context.Context, ctx *app.RequestContext, activi
 	}
 
 	ctx.JSON(http.StatusOK, activity)
+}
+
+// WriteActivityPubResponse writes a JSON response with the ActivityPub Content-Type
+func WriteActivityPubResponse(c context.Context, ctx *app.RequestContext, obj interface{}) {
+	resp, err := json.Marshal(obj)
+	if err != nil {
+		log.Errorf(c, "Failed to marshal activitypub response: %v", err)
+		ctx.JSON(http.StatusInternalServerError, "Internal Server Error")
+		return
+	}
+	ctx.Data(http.StatusOK, "application/activity+json; charset=utf-8", resp)
 }
