@@ -14,6 +14,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -136,7 +137,8 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 		DisplayName: toString(result.User["name"]),
 		Email:       toString(result.User["email"]),
 	}
-	data := &modelpb.LoginData{Tokens: tokens, SessionId: result.SessionID, User: user}
+	actorAny, _ := anypb.New(user)
+	data := &modelpb.LoginData{Tokens: tokens, SessionId: result.SessionID, Actor: actorAny}
 	SuccessResponse(ctx, "Login successful", data)
 }
 
