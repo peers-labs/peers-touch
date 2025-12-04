@@ -1,3 +1,5 @@
+import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
+
 /// 聊天模块核心服务接口
 /// 提供好友管理、会话管理、消息处理等核心功能
 abstract class ChatCoreService {
@@ -39,4 +41,3 @@ abstract class ChatCoreService {
   Future<void> initialize();
   Future<void> dispose();
 }
-import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
