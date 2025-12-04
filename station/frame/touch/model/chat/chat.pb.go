@@ -7,7 +7,6 @@
 package chat
 
 import (
-	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -622,7 +621,7 @@ func (x *MessageAttachment) GetMetadata() map[string]string {
 // 好友关系
 type Friend struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
-	User                *model.Actor           `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	ActorId             string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
 	Status              FriendshipStatus       `protobuf:"varint,2,opt,name=status,proto3,enum=peers_touch.model.chat.v1.FriendshipStatus" json:"status,omitempty"`
 	FriendshipCreatedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=friendship_created_at,json=friendshipCreatedAt,proto3" json:"friendship_created_at,omitempty"`
 	PublicKey           string                 `protobuf:"bytes,4,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // 用于端到端加密
@@ -661,11 +660,11 @@ func (*Friend) Descriptor() ([]byte, []int) {
 	return file_domain_chat_chat_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *Friend) GetUser() *model.Actor {
+func (x *Friend) GetActorId() string {
 	if x != nil {
-		return x.User
+		return x.ActorId
 	}
-	return nil
+	return ""
 }
 
 func (x *Friend) GetStatus() FriendshipStatus {
@@ -793,7 +792,7 @@ var File_domain_chat_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x16domain/chat/chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"\xdd\x03\n" +
+	"\x16domain/chat/chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdd\x03\n" +
 	"\vChatSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05topic\x18\x02 \x01(\tR\x05topic\x12'\n" +
@@ -833,9 +832,9 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"\bmetadata\x18\a \x03(\v2:.peers_touch.model.chat.v1.MessageAttachment.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xfd\x02\n" +
-	"\x06Friend\x125\n" +
-	"\x04user\x18\x01 \x01(\v2!.peers_touch.model.actor.v1.ActorR\x04user\x12C\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe1\x02\n" +
+	"\x06Friend\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12C\n" +
 	"\x06status\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.FriendshipStatusR\x06status\x12N\n" +
 	"\x15friendship_created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x13friendshipCreatedAt\x12\x1d\n" +
 	"\n" +
@@ -914,7 +913,6 @@ var file_domain_chat_chat_proto_goTypes = []any{
 	nil,                           // 12: peers_touch.model.chat.v1.MessageAttachment.MetadataEntry
 	nil,                           // 13: peers_touch.model.chat.v1.Friend.MetadataEntry
 	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
-	(*model.Actor)(nil),           // 15: peers_touch.model.actor.v1.Actor
 }
 var file_domain_chat_chat_proto_depIdxs = []int32{
 	14, // 0: peers_touch.model.chat.v1.ChatSession.last_message_at:type_name -> google.protobuf.Timestamp
@@ -926,18 +924,17 @@ var file_domain_chat_chat_proto_depIdxs = []int32{
 	7,  // 6: peers_touch.model.chat.v1.ChatMessage.attachments:type_name -> peers_touch.model.chat.v1.MessageAttachment
 	11, // 7: peers_touch.model.chat.v1.ChatMessage.metadata:type_name -> peers_touch.model.chat.v1.ChatMessage.MetadataEntry
 	12, // 8: peers_touch.model.chat.v1.MessageAttachment.metadata:type_name -> peers_touch.model.chat.v1.MessageAttachment.MetadataEntry
-	15, // 9: peers_touch.model.chat.v1.Friend.user:type_name -> peers_touch.model.actor.v1.Actor
-	3,  // 10: peers_touch.model.chat.v1.Friend.status:type_name -> peers_touch.model.chat.v1.FriendshipStatus
-	14, // 11: peers_touch.model.chat.v1.Friend.friendship_created_at:type_name -> google.protobuf.Timestamp
-	13, // 12: peers_touch.model.chat.v1.Friend.metadata:type_name -> peers_touch.model.chat.v1.Friend.MetadataEntry
-	4,  // 13: peers_touch.model.chat.v1.FriendRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
-	14, // 14: peers_touch.model.chat.v1.FriendRequest.created_at:type_name -> google.protobuf.Timestamp
-	14, // 15: peers_touch.model.chat.v1.FriendRequest.responded_at:type_name -> google.protobuf.Timestamp
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	3,  // 9: peers_touch.model.chat.v1.Friend.status:type_name -> peers_touch.model.chat.v1.FriendshipStatus
+	14, // 10: peers_touch.model.chat.v1.Friend.friendship_created_at:type_name -> google.protobuf.Timestamp
+	13, // 11: peers_touch.model.chat.v1.Friend.metadata:type_name -> peers_touch.model.chat.v1.Friend.MetadataEntry
+	4,  // 12: peers_touch.model.chat.v1.FriendRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
+	14, // 13: peers_touch.model.chat.v1.FriendRequest.created_at:type_name -> google.protobuf.Timestamp
+	14, // 14: peers_touch.model.chat.v1.FriendRequest.responded_at:type_name -> google.protobuf.Timestamp
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_chat_proto_init() }

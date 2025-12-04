@@ -8,136 +8,13 @@
 // ignore_for_file: constant_identifier_names
 // ignore_for_file: curly_braces_in_flow_control_structures
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
-// ignore_for_file: non_constant_identifier_names
+// ignore_for_file: non_constant_identifier_names, prefer_relative_imports
 
 import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import '../../google/protobuf/timestamp.pb.dart' as $0;
-
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
-
-/// Actor: 核心用户/实体
-class Actor extends $pb.GeneratedMessage {
-  factory Actor({
-    $core.String? id,
-    $core.String? name,
-    $core.String? displayName,
-    $core.String? avatarUrl,
-    $0.Timestamp? createdAt,
-    $0.Timestamp? updatedAt,
-  }) {
-    final result = create();
-    if (id != null) result.id = id;
-    if (name != null) result.name = name;
-    if (displayName != null) result.displayName = displayName;
-    if (avatarUrl != null) result.avatarUrl = avatarUrl;
-    if (createdAt != null) result.createdAt = createdAt;
-    if (updatedAt != null) result.updatedAt = updatedAt;
-    return result;
-  }
-
-  Actor._();
-
-  factory Actor.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory Actor.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'Actor',
-      package: const $pb.PackageName(
-          _omitMessageNames ? '' : 'peers_touch.model.core.v1'),
-      createEmptyInstance: create)
-    ..aOS(1, _omitFieldNames ? '' : 'id')
-    ..aOS(2, _omitFieldNames ? '' : 'name')
-    ..aOS(3, _omitFieldNames ? '' : 'displayName')
-    ..aOS(4, _omitFieldNames ? '' : 'avatarUrl')
-    ..aOM<$0.Timestamp>(5, _omitFieldNames ? '' : 'createdAt',
-        subBuilder: $0.Timestamp.create)
-    ..aOM<$0.Timestamp>(6, _omitFieldNames ? '' : 'updatedAt',
-        subBuilder: $0.Timestamp.create)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Actor clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  Actor copyWith(void Function(Actor) updates) =>
-      super.copyWith((message) => updates(message as Actor)) as Actor;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static Actor create() => Actor._();
-  @$core.override
-  Actor createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static Actor getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Actor>(create);
-  static Actor? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $core.String get id => $_getSZ(0);
-  @$pb.TagNumber(1)
-  set id($core.String value) => $_setString(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasId() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearId() => $_clearField(1);
-
-  @$pb.TagNumber(2)
-  $core.String get name => $_getSZ(1);
-  @$pb.TagNumber(2)
-  set name($core.String value) => $_setString(1, value);
-  @$pb.TagNumber(2)
-  $core.bool hasName() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearName() => $_clearField(2);
-
-  @$pb.TagNumber(3)
-  $core.String get displayName => $_getSZ(2);
-  @$pb.TagNumber(3)
-  set displayName($core.String value) => $_setString(2, value);
-  @$pb.TagNumber(3)
-  $core.bool hasDisplayName() => $_has(2);
-  @$pb.TagNumber(3)
-  void clearDisplayName() => $_clearField(3);
-
-  @$pb.TagNumber(4)
-  $core.String get avatarUrl => $_getSZ(3);
-  @$pb.TagNumber(4)
-  set avatarUrl($core.String value) => $_setString(3, value);
-  @$pb.TagNumber(4)
-  $core.bool hasAvatarUrl() => $_has(3);
-  @$pb.TagNumber(4)
-  void clearAvatarUrl() => $_clearField(4);
-
-  @$pb.TagNumber(5)
-  $0.Timestamp get createdAt => $_getN(4);
-  @$pb.TagNumber(5)
-  set createdAt($0.Timestamp value) => $_setField(5, value);
-  @$pb.TagNumber(5)
-  $core.bool hasCreatedAt() => $_has(4);
-  @$pb.TagNumber(5)
-  void clearCreatedAt() => $_clearField(5);
-  @$pb.TagNumber(5)
-  $0.Timestamp ensureCreatedAt() => $_ensure(4);
-
-  @$pb.TagNumber(6)
-  $0.Timestamp get updatedAt => $_getN(5);
-  @$pb.TagNumber(6)
-  set updatedAt($0.Timestamp value) => $_setField(6, value);
-  @$pb.TagNumber(6)
-  $core.bool hasUpdatedAt() => $_has(5);
-  @$pb.TagNumber(6)
-  void clearUpdatedAt() => $_clearField(6);
-  @$pb.TagNumber(6)
-  $0.Timestamp ensureUpdatedAt() => $_ensure(5);
-}
 
 /// Peer: 对等节点
 class Peer extends $pb.GeneratedMessage {

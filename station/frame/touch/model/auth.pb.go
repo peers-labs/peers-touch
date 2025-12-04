@@ -9,6 +9,7 @@ package model
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -154,7 +155,7 @@ type LoginData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Tokens        *AuthTokens            `protobuf:"bytes,1,opt,name=tokens,proto3" json:"tokens,omitempty"`
 	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	User          *Actor                 `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
+	Actor         *anypb.Any             `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -203,9 +204,9 @@ func (x *LoginData) GetSessionId() string {
 	return ""
 }
 
-func (x *LoginData) GetUser() *Actor {
+func (x *LoginData) GetActor() *anypb.Any {
 	if x != nil {
-		return x.User
+		return x.Actor
 	}
 	return nil
 }
@@ -214,7 +215,7 @@ var File_domain_auth_auth_proto protoreflect.FileDescriptor
 
 const file_domain_auth_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x16domain/auth/auth.proto\x12\x19peers_touch.model.auth.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"@\n" +
+	"\x16domain/auth/auth.proto\x12\x19peers_touch.model.auth.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19google/protobuf/any.proto\"@\n" +
 	"\fLoginRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\"\xc4\x01\n" +
@@ -226,12 +227,12 @@ const file_domain_auth_auth_proto_rawDesc = "" +
 	"\n" +
 	"token_type\x18\x04 \x01(\tR\ttokenType\x129\n" +
 	"\n" +
-	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xa0\x01\n" +
+	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x95\x01\n" +
 	"\tLoginData\x12=\n" +
 	"\x06tokens\x18\x01 \x01(\v2%.peers_touch.model.auth.v1.AuthTokensR\x06tokens\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x125\n" +
-	"\x04user\x18\x03 \x01(\v2!.peers_touch.model.actor.v1.ActorR\x04userBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12*\n" +
+	"\x05actor\x18\x03 \x01(\v2\x14.google.protobuf.AnyR\x05actorBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_auth_auth_proto_rawDescOnce sync.Once
@@ -251,12 +252,12 @@ var file_domain_auth_auth_proto_goTypes = []any{
 	(*AuthTokens)(nil),            // 1: peers_touch.model.auth.v1.AuthTokens
 	(*LoginData)(nil),             // 2: peers_touch.model.auth.v1.LoginData
 	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
-	(*Actor)(nil),                 // 4: peers_touch.model.actor.v1.Actor
+	(*anypb.Any)(nil),             // 4: google.protobuf.Any
 }
 var file_domain_auth_auth_proto_depIdxs = []int32{
 	3, // 0: peers_touch.model.auth.v1.AuthTokens.expires_at:type_name -> google.protobuf.Timestamp
 	1, // 1: peers_touch.model.auth.v1.LoginData.tokens:type_name -> peers_touch.model.auth.v1.AuthTokens
-	4, // 2: peers_touch.model.auth.v1.LoginData.user:type_name -> peers_touch.model.actor.v1.Actor
+	4, // 2: peers_touch.model.auth.v1.LoginData.actor:type_name -> google.protobuf.Any
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -269,7 +270,6 @@ func file_domain_auth_auth_proto_init() {
 	if File_domain_auth_auth_proto != nil {
 		return
 	}
-	file_domain_actor_actor_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

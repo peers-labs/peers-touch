@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package peers_touch.model.actor.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+message ActorSignRequest {
+  string name = 1;
+  string email = 2;
+  string password = 3;
+  string namespace = 10;
+  string account_type = 11;
+}
+

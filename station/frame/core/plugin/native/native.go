@@ -3,7 +3,6 @@ package native
 import (
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/client"
-	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/identity"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/node"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server"
@@ -11,6 +10,7 @@ import (
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/turn"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/server/hertz"
+	_ "github.com/peers-labs/peers-touch/station/frame/touch/actor/identity"
 )
 
 func init() {

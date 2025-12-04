@@ -2,12 +2,8 @@ syntax = "proto3";
 
 package peers_touch.model.core.v1;
 
-import "google/protobuf/timestamp.proto";
-import "domain/actor/actor.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
-
-// 注意：Actor 已迁移到 peers_touch.model.actor.v1.Actor，避免重复定义
 
 // Peer: 对等节点
 message Peer {

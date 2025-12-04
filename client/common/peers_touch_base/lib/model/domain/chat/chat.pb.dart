@@ -8,15 +8,15 @@
 // ignore_for_file: constant_identifier_names
 // ignore_for_file: curly_braces_in_flow_control_structures
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
-// ignore_for_file: non_constant_identifier_names
+// ignore_for_file: non_constant_identifier_names, prefer_relative_imports
 
 import 'dart:core' as $core;
 
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
+import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart'
+    as $0;
 
-import '../../google/protobuf/timestamp.pb.dart' as $0;
-import '../core/core.pb.dart' as $1;
 import 'chat.pbenum.dart';
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
@@ -463,14 +463,14 @@ class MessageAttachment extends $pb.GeneratedMessage {
 /// 好友关系
 class Friend extends $pb.GeneratedMessage {
   factory Friend({
-    $1.Actor? user,
+    $core.String? actorId,
     FriendshipStatus? status,
     $0.Timestamp? friendshipCreatedAt,
     $core.String? publicKey,
     $core.Iterable<$core.MapEntry<$core.String, $core.String>>? metadata,
   }) {
     final result = create();
-    if (user != null) result.user = user;
+    if (actorId != null) result.actorId = actorId;
     if (status != null) result.status = status;
     if (friendshipCreatedAt != null)
       result.friendshipCreatedAt = friendshipCreatedAt;
@@ -493,8 +493,7 @@ class Friend extends $pb.GeneratedMessage {
       package: const $pb.PackageName(
           _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
       createEmptyInstance: create)
-    ..aOM<$1.Actor>(1, _omitFieldNames ? '' : 'user',
-        subBuilder: $1.Actor.create)
+    ..aOS(1, _omitFieldNames ? '' : 'actorId')
     ..aE<FriendshipStatus>(2, _omitFieldNames ? '' : 'status',
         enumValues: FriendshipStatus.values)
     ..aOM<$0.Timestamp>(3, _omitFieldNames ? '' : 'friendshipCreatedAt',
@@ -526,15 +525,13 @@ class Friend extends $pb.GeneratedMessage {
   static Friend? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $1.Actor get user => $_getN(0);
+  $core.String get actorId => $_getSZ(0);
   @$pb.TagNumber(1)
-  set user($1.Actor value) => $_setField(1, value);
+  set actorId($core.String value) => $_setString(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasUser() => $_has(0);
+  $core.bool hasActorId() => $_has(0);
   @$pb.TagNumber(1)
-  void clearUser() => $_clearField(1);
-  @$pb.TagNumber(1)
-  $1.Actor ensureUser() => $_ensure(0);
+  void clearActorId() => $_clearField(1);
 
   @$pb.TagNumber(2)
   FriendshipStatus get status => $_getN(1);

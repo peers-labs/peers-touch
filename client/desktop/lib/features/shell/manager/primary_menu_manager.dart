@@ -40,10 +40,20 @@ class PrimaryMenuManager {
   /// 注册菜单项
   static void registerItem(PrimaryMenuItem item) {
     if (item.isHead) {
-      _headItems.add(item);
+      final idx = _headItems.indexWhere((e) => e.id == item.id);
+      if (idx >= 0) {
+        _headItems[idx] = item; // 去重并允许更新
+      } else {
+        _headItems.add(item);
+      }
       _headItems.sort((a, b) => a.order.compareTo(b.order));
     } else {
-      _tailItems.add(item);
+      final idx = _tailItems.indexWhere((e) => e.id == item.id);
+      if (idx >= 0) {
+        _tailItems[idx] = item; // 去重并允许更新
+      } else {
+        _tailItems.add(item);
+      }
       _tailItems.sort((a, b) => a.order.compareTo(b.order));
     }
   }
