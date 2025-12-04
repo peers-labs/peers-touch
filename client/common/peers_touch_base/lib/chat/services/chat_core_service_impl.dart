@@ -6,8 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_service.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 
-import '../models/models.dart';
 import 'chat_core_service.dart';
 import 'encryption_service.dart';
 import 'storage_service.dart';
@@ -21,7 +21,7 @@ class ChatCoreServiceImpl implements ChatCoreService {
   final EncryptionService _encryptionService;
   final ChatStorageService _storageService;
   final P2PChatProtocol _p2pProtocol;
-  
+
   bool _isInitialized = false;
   final _messageControllers = <String, StreamController<ChatMessage>>{};
   final _friendRequestController = StreamController<FriendRequest>.broadcast();
@@ -42,13 +42,13 @@ class ChatCoreServiceImpl implements ChatCoreService {
   @override
   Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     // 注册P2P协议处理器
     await _p2pProtocol.registerMessageHandler(_handleP2PMessage);
-    
+
     // 启动消息同步
     await _startMessageSync();
-    
+
     _isInitialized = true;
   }
 
@@ -59,15 +59,15 @@ class ChatCoreServiceImpl implements ChatCoreService {
       await controller.close();
     }
     _messageControllers.clear();
-    
+
     await _friendRequestController.close();
     await _friendStatusController.close();
-    
+
     _isInitialized = false;
   }
 
   // ==================== 好友管理 ====================
-  
+
   @override
   Future<List<Friend>> getFriends() async {
     return await _storageService.getFriends();
@@ -90,10 +90,10 @@ class ChatCoreServiceImpl implements ChatCoreService {
       createdAt: DateTime.now(),
       respondedAt: null,
     );
-    
+
     // 保存到本地存储
     await _storageService.saveFriendRequest(friendRequest);
-    
+
     // 通过P2P网络发送好友请求
     await _sendFriendRequestOverP2P(peerId, friendRequest);
   }
@@ -103,11 +103,9 @@ class ChatCoreServiceImpl implements ChatCoreService {
     final friend = await _storageService.getFriend(friendId);
     if (friend != null) {
       // 更新好友状态为已删除
-      final updatedFriend = friend.copyWith(
-        status: FriendshipStatus.removed,
-      );
+      final updatedFriend = friend.copyWith(status: FriendshipStatus.removed);
       await _storageService.saveFriend(updatedFriend);
-      
+
       // 通知好友关系变更
       _friendStatusController.add(updatedFriend);
     }
@@ -117,9 +115,7 @@ class ChatCoreServiceImpl implements ChatCoreService {
   Future<void> blockFriend(String friendId) async {
     final friend = await _storageService.getFriend(friendId);
     if (friend != null) {
-      final updatedFriend = friend.copyWith(
-        status: FriendshipStatus.blocked,
-      );
+      final updatedFriend = friend.copyWith(status: FriendshipStatus.blocked);
       await _storageService.saveFriend(updatedFriend);
       _friendStatusController.add(updatedFriend);
     }
@@ -129,16 +125,14 @@ class ChatCoreServiceImpl implements ChatCoreService {
   Future<void> unblockFriend(String friendId) async {
     final friend = await _storageService.getFriend(friendId);
     if (friend != null && friend.status == FriendshipStatus.blocked) {
-      final updatedFriend = friend.copyWith(
-        status: FriendshipStatus.accepted,
-      );
+      final updatedFriend = friend.copyWith(status: FriendshipStatus.accepted);
       await _storageService.saveFriend(updatedFriend);
       _friendStatusController.add(updatedFriend);
     }
   }
 
   // ==================== 好友请求管理 ====================
-  
+
   @override
   Future<List<FriendRequest>> getFriendRequests() async {
     return await _storageService.getFriendRequests();
@@ -159,7 +153,7 @@ class ChatCoreServiceImpl implements ChatCoreService {
         respondedAt: DateTime.now(),
       );
       await _storageService.saveFriendRequest(updatedRequest);
-      
+
       // 创建好友关系
       final friend = Friend(
         user: Actor(
@@ -176,10 +170,10 @@ class ChatCoreServiceImpl implements ChatCoreService {
         metadata: {},
       );
       await _storageService.saveFriend(friend);
-      
+
       // 发送接受响应
       await _sendFriendResponseOverP2P(request.senderId, true);
-      
+
       _friendStatusController.add(friend);
     }
   }
@@ -193,14 +187,14 @@ class ChatCoreServiceImpl implements ChatCoreService {
         respondedAt: DateTime.now(),
       );
       await _storageService.saveFriendRequest(updatedRequest);
-      
+
       // 发送拒绝响应
       await _sendFriendResponseOverP2P(request.senderId, false);
     }
   }
 
   // ==================== 会话管理 ====================
-  
+
   @override
   Future<List<ChatSession>> getSessions() async {
     return await _storageService.getSessions();
@@ -218,7 +212,7 @@ class ChatCoreServiceImpl implements ChatCoreService {
     if (friend == null || friend.status != FriendshipStatus.accepted) {
       throw Exception('Friend not found or not accepted');
     }
-    
+
     // 创建会话
     final session = ChatSession(
       id: _generateId(),
@@ -231,7 +225,7 @@ class ChatCoreServiceImpl implements ChatCoreService {
       unreadCount: 0,
       metadata: {},
     );
-    
+
     await _storageService.saveSession(session);
     return session;
   }
@@ -245,9 +239,7 @@ class ChatCoreServiceImpl implements ChatCoreService {
   Future<void> markSessionAsRead(String sessionId) async {
     final session = await _storageService.getSession(sessionId);
     if (session != null) {
-      final updatedSession = session.copyWith(
-        unreadCount: 0,
-      );
+      final updatedSession = session.copyWith(unreadCount: 0);
       await _storageService.saveSession(updatedSession);
     }
   }
@@ -256,18 +248,24 @@ class ChatCoreServiceImpl implements ChatCoreService {
   Future<void> pinSession(String sessionId, bool pinned) async {
     final session = await _storageService.getSession(sessionId);
     if (session != null) {
-      final updatedSession = session.copyWith(
-        isPinned: pinned,
-      );
+      final updatedSession = session.copyWith(isPinned: pinned);
       await _storageService.saveSession(updatedSession);
     }
   }
 
   // ==================== 消息管理 ====================
-  
+
   @override
-  Future<List<ChatMessage>> getMessages(String sessionId, {int? limit, int? offset}) async {
-    return await _storageService.getMessages(sessionId, limit: limit, offset: offset);
+  Future<List<ChatMessage>> getMessages(
+    String sessionId, {
+    int? limit,
+    int? offset,
+  }) async {
+    return await _storageService.getMessages(
+      sessionId,
+      limit: limit,
+      offset: offset,
+    );
   }
 
   @override
@@ -276,23 +274,27 @@ class ChatCoreServiceImpl implements ChatCoreService {
   }
 
   @override
-  Future<ChatMessage> sendMessage(String sessionId, String content, {MessageType? type}) async {
+  Future<ChatMessage> sendMessage(
+    String sessionId,
+    String content, {
+    MessageType? type,
+  }) async {
     // 获取会话
     final session = await _storageService.getSession(sessionId);
     if (session == null) {
       throw Exception('Session not found');
     }
-    
+
     // 获取接收者ID
     final receiverId = session.participantIds.firstWhere(
       (id) => id != _host.id.toString(),
       orElse: () => '',
     );
-    
+
     if (receiverId.isEmpty) {
       throw Exception('No receiver found in session');
     }
-    
+
     // 创建消息
     final message = ChatMessage(
       id: _generateId(),
@@ -306,28 +308,28 @@ class ChatCoreServiceImpl implements ChatCoreService {
       attachments: [],
       metadata: {},
     );
-    
+
     // 保存到本地存储
     await _storageService.saveMessage(message);
-    
+
     // 加密消息内容
     final encryptedContent = await _encryptionService.encryptMessage(
       content,
       receiverId,
     );
-    
+
     // 更新消息为加密状态
     final encryptedMessage = message.copyWith(
       encryptedContent: encryptedContent,
     );
     await _storageService.saveMessage(encryptedMessage);
-    
+
     // 通过P2P发送消息
     await _sendMessageOverP2P(receiverId, encryptedMessage);
-    
+
     // 更新会话的最后消息
     await _updateSessionLastMessage(session, encryptedMessage);
-    
+
     return encryptedMessage;
   }
 
@@ -337,18 +339,19 @@ class ChatCoreServiceImpl implements ChatCoreService {
   }
 
   @override
-  Future<void> updateMessageStatus(String messageId, MessageStatus status) async {
+  Future<void> updateMessageStatus(
+    String messageId,
+    MessageStatus status,
+  ) async {
     final message = await _storageService.getMessage(messageId);
     if (message != null) {
-      final updatedMessage = message.copyWith(
-        status: status,
-      );
+      final updatedMessage = message.copyWith(status: status);
       await _storageService.saveMessage(updatedMessage);
     }
   }
 
   // ==================== 实时消息流 ====================
-  
+
   @override
   Stream<ChatMessage> messageStream(String sessionId) {
     final controller = _messageControllers.putIfAbsent(
@@ -369,10 +372,13 @@ class ChatCoreServiceImpl implements ChatCoreService {
   }
 
   // ==================== 私有方法 ====================
-  
-  Future<void> _handleP2PMessage(PeerId sender, Map<String, dynamic> data) async {
+
+  Future<void> _handleP2PMessage(
+    PeerId sender,
+    Map<String, dynamic> data,
+  ) async {
     final messageType = data['type'] as String?;
-    
+
     switch (messageType) {
       case 'chat_message':
         await _handleIncomingChatMessage(sender, data);
@@ -389,7 +395,10 @@ class ChatCoreServiceImpl implements ChatCoreService {
     }
   }
 
-  Future<void> _handleIncomingChatMessage(PeerId sender, Map<String, dynamic> data) async {
+  Future<void> _handleIncomingChatMessage(
+    PeerId sender,
+    Map<String, dynamic> data,
+  ) async {
     try {
       // 解密消息内容
       final encryptedContent = data['encryptedContent'] as String;
@@ -397,7 +406,7 @@ class ChatCoreServiceImpl implements ChatCoreService {
         encryptedContent,
         sender.toString(),
       );
-      
+
       // 创建消息对象
       final message = ChatMessage(
         id: data['messageId'] as String,
@@ -414,38 +423,40 @@ class ChatCoreServiceImpl implements ChatCoreService {
         attachments: [], // 将在后续处理
         metadata: Map<String, String>.from(data['metadata'] ?? {}),
       );
-      
+
       // 保存消息
       await _storageService.saveMessage(message);
-      
+
       // 更新会话
       final session = await _storageService.getSession(message.sessionId);
       if (session != null) {
         await _updateSessionLastMessage(session, message);
-        
+
         // 增加未读计数
         final updatedSession = session.copyWith(
           unreadCount: session.unreadCount + 1,
         );
         await _storageService.saveSession(updatedSession);
       }
-      
+
       // 通知消息接收
       final controller = _messageControllers[message.sessionId];
       if (controller != null) {
         controller.add(message);
       }
-      
+
       // 发送消息已送达确认
       await _sendMessageDeliveryConfirmation(sender, message.id);
-      
     } catch (e) {
       // 记录错误但不影响其他消息处理
       print('Error handling incoming chat message: $e');
     }
   }
 
-  Future<void> _handleIncomingFriendRequest(PeerId sender, Map<String, dynamic> data) async {
+  Future<void> _handleIncomingFriendRequest(
+    PeerId sender,
+    Map<String, dynamic> data,
+  ) async {
     final friendRequest = FriendRequest(
       id: data['requestId'] as String,
       senderId: sender.toString(),
@@ -455,23 +466,28 @@ class ChatCoreServiceImpl implements ChatCoreService {
       createdAt: DateTime.parse(data['timestamp'] as String),
       respondedAt: null,
     );
-    
+
     await _storageService.saveFriendRequest(friendRequest);
     _friendRequestController.add(friendRequest);
   }
 
-  Future<void> _handleIncomingFriendResponse(PeerId sender, Map<String, dynamic> data) async {
+  Future<void> _handleIncomingFriendResponse(
+    PeerId sender,
+    Map<String, dynamic> data,
+  ) async {
     final requestId = data['requestId'] as String;
     final accepted = data['accepted'] as bool;
-    
+
     final request = await _storageService.getFriendRequest(requestId);
     if (request != null) {
       final updatedRequest = request.copyWith(
-        status: accepted ? FriendRequestStatus.accepted : FriendRequestStatus.rejected,
+        status: accepted
+            ? FriendRequestStatus.accepted
+            : FriendRequestStatus.rejected,
         respondedAt: DateTime.now(),
       );
       await _storageService.saveFriendRequest(updatedRequest);
-      
+
       if (accepted) {
         // 创建好友关系
         final friend = Friend(
@@ -494,18 +510,24 @@ class ChatCoreServiceImpl implements ChatCoreService {
     }
   }
 
-  Future<void> _handleMessageStatusUpdate(PeerId sender, Map<String, dynamic> data) async {
+  Future<void> _handleMessageStatusUpdate(
+    PeerId sender,
+    Map<String, dynamic> data,
+  ) async {
     final messageId = data['messageId'] as String;
     final status = MessageStatus.values.firstWhere(
       (s) => s.name == data['status'],
       orElse: () => MessageStatus.sent,
     );
-    
+
     await updateMessageStatus(messageId, status);
   }
 
   // P2P消息发送方法
-  Future<void> _sendMessageOverP2P(String receiverId, ChatMessage message) async {
+  Future<void> _sendMessageOverP2P(
+    String receiverId,
+    ChatMessage message,
+  ) async {
     final data = {
       'type': 'chat_message',
       'messageId': message.id,
@@ -515,47 +537,59 @@ class ChatCoreServiceImpl implements ChatCoreService {
       'timestamp': message.sentAt.toIso8601String(),
       'metadata': message.metadata,
     };
-    
+
     await _p2pProtocol.sendMessage(receiverId, data);
   }
 
-  Future<void> _sendFriendRequestOverP2P(String receiverId, FriendRequest request) async {
+  Future<void> _sendFriendRequestOverP2P(
+    String receiverId,
+    FriendRequest request,
+  ) async {
     final data = {
       'type': 'friend_request',
       'requestId': request.id,
       'message': request.message,
       'timestamp': request.createdAt.toIso8601String(),
     };
-    
+
     await _p2pProtocol.sendMessage(receiverId, data);
   }
 
-  Future<void> _sendFriendResponseOverP2P(String receiverId, bool accepted) async {
+  Future<void> _sendFriendResponseOverP2P(
+    String receiverId,
+    bool accepted,
+  ) async {
     final data = {
       'type': 'friend_response',
       'requestId': '', // 将在调用时传入
       'accepted': accepted,
       'publicKey': accepted ? await _encryptionService.getPublicKey() : '',
     };
-    
+
     await _p2pProtocol.sendMessage(receiverId, data);
   }
 
-  Future<void> _sendMessageDeliveryConfirmation(PeerId receiver, String messageId) async {
+  Future<void> _sendMessageDeliveryConfirmation(
+    PeerId receiver,
+    String messageId,
+  ) async {
     final data = {
       'type': 'message_status',
       'messageId': messageId,
       'status': 'delivered',
     };
-    
+
     await _p2pProtocol.sendMessage(receiver.toString(), data);
   }
 
-  Future<void> _updateSessionLastMessage(ChatSession session, ChatMessage message) async {
+  Future<void> _updateSessionLastMessage(
+    ChatSession session,
+    ChatMessage message,
+  ) async {
     final updatedSession = session.copyWith(
       lastMessageAt: message.sentAt,
-      lastMessageSnippet: message.content.length > 50 
-          ? '${message.content.substring(0, 50)}...' 
+      lastMessageSnippet: message.content.length > 50
+          ? '${message.content.substring(0, 50)}...'
           : message.content,
     );
     await _storageService.saveSession(updatedSession);
