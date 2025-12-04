@@ -17,6 +17,12 @@ const (
 	ActivityPubRouterURLLike      RouterPath = "/:username/like"
 	ActivityPubRouterURLUndo      RouterPath = "/:username/undo"
 	ActivityPubRouterURLChat      RouterPath = "/:username/chat"
+
+	// Actor Management URLs (Client API)
+	RouterURLActorSignUP  RouterPath = "/sign-up"
+	RouterURLActorLogin   RouterPath = "/login"
+	RouterURLActorProfile RouterPath = "/profile"
+	RouterURLActorList    RouterPath = "/list"
 )
 
 // ActivityPubRouters provides general ActivityPub endpoints
