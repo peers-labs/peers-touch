@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_base/model/domain/ai_box/ai_models.pb.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as base;
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
@@ -35,6 +36,8 @@ class AddModelDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
+    final l = AppLocalizations.of(context)!;
+
     return Dialog(
       backgroundColor: tokens.bgLevel2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(UIKit.radiusLg(context))),
@@ -48,67 +51,67 @@ class AddModelDialog extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Add Model', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: tokens.textPrimary, fontWeight: FontWeight.bold)),
+                Text(l.addModel, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: tokens.textPrimary, fontWeight: FontWeight.bold)),
                 IconButton(onPressed: () => Get.back(), icon: const Icon(Icons.close)),
               ],
             ),
             const SizedBox(height: 12),
-            _textField(context, 'Model ID', _idCtrl, hint: 'e.g. gpt-4o-mini or llama3.1:8b'),
+            _textField(context, l.modelId, _idCtrl, hint: l.modelIdPlaceholder),
             const SizedBox(height: 8),
-            _textField(context, 'Display Name', _nameCtrl, hint: 'e.g. GPT-4o Mini'),
+            _textField(context, l.displayName, _nameCtrl, hint: l.modelNamePlaceholder),
             const SizedBox(height: 8),
-            _textField(context, 'Description', _descCtrl, hint: 'Optional description'),
+            _textField(context, l.description, _descCtrl, hint: l.descriptionPlaceholder),
             const SizedBox(height: 8),
-            _textField(context, 'Organization', _orgCtrl, hint: 'e.g. OpenAI / Ollama'),
+            _textField(context, l.organization, _orgCtrl, hint: l.organizationPlaceholder),
             const SizedBox(height: 8),
             Row(children: [
-              Expanded(child: _numberField(context, 'Context Window', _ctxWindowCtrl, hint: 'e.g. 128000')),
+              Expanded(child: _numberField(context, l.contextWindow, _ctxWindowCtrl, hint: l.contextWindowPlaceholder)),
               const SizedBox(width: 8),
-              Expanded(child: _numberField(context, 'Max Output Tokens', _maxOutputCtrl, hint: 'e.g. 4096')),
+              Expanded(child: _numberField(context, l.maxOutputTokens, _maxOutputCtrl, hint: l.maxOutputTokensPlaceholder)),
             ]),
             const SizedBox(height: 8),
             Row(children: [
-              Expanded(child: _numberField(context, 'Input \$ /1k tokens', _priceInCtrl, hint: 'e.g. 0.03')),
+              Expanded(child: _numberField(context, l.inputPrice, _priceInCtrl, hint: l.inputPricePlaceholder)),
               const SizedBox(width: 8),
-              Expanded(child: _numberField(context, 'Output \$ /1k tokens', _priceOutCtrl, hint: 'e.g. 0.06')),
+              Expanded(child: _numberField(context, l.outputPrice, _priceOutCtrl, hint: l.outputPricePlaceholder)),
             ]),
             const SizedBox(height: 8),
-            _textField(context, 'Aliases', _aliasesCtrl, hint: 'comma separated e.g. gpt-4o-mini-2024-07-18'),
+            _textField(context, l.aliases, _aliasesCtrl, hint: l.aliasesPlaceholder),
             const SizedBox(height: 12),
             Row(children: [
               Expanded(
-                child: Obx(() => _dropdown(context, 'Type', _type.value, ['chat','completion','embedding','vision'], (v) => _type.value = v)),
+                child: Obx(() => _dropdown(context, l.type, _type.value, ['chat','completion','embedding','vision'], (v) => _type.value = v)),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Obx(() => _switchRow(context, 'Enabled', _enabled.value, (v) => _enabled.value = v)),
+                child: Obx(() => _switchRow(context, l.enabled, _enabled.value, (v) => _enabled.value = v)),
               ),
             ]),
             const SizedBox(height: 12),
-            Text('Capabilities', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: tokens.textPrimary)),
+            Text(l.capabilities, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: tokens.textPrimary)),
             const SizedBox(height: 8),
             Obx(() => Wrap(spacing: 12, runSpacing: 8, children: [
-              _capChip(context, 'Text', _capText.value, (v) => _capText.value = v),
-              _capChip(context, 'Image', _capImage.value, (v) => _capImage.value = v),
-              _capChip(context, 'Audio', _capAudio.value, (v) => _capAudio.value = v),
-              _capChip(context, 'File', _capFile.value, (v) => _capFile.value = v),
+              _capChip(context, l.capText, _capText.value, (v) => _capText.value = v),
+              _capChip(context, l.capImage, _capImage.value, (v) => _capImage.value = v),
+              _capChip(context, l.capAudio, _capAudio.value, (v) => _capAudio.value = v),
+              _capChip(context, l.capFile, _capFile.value, (v) => _capFile.value = v),
             ])),
             const SizedBox(height: 16),
             Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-              TextButton(onPressed: () => Get.back(), child: const Text('Cancel')),
+              TextButton(onPressed: () => Get.back(), child: Text(l.cancel)),
               const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: () async {
                   final id = _idCtrl.text.trim();
                   final name = _nameCtrl.text.trim();
                   if (id.isEmpty || name.isEmpty) {
-                    Get.snackbar('提示', 'Model ID 与 Display Name 为必填');
+                    Get.snackbar(l.notice, l.modelIdAndNameRequired);
                     return;
                   }
                   // 简单 ID 校验
                   final valid = RegExp(r'^[A-Za-z0-9._:\-]+$').hasMatch(id);
                   if (!valid) {
-                    Get.snackbar('提示', 'ID 仅允许字母、数字、点、冒号、下划线与破折号');
+                    Get.snackbar(l.notice, l.modelIdInvalid);
                     return;
                   }
 
@@ -158,11 +161,11 @@ class AddModelDialog extends StatelessWidget {
                   final ok = await Get.find<ProviderController>().addManualModel(model);
                   if (ok) {
                     Get.back();
-                    Get.snackbar('成功', '模型已添加');
+                    Get.snackbar(l.success, l.modelAdded);
                   }
                 },
                 style: UIKit.primaryButtonStyle(context),
-                child: const Text('Add'),
+                child: Text(l.add),
               ),
             ]),
           ],

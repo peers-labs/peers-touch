@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as base;
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
@@ -15,7 +16,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
-    
+    final l = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: tokens.bgLevel1,
@@ -52,18 +53,18 @@ class ProviderSettingsPage extends GetView<ProviderController> {
                 if (provider == null) {
                   return Center(
                     child: Text(
-                      'Select a provider to configure',
+                      l.selectProviderToConfigure,
                       style: TextStyle(color: tokens.textSecondary),
                     ),
                   );
                 }
                 // 统一设置卡片包装，并提供刷新按钮
                 return SettingsPanelCard(
-                  title: 'Provider Settings',
-                  subtitle: 'Configure API Key, Proxy URL and models',
+                  title: l.providerSettings,
+                  subtitle: l.providerSettingsSubtitle,
                   onRefresh: () => controller.refresh(),
                   actions: [
-                    IconButton(onPressed: () => controller.refresh(), icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
+                    IconButton(onPressed: () => controller.refresh(), icon: const Icon(Icons.refresh), tooltip: l.refresh),
                   ],
                   child: ProviderDetailPanel(provider: provider),
                 );
@@ -76,6 +77,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
   }
 
   Widget _buildSearchAndAdd(BuildContext context, LobeTokens tokens) {
+    final l = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
@@ -83,7 +85,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
           Expanded(
             child: TextField(
               decoration: UIKit.inputDecoration(context).copyWith(
-                hintText: 'Search Providers...',
+                hintText: l.searchProviders,
                 prefixIcon: const Icon(Icons.search),
               ),
             ),
@@ -92,7 +94,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () => _showAddProviderDialog(context, tokens),
-            tooltip: 'Add Provider',
+            tooltip: l.addProvider,
             style: UIKit.primaryButtonStyle(context),
           ),
         ],
@@ -101,6 +103,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
   }
 
   Widget _buildProviderList(BuildContext context, ProviderController controller, LobeTokens tokens) {
+    final l = AppLocalizations.of(context)!;
     final enabledProviders = controller.providers.where((p) => p.enabled).toList();
     final disabledProviders = controller.providers.where((p) => !p.enabled).toList();
 
@@ -108,9 +111,9 @@ class ProviderSettingsPage extends GetView<ProviderController> {
       padding: const EdgeInsets.symmetric(horizontal: 8),
       children: [
         if (enabledProviders.isNotEmpty)
-          ..._buildProviderGroup(context, 'Enabled', enabledProviders, controller, tokens),
+          ..._buildProviderGroup(context, l.enabledGroup, enabledProviders, controller, tokens),
         if (disabledProviders.isNotEmpty)
-          ..._buildProviderGroup(context, 'Disabled', disabledProviders, controller, tokens),
+          ..._buildProviderGroup(context, l.disabledGroup, disabledProviders, controller, tokens),
       ],
     );
   }
@@ -143,6 +146,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
   }
 
   Widget _buildEmptyState(BuildContext context, LobeTokens tokens) {
+    final l = AppLocalizations.of(context)!;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -150,19 +154,19 @@ class ProviderSettingsPage extends GetView<ProviderController> {
           const Icon(Icons.cloud_off_outlined, size: 64, color: Colors.grey),
           const SizedBox(height: 16),
           Text(
-            'No AI providers configured',
+            l.noProvidersConfigured,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(color: tokens.textSecondary),
           ),
           const SizedBox(height: 8),
           Text(
-            'Add your first AI service provider to get started',
+            l.addFirstProvider,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: tokens.textTertiary),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () => _showAddProviderDialog(context, tokens),
             icon: const Icon(Icons.add),
-            label: const Text('Add Provider'),
+            label: Text(l.addProvider),
             style: UIKit.primaryButtonStyle(context),
           ),
         ],

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 class AIChatHeaderBar extends StatelessWidget {
   final String title;

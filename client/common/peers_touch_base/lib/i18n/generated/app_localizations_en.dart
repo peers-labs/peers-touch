@@ -165,4 +165,503 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get topicAlreadySaved => 'Already saved for this conversation';
+
+  @override
+  String get signupValidationErrorMessage =>
+      'Please fill in all information, and passwords must match and be at least 8 characters.';
+
+  @override
+  String get error => 'Error';
+
+  @override
+  String get yourPrivacy => 'Your Privacy';
+
+  @override
+  String get next => 'Next';
+
+  @override
+  String get createAccount => 'Create Account';
+
+  @override
+  String get serverUrl => 'Server URL';
+
+  @override
+  String get displayName => 'Display Name';
+
+  @override
+  String get username => 'Username';
+
+  @override
+  String get email => 'Email';
+
+  @override
+  String get password => 'Password';
+
+  @override
+  String get confirmPassword => 'Confirm Password';
+
+  @override
+  String get passwordMinLengthHint =>
+      'Your password needs at least eight characters';
+
+  @override
+  String get success => 'Success';
+
+  @override
+  String providerLoadError(Object error) {
+    return 'Failed to load providers: $error';
+  }
+
+  @override
+  String get providerUpdateSuccess => 'Provider updated successfully';
+
+  @override
+  String providerUpdateError(Object error) {
+    return 'Failed to update provider: $error';
+  }
+
+  @override
+  String get providerDeleteSuccess => 'Provider deleted successfully';
+
+  @override
+  String providerDeleteError(Object error) {
+    return 'Failed to delete provider: $error';
+  }
+
+  @override
+  String get nameUpdated => 'Name updated';
+
+  @override
+  String nameUpdateError(Object error) {
+    return 'Failed to update name: $error';
+  }
+
+  @override
+  String get providerSwitched => 'Current provider switched';
+
+  @override
+  String providerSwitchError(Object error) {
+    return 'Failed to switch provider: $error';
+  }
+
+  @override
+  String get languageDescription => 'Select application language';
+
+  @override
+  String get themeDescription => 'Select application theme';
+
+  @override
+  String get colorSchemeDescription => 'Select application color scheme';
+
+  @override
+  String get backendNodeAddress => 'Backend Node Address';
+
+  @override
+  String get backendNodeAddressDescription => 'Set backend service address';
+
+  @override
+  String get enterBackendAddress => 'Enter backend service address';
+
+  @override
+  String get securityAuth => 'Security Auth';
+
+  @override
+  String get securityAuthDescription => 'Set API authentication token';
+
+  @override
+  String get enterAuthToken => 'Enter authentication token';
+
+  @override
+  String get advancedSettings => 'Advanced Settings';
+
+  @override
+  String get clearData => 'Clear Data';
+
+  @override
+  String get clearDataDescription => 'Clear all local storage data';
+
+  @override
+  String get clearDataConfirmation =>
+      'Are you sure you want to clear all local data? This action is irreversible.';
+
+  @override
+  String get dataClearedSuccess => 'All local data cleared.';
+
+  @override
+  String get searchSettings => 'Search Settings';
+
+  @override
+  String get noSettingsFound => 'No relevant settings found';
+
+  @override
+  String get test => 'Test';
+
+  @override
+  String get addressTest => 'Address Test';
+
+  @override
+  String successWithData(Object data) {
+    return 'Success: $data';
+  }
+
+  @override
+  String failedWithData(Object error) {
+    return 'Failed: $error';
+  }
+
+  @override
+  String get loginTab => 'Login';
+
+  @override
+  String get registerTab => 'Register';
+
+  @override
+  String get yourGroup => 'YOUR GROUP';
+
+  @override
+  String get friends => 'FRIENDS';
+
+  @override
+  String get noItemsFound => 'No items found';
+
+  @override
+  String get signIn => 'Sign in';
+
+  @override
+  String get signUp => 'Sign up';
+
+  @override
+  String get forgotPassword => 'Forgot your password?';
+
+  @override
+  String get required => 'Required';
+
+  @override
+  String get requiredMinChars => 'Required (min 6 chars)';
+
+  @override
+  String get emailOrUsername => 'Email or username';
+
+  @override
+  String get serverUrlExample => 'Example: http://localhost:18080';
+
+  @override
+  String get aiChat => 'AI Chat';
+
+  @override
+  String get chatRtc => 'RTC Chat';
+
+  @override
+  String get discovery => 'Discovery';
+
+  @override
+  String get expand => 'Expand';
+
+  @override
+  String get collapse => 'Collapse';
+
+  @override
+  String get createCustomAIProvider => 'Create Custom AI Provider';
+
+  @override
+  String get basicInformation => 'Basic Information';
+
+  @override
+  String get providerId => 'Provider ID';
+
+  @override
+  String get providerIdPlaceholder =>
+      'Suggested all lowercase, e.g., openai, cann...';
+
+  @override
+  String get providerName => 'Provider Name';
+
+  @override
+  String get providerNamePlaceholder =>
+      'Please enter the display name of the provider';
+
+  @override
+  String get providerDescription => 'Provider Description';
+
+  @override
+  String get providerDescriptionPlaceholder =>
+      'Provider description (optional)';
+
+  @override
+  String get providerLogo => 'Provider Logo (URL or SVG)';
+
+  @override
+  String get providerLogoPlaceholder => 'Enter logo URL or select preset SVG';
+
+  @override
+  String get presetSvg => 'Preset SVG';
+
+  @override
+  String get configurationInformation => 'Configuration Information';
+
+  @override
+  String get requestFormat => 'Request Format';
+
+  @override
+  String get requestFormatPlaceholder => 'OpenAI / Ollama';
+
+  @override
+  String get proxyUrl => 'Proxy URL';
+
+  @override
+  String get proxyUrlPlaceholder => 'https://xxxx-proxy.com/v1';
+
+  @override
+  String get apiKey => 'API Key';
+
+  @override
+  String get apiKeyPlaceholder => 'Please enter your API Key';
+
+  @override
+  String get create => 'Create';
+
+  @override
+  String get fieldRequired => 'This field is required';
+
+  @override
+  String get addModel => 'Add Model';
+
+  @override
+  String get modelId => 'Model ID';
+
+  @override
+  String get modelIdPlaceholder => 'e.g. gpt-4o-mini or llama3.1:8b';
+
+  @override
+  String get modelNamePlaceholder => 'e.g. GPT-4o Mini';
+
+  @override
+  String get description => 'Description';
+
+  @override
+  String get descriptionPlaceholder => 'Optional description';
+
+  @override
+  String get organization => 'Organization';
+
+  @override
+  String get organizationPlaceholder => 'e.g. OpenAI / Ollama';
+
+  @override
+  String get contextWindow => 'Context Window';
+
+  @override
+  String get contextWindowPlaceholder => 'e.g. 128000';
+
+  @override
+  String get maxOutputTokens => 'Max Output Tokens';
+
+  @override
+  String get maxOutputTokensPlaceholder => 'e.g. 4096';
+
+  @override
+  String get inputPrice => 'Input \$ /1k tokens';
+
+  @override
+  String get inputPricePlaceholder => 'e.g. 0.03';
+
+  @override
+  String get outputPrice => 'Output \$ /1k tokens';
+
+  @override
+  String get outputPricePlaceholder => 'e.g. 0.06';
+
+  @override
+  String get aliases => 'Aliases';
+
+  @override
+  String get aliasesPlaceholder =>
+      'comma separated e.g. gpt-4o-mini-2024-07-18';
+
+  @override
+  String get type => 'Type';
+
+  @override
+  String get enabled => 'Enabled';
+
+  @override
+  String get capabilities => 'Capabilities';
+
+  @override
+  String get capText => 'Text';
+
+  @override
+  String get capImage => 'Image';
+
+  @override
+  String get capAudio => 'Audio';
+
+  @override
+  String get capFile => 'File';
+
+  @override
+  String get add => 'Add';
+
+  @override
+  String get notice => 'Notice';
+
+  @override
+  String get modelIdAndNameRequired => 'Model ID and Display Name are required';
+
+  @override
+  String get modelIdInvalid =>
+      'ID only allows letters, numbers, dots, colons, underscores and dashes';
+
+  @override
+  String get modelAdded => 'Model added';
+
+  @override
+  String get selectProviderToConfigure => 'Select a provider to configure';
+
+  @override
+  String get providerSettings => 'Provider Settings';
+
+  @override
+  String get providerSettingsSubtitle =>
+      'Configure API Key, Proxy URL and models';
+
+  @override
+  String get refresh => 'Refresh';
+
+  @override
+  String get searchProviders => 'Search Providers...';
+
+  @override
+  String get addProvider => 'Add Provider';
+
+  @override
+  String get enabledGroup => 'Enabled';
+
+  @override
+  String get disabledGroup => 'Disabled';
+
+  @override
+  String get noProvidersConfigured => 'No AI providers configured';
+
+  @override
+  String get addFirstProvider =>
+      'Add your first AI service provider to get started';
+
+  @override
+  String get save => 'Save';
+
+  @override
+  String get renameProvider => 'Rename Provider';
+
+  @override
+  String get deleteProvider => 'Delete Provider';
+
+  @override
+  String enterProviderApiKey(String provider) {
+    return 'Please enter your $provider API Key';
+  }
+
+  @override
+  String get apiProxyUrl => 'API Proxy URL';
+
+  @override
+  String get mustIncludeHttp => 'Must include http(s)://';
+
+  @override
+  String get connectivityCheck => 'Connectivity Check';
+
+  @override
+  String get connectivityCheckSubtitle =>
+      'Test if the API Key and proxy URL are correctly filled';
+
+  @override
+  String get check => 'Check';
+
+  @override
+  String get encryptionNotice =>
+      'Your key and proxy URL will be encrypted using AES-GCM encryption algorithm';
+
+  @override
+  String get clientRequestMode => 'Use Client Request Mode';
+
+  @override
+  String get clientRequestModeSubtitle =>
+      'Client will initiate session requests directly from the browser, which can improve response speed';
+
+  @override
+  String get modelList => 'Model List';
+
+  @override
+  String get searchModels => 'Search Models...';
+
+  @override
+  String get fetchModels => 'Fetch models';
+
+  @override
+  String allModelsCount(int count) {
+    return 'All ($count)';
+  }
+
+  @override
+  String enabledModelsCount(int count) {
+    return 'Enabled ($count)';
+  }
+
+  @override
+  String get moreModelsComing =>
+      'More models are planned to be added, stay tuned';
+
+  @override
+  String get yesterday => 'Yesterday';
+
+  @override
+  String get emptyChatNoModels =>
+      'No models available. Please configure an AI provider.';
+
+  @override
+  String get goToSettings => 'Go to Settings';
+
+  @override
+  String get inputHintEnterToSend =>
+      'Press Enter to send, Ctrl+Enter to new line';
+
+  @override
+  String get inputHintCtrlEnterToSend =>
+      'Press Ctrl+Enter to send, Enter to new line';
+
+  @override
+  String get selectModel => 'Select Model';
+
+  @override
+  String get addImage => 'Add Image';
+
+  @override
+  String get modelDoesNotSupportImage =>
+      'Current model does not support image input';
+
+  @override
+  String get addFile => 'Add File';
+
+  @override
+  String get modelDoesNotSupportFile =>
+      'Current model does not support file input';
+
+  @override
+  String get addAudio => 'Add Audio';
+
+  @override
+  String get modelDoesNotSupportAudio =>
+      'Current model does not support audio input';
+
+  @override
+  String get clearInput => 'Clear Input';
+
+  @override
+  String get sendSettings => 'Send Settings';
+
+  @override
+  String get pressEnterToSend => 'Press Enter to send';
+
+  @override
+  String get pressCtrlEnterToSend => 'Press Ctrl+Enter to send';
 }
