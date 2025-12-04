@@ -9,6 +9,7 @@ import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 class SettingController extends GetxController {
   final SettingManager _settingManager = SettingManager();
@@ -16,17 +17,18 @@ class SettingController extends GetxController {
   late final SecureStorage _secureStorage;
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, String?> _itemErrors = {};
-  // 后端地址测试相关状态
-  final backendTestPath = 'Ping'.obs; // 可选：Ping / Health
-  final backendVerified = true.obs;   // 失败后置为 false，用于控制输入框边框
   
-  // 当前选中的设置分区
+  // Backend address test related status
+  final backendTestPath = 'Ping'.obs; // Optional: Ping / Health
+  final backendVerified = true.obs;   // Set to false on failure to control input border
+  
+  // Currently selected setting section
   final selectedSection = Rx<String>('general');
   
-  // 所有设置分区
+  // All setting sections
   final sections = RxList<SettingSection>([]);
   
-  // 搜索关键字（全局搜索设置项）
+  // Search query (global setting item search)
   final searchQuery = ''.obs;
   
   @override
@@ -37,23 +39,23 @@ class SettingController extends GetxController {
     _initializeSettings();
   }
   
-  /// 初始化设置
+  /// Initialize settings
   void _initializeSettings() {
-    // 初始化通用设置
+    // Initialize general settings
     _settingManager.initializeGeneralSettings();
     
-    // 获取所有设置分区并加载已持久化的值
+    // Get all setting sections and load persisted values
     final loadedSections = _settingManager.getSections();
     _loadPersistedValues(loadedSections);
     sections.value = loadedSections;
     
-    // 默认选中第一个分区
+    // Default select first section
     if (sections.isNotEmpty) {
       selectedSection.value = sections.first.id;
     }
   }
   
-  /// 切换设置分区
+  /// Switch setting section
   void selectSection(String sectionId) {
     selectedSection.value = sectionId;
     final section = sections.firstWhereOrNull((s) => s.id == sectionId);
@@ -66,12 +68,12 @@ class SettingController extends GetxController {
     }
   }
   
-  /// 更新搜索关键字
+  /// Update search query
   void setSearchQuery(String query) {
     searchQuery.value = query;
   }
   
-  /// 获取当前选中的分区
+  /// Get currently selected section
   SettingSection? getCurrentSection() {
     return sections.firstWhere(
       (section) => section.id == selectedSection.value,
@@ -79,7 +81,7 @@ class SettingController extends GetxController {
     );
   }
   
-  /// 根据搜索关键字返回全局匹配结果
+  /// Get global match results based on search query
   List<SettingSearchResult> getSearchResults() {
     final q = searchQuery.value.trim().toLowerCase();
     if (q.isEmpty) return [];
@@ -95,9 +97,9 @@ class SettingController extends GetxController {
     return results;
   }
 
-  /// 更新设置项值
+  /// Update setting item value
   void updateSettingValue(String sectionId, String itemId, dynamic value) {
-    // 更新内存中的值
+    // Update value in memory
     final idx = sections.indexWhere((s) => s.id == sectionId);
     if (idx != -1) {
       final section = sections[idx];
@@ -120,7 +122,7 @@ class SettingController extends GetxController {
       }
     }
 
-    // 持久化到存储（敏感信息使用安全存储）
+    // Persist to storage (sensitive info uses secure storage)
     final key = _storageKey(sectionId, itemId);
     final useSecure = _isSensitive(itemId);
     if (useSecure && value is String) {
@@ -130,7 +132,7 @@ class SettingController extends GetxController {
     }
   }
 
-  /// 更新设置项的备选项（用于 select 类型动态选项）
+  /// Update setting item options (for select type dynamic options)
   void updateSettingOptions(String sectionId, String itemId, List<String> options) {
     final idx = sections.indexWhere((s) => s.id == sectionId);
     if (idx != -1) {
@@ -155,20 +157,20 @@ class SettingController extends GetxController {
     }
   }
 
-  /// 设置或清除设置项错误态
+  /// Set or clear setting item error state
   void setItemError(String sectionId, String itemId, String? error) {
     final key = _storageKey(sectionId, itemId);
     _itemErrors[key] = error;
     sections.refresh();
   }
 
-  /// 获取设置项错误信息（null 表示无错误）
+  /// Get setting item error message (null means no error)
   String? getItemError(String sectionId, String itemId) {
     final key = _storageKey(sectionId, itemId);
     return _itemErrors[key];
   }
 
-  /// 获取或创建文本输入控制器，避免因重建导致光标跳转
+  /// Get or create text input controller to avoid cursor jump due to rebuild
   TextEditingController getTextController(String sectionId, String itemId, String? initialValue) {
     final key = _storageKey(sectionId, itemId);
     final existing = _textControllers[key];
@@ -187,7 +189,7 @@ class SettingController extends GetxController {
     super.onClose();
   }
 
-  /// 规范化后端基础地址，自动补全协议与默认地址
+  /// Normalize backend base URL, auto-complete protocol and default address
   String _normalizeBaseUrl(String input) {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return HttpServiceLocator().baseUrl;
@@ -202,7 +204,7 @@ class SettingController extends GetxController {
     }
   }
 
-  /// 测试后端地址指定 path（Ping/Health），结果通过通知栏展示
+  /// Test backend address specific path (Ping/Health), show result via snackbar
   Future<void> testBackendAddress(String baseUrlInput) async {
     final base = _normalizeBaseUrl(baseUrlInput);
     // we now only support the health endpoint.
@@ -216,19 +218,21 @@ class SettingController extends GetxController {
       final resp = await dio.getUri(fullUri);
       backendVerified.value = true;
       final dataText = resp.data is String ? resp.data.toString() : jsonEncode(resp.data);
-      Get.snackbar('地址测试', '成功：$dataText');
+      final l = AppLocalizations.of(Get.context!)!;
+      Get.snackbar(l.addressTest, l.successWithData(dataText));
     } catch (e) {
       backendVerified.value = false;
-      LoggingService.warning('地址测试', '失败：$e');
-      Get.snackbar('地址测试', '失败：$e');
+      LoggingService.warning('Address Test', 'Failed: $e');
+      final l = AppLocalizations.of(Get.context!)!;
+      Get.snackbar(l.addressTest, l.failedWithData(e.toString()));
     }
   }
   
-  /// 注册业务模块设置
+  /// Register business module settings
   void registerModuleSettings(String moduleId, String moduleName, List<SettingItem> settings) {
     _settingManager.registerBusinessModuleSettings(moduleId, moduleName, settings);
     
-    // 刷新设置分区列表
+    // Refresh setting section list
     final loadedSections = _settingManager.getSections();
     _loadPersistedValues(loadedSections);
     sections.value = loadedSections;
@@ -245,7 +249,7 @@ class SettingController extends GetxController {
         final key = _storageKey(section.id, item.id);
         dynamic stored;
         if (_isSensitive(item.id)) {
-          // 异步从安全存储读取
+          // Async read from secure storage
           _secureStorage.get(key).then((s) {
             if (s != null) {
               final idx = targetSections.indexWhere((sec) => sec.id == section.id);
@@ -289,7 +293,7 @@ class SettingController extends GetxController {
               onTap: item.onTap,
               onChanged: item.onChanged,
             );
-            // 同步文本输入的控制器内容
+            // Sync text input controller content
             if (item.type == SettingItemType.textInput) {
               final ctrlKey = _storageKey(section.id, item.id);
               final ctrl = _textControllers[ctrlKey];

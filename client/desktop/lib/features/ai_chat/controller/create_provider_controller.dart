@@ -9,6 +9,8 @@ import 'package:peers_touch_desktop/features/ai_chat/model/request_format.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+
 class CreateProviderController extends GetxController {
   final ProviderService _providerService = Get.find();
 
@@ -67,7 +69,11 @@ class CreateProviderController extends GetxController {
       final withDefaults = template.applyDefaults(provider);
       final errs = template.validate(withDefaults);
       if (errs.isNotEmpty) {
-        Get.snackbar('错误', errs.join('\n'));
+        final context = Get.context;
+        Get.snackbar(
+          context != null ? AppLocalizations.of(context)!.error : 'Error', 
+          errs.join('\n')
+        );
         return;
       }
       await _providerService.createProvider(withDefaults);

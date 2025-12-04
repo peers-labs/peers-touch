@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/app_theme.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
@@ -70,7 +70,7 @@ class SettingPage extends StatelessWidget {
           Padding(
             padding: EdgeInsets.symmetric(horizontal: UIKit.spaceMd(context)),
             child: FrameActionCombo(
-              hintText: '搜索设置',
+              hintText: l.searchSettings,
               prefixIcon: Icons.search,
               onChanged: controller.setSearchQuery,
             ),
@@ -84,7 +84,7 @@ class SettingPage extends StatelessWidget {
                 final results = controller.getSearchResults();
                 if (results.isEmpty) {
                   return Center(
-                    child: Text('未找到相关设置', style: TextStyle(color: tokens.textSecondary)),
+                    child: Text(l.noSettingsFound, style: TextStyle(color: tokens.textSecondary)),
                   );
                 }
                 return ListView.builder(
@@ -474,7 +474,7 @@ class SettingPage extends StatelessWidget {
                     style: ElevatedButton.styleFrom(
                       minimumSize: Size(UIKit.buttonMinWidthSm, UIKit.controlHeightMd),
                     ),
-                    child: const Text('测试'),
+                    child: Text(l.test),
                   ),
                 ),
               ],
@@ -507,6 +507,8 @@ class SettingPage extends StatelessWidget {
         return l.generalSettings;
       case 'global_business':
         return l.globalBusinessSettings;
+      case 'advanced_design':
+        return l.advancedSettings;
       default:
         return section.title;
     }
@@ -532,6 +534,8 @@ class SettingPage extends StatelessWidget {
         return l.openaiBaseUrl;
       case 'model_selection':
         return l.defaultModel;
+      case 'clear_data':
+        return l.clearData;
       default:
         return item.title;
     }
@@ -540,11 +544,11 @@ class SettingPage extends StatelessWidget {
   String _itemDescription(AppLocalizations l, SettingItem item) {
     switch (item.id) {
       case 'language':
-        return l.selectAppLanguage;
+        return l.languageDescription;
       case 'theme':
-        return l.selectAppTheme;
+        return l.themeDescription;
       case 'color_scheme':
-        return l.selectColorScheme;
+        return l.colorSchemeDescription;
       case 'backend_url':
         return l.backendUrlDescription;
       case 'auth_token':
@@ -555,6 +559,8 @@ class SettingPage extends StatelessWidget {
         return l.openaiBaseUrlDescription;
       case 'model_selection':
         return l.defaultModelDescription;
+      case 'clear_data':
+        return l.clearDataDescription;
       default:
         return item.description ?? '';
     }

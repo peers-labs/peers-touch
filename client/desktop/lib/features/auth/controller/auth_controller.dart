@@ -5,6 +5,8 @@ import 'package:get_storage/get_storage.dart';
 import 'package:peers_touch_desktop/core/network/network_initializer.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+
 class AuthController extends GetxController {
   final email = ''.obs;
   final password = ''.obs;
@@ -121,7 +123,10 @@ class AuthController extends GetxController {
     error.value = null;
     try {
       if (!_validateSignupInputs()) {
-        error.value = '请填写完整信息，且密码需一致并至少8位';
+        final context = Get.context;
+        error.value = context != null 
+          ? AppLocalizations.of(context)!.signupValidationErrorMessage 
+          : 'Please fill in all information, and passwords must match and be at least 8 characters.';
         lastStatus.value = null;
         lastBody.value = null;
         loading.value = false;

@@ -13,7 +13,7 @@ import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/view/provider_settings_page.dart';
-import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 typedef SendDraftCallback = void Function(AiComposerDraft draft);
 
@@ -48,6 +48,7 @@ class AIInputBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final ctrl = Get.put(AiInputController(), tag: 'ai-input-box');
     ctrl.configure(capability);
+    final l = AppLocalizations.of(context)!;
 
     final borderColor = Theme.of(context).dividerColor;
     final radius = BorderRadius.circular(12);
@@ -67,8 +68,8 @@ class AIInputBox extends StatelessWidget {
           Obx(() {
             final tc = externalTextController ?? ctrl.textController;
             final hint = ctrl.sendMode.value == 'enter'
-                ? '按 Enter 发送，按 Ctrl+Enter 换行'
-                : '按 Ctrl+Enter 发送，按 Enter 换行';
+                ? l.inputHintEnterToSend
+                : l.inputHintCtrlEnterToSend;
             return Focus(
               canRequestFocus: false,
               onKeyEvent: (node, event) {
@@ -183,6 +184,7 @@ class AIInputBox extends StatelessWidget {
   // 模型选择下拉面板按钮
   Widget _providerMenuButton(BuildContext context) {
     final theme = Theme.of(context);
+    final l = AppLocalizations.of(context)!;
     final menuController = MenuController();
     return MenuAnchor(
       controller: menuController,
@@ -192,7 +194,7 @@ class AIInputBox extends StatelessWidget {
         _buildProviderMenuContent(context),
       ],
       child: IconButton(
-        tooltip: '选择模型',
+        tooltip: l.selectModel,
         icon: Icon(Icons.public, color: theme.colorScheme.primary),
         onPressed: () => menuController.open(),
       ),
@@ -245,6 +247,7 @@ class AIInputBox extends StatelessWidget {
 
   Widget _toolbar(BuildContext context, AiInputController ctrl) {
     final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final l = AppLocalizations.of(context)!;
     return Obx(() {
       // Force dependency on attachments to ensure Obx rebuilds
       final _ = ctrl.attachments.length;
@@ -258,22 +261,22 @@ class AIInputBox extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            tooltip: capability.supportsImageInput ? '添加图片' : '当前模型不支持图片输入',
+            tooltip: capability.supportsImageInput ? l.addImage : l.modelDoesNotSupportImage,
             onPressed: canImg ? () => _pickImage(ctrl) : null,
             icon: Icon(Icons.image_outlined, color: color),
           ),
           IconButton(
-            tooltip: capability.supportsFileInput ? '添加文件' : '当前模型不支持文件输入',
+            tooltip: capability.supportsFileInput ? l.addFile : l.modelDoesNotSupportFile,
             onPressed: canFile ? () => _pickFile(ctrl) : null,
             icon: Icon(Icons.attach_file, color: color),
           ),
           IconButton(
-            tooltip: capability.supportsAudioInput ? '添加音频' : '当前模型不支持音频输入',
+            tooltip: capability.supportsAudioInput ? l.addAudio : l.modelDoesNotSupportAudio,
             onPressed: canAudio ? () => _pickAudio(ctrl) : null,
             icon: Icon(Icons.mic_none, color: color),
           ),
           IconButton(
-            tooltip: '清空输入',
+            tooltip: l.clearInput,
             onPressed: () {
               ctrl.clearAll();
               externalTextController?.clear();
@@ -288,11 +291,12 @@ class AIInputBox extends StatelessWidget {
   // 右侧与发送按钮并排的发送设置菜单
   Widget _sendSettingsButton(BuildContext context, AiInputController ctrl) {
     final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final l = AppLocalizations.of(context)!;
     return PopupMenuButton<String>(
-      tooltip: '发送设置',
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'enter', child: Text('按 Enter 发送')),
-        PopupMenuItem(value: 'ctrlEnter', child: Text('按 Ctrl+Enter 发送')),
+      tooltip: l.sendSettings,
+      itemBuilder: (context) => [
+        PopupMenuItem(value: 'enter', child: Text(l.pressEnterToSend)),
+        PopupMenuItem(value: 'ctrlEnter', child: Text(l.pressCtrlEnterToSend)),
       ],
       onSelected: ctrl.setSendMode,
       icon: Icon(Icons.keyboard_alt_outlined, color: color),
@@ -369,12 +373,13 @@ class AIInputBox extends StatelessWidget {
       overlay.size.width - globalPos.dx,
       overlay.size.height - globalPos.dy,
     );
+    final l = AppLocalizations.of(context)!;
     showMenu<String>(
       context: context,
       position: position,
-      items: const [
-        PopupMenuItem(value: 'enter', child: Text('按 Enter 发送')),
-        PopupMenuItem(value: 'ctrlEnter', child: Text('按 Ctrl+Enter 发送')),
+      items: [
+        PopupMenuItem(value: 'enter', child: Text(l.pressEnterToSend)),
+        PopupMenuItem(value: 'ctrlEnter', child: Text(l.pressCtrlEnterToSend)),
       ],
     ).then((v) {
       if (v != null) ctrl.setSendMode(v);

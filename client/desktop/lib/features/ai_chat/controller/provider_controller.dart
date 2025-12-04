@@ -10,6 +10,8 @@ import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controll
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/capability/capability_resolver.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/model_capability.dart';
 
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+
 /// AI服务提供商控制器
 class ProviderController extends GetxController {
   final ProviderService _providerService = Get.find();
@@ -107,7 +109,9 @@ class ProviderController extends GetxController {
             false);
       }
     } catch (e) {
-      Get.snackbar('错误', '加载提供商失败: $e');
+      final context = Get.context;
+      final l10n = context != null ? AppLocalizations.of(context)! : null;
+      Get.snackbar(l10n?.error ?? 'Error', l10n?.providerLoadError(e.toString()) ?? 'Failed to load providers: $e');
     } finally {
       isLoading.value = false;
     }
@@ -121,9 +125,13 @@ class ProviderController extends GetxController {
 
       await _providerService.updateProvider(updatedProvider);
       await loadProviders();
-      Get.snackbar('成功', '提供商更新成功');
+      final context = Get.context;
+      final l10n = context != null ? AppLocalizations.of(context)! : null;
+      Get.snackbar(l10n?.success ?? 'Success', l10n?.providerUpdateSuccess ?? 'Provider updated successfully');
     } catch (e) {
-      Get.snackbar('错误', '更新提供商失败: $e');
+      final context = Get.context;
+      final l10n = context != null ? AppLocalizations.of(context)! : null;
+      Get.snackbar(l10n?.error ?? 'Error', l10n?.providerUpdateError(e.toString()) ?? 'Failed to update provider: $e');
     }
   }
 
@@ -132,9 +140,13 @@ class ProviderController extends GetxController {
     try {
       await _providerService.deleteProvider(providerId);
       await loadProviders();
-      Get.snackbar('成功', '提供商删除成功');
+      final context = Get.context;
+      final l10n = context != null ? AppLocalizations.of(context)! : null;
+      Get.snackbar(l10n?.success ?? 'Success', l10n?.providerDeleteSuccess ?? 'Provider deleted successfully');
     } catch (e) {
-      Get.snackbar('错误', '删除提供商失败: $e');
+      final context = Get.context;
+      final l10n = context != null ? AppLocalizations.of(context)! : null;
+      Get.snackbar(l10n?.error ?? 'Error', l10n?.providerDeleteError(e.toString()) ?? 'Failed to delete provider: $e');
     }
   }
 
@@ -149,9 +161,13 @@ class ProviderController extends GetxController {
             ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
       await _providerService.updateProvider(updated);
       await loadProviders();
-      Get.snackbar('成功', '名称已更新');
+      final context = Get.context;
+      final l10n = context != null ? AppLocalizations.of(context)! : null;
+      Get.snackbar(l10n?.success ?? 'Success', l10n?.nameUpdated ?? 'Name updated');
     } catch (e) {
-      Get.snackbar('错误', '更新名称失败: $e');
+      final context = Get.context;
+      final l10n = context != null ? AppLocalizations.of(context)! : null;
+      Get.snackbar(l10n?.error ?? 'Error', l10n?.nameUpdateError(e.toString()) ?? 'Failed to update name: $e');
     }
   }
 
@@ -181,9 +197,13 @@ class ProviderController extends GetxController {
           : await _providerService.getCurrentProvider();
       currentProvider.value = current;
 
-      Get.snackbar('成功', '当前提供商已切换');
+      final context = Get.context;
+      final l10n = context != null ? AppLocalizations.of(context)! : null;
+      Get.snackbar(l10n?.success ?? 'Success', l10n?.providerSwitched ?? 'Current provider switched');
     } catch (e) {
-      Get.snackbar('错误', '切换提供商失败: $e');
+      final context = Get.context;
+      final l10n = context != null ? AppLocalizations.of(context)! : null;
+      Get.snackbar(l10n?.error ?? 'Error', l10n?.providerSwitchError(e.toString()) ?? 'Failed to switch provider: $e');
     }
   }
 

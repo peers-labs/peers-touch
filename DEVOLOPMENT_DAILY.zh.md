@@ -75,3 +75,19 @@
 ### 明天
 
 要着重处理identity部分的功能，这是根本，关系整个应用账号体系的串联，identity 还没有完成
+
+## 20251205
+
+### Station
+
+```
+调整了 Actor 目录与响应，使之符合 activitypub 出入参标准，但是未验证。Identity ID 也未验证，需要继续。
+```
+
+### Desktop 
+
+多语言调整到base仓，把proto也调整了下。
+ 
+### 明天
+
+验证 activitypub 是否能用。制作个人 Profile 页，要有 ActivityPub 风

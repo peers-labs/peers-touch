@@ -3,17 +3,18 @@ import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
-/// 设置项注册器接口
+/// Setting registry interface
 abstract class SettingRegistry {
-  /// 注册设置分区
+  /// Register setting section
   void registerSection(SettingSection section);
   
-  /// 获取所有设置分区
+  /// Get all setting sections
   List<SettingSection> getSections();
 }
 
-/// 设置管理器 - 统一管理所有设置项
+/// Setting manager - manages all settings
 class SettingManager implements SettingRegistry {
   static final SettingManager _instance = SettingManager._internal();
   
@@ -23,30 +24,30 @@ class SettingManager implements SettingRegistry {
   
   final List<SettingSection> _sections = [];
   
-  /// 注册设置分区
+  /// Register setting section
   @override
   void registerSection(SettingSection section) {
     _sections.add(section);
   }
   
-  /// 获取所有设置分区
+  /// Get all setting sections
   @override
   List<SettingSection> getSections() {
     return List.from(_sections);
   }
   
-  /// 初始化通用设置分区
+  /// Initialize general settings
   void initializeGeneralSettings() {
-    // 通用设置分区（可变分区，便于后续更新项值）
+    // General settings section (mutable, for future updates)
     registerSection(SettingSection(
       id: 'general',
-      title: '通用设置',
+      title: 'General Settings',
       icon: Icons.settings,
       items: [
         SettingItem(
           id: 'language',
-          title: '语言',
-          description: '选择应用语言',
+          title: 'Language',
+          description: 'Select application language',
           icon: Icons.language,
           type: SettingItemType.select,
           value: 'zh-CN',
@@ -66,8 +67,8 @@ class SettingManager implements SettingRegistry {
         ),
         SettingItem(
           id: 'theme',
-          title: '主题',
-          description: '选择应用主题',
+          title: 'Theme',
+          description: 'Select application theme',
           icon: Icons.palette,
           type: SettingItemType.select,
           value: 'dark',
@@ -90,76 +91,77 @@ class SettingManager implements SettingRegistry {
         ),
         SettingItem(
           id: 'color_scheme',
-          title: '色彩方案',
-          description: '选择应用色彩方案',
+          title: 'Color Scheme',
+          description: 'Select application color scheme',
           icon: Icons.color_lens,
           type: SettingItemType.select,
           value: 'lobe_chat',
           options: ['lobe_chat', 'material', 'cupertino'],
-          // 暂未实现不同方案的即时切换，这里预留回调
+          // Immediate switching not implemented yet, reserved callback
           onChanged: (val) {
-            // TODO: 根据方案切换不同的 ThemeData 扩展（后续实现）
+            // TODO: Switch ThemeData extensions based on scheme (future implementation)
           },
         ),
       ],
     ));
     
-    // 全局业务设置分区
+    // Global business settings section
     registerSection(SettingSection(
       id: 'global_business',
-      title: '全局业务设置',
+      title: 'Global Business Settings',
       icon: Icons.cloud,
       items: [
         SettingItem(
           id: 'backend_url',
-          title: '后端节点地址',
-          description: '设置后端服务地址',
+          title: 'Backend Node Address',
+          description: 'Set backend service address',
           icon: Icons.cloud_queue,
           type: SettingItemType.textInput,
           value: HttpServiceLocator().baseUrl,
-          placeholder: '请输入后端服务地址',
+          placeholder: 'Enter backend service address',
         ),
         SettingItem(
           id: 'auth_token',
-          title: '安全认证',
-          description: '设置API认证令牌',
+          title: 'Security Auth',
+          description: 'Set API authentication token',
           icon: Icons.security,
           type: SettingItemType.textInput,
           value: '',
-          placeholder: '请输入认证令牌',
+          placeholder: 'Enter authentication token',
         ),
       ],
     ));
 
-    // 高级设计分区
+    // Advanced settings section
     registerSection(SettingSection(
       id: 'advanced_design',
-      title: '高级设置',
+      title: 'Advanced Settings',
       icon: Icons.design_services,
       items: [
         SettingItem(
           id: 'clear_data',
-          title: '清空数据',
-          description: '清除所有本地存储数据',
+          title: 'Clear Data',
+          description: 'Clear all local storage data',
           icon: Icons.delete_forever,
           type: SettingItemType.button,
           onTap: () {
+            final l = AppLocalizations.of(Get.context!)!;
             Get.dialog(
               AlertDialog(
-                title: const Text('确认'),
-                content: const Text('您确定要清空所有本地数据吗？此操作不可逆。'),
+                title: Text(l.confirm),
+                content: Text(l.clearDataConfirmation),
                 actions: [
                   TextButton(
                     onPressed: () => Get.back(),
-                    child: const Text('取消'),
+                    child: Text(l.cancel),
                   ),
                   TextButton(
                     onPressed: () async {
                       await LocalStorage().clearAll();
                       Get.back(); // Close the dialog
-                      Get.snackbar('成功', '所有本地数据已清空。');
+                      Get.snackbar(l.success, l.dataClearedSuccess);
                     },
-                    child: const Text('确认'),
+                    child: Text(l.confirm),
                   ),
                 ],
               ),
@@ -170,7 +172,7 @@ class SettingManager implements SettingRegistry {
     ));
   }
   
-  /// 注册业务模块设置
+  /// Register business module settings
   void registerBusinessModuleSettings(String moduleId, String moduleName, List<SettingItem> settings) {
     registerSection(SettingSection(
       id: 'module_$moduleId',
