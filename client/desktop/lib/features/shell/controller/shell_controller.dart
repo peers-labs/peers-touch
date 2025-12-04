@@ -36,6 +36,8 @@ class ShellController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // 初始化左侧面板宽度为响应式，避免 Obx 未使用可观察变量的误用警告
+    leftPaneWidth ??= UIKit.secondaryNavWidth.obs;
     // 初始化右侧面板状态
     // 默认显示右侧折叠栏，由其自身按钮控制展开/收起
     isRightPanelVisible.value = true;

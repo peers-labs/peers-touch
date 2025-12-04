@@ -8,7 +8,8 @@
 // ignore_for_file: constant_identifier_names
 // ignore_for_file: curly_braces_in_flow_control_structures
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
-// ignore_for_file: non_constant_identifier_names, unused_import
+// ignore_for_file: non_constant_identifier_names, prefer_relative_imports
+// ignore_for_file: unused_import
 
 import 'dart:convert' as $convert;
 import 'dart:core' as $core;
@@ -298,14 +299,7 @@ final $typed_data.Uint8List messageAttachmentDescriptor = $convert.base64Decode(
 const Friend$json = {
   '1': 'Friend',
   '2': [
-    {
-      '1': 'user',
-      '3': 1,
-      '4': 1,
-      '5': 11,
-      '6': '.peers_touch.model.core.v1.Actor',
-      '10': 'user'
-    },
+    {'1': 'actor_id', '3': 1, '4': 1, '5': 9, '10': 'actorId'},
     {
       '1': 'status',
       '3': 2,
@@ -347,13 +341,13 @@ const Friend_MetadataEntry$json = {
 
 /// Descriptor for `Friend`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List friendDescriptor = $convert.base64Decode(
-    'CgZGcmllbmQSNAoEdXNlchgBIAEoCzIgLnBlZXJzX3RvdWNoLm1vZGVsLmNvcmUudjEuQWN0b3'
-    'JSBHVzZXISQwoGc3RhdHVzGAIgASgOMisucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Gcmll'
-    'bmRzaGlwU3RhdHVzUgZzdGF0dXMSTgoVZnJpZW5kc2hpcF9jcmVhdGVkX2F0GAMgASgLMhouZ2'
-    '9vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcFITZnJpZW5kc2hpcENyZWF0ZWRBdBIdCgpwdWJsaWNf'
-    'a2V5GAQgASgJUglwdWJsaWNLZXkSSwoIbWV0YWRhdGEYBSADKAsyLy5wZWVyc190b3VjaC5tb2'
-    'RlbC5jaGF0LnYxLkZyaWVuZC5NZXRhZGF0YUVudHJ5UghtZXRhZGF0YRo7Cg1NZXRhZGF0YUVu'
-    'dHJ5EhAKA2tleRgBIAEoCVIDa2V5EhQKBXZhbHVlGAIgASgJUgV2YWx1ZToCOAE=');
+    'CgZGcmllbmQSGQoIYWN0b3JfaWQYASABKAlSB2FjdG9ySWQSQwoGc3RhdHVzGAIgASgOMisucG'
+    'VlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5GcmllbmRzaGlwU3RhdHVzUgZzdGF0dXMSTgoVZnJp'
+    'ZW5kc2hpcF9jcmVhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcFITZn'
+    'JpZW5kc2hpcENyZWF0ZWRBdBIdCgpwdWJsaWNfa2V5GAQgASgJUglwdWJsaWNLZXkSSwoIbWV0'
+    'YWRhdGEYBSADKAsyLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkZyaWVuZC5NZXRhZGF0YU'
+    'VudHJ5UghtZXRhZGF0YRo7Cg1NZXRhZGF0YUVudHJ5EhAKA2tleRgBIAEoCVIDa2V5EhQKBXZh'
+    'bHVlGAIgASgJUgV2YWx1ZToCOAE=');
 
 @$core.Deprecated('Use friendRequestDescriptor instead')
 const FriendRequest$json = {

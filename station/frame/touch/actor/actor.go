@@ -3,10 +3,9 @@ package actor
 import (
 	"context"
 
-	"github.com/peers-labs/peers-touch/station/frame/core/identity"
-	"github.com/peers-labs/peers-touch/station/frame/core/identity/ptid"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	identity "github.com/peers-labs/peers-touch/station/frame/touch/actor/identity"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
@@ -56,7 +55,7 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 	// Create new identity for the actor
 	// Namespace: "peers" (default)
 	// Type: TypePerson
-	createdIdentity, err := identity.CreateIdentity(c, actorParams.Name, "peers", ptid.TypePerson)
+	createdIdentity, err := identity.CreateIdentity(c, actorParams.Name, "peers", identity.TypePerson)
 	if err != nil {
 		log.Warnf(c, "[SignUp] Create identity err: %v", err)
 		return err

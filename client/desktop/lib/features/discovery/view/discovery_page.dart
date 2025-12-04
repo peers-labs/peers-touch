@@ -420,6 +420,7 @@ class _DiscoveryDetailView extends StatelessWidget {
                 child: Scrollbar(
                   thumbVisibility: true,
                   child: SingleChildScrollView(
+                    primary: true,
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,

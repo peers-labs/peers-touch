@@ -9,7 +9,6 @@ package model
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	_ "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -140,7 +139,7 @@ var File_domain_core_core_proto protoreflect.FileDescriptor
 
 const file_domain_core_core_proto_rawDesc = "" +
 	"\n" +
-	"\x16domain/core/core.proto\x12\x19peers_touch.model.core.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"?\n" +
+	"\x16domain/core/core.proto\x12\x19peers_touch.model.core.v1\"?\n" +
 	"\x04Peer\x12\x17\n" +
 	"\apeer_id\x18\x01 \x01(\tR\x06peerId\x12\x1e\n" +
 	"\n" +
@@ -186,7 +185,6 @@ func file_domain_core_core_proto_init() {
 	if File_domain_core_core_proto != nil {
 		return
 	}
-	file_domain_actor_actor_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
