@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/ai_proxy/provider/template/template_factory.dart';
-import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
+import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart' as $pb_timestamp;
 import 'package:peers_touch_desktop/features/ai_chat/model/request_format.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
@@ -58,9 +58,9 @@ class CreateProviderController extends GetxController {
           'presencePenalty': 0.0,
         }),
         enabled: true,
-        accessedAt: Timestamp.fromDateTime(now.toUtc()),
-        createdAt: Timestamp.fromDateTime(now.toUtc()),
-        updatedAt: Timestamp.fromDateTime(now.toUtc()),
+        accessedAt: $pb_timestamp.Timestamp.fromDateTime(now.toUtc()),
+        createdAt: $pb_timestamp.Timestamp.fromDateTime(now.toUtc()),
+        updatedAt: $pb_timestamp.Timestamp.fromDateTime(now.toUtc()),
       );
       // 应用模板默认值与校验
       final template = AIProviderTemplateFactory.fromProvider(provider);
