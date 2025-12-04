@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 import 'app/bindings/initial_binding.dart';
 import 'app/initialization/app_initializer.dart';

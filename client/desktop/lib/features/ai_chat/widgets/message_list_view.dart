@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_base/ai_proxy/token/token_counter.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 class MessageListView extends StatefulWidget {
   final List<ChatMessage> messages;
@@ -33,12 +34,12 @@ class _MessageListViewState extends State<MessageListView> {
     }
   }
 
-String _formatMessageTime(DateTime dt) {
+  String _formatMessageTime(DateTime dt) {
     final now = DateTime.now();
     if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
       return DateFormat.Hm().format(dt); // 今天：HH:mm
     } else if (now.difference(dt).inDays == 1) {
-      return '昨天 ${DateFormat.Hm().format(dt)}';
+      return '${AppLocalizations.of(context).yesterday} ${DateFormat.Hm().format(dt)}';
     } else {
       return DateFormat('yyyy/MM/dd HH:mm').format(dt);
     }

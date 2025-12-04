@@ -1,6 +1,6 @@
-arb-dir: lib/app/i18n
+arb-dir: lib/i18n
 template-arb-file: app_en.arb
 output-localization-file: app_localizations.dart
 output-class: AppLocalizations
-output-dir: lib/app/i18n/generated
-nullable-getter: false
+output-dir: lib/i18n/generated
+synthetic-package: false

@@ -5,6 +5,8 @@ import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/create_provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/request_format.dart';
 
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+
 class CreateProviderForm extends StatelessWidget {
   const CreateProviderForm({super.key});
 
@@ -12,6 +14,7 @@ class CreateProviderForm extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
     final controller = Get.put(CreateProviderController());
+    final l = AppLocalizations.of(context)!;
 
     return Container(
       width: 600, // Set a fixed width for the dialog content
@@ -30,7 +33,7 @@ class CreateProviderForm extends StatelessWidget {
                   children: [
                     Icon(Icons.auto_awesome, color: tokens.textSecondary),
                     const SizedBox(width: 8),
-                    Text('Create Custom AI Provider', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: tokens.textPrimary)),
+                    Text(l.createCustomAIProvider, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: tokens.textPrimary)),
                   ],
                 ),
                 IconButton(
@@ -48,21 +51,21 @@ class CreateProviderForm extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Basic Information
-                    Text('Basic Information', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                    Text(l.basicInformation, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: tokens.textPrimary)),
                     const SizedBox(height: 16),
-                    _buildTextField(context, controller: controller.idController, label: 'Provider ID', hint: 'Suggested all lowercase, e.g., openai, cann...', isRequired: true),
-                    _buildTextField(context, controller: controller.nameController, label: 'Provider Name', hint: 'Please enter the display name of the provider', isRequired: true),
-                    _buildTextField(context, controller: controller.descriptionController, label: 'Provider Description', hint: 'Provider description (optional)'),
-                    _buildTextField(context, controller: controller.logoController, label: 'Provider Logo (URL or SVG)', hint: '输入 logo URL 或选择预制 SVG'),
+                    _buildTextField(context, controller: controller.idController, label: l.providerId, hint: l.providerIdPlaceholder, isRequired: true),
+                    _buildTextField(context, controller: controller.nameController, label: l.providerName, hint: l.providerNamePlaceholder, isRequired: true),
+                    _buildTextField(context, controller: controller.descriptionController, label: l.providerDescription, hint: l.providerDescriptionPlaceholder),
+                    _buildTextField(context, controller: controller.logoController, label: l.providerLogo, hint: l.providerLogoPlaceholder),
                     _buildSvgPicker(context, controller),
                     const SizedBox(height: 24),
 
                     // Configuration Information
-                    Text('Configuration Information', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: tokens.textPrimary)),
+                    Text(l.configurationInformation, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: tokens.textPrimary)),
                     const SizedBox(height: 16),
-                    _buildDropdownField(context, controller: controller, label: 'Request Format', hint: 'OpenAI / Ollama', isRequired: true),
-                    _buildTextField(context, controller: controller.proxyUrlController, label: 'Proxy URL', hint: 'https://xxxx-proxy.com/v1', isRequired: true),
-                    _buildTextField(context, controller: controller.apiKeyController, label: 'API Key', hint: 'Please enter your API Key', obscureText: true),
+                    _buildDropdownField(context, controller: controller, label: l.requestFormat, hint: l.requestFormatPlaceholder, isRequired: true),
+                    _buildTextField(context, controller: controller.proxyUrlController, label: l.proxyUrl, hint: l.proxyUrlPlaceholder, isRequired: true),
+                    _buildTextField(context, controller: controller.apiKeyController, label: l.apiKey, hint: l.apiKeyPlaceholder, obscureText: true),
                   ],
                 ),
               ),
@@ -77,7 +80,7 @@ class CreateProviderForm extends StatelessWidget {
                 style: UIKit.primaryButtonStyle(context)?.copyWith(
                   padding: MaterialStateProperty.all(const EdgeInsets.symmetric(vertical: 20)),
                 ),
-                child: const Text('Create', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(l.create, style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -88,6 +91,7 @@ class CreateProviderForm extends StatelessWidget {
 
   Widget _buildTextField(BuildContext context, {required TextEditingController controller, required String label, required String hint, bool isRequired = false, bool obscureText = false}) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
+    final l = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: Column(
@@ -110,7 +114,7 @@ class CreateProviderForm extends StatelessWidget {
             ),
             validator: (value) {
               if (isRequired && (value == null || value.isEmpty)) {
-                return 'This field is required';
+                return l.fieldRequired;
               }
               return null;
             },
@@ -122,6 +126,7 @@ class CreateProviderForm extends StatelessWidget {
 
   Widget _buildDropdownField(BuildContext context, {required CreateProviderController controller, required String label, required String hint, bool isRequired = false}) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
+    final l = AppLocalizations.of(context)!;
     final formats = RequestFormat.supportedFormats;
 
     return Padding(
@@ -165,7 +170,7 @@ class CreateProviderForm extends StatelessWidget {
             icon: Icon(Icons.arrow_drop_down, color: tokens.textSecondary),
             validator: (value) {
               if (isRequired && value == null) {
-                return 'This field is required';
+                return l.fieldRequired;
               }
               return null;
             },
@@ -177,6 +182,7 @@ class CreateProviderForm extends StatelessWidget {
 
   Widget _buildSvgPicker(BuildContext context, CreateProviderController controller) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
+    final l = AppLocalizations.of(context)!;
     final options = const [
       'openai.svg',
       'openai-text.svg',

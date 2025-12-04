@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
 import 'dart:convert';
 import 'package:fixnum/fixnum.dart' as $fixnum;
@@ -110,7 +110,7 @@ class AssistantSidebar extends StatelessWidget {
                         // 使用 updatedAt 作为最后活跃时间
                         if (s.updatedAt != $fixnum.Int64(0))
                           Text(
-                            formatDateTime(DateTime.fromMillisecondsSinceEpoch(s.updatedAt.toInt())),
+                            formatDateTime(DateTime.fromMillisecondsSinceEpoch(s.updatedAt.toInt()), context),
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                       ],
@@ -126,7 +126,7 @@ class AssistantSidebar extends StatelessWidget {
   }
 }
 
-String formatDateTime(DateTime dt) {
+String formatDateTime(DateTime dt, BuildContext context) {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final date = DateTime(dt.year, dt.month, dt.day);
@@ -134,7 +134,7 @@ String formatDateTime(DateTime dt) {
   if (date == today) {
     return DateFormat.Hm().format(dt);
   } else if (today.difference(date).inDays == 1) {
-    return '昨天';
+    return AppLocalizations.of(context).yesterday;
   } else {
     return DateFormat('yy/MM/dd').format(dt);
   }

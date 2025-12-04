@@ -6,7 +6,7 @@ import 'package:peers_touch_desktop/core/constants/app_constants.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
-import 'package:peers_touch_desktop/app/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/app_theme.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
@@ -205,8 +205,28 @@ class ShellPage extends StatelessWidget {
     final double barWidth = tokens.menuBarWidth; // 从 tokens 读取栏宽
     final double boxSize = barWidth * tokens.menuItemBoxRatio; // 黄金分割比例尺寸（从 tokens 读取）
     final double horizontalMargin = (barWidth - boxSize) / 2; // 居中，左右留白更大
+
+    final localizations = AppLocalizations.of(context);
+    String tooltip = item.label;
+    if (localizations != null) {
+      switch (item.id) {
+        case 'settings':
+          tooltip = localizations.settingsTitle;
+          break;
+        case 'ai_chat':
+          tooltip = localizations.aiChat;
+          break;
+        case 'chat_rtc':
+          tooltip = localizations.chatRtc;
+          break;
+        case 'discovery':
+          tooltip = localizations.discovery;
+          break;
+      }
+    }
+
     return Tooltip(
-      message: item.label,
+      message: tooltip,
       child: Container(
         height: boxSize,
         width: boxSize,
@@ -355,7 +375,7 @@ class ShellPage extends StatelessWidget {
                             // 窄宽或折叠态：仅居中显示小号按钮
                             ? Center(
                                 child: Tooltip(
-                                  message: '展开',
+                                  message: localizations?.expand ?? 'Expand',
                                   child: IconButton(
                                     padding: EdgeInsets.zero,
                                     iconSize: 18,
@@ -370,7 +390,7 @@ class ShellPage extends StatelessWidget {
                                   const Spacer(),
                                   if (showCollapse)
                                     Tooltip(
-                                      message: '折叠',
+                                      message: localizations?.collapse ?? 'Collapse',
                                       child: IconButton(
                                         style: UIKit.squareIconButtonStyle(context),
                                         icon: const Icon(Icons.keyboard_double_arrow_right),
