@@ -18,7 +18,7 @@ import (
 
 // CreateOutboxActivity handles POST requests to the outbox
 func CreateOutboxActivity(c context.Context, ctx *app.RequestContext) {
-	user := ctx.Param("user")
+	user := ctx.Param("actor")
 	if user == "" {
 		log.Warnf(c, "User parameter is required for outbox activity")
 		ctx.JSON(http.StatusBadRequest, "User parameter is required")
@@ -79,7 +79,7 @@ func CreateOutboxActivity(c context.Context, ctx *app.RequestContext) {
 func ProcessActivity(c context.Context, dbConn *gorm.DB, facade actor.ActivityPubFacade, username string, activity *ap.Activity, baseURL string) error {
 	// Ensure Actor is set
 	if activity.Actor == nil {
-		activity.Actor = ap.IRI(fmt.Sprintf("%s/%s", baseURL, username))
+		activity.Actor = ap.IRI(fmt.Sprintf("%s/%s/actor", baseURL, username))
 	}
 	if activity.Published.IsZero() {
 		activity.Published = time.Now()
@@ -97,6 +97,8 @@ func ProcessActivity(c context.Context, dbConn *gorm.DB, facade actor.ActivityPu
 		return handleLikeActivity(c, dbConn, username, activity, baseURL)
 	case ap.UndoType:
 		return handleUndoActivity(c, dbConn, username, activity, baseURL)
+	case ap.AnnounceType:
+		return handleAnnounceActivity(c, dbConn, username, activity, baseURL)
 	case ap.UpdateType:
 		return handleUpdateActivity(c, dbConn, username, activity, baseURL)
 	case ap.DeleteType:
@@ -345,5 +347,26 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 	}
 	dbConn.Create(colItem)
 
+	return nil
+}
+func handleAnnounceActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
+	log.Infof(c, "Handling Announce activity for user %s", username)
+
+	targetURI := activity.Object.GetLink()
+	if targetURI == "" {
+		return fmt.Errorf("announce target is required")
+	}
+
+	// Persist Announce as a regular activity referencing target object
+	if activity.ID == "" {
+		activity.ID = ap.ID(fmt.Sprintf("%s/activities/%d", activity.Actor, time.Now().UnixNano()))
+	}
+	if activity.Published.IsZero() {
+		activity.Published = time.Now()
+	}
+
+	if err := persistActivity(dbConn, username, activity, string(targetURI), baseURL); err != nil {
+		return err
+	}
 	return nil
 }

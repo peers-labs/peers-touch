@@ -75,7 +75,7 @@ func Webfinger(c context.Context, ctx *app.RequestContext) {
 	}
 
 	// Set appropriate content type for WebFinger response
-	ctx.Header("Content-Type", "application/jrd+json; charset=utf-8")
+	ctx.Header("Content-Type", model.ContentTypeJRDUTF8)
 	ctx.Header("Access-Control-Allow-Origin", "*")
 	ctx.Header("Access-Control-Allow-Methods", "GET")
 	ctx.Header("Access-Control-Allow-Headers", "Content-Type")
