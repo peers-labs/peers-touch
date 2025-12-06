@@ -35,6 +35,12 @@ func GetWellKnownHandlers() []WellKnownHandlerInfo {
 			Method:    server.GET,
 			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("WellKnown")},
 		},
+		{
+			RouterURL: RouterURLWellKnownNodeInfo,
+			Handler:   NodeInfoWellKnown,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("WellKnown")},
+		},
 	}
 }
 
@@ -106,10 +112,30 @@ func WebfingerHandler(c context.Context, ctx *app.RequestContext) {
 	}
 
 	// Set WebFinger content type
-	ctx.Header("Content-Type", "application/jrd+json; charset=utf-8")
+	ctx.Header("Content-Type", model.ContentTypeJRDUTF8)
 	ctx.Header("Access-Control-Allow-Origin", "*")
 	ctx.Header("Access-Control-Allow-Methods", "GET")
 	ctx.Header("Access-Control-Allow-Headers", "Content-Type")
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+// NodeInfo Well-Known: returns a link to the NodeInfo schema document
+func NodeInfoWellKnown(c context.Context, ctx *app.RequestContext) {
+	base := string(ctx.URI().Scheme())
+	if base == "" {
+		base = "https"
+	}
+	host := string(ctx.Host())
+	href := base + "://" + host + "/nodeinfo/2.1"
+	resp := map[string]interface{}{
+		"links": []map[string]string{
+			{
+				"rel":  "http://nodeinfo.diaspora.software/ns/schema/2.1",
+				"href": href,
+			},
+		},
+	}
+	ctx.Header("Content-Type", model.ContentTypeJSONUTF8)
+	ctx.JSON(http.StatusOK, resp)
 }

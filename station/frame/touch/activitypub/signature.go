@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	m "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 // SignatureData holds parsed signature header fields
@@ -162,7 +163,7 @@ func fetchPublicKey(c context.Context, keyID string) (crypto.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/activity+json, application/ld+json")
+	req.Header.Set("Accept", m.AcceptActivityJSONLD)
 
 	// Use default client for now. In production, use a client with timeout and limits.
 	client := &http.Client{Timeout: 10 * time.Second}
