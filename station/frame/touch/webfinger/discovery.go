@@ -64,7 +64,7 @@ func DiscoverActor(ctx context.Context, params *model.WebFingerParams, rels []st
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	profileURL := fmt.Sprintf("%s/@%s", baseURL, username)
-	actorID := fmt.Sprintf("%s/users/%s", baseURL, username)
+	actorID := fmt.Sprintf("%s/%s/actor", baseURL, username)
 
 	response := &model.WebFingerResponse{
 		Subject: resource,
@@ -75,12 +75,12 @@ func DiscoverActor(ctx context.Context, params *model.WebFingerParams, rels []st
 		Links: []model.WebFingerLink{
 			{
 				Rel:  model.RelSelf,
-				Type: "application/activity+json",
+				Type: model.ContentTypeActivityJSON,
 				Href: actorID,
 			},
 			{
 				Rel:  model.RelProfilePage,
-				Type: "text/html",
+				Type: model.ContentTypeHTML,
 				Href: profileURL,
 			},
 		},
@@ -105,7 +105,7 @@ func GetActivityPubActor(ctx context.Context, username string) (*model.WebFinger
 
 	baseURL := getBaseURL()
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	actorID := fmt.Sprintf("%s/users/%s", baseURL, username)
+	actorID := fmt.Sprintf("%s/%s/actor", baseURL, username)
 
 	return &model.WebFingerActivityPubActor{
 		ID:                actorID,

@@ -143,6 +143,26 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Method:    server.POST,
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
+		// NodeInfo schema endpoint
+		{
+			RouterURL: ActivityPubRouterURLNodeInfo21,
+			Handler:   activitypub.NodeInfo21,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper},
+		},
+		// Shared Inbox endpoints
+		{
+			RouterURL: ActivityPubRouterURLSharedInbox,
+			Handler:   GetSharedInbox,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper},
+		},
+		{
+			RouterURL: ActivityPubRouterURLSharedInbox,
+			Handler:   PostSharedInbox,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper},
+		},
 	}
 }
 
@@ -343,4 +363,13 @@ func GetUserFollowing(c context.Context, ctx *app.RequestContext) {
 // GetUserLiked handles GET requests for user liked
 func GetUserLiked(c context.Context, ctx *app.RequestContext) {
 	activitypub.GetLiked(c, ctx)
+}
+
+// Shared Inbox Handlers
+func GetSharedInbox(c context.Context, ctx *app.RequestContext) {
+	activitypub.GetSharedInbox(c, ctx)
+}
+
+func PostSharedInbox(c context.Context, ctx *app.RequestContext) {
+	activitypub.PostSharedInbox(c, ctx)
 }
