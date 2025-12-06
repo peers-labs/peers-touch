@@ -7,6 +7,7 @@ import (
 const (
 	RouterURLWellKnown          RouterPath = "/"
 	RouterURLWellKnownWebFinger RouterPath = "/webfinger"
+	RouterURLWellKnownNodeInfo  RouterPath = "/nodeinfo"
 )
 
 // WellKnownRouters provides .well-known endpoints for the service

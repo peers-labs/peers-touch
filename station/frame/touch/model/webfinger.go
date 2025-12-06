@@ -194,7 +194,7 @@ func BuildWebFingerResponse(actor *WebFingerActivityPubActor, baseURL string, re
 		Links: []WebFingerLink{
 			{
 				Rel:  "self",
-				Type: "application/activity+json",
+				Type: ContentTypeActivityJSON,
 				Href: actor.ID,
 			},
 			{
@@ -218,7 +218,7 @@ func BuildWebFingerResponse(actor *WebFingerActivityPubActor, baseURL string, re
 	if actor.Inbox != "" {
 		response.Links = append(response.Links, WebFingerLink{
 			Rel:  "https://www.w3.org/ns/activitystreams#inbox",
-			Type: "application/activity+json",
+			Type: ContentTypeActivityJSON,
 			Href: actor.Inbox,
 		})
 	}
@@ -226,7 +226,7 @@ func BuildWebFingerResponse(actor *WebFingerActivityPubActor, baseURL string, re
 	if actor.Outbox != "" {
 		response.Links = append(response.Links, WebFingerLink{
 			Rel:  "https://www.w3.org/ns/activitystreams#outbox",
-			Type: "application/activity+json",
+			Type: ContentTypeActivityJSON,
 			Href: actor.Outbox,
 		})
 	}
@@ -245,10 +245,4 @@ const (
 	RelActivityPubFollowing = "https://www.w3.org/ns/activitystreams#following"
 )
 
-// Constants for common content types
-const (
-	ContentTypeActivityJSON = "application/activity+json"
-	ContentTypeJSON         = "application/json"
-	ContentTypeHTML         = "text/html"
-	ContentTypeJRD          = "application/jrd+json"
-)
+// Content type constants moved to http_constants.go
