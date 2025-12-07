@@ -72,7 +72,7 @@ class AuthController extends GetxController {
       if (!ident.contains('@') && ident.isNotEmpty) {
         ident = ident + '@station.local';
       }
-      final uri = Uri.parse(useUrl.endsWith('/') ? '${useUrl}actor/login' : '$useUrl/actor/login');
+      final uri = Uri.parse(useUrl.endsWith('/') ? '${useUrl}activitypub/login' : '$useUrl/activitypub/login');
       final req = await HttpClient().postUrl(uri);
       req.headers.contentType = ContentType.json;
       req.write(json.encode({'email': ident, 'password': password.value}));

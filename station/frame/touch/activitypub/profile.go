@@ -3,234 +3,173 @@ package activitypub
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
-	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
 
-// CreateProfile creates a new user profile
-func CreateProfile(c context.Context, actorId uint64, name string, email string) (*db.ActorProfile, error) {
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Warnf(c, "[CreateProfile] Get db err: %v", err)
-		return nil, err
-	}
-
-	// Check if profile already exists
-	var existingProfile db.ActorProfile
-	if err := rds.Where("user_id = ?", actorId).First(&existingProfile).Error; err == nil {
-		return &existingProfile, nil // Profile already exists, return it
-	} else if err != gorm.ErrRecordNotFound {
-		log.Warnf(c, "[CreateProfile] Check existing profile err: %v", err)
-		return nil, err
-	}
-
-	// Generate unique peers ID
-	peersID := generatePeersID(name)
-
-	// Ensure peers ID is unique
-	for {
-		var count int64
-		if err := rds.Model(&db.ActorProfile{}).Where("peers_id = ?", peersID).Count(&count).Error; err != nil {
-			log.Warnf(c, "[CreateProfile] Check peers ID uniqueness err: %v", err)
-			return nil, err
-		}
-		if count == 0 {
-			break
-		}
-		// Generate new peers ID if collision
-		peersID = generatePeersID(name)
-	}
-
-	// Create new profile
-	profile := db.ActorProfile{
-		ActorID: actorId,
-		Email:   email,
-		PeersID: peersID,
-		Gender:  db.GenderOther, // Default gender
-	}
-
-	if err := rds.Create(&profile).Error; err != nil {
-		log.Warnf(c, "[CreateProfile] Create profile err: %v", err)
-		return nil, err
-	}
-
-	log.Infof(c, "[CreateProfile] Profile created for user %d with peers ID %s", actorId, peersID)
-	return &profile, nil
+// PeersTouchInfo contains Peers Touch specific network information
+type PeersTouchInfo struct {
+	NetworkID string `json:"network_id"` // PeersActorID (PTID)
 }
 
-// GetProfile retrieves user profile by user ID
-func GetProfile(c context.Context, actorId uint64) (*model.ProfileGetResponse, error) {
+// ProfileResponse represents the extended actor profile for the personal page
+// Modeled after Mastodon's Account entity but with Peers Touch extensions
+type ProfileResponse struct {
+	ID             string    `json:"id"`
+	Username       string    `json:"username"`
+	Acct           string    `json:"acct"`
+	DisplayName    string    `json:"display_name"`
+	Note           string    `json:"note"`
+	URL            string    `json:"url"`
+	Avatar         string    `json:"avatar"`
+	Header         string    `json:"header"`
+	Locked         bool      `json:"locked"`
+	CreatedAt      time.Time `json:"created_at"`
+	StatusesCount  int64     `json:"statuses_count"`
+	FollowingCount int64     `json:"following_count"`
+	FollowersCount int64     `json:"followers_count"`
+
+	// Peers Touch specific extensions
+	PeersTouch PeersTouchInfo `json:"peers_touch"`
+}
+
+// GetActorProfile handles GET requests for the extended actor profile
+// GET /:actor/profile
+func GetActorProfile(c context.Context, ctx *app.RequestContext) {
+	username := ctx.Param("actor")
+	if username == "" {
+		log.Warnf(c, "Username parameter is required")
+		ctx.JSON(http.StatusBadRequest, "Username parameter is required")
+		return
+	}
+
 	rds, err := store.GetRDS(c)
 	if err != nil {
-		log.Warnf(c, "[GetProfile] Get db err: %v", err)
-		return nil, err
+		log.Errorf(c, "Failed to get database connection: %v", err)
+		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
+		return
 	}
 
-	// Get user info
-	user, err := GetUserByID(c, actorId)
+	// 1. Fetch Basic Actor Info
+	var actor db.Actor
+	// Assuming "peers" namespace for now, similar to GetActor
+	err = rds.Where("name = ? AND namespace = ?", username, "peers").First(&actor).Error
 	if err != nil {
-		log.Warnf(c, "[GetProfile] Get user err: %v", err)
-		return nil, err
-	}
-
-	// Get profile info
-	var profile db.ActorProfile
-	if err := rds.Where("user_id = ?", actorId).First(&profile).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Return profile not found error instead of auto-creating
-			return nil, model.NewError("t20009", "Profile not found")
+			ctx.JSON(http.StatusNotFound, "User not found")
+			return
 		}
-		log.Warnf(c, "[GetProfile] Get profile err: %v", err)
+		log.Errorf(c, "Failed to fetch actor: %v", err)
+		ctx.JSON(http.StatusInternalServerError, "Internal Server Error")
+		return
+	}
+
+	baseURL := getBaseURL(ctx)
+	activityPubID := fmt.Sprintf("%s/users/%s", baseURL, username) // Standard AP Actor ID format
+
+	// 2. Fetch Stats
+	var statusesCount int64
+	// Count objects (Notes, Articles) attributed to this actor
+	// We check ActivityPubObject where AttributedTo matches the actor's AP ID
+	err = rds.Model(&db.ActivityPubObject{}).
+		Where("attributed_to = ?", activityPubID).
+		Count(&statusesCount).Error
+	if err != nil {
+		log.Warnf(c, "Failed to count statuses: %v", err)
+		// Continue, just default to 0
+	}
+
+	var followingCount int64
+	// Count active follows initiated by this actor
+	err = rds.Model(&db.ActivityPubFollow{}).
+		Where("follower_id = ? AND is_active = ?", activityPubID, true).
+		Count(&followingCount).Error
+	if err != nil {
+		log.Warnf(c, "Failed to count following: %v", err)
+	}
+
+	var followersCount int64
+	// Count active follows targeting this actor
+	err = rds.Model(&db.ActivityPubFollow{}).
+		Where("following_id = ? AND is_active = ?", activityPubID, true).
+		Count(&followersCount).Error
+	if err != nil {
+		log.Warnf(c, "Failed to count followers: %v", err)
+	}
+
+	// 3. Construct Response
+	response := ProfileResponse{
+		ID:             strconv.FormatUint(actor.ID, 10),
+		Username:       actor.Name,
+		Acct:           actor.Name, // Local user, so acct is just username
+		DisplayName:    actor.DisplayName,
+		Note:           actor.Summary,
+		URL:            activityPubID,
+		Avatar:         actor.Icon,
+		Header:         actor.Image,
+		Locked:         false, // TODO: Add logic if we support locked accounts
+		CreatedAt:      actor.CreatedAt,
+		StatusesCount:  statusesCount,
+		FollowingCount: followingCount,
+		FollowersCount: followersCount,
+		PeersTouch: PeersTouchInfo{
+			NetworkID: actor.PeersActorID,
+		},
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// GetProfile retrieves the profile for a given actor ID (internal use)
+func GetProfile(c context.Context, actorID uint64) (*ProfileResponse, error) {
+	rds, err := store.GetRDS(c)
+	if err != nil {
 		return nil, err
 	}
 
-	return &model.ProfileGetResponse{
-		ProfilePhoto: profile.ProfilePhoto,
-		Name:         user.Name,
-		Gender:       profile.Gender,
-		Region:       profile.Region,
-		Email:        profile.Email,
-		PeersID:      profile.PeersID,
-		WhatsUp:      profile.WhatsUp,
+	var actor db.Actor
+	if err := rds.First(&actor, actorID).Error; err != nil {
+		return nil, err
+	}
+
+	return &ProfileResponse{
+		ID:          strconv.FormatUint(actor.ID, 10),
+		Username:    actor.Name,
+		Acct:        actor.Name,
+		DisplayName: actor.DisplayName,
+		Note:        actor.Summary,
+		Avatar:      actor.Icon,
+		Header:      actor.Image,
+		CreatedAt:   actor.CreatedAt,
+		PeersTouch: PeersTouchInfo{
+			NetworkID: actor.PeersActorID,
+		},
 	}, nil
 }
 
-// GetProfileByPeersID retrieves user profile by peers ID
-func GetProfileByPeersID(c context.Context, peersID string) (*model.ProfileGetResponse, error) {
+// UpdateProfile updates the profile
+func UpdateProfile(c context.Context, actorID uint64, params *model.ProfileUpdateParams) error {
 	rds, err := store.GetRDS(c)
 	if err != nil {
-		log.Warnf(c, "[GetProfileByPeersID] Get db err: %v", err)
-		return nil, err
-	}
-
-	// Get profile by peers ID
-	var profile db.ActorProfile
-	if err := rds.Where("peers_id = ?", peersID).First(&profile).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, model.NewError("t20008", "Profile not found")
-		}
-		log.Warnf(c, "[GetProfileByPeersID] Get profile err: %v", err)
-		return nil, err
-	}
-
-	// Get user info
-	user, err := GetUserByID(c, profile.ActorID)
-	if err != nil {
-		log.Warnf(c, "[GetProfileByPeersID] Get user err: %v", err)
-		return nil, err
-	}
-
-	return &model.ProfileGetResponse{
-		ProfilePhoto: profile.ProfilePhoto,
-		Name:         user.Name,
-		Gender:       profile.Gender,
-		Region:       profile.Region,
-		Email:        profile.Email,
-		PeersID:      profile.PeersID,
-		WhatsUp:      profile.WhatsUp,
-	}, nil
-}
-
-// UpdateProfile updates user profile information
-// Supports updating specific items (partial updates) like WeChat
-func UpdateProfile(c context.Context, actorId uint64, params *model.ProfileUpdateParams) error {
-	// Validate parameters
-	if err := params.Validate(); err != nil {
 		return err
 	}
 
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Warnf(c, "[UpdateProfile] Get db err: %v", err)
-		return err
-	}
-
-	// Get existing profile
-	var profile db.ActorProfile
-	if err := rds.Where("user_id = ?", actorId).First(&profile).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return model.NewError("t20009", "Profile not found")
-		}
-		log.Warnf(c, "[UpdateProfile] Get profile err: %v", err)
-		return err
-	}
-
-	// Update fields if provided - supports partial updates
-	updates := make(map[string]interface{})
-
-	if params.ProfilePhoto != nil {
-		updates["profile_photo"] = *params.ProfilePhoto
-	}
-	if params.Gender != nil {
-		updates["gender"] = *params.Gender
-	}
-	if params.Region != nil {
-		updates["region"] = *params.Region
-	}
-	if params.Email != nil {
-		updates["email"] = *params.Email
-	}
+	updates := map[string]interface{}{}
 	if params.WhatsUp != nil {
-		updates["whats_up"] = *params.WhatsUp
+		updates["summary"] = *params.WhatsUp
 	}
-
-	if len(updates) > 0 {
-		updates["updated_at"] = time.Now()
-		if err := rds.Model(&profile).Updates(updates).Error; err != nil {
-			log.Warnf(c, "[UpdateProfile] Update profile err: %v", err)
-			return err
-		}
+	if params.ProfilePhoto != nil {
+		updates["icon"] = *params.ProfilePhoto
 	}
+	// Add other fields as needed
 
-	log.Infof(c, "[UpdateProfile] Profile updated for user %d", actorId)
-	return nil
-}
-
-// GetUserByID retrieves user by ID (helper function)
-func GetUserByID(c context.Context, actorId uint64) (*db.Actor, error) {
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		return nil, err
-	}
-
-	var user db.Actor
-	if err := rds.Where("id = ?", actorId).First(&user).Error; err != nil {
-		return nil, err
-	}
-
-	return &user, nil
-}
-
-// generatePeersID generates a unique peers ID based on user name
-func generatePeersID(name string) string {
-	// Use snowflake ID to ensure uniqueness
-	snowflakeID := id.NextID()
-
-	// Create a simple peers ID format: first 3 chars of name + timestamp suffix
-	prefix := ""
-	if len(name) >= 3 {
-		prefix = name[:3]
-	} else {
-		prefix = name
-	}
-
-	// Remove non-alphanumeric characters and convert to lowercase
-	cleanPrefix := ""
-	for _, r := range prefix {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			cleanPrefix += string(r)
-		}
-	}
-
-	if cleanPrefix == "" {
-		cleanPrefix = "usr"
-	}
-
-	return fmt.Sprintf("%s_%d", cleanPrefix, snowflakeID%1000000)
+	return rds.Model(&db.Actor{}).Where("id = ?", actorID).Updates(updates).Error
 }
