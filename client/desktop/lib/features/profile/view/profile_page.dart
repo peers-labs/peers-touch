@@ -71,6 +71,8 @@ class ProfilePage extends StatelessWidget {
                                     spacing: UIKit.spaceSm(context),
                                     runSpacing: UIKit.spaceSm(context),
                                     children: [
+                                      if (d.peersTouch?.networkId != null && d.peersTouch!.networkId.isNotEmpty)
+                                        _InfoChip(label: 'PT ID: ${d.peersTouch!.networkId}'),
                                       if ((d.region ?? '').isNotEmpty)
                                         _InfoChip(label: d.region!),
                                       if ((d.timezone ?? '').isNotEmpty)
@@ -92,6 +94,19 @@ class ProfilePage extends StatelessWidget {
                             ),
                           ],
                         ),
+                        SizedBox(height: UIKit.spaceLg(context)),
+                        if (d.showCounts)
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: UIKit.spaceLg(context)),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                _StatItem(label: 'posts'.tr, count: d.statusesCount ?? 0),
+                                _StatItem(label: 'following'.tr, count: d.followingCount ?? 0),
+                                _StatItem(label: 'followers'.tr, count: d.followersCount ?? 0),
+                              ],
+                            ),
+                          ),
                         SizedBox(height: UIKit.spaceLg(context)),
                         // Moments 预览（与头像左对齐，提升为卡片内平级）
                         Column(
@@ -258,6 +273,28 @@ class _VisibilitySelector extends StatelessWidget {
                 onSelected: (_) => onChanged(opt),
               ))
           .toList(),
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  final String label;
+  final int count;
+  const _StatItem({required this.label, required this.count});
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        Text(
+          '$count',
+          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(color: UIKit.textSecondary(context)),
+        ),
+      ],
     );
   }
 }

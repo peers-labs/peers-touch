@@ -3,6 +3,8 @@ import 'package:peers_touch_desktop/core/models/actor_base.dart';
 import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 
 class ProfileController extends GetxController {
   final Rx<ActorBase?> user = Rx<ActorBase?>(null);
@@ -12,6 +14,7 @@ class ProfileController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // Initialize with mock data for immediate display, will be updated by fetchProfile
     user.value = ActorBase(id: '1', name: 'Alice', avatar: null);
     detail.value = const UserDetail(
       id: '1',
@@ -38,7 +41,29 @@ class ProfileController extends GetxController {
       serverDomain: 'node.local',
       keyFingerprint: 'E3:9A:7B:...:12',
       verifications: ['self', 'peer'],
+      peersTouch: PeersTouchInfo(networkId: 'pt-mock-id-12345'),
     );
+    
+    // Fetch real data
+    fetchProfile();
+  }
+
+  Future<void> fetchProfile() async {
+    try {
+      final auth = Get.find<AuthController>();
+      // Use authenticated user's username if available, or fallback to 'alice' for dev/demo
+      final username = auth.username.value.isNotEmpty ? auth.username.value : 'alice';
+      
+      final client = Get.find<ApiClient>();
+      final response = await client.get('/$username/profile');
+      
+      if (response.statusCode == 200 && response.data != null) {
+        detail.value = UserDetail.fromJson(response.data);
+      }
+    } catch (e) {
+      // Log error but keep mock data if fetch fails
+      print('Failed to fetch profile: $e');
+    }
   }
 
   void toggleFollowing() => following.value = !following.value;
