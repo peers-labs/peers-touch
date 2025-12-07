@@ -181,15 +181,22 @@ func handleCreateActivity(c context.Context, dbConn *gorm.DB, username string, a
 func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
 	log.Infof(c, "Handling Follow activity for user %s", username)
 
-	targetURI := activity.Object.GetLink()
+	targetURI := string(activity.Object.GetLink())
 	if targetURI == "" {
 		return fmt.Errorf("follow target is required")
 	}
 
+	// Resolve target to canonical Actor IRI
+	resolvedURI, err := ResolveActorIRI(c, targetURI)
+	if err != nil {
+		return fmt.Errorf("failed to resolve target %s: %w", targetURI, err)
+	}
+	activity.Object = ap.IRI(resolvedURI)
+
 	// Persist Follow
 	follow := &db.ActivityPubFollow{
 		FollowerID:  string(activity.Actor.GetLink()),
-		FollowingID: string(targetURI),
+		FollowingID: resolvedURI,
 		ActivityID:  string(activity.ID),
 		Accepted:    false,
 		IsActive:    true,
@@ -199,7 +206,7 @@ func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, a
 		return fmt.Errorf("failed to create follow in DB: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, string(targetURI), baseURL)
+	return persistActivity(dbConn, username, activity, resolvedURI, baseURL)
 }
 
 func handleLikeActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -347,7 +354,107 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 	}
 	dbConn.Create(colItem)
 
+	// Trigger async delivery to remote instances
+	go deliverToRemote(username, activity, baseURL)
+
 	return nil
+}
+
+func deliverToRemote(username string, activity *ap.Activity, baseURL string) {
+	ctx := context.Background()
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		log.Errorf(ctx, "Delivery: Failed to get DB: %v", err)
+		return
+	}
+
+	// Get Actor
+	var actor db.Actor
+	if err := rds.Where("name = ?", username).First(&actor).Error; err != nil {
+		log.Errorf(ctx, "Delivery: Actor %s not found: %v", username, err)
+		return
+	}
+
+	// Get Keys
+	var keys db.ActivityPubKey
+	if err := rds.Where("actor_id = ?", actor.ID).First(&keys).Error; err != nil {
+		log.Errorf(ctx, "Delivery: Keys for actor %s not found: %v", username, err)
+		return
+	}
+
+	keyID := fmt.Sprintf("%s/%s/actor#main-key", baseURL, username)
+
+	// Determine targets
+	targets := make(map[string]bool)
+
+	// Helper to add targets
+	addTarget := func(iri string) {
+		if iri == "" || iri == ap.PublicNS.String() {
+			return
+		}
+
+		// Handle Followers Collection
+		// Check if it matches our followers collection ID
+		// Typically: baseURL/ap/u/{username}/followers or similar
+		// But here we constructed it as: baseURL/{username}/followers (see GetFollowing in activitypub.go)
+		// Let's match the suffix or construct the expected ID.
+		expectedFollowersID := fmt.Sprintf("%s/%s/followers", baseURL, username)
+		if iri == expectedFollowersID {
+			var followers []db.ActivityPubFollow
+			// Who is following me? FollowingID = My Actor ID
+			myActorID := fmt.Sprintf("%s/%s/actor", baseURL, username)
+			if err := rds.Where("following_id = ? AND is_active = ?", myActorID, true).Find(&followers).Error; err == nil {
+				for _, f := range followers {
+					// Add the follower's IRI (Actor ID)
+					targets[f.FollowerID] = true
+				}
+			} else {
+				log.Warnf(ctx, "Delivery: Failed to fetch followers for %s: %v", username, err)
+			}
+			return
+		}
+
+		targets[iri] = true
+	}
+
+	if activity.Type == ap.FollowType {
+		// Deliver to object (the person being followed)
+		addTarget(string(activity.Object.GetLink()))
+	} else {
+		// For Create, Announce, etc.
+		for _, to := range activity.To {
+			addTarget(string(to.GetLink()))
+		}
+		for _, cc := range activity.CC {
+			addTarget(string(cc.GetLink()))
+		}
+	}
+
+	// Process targets
+	for targetIRI := range targets {
+		// Resolve Inbox
+		// We need to fetch the actor to find their inbox
+		remoteActor, err := FetchActorDoc(ctx, targetIRI)
+		if err != nil {
+			log.Warnf(ctx, "Delivery: Failed to fetch remote actor %s: %v", targetIRI, err)
+			continue
+		}
+
+		inbox, err := ChooseInbox(remoteActor, true) // Prefer shared inbox
+		if err != nil {
+			log.Warnf(ctx, "Delivery: No inbox for %s: %v", targetIRI, err)
+			continue
+		}
+
+		// Send
+		log.Infof(ctx, "Delivery: Sending activity %s to %s", activity.ID, inbox)
+		statusCode, err := DeliverActivity(ctx, inbox, activity, keyID, keys.PrivateKeyPEM)
+		if err != nil {
+			log.Errorf(ctx, "Delivery: Failed to send to %s: %v", inbox, err)
+		} else {
+			log.Infof(ctx, "Delivery: Sent to %s, status: %d", inbox, statusCode)
+		}
+	}
 }
 func handleAnnounceActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
 	log.Infof(c, "Handling Announce activity for user %s", username)

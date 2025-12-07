@@ -37,7 +37,7 @@ class AssistantSidebar extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: UIKit.spaceMd(context)),
             alignment: Alignment.center,
             child: FrameActionCombo(
-              hintText: AppLocalizations.of(context).chatSearchSessionsPlaceholder,
+              hintText: AppLocalizations.of(context)!.chatSearchSessionsPlaceholder,
               prefixIcon: Icons.search,
               onAction: onNewChat,
               actionIcon: Icons.add,
@@ -134,7 +134,7 @@ String formatDateTime(DateTime dt, BuildContext context) {
   if (date == today) {
     return DateFormat.Hm().format(dt);
   } else if (today.difference(date).inDays == 1) {
-    return AppLocalizations.of(context).yesterday;
+    return AppLocalizations.of(context)!.yesterday;
   } else {
     return DateFormat('yy/MM/dd').format(dt);
   }

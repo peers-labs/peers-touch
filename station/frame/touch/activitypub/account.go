@@ -87,6 +87,24 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 		return err
 	}
 
+	// Part 3: Generate and store ActivityPub RSA Keys
+	pubPEM, privPEM, err := GenerateRSAKeyPair(2048)
+	if err != nil {
+		log.Warnf(c, "[SignUp] Generate RSA keys err: %v", err)
+		return err
+	}
+
+	apKey := db.ActivityPubKey{
+		ActorID:       a.ID,
+		PublicKeyPEM:  pubPEM,
+		PrivateKeyPEM: privPEM,
+	}
+
+	if err = rds.Create(&apKey).Error; err != nil {
+		log.Warnf(c, "[SignUp] Create ActivityPub keys err: %v", err)
+		return err
+	}
+
 	log.Infof(c, "[SignUp] Actor and profile created successfully for actor %s with peers ID %s", a.Name, a.PeersActorID)
 	return nil
 }

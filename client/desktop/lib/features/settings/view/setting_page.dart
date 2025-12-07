@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_desktop/app/theme/app_theme.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
-import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
-import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
@@ -22,7 +19,6 @@ class SettingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tokens = theme.extension<LobeTokens>()!;
 
     // 统一使用三段式骨架：左（设置导航）+ 中（设置内容）；右侧由 ShellPage 控制
     final shell = Get.find<ShellController>();
@@ -49,7 +45,7 @@ class SettingPage extends StatelessWidget {
 
   Widget _buildSettingNavigation(BuildContext context, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context);
+    final l = AppLocalizations.of(context)!;
     final shell = Get.find<ShellController>();
     final showTitle = shell.currentMenuItem.value?.toDIsplayPageTitle ?? false;
     return Container(
@@ -113,7 +109,7 @@ class SettingPage extends StatelessWidget {
 
   Widget _buildSectionItem(BuildContext context, SettingSection section, bool isSelected, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context);
+    final l = AppLocalizations.of(context)!;
     return Container(
       margin: EdgeInsets.symmetric(vertical: tokens.spaceXs, horizontal: tokens.spaceSm),
       decoration: BoxDecoration(
@@ -133,7 +129,7 @@ class SettingPage extends StatelessWidget {
 
   Widget _buildSettingContent(BuildContext context, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context);
+    final l = AppLocalizations.of(context)!;
     return Container(
       color: tokens.bgLevel1,
       child: Obx(() {
@@ -184,7 +180,7 @@ class SettingPage extends StatelessWidget {
 
   Widget _buildSearchResultTile(BuildContext context, SettingSearchResult r, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context);
+    final l = AppLocalizations.of(context)!;
     final section = controller.sections.firstWhere((s) => s.id == r.sectionId);
     return Container(
       margin: EdgeInsets.symmetric(vertical: tokens.spaceXs, horizontal: tokens.spaceSm),
@@ -228,7 +224,7 @@ class SettingPage extends StatelessWidget {
 
   Widget _buildSectionHeader(BuildContext context, SettingItem item, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context);
+    final l = AppLocalizations.of(context)!;
     return Container(
       margin: EdgeInsets.only(top: tokens.spaceLg, bottom: tokens.spaceSm),
       child: Text(
@@ -240,7 +236,7 @@ class SettingPage extends StatelessWidget {
 
   Widget _buildToggleItem(BuildContext context, String sectionId, SettingItem item, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context);
+    final l = AppLocalizations.of(context)!;
     return Container(
       margin: EdgeInsets.symmetric(vertical: tokens.spaceSm),
       padding: EdgeInsets.all(tokens.spaceSm),
@@ -284,7 +280,7 @@ class SettingPage extends StatelessWidget {
 
   Widget _buildSelectItem(BuildContext context, String sectionId, SettingItem item, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context);
+    final l = AppLocalizations.of(context)!;
     final options = item.options ?? [];
     final current = item.value?.toString();
     final isValid = current != null && options.contains(current);
@@ -363,7 +359,7 @@ class SettingPage extends StatelessWidget {
 
   Widget _buildTextInputItem(BuildContext context, String sectionId, SettingItem item, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context);
+    final l = AppLocalizations.of(context)!;
     return Container(
       margin: EdgeInsets.symmetric(vertical: tokens.spaceSm),
       padding: EdgeInsets.all(tokens.spaceSm),
@@ -487,7 +483,7 @@ class SettingPage extends StatelessWidget {
 
   Widget _buildButtonItem(BuildContext context, String sectionId, SettingItem item, ThemeData theme) {
     final tokens = theme.extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context);
+    final l = AppLocalizations.of(context)!;
     return Container(
       margin: EdgeInsets.symmetric(vertical: tokens.spaceSm),
       child: ElevatedButton(

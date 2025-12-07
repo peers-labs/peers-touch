@@ -34,19 +34,19 @@ class AIChatPage extends GetView<AIChatController> {
               final newTitle = await showDialog<String>(
                 context: ctx,
                 builder: (dctx) => AlertDialog(
-                  title: Text(AppLocalizations.of(dctx).renameSessionTitle),
+                  title: Text(AppLocalizations.of(dctx)!.renameSessionTitle),
                   content: TextField(
                     controller: textController,
-                    decoration: InputDecoration(hintText: AppLocalizations.of(dctx).inputNewNamePlaceholder),
+                    decoration: InputDecoration(hintText: AppLocalizations.of(dctx)!.inputNewNamePlaceholder),
                   ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.of(dctx).pop(null),
-                      child: Text(AppLocalizations.of(dctx).cancel),
+                      child: Text(AppLocalizations.of(dctx)!.cancel),
                     ),
                     TextButton(
                       onPressed: () => Navigator.of(dctx).pop(textController.text.trim()),
-                      child: Text(AppLocalizations.of(dctx).confirm),
+                      child: Text(AppLocalizations.of(dctx)!.confirm),
                     ),
                   ],
                 ),
@@ -59,16 +59,16 @@ class AIChatPage extends GetView<AIChatController> {
               final ok = await showDialog<bool>(
                 context: ctx,
                 builder: (dctx) => AlertDialog(
-                  title: Text(AppLocalizations.of(dctx).deleteSessionTitle),
-                  content: Text(AppLocalizations.of(dctx).deleteSessionConfirm(s.title)),
+                  title: Text(AppLocalizations.of(dctx)!.deleteSessionTitle),
+                  content: Text(AppLocalizations.of(dctx)!.deleteSessionConfirm(s.title)),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.of(dctx).pop(false),
-                      child: Text(AppLocalizations.of(dctx).cancel),
+                      child: Text(AppLocalizations.of(dctx)!.cancel),
                     ),
                     TextButton(
                       onPressed: () => Navigator.of(dctx).pop(true),
-                      child: Text(AppLocalizations.of(dctx).confirm),
+                      child: Text(AppLocalizations.of(dctx)!.confirm),
                     ),
                   ],
                 ),
@@ -87,7 +87,7 @@ class AIChatPage extends GetView<AIChatController> {
               Obx(() {
                 final sending = controller.isSending.value;
                 // 计算标题为当前会话标题
-                String headerTitle = AppLocalizations.of(ctx).chatDefaultTitle;
+                String headerTitle = AppLocalizations.of(ctx)!.chatDefaultTitle;
                 final sid = controller.selectedSessionId.value;
                 if (sid != null) {
                   final match = controller.sessions.where((e) => e.id == sid);
@@ -109,19 +109,19 @@ class AIChatPage extends GetView<AIChatController> {
                           final newTitle = await showDialog<String>(
                             context: bctx,
                             builder: (dctx) => AlertDialog(
-                              title: Text(AppLocalizations.of(dctx).renameTopicTitle),
+                              title: Text(AppLocalizations.of(dctx)!.renameTopicTitle),
                               content: TextField(
                                 controller: textController,
-                                decoration: InputDecoration(hintText: AppLocalizations.of(dctx).inputNewNamePlaceholder),
+                                decoration: InputDecoration(hintText: AppLocalizations.of(dctx)!.inputNewNamePlaceholder),
                               ),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.of(dctx).pop(null),
-                                  child: Text(AppLocalizations.of(dctx).cancel),
+                                  child: Text(AppLocalizations.of(dctx)!.cancel),
                                 ),
                                 TextButton(
                                   onPressed: () => Navigator.of(dctx).pop(textController.text.trim()),
-                                  child: Text(AppLocalizations.of(dctx).confirm),
+                                  child: Text(AppLocalizations.of(dctx)!.confirm),
                                 ),
                               ],
                             ),
