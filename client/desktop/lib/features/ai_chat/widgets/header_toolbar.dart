@@ -29,21 +29,21 @@ class AIChatHeaderBar extends StatelessWidget {
           SizedBox(width: UIKit.spaceMd(context)),
           const Spacer(),
           Tooltip(
-            message: AppLocalizations.of(context).sharePlaceholder,
+            message: AppLocalizations.of(context)!.sharePlaceholder,
             child: IconButton(
               icon: const Icon(Icons.share),
               onPressed: () {},
             ),
           ),
           Tooltip(
-            message: AppLocalizations.of(context).layoutTogglePlaceholder,
+            message: AppLocalizations.of(context)!.layoutTogglePlaceholder,
             child: IconButton(
               icon: const Icon(Icons.dashboard_customize),
               onPressed: () {},
             ),
           ),
           Tooltip(
-            message: AppLocalizations.of(context).moreMenuPlaceholder,
+            message: AppLocalizations.of(context)!.moreMenuPlaceholder,
             child: IconButton(
               icon: const Icon(Icons.more_vert),
               onPressed: () {},
@@ -51,7 +51,7 @@ class AIChatHeaderBar extends StatelessWidget {
           ),
           SizedBox(width: UIKit.spaceMd(context)),
           if (isSending)
-            Text(AppLocalizations.of(context).sendingIndicator,
+            Text(AppLocalizations.of(context)!.sendingIndicator,
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall

@@ -39,7 +39,7 @@ class _MessageListViewState extends State<MessageListView> {
     if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
       return DateFormat.Hm().format(dt); // 今天：HH:mm
     } else if (now.difference(dt).inDays == 1) {
-      return '${AppLocalizations.of(context).yesterday} ${DateFormat.Hm().format(dt)}';
+      return '${AppLocalizations.of(context)!.yesterday} ${DateFormat.Hm().format(dt)}';
     } else {
       return DateFormat('yyyy/MM/dd HH:mm').format(dt);
     }

@@ -37,12 +37,12 @@ class TopicPanel extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    AppLocalizations.of(context).chatTopicHistory,
+                    AppLocalizations.of(context)!.chatTopicHistory,
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
                 IconButton(
-                  tooltip: AppLocalizations.of(context).chatAddTopic,
+                  tooltip: AppLocalizations.of(context)!.chatAddTopic,
                   onPressed: onAddTopic,
                   icon: const Icon(Icons.add),
                 ),
@@ -72,7 +72,7 @@ class TopicPanel extends StatelessWidget {
                         : null,
                     trailing: ExcludeSemantics(
                       child: PopupMenuButton<String>(
-                        tooltip: AppLocalizations.of(context).chatTopicActions,
+                        tooltip: AppLocalizations.of(context)!.chatTopicActions,
                         onSelected: (value) {
                           switch (value) {
                             case 'rename':
@@ -86,11 +86,11 @@ class TopicPanel extends StatelessWidget {
                         itemBuilder: (context) => [
                           PopupMenuItem(
                             value: 'rename',
-                            child: Text(AppLocalizations.of(context).rename),
+                            child: Text(AppLocalizations.of(context)!.rename),
                           ),
                           PopupMenuItem(
                             value: 'delete',
-                            child: Text(AppLocalizations.of(context).delete),
+                            child: Text(AppLocalizations.of(context)!.delete),
                           ),
                         ],
                         icon: Icon(

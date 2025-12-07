@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/app_constants.dart';
@@ -7,7 +5,6 @@ import 'package:peers_touch_desktop/features/shell/controller/shell_controller.d
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_desktop/app/theme/app_theme.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 
@@ -327,6 +324,7 @@ class ShellPage extends StatelessWidget {
 
   Widget _buildAssistantPanel(BuildContext context, ShellController controller, ThemeData theme) {
     final tokens = theme.extension<WeChatTokens>()!;
+    final localizations = AppLocalizations.of(context);
     final builder = controller.rightPanelBuilder.value;
     final collapsed = controller.isRightPanelCollapsed.value;
     

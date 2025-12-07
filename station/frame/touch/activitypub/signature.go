@@ -60,6 +60,16 @@ func VerifyHTTPSignature(c context.Context, ctx *app.RequestContext) error {
 		return fmt.Errorf("invalid base64 signature: %w", err)
 	}
 
+	// 6. Verify Digest if present in headers
+	for _, h := range sigData.Headers {
+		if strings.ToLower(h) == "digest" {
+			if err := verifyDigest(ctx); err != nil {
+				return fmt.Errorf("digest verification failed: %w", err)
+			}
+			break
+		}
+	}
+
 	// Assuming RSA-SHA256 for now (ActivityPub standard)
 	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
 	if !ok {
@@ -209,4 +219,25 @@ func fetchPublicKey(c context.Context, keyID string) (crypto.PublicKey, error) {
 	}
 
 	return pub, nil
+}
+
+func verifyDigest(ctx *app.RequestContext) error {
+	digestHeader := string(ctx.Request.Header.Peek("Digest"))
+	if digestHeader == "" {
+		return errors.New("missing Digest header")
+	}
+
+	body, err := ctx.Body()
+	if err != nil {
+		return fmt.Errorf("failed to read body: %w", err)
+	}
+
+	hash := sha256.Sum256(body)
+	calculatedDigest := "SHA-256=" + base64.StdEncoding.EncodeToString(hash[:])
+
+	if digestHeader != calculatedDigest {
+		return fmt.Errorf("digest mismatch: expected %s, got %s", calculatedDigest, digestHeader)
+	}
+
+	return nil
 }
