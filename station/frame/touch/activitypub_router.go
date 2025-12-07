@@ -5,32 +5,32 @@ import (
 )
 
 const (
-	// ActivityPub URLs (all user-scoped)
+	// ActivityPubRouterURLActor ActivityPub URLs (all user-scoped)
 	// Actor document: canonical ActivityStreams representation ("self") for the given actor
 	ActivityPubRouterURLActor RouterPath = "/:actor/actor"
-	// Actor inbox: server-to-server delivery target for activities addressed to this actor
+	// ActivityPubRouterURLInbox Actor inbox: server-to-server delivery target for activities addressed to this actor
 	ActivityPubRouterURLInbox RouterPath = "/:actor/inbox"
-	// Actor outbox: client-to-server publishing endpoint for activities created by this actor
+	// ActivityPubRouterURLOutbox Actor outbox: client-to-server publishing endpoint for activities created by this actor
 	ActivityPubRouterURLOutbox RouterPath = "/:actor/outbox"
-	// Followers collection: who follows this actor (OrderedCollection / paged)
+	// ActivityPubRouterURLFollowers Followers collection: who follows this actor (OrderedCollection / paged)
 	ActivityPubRouterURLFollowers RouterPath = "/:actor/followers"
-	// Following collection: who this actor follows (OrderedCollection / paged)
+	// ActivityPubRouterURLFollowing Following collection: who this actor follows (OrderedCollection / paged)
 	ActivityPubRouterURLFollowing RouterPath = "/:actor/following"
-	// Liked collection: objects this actor has liked (OrderedCollection / paged)
+	// ActivityPubRouterURLLiked Liked collection: objects this actor has liked (OrderedCollection / paged)
 	ActivityPubRouterURLLiked RouterPath = "/:actor/liked"
-	// Simplified follow action: create a Follow activity
+	// ActivityPubRouterURLFollow Simplified follow action: create a Follow activity
 	ActivityPubRouterURLFollow RouterPath = "/:actor/follow"
-	// Simplified unfollow action: create an Undo(Follow) activity
+	// ActivityPubRouterURLUnfollow Simplified unfollow action: create an Undo(Follow) activity
 	ActivityPubRouterURLUnfollow RouterPath = "/:actor/unfollow"
-	// Simplified like action: create a Like activity
+	// ActivityPubRouterURLLike Simplified like action: create a Like activity
 	ActivityPubRouterURLLike RouterPath = "/:actor/like"
-	// Simplified undo action: create an Undo activity for a previous action
+	// ActivityPubRouterURLUndo Simplified undo action: create an Undo activity for a previous action
 	ActivityPubRouterURLUndo RouterPath = "/:actor/undo"
-	// Custom chat endpoint (non-standard), reserved for messaging features
+	// ActivityPubRouterURLChat Custom chat endpoint (non-standard), reserved for messaging features
 	ActivityPubRouterURLChat RouterPath = "/:actor/chat"
-	// Shared inbox: wide delivery endpoint for public and followers-addressed activities
+	// ActivityPubRouterURLSharedInbox Shared inbox: wide delivery endpoint for public and followers-addressed activities
 	ActivityPubRouterURLSharedInbox RouterPath = "/inbox"
-	// NodeInfo 2.1 schema endpoint
+	// ActivityPubRouterURLNodeInfo21 NodeInfo 2.1 schema endpoint
 	//  - Purpose: Exposes instance metadata used by Fediverse aggregators (e.g., Mastodon/GoToSocial) for discovery.
 	//  - Flow: Clients first call `/.well-known/nodeinfo` to obtain a link, then fetch `GET /nodeinfo/2.1`.
 	//  - Response: JSON including `version`, `software{name,version}`, `protocols`, `services{inbound,outbound}`,
@@ -38,14 +38,16 @@ const (
 	//  - Compatibility: Works with hosts that include non-standard ports; links are built using request `scheme` and `host`.
 	ActivityPubRouterURLNodeInfo21 RouterPath = "/nodeinfo/2.1"
 
-	// Actor Management URLs (Client API)
+	// RouterURLActorSignUP Actor Management URLs (Client API)
 	// Client sign-up: create a local actor account
 	RouterURLActorSignUP RouterPath = "/sign-up"
-	// Client login: obtain session/tokens
+	// RouterURLActorLogin Client login: obtain session/tokens
 	RouterURLActorLogin RouterPath = "/login"
-	// Actor profile: GET/POST to read or update profile attributes
+	// RouterURLActorProfile Actor profile: GET/POST to read or update profile attributes
 	RouterURLActorProfile RouterPath = "/profile"
-	// Actor list: enumerate local actors (for admin/testing)
+	// RouterURLPublicProfile Public actor profile: GET to read extended profile by username
+	RouterURLPublicProfile RouterPath = "/:actor/profile"
+	// RouterURLActorList Actor list: enumerate local actors (for admin/testing)
 	RouterURLActorList RouterPath = "/list"
 )
 

@@ -52,6 +52,12 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
 		{
+			RouterURL: RouterURLPublicProfile,
+			Handler:   activitypub.GetActorProfile,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper}, // Public access
+		},
+		{
 			RouterURL: RouterURLActorProfile,
 			Handler:   UpdateActorProfile,
 			Method:    server.POST,

@@ -90,4 +90,6 @@
  
 ### 明天
 
-验证 activitypub 是否能用。制作个人 Profile 页，要有 ActivityPub 风
+1. 验证 activitypub 是否能用。制作个人 Profile 页，要有 ActivityPub 风格。
+
+2. 尝试 接入Mastodon 的可行性。
