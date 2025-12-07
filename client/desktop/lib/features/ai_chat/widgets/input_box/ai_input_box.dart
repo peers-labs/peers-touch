@@ -152,7 +152,7 @@ class AIInputBox extends StatelessWidget {
               // 保存为主题按钮（位于右侧发送按钮前）
               const SizedBox(width: 4),
               Tooltip(
-                message: AppLocalizations.of(context).saveAsTopic,
+                message: l.saveAsTopic,
                 child: IconButton(
                   icon: const Icon(Icons.save_outlined),
                   onPressed: () {
@@ -160,8 +160,8 @@ class AIInputBox extends StatelessWidget {
                       final c = Get.find<AIChatController>();
                       final status = c.saveCurrentChatAsTopic();
                       final text = status == SaveTopicStatus.createdNew
-                          ? AppLocalizations.of(context).topicSaved
-                          : AppLocalizations.of(context).topicAlreadySaved;
+                          ? l.topicSaved
+                          : l.topicAlreadySaved;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(text)),
                       );
