@@ -12,15 +12,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
-const (
-	RoutersNameManagement  = "management"
-	RoutersNameActivityPub = "activitypub"
-	RoutersNameWellKnown   = ".well-known"
-	RoutersNameActor       = "actor"
-	RoutersNamePeer        = "peer"
-	RoutersNameMessage     = "message"
-)
-
 // Router is a server handler that can be registered with a server.
 // Peers defines a router protocol that can be used to register handlers with a server.
 // also supplies standard handlers which follow activityPub protocol.
@@ -46,17 +37,17 @@ func CommonAccessControlWrapper(routerFamilyName string) server.Wrapper {
 			// Check if the router family is enabled based on its name
 			var isEnabled bool
 			switch routerFamilyName {
-			case RoutersNameManagement:
+			case model.RouteNameManagement:
 				isEnabled = routerConfig.Management
-			case RoutersNameActivityPub:
+			case model.RouteNameActivityPub:
 				isEnabled = routerConfig.ActivityPub
-			case RoutersNameWellKnown:
+			case model.RouteNameWellKnown:
 				isEnabled = routerConfig.WellKnown
-			case RoutersNameActor:
+			case model.RouteNameActor:
 				isEnabled = routerConfig.User
-			case RoutersNamePeer:
+			case model.RouteNamePeer:
 				isEnabled = routerConfig.Peer
-			case RoutersNameMessage:
+			case model.RouteNameMessage:
 				isEnabled = routerConfig.Message
 			default:
 				log.Warnf(r.Context(), "Unknown router family: %s", routerFamilyName)

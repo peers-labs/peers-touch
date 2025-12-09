@@ -2,6 +2,7 @@ package touch
 
 import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 const (
@@ -73,7 +74,7 @@ func (apr *ActivityPubRouters) Handlers() []server.Handler {
 }
 
 func (apr *ActivityPubRouters) Name() string {
-	return RoutersNameActivityPub
+	return model.RouteNameActivityPub
 }
 
 // NewActivityPubRouter creates a new ActivityPubRouters

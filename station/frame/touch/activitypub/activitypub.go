@@ -186,11 +186,11 @@ func GetActor(c context.Context, ctx *app.RequestContext) {
 		actorObj.Image = image
 	}
 
-	actorObj.Inbox = ap.IRI(fmt.Sprintf("%s/%s/inbox", baseURL, user))
-	actorObj.Outbox = ap.IRI(fmt.Sprintf("%s/%s/outbox", baseURL, user))
-	actorObj.Followers = ap.IRI(fmt.Sprintf("%s/%s/followers", baseURL, user))
-	actorObj.Following = ap.IRI(fmt.Sprintf("%s/%s/following", baseURL, user))
-	actorObj.Liked = ap.IRI(fmt.Sprintf("%s/%s/liked", baseURL, user))
+	actorObj.Inbox = ap.IRI(fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user))
+	actorObj.Outbox = ap.IRI(fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, user))
+	actorObj.Followers = ap.IRI(fmt.Sprintf("%s/activitypub/%s/followers", baseURL, user))
+	actorObj.Following = ap.IRI(fmt.Sprintf("%s/activitypub/%s/following", baseURL, user))
+	actorObj.Liked = ap.IRI(fmt.Sprintf("%s/activitypub/%s/liked", baseURL, user))
 
 	// Add Public Key
 	publicKeyID := fmt.Sprintf("%s#main-key", actorID)
@@ -202,7 +202,7 @@ func GetActor(c context.Context, ctx *app.RequestContext) {
 
 	// Endpoints including sharedInbox
 	actorObj.Endpoints = &ap.Endpoints{}
-	actorObj.Endpoints.SharedInbox = ap.IRI(fmt.Sprintf("%s/inbox", baseURL))
+	actorObj.Endpoints.SharedInbox = ap.IRI(fmt.Sprintf("%s/activitypub/inbox", baseURL))
 
 	WriteActivityPubResponse(c, ctx, actorObj)
 }
@@ -262,7 +262,7 @@ func HandleInboxActivity(c context.Context, ctx *app.RequestContext) {
 
 		// Add to Inbox Collection
 		baseURL := getBaseURL(ctx)
-		inboxID := fmt.Sprintf("%s/%s/inbox", baseURL, user)
+		inboxID := fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user)
 
 		collectionItem := db.ActivityPubCollection{
 			CollectionID: inboxID,
@@ -307,7 +307,7 @@ func getLink(item ap.Item) string {
 func handleFollow(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
 	target := getLink(activity.Object)
 	baseURL := getBaseURL(ctx)
-	myActorID := fmt.Sprintf("%s/%s/actor", baseURL, user)
+	myActorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
 
 	// Simple check if target is us
 	if target != myActorID {
@@ -330,7 +330,7 @@ func handleFollow(c context.Context, ctx *app.RequestContext, activity *ap.Activ
 	}
 
 	// Send Accept Activity
-	acceptID := fmt.Sprintf("%s/accept/%d", myActorID, time.Now().UnixNano())
+	acceptID := fmt.Sprintf("%s/activitypub/%s/accept/%d", baseURL, user, time.Now().UnixNano())
 	accept := ap.ActivityNew(ap.ID(acceptID), ap.AcceptType, ap.IRI(activity.ID))
 	accept.Actor = ap.IRI(myActorID)
 	accept.To = ap.ItemCollection{ap.IRI(follower)}
@@ -410,83 +410,21 @@ func handleUndo(c context.Context, ctx *app.RequestContext, activity *ap.Activit
 }
 
 func handleCreate(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
-	// The activity is already persisted in the Inbox collection and Activity table.
-	// Now we extract the Object and persist it as a remote object for easier querying.
-
-	obj := activity.Object
-	if obj == nil {
-		return
-	}
-
-	var object *ap.Object
-	if err := ap.OnObject(obj, func(o *ap.Object) error {
-		object = o
-		return nil
-	}); err != nil {
-		log.Warnf(c, "Failed to extract object from Create activity: %v", err)
-		return
-	}
-
-	dbObj := &db.ActivityPubObject{
-		ActivityPubID: string(object.ID),
-		Type:          string(object.Type),
-		AttributedTo:  string(activity.Actor.GetLink()),
-		Published:     object.Published,
-		IsLocal:       false, // Remote object
-	}
-
-	if len(object.Name) > 0 {
-		dbObj.Name = string(object.Name.First().Value)
-	}
-	if len(object.Content) > 0 {
-		dbObj.Content = string(object.Content.First().Value)
-	}
-	if len(object.Summary) > 0 {
-		dbObj.Summary = string(object.Summary.First().Value)
-	}
-	if object.URL != nil {
-		dbObj.URL = string(object.URL.GetLink())
-	}
-	if object.InReplyTo != nil {
-		dbObj.InReplyTo = string(object.InReplyTo.GetLink())
-	}
-
-	// Upsert the object
-	if err := rds.Save(dbObj).Error; err != nil {
-		log.Warnf(c, "Failed to save remote object: %v", err)
-	}
-
-	ctx.JSON(http.StatusOK, "Create received")
+	// Typically, Create activities in our inbox are replies or mentions.
+	// For this example, we just log them.
+	// We might want to verify if the object is addressed to us.
+	log.Infof(c, "Received Create activity: %s", activity.ID)
+	// TODO: Process replies, mentions, etc.
 }
 
 func handleUpdate(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
-	objectID := getLink(activity.Object)
-	if objectID == "" {
-		log.Warnf(c, "Update object ID missing")
-		ctx.JSON(http.StatusBadRequest, "Update object ID missing")
-		return
-	}
-
-	// TODO: Implement logic to update local cache of remote object
-	// e.g. fetch objectID again or use content in activity.Object if present.
-
-	ctx.JSON(http.StatusOK, "Update processed")
+	log.Infof(c, "Received Update activity: %s", activity.ID)
+	// Typically update Actor profile or Object content
 }
 
 func handleDelete(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
-	objectID := getLink(activity.Object)
-	if objectID == "" {
-		log.Warnf(c, "Delete object ID missing")
-		ctx.JSON(http.StatusBadRequest, "Delete object ID missing")
-		return
-	}
-
-	// Delete local cache of remote object if it exists (and isn't local)
-	if err := rds.Where("activity_pub_id = ? AND is_local = ?", objectID, false).Delete(&db.ActivityPubObject{}).Error; err != nil {
-		log.Warnf(c, "Failed to delete remote object: %v", err)
-	}
-
-	ctx.JSON(http.StatusOK, "Delete processed")
+	log.Infof(c, "Received Delete activity: %s", activity.ID)
+	// Handle deletion of objects or profiles
 }
 
 // GetOutboxActivities retrieves activities from an actor's outbox
@@ -507,7 +445,7 @@ func GetOutboxActivities(c context.Context, ctx *app.RequestContext) {
 	}
 
 	baseURL := getBaseURL(ctx)
-	outboxID := fmt.Sprintf("%s/%s/outbox", baseURL, user)
+	outboxID := fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, user)
 
 	var totalItems int64
 	if err := rds.Model(&db.ActivityPubCollection{}).Where("collection_id = ?", outboxID).Count(&totalItems).Error; err != nil {
@@ -579,8 +517,8 @@ func GetFollowers(c context.Context, ctx *app.RequestContext) {
 	}
 
 	baseURL := getBaseURL(ctx)
-	actorID := fmt.Sprintf("%s/%s/actor", baseURL, user)
-	followersID := fmt.Sprintf("%s/%s/followers", baseURL, user)
+	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
+	followersID := fmt.Sprintf("%s/activitypub/%s/followers", baseURL, user)
 
 	var totalItems int64
 	if err := rds.Model(&db.ActivityPubFollow{}).Where("following_id = ? AND is_active = ?", actorID, true).Count(&totalItems).Error; err != nil {
@@ -642,7 +580,7 @@ func GetInboxActivities(c context.Context, ctx *app.RequestContext) {
 	}
 
 	baseURL := getBaseURL(ctx)
-	inboxID := fmt.Sprintf("%s/%s/inbox", baseURL, user)
+	inboxID := fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user)
 
 	var totalItems int64
 	if err := rds.Model(&db.ActivityPubCollection{}).Where("collection_id = ?", inboxID).Count(&totalItems).Error; err != nil {
@@ -714,8 +652,8 @@ func GetFollowing(c context.Context, ctx *app.RequestContext) {
 	}
 
 	baseURL := getBaseURL(ctx)
-	actorID := fmt.Sprintf("%s/%s/actor", baseURL, user)
-	followingID := fmt.Sprintf("%s/%s/following", baseURL, user)
+	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
+	followingID := fmt.Sprintf("%s/activitypub/%s/following", baseURL, user)
 
 	var totalItems int64
 	if err := rds.Model(&db.ActivityPubFollow{}).Where("follower_id = ? AND is_active = ?", actorID, true).Count(&totalItems).Error; err != nil {
@@ -777,8 +715,8 @@ func GetLiked(c context.Context, ctx *app.RequestContext) {
 	}
 
 	baseURL := getBaseURL(ctx)
-	actorID := fmt.Sprintf("%s/%s/actor", baseURL, user)
-	likedID := fmt.Sprintf("%s/%s/liked", baseURL, user)
+	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
+	likedID := fmt.Sprintf("%s/activitypub/%s/liked", baseURL, user)
 
 	var totalItems int64
 	if err := rds.Model(&db.ActivityPubLike{}).Where("actor_id = ? AND is_active = ?", actorID, true).Count(&totalItems).Error; err != nil {

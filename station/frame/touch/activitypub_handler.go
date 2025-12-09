@@ -28,8 +28,8 @@ type ActivityPubHandlerInfo struct {
 
 // GetActivityPubHandlers returns all ActivityPub handler configurations
 func GetActivityPubHandlers() []ActivityPubHandlerInfo {
-	commonWrapper := CommonAccessControlWrapper(RoutersNameActivityPub)
-	actorWrapper := CommonAccessControlWrapper(RoutersNameActor)
+	commonWrapper := CommonAccessControlWrapper(model.RouteNameActivityPub)
+	actorWrapper := CommonAccessControlWrapper(model.RouteNameActor)
 
 	return []ActivityPubHandlerInfo{
 		// Actor Management Endpoints (Client API)

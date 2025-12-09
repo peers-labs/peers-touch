@@ -15,3 +15,14 @@ const (
 	AcceptActivityJSONLD = "application/activity+json, application/ld+json"
 	AcceptJRDJSON        = "application/jrd+json, application/json"
 )
+
+// router constants
+const (
+	RouteNameActivityPub = "activitypub"
+	RouteNameManagement  = "management"
+	RouteNameWellKnown   = ".well-known"
+	RouteNameActor       = "actor"
+	RouteNamePeer        = "peer"
+	RouteNameMessage     = "message"
+	RouteNameMastodon    = "mastodon"
+)

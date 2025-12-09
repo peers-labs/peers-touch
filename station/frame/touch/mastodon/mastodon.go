@@ -184,3 +184,23 @@ func Directory(ctx context.Context, limit, offset int) ([]model.MastodonAccount,
 	}
 	return items, nil
 }
+
+func GetInstance(ctx context.Context, baseURL string) (*model.MastodonInstance, error) {
+	// TODO: Read from configuration
+	// Using a Mastodon-compatible version string is important for some clients
+	domain := strings.TrimPrefix(strings.TrimPrefix(baseURL, "http://"), "https://")
+	return &model.MastodonInstance{
+		URI:              domain,
+		Title:            "Peers Touch Station",
+		ShortDescription: "A decentralized Peers Touch station",
+		Description:      "This is a Peers Touch station running compatible ActivityPub and Mastodon API.",
+		Email:            "admin@" + domain,
+		Version:          "4.0.0 (compatible; PeersTouch 1.0.0)",
+		Urls:             map[string]string{"streaming_api": strings.Replace(baseURL, "http", "ws", 1) + "/api/v1/streaming"},
+		Stats:            &model.InstanceStats{UserCount: 1, StatusCount: 0, DomainCount: 0},
+		Languages:        []string{"en"},
+		Registrations:    true,
+		ApprovalRequired: false,
+		InvitesEnabled:   true,
+	}, nil
+}

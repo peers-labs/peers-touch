@@ -55,7 +55,8 @@ class ProfileController extends GetxController {
       final username = auth.username.value.isNotEmpty ? auth.username.value : 'alice';
       
       final client = Get.find<ApiClient>();
-      final response = await client.get('/$username/profile');
+      // Using /activitypub prefix as the router is mounted under this name
+      final response = await client.get('/activitypub/$username/profile');
       
       if (response.statusCode == 200 && response.data != null) {
         detail.value = UserDetail.fromJson(response.data);

@@ -5,6 +5,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 // PeerHandlerInfo represents a single handler's information
@@ -17,7 +18,7 @@ type PeerHandlerInfo struct {
 
 // GetPeerHandlers returns all peer handler configurations
 func GetPeerHandlers() []PeerHandlerInfo {
-	commonWrapper := CommonAccessControlWrapper(RoutersNamePeer)
+	commonWrapper := CommonAccessControlWrapper(model.RouteNamePeer)
 
 	return []PeerHandlerInfo{
 		{

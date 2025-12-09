@@ -2,11 +2,13 @@ package touch
 
 import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 const (
 	RouterURLWellKnown          RouterPath = "/"
 	RouterURLWellKnownWebFinger RouterPath = "/webfinger"
+	RouterURLWellKnownHostMeta  RouterPath = "/host-meta"
 	RouterURLWellKnownNodeInfo  RouterPath = "/nodeinfo"
 )
 
@@ -35,7 +37,7 @@ func (mr *WellKnownRouters) Handlers() []server.Handler {
 }
 
 func (mr *WellKnownRouters) Name() string {
-	return RoutersNameWellKnown
+	return model.RouteNameWellKnown
 }
 
 // NewWellKnownRouter creates WellKnownRouters

@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/message/service"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	m "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
@@ -19,7 +20,7 @@ type MessageHandlerInfo struct {
 }
 
 func GetMessageHandlers() []MessageHandlerInfo {
-	commonWrapper := CommonAccessControlWrapper(RoutersNameMessage)
+	commonWrapper := CommonAccessControlWrapper(model.RouteNameMessage)
 
 	return []MessageHandlerInfo{
 		{RouterURL: MessageRouterURLCreateConv, Handler: CreateConv, Method: server.POST, Wrappers: []server.Wrapper{commonWrapper}},
