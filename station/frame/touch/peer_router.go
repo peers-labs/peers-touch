@@ -47,7 +47,7 @@ func (pr *PeerRouters) Handlers() []server.Handler {
 }
 
 func (mr *PeerRouters) Name() string {
-	return RoutersNamePeer
+	return model.RouteNamePeer
 }
 
 // NewPeerRouter creates PeerRouters

@@ -2,6 +2,7 @@ package touch
 
 import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 const (
@@ -15,6 +16,7 @@ const (
 	MastodonURLUnreblog          RouterPath = "/api/v1/statuses/:id/unreblog"
 	MastodonURLTimelinesHome     RouterPath = "/api/v1/timelines/home"
 	MastodonURLTimelinesPublic   RouterPath = "/api/v1/timelines/public"
+	MastodonURLInstance          RouterPath = "/api/v1/instance"
 	MastodonURLDirectory         RouterPath = "/api/v1/directory"
 )
 
@@ -23,7 +25,7 @@ type MastodonRouters struct{}
 var _ server.Routers = (*MastodonRouters)(nil)
 
 func (mr *MastodonRouters) Handlers() []server.Handler {
-	commonWrapper := CommonAccessControlWrapper(RoutersNameActivityPub)
+	commonWrapper := CommonAccessControlWrapper(model.RouteNameMastodon)
 	return []server.Handler{
 		server.NewHandler(MastodonURLApps, MastodonApps, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
 		server.NewHandler(MastodonURLVerifyCredentials, MastodonVerifyCredentials, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
@@ -35,10 +37,13 @@ func (mr *MastodonRouters) Handlers() []server.Handler {
 		server.NewHandler(MastodonURLUnreblog, MastodonUnreblog, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
 		server.NewHandler(MastodonURLTimelinesHome, MastodonTimelinesHome, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
 		server.NewHandler(MastodonURLTimelinesPublic, MastodonTimelinesPublic, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
+		server.NewHandler(MastodonURLInstance, MastodonInstance, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
 		server.NewHandler(MastodonURLDirectory, MastodonDirectory, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
 	}
 }
 
-func (mr *MastodonRouters) Name() string { return "mastodon" }
+func (mr *MastodonRouters) Name() string {
+	return model.RouteNameMastodon
+}
 
 func NewMastodonRouter() *MastodonRouters { return &MastodonRouters{} }
