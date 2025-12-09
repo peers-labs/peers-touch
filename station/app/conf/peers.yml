@@ -1,7 +1,7 @@
 peers:
   version: 0.0.1
   run-mode: 2
-  includes: store.yml, store.local.yml, sub_aibox.yml, sub_bootstrap.yml, log.yml, actor.yml
+  includes: store.yml, store.local.yml, sub_aibox.yml, sub_bootstrap.yml, log.yml, actor.yml, server.host.local.yml
   config:
     hierarchy-merge: true
   node:
@@ -27,4 +27,4 @@ peers:
       native:
         mdns-enable: true
         bootstrap-nodes:
-            - /ip4/192.168.31.24/tcp/4001/p2p/12D3KooWKTtX66KkP4sLEYCTDvxMiaCzQc1gCsKLed91CGPsVVkQ
+        #    - /ip4/192.168.31.24/tcp/4001/p2p/12D3KooWKTtX66KkP4sLEYCTDvxMiaCzQc1gCsKLed91CGPsVVkQ

@@ -143,12 +143,6 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Method:    server.POST,
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
-		{
-			RouterURL: ActivityPubRouterURLChat,
-			Handler:   ChatHandler,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper},
-		},
 		// NodeInfo schema endpoint
 		{
 			RouterURL: ActivityPubRouterURLNodeInfo21,
@@ -323,10 +317,6 @@ func CreateLikeHandler(c context.Context, ctx *app.RequestContext) {
 
 func CreateUndoHandler(c context.Context, ctx *app.RequestContext) {
 	activitypub.CreateUndo(c, ctx)
-}
-
-func ChatHandler(c context.Context, ctx *app.RequestContext) {
-	ctx.String(http.StatusOK, "Chat endpoint not implemented yet")
 }
 
 // User ActivityPub Handler Functions

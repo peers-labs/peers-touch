@@ -9,6 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/chat"
+	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
 	touchactivitypub "github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 
 	// default plugins
@@ -32,6 +33,7 @@ func main() {
 		// Use the new router pattern for station endpoints
 		// server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
 		server.WithSubServer("chat", chat.NewChatSubServer),
+		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
 	)
 	if err != nil {
 		panic(err)
