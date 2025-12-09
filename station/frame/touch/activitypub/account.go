@@ -2,6 +2,7 @@ package activitypub
 
 import (
 	"context"
+	"errors"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -9,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 const (
@@ -116,11 +118,13 @@ func GetActorByName(c context.Context, name string) (*db.Actor, error) {
 		return nil, err
 	}
 
-	presentActor := db.Actor{}
-	if err = rds.Where("name = ?", name).Select(&db.Actor{}).Scan(&presentActor).Error; err != nil {
+	var presentActor db.Actor
+	if err = rds.Where("name = ?", name).First(&presentActor).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
-
 	return &presentActor, nil
 }
 

@@ -26,8 +26,6 @@ const (
 	ActivityPubRouterURLLike RouterPath = "/:actor/like"
 	// ActivityPubRouterURLUndo Simplified undo action: create an Undo activity for a previous action
 	ActivityPubRouterURLUndo RouterPath = "/:actor/undo"
-	// ActivityPubRouterURLChat Custom chat endpoint (non-standard), reserved for messaging features
-	ActivityPubRouterURLChat RouterPath = "/:actor/chat"
 	// ActivityPubRouterURLSharedInbox Shared inbox: wide delivery endpoint for public and followers-addressed activities
 	ActivityPubRouterURLSharedInbox RouterPath = "/inbox"
 	// ActivityPubRouterURLNodeInfo21 NodeInfo 2.1 schema endpoint

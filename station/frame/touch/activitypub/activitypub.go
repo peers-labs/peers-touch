@@ -15,7 +15,6 @@ import (
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	m "github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"github.com/peers-labs/peers-touch/station/frame/touch/model/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 	"gorm.io/gorm"
@@ -30,6 +29,8 @@ func getBaseURL(ctx *app.RequestContext) string {
 	host := string(ctx.Host())
 	return fmt.Sprintf("%s://%s", scheme, host)
 }
+
+func activitypubBaseURLFrom(ctx *app.RequestContext) string { return getBaseURL(ctx) }
 
 // GenerateRSAKeyPair generates a new RSA key pair
 func GenerateRSAKeyPair(bits int) (string, string, error) {
@@ -344,6 +345,7 @@ func handleFollow(c context.Context, ctx *app.RequestContext, activity *ap.Activ
 		ctx.JSON(http.StatusOK, "Follow received")
 		return
 	}
+
 	targetInbox, err := ChooseInbox(followerActor, true)
 	if err != nil || targetInbox == "" {
 		log.Warnf(c, "No inbox available for follower: %v", err)
@@ -880,7 +882,6 @@ func handleSimplifiedActivity(c context.Context, ctx *app.RequestContext, activi
 		return
 	}
 
-	facade := actor.NewDefaultActivityPubFacade(rds)
 	baseURL := getBaseURL(ctx)
 
 	activity := ap.Activity{
@@ -908,7 +909,7 @@ func handleSimplifiedActivity(c context.Context, ctx *app.RequestContext, activi
 		}
 	}
 
-	if err := ProcessActivity(c, rds, facade, user, &activity, baseURL); err != nil {
+	if err := ProcessActivity(c, rds, user, &activity, baseURL); err != nil {
 		log.Errorf(c, "Failed to process simplified activity: %v", err)
 		ctx.JSON(http.StatusInternalServerError, fmt.Sprintf("Error: %v", err))
 		return

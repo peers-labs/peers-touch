@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package peers_touch.model.oauth.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+message OAuthClient {
+  string id = 1;
+  string name = 2;
+  string client_id = 3;
+  string client_secret_hash = 4;
+  string redirect_uri = 5;
+  string scopes = 6; // space-delimited
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message OAuthAuthCode {
+  string code_hash = 1;
+  string client_id = 2;
+  string user_id = 3;
+  string scopes = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  bool used = 6;
+}
+
+message OAuthToken {
+  string access_token_hash = 1;
+  string refresh_token_hash = 2;
+  string token_type = 3; // Bearer
+  string scope = 4;
+  string user_id = 5;
+  string client_id = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp expires_at = 8;
+}

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package peers_touch.model.mastodon.v1;
+
+import "google/protobuf/timestamp.proto";
+import "domain/mastodon/account.proto";
+import "domain/mastodon/status.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+message MastodonNotification {
+  string id = 1;
+  string type = 2;
+  google.protobuf.Timestamp created_at = 3;
+  MastodonAccount account = 4;
+  MastodonStatus status = 5;
+}
