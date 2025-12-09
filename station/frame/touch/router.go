@@ -49,6 +49,8 @@ func CommonAccessControlWrapper(routerFamilyName string) server.Wrapper {
 				isEnabled = routerConfig.Peer
 			case model.RouteNameMessage:
 				isEnabled = routerConfig.Message
+			case model.RouteNameMastodon:
+				isEnabled = routerConfig.Mastodon
 			default:
 				log.Warnf(r.Context(), "Unknown router family: %s", routerFamilyName)
 				isEnabled = false
