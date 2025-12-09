@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package peers_touch.model.mastodon.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+message MastodonApp {
+  string id = 1;
+  string name = 2;
+  string client_id = 3;
+  string client_secret = 4;
+  string redirect_uri = 5;
+  string website = 6;
+  string scopes = 7;
+}

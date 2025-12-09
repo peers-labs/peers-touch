@@ -17,6 +17,8 @@ func init() {
 			// ActivityPub models
 			&ActivityPubKey{}, &ActivityPubActivity{}, &ActivityPubObject{},
 			&ActivityPubFollow{}, &ActivityPubLike{}, &ActivityPubCollection{},
+			// OAuth models
+			&OAuthClient{}, &OAuthAuthCode{}, &OAuthToken{},
 			&Conversation{},
 			&ConvMember{},
 			&Message{},

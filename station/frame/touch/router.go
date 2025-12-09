@@ -97,6 +97,7 @@ func Routers() []option.Option {
 	routers = append(routers, NewWellKnownRouter())
 	routers = append(routers, NewPeerRouter())
 	routers = append(routers, NewMessageRouter())
+	routers = append(routers, NewMastodonRouter())
 	return []option.Option{
 		server.WithRouters(routers...),
 	}

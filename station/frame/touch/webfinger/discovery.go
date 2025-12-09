@@ -54,6 +54,7 @@ func DiscoverActor(ctx context.Context, params *model.WebFingerParams, rels []st
 	if err != nil {
 		return nil, fmt.Errorf("error looking up actor: %v", err)
 	}
+
 	if actor == nil {
 		return nil, fmt.Errorf("actor not found: %s", username)
 	}
@@ -63,8 +64,11 @@ func DiscoverActor(ctx context.Context, params *model.WebFingerParams, rels []st
 	// Ensure baseURL doesn't have trailing slash
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
+	// TODO: make the ActivityPub path prefix configurable instead of hardcoding "/activitypub".
+	// Suggested: read from config (e.g., peers.touch.routers.activitypub.base_path) with default
+	// to "/" + router name, or centralize URI building via a shared helper to avoid drift.
 	profileURL := fmt.Sprintf("%s/@%s", baseURL, username)
-	actorID := fmt.Sprintf("%s/%s/actor", baseURL, username)
+	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, username)
 
 	response := &model.WebFingerResponse{
 		Subject: resource,
@@ -105,14 +109,14 @@ func GetActivityPubActor(ctx context.Context, username string) (*model.WebFinger
 
 	baseURL := getBaseURL()
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	actorID := fmt.Sprintf("%s/%s/actor", baseURL, username)
+	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, username)
 
 	return &model.WebFingerActivityPubActor{
 		ID:                actorID,
 		Type:              "Person",
 		PreferredUsername: actor.Name,
-		Inbox:             fmt.Sprintf("%s/inbox", actorID),
-		Outbox:            fmt.Sprintf("%s/outbox", actorID),
+		Inbox:             fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, username),
+		Outbox:            fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, username),
 		PublicKey: &model.ActivityPubPublicKey{
 			ID:           fmt.Sprintf("%s#main-key", actorID),
 			Owner:        actorID,
@@ -187,7 +191,7 @@ func FilterRequestedRelationships(response *model.WebFingerResponse, requestedRe
 // getBaseURL retrieves the base SubPath from configuration
 func getBaseURL() string {
 	// Get base SubPath from core config system
-	if baseURL := cfg.Get("peers", "service", "server", "baseurl").String(""); baseURL != "" {
+	if baseURL := cfg.Get("peers", "node", "server", "baseurl").String(""); baseURL != "" {
 		return baseURL
 	}
 	// Fallback to default

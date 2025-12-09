@@ -10,7 +10,6 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
-	"github.com/peers-labs/peers-touch/station/frame/touch/model/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 	"gorm.io/gorm"
@@ -54,7 +53,7 @@ func CreateOutboxActivity(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	facade := actor.NewDefaultActivityPubFacade(rds)
+	// facade removed as ProcessActivity no longer requires it
 
 	// 4. Determine Base URL
 	scheme := string(ctx.URI().Scheme())
@@ -65,7 +64,7 @@ func CreateOutboxActivity(c context.Context, ctx *app.RequestContext) {
 	baseURL := fmt.Sprintf("%s://%s", scheme, host)
 
 	// 5. Dispatch based on Type
-	err = ProcessActivity(c, rds, facade, user, &activity, baseURL)
+	err = ProcessActivity(c, rds, user, &activity, baseURL)
 	if err != nil {
 		log.Errorf(c, "Failed to process activity: %v", err)
 		ctx.JSON(http.StatusInternalServerError, fmt.Sprintf("Failed to process activity: %v", err))
@@ -76,7 +75,7 @@ func CreateOutboxActivity(c context.Context, ctx *app.RequestContext) {
 	ctx.JSON(http.StatusCreated, activity)
 }
 
-func ProcessActivity(c context.Context, dbConn *gorm.DB, facade actor.ActivityPubFacade, username string, activity *ap.Activity, baseURL string) error {
+func ProcessActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
 	// Ensure Actor is set
 	if activity.Actor == nil {
 		activity.Actor = ap.IRI(fmt.Sprintf("%s/%s/actor", baseURL, username))
