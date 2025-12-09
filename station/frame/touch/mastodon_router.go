@@ -43,7 +43,9 @@ func (mr *MastodonRouters) Handlers() []server.Handler {
 }
 
 func (mr *MastodonRouters) Name() string {
-	return model.RouteNameMastodon
+	// Return empty string to mount Mastodon API at root (e.g. /api/v1/...)
+	// This is required for compatibility with Mastodon clients.
+	return ""
 }
 
 func NewMastodonRouter() *MastodonRouters { return &MastodonRouters{} }
