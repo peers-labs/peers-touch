@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package peers_touch.model.mastodon.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+message MastodonAccount {
+  string id = 1;
+  string username = 2;
+  string acct = 3;
+  string display_name = 4;
+  string note = 5;
+  string avatar = 6;
+  string header = 7;
+  int64 followers_count = 8;
+  int64 following_count = 9;
+  int64 statuses_count = 10;
+}

@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package peers_touch.model.mastodon.v1;
+
+import "google/protobuf/timestamp.proto";
+import "domain/mastodon/account.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+message MastodonMediaAttachment {
+  string id = 1;
+  string type = 2;
+  string url = 3;
+  string preview_url = 4;
+}
+
+message MastodonStatus {
+  string id = 1;
+  string uri = 2;
+  google.protobuf.Timestamp created_at = 3;
+  string content = 4;
+  string visibility = 5;
+  int64 reblogs_count = 6;
+  int64 favourites_count = 7;
+  string in_reply_to_id = 8;
+  string reblog_id = 9;
+  MastodonAccount account = 10;
+  repeated MastodonMediaAttachment media_attachments = 11;
+}
+
+message MastodonTimelinePage {
+  repeated MastodonStatus items = 1;
+  string max_id = 2;
+  string since_id = 3;
+}
+
+message MastodonCreateStatusRequest {
+  string status = 1;
+  string in_reply_to_id = 2;
+  string visibility = 3;
+  repeated string media_ids = 4;
+}

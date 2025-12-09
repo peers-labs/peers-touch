@@ -89,7 +89,7 @@ func WebfingerHandler(c context.Context, ctx *app.RequestContext) {
 	// Discover the actor
 	response, err := webfinger.DiscoverActor(c, &params, requestedRels)
 	if err != nil {
-		log.Warnf(c, "[Webfinger] discovery failed: %v", err)
+		log.Error(c, "[Webfinger] discovery failed: %v", err)
 
 		if strings.Contains(err.Error(), "actor not found") {
 			ctx.JSON(http.StatusNotFound, map[string]string{
