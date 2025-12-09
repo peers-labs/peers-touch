@@ -2,6 +2,7 @@ package touch
 
 import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 const (
@@ -33,7 +34,7 @@ func (mr *ManageRouters) Handlers() []server.Handler {
 }
 
 func (mr *ManageRouters) Name() string {
-	return RoutersNameManagement
+	return model.RouteNameManagement
 }
 
 // NewManageRouter creates a new router with management endpoints

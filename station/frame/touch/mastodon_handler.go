@@ -83,6 +83,16 @@ func MastodonGetStatus(c context.Context, ctx *app.RequestContext) {
 	ctx.Data(http.StatusOK, "application/json; charset=utf-8", b)
 }
 
+func MastodonInstance(c context.Context, ctx *app.RequestContext) {
+	baseURL := baseURLFrom(ctx)
+	instance, err := mastodonsvc.GetInstance(c, baseURL)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "server_error"})
+		return
+	}
+	ctx.JSON(http.StatusOK, instance)
+}
+
 func MastodonFavourite(c context.Context, ctx *app.RequestContext) {
 	username := string(ctx.Query("actor"))
 	id := string(ctx.Param("id"))

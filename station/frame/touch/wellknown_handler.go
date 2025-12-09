@@ -27,19 +27,25 @@ func GetWellKnownHandlers() []WellKnownHandlerInfo {
 			RouterURL: RouterURLWellKnown,
 			Handler:   WellKnownHandler,
 			Method:    server.POST,
-			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("WellKnown")},
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(model.RouteNameWellKnown)},
 		},
 		{
 			RouterURL: RouterURLWellKnownWebFinger,
 			Handler:   WebfingerHandler,
 			Method:    server.GET,
-			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("WellKnown")},
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(model.RouteNameWellKnown)},
+		},
+		{
+			RouterURL: RouterURLWellKnownHostMeta,
+			Handler:   HostMetaHandler,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(model.RouteNameWellKnown)},
 		},
 		{
 			RouterURL: RouterURLWellKnownNodeInfo,
 			Handler:   NodeInfoWellKnown,
 			Method:    server.GET,
-			Wrappers:  []server.Wrapper{CommonAccessControlWrapper("WellKnown")},
+			Wrappers:  []server.Wrapper{CommonAccessControlWrapper(model.RouteNameWellKnown)},
 		},
 	}
 }
@@ -138,4 +144,26 @@ func NodeInfoWellKnown(c context.Context, ctx *app.RequestContext) {
 	}
 	ctx.Header("Content-Type", model.ContentTypeJSONUTF8)
 	ctx.JSON(http.StatusOK, resp)
+}
+
+// HostMetaHandler handles /.well-known/host-meta requests
+// Returns an XML response pointing to the WebFinger endpoint
+func HostMetaHandler(c context.Context, ctx *app.RequestContext) {
+	base := string(ctx.URI().Scheme())
+	if base == "" {
+		base = "https"
+	}
+	host := string(ctx.Host())
+	// Construct the WebFinger URL template
+	// e.g. https://example.com/.well-known/webfinger?resource={uri}
+	template := base + "://" + host + "/.well-known/webfinger?resource={uri}"
+
+	xmlContent := `<?xml version="1.0" encoding="UTF-8"?>
+<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
+  <Link rel="lrdd" type="application/xrd+xml" template="` + template + `"/>
+</XRD>`
+
+	ctx.Header("Content-Type", "application/xrd+xml; charset=utf-8")
+	ctx.Header("Access-Control-Allow-Origin", "*")
+	ctx.Data(http.StatusOK, "application/xrd+xml; charset=utf-8", []byte(xmlContent))
 }

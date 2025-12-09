@@ -6,6 +6,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 // ManageHandlerInfo represents a single handler's information
@@ -18,7 +19,7 @@ type ManageHandlerInfo struct {
 
 // GetManageHandlers returns all management handler configurations
 func GetManageHandlers() []ManageHandlerInfo {
-	commonWrapper := CommonAccessControlWrapper(RoutersNameManagement)
+	commonWrapper := CommonAccessControlWrapper(model.RouteNameManagement)
 
 	return []ManageHandlerInfo{
 		{
