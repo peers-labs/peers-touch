@@ -33,6 +33,15 @@ class ShellController extends GetxController {
   // 图标hover状态管理
   final _hoveredIcons = <String, bool>{}.obs;
   
+  // 焦点节点
+  final focusNode = FocusNode();
+
+  @override
+  void onClose() {
+    focusNode.dispose();
+    super.onClose();
+  }
+
   @override
   void onInit() {
     super.onInit();
@@ -65,11 +74,6 @@ class ShellController extends GetxController {
       didFirstLayout = true;
       update();
     }
-  }
-  
-  @override
-  void onClose() {
-    super.onClose();
   }
   
   // 切换一级菜单项
@@ -169,12 +173,15 @@ class ShellController extends GetxController {
   }
   
   // 处理键盘事件
-  void handleKeyEvent(RawKeyEvent event) {
+  KeyEventResult handleKeyEvent(FocusNode node, KeyEvent event) {
     // 处理ESC键关闭右侧面板
-    if (event.logicalKey == LogicalKeyboardKey.escape) {
+    // 只在按键按下时触发
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
       if (isRightPanelVisible.value) {
         closeRightPanel();
+        return KeyEventResult.handled;
       }
     }
+    return KeyEventResult.ignored;
   }
 }

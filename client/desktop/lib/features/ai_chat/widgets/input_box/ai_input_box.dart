@@ -102,7 +102,7 @@ class AIInputBox extends StatelessWidget {
                   }
                 }
                 if (!isEnter) return KeyEventResult.ignored;
-                final pressed = RawKeyboard.instance.keysPressed;
+                final pressed = HardwareKeyboard.instance.logicalKeysPressed;
                 final isCtrl = pressed.contains(LogicalKeyboardKey.controlLeft) ||
                     pressed.contains(LogicalKeyboardKey.controlRight);
                 final mode = ctrl.sendMode.value;

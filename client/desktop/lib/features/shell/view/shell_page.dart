@@ -31,10 +31,10 @@ class ShellPage extends StatelessWidget {
           body: Listener(
             onPointerDown: (event) => _handleGlobalTap(context, controller, event),
             behavior: HitTestBehavior.translucent,
-            child: RawKeyboardListener(
-              focusNode: FocusNode(),
+            child: Focus(
+              focusNode: controller.focusNode,
               autofocus: true,
-              onKey: controller.handleKeyEvent,
+              onKeyEvent: controller.handleKeyEvent,
               child: Padding(
               padding: EdgeInsets.only(
                 top: (Theme.of(context).platform == TargetPlatform.macOS)
