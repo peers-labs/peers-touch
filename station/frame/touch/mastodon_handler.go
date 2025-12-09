@@ -2,6 +2,8 @@ package touch
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -192,10 +194,32 @@ func MastodonDirectory(c context.Context, ctx *app.RequestContext) {
 }
 
 func baseURLFrom(ctx *app.RequestContext) string {
-	scheme := string(ctx.URI().Scheme())
+	// 1. Try to get scheme from X-Forwarded-Proto
+	scheme := string(ctx.GetHeader("X-Forwarded-Proto"))
+	if scheme == "" {
+		scheme = string(ctx.URI().Scheme())
+	}
 	if scheme == "" {
 		scheme = "https"
 	}
-	host := string(ctx.Host())
-	return scheme + "://" + host
+
+	// 2. Try to get host from X-Forwarded-Host
+	host := string(ctx.GetHeader("X-Forwarded-Host"))
+	if host == "" {
+		host = string(ctx.Host())
+	}
+
+	// 3. Handle port
+	// Check if host has port
+	if _, _, err := net.SplitHostPort(host); err != nil {
+		// Host likely doesn't have a port, check X-Forwarded-Port
+		port := string(ctx.GetHeader("X-Forwarded-Port"))
+
+		// Only append port if it's not standard (80/443) and not empty
+		if port != "" && port != "80" && port != "443" {
+			host = net.JoinHostPort(host, port)
+		}
+	}
+
+	return fmt.Sprintf("%s://%s", scheme, host)
 }
