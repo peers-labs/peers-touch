@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloudwego/hertz/pkg/app"
 	m "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
@@ -29,9 +28,18 @@ type SignatureData struct {
 }
 
 // VerifyHTTPSignature verifies the HTTP signature of the incoming request
-func VerifyHTTPSignature(c context.Context, ctx *app.RequestContext) error {
+func VerifyHTTPSignature(c context.Context, method string, path string, headers map[string]string, body []byte) error {
 	// 1. Get Signature Header
-	sigHeader := string(ctx.Request.Header.Peek("Signature"))
+	sigHeader := headers["signature"]
+	if sigHeader == "" {
+		// Fallback to case-insensitive lookup if map keys are not normalized
+		for k, v := range headers {
+			if strings.ToLower(k) == "signature" {
+				sigHeader = v
+				break
+			}
+		}
+	}
 	if sigHeader == "" {
 		return errors.New("missing Signature header")
 	}
@@ -49,7 +57,7 @@ func VerifyHTTPSignature(c context.Context, ctx *app.RequestContext) error {
 	}
 
 	// 4. Construct Signing String
-	signingString, err := buildSigningString(ctx, sigData.Headers)
+	signingString, err := buildSigningString(method, path, headers, sigData.Headers)
 	if err != nil {
 		return fmt.Errorf("failed to build signing string: %w", err)
 	}
@@ -63,7 +71,7 @@ func VerifyHTTPSignature(c context.Context, ctx *app.RequestContext) error {
 	// 6. Verify Digest if present in headers
 	for _, h := range sigData.Headers {
 		if strings.ToLower(h) == "digest" {
-			if err := verifyDigest(ctx); err != nil {
+			if err := verifyDigest(headers, body); err != nil {
 				return fmt.Errorf("digest verification failed: %w", err)
 			}
 			break
@@ -120,10 +128,10 @@ func parseSignatureHeader(header string) (*SignatureData, error) {
 	return data, nil
 }
 
-func buildSigningString(ctx *app.RequestContext, headers []string) (string, error) {
+func buildSigningString(method string, path string, headers map[string]string, requiredHeaders []string) (string, error) {
 	var sb strings.Builder
 
-	for i, header := range headers {
+	for i, header := range requiredHeaders {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
@@ -134,17 +142,17 @@ func buildSigningString(ctx *app.RequestContext, headers []string) (string, erro
 
 		switch headerName {
 		case "(request-target)":
-			method := strings.ToLower(string(ctx.Method()))
-			path := string(ctx.URI().PathOriginal())
-			// Query params? usually included in path for request-target
-			if args := string(ctx.URI().QueryString()); args != "" {
-				path = path + "?" + args
-			}
-			sb.WriteString(fmt.Sprintf("%s %s", method, path))
+			// method is already lowercased by caller usually, but let's ensure
+			sb.WriteString(fmt.Sprintf("%s %s", strings.ToLower(method), path))
 		case "host":
-			sb.WriteString(string(ctx.Host()))
+			// Host is usually in headers map
+			val := getHeader(headers, "host")
+			if val == "" {
+				return "", errors.New("missing host header")
+			}
+			sb.WriteString(val)
 		default:
-			val := string(ctx.Request.Header.Peek(header))
+			val := getHeader(headers, headerName)
 			if val == "" {
 				return "", fmt.Errorf("missing header required for signature: %s", header)
 			}
@@ -153,6 +161,20 @@ func buildSigningString(ctx *app.RequestContext, headers []string) (string, erro
 	}
 
 	return sb.String(), nil
+}
+
+func getHeader(headers map[string]string, key string) string {
+	if v, ok := headers[key]; ok {
+		return v
+	}
+	// Try case-insensitive
+	keyLower := strings.ToLower(key)
+	for k, v := range headers {
+		if strings.ToLower(k) == keyLower {
+			return v
+		}
+	}
+	return ""
 }
 
 // Helper struct for parsing Actor JSON
@@ -221,15 +243,10 @@ func fetchPublicKey(c context.Context, keyID string) (crypto.PublicKey, error) {
 	return pub, nil
 }
 
-func verifyDigest(ctx *app.RequestContext) error {
-	digestHeader := string(ctx.Request.Header.Peek("Digest"))
+func verifyDigest(headers map[string]string, body []byte) error {
+	digestHeader := getHeader(headers, "digest")
 	if digestHeader == "" {
 		return errors.New("missing Digest header")
-	}
-
-	body, err := ctx.Body()
-	if err != nil {
-		return fmt.Errorf("failed to read body: %w", err)
 	}
 
 	hash := sha256.Sum256(body)

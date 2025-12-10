@@ -14,36 +14,6 @@ class ProfileController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    // Initialize with mock data for immediate display, will be updated by fetchProfile
-    user.value = ActorBase(id: '1', name: 'Alice', avatar: null);
-    detail.value = const UserDetail(
-      id: '1',
-      displayName: 'Alice',
-      handle: 'alice',
-      summary: '去中心化爱好者，关注隐私与联邦社交。',
-      region: 'Shenzhen, CN',
-      timezone: 'Asia/Shanghai',
-      tags: ['privacy', 'federation', 'open-source'],
-      links: [UserLink(label: 'Website', url: 'https://alice.example')],
-      followersCount: 128,
-      followingCount: 56,
-      showCounts: true,
-      moments: [
-        'https://picsum.photos/seed/a/80/80',
-        'https://picsum.photos/seed/b/80/80',
-        'https://picsum.photos/seed/c/80/80',
-        'https://picsum.photos/seed/d/80/80',
-      ],
-      defaultVisibility: 'public',
-      manuallyApprovesFollowers: true,
-      messagePermission: 'mutual',
-      actorUrl: 'peers://alice@node.local',
-      serverDomain: 'node.local',
-      keyFingerprint: 'E3:9A:7B:...:12',
-      verifications: ['self', 'peer'],
-      peersTouch: PeersTouchInfo(networkId: 'pt-mock-id-12345'),
-    );
-    
     // Fetch real data
     fetchProfile();
   }
@@ -51,8 +21,17 @@ class ProfileController extends GetxController {
   Future<void> fetchProfile() async {
     try {
       final auth = Get.find<AuthController>();
-      // Use authenticated user's username if available, or fallback to 'alice' for dev/demo
-      final username = auth.username.value.isNotEmpty ? auth.username.value : 'alice';
+      // Try to determine username from auth controller inputs
+      String username = auth.username.value;
+      if (username.isEmpty && auth.email.value.isNotEmpty) {
+         // Best guess: use the part before @ if it's an email, or the whole string
+         username = auth.email.value.split('@').first;
+      }
+      
+      if (username.isEmpty) {
+        // No username identified, cannot fetch profile
+        return;
+      }
       
       final client = Get.find<ApiClient>();
       // Using /activitypub prefix as the router is mounted under this name
@@ -62,7 +41,7 @@ class ProfileController extends GetxController {
         detail.value = UserDetail.fromJson(response.data);
       }
     } catch (e) {
-      // Log error but keep mock data if fetch fails
+      // Log error
       print('Failed to fetch profile: $e');
     }
   }
