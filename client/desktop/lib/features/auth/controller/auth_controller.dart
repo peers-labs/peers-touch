@@ -20,11 +20,13 @@ class AuthController extends GetxController {
   final lastStatus = RxnInt();
   final lastBody = RxnString();
   final authTab = 0.obs; // 0: login, 1: signup
+  final protocol = 'peers-touch'.obs;
 
   @override
   void onReady() {
     super.onReady();
     loadPresetUsers(baseUrl.value);
+    detectProtocol(baseUrl.value);
   }
 
   Future<void> loadPresetUsers(String baseUrl) async {
@@ -56,6 +58,8 @@ class AuthController extends GetxController {
     if (baseUrl.isEmpty) return;
     GetStorage().write('base_url', baseUrl.value);
     NetworkInitializer.initialize(baseUrl: baseUrl.value);
+    detectProtocol(baseUrl.value);
+    loadPresetUsers(baseUrl.value);
   }
 
   void switchTab(int i) {
@@ -163,5 +167,44 @@ class AuthController extends GetxController {
     final pwdOk = pwd.length >= 8;
     final confirmOk = pwd == confirmPassword.value.trim();
     return nameOk && dispOk && emailOk && pwdOk && confirmOk;
+  }
+
+  Future<void> detectProtocol(String baseUrl) async {
+    try {
+      final url = baseUrl.trim();
+      if (url.isEmpty) {
+        protocol.value = 'peers-touch';
+        return;
+      }
+      final uri = Uri.parse(url.endsWith('/') ? '${url}api/v1/instance' : '$url/api/v1/instance');
+      final resp = await (await HttpClient().getUrl(uri)).close();
+      final text = await resp.transform(const Utf8Decoder()).join();
+      lastStatus.value = resp.statusCode;
+      lastBody.value = text;
+      if (resp.statusCode == 200) {
+        String ver = '';
+        String title = '';
+        try {
+          final obj = json.decode(text);
+          if (obj is Map) {
+            ver = obj['version']?.toString() ?? '';
+            title = obj['title']?.toString() ?? '';
+          }
+        } catch (_) {}
+        final lowVer = ver.toLowerCase();
+        final lowTitle = title.toLowerCase();
+        if (lowVer.contains('peerstouch') || lowTitle.contains('peers touch')) {
+          protocol.value = 'peers-touch';
+        } else if (lowVer.contains('mastodon') || lowTitle.contains('mastodon') || ver.isNotEmpty || title.isNotEmpty) {
+          protocol.value = 'mastodon';
+        } else {
+          protocol.value = 'other activitypub';
+        }
+      } else {
+        protocol.value = 'other activitypub';
+      }
+    } catch (_) {
+      protocol.value = 'other activitypub';
+    }
   }
 }

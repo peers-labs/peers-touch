@@ -26,11 +26,27 @@ class LoginPage extends GetView<AuthController> {
                 const SizedBox(height: 12),
                 Obx(() => Tabs(labels: [l.loginTab, l.registerTab], index: controller.authTab.value, onChanged: controller.switchTab)),
                 const SizedBox(height: 20),
-                Obx(() => TextBox(
-                      label: l.serverUrl,
-                      value: controller.baseUrl.value,
-                      description: l.serverUrlExample,
-                      onChanged: (v) => controller.updateBaseUrl(v),
+                Obx(() => Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: TextBox(
+                            label: l.serverUrl,
+                            value: controller.baseUrl.value,
+                            description: l.serverUrlExample,
+                            onChanged: (v) => controller.updateBaseUrl(v),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 1,
+                          child: _ProtocolDropdown(
+                            value: controller.protocol.value,
+                            onChanged: (v) {},
+                          ),
+                        ),
+                      ],
                     )),
                 const SizedBox(height: 12),
                 Obx(() => controller.authTab.value == 1
@@ -102,6 +118,58 @@ class LoginPage extends GetView<AuthController> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ProtocolDropdown extends StatelessWidget {
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  const _ProtocolDropdown({required this.value, required this.onChanged});
+
+  static const List<String> _items = [
+    'peers-touch',
+    'mastodon',
+    'other activitypub',
+  ];
+
+  static String _desc(String v) {
+    switch (v) {
+      case 'peers-touch':
+        return '默认协议，内置 Peers Touch 兼容 ActivityPub/Mastodon API';
+      case 'mastodon':
+        return 'Mastodon 服务器，使用 /api/v1/* 接口兼容';
+      default:
+        return '其他 ActivityPub 实现，部分功能可能不完整';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('协议服务', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        InputDecorator(
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: value ?? 'peers-touch',
+              items: _items
+                  .map((e) => DropdownMenuItem<String>(
+                        value: e,
+                        enabled: false,
+                        child: Tooltip(message: _desc(e), child: Text(e)),
+                      ))
+                  .toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
