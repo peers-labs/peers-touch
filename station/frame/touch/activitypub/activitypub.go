@@ -409,6 +409,73 @@ func handleUndo(c context.Context, ctx *app.RequestContext, activity *ap.Activit
 	ctx.JSON(http.StatusOK, "Undo received")
 }
 
+// Service-layer helpers without RequestContext
+func PersistInboxActivity(c context.Context, rds *gorm.DB, user string, activity *ap.Activity, baseURL string, rawBody []byte) error {
+	activityID := string(activity.ID)
+	if activityID != "" {
+		apActivity := db.ActivityPubActivity{
+			ActivityPubID: activityID,
+			Type:          string(activity.Type),
+			ActorID:       getLink(activity.Actor),
+			ObjectID:      getLink(activity.Object),
+			Content:       string(rawBody),
+		}
+		if err := rds.FirstOrCreate(&apActivity, db.ActivityPubActivity{ActivityPubID: activityID}).Error; err != nil {
+			return err
+		}
+		inboxID := fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user)
+		collectionItem := db.ActivityPubCollection{CollectionID: inboxID, ItemID: activityID, ItemType: string(activity.Type), AddedAt: time.Now()}
+		if err := rds.Create(&collectionItem).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ApplyFollowInbox(c context.Context, rds *gorm.DB, user string, activity *ap.Activity, baseURL string) error {
+	targetURI := getLink(activity.Object)
+	myActorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
+	follower := getLink(activity.Actor)
+	follow := db.ActivityPubFollow{FollowerID: follower, FollowingID: myActorID, ActivityID: string(activity.ID), IsActive: true, CreatedAt: time.Now()}
+	if err := rds.Create(&follow).Error; err != nil {
+		return err
+	}
+
+	acceptID := fmt.Sprintf("%s/activitypub/%s/accept/%d", baseURL, user, time.Now().UnixNano())
+	accept := ap.ActivityNew(ap.ID(acceptID), ap.AcceptType, ap.IRI(activity.ID))
+	accept.Actor = ap.IRI(myActorID)
+	accept.To = ap.ItemCollection{ap.IRI(follower)}
+
+	followerActor, err := FetchActorDoc(c, follower)
+	if err != nil {
+		return nil
+	}
+	targetInbox, err := ChooseInbox(followerActor, true)
+	if err != nil || targetInbox == "" {
+		return nil
+	}
+
+	var myActor db.Actor
+	if e := rds.Where("name = ? AND namespace = ?", user, "peers").First(&myActor).Error; e != nil {
+		return nil
+	}
+	var myKey db.ActivityPubKey
+	if e := rds.Where("actor_id = ?", myActor.ID).First(&myKey).Error; e != nil {
+		return nil
+	}
+	keyID := fmt.Sprintf("%s#main-key", myActorID)
+	_, _ = DeliverActivity(c, targetInbox, accept, keyID, myKey.PrivateKeyPEM)
+	_ = targetURI
+	return nil
+}
+
+func ApplyUndoInbox(c context.Context, rds *gorm.DB, user string, activity *ap.Activity, baseURL string) error {
+	targetActivityURI := getLink(activity.Object)
+	rds.Where("activity_id = ?", targetActivityURI).Delete(&db.ActivityPubFollow{})
+	rds.Where("activity_id = ?", targetActivityURI).Delete(&db.ActivityPubLike{})
+	return nil
+}
+
 func handleCreate(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
 	// Typically, Create activities in our inbox are replies or mentions.
 	// For this example, we just log them.
