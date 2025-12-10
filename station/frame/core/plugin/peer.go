@@ -10,4 +10,5 @@ var (
 	RegistryPlugins  = map[string]RegistryPlugin{}
 	SubserverPlugins = map[string]SubserverPlugin{}
 	TransportPlugins = map[string]TransportPlugin{}
+	BrokerPlugins    = map[string]BrokerPlugin{}
 )
