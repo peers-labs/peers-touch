@@ -2,15 +2,12 @@ package activitypub
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
-	"github.com/peers-labs/peers-touch/station/frame/core/store"
-	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
@@ -18,6 +15,12 @@ import (
 // PeersTouchInfo contains Peers Touch specific network information
 type PeersTouchInfo struct {
 	NetworkID string `json:"network_id"` // PeersActorID (PTID)
+}
+
+// UserLink represents a link in the user's profile
+type UserLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
 }
 
 // ProfileResponse represents the extended actor profile for the personal page
@@ -37,45 +40,77 @@ type ProfileResponse struct {
 	FollowingCount int64     `json:"following_count"`
 	FollowersCount int64     `json:"followers_count"`
 
+	// Extended Profile Fields
+	Region                    string     `json:"region"`
+	Timezone                  string     `json:"timezone"`
+	Tags                      []string   `json:"tags"`
+	Links                     []UserLink `json:"links"`
+	DefaultVisibility         string     `json:"default_visibility"`
+	ManuallyApprovesFollowers bool       `json:"manually_approves_followers"`
+	MessagePermission         string     `json:"message_permission"`
+	AutoExpireDays            int        `json:"auto_expire_days"`
+
 	// Peers Touch specific extensions
 	PeersTouch PeersTouchInfo `json:"peers_touch"`
 }
 
-// GetActorProfile handles GET requests for the extended actor profile
-// GET /:actor/profile
-func GetActorProfile(c context.Context, ctx *app.RequestContext) {
-	username := ctx.Param("actor")
-	if username == "" {
-		log.Warnf(c, "Username parameter is required")
-		ctx.JSON(http.StatusBadRequest, "Username parameter is required")
-		return
-	}
+// UpdateProfileRequest represents the request body for updating a profile
+type UpdateProfileRequest struct {
+	DisplayName               *string     `json:"display_name"`
+	Note                      *string     `json:"note"`
+	Avatar                    *string     `json:"avatar"`
+	Header                    *string     `json:"header"`
+	Region                    *string     `json:"region"`
+	Timezone                  *string     `json:"timezone"`
+	Tags                      *[]string   `json:"tags"`
+	Links                     *[]UserLink `json:"links"`
+	DefaultVisibility         *string     `json:"default_visibility"`
+	ManuallyApprovesFollowers *bool       `json:"manually_approves_followers"`
+	MessagePermission         *string     `json:"message_permission"`
+	AutoExpireDays            *int        `json:"auto_expire_days"`
+}
 
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
+// GetWebProfile retrieves the extended actor profile
+// Logic only, no HTTP dependency
+func GetWebProfile(c context.Context, rds *gorm.DB, username string, baseURL string) (*ProfileResponse, error) {
 	// 1. Fetch Basic Actor Info
 	var actor db.Actor
 	// Assuming "peers" namespace for now, similar to GetActor
-	err = rds.Where("name = ? AND namespace = ?", username, "peers").First(&actor).Error
+	err := rds.Where("name = ? AND namespace = ?", username, "peers").First(&actor).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			ctx.JSON(http.StatusNotFound, "User not found")
-			return
+			return nil, gorm.ErrRecordNotFound
 		}
-		log.Errorf(c, "Failed to fetch actor: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Internal Server Error")
-		return
+		return nil, err
 	}
 
-	baseURL := getBaseURL(ctx)
-	activityPubID := fmt.Sprintf("%s/users/%s", baseURL, username) // Standard AP Actor ID format
+	return getWebProfileFromActor(c, rds, &actor, baseURL)
+}
 
-	// 2. Fetch Stats
+// GetWebProfileByID retrieves the extended actor profile by Actor ID
+func GetWebProfileByID(c context.Context, rds *gorm.DB, actorID uint64, baseURL string) (*ProfileResponse, error) {
+	var actor db.Actor
+	if err := rds.First(&actor, actorID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, err
+	}
+
+	return getWebProfileFromActor(c, rds, &actor, baseURL)
+}
+
+func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, baseURL string) (*ProfileResponse, error) {
+	// 2. Fetch Extended Profile Info
+	var profile db.ActorProfile
+	err := rds.Where("actor_id = ?", actor.ID).First(&profile).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		log.Warnf(c, "Failed to fetch actor profile: %v", err)
+	}
+
+	activityPubID := fmt.Sprintf("%s/users/%s", baseURL, actor.Name) // Standard AP Actor ID format
+
+	// 3. Fetch Stats
 	var statusesCount int64
 	// Count objects (Notes, Articles) attributed to this actor
 	// We check ActivityPubObject where AttributedTo matches the actor's AP ID
@@ -105,139 +140,145 @@ func GetActorProfile(c context.Context, ctx *app.RequestContext) {
 		log.Warnf(c, "Failed to count followers: %v", err)
 	}
 
-	// 3. Construct Response
-	response := ProfileResponse{
-		ID:             strconv.FormatUint(actor.ID, 10),
-		Username:       actor.Name,
-		Acct:           actor.Name, // Local user, so acct is just username
-		DisplayName:    actor.DisplayName,
-		Note:           actor.Summary,
-		URL:            activityPubID,
-		Avatar:         actor.Icon,
-		Header:         actor.Image,
-		Locked:         false, // TODO: Add logic if we support locked accounts
-		CreatedAt:      actor.CreatedAt,
-		StatusesCount:  statusesCount,
-		FollowingCount: followingCount,
-		FollowersCount: followersCount,
+	// Parse JSON fields
+	var tags []string
+	if profile.Tags != "" {
+		_ = json.Unmarshal([]byte(profile.Tags), &tags)
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+
+	var links []UserLink
+	if profile.Links != "" {
+		_ = json.Unmarshal([]byte(profile.Links), &links)
+	}
+	if links == nil {
+		links = []UserLink{}
+	}
+
+	// 4. Construct Response
+	response := &ProfileResponse{
+		ID:                        strconv.FormatUint(actor.ID, 10),
+		Username:                  actor.Name,
+		Acct:                      actor.Name, // Local user, so acct is just username
+		DisplayName:               actor.DisplayName,
+		Note:                      actor.Summary,
+		URL:                       activityPubID,
+		Avatar:                    actor.Icon,
+		Header:                    actor.Image,
+		Locked:                    false, // TODO: Add logic if we support locked accounts
+		CreatedAt:                 actor.CreatedAt,
+		StatusesCount:             statusesCount,
+		FollowingCount:            followingCount,
+		FollowersCount:            followersCount,
+		Region:                    profile.Region,
+		Timezone:                  profile.Timezone,
+		Tags:                      tags,
+		Links:                     links,
+		DefaultVisibility:         profile.DefaultVisibility,
+		ManuallyApprovesFollowers: profile.ManuallyApprovesFollowers,
+		MessagePermission:         profile.MessagePermission,
+		AutoExpireDays:            profile.AutoExpireDays,
 		PeersTouch: PeersTouchInfo{
-			NetworkID: actor.PeersActorID,
+			NetworkID: actor.PeersActorID, // Using Actor's PeersActorID
 		},
 	}
 
-	ctx.JSON(http.StatusOK, response)
+	return response, nil
 }
 
-// GetProfile retrieves the profile for a given actor ID (internal use)
-func GetProfile(c context.Context, actorID uint64) (*ProfileResponse, error) {
-	rds, err := store.GetRDS(c)
+// UpdateProfile updates the actor profile
+func UpdateProfile(c context.Context, rds *gorm.DB, username string, req UpdateProfileRequest) error {
+	var actor db.Actor
+	err := rds.Where("name = ? AND namespace = ?", username, "peers").First(&actor).Error
 	if err != nil {
-		return nil, err
+		return err
 	}
+	return updateProfileInternal(c, rds, &actor, req)
+}
 
+// UpdateProfileByID updates the actor profile by Actor ID
+func UpdateProfileByID(c context.Context, rds *gorm.DB, actorID uint64, req UpdateProfileRequest) error {
 	var actor db.Actor
 	if err := rds.First(&actor, actorID).Error; err != nil {
-		return nil, err
+		return err
 	}
-
-	return &ProfileResponse{
-		ID:          strconv.FormatUint(actor.ID, 10),
-		Username:    actor.Name,
-		Acct:        actor.Name,
-		DisplayName: actor.DisplayName,
-		Note:        actor.Summary,
-		Avatar:      actor.Icon,
-		Header:      actor.Image,
-		CreatedAt:   actor.CreatedAt,
-		PeersTouch: PeersTouchInfo{
-			NetworkID: actor.PeersActorID,
-		},
-	}, nil
+	return updateProfileInternal(c, rds, &actor, req)
 }
 
-// UpdateProfile updates the profile
-func UpdateProfile(c context.Context, actorID uint64, params *model.ProfileUpdateParams) error {
-	if params == nil {
-		return nil
-	}
-	if err := params.Validate(); err != nil {
-		return err
-	}
-	rds, err := store.GetRDS(c)
+func updateProfileInternal(c context.Context, rds *gorm.DB, actor *db.Actor, req UpdateProfileRequest) error {
+	var profile db.ActorProfile
+	err := rds.Where("actor_id = ?", actor.ID).First(&profile).Error
 	if err != nil {
-		return err
-	}
-	updatesActor := map[string]interface{}{}
-	if params.WhatsUp != nil {
-		updatesActor["summary"] = *params.WhatsUp
-	}
-	if params.ProfilePhoto != nil {
-		updatesActor["icon"] = *params.ProfilePhoto
-	}
-	if params.Email != nil {
-		updatesActor["email"] = *params.Email
-	}
-	if len(updatesActor) > 0 {
-		if err := rds.Model(&db.Actor{}).Where("id = ?", actorID).Updates(updatesActor).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Create profile if it doesn't exist
+			profile = db.ActorProfile{
+				ActorID: actor.ID,
+			}
+			if err := rds.Create(&profile).Error; err != nil {
+				return err
+			}
+		} else {
 			return err
 		}
 	}
-	var prof db.ActorProfile
-	if err := rds.Where("actor_id = ?", actorID).First(&prof).Error; err != nil {
-		prof.ActorID = actorID
+
+	// Update Actor fields
+	actorUpdates := map[string]interface{}{}
+	if req.DisplayName != nil {
+		actorUpdates["display_name"] = *req.DisplayName
 	}
-	if params.ProfilePhoto != nil {
-		prof.ProfilePhoto = *params.ProfilePhoto
+	if req.Note != nil {
+		actorUpdates["summary"] = *req.Note
 	}
-	if params.Gender != nil {
-		prof.Gender = *params.Gender
+	if req.Avatar != nil {
+		actorUpdates["icon"] = *req.Avatar
 	}
-	if params.Region != nil {
-		prof.Region = *params.Region
+	if req.Header != nil {
+		actorUpdates["image"] = *req.Header
 	}
-	if params.Email != nil {
-		prof.Email = *params.Email
-	}
-	if params.WhatsUp != nil {
-		prof.WhatsUp = *params.WhatsUp
-	}
-	if prof.ID == 0 {
-		if err := rds.Create(&prof).Error; err != nil {
-			return err
-		}
-	} else {
-		if err := rds.Save(&prof).Error; err != nil {
+
+	if len(actorUpdates) > 0 {
+		if err := rds.Model(actor).Updates(actorUpdates).Error; err != nil {
 			return err
 		}
 	}
+
+	// Update Profile fields
+	profileUpdates := map[string]interface{}{}
+	if req.Region != nil {
+		profileUpdates["region"] = *req.Region
+	}
+	if req.Timezone != nil {
+		profileUpdates["timezone"] = *req.Timezone
+	}
+	if req.Tags != nil {
+		tagsJSON, _ := json.Marshal(*req.Tags)
+		profileUpdates["tags"] = string(tagsJSON)
+	}
+	if req.Links != nil {
+		linksJSON, _ := json.Marshal(*req.Links)
+		profileUpdates["links"] = string(linksJSON)
+	}
+	if req.DefaultVisibility != nil {
+		profileUpdates["default_visibility"] = *req.DefaultVisibility
+	}
+	if req.ManuallyApprovesFollowers != nil {
+		profileUpdates["manually_approves_followers"] = *req.ManuallyApprovesFollowers
+	}
+	if req.MessagePermission != nil {
+		profileUpdates["message_permission"] = *req.MessagePermission
+	}
+	if req.AutoExpireDays != nil {
+		profileUpdates["auto_expire_days"] = *req.AutoExpireDays
+	}
+
+	if len(profileUpdates) > 0 {
+		if err := rds.Model(&profile).Updates(profileUpdates).Error; err != nil {
+			return err
+		}
+	}
+
 	return nil
-}
-
-func GetPTProfile(c context.Context, actorID uint64) (*model.ProfileGetResponse, error) {
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		return nil, err
-	}
-	var actor db.Actor
-	if err := rds.First(&actor, actorID).Error; err != nil {
-		return nil, err
-	}
-	var prof db.ActorProfile
-	_ = rds.Where("actor_id = ?", actorID).First(&prof).Error
-	return &model.ProfileGetResponse{
-		ProfilePhoto: firstNonEmpty(prof.ProfilePhoto, actor.Icon),
-		Name:         firstNonEmpty(actor.DisplayName, actor.Name),
-		Gender:       prof.Gender,
-		Region:       prof.Region,
-		Email:        firstNonEmpty(prof.Email, actor.Email),
-		PeersID:      firstNonEmpty(prof.PeersID, actor.PeersActorID),
-		WhatsUp:      firstNonEmpty(prof.WhatsUp, actor.Summary),
-	}, nil
-}
-
-func firstNonEmpty(a string, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }

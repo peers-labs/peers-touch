@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
@@ -15,65 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreateOutboxActivity handles POST requests to the outbox
-func CreateOutboxActivity(c context.Context, ctx *app.RequestContext) {
-	user := ctx.Param("actor")
-	if user == "" {
-		log.Warnf(c, "User parameter is required for outbox activity")
-		ctx.JSON(http.StatusBadRequest, "User parameter is required")
-		return
-	}
-
-	// 1. Parse Request Body
-	body, err := ctx.Body()
-	if err != nil {
-		log.Errorf(c, "Failed to read request body: %v", err)
-		ctx.JSON(http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	var activity ap.Activity
-	if err := json.Unmarshal(body, &activity); err != nil {
-		log.Errorf(c, "Failed to parse JSON-LD activity: %v", err)
-		ctx.JSON(http.StatusBadRequest, "Invalid JSON-LD activity")
-		return
-	}
-
-	// 2. Validate Activity
-	if activity.Type == "" {
-		ctx.JSON(http.StatusBadRequest, "Activity type is required")
-		return
-	}
-
-	// 3. Get Database Connection
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
-	// facade removed as ProcessActivity no longer requires it
-
-	// 4. Determine Base URL
-	scheme := string(ctx.URI().Scheme())
-	if scheme == "" {
-		scheme = "https"
-	}
-	host := string(ctx.Host())
-	baseURL := fmt.Sprintf("%s://%s", scheme, host)
-
-	// 5. Dispatch based on Type
-	err = ProcessActivity(c, rds, user, &activity, baseURL)
-	if err != nil {
-		log.Errorf(c, "Failed to process activity: %v", err)
-		ctx.JSON(http.StatusInternalServerError, fmt.Sprintf("Failed to process activity: %v", err))
-		return
-	}
-
-	log.Infof(c, "Outbox activity created successfully for user: %s, type: %s", user, activity.Type)
-	ctx.JSON(http.StatusCreated, activity)
-}
+// CreateOutboxActivity has been moved to activitypub_handler.go as PostUserOutbox to comply with architectural rules.
 
 func ProcessActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
 	// Ensure Actor is set

@@ -84,7 +84,8 @@ class _TextBoxState extends State<TextBox> {
           const SizedBox(height: 4),
           Text(widget.description!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.6))),
         ],
-        const SizedBox(height: 8),
+        if (widget.showLabel || widget.description != null)
+          const SizedBox(height: 8),
         TextField(
           controller: _controller,
           maxLines: widget.maxLines,
@@ -97,6 +98,8 @@ class _TextBoxState extends State<TextBox> {
             hintText: widget.placeholder,
             filled: true,
             fillColor: theme.colorScheme.surface,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: theme.colorScheme.outline.withOpacity(0.3)),
@@ -109,7 +112,6 @@ class _TextBoxState extends State<TextBox> {
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
           style: theme.textTheme.bodyMedium,
         ),

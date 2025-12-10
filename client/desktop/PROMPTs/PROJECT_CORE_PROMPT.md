@@ -15,7 +15,7 @@
 *   **状态由Controller集中管理**: 所有页面或组件的状态都**必须在 `GetxController` 中使用响应式变量（`.obs`）进行管理**。禁止在视图层持有任何可变状态。
 *   **彻底的模块化**: 每个业务功能（Feature）都必须是“自包含”的。模块之间高度解耦，禁止直接引用其他模块的内部实现。
 *   **模型必须由Proto生成**: **所有的数据模型（Model）都必须来源于项目根目录下的 `model/domain` 中的 `.proto` 文件**。这是保证 Mobile, Desktop, Station 三端统一的生命线。
-*   **UI组件优先原则**: 优先使用 `common/peers_touch_ui` 中的组件。如果所需组件不存在，应在 `common/peers_touch_ui` 中新建通用组件，而不是在业务模块中临时实现。
+*   **UI组件优先原则**: 优先使用 `common/peers_touch_ui` 中的组件。如果所需组件不存在，应在 `common/peers_touch_ui` 中新建通用组件，而不是在业务模块中临时实现。严禁使用 Material 风格的默认组件（如 PopupMenuButton 等），必须保持 UI 风格的统一性。
 
 ## 3. 交互与行为模式 (Interaction & Behavior Model)
 

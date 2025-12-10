@@ -21,7 +21,7 @@ class ApiClient {
             receiveTimeout: const Duration(seconds: 30),
           ),
         ) {
-    dio.interceptors.add(LogInterceptor(responseBody: false));
+    dio.interceptors.add(LogInterceptor(responseBody: true));
     if (secureStorage != null) {
       dio.interceptors.add(AuthInterceptor(secureStorage: secureStorage!));
     }
@@ -89,6 +89,12 @@ class ApiClient {
         return ApiException('Connection error', statusCode: status);
       default:
         return ApiException(message, statusCode: status);
+    }
+  }
+
+  void setBaseUrl(String url) {
+    if (url.isNotEmpty) {
+      dio.options.baseUrl = url.endsWith('/') ? url : '$url/';
     }
   }
 }
