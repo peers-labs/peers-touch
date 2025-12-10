@@ -8,29 +8,13 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
-	"github.com/peers-labs/peers-touch/station/frame/core/store"
-	m "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 	"gorm.io/gorm"
 )
-
-// Helper to get BaseURL
-func getBaseURL(ctx *app.RequestContext) string {
-	scheme := string(ctx.URI().Scheme())
-	if scheme == "" {
-		scheme = "https"
-	}
-	host := string(ctx.Host())
-	return fmt.Sprintf("%s://%s", scheme, host)
-}
-
-func activitypubBaseURLFrom(ctx *app.RequestContext) string { return getBaseURL(ctx) }
 
 // GenerateRSAKeyPair generates a new RSA key pair
 func GenerateRSAKeyPair(bits int) (string, string, error) {
@@ -57,23 +41,8 @@ func GenerateRSAKeyPair(bits int) (string, string, error) {
 	return string(privateKeyPEM), string(publicKeyPEM), nil
 }
 
-// GetActor handles GET requests for user actor
-func GetActor(c context.Context, ctx *app.RequestContext) {
-	user := ctx.Param("actor")
-	if user == "" {
-		log.Warnf(c, "User parameter is required")
-		ctx.JSON(http.StatusBadRequest, "User parameter is required")
-		return
-	}
-
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
-	baseURL := getBaseURL(ctx)
+// GetActorData retrieves the actor data for a user
+func GetActorData(c context.Context, rds *gorm.DB, user string, baseURL string) (*ap.Person, error) {
 	actorID := fmt.Sprintf("%s/%s/actor", baseURL, user)
 
 	var actor db.Actor
@@ -81,15 +50,14 @@ func GetActor(c context.Context, ctx *app.RequestContext) {
 
 	// Try to find the actor by name and namespace 'peers'
 	// TODO: Support other namespaces if needed
-	err = rds.Where("name = ? AND namespace = ?", user, "peers").First(&actor).Error
+	err := rds.Where("name = ? AND namespace = ?", user, "peers").First(&actor).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Create new actor if not exists (for testing/dev)
 			privateKey, publicKey, err := GenerateRSAKeyPair(2048)
 			if err != nil {
 				log.Errorf(c, "Failed to generate keys: %v", err)
-				ctx.JSON(http.StatusInternalServerError, "Failed to generate keys")
-				return
+				return nil, fmt.Errorf("failed to generate keys: %w", err)
 			}
 
 			// Start transaction
@@ -108,8 +76,7 @@ func GetActor(c context.Context, ctx *app.RequestContext) {
 			if err := tx.Create(&actor).Error; err != nil {
 				tx.Rollback()
 				log.Errorf(c, "Failed to create actor: %v", err)
-				ctx.JSON(http.StatusInternalServerError, "Failed to create actor")
-				return
+				return nil, fmt.Errorf("failed to create actor: %w", err)
 			}
 
 			// Create ActivityPubKey
@@ -123,15 +90,13 @@ func GetActor(c context.Context, ctx *app.RequestContext) {
 			if err := tx.Create(&pubKey).Error; err != nil {
 				tx.Rollback()
 				log.Errorf(c, "Failed to save keys: %v", err)
-				ctx.JSON(http.StatusInternalServerError, "Failed to save keys")
-				return
+				return nil, fmt.Errorf("failed to save keys: %w", err)
 			}
 
 			tx.Commit()
 		} else {
 			log.Errorf(c, "Failed to retrieve actor: %v", err)
-			ctx.JSON(http.StatusInternalServerError, "Failed to retrieve actor")
-			return
+			return nil, fmt.Errorf("failed to retrieve actor: %w", err)
 		}
 	} else {
 		// Actor found, fetch keys
@@ -140,8 +105,7 @@ func GetActor(c context.Context, ctx *app.RequestContext) {
 			privateKey, publicKey, err := GenerateRSAKeyPair(2048)
 			if err != nil {
 				log.Errorf(c, "Failed to generate keys: %v", err)
-				ctx.JSON(http.StatusInternalServerError, "Failed to generate keys")
-				return
+				return nil, fmt.Errorf("failed to generate keys: %w", err)
 			}
 
 			pubKey = db.ActivityPubKey{
@@ -153,8 +117,7 @@ func GetActor(c context.Context, ctx *app.RequestContext) {
 			}
 			if err := rds.Create(&pubKey).Error; err != nil {
 				log.Errorf(c, "Failed to save keys: %v", err)
-				ctx.JSON(http.StatusInternalServerError, "Failed to save keys")
-				return
+				return nil, fmt.Errorf("failed to save keys: %w", err)
 			}
 		}
 	}
@@ -204,209 +167,304 @@ func GetActor(c context.Context, ctx *app.RequestContext) {
 	actorObj.Endpoints = &ap.Endpoints{}
 	actorObj.Endpoints.SharedInbox = ap.IRI(fmt.Sprintf("%s/activitypub/inbox", baseURL))
 
-	WriteActivityPubResponse(c, ctx, actorObj)
+	return actorObj, nil
 }
 
-// HandleInboxActivity handles incoming ActivityPub activities
-func HandleInboxActivity(c context.Context, ctx *app.RequestContext) {
-	user := ctx.Param("actor")
-	if user == "" {
-		log.Warnf(c, "User parameter is required for inbox activity")
-		ctx.JSON(http.StatusBadRequest, "User parameter is required")
-		return
+// FetchInbox retrieves the inbox collection
+func FetchInbox(c context.Context, rds *gorm.DB, user string, baseURL string, page bool) (interface{}, error) {
+	inboxID := fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user)
+
+	var totalItems int64
+	if err := rds.Model(&db.ActivityPubCollection{}).Where("collection_id = ?", inboxID).Count(&totalItems).Error; err != nil {
+		log.Errorf(c, "Failed to count inbox items: %v", err)
+		return nil, fmt.Errorf("failed to count inbox items: %w", err)
 	}
 
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
+	if !page {
+		collection := ap.OrderedCollectionNew(ap.ID(inboxID))
+		collection.TotalItems = uint(totalItems)
+		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", inboxID))
+		collection.Last = ap.IRI(fmt.Sprintf("%s?page=true&min_id=0", inboxID))
+
+		log.Infof(c, "Retrieving inbox collection for user: %s", user)
+		return collection, nil
 	}
 
-	// Verify HTTP Signature
-	if err := VerifyHTTPSignature(c, ctx); err != nil {
-		log.Warnf(c, "HTTP Signature verification failed: %v", err)
-		ctx.JSON(http.StatusUnauthorized, "Invalid HTTP Signature")
-		return
+	// Get items from ActivityPubCollection
+	var collectionItems []db.ActivityPubCollection
+	if err := rds.Where("collection_id = ?", inboxID).Order("added_at desc").Limit(20).Find(&collectionItems).Error; err != nil {
+		log.Errorf(c, "Failed to retrieve inbox items: %v", err)
+		return nil, fmt.Errorf("failed to retrieve inbox items: %w", err)
 	}
 
-	body, err := ctx.Body()
-	if err != nil {
-		log.Errorf(c, "Failed to read request body: %v", err)
-		ctx.JSON(http.StatusBadRequest, "Failed to read request body")
-		return
-	}
+	// Create OrderedCollectionPage
+	pageID := fmt.Sprintf("%s?page=true", inboxID)
+	inbox := ap.OrderedCollectionNew(ap.ID(inboxID))
+	inbox.TotalItems = uint(totalItems)
+	collection := ap.OrderedCollectionPageNew(inbox)
+	collection.ID = ap.ID(pageID)
+	collection.PartOf = ap.IRI(inboxID)
 
-	var activity ap.Activity
-	if err := json.Unmarshal(body, &activity); err != nil {
-		log.Errorf(c, "Failed to unmarshal activity: %v", err)
-		ctx.JSON(http.StatusBadRequest, "Invalid activity JSON")
-		return
-	}
-
-	// Persist Activity and Add to Inbox
-	activityID := string(activity.ID)
-	if activityID != "" {
-		// Save to ActivityPubActivity
-		apActivity := db.ActivityPubActivity{
-			ActivityPubID: activityID,
-			Type:          string(activity.Type),
-			ActorID:       getLink(activity.Actor),
-			ObjectID:      getLink(activity.Object),
-			Content:       string(body), // Store original body
+	collection.OrderedItems = make(ap.ItemCollection, len(collectionItems))
+	for i, item := range collectionItems {
+		var activity db.ActivityPubActivity
+		if err := rds.Where("activity_pub_id = ?", item.ItemID).First(&activity).Error; err == nil {
+			var act ap.Activity
+			if err := json.Unmarshal([]byte(activity.Content), &act); err == nil {
+				collection.OrderedItems[i] = &act
+				continue
+			}
 		}
-		// Create if not exists
-		if err := rds.FirstOrCreate(&apActivity, db.ActivityPubActivity{ActivityPubID: activityID}).Error; err != nil {
-			log.Warnf(c, "Failed to persist activity: %v", err)
+		// Fallback to Link/IRI if content not found
+		collection.OrderedItems[i] = ap.IRI(item.ItemID)
+	}
+
+	log.Infof(c, "Retrieving inbox activities page for user: %s", user)
+	return collection, nil
+}
+
+// FetchOutbox retrieves the outbox collection
+func FetchOutbox(c context.Context, rds *gorm.DB, user string, baseURL string, page bool) (interface{}, error) {
+	outboxID := fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, user)
+
+	var totalItems int64
+	if err := rds.Model(&db.ActivityPubCollection{}).Where("collection_id = ?", outboxID).Count(&totalItems).Error; err != nil {
+		log.Errorf(c, "Failed to count outbox items: %v", err)
+		return nil, fmt.Errorf("failed to count outbox items: %w", err)
+	}
+
+	if !page {
+		collection := ap.OrderedCollectionNew(ap.ID(outboxID))
+		collection.TotalItems = uint(totalItems)
+		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", outboxID))
+		collection.Last = ap.IRI(fmt.Sprintf("%s?page=true&min_id=0", outboxID))
+
+		log.Infof(c, "Retrieving outbox collection for user: %s", user)
+		return collection, nil
+	}
+
+	// Get items from ActivityPubCollection
+	var collectionItems []db.ActivityPubCollection
+	if err := rds.Where("collection_id = ?", outboxID).Order("added_at desc").Limit(20).Find(&collectionItems).Error; err != nil {
+		log.Errorf(c, "Failed to retrieve outbox items: %v", err)
+		return nil, fmt.Errorf("failed to retrieve outbox items: %w", err)
+	}
+
+	// Create OrderedCollectionPage
+	pageID := fmt.Sprintf("%s?page=true", outboxID)
+	outbox := ap.OrderedCollectionNew(ap.ID(outboxID))
+	outbox.TotalItems = uint(totalItems)
+	collection := ap.OrderedCollectionPageNew(outbox)
+	collection.ID = ap.ID(pageID)
+	collection.PartOf = ap.IRI(outboxID)
+
+	collection.OrderedItems = make(ap.ItemCollection, len(collectionItems))
+	for i, item := range collectionItems {
+		var activity db.ActivityPubActivity
+		if err := rds.Where("activity_pub_id = ?", item.ItemID).First(&activity).Error; err == nil {
+			var act ap.Activity
+			if err := json.Unmarshal([]byte(activity.Content), &act); err == nil {
+				collection.OrderedItems[i] = &act
+				continue
+			}
 		}
+		// Fallback to Link/IRI if content not found
+		collection.OrderedItems[i] = ap.IRI(item.ItemID)
+	}
 
-		// Add to Inbox Collection
-		baseURL := getBaseURL(ctx)
-		inboxID := fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user)
+	log.Infof(c, "Retrieving outbox activities page for user: %s", user)
+	return collection, nil
+}
 
-		collectionItem := db.ActivityPubCollection{
-			CollectionID: inboxID,
-			ItemID:       activityID,
-			ItemType:     string(activity.Type),
-			AddedAt:      time.Now(),
+// FetchFollowers retrieves the followers collection
+func FetchFollowers(c context.Context, rds *gorm.DB, user string, baseURL string, page bool) (interface{}, error) {
+	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
+	followersID := fmt.Sprintf("%s/activitypub/%s/followers", baseURL, user)
+
+	var totalItems int64
+	if err := rds.Model(&db.ActivityPubFollow{}).Where("following_id = ? AND is_active = ?", actorID, true).Count(&totalItems).Error; err != nil {
+		log.Errorf(c, "Failed to count followers: %v", err)
+		return nil, fmt.Errorf("failed to count followers: %w", err)
+	}
+
+	if !page {
+		collection := ap.OrderedCollectionNew(ap.ID(followersID))
+		collection.TotalItems = uint(totalItems)
+		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", followersID))
+
+		log.Infof(c, "Retrieving followers collection for user: %s", user)
+		return collection, nil
+	}
+
+	var follows []db.ActivityPubFollow
+	// Find who is following THIS actor (FollowingID = actorID)
+	if err := rds.Where("following_id = ? AND is_active = ?", actorID, true).Limit(20).Find(&follows).Error; err != nil {
+		log.Errorf(c, "Failed to retrieve followers: %v", err)
+		return nil, fmt.Errorf("failed to retrieve followers: %w", err)
+	}
+
+	pageID := fmt.Sprintf("%s?page=true", followersID)
+	// Create OrderedCollectionPage
+	followers := ap.OrderedCollectionNew(ap.ID(followersID))
+	followers.TotalItems = uint(totalItems)
+	collection := ap.OrderedCollectionPageNew(followers)
+	collection.ID = ap.ID(pageID)
+	collection.PartOf = ap.IRI(followersID)
+	collection.OrderedItems = make(ap.ItemCollection, len(follows))
+
+	for i, follow := range follows {
+		collection.OrderedItems[i] = ap.IRI(follow.FollowerID)
+	}
+
+	log.Infof(c, "Retrieving followers page for user: %s", user)
+	return collection, nil
+}
+
+// FetchFollowing retrieves who an actor is following
+func FetchFollowing(c context.Context, rds *gorm.DB, user string, baseURL string, page bool) (interface{}, error) {
+	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
+	followingID := fmt.Sprintf("%s/activitypub/%s/following", baseURL, user)
+
+	var totalItems int64
+	if err := rds.Model(&db.ActivityPubFollow{}).Where("follower_id = ? AND is_active = ?", actorID, true).Count(&totalItems).Error; err != nil {
+		log.Errorf(c, "Failed to count following: %v", err)
+		return nil, fmt.Errorf("failed to count following: %w", err)
+	}
+
+	if !page {
+		collection := ap.OrderedCollectionNew(ap.ID(followingID))
+		collection.TotalItems = uint(totalItems)
+		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", followingID))
+
+		log.Infof(c, "Retrieving following collection for user: %s", user)
+		return collection, nil
+	}
+
+	var follows []db.ActivityPubFollow
+	// Find who THIS actor is following (FollowerID = actorID)
+	if err := rds.Where("follower_id = ? AND is_active = ?", actorID, true).Limit(20).Find(&follows).Error; err != nil {
+		log.Errorf(c, "Failed to retrieve following: %v", err)
+		return nil, fmt.Errorf("failed to retrieve following: %w", err)
+	}
+
+	pageID := fmt.Sprintf("%s?page=true", followingID)
+	// Create OrderedCollectionPage
+	following := ap.OrderedCollectionNew(ap.ID(followingID))
+	following.TotalItems = uint(totalItems)
+	collection := ap.OrderedCollectionPageNew(following)
+	collection.ID = ap.ID(pageID)
+	collection.PartOf = ap.IRI(followingID)
+	collection.OrderedItems = make(ap.ItemCollection, len(follows))
+
+	for i, follow := range follows {
+		collection.OrderedItems[i] = ap.IRI(follow.FollowingID)
+	}
+
+	log.Infof(c, "Retrieving following page for user: %s", user)
+	return collection, nil
+}
+
+// FetchLiked retrieves an actor's liked activities
+func FetchLiked(c context.Context, rds *gorm.DB, user string, baseURL string, page bool) (interface{}, error) {
+	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
+	likedID := fmt.Sprintf("%s/activitypub/%s/liked", baseURL, user)
+
+	var totalItems int64
+	if err := rds.Model(&db.ActivityPubLike{}).Where("actor_id = ? AND is_active = ?", actorID, true).Count(&totalItems).Error; err != nil {
+		log.Errorf(c, "Failed to count liked items: %v", err)
+		return nil, fmt.Errorf("failed to count liked items: %w", err)
+	}
+
+	if !page {
+		collection := ap.OrderedCollectionNew(ap.ID(likedID))
+		collection.TotalItems = uint(totalItems)
+		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", likedID))
+
+		log.Infof(c, "Retrieving liked collection for user: %s", user)
+		return collection, nil
+	}
+
+	var likes []db.ActivityPubLike
+	if err := rds.Where("actor_id = ? AND is_active = ?", actorID, true).Limit(20).Find(&likes).Error; err != nil {
+		log.Errorf(c, "Failed to retrieve liked items: %v", err)
+		return nil, fmt.Errorf("failed to retrieve liked items: %w", err)
+	}
+
+	pageID := fmt.Sprintf("%s?page=true", likedID)
+	// Create OrderedCollectionPage
+	liked := ap.OrderedCollectionNew(ap.ID(likedID))
+	liked.TotalItems = uint(totalItems)
+	collection := ap.OrderedCollectionPageNew(liked)
+	collection.ID = ap.ID(pageID)
+	collection.PartOf = ap.IRI(likedID)
+	collection.OrderedItems = make(ap.ItemCollection, len(likes))
+
+	for i, like := range likes {
+		collection.OrderedItems[i] = ap.IRI(like.ObjectID)
+	}
+
+	log.Infof(c, "Retrieving liked page for user: %s", user)
+	return collection, nil
+}
+
+// FetchSharedInbox retrieves the shared inbox collection
+func FetchSharedInbox(c context.Context, rds *gorm.DB, baseURL string, page bool) (interface{}, error) {
+	inboxID := fmt.Sprintf("%s/inbox", baseURL)
+
+	var totalItems int64
+	if err := rds.Model(&db.ActivityPubCollection{}).Where("collection_id = ?", inboxID).Count(&totalItems).Error; err != nil {
+		return nil, fmt.Errorf("failed to count inbox items: %w", err)
+	}
+
+	if !page {
+		collection := ap.OrderedCollectionNew(ap.ID(inboxID))
+		collection.TotalItems = uint(totalItems)
+		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", inboxID))
+		return collection, nil
+	}
+
+	var collectionItems []db.ActivityPubCollection
+	if err := rds.Where("collection_id = ?", inboxID).Order("added_at desc").Limit(20).Find(&collectionItems).Error; err != nil {
+		return nil, fmt.Errorf("failed to retrieve inbox items: %w", err)
+	}
+
+	pageID := fmt.Sprintf("%s?page=true", inboxID)
+	inbox := ap.OrderedCollectionNew(ap.ID(inboxID))
+	inbox.TotalItems = uint(totalItems)
+	collection := ap.OrderedCollectionPageNew(inbox)
+	collection.ID = ap.ID(pageID)
+	collection.PartOf = ap.IRI(inboxID)
+	collection.OrderedItems = make(ap.ItemCollection, len(collectionItems))
+	for i, item := range collectionItems {
+		var activity db.ActivityPubActivity
+		if err := rds.Where("activity_pub_id = ?", item.ItemID).First(&activity).Error; err == nil {
+			var act ap.Activity
+			if err := json.Unmarshal([]byte(activity.Content), &act); err == nil {
+				collection.OrderedItems[i] = &act
+				continue
+			}
 		}
-		if err := rds.Create(&collectionItem).Error; err != nil {
-			log.Warnf(c, "Failed to add to inbox collection: %v", err)
-		}
+		collection.OrderedItems[i] = ap.IRI(item.ItemID)
 	}
-
-	switch activity.Type {
-	case ap.FollowType:
-		handleFollow(c, ctx, &activity, user, rds)
-	case ap.LikeType:
-		handleLike(c, ctx, &activity, user, rds)
-	case ap.UndoType:
-		handleUndo(c, ctx, &activity, user, rds)
-	case ap.CreateType:
-		handleCreate(c, ctx, &activity, user, rds)
-	case ap.UpdateType:
-		handleUpdate(c, ctx, &activity, user, rds)
-	case ap.DeleteType:
-		handleDelete(c, ctx, &activity, user, rds)
-	default:
-		log.Warnf(c, "Unsupported activity type: %s", activity.Type)
-		ctx.JSON(http.StatusOK, "Activity processed")
-	}
+	return collection, nil
 }
 
-func getLink(item ap.Item) string {
-	if item == nil {
-		return ""
+// GetNodeInfo returns the NodeInfo 2.1 data
+func GetNodeInfo(baseURL string) map[string]interface{} {
+	data := map[string]interface{}{
+		"version":           "2.1",
+		"software":          map[string]string{"name": "peers-touch", "version": "dev"},
+		"protocols":         []string{"activitypub"},
+		"services":          map[string][]string{"inbound": {}, "outbound": {}},
+		"openRegistrations": false,
+		"usage": map[string]interface{}{
+			"users": map[string]int{"total": 0},
+		},
+		"metadata": map[string]interface{}{
+			"baseURL": baseURL,
+		},
 	}
-	if item.IsLink() {
-		return string(item.GetLink())
-	}
-	return string(item.GetID())
-}
-
-func handleFollow(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
-	target := getLink(activity.Object)
-	baseURL := getBaseURL(ctx)
-	myActorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
-
-	// Simple check if target is us
-	if target != myActorID {
-		log.Warnf(c, "Follow target mismatch: expected %s, got %s", myActorID, target)
-		// We still accept it if it's in our inbox, but maybe log warning.
-	}
-
-	follower := getLink(activity.Actor)
-
-	follow := db.ActivityPubFollow{
-		FollowerID:  follower,
-		FollowingID: myActorID,
-		ActivityID:  string(activity.ID),
-		IsActive:    true,
-		CreatedAt:   time.Now(),
-	}
-
-	if err := rds.Create(&follow).Error; err != nil {
-		log.Errorf(c, "Failed to save follow: %v", err)
-	}
-
-	// Send Accept Activity
-	acceptID := fmt.Sprintf("%s/activitypub/%s/accept/%d", baseURL, user, time.Now().UnixNano())
-	accept := ap.ActivityNew(ap.ID(acceptID), ap.AcceptType, ap.IRI(activity.ID))
-	accept.Actor = ap.IRI(myActorID)
-	accept.To = ap.ItemCollection{ap.IRI(follower)}
-
-	// Persist Accept Activity locally (optional)
-	// and deliver to follower's inbox/sharedInbox
-
-	// Fetch follower Actor doc to choose target inbox
-	followerActor, err := FetchActorDoc(c, follower)
-	if err != nil {
-		log.Warnf(c, "Failed to fetch follower actor: %v", err)
-		ctx.JSON(http.StatusOK, "Follow received")
-		return
-	}
-
-	targetInbox, err := ChooseInbox(followerActor, true)
-	if err != nil || targetInbox == "" {
-		log.Warnf(c, "No inbox available for follower: %v", err)
-		ctx.JSON(http.StatusOK, "Follow received")
-		return
-	}
-
-	// Load our private key
-	var myActor db.Actor
-	if e := rds.Where("name = ? AND namespace = ?", user, "peers").First(&myActor).Error; e != nil {
-		log.Warnf(c, "Load local actor failed: %v", e)
-		ctx.JSON(http.StatusOK, "Follow received")
-		return
-	}
-	var myKey db.ActivityPubKey
-	if e := rds.Where("actor_id = ?", myActor.ID).First(&myKey).Error; e != nil {
-		log.Warnf(c, "Load local actor key failed: %v", e)
-		ctx.JSON(http.StatusOK, "Follow received")
-		return
-	}
-
-	keyID := fmt.Sprintf("%s#main-key", myActorID)
-	status, err := DeliverActivity(c, targetInbox, accept, keyID, myKey.PrivateKeyPEM)
-	if err != nil {
-		log.Warnf(c, "Deliver Accept failed: %v", err)
-	} else {
-		log.Infof(c, "Delivered Accept to %s, status=%d", targetInbox, status)
-	}
-
-	ctx.JSON(http.StatusOK, "Follow received")
-}
-
-func handleLike(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
-	objectID := getLink(activity.Object)
-	actorID := getLink(activity.Actor)
-
-	like := db.ActivityPubLike{
-		ActorID:    actorID,
-		ObjectID:   objectID,
-		ActivityID: string(activity.ID),
-		IsActive:   true,
-		CreatedAt:  time.Now(),
-	}
-
-	if err := rds.Create(&like).Error; err != nil {
-		log.Errorf(c, "Failed to save like: %v", err)
-	}
-
-	ctx.JSON(http.StatusOK, "Like received")
-}
-
-func handleUndo(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
-	objectID := getLink(activity.Object)
-
-	// Delete from Follows
-	rds.Where("activity_id = ?", objectID).Delete(&db.ActivityPubFollow{})
-
-	// Delete from Likes
-	rds.Where("activity_id = ?", objectID).Delete(&db.ActivityPubLike{})
-
-	ctx.JSON(http.StatusOK, "Undo received")
+	return data
 }
 
 // Service-layer helpers without RequestContext
@@ -476,574 +534,12 @@ func ApplyUndoInbox(c context.Context, rds *gorm.DB, user string, activity *ap.A
 	return nil
 }
 
-func handleCreate(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
-	// Typically, Create activities in our inbox are replies or mentions.
-	// For this example, we just log them.
-	// We might want to verify if the object is addressed to us.
-	log.Infof(c, "Received Create activity: %s", activity.ID)
-	// TODO: Process replies, mentions, etc.
-}
-
-func handleUpdate(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
-	log.Infof(c, "Received Update activity: %s", activity.ID)
-	// Typically update Actor profile or Object content
-}
-
-func handleDelete(c context.Context, ctx *app.RequestContext, activity *ap.Activity, user string, rds *gorm.DB) {
-	log.Infof(c, "Received Delete activity: %s", activity.ID)
-	// Handle deletion of objects or profiles
-}
-
-// GetOutboxActivities retrieves activities from an actor's outbox
-func GetOutboxActivities(c context.Context, ctx *app.RequestContext) {
-	user := ctx.Param("actor")
-	page := ctx.Query("page")
-	if user == "" {
-		log.Warnf(c, "User parameter is required for outbox activities")
-		ctx.JSON(http.StatusBadRequest, "User parameter is required")
-		return
+func getLink(item ap.Item) string {
+	if item == nil {
+		return ""
 	}
-
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
+	if item.IsLink() {
+		return string(item.GetLink())
 	}
-
-	baseURL := getBaseURL(ctx)
-	outboxID := fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, user)
-
-	var totalItems int64
-	if err := rds.Model(&db.ActivityPubCollection{}).Where("collection_id = ?", outboxID).Count(&totalItems).Error; err != nil {
-		log.Errorf(c, "Failed to count outbox items: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to count outbox items")
-		return
-	}
-
-	if page != "true" {
-		collection := ap.OrderedCollectionNew(ap.ID(outboxID))
-		collection.TotalItems = uint(totalItems)
-		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", outboxID))
-		collection.Last = ap.IRI(fmt.Sprintf("%s?page=true&min_id=0", outboxID))
-
-		log.Infof(c, "Retrieving outbox collection for user: %s", user)
-		WriteActivityPubResponse(c, ctx, collection)
-		return
-	}
-
-	// Get items from ActivityPubCollection
-	var collectionItems []db.ActivityPubCollection
-	if err := rds.Where("collection_id = ?", outboxID).Order("added_at desc").Limit(20).Find(&collectionItems).Error; err != nil {
-		log.Errorf(c, "Failed to retrieve outbox items: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to retrieve outbox items")
-		return
-	}
-
-	// Create OrderedCollectionPage
-	pageID := fmt.Sprintf("%s?page=true", outboxID)
-	outbox := ap.OrderedCollectionNew(ap.ID(outboxID))
-	outbox.TotalItems = uint(totalItems)
-	collection := ap.OrderedCollectionPageNew(outbox)
-	collection.ID = ap.ID(pageID)
-	collection.PartOf = ap.IRI(outboxID)
-
-	collection.OrderedItems = make(ap.ItemCollection, len(collectionItems))
-	for i, item := range collectionItems {
-		var activity db.ActivityPubActivity
-		if err := rds.Where("activity_pub_id = ?", item.ItemID).First(&activity).Error; err == nil {
-			var act ap.Activity
-			if err := json.Unmarshal([]byte(activity.Content), &act); err == nil {
-				collection.OrderedItems[i] = &act
-				continue
-			}
-		}
-		// Fallback to Link/IRI if content not found
-		collection.OrderedItems[i] = ap.IRI(item.ItemID)
-	}
-
-	log.Infof(c, "Retrieving outbox activities page for user: %s", user)
-	WriteActivityPubResponse(c, ctx, collection)
-}
-
-// GetFollowers retrieves the followers collection for an actor
-func GetFollowers(c context.Context, ctx *app.RequestContext) {
-	user := ctx.Param("actor")
-	page := ctx.Query("page")
-	if user == "" {
-		log.Warnf(c, "User parameter is required for followers")
-		ctx.JSON(http.StatusBadRequest, "User parameter is required")
-		return
-	}
-
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
-	baseURL := getBaseURL(ctx)
-	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
-	followersID := fmt.Sprintf("%s/activitypub/%s/followers", baseURL, user)
-
-	var totalItems int64
-	if err := rds.Model(&db.ActivityPubFollow{}).Where("following_id = ? AND is_active = ?", actorID, true).Count(&totalItems).Error; err != nil {
-		log.Errorf(c, "Failed to count followers: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to count followers")
-		return
-	}
-
-	if page != "true" {
-		collection := ap.OrderedCollectionNew(ap.ID(followersID))
-		collection.TotalItems = uint(totalItems)
-		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", followersID))
-
-		log.Infof(c, "Retrieving followers collection for user: %s", user)
-		WriteActivityPubResponse(c, ctx, collection)
-		return
-	}
-
-	var follows []db.ActivityPubFollow
-	// Find who is following THIS actor (FollowingID = actorID)
-	if err := rds.Where("following_id = ? AND is_active = ?", actorID, true).Limit(20).Find(&follows).Error; err != nil {
-		log.Errorf(c, "Failed to retrieve followers: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to retrieve followers")
-		return
-	}
-
-	pageID := fmt.Sprintf("%s?page=true", followersID)
-	// Create OrderedCollectionPage
-	followers := ap.OrderedCollectionNew(ap.ID(followersID))
-	followers.TotalItems = uint(totalItems)
-	collection := ap.OrderedCollectionPageNew(followers)
-	collection.ID = ap.ID(pageID)
-	collection.PartOf = ap.IRI(followersID)
-	collection.OrderedItems = make(ap.ItemCollection, len(follows))
-
-	for i, follow := range follows {
-		collection.OrderedItems[i] = ap.IRI(follow.FollowerID)
-	}
-
-	log.Infof(c, "Retrieving followers page for user: %s", user)
-	WriteActivityPubResponse(c, ctx, collection)
-}
-
-// GetInboxActivities retrieves activities from an actor's inbox
-func GetInboxActivities(c context.Context, ctx *app.RequestContext) {
-	user := ctx.Param("actor")
-	page := ctx.Query("page")
-	if user == "" {
-		log.Warnf(c, "User parameter is required for inbox activities")
-		ctx.JSON(http.StatusBadRequest, "User parameter is required")
-		return
-	}
-
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
-	baseURL := getBaseURL(ctx)
-	inboxID := fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user)
-
-	var totalItems int64
-	if err := rds.Model(&db.ActivityPubCollection{}).Where("collection_id = ?", inboxID).Count(&totalItems).Error; err != nil {
-		log.Errorf(c, "Failed to count inbox items: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to count inbox items")
-		return
-	}
-
-	if page != "true" {
-		collection := ap.OrderedCollectionNew(ap.ID(inboxID))
-		collection.TotalItems = uint(totalItems)
-		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", inboxID))
-		collection.Last = ap.IRI(fmt.Sprintf("%s?page=true&min_id=0", inboxID))
-
-		log.Infof(c, "Retrieving inbox collection for user: %s", user)
-		WriteActivityPubResponse(c, ctx, collection)
-		return
-	}
-
-	// Get items from ActivityPubCollection
-	var collectionItems []db.ActivityPubCollection
-	if err := rds.Where("collection_id = ?", inboxID).Order("added_at desc").Limit(20).Find(&collectionItems).Error; err != nil {
-		log.Errorf(c, "Failed to retrieve inbox items: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to retrieve inbox items")
-		return
-	}
-
-	// Create OrderedCollectionPage
-	pageID := fmt.Sprintf("%s?page=true", inboxID)
-	inbox := ap.OrderedCollectionNew(ap.ID(inboxID))
-	inbox.TotalItems = uint(totalItems)
-	collection := ap.OrderedCollectionPageNew(inbox)
-	collection.ID = ap.ID(pageID)
-	collection.PartOf = ap.IRI(inboxID)
-
-	collection.OrderedItems = make(ap.ItemCollection, len(collectionItems))
-	for i, item := range collectionItems {
-		var activity db.ActivityPubActivity
-		if err := rds.Where("activity_pub_id = ?", item.ItemID).First(&activity).Error; err == nil {
-			var act ap.Activity
-			if err := json.Unmarshal([]byte(activity.Content), &act); err == nil {
-				collection.OrderedItems[i] = &act
-				continue
-			}
-		}
-		// Fallback to Link/IRI if content not found
-		collection.OrderedItems[i] = ap.IRI(item.ItemID)
-	}
-
-	log.Infof(c, "Retrieving inbox activities page for user: %s", user)
-	WriteActivityPubResponse(c, ctx, collection)
-}
-
-// GetFollowing retrieves who an actor is following
-func GetFollowing(c context.Context, ctx *app.RequestContext) {
-	user := ctx.Param("actor")
-	page := ctx.Query("page")
-	if user == "" {
-		log.Warnf(c, "User parameter is required for following")
-		ctx.JSON(http.StatusBadRequest, "User parameter is required")
-		return
-	}
-
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
-	baseURL := getBaseURL(ctx)
-	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
-	followingID := fmt.Sprintf("%s/activitypub/%s/following", baseURL, user)
-
-	var totalItems int64
-	if err := rds.Model(&db.ActivityPubFollow{}).Where("follower_id = ? AND is_active = ?", actorID, true).Count(&totalItems).Error; err != nil {
-		log.Errorf(c, "Failed to count following: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to count following")
-		return
-	}
-
-	if page != "true" {
-		collection := ap.OrderedCollectionNew(ap.ID(followingID))
-		collection.TotalItems = uint(totalItems)
-		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", followingID))
-
-		log.Infof(c, "Retrieving following collection for user: %s", user)
-		WriteActivityPubResponse(c, ctx, collection)
-		return
-	}
-
-	var follows []db.ActivityPubFollow
-	// Find who THIS actor is following (FollowerID = actorID)
-	if err := rds.Where("follower_id = ? AND is_active = ?", actorID, true).Limit(20).Find(&follows).Error; err != nil {
-		log.Errorf(c, "Failed to retrieve following: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to retrieve following")
-		return
-	}
-
-	pageID := fmt.Sprintf("%s?page=true", followingID)
-	// Create OrderedCollectionPage
-	following := ap.OrderedCollectionNew(ap.ID(followingID))
-	following.TotalItems = uint(totalItems)
-	collection := ap.OrderedCollectionPageNew(following)
-	collection.ID = ap.ID(pageID)
-	collection.PartOf = ap.IRI(followingID)
-	collection.OrderedItems = make(ap.ItemCollection, len(follows))
-
-	for i, follow := range follows {
-		collection.OrderedItems[i] = ap.IRI(follow.FollowingID)
-	}
-
-	log.Infof(c, "Retrieving following page for user: %s", user)
-	WriteActivityPubResponse(c, ctx, collection)
-}
-
-// GetLiked retrieves an actor's liked activities
-func GetLiked(c context.Context, ctx *app.RequestContext) {
-	user := ctx.Param("actor")
-	page := ctx.Query("page")
-	if user == "" {
-		log.Warnf(c, "User parameter is required for liked")
-		ctx.JSON(http.StatusBadRequest, "User parameter is required")
-		return
-	}
-
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
-	baseURL := getBaseURL(ctx)
-	actorID := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, user)
-	likedID := fmt.Sprintf("%s/activitypub/%s/liked", baseURL, user)
-
-	var totalItems int64
-	if err := rds.Model(&db.ActivityPubLike{}).Where("actor_id = ? AND is_active = ?", actorID, true).Count(&totalItems).Error; err != nil {
-		log.Errorf(c, "Failed to count liked items: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to count liked items")
-		return
-	}
-
-	if page != "true" {
-		collection := ap.OrderedCollectionNew(ap.ID(likedID))
-		collection.TotalItems = uint(totalItems)
-		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", likedID))
-
-		log.Infof(c, "Retrieving liked collection for user: %s", user)
-		WriteActivityPubResponse(c, ctx, collection)
-		return
-	}
-
-	var likes []db.ActivityPubLike
-	if err := rds.Where("actor_id = ? AND is_active = ?", actorID, true).Limit(20).Find(&likes).Error; err != nil {
-		log.Errorf(c, "Failed to retrieve liked items: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Failed to retrieve liked items")
-		return
-	}
-
-	pageID := fmt.Sprintf("%s?page=true", likedID)
-	// Create OrderedCollectionPage
-	liked := ap.OrderedCollectionNew(ap.ID(likedID))
-	liked.TotalItems = uint(totalItems)
-	collection := ap.OrderedCollectionPageNew(liked)
-	collection.ID = ap.ID(pageID)
-	collection.PartOf = ap.IRI(likedID)
-	collection.OrderedItems = make(ap.ItemCollection, len(likes))
-
-	for i, like := range likes {
-		collection.OrderedItems[i] = ap.IRI(like.ObjectID)
-	}
-
-	log.Infof(c, "Retrieving liked page for user: %s", user)
-	WriteActivityPubResponse(c, ctx, collection)
-}
-
-// Stubs for missing handlers referenced in activitypub_handler.go
-
-// CreateFollow handles simplified follow requests
-func CreateFollow(c context.Context, ctx *app.RequestContext) {
-	handleSimplifiedActivity(c, ctx, ap.FollowType)
-}
-
-// CreateUnfollow handles simplified unfollow requests (Undo Follow)
-func CreateUnfollow(c context.Context, ctx *app.RequestContext) {
-	handleSimplifiedActivity(c, ctx, ap.UndoType)
-}
-
-// CreateLike handles simplified like requests
-func CreateLike(c context.Context, ctx *app.RequestContext) {
-	handleSimplifiedActivity(c, ctx, ap.LikeType)
-}
-
-// CreateUndo handles simplified undo requests
-func CreateUndo(c context.Context, ctx *app.RequestContext) {
-	handleSimplifiedActivity(c, ctx, ap.UndoType)
-}
-
-type SimpleRequest struct {
-	Target string `json:"target"`
-	Object string `json:"object"`
-}
-
-func handleSimplifiedActivity(c context.Context, ctx *app.RequestContext, activityType ap.ActivityVocabularyType) {
-	user := ctx.Param("actor")
-	if user == "" {
-		ctx.JSON(http.StatusBadRequest, "User parameter required")
-		return
-	}
-
-	body, err := ctx.Body()
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, "Failed to read body")
-		return
-	}
-
-	var req SimpleRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		ctx.JSON(http.StatusBadRequest, "Invalid JSON")
-		return
-	}
-
-	target := req.Target
-	if target == "" {
-		target = req.Object
-	}
-	if target == "" {
-		ctx.JSON(http.StatusBadRequest, "Target/Object required")
-		return
-	}
-
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "DB Error")
-		return
-	}
-
-	baseURL := getBaseURL(ctx)
-
-	activity := ap.Activity{
-		Type:   activityType,
-		Object: ap.IRI(target),
-	}
-
-	// Special handling for Unfollow (Undo Follow)
-	if activityType == ap.UndoType && req.Target != "" {
-		// "Target" implies we provided a user ID to unfollow, so we must find the Follow activity
-		var follow db.ActivityPubFollow
-		myID := fmt.Sprintf("%s/%s/actor", baseURL, user)
-		if err := rds.Where("follower_id = ? AND following_id = ? AND is_active = ?", myID, target, true).First(&follow).Error; err == nil {
-			activity.Object = ap.IRI(follow.ActivityID)
-		} else {
-			// If we can't find the follow, we can't undo it.
-			// But maybe the user passed the Activity ID directly in "Object"?
-			// If "Target" was set, we assumed it was a user ID.
-			// If we failed to find it, and req.Object was NOT set, we error.
-			if req.Object == "" {
-				ctx.JSON(http.StatusNotFound, "Active follow not found for target")
-				return
-			}
-			// If Object was set, we assume it might be the ActivityID, so we proceed with what we have in activity.Object (which is set to target=Object above if target was empty, but here target was not empty)
-		}
-	}
-
-	if err := ProcessActivity(c, rds, user, &activity, baseURL); err != nil {
-		log.Errorf(c, "Failed to process simplified activity: %v", err)
-		ctx.JSON(http.StatusInternalServerError, fmt.Sprintf("Error: %v", err))
-		return
-	}
-
-	ctx.JSON(http.StatusOK, activity)
-}
-
-// WriteActivityPubResponse writes a JSON response with the ActivityPub Content-Type
-func WriteActivityPubResponse(c context.Context, ctx *app.RequestContext, obj interface{}) {
-	resp, err := json.Marshal(obj)
-	if err != nil {
-		log.Errorf(c, "Failed to marshal activitypub response: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Internal Server Error")
-		return
-	}
-	ctx.Data(http.StatusOK, m.ContentTypeActivityJSONUTF8, resp)
-}
-
-// Shared Inbox endpoints
-func GetSharedInbox(c context.Context, ctx *app.RequestContext) {
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-	baseURL := getBaseURL(ctx)
-	inboxID := fmt.Sprintf("%s/inbox", baseURL)
-
-	var totalItems int64
-	if err := rds.Model(&db.ActivityPubCollection{}).Where("collection_id = ?", inboxID).Count(&totalItems).Error; err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Failed to count inbox items")
-		return
-	}
-
-	if ctx.Query("page") != "true" {
-		collection := ap.OrderedCollectionNew(ap.ID(inboxID))
-		collection.TotalItems = uint(totalItems)
-		collection.First = ap.IRI(fmt.Sprintf("%s?page=true", inboxID))
-		WriteActivityPubResponse(c, ctx, collection)
-		return
-	}
-
-	var collectionItems []db.ActivityPubCollection
-	if err := rds.Where("collection_id = ?", inboxID).Order("added_at desc").Limit(20).Find(&collectionItems).Error; err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Failed to retrieve inbox items")
-		return
-	}
-
-	pageID := fmt.Sprintf("%s?page=true", inboxID)
-	inbox := ap.OrderedCollectionNew(ap.ID(inboxID))
-	inbox.TotalItems = uint(totalItems)
-	collection := ap.OrderedCollectionPageNew(inbox)
-	collection.ID = ap.ID(pageID)
-	collection.PartOf = ap.IRI(inboxID)
-	collection.OrderedItems = make(ap.ItemCollection, len(collectionItems))
-	for i, item := range collectionItems {
-		var activity db.ActivityPubActivity
-		if err := rds.Where("activity_pub_id = ?", item.ItemID).First(&activity).Error; err == nil {
-			var act ap.Activity
-			if err := json.Unmarshal([]byte(activity.Content), &act); err == nil {
-				collection.OrderedItems[i] = &act
-				continue
-			}
-		}
-		collection.OrderedItems[i] = ap.IRI(item.ItemID)
-	}
-	WriteActivityPubResponse(c, ctx, collection)
-}
-
-func PostSharedInbox(c context.Context, ctx *app.RequestContext) {
-	if err := VerifyHTTPSignature(c, ctx); err != nil {
-		ctx.JSON(http.StatusUnauthorized, "Invalid HTTP Signature")
-		return
-	}
-	body, err := ctx.Body()
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, "Failed to read request body")
-		return
-	}
-	var activity ap.Activity
-	if err := json.Unmarshal(body, &activity); err != nil {
-		ctx.JSON(http.StatusBadRequest, "Invalid activity JSON")
-		return
-	}
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-	activityID := string(activity.ID)
-	if activityID != "" {
-		apActivity := db.ActivityPubActivity{
-			ActivityPubID: activityID,
-			Type:          string(activity.Type),
-			ActorID:       getLink(activity.Actor),
-			ObjectID:      getLink(activity.Object),
-			Content:       string(body),
-		}
-		_ = rds.FirstOrCreate(&apActivity, db.ActivityPubActivity{ActivityPubID: activityID}).Error
-		baseURL := getBaseURL(ctx)
-		inboxID := fmt.Sprintf("%s/inbox", baseURL)
-		collectionItem := db.ActivityPubCollection{
-			CollectionID: inboxID,
-			ItemID:       activityID,
-			ItemType:     string(activity.Type),
-			AddedAt:      time.Now(),
-		}
-		_ = rds.Create(&collectionItem).Error
-	}
-	ctx.JSON(http.StatusOK, "Activity received")
-}
-
-// NodeInfo schema 2.1 endpoint
-func NodeInfo21(c context.Context, ctx *app.RequestContext) {
-	base := getBaseURL(ctx)
-	data := map[string]interface{}{
-		"version":           "2.1",
-		"software":          map[string]string{"name": "peers-touch", "version": "dev"},
-		"protocols":         []string{"activitypub"},
-		"services":          map[string][]string{"inbound": {}, "outbound": {}},
-		"openRegistrations": false,
-		"usage": map[string]interface{}{
-			"users": map[string]int{"total": 0},
-		},
-		"metadata": map[string]interface{}{
-			"baseURL": base,
-		},
-	}
-	ctx.Header("Content-Type", m.ContentTypeJSONUTF8)
-	ctx.JSON(http.StatusOK, data)
+	return string(item.GetID())
 }

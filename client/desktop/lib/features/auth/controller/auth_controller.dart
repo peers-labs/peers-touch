@@ -23,10 +23,33 @@ class AuthController extends GetxController {
   final protocol = 'peers-touch'.obs;
 
   @override
+  void onInit() {
+    super.onInit();
+    debounce(baseUrl, (String url) {
+      final trimmed = url.trim();
+      if (trimmed.isNotEmpty) {
+        GetStorage().write('base_url', trimmed);
+        NetworkInitializer.initialize(baseUrl: trimmed);
+        try { Get.find<ApiClient>().setBaseUrl(trimmed); } catch (_) {}
+        detectProtocol(trimmed);
+        loadPresetUsers(trimmed);
+      }
+    }, time: const Duration(milliseconds: 800));
+  }
+
+  @override
   void onReady() {
     super.onReady();
-    loadPresetUsers(baseUrl.value);
-    detectProtocol(baseUrl.value);
+    final url = baseUrl.value.trim();
+    if (url.isNotEmpty) {
+      try { Get.find<ApiClient>().setBaseUrl(url); } catch (_) {}
+      loadPresetUsers(url);
+      detectProtocol(url);
+    }
+  }
+
+  void updateBaseUrl(String url) {
+    baseUrl.value = url;
   }
 
   Future<void> loadPresetUsers(String baseUrl) async {
@@ -51,15 +74,6 @@ class AuthController extends GetxController {
         LoggingService.info('Loaded preset users (${list.length}) from $baseUrl');
       }
     } catch (_) {}
-  }
-
-  void updateBaseUrl(String url) {
-    baseUrl.value = url.trim();
-    if (baseUrl.isEmpty) return;
-    GetStorage().write('base_url', baseUrl.value);
-    NetworkInitializer.initialize(baseUrl: baseUrl.value);
-    detectProtocol(baseUrl.value);
-    loadPresetUsers(baseUrl.value);
   }
 
   void switchTab(int i) {
