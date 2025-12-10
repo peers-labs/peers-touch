@@ -18,33 +18,25 @@ func DiscoverUser(ctx context.Context, params *model.WebFingerParams) (*model.We
 
 // DiscoverActor discovers an actor by WebFinger resource and returns a WebFinger response
 func DiscoverActor(ctx context.Context, params *model.WebFingerParams, rels []string) (*model.WebFingerResponse, error) {
-	// 1. Parse resource (acct:user@domain)
 	resource := string(params.Resource)
 	if !strings.HasPrefix(resource, "acct:") {
-		// Check if it is a URL (e.g. https://example.com/users/alice)
 		if strings.HasPrefix(resource, "http") {
-			// TODO: Handle URL based discovery if needed
 			return nil, fmt.Errorf("unsupported resource format: %s", resource)
 		}
 		return nil, fmt.Errorf("invalid resource format: missing acct: prefix")
 	}
-
 	identifier := strings.TrimPrefix(resource, "acct:")
 	parts := strings.Split(identifier, "@")
 	var username, domain string
-
 	if len(parts) == 2 {
 		username = parts[0]
 		domain = parts[1]
 	} else if len(parts) == 1 {
-		// If no domain provided, assume local (though strictly acct should have domain)
 		username = parts[0]
-		domain = "" // check logic below
+		domain = ""
 	} else {
-		return nil, fmt.Errorf("invalid resource format: expected user@domain")
+		return nil, fmt.Errorf("invalid resource identifier: %s", identifier)
 	}
-
-	// 2. Check if domain is local (if provided)
 	if domain != "" && !isLocalDomain(domain) {
 		return nil, fmt.Errorf("domain not supported: %s", domain)
 	}

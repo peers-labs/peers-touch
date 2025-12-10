@@ -157,19 +157,87 @@ func GetProfile(c context.Context, actorID uint64) (*ProfileResponse, error) {
 
 // UpdateProfile updates the profile
 func UpdateProfile(c context.Context, actorID uint64, params *model.ProfileUpdateParams) error {
+	if params == nil {
+		return nil
+	}
+	if err := params.Validate(); err != nil {
+		return err
+	}
 	rds, err := store.GetRDS(c)
 	if err != nil {
 		return err
 	}
-
-	updates := map[string]interface{}{}
+	updatesActor := map[string]interface{}{}
 	if params.WhatsUp != nil {
-		updates["summary"] = *params.WhatsUp
+		updatesActor["summary"] = *params.WhatsUp
 	}
 	if params.ProfilePhoto != nil {
-		updates["icon"] = *params.ProfilePhoto
+		updatesActor["icon"] = *params.ProfilePhoto
 	}
-	// Add other fields as needed
+	if params.Email != nil {
+		updatesActor["email"] = *params.Email
+	}
+	if len(updatesActor) > 0 {
+		if err := rds.Model(&db.Actor{}).Where("id = ?", actorID).Updates(updatesActor).Error; err != nil {
+			return err
+		}
+	}
+	var prof db.ActorProfile
+	if err := rds.Where("actor_id = ?", actorID).First(&prof).Error; err != nil {
+		prof.ActorID = actorID
+	}
+	if params.ProfilePhoto != nil {
+		prof.ProfilePhoto = *params.ProfilePhoto
+	}
+	if params.Gender != nil {
+		prof.Gender = *params.Gender
+	}
+	if params.Region != nil {
+		prof.Region = *params.Region
+	}
+	if params.Email != nil {
+		prof.Email = *params.Email
+	}
+	if params.WhatsUp != nil {
+		prof.WhatsUp = *params.WhatsUp
+	}
+	if prof.ID == 0 {
+		if err := rds.Create(&prof).Error; err != nil {
+			return err
+		}
+	} else {
+		if err := rds.Save(&prof).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	return rds.Model(&db.Actor{}).Where("id = ?", actorID).Updates(updates).Error
+func GetPTProfile(c context.Context, actorID uint64) (*model.ProfileGetResponse, error) {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		return nil, err
+	}
+	var actor db.Actor
+	if err := rds.First(&actor, actorID).Error; err != nil {
+		return nil, err
+	}
+	var prof db.ActorProfile
+	_ = rds.Where("actor_id = ?", actorID).First(&prof).Error
+	return &model.ProfileGetResponse{
+		ProfilePhoto: firstNonEmpty(prof.ProfilePhoto, actor.Icon),
+		Name:         firstNonEmpty(actor.DisplayName, actor.Name),
+		Gender:       prof.Gender,
+		Region:       prof.Region,
+		Email:        firstNonEmpty(prof.Email, actor.Email),
+		PeersID:      firstNonEmpty(prof.PeersID, actor.PeersActorID),
+		WhatsUp:      firstNonEmpty(prof.WhatsUp, actor.Summary),
+	}, nil
+}
+
+func firstNonEmpty(a string, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	"github.com/peers-labs/peers-touch/station/frame/core/client"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -77,4 +78,10 @@ type SubserverPlugin interface {
 	// *option.Options is not necessary here, the Server that subserver hooks on already has it.
 	// The Server component will help to inject the root Options.
 	New(...option.Option) server.Subserver
+}
+
+type BrokerPlugin interface {
+	Plugin
+	Options() []option.Option
+	New(...option.Option) broker.Broker
 }

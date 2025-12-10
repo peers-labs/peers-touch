@@ -1,5 +1,130 @@
 # 消息存储系统（初稿）
 
+## 事件通知通用化设计
+
+- 目标：事件机制不仅服务于关注关系（Follow/Undo/Accept），也统一服务聊天消息（Chat Message）、评论（Comment）、内容互动（Like/Announce/Delete）、系统通知等。
+
+- 事件信封（Envelope）：
+  - 字段：`eventId`、`version`、`type`、`actorId`、`targetId`、`objectId`、`scope`（actor|conv|content）、`seq`（每-主体单调）、`ts`、`payload`（JSON）
+  - 类型命名：`<域>.<动作>`（示例：`follow.requested`、`chat.message.appended`、`chat.message.read`、`comment.created`、`like.added`、`content.deleted`）
+
+- 模块职责（解耦）：
+  - 活动接收器（协议层）：解析入站 Activity 或业务动作，不直接通知
+  - 领域服务（各域）：更新本域状态并“发出领域事件”对象
+  - 事件出站器（Transactional Outbox）：将领域事件与域数据更新同事务写入 Outbox 表（幂等 `dedupKey`）
+  - 事件调度器（Dispatcher）：异步扫描 Outbox，发布到事件总线（只发布 `eventId` 或轻量引用）
+  - 事件总线（可插拔）：memory+db 起步，后续可替换为 Postgres LISTEN/NOTIFY、Redis Streams、NATS
+  - 订阅注册表（SubscriptionRegistry）：维护在线订阅（actor/conv/content）到连接集合的映射
+  - 投递路由（DeliveryRouter）：按 `scope` 将事件路由到目标订阅连接，支持类型过滤
+  - 连接枢纽（ConnectionHub）：SSE/WS 管理、背压、断线与重连（`Last-Event-ID`）
+
+- 订阅与权限：
+  - Actor 订阅：仅允许订阅自身 actor 的事件（登录态或 Token）
+  - 会话订阅：仅会话成员可订阅 `conv` 事件（聊天消息、回执）
+  - 内容订阅：按需要开放（如评论、点赞），遵循可见性规则
+
+- 补漏与一致性：
+  - 拉取接口：`GET /events/:scope/pull?since=<eventId>&limit=<N>` 按主体游标分页补齐
+  - 顺序：以 `seq` 保证每主体局部有序；前端以 `eventId` 去重
+
+- 通用事件示例：
+  - 关注域：`follow.requested`、`follow.accepted`、`follow.rejected`、`follow.undone`
+  - 聊天域：`chat.message.appended`（payload 含 `convId/msgId`）、`chat.message.delivered`、`chat.message.read`
+  - 评论域：`comment.created`、`comment.deleted`、`comment.updated`
+  - 互动域：`like.added`、`announce.shared`、`undo.like`
+  - 系统域：`system.alert`、`node.status.changed`
+
+- 初始实现（memory+db）：
+  - Outbox：统一表结构作为权威来源；与域更新同事务提交
+  - 总线：本节点内存发布-订阅，跨节点依赖 DB 轮询（后续可替换）
+  - 前端：SSE/WS 单连接；事件总线统一转为状态机事件，驱动 UI（关系与会话等）
+
+## 队列边界与状态机（进栈/出栈/回滚）
+
+- 事件状态机：
+  - `PENDING`：写入 Outbox 成功，等待调度
+  - `QUEUE_SKIPPED`：不满足入栈条件（目标不在线/无订阅/背压），仅留库
+  - `ENQUEUED`：进入本节点内存队列，等待派发
+  - `IN_FLIGHT`：已发送到连接，等待 ACK（或视为交付完成，取决于通道类型）
+  - `ACKED`：客户端确认收到（或通道可靠交付）
+  - `TIMEOUT`：在 ACK 截止时间未确认，进入回滚（重试）
+  - `RETRY`：重新进入调度（指数退避，`attempts+1`）
+  - `DEAD_LETTER`：超过最大重试次数，入死信队列，等待人工或离线补拉
+
+- 入栈（进内存队列）的“栈 Wrapper”判断：
+  - 条件函数 `shouldQueue(evt, target)`：
+    - 目标是否在线（SubscriptionRegistry 有连接）
+    - 目标是否订阅该 `scope/type`
+    - 队列负载是否可接受（背压阈值）
+  - 满足条件 → 标记 `ENQUEUED`，放入队列；否则标记 `QUEUE_SKIPPED`，仅留库，等待后续机会（上线/订阅变化/定时刷新）
+
+- 出栈（派发到连接）：
+  - 发送后标记 `IN_FLIGHT`，设置 `ack_deadline = now + T`
+  - ACK 机制：
+    - SSE/WS 非事务信道需显式 ACK：`POST /events/:actor/ack` 或批量 `POST /events/:actor/acks`（携带 `eventId[]`）
+    - 若采用可靠消息通道（后续可选），可将交付即视为 ACK
+  - 收到 ACK → 标记 `ACKED`，从队列移除；未收到 → 超时流程
+
+- 超时与回滚：
+  - 超时未 ACK → 标记 `TIMEOUT`，写 `attempts+1` 并转 `RETRY`
+  - 退避策略：指数退避（如 1s, 2s, 4s, ... 上限），或固定窗口重试
+  - 超过重试上限 → `DEAD_LETTER`，保持在库中供前端补拉或后台修复
+
+- 上线与订阅变化：
+  - 当目标 actor 上线或新增订阅，触发调度器扫描该主体的 `PENDING/QUEUE_SKIPPED/RETRY` 事件，重新评估入栈条件并推进派发
+
+- 离线场景示例（关注）：
+  - 我关注你，但你不在线 → 事件写库 `PENDING` → Wrapper 判定不入栈，变为 `QUEUE_SKIPPED`
+  - 你上线 → 调度器重评估，将事件推进 `ENQUEUED` → `IN_FLIGHT` → ACK 或重试
+
+- 长期未在线与补拉：
+  - 客户端重连并携带 `Last-Event-ID` → 服务端通过 `pull(since)` 返回未送达或死信中的事件（含 `QUEUE_SKIPPED/RETRY/DEAD_LETTER`）
+  - 客户端按 `eventId` 去重，状态机应用与 UI 修复
+
+- 幂等与去重：
+  - `dedupKey = activityId + type` 防止领域层重复产生事件
+  - 投递端以 `eventId` 去重，确保“至少一次”交付不导致状态错乱
+
+- 背压与资源保护：
+  - 每连接队列长度与速率限制；超限直接断开或切换为轮询补拉模式
+  - 全局限流保护（事件产生率与派发率），避免阻塞核心链路
+
+## Broker 插件化与命名选择
+
+- 插件位置：`station/frame/core/plugin/broker/{a|b|c}`
+  - 在 `broker/a`、`broker/b`、`broker/c` 下提供第一版默认实现（例如 memory/db/kafka 的占位实现），统一实现 `Broker` 接口。
+  - `native` 层按名称引用 `a|b|c` 即可完成注入与使用。
+
+- 多 Broker 支持（按 name 选择）：
+  - 同一服务可注册多个 Broker 实例，通过 `name` 进行匹配与注入。
+  - 示例配置（伪示意）：
+    ```yaml
+    broker:
+      - name: a
+        kind: a
+        dsn: postgres://...
+      - name: b
+        kind: b
+      - name: c
+        kind: c
+        endpoints: ["kafka-1:9092","kafka-2:9092"]
+    ```
+  - 业务模块按需声明所需的 `brokerName`，由插件容器在初始化期注入对应实例：
+    ```go
+    func UseBroker(brokerName string) (Broker, error)
+    ```
+
+- 使用规范：
+  - 根据域选择 broker 名称：如关系/事件派发用 `a`，聊天/会话用 `b`，分析链路用 `c`。
+  - 订阅端指定 `group` 与过滤器，确保多副本与多租使用。
+
+- 生命周期管理：
+  - 插件容器负责创建/启动/关闭 Broker；进程退出时统一调用 `Close()`。
+  - 热更新策略：可支持按 name 重载实现（高级特性，后续设计）。
+
+
+
+
 ## 目标与范围
 
 - 支持两类会话：用户与用户聊天、用户与 AI 聊天。
@@ -229,16 +354,26 @@
 - 索引增量：追加式构建与后台合并，避免阻塞前台写入。
 - 附件分块：大对象分块存储与断点续传，块级去重。
 
-## 开放接口（草案）
+## 接口对齐一览（表格）
 
-```text
-POST /conv/{id}/msg         # 追加消息
-GET  /conv/{id}/msg?cursor  # 拉取消息
-GET  /conv/{id}/search?q=   # 全文查询
-POST /conv/{id}/receipt     # 上报回执
-POST /conv/{id}/attach      # 上传附件（返回 CID）
-GET  /attach/{cid}          # 下载附件（密文）
-```
+| 接口 | 方法 | 功能描述 | 认证要求 | 作用域/主体 | 备注 |
+| --- | --- | --- | --- | --- | --- |
+| /conv | POST | 创建会话 | 必需（成员身份） | conversation | 支持 type=group 等 |
+| /conv/{id} | GET | 读取会话详情 | 必需（成员身份） | conversation | 返回 meta/policy/epoch |
+| /conv/{id}/state | GET | 读取会话状态（epoch 等） | 必需（成员身份） | conversation | 轻量状态视图 |
+| /conv/{id}/members | POST | 邀请/移除成员/角色变更 | 必需（管理员/所有者） | conversation | 成员事件触发密钥轮换 |
+| /conv/{id}/members | GET | 列举成员 | 必需（成员身份） | conversation | 只读 |
+| /conv/{id}/key-rotate | POST | 会话密钥轮换 | 必需（管理员/所有者） | conversation | 提升 epoch 并分发新密钥 |
+| /conv/{id}/msg | POST | 追加消息 | 必需（成员身份） | message | 支持批量/事务块/AI segments |
+| /conv/{id}/msg | GET | 拉取消息（cursor/分页） | 必需（成员身份） | message | 参数 cursor/after/limit |
+| /conv/{id}/stream | GET | 流式订阅（SSE/WS） | 必需（成员身份） | message | 心跳与重连游标 |
+| /conv/{id}/receipt | POST | 上报回执（delivered/read） | 必需（成员身份） | receipt | 单条或批量 |
+| /conv/{id}/receipts | GET | 查询回执（after/aggregate） | 必需（成员身份） | receipt | 聚合视图可选 |
+| /conv/{id}/attach | POST | 上传附件 | 必需（成员身份） | attachment | 返回 CID，支持分块 |
+| /attach/{cid} | GET | 下载附件（密文） | 必需（成员身份） | attachment | 依据权限与成员校验 |
+| /conv/{id}/search | GET | 全文/索引查询 | 必需（成员身份） | index | 可选外部 FTS |
+| /conv/{id}/snapshot | GET | 导出会话快照 | 必需（成员身份） | snapshot | 加密快照（日志+CAS） |
+| /conv/{id}/snapshot | POST | 导入会话快照 | 必需（成员身份） | snapshot | 验证并重建 |
 
 ## 端侧与服务侧分工
 
@@ -297,29 +432,42 @@ flowchart TD
   %% R: GET /conv/{id}/receipts?after 或流式订阅
 ```
 
-### 核心节点 → 接口一览
+### 核心节点 → 接口汇总（表格）
 
-- 创建会话：`POST /conv`，读取会话：`GET /conv/{id}`，状态：`GET /conv/{id}/state`
-- 密钥协商/更新：`POST /conv/{id}/key-rotate`（或成员变更自动触发）
-- 上传附件：`POST /conv/{id}/attach`（返回 `cid`），下载附件：`GET /attach/{cid}`
-- 追加消息：`POST /conv/{id}/msg`（支持批量与事务块）
-- 拉取/订阅消息：`GET /conv/{id}/msg?cursor` 或 `GET /conv/{id}/stream`（SSE/WS）
-- 回执上报：`POST /conv/{id}/receipt`，回执查询：`GET /conv/{id}/receipts?after`
-- 搜索：`GET /conv/{id}/search?q=`（可选全文索引服务）
-- 成员管理：`POST /conv/{id}/members`（邀请/移除/角色变更），读取：`GET /conv/{id}/members`
-- 会话快照：导出 `GET /conv/{id}/snapshot`，导入 `POST /conv/{id}/snapshot`
+| 场景 | 接口 | 方法 | 说明 |
+| --- | --- | --- | --- |
+| 会话 | /conv | POST | 创建会话 |
+| 会话 | /conv/{id} | GET | 读取会话详情 |
+| 会话 | /conv/{id}/state | GET | 读取会话状态 |
+| 成员 | /conv/{id}/members | POST | 邀请/移除/角色变更 |
+| 成员 | /conv/{id}/members | GET | 列举成员 |
+| 密钥 | /conv/{id}/key-rotate | POST | 会话密钥轮换（提升 epoch） |
+| 消息 | /conv/{id}/msg | POST | 追加消息（批量/事务块） |
+| 消息 | /conv/{id}/msg | GET | 拉取消息（cursor/分页） |
+| 消息 | /conv/{id}/stream | GET | 流式订阅（SSE/WS） |
+| 回执 | /conv/{id}/receipt | POST | 上报回执（delivered/read） |
+| 回执 | /conv/{id}/receipts | GET | 查询回执（after/aggregate） |
+| 附件 | /conv/{id}/attach | POST | 上传附件（返回 CID） |
+| 附件 | /attach/{cid} | GET | 下载附件（密文） |
+| 检索 | /conv/{id}/search | GET | 全文/索引查询 |
+| 快照 | /conv/{id}/snapshot | GET | 导出加密快照 |
+| 快照 | /conv/{id}/snapshot | POST | 导入加密快照 |
 
-### 接口完整性检查与建议新增
+### 完整性检查与建议新增（表格）
 
-- 已覆盖：消息追加、附件上传/下载、拉取/订阅、回执、搜索。
-- 建议新增：
-  - 会话生命周期：`POST /conv`、`GET /conv/{id}`、`GET /conv/{id}/state`。
-  - 成员与权限：`POST /conv/{id}/members`、`GET /conv/{id}/members`。
-  - 密钥轮换：`POST /conv/{id}/key-rotate`。
-  - 流式接口：`GET /conv/{id}/stream`（SSE/WS），或 `POST /conv/{id}/msg?stream=1` 返回分片。
-  - 回执查询：`GET /conv/{id}/receipts?after`（便于发送端汇总）。
-  - 快照：`GET/POST /conv/{id}/snapshot`（迁移/备份/导入）。
-  - 发现与联邦：`GET /.well-known/did`、`GET /.well-known/conv/{id}`（可选，用于跨域发现）。
+| 类别 | 接口 | 方法 | 功能描述 | 备注 |
+| --- | --- | --- | --- | --- |
+| 生命周期 | /conv | POST | 创建会话 | 已列于接口总表 |
+| 生命周期 | /conv/{id} | GET | 读取会话 | 已列于接口总表 |
+| 生命周期 | /conv/{id}/state | GET | 读取会话状态 | 已列于接口总表 |
+| 成员 | /conv/{id}/members | POST | 邀请/移除/角色变更 | 已列于接口总表 |
+| 成员 | /conv/{id}/members | GET | 列举成员 | 已列于接口总表 |
+| 密钥 | /conv/{id}/key-rotate | POST | 会话密钥轮换 | 已列于接口总表 |
+| 流式 | /conv/{id}/stream | GET | 流式订阅（SSE/WS） | 已列于接口总表；或 POST /conv/{id}/msg?stream=1 返回分片 |
+| 回执 | /conv/{id}/receipts | GET | 查询回执（after） | 便于发送端汇总 |
+| 快照 | /conv/{id}/snapshot | GET/POST | 导出/导入加密快照 | 迁移/备份/导入 |
+| 发现 | /.well-known/did | GET | DID 发现 | 可选，用于跨域发现 |
+| 发现 | /.well-known/conv/{id} | GET | 会话入口发现 | 可选，用于跨域发现 |
 
 ### AI 消息补充流程（工具调用）
 
@@ -540,9 +688,28 @@ type CryptoService interface {
   Open(ctx context.Context, conv *db.Conversation, env Envelope, ciphertext []byte) ([]byte, error)
 }
 
-type SyncService interface {
-  Publish(ctx context.Context, topic string, env Envelope, ciphertext []byte) error
-  Subscribe(ctx context.Context, topic string) (<-chan SyncEvent, error)
+type Broker interface {
+  Publish(ctx context.Context, topic string, key string, headers map[string]string, payload []byte) error
+  Subscribe(ctx context.Context, topicPattern string, group string, handler func(ctx context.Context, msg Message) error, opts SubscribeOptions) (Subscription, error)
+  Close() error
+}
+
+type Message struct {
+  ID        string
+  Topic     string
+  Key       string
+  Headers   map[string]string
+  Payload   []byte
+  Timestamp int64
+}
+
+type SubscribeOptions struct {
+  ManualAck bool
+  Filter    []string
+}
+
+type Subscription interface {
+  Stop() error
 }
 ```
 
@@ -574,8 +741,8 @@ type SyncService interface {
   - 可选 IPFS/Boxo 集成：`cas/ipfs_store.go`，读取/写入通过 `cid` 映射。
 
 - 同步层
-  - 将 `conv_id` 映射为 PubSub 主题；本地消息追加后经 `SyncService.Publish` 发布。
-  - 订阅侧用 `SyncService.Subscribe` 接收并落盘，触发附件补齐与回执上报。
+  - 将 `conv_id` 映射为 PubSub 主题；本地消息追加后经 `Broker.Publish` 发布。
+  - 订阅侧用 `Broker.Subscribe` 接收并落盘，触发附件补齐与回执上报。
 
 - 生命周期与状态机落地
   - `message_service` 维护 `local_state` 与重试队列；
