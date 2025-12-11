@@ -7,7 +7,7 @@ import 'view/composer_page.dart';
 class PostingModule {
   static void register() {
     Get.put<PostingController>(PostingController(), permanent: true);
-    PrimaryMenuManager.registerItem(const PrimaryMenuItem(
+    PrimaryMenuManager.registerItem(PrimaryMenuItem(
       id: 'posting',
       label: 'Post',
       icon: Icons.edit,
@@ -18,4 +18,3 @@ class PostingModule {
     ));
   }
 }
-
