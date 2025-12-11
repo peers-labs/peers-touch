@@ -34,4 +34,36 @@
 *   **禁止在 `Model` 中包含任何行为或逻辑**。
 *   **禁止在 `app/` 目录中添加任何业务相关代码**。
 
+## 5. 目录结构规范 (Directory Structure Standards)
+
+严格遵循 **Feature-First + 模块内分层** 的目录结构。只有全局通用的代码才允许放在根目录，业务代码必须收敛在 `features/` 下。
+
+### 推荐结构示例
+```text
+lib/
+  ├── bindings/          <-- 【根目录】全局通用 Binding (如 Auth, GlobalConfig)
+  ├── routes/            <-- 【根目录】全局路由定义 (AppPages)
+  ├── features/
+  │   ├── discovery/     <-- 【业务模块根目录】
+  │   │   ├── binding/   <--  Binding 放在子目录 (因为复杂模块可能有多个 Binding)
+  │   │   │   └── discovery_binding.dart
+  │   │   ├── controller/<--  Controller 放在子目录
+  │   │   │   ├── discovery_controller.dart
+  │   │   │   └── posting_controller.dart
+  │   │   ├── view/      <--  View 放在子目录
+  │   │   │   ├── discovery_page.dart
+  │   │   │   └── composer_page.dart
+  │   │   ├── model/     <--  Model 放在子目录，优先使用 client/common/peers_touch_base/lib/model 中的模型
+  │   │   │   └── discovery_item.dart
+  │   │   └── discovery_module.dart  <-- 【关键】模块定义/入口文件放在模块根目录
+  │   └── ai_chat/
+  │       ├── ...
+```
+
+### 核心规则
+1.  **全局代码 (Global)**: 放在 `lib/` 根目录对应的文件夹 (`lib/bindings`, `lib/config`)。
+2.  **模块代码 (Module Specific)**: 全部收敛在 `lib/features/xxx/` 内。
+3.  **模块入口**: 只有 **模块定义文件 (`xxx_module.dart`)** 允许放在模块根目录，作为模块的对外清单。
+4.  **内部细节**: 所有实现细节（View, Controller, Binding, Model）必须下沉到模块内的对应子目录中，保持模块根目录整洁。
+
 此核心准则定义了你的身份和思考模式的基石。在处理任何具体任务之前，请务必以内置于你“DNA”中的这些原则为出发点。

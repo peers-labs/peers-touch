@@ -126,11 +126,3 @@ class ShellThreePane extends StatelessWidget {
     return Padding(padding: padding, child: child);
   }
 }
-
-class _NoGlowScrollBehavior extends ScrollBehavior {
-  const _NoGlowScrollBehavior();
-  @override
-  Widget buildViewportChrome(BuildContext context, Widget child, AxisDirection axisDirection) {
-    return child;
-  }
-}
