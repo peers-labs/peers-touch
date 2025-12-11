@@ -6,6 +6,7 @@ import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.d
 import 'package:peers_touch_ui/peers_touch_ui.dart';
 import '../controller/discovery_controller.dart';
 import '../model/discovery_item.dart';
+import 'composer_page.dart';
 
 class DiscoveryPage extends GetView<DiscoveryController> {
   const DiscoveryPage({super.key});
@@ -30,8 +31,28 @@ class DiscoveryPage extends GetView<DiscoveryController> {
     return Container(
       color: Theme.of(context).colorScheme.surface,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // New Post Button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Get.dialog(
+                  const Dialog(
+                    child: ComposerPage(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.edit),
+              label: const Text('New Post'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              ),
+            ),
+          ),
+
           // 1. Search Box
           Padding(
             padding: const EdgeInsets.all(16.0),

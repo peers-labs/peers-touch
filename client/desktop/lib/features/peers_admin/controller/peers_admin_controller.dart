@@ -37,6 +37,7 @@ class PeersAdminController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _syncSettingsToRuntime();
     // 添加baseurl变化监听器
     backendUrl.listen((newUrl) {
       if (newUrl.isNotEmpty) {

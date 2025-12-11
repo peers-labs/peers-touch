@@ -6,11 +6,11 @@ import 'package:peers_touch_desktop/features/shell/controller/shell_controller.d
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 
-import 'package:peers_touch_desktop/features/profile/profile_binding.dart';
 import 'package:peers_touch_desktop/features/profile/view/profile_page.dart';
 import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
+import 'binding/profile_binding.dart';
 
 /// 个人主页模块注册
 class ProfileModule {

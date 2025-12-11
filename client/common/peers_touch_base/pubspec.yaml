@@ -33,7 +33,7 @@ dependencies:
   dart_multihash: ^1.0.1
   cid: ^1.0.1
   flutter_webrtc: ^1.2.1
-  flutter_secure_storage: ^4.2.1
+  flutter_secure_storage: ^9.0.0
   get: ^4.7.3
 
 dev_dependencies:

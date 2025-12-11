@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 
 import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_desktop/core/network/network_initializer.dart';
 import 'package:peers_touch_desktop/core/network/network_status_service.dart';
 import 'package:peers_touch_desktop/core/services/network_discovery/libp2p_network_service.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
@@ -32,7 +33,7 @@ class InitialBinding extends Bindings {
           secureStorage: Get.find<SecureStorage>(),
           networkStatusService: Get.find<NetworkStatusService>(),
           // tokenRefreshHandler: null, // Can be injected when real refresh interface is connected
-        ),
+        )..setBaseUrl(NetworkInitializer.currentBaseUrl),
         permanent: true,
       );
   }

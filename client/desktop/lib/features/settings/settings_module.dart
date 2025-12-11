@@ -1,35 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
-import 'package:peers_touch_desktop/features/settings/setting_binding.dart';
-import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
-import 'package:peers_touch_desktop/features/settings/view/setting_page.dart';
+import 'binding/setting_binding.dart';
+import 'controller/setting_controller.dart';
+import 'view/setting_page.dart';
 
-/// 设置模块 - 演示尾部区域注册
 class SettingsModule {
   static void register() {
-    // 注册到尾部区域（重要入口）
+    // Register binding
     SettingsBinding().dependencies();
+
+    // Register menu item
     PrimaryMenuManager.registerItem(PrimaryMenuItem(
       id: 'settings',
-      label: '设置',
+      label: 'Settings',
       icon: Icons.settings,
-      isHead: false,   // 尾部区域
-      order: 100,      // 尾部区域内的排序
-      contentBuilder: (context) => const SettingsContentPage(),
+      isHead: false, // Bottom area
+      order: 100, 
+      contentBuilder: (context) => SettingPage(controller: Get.find<SettingController>()),
       toDIsplayPageTitle: false,
     ));
-  }
-}
-
-/// 设置内容页面
-class SettingsContentPage extends StatelessWidget {
-  const SettingsContentPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return GetBuilder<SettingController>(
-      builder: (controller) => SettingPage(controller: controller),
-    );
   }
 }
