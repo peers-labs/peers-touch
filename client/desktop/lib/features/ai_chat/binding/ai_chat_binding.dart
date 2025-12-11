@@ -7,7 +7,7 @@ import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 
-import 'controller/provider_controller.dart';
+import '../controller/provider_controller.dart';
 
 class AIChatBinding extends Bindings {
   @override

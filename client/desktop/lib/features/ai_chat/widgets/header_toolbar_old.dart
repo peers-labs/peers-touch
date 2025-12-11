@@ -35,7 +35,7 @@ class AIChatHeaderBar extends StatelessWidget {
           SizedBox(width: UIKit.spaceMd(context)),
           const Spacer(),
           // 模型选择
-          Text(AppLocalizations.of(context).aiModelLabel,
+          Text(AppLocalizations.of(context)!.aiModelLabel,
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium
@@ -45,7 +45,7 @@ class AIChatHeaderBar extends StatelessWidget {
           ExcludeSemantics(
             child: DropdownButton<String>(
               value: models.contains(currentModel) ? currentModel : null,
-              hint: Text(currentModel.isEmpty ? AppLocalizations.of(context).defaultModel : currentModel),
+              hint: Text(currentModel.isEmpty ? AppLocalizations.of(context)!.defaultModel : currentModel),
               items: models
                   .map((m) => DropdownMenuItem(value: m, child: Text(m)))
                   .toList(),
@@ -57,28 +57,28 @@ class AIChatHeaderBar extends StatelessWidget {
           SizedBox(width: UIKit.spaceMd(context)),
           // 主题面板显隐
           Tooltip(
-            message: AppLocalizations.of(context).toggleTopicPanel,
+            message: AppLocalizations.of(context)!.toggleTopicPanel,
             child: IconButton(
               icon: const Icon(Icons.view_sidebar),
               onPressed: onToggleTopicPanel,
             ),
           ),
           Tooltip(
-            message: AppLocalizations.of(context).sharePlaceholder,
+            message: AppLocalizations.of(context)!.sharePlaceholder,
             child: IconButton(
               icon: const Icon(Icons.share),
               onPressed: () {},
             ),
           ),
           Tooltip(
-            message: AppLocalizations.of(context).layoutTogglePlaceholder,
+            message: AppLocalizations.of(context)!.layoutTogglePlaceholder,
             child: IconButton(
               icon: const Icon(Icons.dashboard_customize),
               onPressed: () {},
             ),
           ),
           Tooltip(
-            message: AppLocalizations.of(context).moreMenuPlaceholder,
+            message: AppLocalizations.of(context)!.moreMenuPlaceholder,
             child: IconButton(
               icon: const Icon(Icons.more_vert),
               onPressed: () {},
@@ -86,7 +86,7 @@ class AIChatHeaderBar extends StatelessWidget {
           ),
           SizedBox(width: UIKit.spaceMd(context)),
           if (isSending)
-            Text(AppLocalizations.of(context).sendingIndicator,
+            Text(AppLocalizations.of(context)!.sendingIndicator,
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall

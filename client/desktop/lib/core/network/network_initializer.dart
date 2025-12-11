@@ -1,4 +1,6 @@
+import 'package:get/get.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_desktop/core/network/api_client.dart';
 
 /// 网络服务初始化器
 class NetworkInitializer {

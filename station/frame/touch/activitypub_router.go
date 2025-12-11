@@ -53,6 +53,7 @@ const (
 
 	PostingRouterURLPost  RouterPath = "/:actor/post"
 	PostingRouterURLMedia RouterPath = "/:actor/media"
+	PostingRouterURLGetMedia RouterPath = "/media/:filename"
 )
 
 // ActivityPubRouters provides general ActivityPub endpoints
