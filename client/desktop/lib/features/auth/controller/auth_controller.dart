@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:peers_touch_desktop/core/network/network_initializer.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_desktop/core/network/api_client.dart';
 
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
@@ -30,7 +31,9 @@ class AuthController extends GetxController {
       if (trimmed.isNotEmpty) {
         GetStorage().write('base_url', trimmed);
         NetworkInitializer.initialize(baseUrl: trimmed);
-        try { Get.find<ApiClient>().setBaseUrl(trimmed); } catch (_) {}
+        try {
+          Get.find<ApiClient>().setBaseUrl(trimmed);
+        } catch (_) {}
         detectProtocol(trimmed);
         loadPresetUsers(trimmed);
       }
@@ -42,7 +45,9 @@ class AuthController extends GetxController {
     super.onReady();
     final url = baseUrl.value.trim();
     if (url.isNotEmpty) {
-      try { Get.find<ApiClient>().setBaseUrl(url); } catch (_) {}
+      try {
+        Get.find<ApiClient>().setBaseUrl(url);
+      } catch (_) {}
       loadPresetUsers(url);
       detectProtocol(url);
     }
@@ -54,7 +59,9 @@ class AuthController extends GetxController {
 
   Future<void> loadPresetUsers(String baseUrl) async {
     try {
-      final uri = Uri.parse(baseUrl.endsWith('/') ? '${baseUrl}actor/list' : '$baseUrl/actor/list');
+      final uri = Uri.parse(
+        baseUrl.endsWith('/') ? '${baseUrl}actor/list' : '$baseUrl/actor/list',
+      );
       final resp = await (await HttpClient().getUrl(uri)).close();
       if (resp.statusCode == 200) {
         final text = await resp.transform(const Utf8Decoder()).join();
@@ -68,10 +75,17 @@ class AuthController extends GetxController {
             list = data['items'] as List;
           }
         }
-        presetUsers.assignAll(list.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList());
+        presetUsers.assignAll(
+          list
+              .whereType<Map>()
+              .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+              .toList(),
+        );
         lastStatus.value = resp.statusCode;
         lastBody.value = text;
-        LoggingService.info('Loaded preset users (${list.length}) from $baseUrl');
+        LoggingService.info(
+          'Loaded preset users (${list.length}) from $baseUrl',
+        );
       }
     } catch (_) {}
   }
@@ -90,7 +104,11 @@ class AuthController extends GetxController {
       if (!ident.contains('@') && ident.isNotEmpty) {
         ident = ident + '@station.local';
       }
-      final uri = Uri.parse(useUrl.endsWith('/') ? '${useUrl}activitypub/login' : '$useUrl/activitypub/login');
+      final uri = Uri.parse(
+        useUrl.endsWith('/')
+            ? '${useUrl}activitypub/login'
+            : '$useUrl/activitypub/login',
+      );
       final req = await HttpClient().postUrl(uri);
       req.headers.contentType = ContentType.json;
       req.write(json.encode({'email': ident, 'password': password.value}));
@@ -108,15 +126,25 @@ class AuthController extends GetxController {
           if (data is Map) {
             dmap = data.cast<String, dynamic>();
           }
-          final tokensMap = (dmap != null && dmap['tokens'] is Map) ? (dmap['tokens'] as Map).cast<String, dynamic>() : dmap;
+          final tokensMap = (dmap != null && dmap['tokens'] is Map)
+              ? (dmap['tokens'] as Map).cast<String, dynamic>()
+              : dmap;
           if (tokensMap != null) {
-            token = tokensMap['token']?.toString() ??
+            token =
+                tokensMap['token']?.toString() ??
                 tokensMap['access_token']?.toString() ??
-                tokensMap['accessToken']?.toString() ?? '';
-            final refresh = tokensMap['refresh_token']?.toString() ?? tokensMap['refreshToken']?.toString();
-            final ttype = tokensMap['token_type']?.toString() ?? tokensMap['tokenType']?.toString();
-            if (refresh != null && refresh.isNotEmpty) GetStorage().write('refresh_token', refresh);
-            if (ttype != null && ttype.isNotEmpty) GetStorage().write('auth_token_type', ttype);
+                tokensMap['accessToken']?.toString() ??
+                '';
+            final refresh =
+                tokensMap['refresh_token']?.toString() ??
+                tokensMap['refreshToken']?.toString();
+            final ttype =
+                tokensMap['token_type']?.toString() ??
+                tokensMap['tokenType']?.toString();
+            if (refresh != null && refresh.isNotEmpty)
+              GetStorage().write('refresh_token', refresh);
+            if (ttype != null && ttype.isNotEmpty)
+              GetStorage().write('auth_token_type', ttype);
           } else {
             token = obj['token']?.toString() ?? '';
           }
@@ -142,19 +170,29 @@ class AuthController extends GetxController {
     try {
       if (!_validateSignupInputs()) {
         final context = Get.context;
-        error.value = context != null 
-          ? AppLocalizations.of(context)!.signupValidationErrorMessage 
-          : 'Please fill in all information, and passwords must match and be at least 8 characters.';
+        error.value = context != null
+            ? AppLocalizations.of(context)!.signupValidationErrorMessage
+            : 'Please fill in all information, and passwords must match and be at least 8 characters.';
         lastStatus.value = null;
         lastBody.value = null;
         loading.value = false;
         return;
       }
       final useUrl = (overrideBaseUrl ?? baseUrl.value).trim();
-      final uri = Uri.parse(useUrl.endsWith('/') ? '${useUrl}actor/sign-up' : '$useUrl/actor/sign-up');
+      final uri = Uri.parse(
+        useUrl.endsWith('/')
+            ? '${useUrl}actor/sign-up'
+            : '$useUrl/actor/sign-up',
+      );
       final req = await HttpClient().postUrl(uri);
       req.headers.contentType = ContentType.json;
-      req.write(json.encode({'name': username.value, 'email': email.value, 'password': password.value}));
+      req.write(
+        json.encode({
+          'name': username.value,
+          'email': email.value,
+          'password': password.value,
+        }),
+      );
       final resp = await req.close();
       final text = await resp.transform(const Utf8Decoder()).join();
       lastStatus.value = resp.statusCode;
@@ -174,9 +212,11 @@ class AuthController extends GetxController {
   bool _validateSignupInputs() {
     final nameOk = username.value.trim().isNotEmpty;
     // displayName is optional for backend currently but required for UI
-    final dispOk = displayName.value.trim().isNotEmpty; 
+    final dispOk = displayName.value.trim().isNotEmpty;
     final emailText = email.value.trim();
-    final emailOk = emailText.isNotEmpty && RegExp(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").hasMatch(emailText);
+    final emailOk =
+        emailText.isNotEmpty &&
+        RegExp(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").hasMatch(emailText);
     final pwd = password.value.trim();
     final pwdOk = pwd.length >= 8;
     final confirmOk = pwd == confirmPassword.value.trim();
@@ -190,7 +230,9 @@ class AuthController extends GetxController {
         protocol.value = 'peers-touch';
         return;
       }
-      final uri = Uri.parse(url.endsWith('/') ? '${url}api/v1/instance' : '$url/api/v1/instance');
+      final uri = Uri.parse(
+        url.endsWith('/') ? '${url}api/v1/instance' : '$url/api/v1/instance',
+      );
       final resp = await (await HttpClient().getUrl(uri)).close();
       final text = await resp.transform(const Utf8Decoder()).join();
       lastStatus.value = resp.statusCode;
@@ -209,7 +251,10 @@ class AuthController extends GetxController {
         final lowTitle = title.toLowerCase();
         if (lowVer.contains('peerstouch') || lowTitle.contains('peers touch')) {
           protocol.value = 'peers-touch';
-        } else if (lowVer.contains('mastodon') || lowTitle.contains('mastodon') || ver.isNotEmpty || title.isNotEmpty) {
+        } else if (lowVer.contains('mastodon') ||
+            lowTitle.contains('mastodon') ||
+            ver.isNotEmpty ||
+            title.isNotEmpty) {
           protocol.value = 'mastodon';
         } else {
           protocol.value = 'other activitypub';

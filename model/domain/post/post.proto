@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package peers_touch.model.post.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+message Attachment {
+  string media_id = 1;
+  string url = 2;
+  string media_type = 3;
+  string alt = 4;
+}
+
+message PollOption {
+  string text = 1;
+}
+
+message Poll {
+  repeated PollOption options = 1;
+  int32 expires_in = 2;
+  bool multiple = 3;
+  bool hide_totals = 4;
+}
+
+message PostInput {
+  string text = 1;
+  repeated Attachment attachments = 2;
+  repeated string tags = 3;
+  string visibility = 4;
+  repeated string audience = 5;
+  string cw = 6;
+  bool sensitive = 7;
+  string reply_to = 8;
+  Poll poll = 9;
+  google.protobuf.Timestamp client_time = 10;
+}
+
+message PostResponse {
+  string post_id = 1;
+  string activity_id = 2;
+}
+
+message MediaUploadResponse {
+  string media_id = 1;
+  string url = 2;
+  string media_type = 3;
+  string alt = 4;
+}

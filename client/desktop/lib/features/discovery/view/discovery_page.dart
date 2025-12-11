@@ -136,48 +136,24 @@ class DiscoveryPage extends GetView<DiscoveryController> {
   }
 
   Widget _buildContentList(BuildContext context, ShellController shell) {
-    return Container(
-      color: const Color(0xFFF5F7FB), // Light background for content area
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-            child: Obx(() => IconTabs(
-              items: controller.tabIcons.map((icon) => IconTabItem(icon: icon)).toList(),
-              selectedIndex: controller.currentTab.value,
-              onChanged: controller.setTab,
-              decoration: const BoxDecoration(
-                color: Color(0xFFF0F6FF), // 保持参考图的浅蓝色背景
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
-                border: Border(
-                  left: BorderSide(color: Color(0xFFE1E6EB), width: 1),
-                  right: BorderSide(color: Color(0xFFE1E6EB), width: 1),
-                  bottom: BorderSide(color: Color(0xFFE1E6EB), width: 1),
-                ),
-              ),
-              selectedItemDecoration: BoxDecoration(
-                color: Colors.transparent, // 恢复按钮透明背景
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFB0C4DE), width: 1.5), // 使用左侧栏风格的边框（调整颜色以适应浅蓝背景）
-              ),
-              selectedIconColor: const Color(0xFF003087), // 选中图标恢复为深色（深蓝以呼应背景）
-              unselectedIconColor: const Color(0xFF78909C), // 未选中图标保持蓝灰色
-            )),
-          ),
-          Expanded(
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Container(
+            color: const Color(0xFFF5F7FB),
             child: Obx(() {
               if (controller.isLoading.value) {
                 return const Center(child: CircularProgressIndicator());
               }
-      
+
               final items = controller.items;
-      
               if (items.isEmpty) {
                 return const Center(child: Text('No items found'));
               }
-      
+
               return ListView.separated(
-                padding: const EdgeInsets.all(24),
+                controller: controller.scrollController,
+                padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
                 itemCount: items.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 24),
                 itemBuilder: (ctx, i) {
@@ -207,7 +183,6 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Header
                           Padding(
                             padding: const EdgeInsets.all(20),
                             child: Row(
@@ -281,8 +256,6 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                               ],
                             ),
                           ),
-                          
-                          // Content Preview
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: Text(
@@ -295,53 +268,31 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                               ),
                             ),
                           ),
-                          
                           const SizedBox(height: 20),
-                          
-                          // Footer
                           Padding(
                             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                             child: Row(
-                              children: [
-                                const CircleAvatar(
+                              children: const [
+                                CircleAvatar(
                                   radius: 12,
                                   backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=8'),
                                 ),
-                                const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      item.author,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    Text(
-                                      'ActivityPub Actor',
-                                      style: TextStyle(
-                                        color: Colors.grey[500],
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const Spacer(),
-                                const SizedBox(width: 12),
-                                const Icon(Icons.local_fire_department, color: Colors.orange, size: 16),
-                                const SizedBox(width: 4),
-                                const Text(
+                                SizedBox(width: 8),
+                                Spacer(),
+                                SizedBox(width: 12),
+                                Icon(Icons.local_fire_department, color: Colors.orange, size: 16),
+                                SizedBox(width: 4),
+                                Text(
                                   '12',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                const Icon(Icons.share, color: Colors.cyan, size: 16),
-                                const SizedBox(width: 4),
-                                const Text(
+                                SizedBox(width: 12),
+                                Icon(Icons.share, color: Colors.cyan, size: 16),
+                                SizedBox(width: 4),
+                                Text(
                                   '30',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
@@ -359,8 +310,61 @@ class DiscoveryPage extends GetView<DiscoveryController> {
               );
             }),
           ),
-        ],
-      ),
+        ),
+        Positioned(
+          top: 12,
+          left: 0,
+          right: 0,
+          child: SafeArea(
+            top: true,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Obx(() {
+                    final alpha = controller.isScrolling.value ? 0.45 : 0.92;
+                    final opacity = controller.isScrolling.value ? 0.6 : 1.0;
+                    return AnimatedOpacity(
+                      duration: const Duration(milliseconds: 180),
+                      opacity: opacity,
+                      child: IconTabs(
+                        items: controller.tabIcons
+                            .map((icon) => IconTabItem(icon: icon))
+                            .toList(),
+                        selectedIndex: controller.currentTab.value,
+                        onChanged: controller.setTab,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0F6FF).withOpacity(alpha),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        selectedItemDecoration: BoxDecoration(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFB0C4DE),
+                            width: 1.5,
+                          ),
+                        ),
+                        selectedIconColor: const Color(0xFF003087),
+                        unselectedIconColor: const Color(0xFF78909C),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

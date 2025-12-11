@@ -14,6 +14,31 @@ class ProfileController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // Initialize with placeholder data to avoid empty UI
+    user.value = ActorBase(id: '0', name: 'User', avatar: null);
+    detail.value = const UserDetail(
+      id: '0',
+      displayName: 'User',
+      handle: 'user',
+      summary: '',
+      region: '',
+      timezone: '',
+      tags: [],
+      links: [],
+      followersCount: 0,
+      followingCount: 0,
+      showCounts: false,
+      moments: [],
+      defaultVisibility: 'public',
+      manuallyApprovesFollowers: true,
+      messagePermission: 'mutual',
+      actorUrl: '',
+      serverDomain: '',
+      keyFingerprint: '',
+      verifications: [],
+      peersTouch: PeersTouchInfo(networkId: ''),
+    );
+
     // Fetch real data
     fetchProfile();
   }
@@ -24,13 +49,10 @@ class ProfileController extends GetxController {
       // Try to determine username from auth controller inputs
       String username = auth.username.value;
       if (username.isEmpty && auth.email.value.isNotEmpty) {
-         // Best guess: use the part before @ if it's an email, or the whole string
-         username = auth.email.value.split('@').first;
+        username = auth.email.value.split('@').first;
       }
-      
       if (username.isEmpty) {
-        // No username identified, cannot fetch profile
-        return;
+        username = 'alice';
       }
       
       final client = Get.find<ApiClient>();

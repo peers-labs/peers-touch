@@ -20,6 +20,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/posting"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -141,6 +142,18 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 		// Shared Inbox endpoints
+		{
+			RouterURL: PostingRouterURLMedia,
+			Handler:   UploadMedia,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper},
+		},
+		{
+			RouterURL: PostingRouterURLPost,
+			Handler:   CreatePost,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper},
+		},
 		{
 			RouterURL: ActivityPubRouterURLSharedInbox,
 			Handler:   GetSharedInbox,
@@ -689,6 +702,67 @@ func PostSharedInbox(c context.Context, ctx *app.RequestContext) {
 	// Shared inbox usually means delivery to multiple local users.
 	// For now, return Accepted.
 	ctx.JSON(http.StatusAccepted, "Shared Inbox received (not fully implemented)")
+}
+
+func CreatePost(c context.Context, ctx *app.RequestContext) {
+	actor := ctx.Param("actor")
+	if actor == "" {
+		ctx.JSON(http.StatusBadRequest, "actor required")
+		return
+	}
+	if _, err := resolveActorID(c, ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var in modelpb.PostInput
+	if err := ctx.Bind(&in); err != nil {
+		FailedResponse(ctx, err)
+		return
+	}
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
+		return
+	}
+	baseURL := baseURLFrom(ctx)
+	postID, actID, err := posting.Create(c, rds, actor, baseURL, &in)
+	if err != nil {
+		FailedResponse(ctx, err)
+		return
+	}
+	resp := &modelpb.PostResponse{PostId: postID, ActivityId: actID}
+	SuccessResponse(ctx, "ok", resp)
+}
+
+func UploadMedia(c context.Context, ctx *app.RequestContext) {
+	actor := ctx.Param("actor")
+	if actor == "" {
+		ctx.JSON(http.StatusBadRequest, "actor required")
+		return
+	}
+	if _, err := resolveActorID(c, ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	file, err := ctx.FormFile("file")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, "file required")
+		return
+	}
+	alt := string(ctx.FormValue("alt"))
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
+		return
+	}
+	baseURL := baseURLFrom(ctx)
+	url, mediaID, mediaType, err := posting.StoreMedia(c, rds, actor, baseURL, file, alt)
+	if err != nil {
+		FailedResponse(ctx, err)
+		return
+	}
+	resp := &modelpb.MediaUploadResponse{MediaId: mediaID, Url: url, MediaType: mediaType, Alt: alt}
+	SuccessResponse(ctx, "ok", resp)
 }
 
 func NodeInfoHandler(c context.Context, ctx *app.RequestContext) {
