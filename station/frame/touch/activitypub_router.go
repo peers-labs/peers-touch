@@ -37,6 +37,8 @@ const (
 	//  - Compatibility: Works with hosts that include non-standard ports; links are built using request `scheme` and `host`.
 	ActivityPubRouterURLNodeInfo21 RouterPath = "/nodeinfo/2.1"
 
+	ActivityPubRouterURLEvents RouterPath = "/:actor/events"
+
 	// RouterURLActorSignUP Actor Management URLs (Client API)
 	// Client sign-up: create a local actor account
 	RouterURLActorSignUP RouterPath = "/sign-up"
