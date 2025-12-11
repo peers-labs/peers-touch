@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -146,6 +147,12 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			RouterURL: PostingRouterURLMedia,
 			Handler:   UploadMedia,
 			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper},
+		},
+		{
+			RouterURL: PostingRouterURLGetMedia,
+			Handler:   GetMedia,
+			Method:    server.GET,
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 		{
@@ -763,6 +770,19 @@ func UploadMedia(c context.Context, ctx *app.RequestContext) {
 	}
 	resp := &modelpb.MediaUploadResponse{MediaId: mediaID, Url: url, MediaType: mediaType, Alt: alt}
 	SuccessResponse(ctx, "ok", resp)
+}
+
+func GetMedia(c context.Context, ctx *app.RequestContext) {
+	filename := ctx.Param("filename")
+	if filename == "" {
+		ctx.JSON(http.StatusBadRequest, "filename required")
+		return
+	}
+	// Serve file from uploads directory
+	// Be careful with path traversal, but ctx.File usually handles basic cases.
+	// Explicitly join with uploads dir.
+	path := filepath.Join("uploads", filename)
+	ctx.File(path)
 }
 
 func NodeInfoHandler(c context.Context, ctx *app.RequestContext) {

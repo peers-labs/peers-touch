@@ -2,7 +2,9 @@ package posting
 
 import (
 	"context"
+	"io"
 	"mime/multipart"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,6 +20,33 @@ func StoreMedia(ctx context.Context, db *gorm.DB, actor string, baseURL string, 
 		mediaType = ext
 	}
 	mediaID := time.Now().Format("20060102150405.000000")
-	url := baseURL + "/media/" + mediaID
+	
+	// Create uploads directory if it doesn't exist
+	uploadDir := "uploads"
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		return "", "", "", err
+	}
+
+	// Save file
+	filename := mediaID + ext
+	dst := filepath.Join(uploadDir, filename)
+	
+	src, err := file.Open()
+	if err != nil {
+		return "", "", "", err
+	}
+	defer src.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer out.Close()
+
+	if _, err = io.Copy(out, src); err != nil {
+		return "", "", "", err
+	}
+
+	url := baseURL + "/media/" + filename
 	return url, mediaID, mediaType, nil
 }

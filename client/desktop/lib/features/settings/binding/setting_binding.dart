@@ -1,7 +1,6 @@
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
+import '../controller/setting_controller.dart';
 import 'package:peers_touch_desktop/core/services/setting_manager.dart';
-import 'package:peers_touch_desktop/features/ai_chat/ai_provider_settings.dart';
 
 class SettingsBinding extends Bindings {
   @override

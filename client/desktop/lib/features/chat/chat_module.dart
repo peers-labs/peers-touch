@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
-import 'chat_binding.dart';
+import 'binding/chat_binding.dart';
 import 'view/chat_page.dart';
 
 class ChatModule {
   static void register() {
-    // 注册依赖绑定
+    // Register binding
     ChatBinding().dependencies();
 
-    // 注册到头部区域（业务功能）
+    // Register menu item
     PrimaryMenuManager.registerItem(PrimaryMenuItem(
-      id: 'chat_rtc',
-      label: 'RTC聊天',
-      icon: Icons.chat_bubble_outline,
+      id: 'chat',
+      label: 'Chat',
+      icon: Icons.chat,
       isHead: true,
-      order: 101, 
+      order: 30, 
       contentBuilder: (context) => const ChatPage(),
       toDIsplayPageTitle: false,
     ));
