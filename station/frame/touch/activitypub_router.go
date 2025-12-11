@@ -36,10 +36,7 @@ const (
 	//              `openRegistrations`, `usage{users}`, and optional `metadata`.
 	//  - Compatibility: Works with hosts that include non-standard ports; links are built using request `scheme` and `host`.
 	ActivityPubRouterURLNodeInfo21 RouterPath = "/nodeinfo/2.1"
-	ActivityPubRouterURLEvents     RouterPath = "/:actor/events"
-)
 
-const (
 	// RouterURLActorSignUP Actor Management URLs (Client API)
 	// Client sign-up: create a local actor account
 	RouterURLActorSignUP RouterPath = "/sign-up"
@@ -51,6 +48,9 @@ const (
 	RouterURLPublicProfile RouterPath = "/:actor/profile"
 	// RouterURLActorList Actor list: enumerate local actors (for admin/testing)
 	RouterURLActorList RouterPath = "/list"
+
+	PostingRouterURLPost  RouterPath = "/:actor/post"
+	PostingRouterURLMedia RouterPath = "/:actor/media"
 )
 
 // ActivityPubRouters provides general ActivityPub endpoints
