@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
@@ -44,6 +45,10 @@ class DiscoveryController extends GetxController {
     Icons.chat_bubble,
   ];
 
+  final scrollController = ScrollController();
+  final isScrolling = false.obs;
+  Timer? _scrollStopTimer;
+
   @override
   void onInit() {
     super.onInit();
@@ -52,7 +57,18 @@ class DiscoveryController extends GetxController {
     loadFriends();
     
     // React to tab changes
-    ever(currentTab, (_) => loadItems());
+    ever(currentTab, (_) {
+      scrollToTop();
+      loadItems();
+    });
+
+    scrollController.addListener(() {
+      isScrolling.value = true;
+      _scrollStopTimer?.cancel();
+      _scrollStopTimer = Timer(const Duration(milliseconds: 180), () {
+        isScrolling.value = false;
+      });
+    });
   }
 
   void setTab(int index) {
@@ -137,6 +153,7 @@ class DiscoveryController extends GetxController {
 
     items.value = newItems;
     isLoading.value = false;
+    scrollToTop();
   }
 
   void selectItem(DiscoveryItem item) {
@@ -145,5 +162,11 @@ class DiscoveryController extends GetxController {
   
   void setSearchQuery(String query) {
     searchQuery.value = query;
+  }
+
+  void scrollToTop() {
+    if (!scrollController.hasClients) return;
+    scrollController.animateTo(0,
+        duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
   }
 }
