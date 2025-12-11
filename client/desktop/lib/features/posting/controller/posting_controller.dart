@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:get/get.dart';
-import 'package:dio/dio.dart';
+import 'package:dio/dio.dart' as dio;
 import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/post/post.pb.dart' as pb;
@@ -16,8 +16,8 @@ class PostingController extends GetxController {
 
   Future<pb.MediaUploadResponse?> uploadMedia(File file, {String? alt}) async {
     try {
-      final form = FormData.fromMap({
-        'file': await MultipartFile.fromFile(file.path, filename: file.uri.pathSegments.last),
+      final form = dio.FormData.fromMap({
+        'file': await dio.MultipartFile.fromFile(file.path, filename: file.uri.pathSegments.last),
         if (alt != null) 'alt': alt,
       });
       final resp = await _api.post<Map<String, dynamic>>('/activitypub/${actor.value}/media', data: form);
@@ -53,4 +53,3 @@ class PostingController extends GetxController {
     }
   }
 }
-
