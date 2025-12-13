@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:get_storage/get_storage.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/context/app_lifecycle_orchestrator.dart';
 
 import 'app/bindings/initial_binding.dart';
 import 'app/initialization/app_initializer.dart';
@@ -38,6 +38,16 @@ class _AppState extends State<App> {
         setState(() {
           _absorbing = false;
         });
+        try {
+          final orch = Get.find<AppLifecycleOrchestrator>();
+          orch.awaitReadyGate().then((snapshot) {
+            final target = snapshot.initialRoute;
+            final current = Get.currentRoute;
+            if (target.isNotEmpty && target != current) {
+              Get.offAllNamed(target);
+            }
+          });
+        } catch (_) {}
       }
     });
   }
@@ -57,17 +67,11 @@ class _AppState extends State<App> {
       supportedLocales: AppLocalizations.supportedLocales,
       initialBinding: InitialBinding(),
       getPages: AppPages.pages,
-      initialRoute: _initialRoute(),
+      initialRoute: AppRoutes.login,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       // Globally absorb pointer events until the first frame is rendered
       builder: (context, child) => AbsorbPointer(absorbing: _absorbing, child: child ?? const SizedBox.shrink()),
     );
   }
-}
-
-String _initialRoute() {
-  final box = GetStorage();
-  final token = box.read<String>('auth_token');
-  return (token != null && token.isNotEmpty) ? AppRoutes.shell : AppRoutes.login;
 }

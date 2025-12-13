@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
+import '../../../app/theme/ui_kit.dart';
 import '../controller/auth_controller.dart';
 
 import 'package:peers_touch_desktop/core/components/language_selector.dart';
@@ -84,29 +85,32 @@ class LoginPage extends GetView<AuthController> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
-                        ),
-                        alignment: Alignment.center,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 80),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.hub, size: 14, color: theme.colorScheme.primary.withOpacity(0.7)),
-                              const SizedBox(width: 6),
-                              Text(
-                                controller.protocol.value ?? 'peers-touch',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurface.withOpacity(0.8),
-                                  fontWeight: FontWeight.w500,
+                      SizedBox(
+                        height: UIKit.controlHeightMd,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: UIKit.inputFillLight(context),
+                            borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
+                            border: Border.all(color: UIKit.dividerColor(context), width: UIKit.dividerThickness),
+                          ),
+                          alignment: Alignment.center,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 80),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.hub, size: 16, color: theme.colorScheme.primary.withOpacity(0.7)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  controller.protocol.value ?? 'peers-touch',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: UIKit.textPrimary(context).withOpacity(0.85),
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),

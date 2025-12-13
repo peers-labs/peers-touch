@@ -4,6 +4,8 @@ import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_base/repositories/actor_repository.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 
 class ProfileController extends GetxController {
@@ -55,12 +57,19 @@ class ProfileController extends GetxController {
         username = 'alice';
       }
       
-      final client = Get.find<ApiClient>();
-      // Using /activitypub prefix as the router is mounted under this name
-      final response = await client.get('/activitypub/$username/profile');
-      
-      if (response.statusCode == 200 && response.data != null) {
-        detail.value = UserDetail.fromJson(response.data);
+      Map<String, dynamic>? data;
+      if (Get.isRegistered<ActorRepository>()) {
+        final repo = Get.find<ActorRepository>();
+        data = await repo.fetchProfile(username: username);
+      } else {
+        final client = Get.find<ApiClient>();
+        final response = await client.get('/activitypub/$username/profile');
+        if (response.statusCode == 200 && response.data is Map) {
+          data = (response.data as Map).cast<String, dynamic>();
+        }
+      }
+      if (data != null) {
+        detail.value = UserDetail.fromJson(data);
       }
     } catch (e) {
       // Log error
@@ -162,6 +171,12 @@ class ProfileController extends GetxController {
 
   Future<void> logout() async {
     try {
+      try {
+        if (Get.isRegistered<GlobalContext>()) {
+          final gc = Get.find<GlobalContext>();
+          await gc.setSession(null);
+        }
+      } catch (_) {}
       await LocalStorage().remove('auth_token');
       await LocalStorage().remove('refresh_token');
       await LocalStorage().remove('auth_token_type');
