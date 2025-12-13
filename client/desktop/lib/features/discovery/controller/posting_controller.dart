@@ -6,12 +6,12 @@ import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/post/post.pb.dart' as pb;
 
-import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 
 class PostingController extends GetxController {
   final ApiClient _api = Get.find<ApiClient>();
-  final AuthController _auth = Get.find<AuthController>();
-  late final RxString actor;
+  final GlobalContext _gctx = Get.find<GlobalContext>();
+  String? overrideActor;
   
   final submitting = false.obs;
   final errorText = RxnString();
@@ -24,19 +24,14 @@ class PostingController extends GetxController {
   final attachments = <File>[].obs;
   // TODO: Add Poll state
 
-  @override
-  void onInit() {
-    super.onInit();
-    // Initialize actor from AuthController
-    // Prefer username, fallback to email user part, fallback to 'dev' (should not happen if logged in)
-    String name = _auth.username.value;
-    if (name.isEmpty && _auth.email.value.isNotEmpty) {
-      name = _auth.email.value.split('@').first;
-    }
-    actor = (name.isEmpty ? 'dev' : name).obs;
-  }
 
-  void setActor(String name) => actor.value = name;
+  void setActor(String name) => overrideActor = name;
+
+  String get _actor {
+    final handle = _gctx.actorHandle ?? _gctx.currentSession?['username']?.toString();
+    final name = (overrideActor ?? handle ?? '').trim();
+    return name.isEmpty ? 'dev' : name;
+  }
 
   void toggleCW() {
     cwEnabled.value = !cwEnabled.value;
@@ -63,7 +58,7 @@ class PostingController extends GetxController {
         'file': await dio.MultipartFile.fromFile(file.path, filename: file.uri.pathSegments.last),
         if (alt != null) 'alt': alt,
       });
-      final resp = await _api.post<Map<String, dynamic>>('/activitypub/${actor.value}/media', data: form);
+      final resp = await _api.post<Map<String, dynamic>>('/activitypub/$_actor/media', data: form);
       final data = resp.data ?? {};
       return pb.MediaUploadResponse(
         mediaId: data['data']?['media_id'] ?? data['data']?['mediaId'] ?? data['media_id'] ?? data['mediaId'] ?? '',
@@ -96,8 +91,9 @@ class PostingController extends GetxController {
 
       // 2. Construct ActivityPub Activity
       final baseUrl = _api.dio.options.baseUrl.replaceAll(RegExp(r'/$'), '');
-      final actorId = '$baseUrl/activitypub/${actor.value}/actor';
-      final followers = '$baseUrl/activitypub/${actor.value}/followers';
+      final actorName = _actor;
+      final actorId = '$baseUrl/activitypub/$actorName/actor';
+      final followers = '$baseUrl/activitypub/$actorName/followers';
       const public = 'https://www.w3.org/ns/activitystreams#Public';
 
       final to = visibility.value == 'public' ? [public] : [followers];
@@ -132,7 +128,7 @@ class PostingController extends GetxController {
       };
 
       // 3. Submit Post to Outbox
-      final resp = await _api.post<Map<String, dynamic>>('/activitypub/${actor.value}/outbox', data: activity);
+      final resp = await _api.post<Map<String, dynamic>>('/activitypub/$actorName/outbox', data: activity);
       final data = resp.data ?? {};
       
       submitting.value = false;
