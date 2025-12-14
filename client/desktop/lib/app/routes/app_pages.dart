@@ -16,12 +16,13 @@ class AppPages {
     GetPage(
       name: AppRoutes.login,
       page: () => const LoginPage(),
-      binding: AuthBinding(),
+      // AuthController is now permanent in InitialBinding
+      // binding: AuthBinding(), 
     ),
     GetPage(
       name: AppRoutes.signup,
       page: () => const SignupPage(),
-      binding: AuthBinding(),
+      // binding: AuthBinding(),
     ),
     GetPage(
       name: AppRoutes.shell,

@@ -38,6 +38,11 @@ class AuthController extends GetxController {
         loadPresetUsers(trimmed);
       }
     }, time: const Duration(milliseconds: 800));
+
+    // Restore user info from storage
+    final box = GetStorage();
+    if (box.hasData('username')) username.value = box.read('username') ?? '';
+    if (box.hasData('email')) email.value = box.read('email') ?? '';
   }
 
   @override
@@ -148,9 +153,45 @@ class AuthController extends GetxController {
           } else {
             token = obj['token']?.toString() ?? '';
           }
+
+          // Try to extract user info from response
+          if (obj is Map) {
+            final data = obj['data'];
+            Map<String, dynamic>? userMap;
+            if (data is Map) {
+              // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
+              if (data['user'] is Map) {
+                userMap = data['user'];
+              } else if (data['actor'] is Map) {
+                userMap = data['actor'];
+              } else {
+                // Assume data itself might contain user fields if not nested
+                userMap = data as Map<String, dynamic>;
+              }
+            } else if (obj['user'] is Map) {
+              userMap = obj['user'];
+            } else if (obj['actor'] is Map) {
+              userMap = obj['actor'];
+            }
+
+            if (userMap != null) {
+              final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
+              if (name != null) username.value = name.toString();
+              
+              final mail = userMap['email'];
+              if (mail != null) email.value = mail.toString();
+              
+              final disp = userMap['display_name'] ?? userMap['displayName'];
+              if (disp != null) displayName.value = disp.toString();
+            }
+          }
         }
         if (token.isNotEmpty) {
           GetStorage().write('auth_token', token);
+          // Persist user info
+          GetStorage().write('username', username.value);
+          GetStorage().write('email', email.value);
+          
           Get.offAllNamed('/shell');
         } else {
           error.value = 'Invalid login response';

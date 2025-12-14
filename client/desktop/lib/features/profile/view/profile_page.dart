@@ -48,7 +48,13 @@ class ProfilePage extends StatelessWidget {
                                 height: UIKit.avatarBlockHeight,
                                 color: wx?.bgLevel3 ?? theme.colorScheme.surfaceVariant,
                                 child: d.avatarUrl != null
-                                    ? Image.network(d.avatarUrl!, fit: BoxFit.cover)
+                                    ? Image.network(
+                                        d.avatarUrl!, 
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Icon(Icons.person, size: UIKit.indicatorSizeSm, color: UIKit.textSecondary(context));
+                                        },
+                                      )
                                     : Icon(Icons.person, size: UIKit.indicatorSizeSm, color: UIKit.textSecondary(context)),
                               ),
                             ),
@@ -128,7 +134,11 @@ class ProfilePage extends StatelessWidget {
                                               width: UIKit.controlHeightMd,
                                               height: UIKit.controlHeightMd,
                                               color: wx?.bgLevel3 ?? theme.colorScheme.surfaceVariant,
-                                              child: Image.network(url, fit: BoxFit.cover),
+                                              child: Image.network(
+                                                url, 
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) => const SizedBox(),
+                                              ),
                                             ),
                                           ),
                                         ))
@@ -193,7 +203,10 @@ class ProfilePage extends StatelessWidget {
               );
 
       if (embedded) {
-        return content;
+        return SingleChildScrollView(
+          padding: EdgeInsets.all(UIKit.spaceMd(context)),
+          child: content,
+        );
       }
 
       return Center(

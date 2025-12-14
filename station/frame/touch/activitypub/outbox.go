@@ -104,10 +104,16 @@ func handleCreateActivity(c context.Context, dbConn *gorm.DB, username string, a
 		dbObj.InReplyTo = string(object.InReplyTo.GetLink())
 	}
 
-	// Serialize full object for Metadata/Content storage if needed
-	// Currently db.ActivityPubObject has Content as text. We store JSON in Metadata?
-	// db.ActivityPubObject.Metadata is JSON string.
-	// We can store extra fields there.
+	// Serialize full object for Metadata storage
+	// This ensures we keep attachments, tags, etc. and fixes the JSON error.
+	objJSON, err := json.Marshal(object)
+	if err == nil {
+		dbObj.Metadata = string(objJSON)
+	} else {
+		// Fallback to empty JSON if marshaling fails
+		dbObj.Metadata = "{}"
+		log.Warnf(c, "Failed to marshal object to JSON: %v", err)
+	}
 
 	if err := dbConn.Create(dbObj).Error; err != nil {
 		return fmt.Errorf("failed to create object in DB: %w", err)
@@ -286,7 +292,7 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 
 	// Add to Outbox collection
 	colItem := &db.ActivityPubCollection{
-		CollectionID: fmt.Sprintf("%s/%s/outbox", baseURL, username),
+		CollectionID: fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, username),
 		ItemID:       string(activity.ID),
 		ItemType:     "Activity",
 		AddedAt:      time.Now(),

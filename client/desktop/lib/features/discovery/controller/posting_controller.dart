@@ -7,6 +7,7 @@ import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/post/post.pb.dart' as pb;
 
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
+import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
 
 class PostingController extends GetxController {
   final ApiClient _api = Get.find<ApiClient>();
@@ -28,12 +29,25 @@ class PostingController extends GetxController {
   void onInit() {
     super.onInit();
     // Initialize actor from AuthController
-    // Prefer username, fallback to email user part, fallback to 'dev' (should not happen if logged in)
+    // Use empty string if not found, do not use fallback 'dev'
     String name = _auth.username.value;
     if (name.isEmpty && _auth.email.value.isNotEmpty) {
+      // If email is available but username is not, try to use the part before @ as a temporary handle
+      // Ideally, we should fetch the real profile
       name = _auth.email.value.split('@').first;
     }
-    actor = (name.isEmpty ? 'dev' : name).obs;
+    
+    // If still empty, try to get from ProfileController if it's already loaded
+    if (name.isEmpty) {
+      try {
+        final profile = Get.find<ProfileController>();
+        if (profile.detail.value != null) {
+          name = profile.detail.value!.handle;
+        }
+      } catch (_) {}
+    }
+
+    actor = name.obs;
   }
 
   void setActor(String name) => actor.value = name;
