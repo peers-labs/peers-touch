@@ -65,7 +65,9 @@
 
 **存储键名规范**
 - 安全存储（敏感）：`token_key`、`refresh_token_key`。
-- 本地存储（非敏感）：`global:current_session`、`global:accounts`、`global:user_preferences`、`base_url`、`auth_token_type`。
+- 本地存储（非敏感）：
+  - Map 兼容键：`global:current_session`、`global:accounts`、`global:user_preferences`、`base_url`、`auth_token_type`。
+  - Proto JSON 优先键：`global:current_session_pb`、`global:user_preferences_pb`（上下文重水化优先读取 Proto JSON，缺失时回退至 Map 键）。
 - 规范：键名前缀 `global:*`；偏好与账号快照维护 `schemaVersion` 并提供迁移器。
 
 **键名判定规则**
@@ -122,13 +124,13 @@
 
 **无状态模型（使用 Proto）**
 - `ActorIdentifier`：`actor_id`、`handle`、`origin { protocol, instance }`。
-- `UserDetail`：`id`、`display_name`、`avatar_url`、`cover_url`、`region`、`timezone`、`summary`、`tags[]`、`links[]`、`server_domain`、`key_fingerprint`、`verifications[]`、可见性与权限字段。
+- `ActorDetail`：`id`、`display_name`、`avatar_url`、`cover_url`、`region`、`timezone`、`summary`、`tags[]`、`links[]`、`server_domain`、`key_fingerprint`、`verifications[]`、可见性与权限字段。
 - `Note/Post`：`id`、`content`、`attachments[]`、`visibility`、`created_at`、`updated_at`、`reply_to?`。
 - `Activity`：`type`（枚举）、`actor_ref`、`object_ref`、`target_ref`、`published_at`、`source_meta { protocol, instance, object_id }`。
 - `TimelineEntry`：`entry_id`、`object_ref`、`source_meta`、`delivered_at`、`pinned?`。
 - `Relationship`：`kind`（follow/block/mute…）、`from_actor`、`to_actor`、`created_at`、`scope`。
-- `UserSessionSnapshot`：`user_id`、`username`、`protocol`、`base_url`、`access_token`、`refresh_token?`、`expires_at?`、`roles[]`（敏感字段仅用于序列化与安全存储，禁止日志打印）。
-- `UserPreferences`：`theme`、`locale`、`privacy/telemetry`、`endpoint_overrides`、`feature_flags`、`schema_version`。
+- `ActorSessionSnapshot`：`actor_id`、`handle`、`protocol`、`base_url`、`access_token`、`refresh_token?`、`expires_at?`、`roles[]`（敏感字段仅用于序列化与安全存储，禁止日志打印）。
+- `ActorPreferences`：`theme`、`locale`、`privacy/telemetry`、`endpoint_overrides`、`feature_flags`、`schema_version`。
 - `ProtocolTag`：枚举 `PEERS_TOUCH`、`MASTODON`、`OTHER_ACTIVITYPUB`。
 
 **有状态模型（不使用 Proto）**
@@ -138,11 +140,13 @@
 - 各平台 `Adapters`：安全存储、连接性、窗口/通知等运行态。
 
 **Proto 与代码生成规范**
-- 目录建议：`station/frame/proto/` 统一存放 `.proto`，客户端与服务端共用；生成代码分别输出到各语言目标目录。
+- 目录建议：在仓库根目录的 `model/domain/` 按领域分组存放 `.proto`（例如 `model/domain/actor/session.proto`、`model/domain/actor/preferences.proto`、`model/domain/social/actor.proto`、`model/domain/social/activity.proto`、`model/domain/timeline/timeline.proto`、`model/domain/posting/post.proto`）。
+- 生成输出：客户端与服务端共用定义，代码分别输出到各语言目标目录。
 - Dart 生成：依赖 `protoc` 与 `protoc_plugin`，示例命令（参考）：
-  - `protoc -I station/frame/proto --dart_out=client/common/peers_touch_base/lib/generated station/frame/proto/*.proto`
+  - `protoc -I model/domain --dart_out=client/common/peers_touch_base/lib/generated model/domain/**/**/*.proto`
 - Go 生成：依赖 `protoc-gen-go`，示例命令（参考）：
-  - `protoc -I station/frame/proto --go_out=peers-touch-go/internal/generated station/frame/proto/*.proto`
+  - `protoc -I model/domain --go_out=peers-touch-go/internal/generated model/domain/**/**/*.proto`
+- 构建脚本：可复用现有 `model/build.sh`/`model/build.ps1`，在脚本中统一处理生成目标与版本锁定。
 - 版本与兼容：
   - 使用 `reserved` 标记废弃字段编号与名称，新增字段采用递增编号，避免破坏兼容。
   - 时间戳统一使用 `google.protobuf.Timestamp`；ID 使用字符串或 `uint64` 保持跨语言兼容。
@@ -152,7 +156,7 @@
   - 敏感字段（如令牌）只用于加密存储/进程内传递；禁止写入日志与非安全介质。
 
 **迁移与替换**
-- 现有手写模型类（如 `UserSession`、`UserPreferences`）将由 Proto 生成代码替换；保持字段与键名一致性，逐步迁移调用点。
+- 现有手写模型类（如 `UserSession`、`UserPreferences`）将由 Proto 生成的 `ActorSessionSnapshot`、`ActorPreferences` 替换（仅限纯 DTO）；保持字段与键名一致性，逐步迁移调用点。
 - 控制器与仓库层改为依赖生成的 DTO 类型；运行态服务继续保持在通用/适配层。
 
 **验收**

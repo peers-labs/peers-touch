@@ -1,0 +1,16 @@
+syntax = "proto3";
+package peers.actor;
+
+import "google/protobuf/timestamp.proto";
+option go_package = "github.com/peers-labs/peers-touch/station/domain/actor;actor";
+
+message ActorSessionSnapshot {
+  string actor_id = 1;
+  string handle = 2;
+  string protocol = 3;
+  string base_url = 4;
+  string access_token = 5;
+  string refresh_token = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  repeated string roles = 8;
+}

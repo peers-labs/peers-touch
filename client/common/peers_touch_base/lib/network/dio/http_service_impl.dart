@@ -9,7 +9,11 @@ import 'package:peers_touch_base/network/dio/interceptors/retry_interceptor.dart
 class HttpServiceImpl implements IHttpService {
   late final Dio _dio;
 
-  HttpServiceImpl({required String baseUrl, HttpClientAdapter? httpClientAdapter}) {
+  HttpServiceImpl({
+    required String baseUrl,
+    HttpClientAdapter? httpClientAdapter,
+    List<Interceptor>? interceptors,
+  }) {
     _dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
@@ -24,7 +28,8 @@ class HttpServiceImpl implements IHttpService {
 
     _dio.interceptors.addAll([
       if (kDebugMode) LoggingInterceptor(),
-      AuthInterceptor(),
+      ...?interceptors,
+      if (interceptors?.any((i) => i is AuthInterceptor) != true) AuthInterceptor(), // Use default if none provided
       retryInterceptor,
       ErrorInterceptor(),
     ]);

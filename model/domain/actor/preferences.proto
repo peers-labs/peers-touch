@@ -1,0 +1,12 @@
+syntax = "proto3";
+package peers.actor;
+option go_package = "github.com/peers-labs/peers-touch/station/domain/actor;actor";
+
+message ActorPreferences {
+  string theme = 1;
+  string locale = 2;
+  bool telemetry = 3;
+  map<string, string> endpoint_overrides = 4;
+  map<string, bool> feature_flags = 5;
+  int32 schema_version = 6;
+}
