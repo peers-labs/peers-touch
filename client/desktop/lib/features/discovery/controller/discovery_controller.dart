@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 
 class GroupItem {
@@ -35,10 +37,10 @@ class DiscoveryController extends GetxController {
   final isLoading = false.obs;
   final searchQuery = ''.obs;
   final currentTab = 0.obs;
-  final tabs = ['Home', 'Create', 'Like', 'Follow', 'Announce', 'Comment'];
+  final tabs = ['Home', 'Me', 'Like', 'Follow', 'Announce', 'Comment'];
   final tabIcons = <IconData>[
     Icons.home_filled,
-    Icons.create,
+    Icons.person,
     Icons.favorite,
     Icons.person_add,
     Icons.campaign,
@@ -99,7 +101,7 @@ class DiscoveryController extends GetxController {
 
   void loadItems() async {
     isLoading.value = true;
-    await Future.delayed(const Duration(milliseconds: 300)); 
+    // await Future.delayed(const Duration(milliseconds: 300)); // Remove delay or keep if needed for smooth transition
     
     final List<DiscoveryItem> newItems = [];
     final tabName = tabs[currentTab.value];
@@ -116,7 +118,69 @@ class DiscoveryController extends GetxController {
       ));
     }
 
-    if (tabName == 'Home' || tabName == 'Create') {
+    if (tabName == 'Me') {
+      try {
+        final auth = Get.find<AuthController>();
+        final api = Get.find<ApiClient>();
+        final username = auth.username.value;
+        
+        if (username.isNotEmpty) {
+          final resp = await api.get('/activitypub/$username/outbox?page=true');
+          final data = resp.data;
+          
+          if (data != null && data['orderedItems'] is List) {
+            final itemsList = data['orderedItems'] as List;
+            for (var item in itemsList) {
+              if (item is Map) {
+                String title = 'New Post';
+                String content = '';
+                String author = username;
+                DateTime timestamp = DateTime.now();
+                String type = item['type']?.toString() ?? 'Create';
+                
+                if (item['object'] is Map) {
+                   final obj = item['object'];
+                   content = obj['content']?.toString() ?? '';
+                   if (obj['summary'] != null && obj['summary'].toString().isNotEmpty) {
+                     title = obj['summary'].toString();
+                   } else if (content.isNotEmpty) {
+                     // Simple truncation for title
+                     final plainText = content.replaceAll(RegExp(r'<[^>]*>'), ''); // Remove HTML tags roughly
+                     title = plainText.split('\n').first;
+                     if (title.length > 50) title = title.substring(0, 50) + '...';
+                   }
+                   
+                   if (obj['published'] != null) {
+                     timestamp = DateTime.tryParse(obj['published'].toString()) ?? DateTime.now();
+                   }
+                } else if (item['published'] != null) {
+                   timestamp = DateTime.tryParse(item['published'].toString()) ?? DateTime.now();
+                }
+
+                // If content is still empty, maybe it's just an activity without rich object details here
+                if (content.isEmpty && item['object'] is String) {
+                   content = 'Object ID: ${item['object']}';
+                }
+
+                newItems.add(DiscoveryItem(
+                  id: item['id']?.toString() ?? DateTime.now().toString(),
+                  title: title,
+                  content: content,
+                  author: author,
+                  timestamp: timestamp,
+                  type: type,
+                ));
+              }
+            }
+          }
+        }
+      } catch (e) {
+        print('Error fetching outbox: $e');
+        // Optionally add an error item or leave empty
+      }
+    }
+
+    if (tabName == 'Home') {
       add('How To Manage Your Time & Get More Done', 'It may not be possible to squeeze more time in the day without sacrificing sleep. So how do you achieve more...', 'Valentino Del More', 'Create');
       add('The Future of Flutter', 'Flutter is evolving rapidly. Here are the new features coming in 2025. The ecosystem is growing stronger every day.', 'Tech Insider', 'Create');
       add('My Travel Diary: Japan', 'Japan was an amazing experience. The food, the culture, the people...', 'Traveler Joe', 'Create');
