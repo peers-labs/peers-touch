@@ -7,6 +7,7 @@ import 'package:peers_touch_desktop/core/services/network_discovery/libp2p_netwo
 import 'package:peers_touch_desktop/core/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/features/shared/services/user_status_service.dart';
+import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 
 /// Application dependency injection binding
 /// Focuses on GetX dependency injection registration and management
@@ -41,5 +42,7 @@ class InitialBinding extends Bindings {
   /// Register business services
   void _registerBusinessServices() {
     Get.put<UserStatusService>(UserStatusService(), permanent: true);
+    // Make AuthController permanent to persist user info session state
+    Get.put<AuthController>(AuthController(), permanent: true);
   }
 }

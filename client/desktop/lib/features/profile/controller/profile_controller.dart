@@ -51,8 +51,11 @@ class ProfileController extends GetxController {
       if (username.isEmpty && auth.email.value.isNotEmpty) {
         username = auth.email.value.split('@').first;
       }
+      
       if (username.isEmpty) {
-        username = 'alice';
+        // If username is still empty, we cannot fetch profile.
+        // Should handle this case (e.g. redirect to login or show error)
+        return;
       }
       
       final client = Get.find<ApiClient>();

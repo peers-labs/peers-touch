@@ -164,7 +164,7 @@ class DiscoveryPage extends GetView<DiscoveryController> {
             color: const Color(0xFFF5F7FB),
             child: Obx(() {
               if (controller.isLoading.value) {
-                return const Center(child: CircularProgressIndicator());
+                return _buildSkeletonList();
               }
 
               final items = controller.items;
@@ -386,6 +386,96 @@ class DiscoveryPage extends GetView<DiscoveryController> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSkeletonList() {
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
+      itemCount: 5,
+      separatorBuilder: (_, __) => const SizedBox(height: 24),
+      itemBuilder: (ctx, i) => _buildSkeletonItem(),
+    );
+  }
+
+  Widget _buildSkeletonItem() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Date Box Skeleton
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title Skeleton
+                    Container(
+                      width: 200,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Type Skeleton
+                    Container(
+                      width: 80,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Content Skeleton
+          Container(
+            width: double.infinity,
+            height: 14,
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: 200,
+            height: 14,
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
