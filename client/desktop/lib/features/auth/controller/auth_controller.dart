@@ -5,6 +5,7 @@ import 'package:get_storage/get_storage.dart';
 import 'package:peers_touch_desktop/core/network/network_initializer.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
@@ -186,12 +187,32 @@ class AuthController extends GetxController {
             }
           }
         }
+
         if (token.isNotEmpty) {
           GetStorage().write('auth_token', token);
           // Persist user info
           GetStorage().write('username', username.value);
           GetStorage().write('email', email.value);
           
+          try {
+            if (Get.isRegistered<GlobalContext>()) {
+              final refresh = GetStorage().read<String>('refresh_token');
+              final gc = Get.find<GlobalContext>();
+              final handle = username.value.isNotEmpty
+                  ? username.value
+                  : (email.value.isNotEmpty
+                        ? email.value.split('@').first
+                        : '');
+              await gc.setSession({
+                'actorId': handle,
+                'handle': handle,
+                'protocol': protocol.value,
+                'baseUrl': (overrideBaseUrl ?? baseUrl.value).trim(),
+                'accessToken': token,
+                'refreshToken': refresh,
+              });
+            }
+          } catch (_) {}
           Get.offAllNamed('/shell');
         } else {
           error.value = 'Invalid login response';
@@ -269,6 +290,11 @@ class AuthController extends GetxController {
       final url = baseUrl.trim();
       if (url.isEmpty) {
         protocol.value = 'peers-touch';
+        try {
+          if (Get.isRegistered<GlobalContext>()) {
+            await Get.find<GlobalContext>().setProtocolTag(protocol.value);
+          }
+        } catch (_) {}
         return;
       }
       final uri = Uri.parse(
@@ -300,11 +326,26 @@ class AuthController extends GetxController {
         } else {
           protocol.value = 'other activitypub';
         }
+        try {
+          if (Get.isRegistered<GlobalContext>()) {
+            await Get.find<GlobalContext>().setProtocolTag(protocol.value);
+          }
+        } catch (_) {}
       } else {
         protocol.value = 'other activitypub';
+        try {
+          if (Get.isRegistered<GlobalContext>()) {
+            await Get.find<GlobalContext>().setProtocolTag(protocol.value);
+          }
+        } catch (_) {}
       }
     } catch (_) {
       protocol.value = 'other activitypub';
+      try {
+        if (Get.isRegistered<GlobalContext>()) {
+          await Get.find<GlobalContext>().setProtocolTag(protocol.value);
+        }
+      } catch (_) {}
     }
   }
 }
