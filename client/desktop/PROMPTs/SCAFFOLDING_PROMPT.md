@@ -27,7 +27,7 @@ lib/
 *   **`features/`**: **业务逻辑的主战场**。所有与特定业务功能相关的代码（View, Controller, Model）都必须按模块划分并存放在此。这是项目扩展的主要区域。
 *   **`main.dart`**: **唯一的启动入口**。负责初始化应用并加载根`GetMaterialApp`。
 
-## 2. `features/` 业务模块结构规范
+## 3. `features/` 业务模块结构规范
 
 所有业务模块都必须遵循严格的“自包含”结构。以一个名为 `example_feature` 的模块为例：
 
@@ -48,7 +48,7 @@ features/
 *   **`model/`**: 存放仅供此模块使用的数据模型。如果一个模型需要在多个模块间共享，它应该被移至 `features/shared/models/`。
 *   **`*_binding.dart`**: 负责使用 `Get.lazyPut()` 注册该模块的 `Controller`，实现依赖的懒加载和自动回收。
 
-## 3. `core/` 全局通用能力详解
+## 4. `core/` 全局通用能力详解
 
 `core/` 目录是你寻找可复用基础能力的地方。
 
@@ -66,7 +66,7 @@ core/
 
 当你需要实现一个不与任何特定业务绑定的功能时（如日期格式化、发起一个HTTP请求），你应该首先检查 `core/` 目录中是否已有现成的实现。
 
-## 4. `features/shared/` 业务共享层
+## 5. `features/shared/` 业务共享层
 
 当某个模型或服务在**多个业务模块**之间需要共享，但它又**带有业务属性**时，它应该被放在 `features/shared/` 目录下。
 
@@ -83,7 +83,7 @@ features/
 *   `PageModel` (分页模型) -> `core/models/` (无业务关联)
 *   `ChatMessage` (聊天消息模型) -> `features/shared/models/` (与“聊天”这个具体业务关联)
 
-## 5. 代码定位与生成规则
+## 6. 代码定位与生成规则
 
 1.  **接到新功能需求时**: 首先确定它属于哪个业务模块。在 `features/` 下找到或创建对应的模块目录，然后在其内部的 `view/`, `controller/`, `model/` 中创建或修改文件。
 2.  **需要通用工具时**: 首先去 `core/utils/` 或 `core/components/` 寻找。如果没有，再考虑创建新的通用工具。
@@ -91,3 +91,61 @@ features/
 4.  **添加依赖时**: 在对应模块的 `binding` 文件中添加。如果是全局依赖，则在 `app/bindings/initial_binding.dart` 中添加。
 
 这份脚手架文件是你行动的指南。在对代码进行任何操作前，请先在此“地图”上找到你的位置。
+
+## 7. 网络请求封装规范 (Network Request Encapsulation Standards)
+
+为了保持代码的整洁和可维护性，我们采用分层的网络请求架构。
+
+### 7.1 核心原则
+1.  **禁止裸奔 HTTP**: 严禁在 `Controller` 或 `Service` 层直接实例化 `Dio` 或 `HttpClient` 发起请求。
+2.  **统一基座**: 必须使用 `peers_touch_base` 提供的 `HttpService` 作为底层网络能力的唯一来源。
+3.  **API 语义化**: 上层调用必须是语义化的 API 方法（如 `login()`, `fetchPosts()`），而不是 HTTP 动词（如 `post()`, `get()`）。
+
+### 7.2 架构分层
+1.  **底层 (Foundation)**: `peers_touch_base` 中的 `HttpService` (负责拦截器、超时、BaseUrl等)。
+2.  **API 客户端 (ApiClient/Repository)**: 位于 `core/network` 或各模块的 `repository/`。它持有 `HttpService` 的实例，并将 HTTP 接口映射为强类型的 Dart 方法。
+3.  **业务层 (Controller/Service)**: 注入 `ApiClient` 或 `Repository`，调用语义化方法。
+
+### 7.3 实际调用场景示例
+
+**错误的做法 (Forbidden):**
+```dart
+// Controller 中
+void login() async {
+  final dio = Dio(); // 禁止直接使用 Dio
+  await dio.post('/login', data: {...});
+}
+```
+
+**正确的做法 (Recommended):**
+
+1.  **定义 API 接口 (core/network/api_client.dart 或 features/auth/repository/auth_repository.dart)**:
+    ```dart
+    import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+
+    class AuthRepository {
+      // 获取统一封装的 HTTP 服务
+      final _http = HttpServiceLocator().httpService;
+
+      Future<User> login(String username, String password) async {
+        // 使用封装好的 get/post 方法
+        final response = await _http.post('/auth/login', data: {
+          'username': username,
+          'password': password,
+        });
+        return User.fromJson(response);
+      }
+    }
+    ```
+
+2.  **业务层调用 (Controller)**:
+    ```dart
+    class LoginController extends GetxController {
+      final AuthRepository _repo = Get.find<AuthRepository>();
+
+      void login() async {
+        // 语义化调用，完全屏蔽 HTTP 细节
+        final user = await _repo.login(username.value, password.value);
+      }
+    }
+    ```

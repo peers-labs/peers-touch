@@ -26,6 +26,7 @@ export 'src/widgets/line_chart.dart';
 export 'src/widgets/heatmap.dart';
 export 'src/layout/icon_sidebar.dart';
 export 'src/layout/brand_bar.dart';
+export 'src/widgets/refreshable_list.dart';
 
 // Export other UI components (to be added later)
 // export 'src/components/buttons.dart';

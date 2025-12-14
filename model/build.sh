@@ -27,10 +27,16 @@ fi
 
 # Find all .proto files for Dart generation (domain files and google protobuf files, exclude ai_box_message.proto)
 DART_PROTO_FILES=$(find "$PROTO_ROOT/domain" -name "*.proto" -not -path "*/ai_box/ai_box_message.proto")
-# Add google protobuf files explicitly
-DART_PROTO_FILES="$DART_PROTO_FILES $PROTO_ROOT/google/protobuf/struct.proto"
-DART_PROTO_FILES="$DART_PROTO_FILES $PROTO_ROOT/google/protobuf/any.proto"
-DART_PROTO_FILES="$DART_PROTO_FILES $PROTO_ROOT/google/protobuf/timestamp.proto"
+# Add google protobuf files explicitly (if present in repo mirror)
+if [ -f "$PROTO_ROOT/google/protobuf/struct.proto" ]; then
+  DART_PROTO_FILES="$DART_PROTO_FILES $PROTO_ROOT/google/protobuf/struct.proto"
+fi
+if [ -f "$PROTO_ROOT/google/protobuf/any.proto" ]; then
+  DART_PROTO_FILES="$DART_PROTO_FILES $PROTO_ROOT/google/protobuf/any.proto"
+fi
+if [ -f "$PROTO_ROOT/google/protobuf/timestamp.proto" ]; then
+  DART_PROTO_FILES="$DART_PROTO_FILES $PROTO_ROOT/google/protobuf/timestamp.proto"
+fi
 
 if [ -z "$DART_PROTO_FILES" ]; then
     echo "No .proto files found for Dart. Exiting."

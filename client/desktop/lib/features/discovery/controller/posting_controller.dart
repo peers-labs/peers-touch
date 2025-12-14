@@ -1,18 +1,21 @@
 import 'dart:io';
 
 import 'package:get/get.dart';
-import 'package:dio/dio.dart' as dio;
-import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/post/post.pb.dart' as pb;
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
-import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
+import 'package:peers_touch_desktop/features/discovery/repository/discovery_repository.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 
 class PostingController extends GetxController {
-  final ApiClient _api = Get.find<ApiClient>();
+  final DiscoveryRepository _repo = Get.find<DiscoveryRepository>();
+  final GlobalContext _gctx = Get.find<GlobalContext>();
+  // ignore: unused_field
   final AuthController _auth = Get.find<AuthController>();
-  late final RxString actor;
+  
+  String? overrideActor;
   
   final submitting = false.obs;
   final errorText = RxnString();
@@ -25,32 +28,30 @@ class PostingController extends GetxController {
   final attachments = <File>[].obs;
   // TODO: Add Poll state
 
-  @override
-  void onInit() {
-    super.onInit();
-    // Initialize actor from AuthController
-    // Use empty string if not found, do not use fallback 'dev'
+  void setActor(String name) => overrideActor = name;
+
+  String get _actor {
+    // Try to get from AuthController first
     String name = _auth.username.value;
+    
+    // If username is empty but email exists, try to use email part
     if (name.isEmpty && _auth.email.value.isNotEmpty) {
-      // If email is available but username is not, try to use the part before @ as a temporary handle
-      // Ideally, we should fetch the real profile
-      name = _auth.email.value.split('@').first;
+       name = _auth.email.value.split('@').first;
+    }
+
+    // If still empty, try GlobalContext
+    if (name.isEmpty) {
+       final handle = _gctx.actorHandle ?? _gctx.currentSession?['username']?.toString();
+       name = handle ?? '';
     }
     
-    // If still empty, try to get from ProfileController if it's already loaded
-    if (name.isEmpty) {
-      try {
-        final profile = Get.find<ProfileController>();
-        if (profile.detail.value != null) {
-          name = profile.detail.value!.handle;
-        }
-      } catch (_) {}
+    // Check override
+    if (overrideActor != null && overrideActor!.isNotEmpty) {
+      name = overrideActor!;
     }
-
-    actor = name.obs;
+    
+    return name.trim().isEmpty ? 'dev' : name.trim();
   }
-
-  void setActor(String name) => actor.value = name;
 
   void toggleCW() {
     cwEnabled.value = !cwEnabled.value;
@@ -73,16 +74,12 @@ class PostingController extends GetxController {
 
   Future<pb.MediaUploadResponse?> uploadMedia(File file, {String? alt}) async {
     try {
-      final form = dio.FormData.fromMap({
-        'file': await dio.MultipartFile.fromFile(file.path, filename: file.uri.pathSegments.last),
-        if (alt != null) 'alt': alt,
-      });
-      final resp = await _api.post<Map<String, dynamic>>('/activitypub/${actor.value}/media', data: form);
-      final data = resp.data ?? {};
+      final data = await _repo.uploadMedia(_actor, file, alt: alt);
+      final responseData = data['data'] ?? data; // Handle wrapper if any
       return pb.MediaUploadResponse(
-        mediaId: data['data']?['media_id'] ?? data['data']?['mediaId'] ?? data['media_id'] ?? data['mediaId'] ?? '',
-        url: data['data']?['url'] ?? data['url'] ?? '',
-        mediaType: data['data']?['media_type'] ?? data['data']?['mediaType'] ?? data['media_type'] ?? data['mediaType'] ?? '',
+        mediaId: responseData['media_id'] ?? responseData['mediaId'] ?? '',
+        url: responseData['url'] ?? '',
+        mediaType: responseData['media_type'] ?? responseData['mediaType'] ?? '',
         alt: alt ?? '',
       );
     } catch (e) {
@@ -109,9 +106,10 @@ class PostingController extends GetxController {
       }
 
       // 2. Construct ActivityPub Activity
-      final baseUrl = _api.dio.options.baseUrl.replaceAll(RegExp(r'/$'), '');
-      final actorId = '$baseUrl/activitypub/${actor.value}/actor';
-      final followers = '$baseUrl/activitypub/${actor.value}/followers';
+      final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+      final actorName = _actor;
+      final actorId = '$baseUrl/activitypub/$actorName/actor';
+      final followers = '$baseUrl/activitypub/$actorName/followers';
       const public = 'https://www.w3.org/ns/activitystreams#Public';
 
       final to = visibility.value == 'public' ? [public] : [followers];
@@ -146,8 +144,7 @@ class PostingController extends GetxController {
       };
 
       // 3. Submit Post to Outbox
-      final resp = await _api.post<Map<String, dynamic>>('/activitypub/${actor.value}/outbox', data: activity);
-      final data = resp.data ?? {};
+      final data = await _repo.submitPost(actorName, activity);
       
       submitting.value = false;
       

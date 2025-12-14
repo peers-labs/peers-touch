@@ -1,6 +1,5 @@
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'dart:convert';
 import 'package:peers_touch_desktop/core/services/setting_manager.dart';
@@ -9,6 +8,7 @@ import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/network/dio/http_service_impl.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 class SettingController extends GetxController {
@@ -209,15 +209,12 @@ class SettingController extends GetxController {
     final base = _normalizeBaseUrl(baseUrlInput);
     // we now only support the health endpoint.
     final path = backendTestPath.value == 'Health' ? '/management/health' : '/management/health';
-    final Uri fullUri = Uri.parse(base).resolve(path);
     try {
-      final dio = Dio(BaseOptions(
-        connectTimeout: const Duration(seconds: 8),
-        receiveTimeout: const Duration(seconds: 12),
-      ));
-      final resp = await dio.getUri(fullUri);
+      final httpService = HttpServiceImpl(baseUrl: base);
+      final respData = await httpService.get(path);
+      
       backendVerified.value = true;
-      final dataText = resp.data is String ? resp.data.toString() : jsonEncode(resp.data);
+      final dataText = respData is String ? respData : jsonEncode(respData);
       final l = AppLocalizations.of(Get.context!)!;
       Get.snackbar(l.addressTest, l.successWithData(dataText));
     } catch (e) {
