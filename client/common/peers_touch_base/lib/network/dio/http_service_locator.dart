@@ -17,11 +17,16 @@ class HttpServiceLocator {
   HttpServiceLocator._internal();
 
   /// 初始化HTTP服务
-  void initialize({required String baseUrl, HttpClientAdapter? adapter}) {
+  void initialize({
+    required String baseUrl,
+    HttpClientAdapter? adapter,
+    List<Interceptor>? interceptors,
+  }) {
     _baseUrl = baseUrl;
     _httpService = HttpServiceImpl(
       baseUrl: baseUrl,
       httpClientAdapter: adapter,
+      interceptors: interceptors,
     );
   }
 

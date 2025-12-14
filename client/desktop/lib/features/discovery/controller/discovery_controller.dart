@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
+import 'package:peers_touch_desktop/features/discovery/repository/discovery_repository.dart';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
 
 class GroupItem {
   final String id;
@@ -50,6 +51,8 @@ class DiscoveryController extends GetxController {
   final scrollController = ScrollController();
   final isScrolling = false.obs;
   Timer? _scrollStopTimer;
+  
+  final DiscoveryRepository _repo = Get.find<DiscoveryRepository>();
 
   @override
   void onInit() {
@@ -99,9 +102,13 @@ class DiscoveryController extends GetxController {
     ];
   }
 
-  void loadItems() async {
+  Future<void> refreshItems() async {
+    await loadItems();
+  }
+
+  Future<void> loadItems() async {
     isLoading.value = true;
-    // await Future.delayed(const Duration(milliseconds: 300)); // Remove delay or keep if needed for smooth transition
+    LoggingService.info('DiscoveryController: Loading items for tab ${tabs[currentTab.value]}');
     
     final List<DiscoveryItem> newItems = [];
     final tabName = tabs[currentTab.value];
@@ -121,15 +128,16 @@ class DiscoveryController extends GetxController {
     if (tabName == 'Me') {
       try {
         final auth = Get.find<AuthController>();
-        final api = Get.find<ApiClient>();
         final username = auth.username.value;
+        LoggingService.info('DiscoveryController: Fetching outbox for user: $username');
         
         if (username.isNotEmpty) {
-          final resp = await api.get('/activitypub/$username/outbox?page=true');
-          final data = resp.data;
+          final data = await _repo.fetchOutbox(username);
+          LoggingService.info('DiscoveryController: Outbox response data: $data');
           
-          if (data != null && data['orderedItems'] is List) {
+          if (data['orderedItems'] is List) {
             final itemsList = data['orderedItems'] as List;
+            LoggingService.info('DiscoveryController: Found ${itemsList.length} items');
             for (var item in itemsList) {
               if (item is Map) {
                 String title = 'New Post';
@@ -172,10 +180,15 @@ class DiscoveryController extends GetxController {
                 ));
               }
             }
+          } else {
+             LoggingService.warning('DiscoveryController: No orderedItems found in response');
           }
+        } else {
+           LoggingService.warning('DiscoveryController: Username is empty');
         }
-      } catch (e) {
-        print('Error fetching outbox: $e');
+      } catch (e, stack) {
+        LoggingService.error('DiscoveryController: Error fetching outbox: $e');
+        LoggingService.error(stack.toString());
         // Optionally add an error item or leave empty
       }
     }

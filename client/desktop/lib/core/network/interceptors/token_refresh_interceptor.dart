@@ -3,6 +3,8 @@ import 'package:dio/dio.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/core/network/token_refresh_handler.dart';
+import 'package:get/get.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 
 class TokenRefreshInterceptor extends Interceptor {
   final Dio dio;
@@ -32,6 +34,18 @@ class TokenRefreshInterceptor extends Interceptor {
         }
         await secureStorage.set(StorageKeys.tokenKey, newPair.accessToken);
         await secureStorage.set(StorageKeys.refreshTokenKey, newPair.refreshToken);
+        try {
+          if (Get.isRegistered<GlobalContext>()) {
+            final gc = Get.find<GlobalContext>();
+            final sess = gc.currentSession;
+            if (sess != null) {
+              final updated = Map<String, dynamic>.from(sess);
+              updated['accessToken'] = newPair.accessToken;
+              updated['refreshToken'] = newPair.refreshToken;
+              await gc.setSession(updated);
+            }
+          }
+        } catch (_) {}
 
         // Attach new access token header and retry original request
         opts.headers = Map<String, dynamic>.from(opts.headers);

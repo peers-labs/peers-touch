@@ -162,174 +162,184 @@ class DiscoveryPage extends GetView<DiscoveryController> {
         Positioned.fill(
           child: Container(
             color: const Color(0xFFF5F7FB),
-            child: Obx(() {
-              if (controller.isLoading.value) {
-                return _buildSkeletonList();
-              }
+            child: RefreshableList(
+              onRefresh: controller.refreshItems,
+              child: Obx(() {
+                if (controller.isLoading.value) {
+                  return _buildSkeletonList();
+                }
 
-              final items = controller.items;
-              if (items.isEmpty) {
-                return const Center(child: Text('No items found'));
-              }
+                final items = controller.items;
+                if (items.isEmpty) {
+                  return ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: const [
+                      SizedBox(height: 200),
+                      Center(child: Text('No items found')),
+                    ],
+                  );
+                }
 
-              return ListView.separated(
-                controller: controller.scrollController,
-                padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 24),
-                itemBuilder: (ctx, i) {
-                  final item = items[i];
-                  return InkWell(
-                    onTap: () {
-                      controller.selectItem(item);
-                      shell.openRightPanelWithOptions(
-                        (ctx) => _DiscoveryDetailView(item: item),
-                        mode: RightPanelMode.cover,
-                        collapsedByDefault: false,
-                        widthMode: RightPanelWidthMode.adaptive,
-                      );
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 20,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(20),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: _getTypeColor(item.type),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        _getMonth(item.timestamp),
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      Text(
-                                        item.timestamp.day.toString().padLeft(2, '0'),
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.title,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          Text(
-                                            item.type.toUpperCase(),
-                                            style: const TextStyle(
-                                              color: Colors.grey,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          const Icon(Icons.circle, size: 4, color: Colors.grey),
-                                          const SizedBox(width: 8),
-                                          const Text(
-                                            'Activity',
-                                            style: TextStyle(
-                                              color: Colors.grey,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const Icon(Icons.more_horiz, color: Colors.grey),
-                              ],
+                return ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  controller: controller.scrollController,
+                  padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 24),
+                  itemBuilder: (ctx, i) {
+                    final item = items[i];
+                    return InkWell(
+                      onTap: () {
+                        controller.selectItem(item);
+                        shell.openRightPanelWithOptions(
+                          (ctx) => _DiscoveryDetailView(item: item),
+                          mode: RightPanelMode.cover,
+                          collapsedByDefault: false,
+                          widthMode: RightPanelWidthMode.adaptive,
+                        );
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 20,
+                              offset: const Offset(0, 4),
                             ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Text(
-                              item.content,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                height: 1.5,
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: _getTypeColor(item.type),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          _getMonth(item.timestamp),
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        Text(
+                                          item.timestamp.day.toString().padLeft(2, '0'),
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          item.title,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Text(
+                                              item.type.toUpperCase(),
+                                              style: const TextStyle(
+                                                color: Colors.grey,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Icon(Icons.circle, size: 4, color: Colors.grey),
+                                            const SizedBox(width: 8),
+                                            const Text(
+                                              'Activity',
+                                              style: TextStyle(
+                                                color: Colors.grey,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.more_horiz, color: Colors.grey),
+                                ],
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 20),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                            child: Row(
-                              children: const [
-                                CircleAvatar(
-                                  radius: 12,
-                                  backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=8'),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              child: Text(
+                                item.content,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  height: 1.5,
                                 ),
-                                SizedBox(width: 8),
-                                Spacer(),
-                                SizedBox(width: 12),
-                                Icon(Icons.local_fire_department, color: Colors.orange, size: 16),
-                                SizedBox(width: 4),
-                                Text(
-                                  '12',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                SizedBox(width: 12),
-                                Icon(Icons.share, color: Colors.cyan, size: 16),
-                                SizedBox(width: 4),
-                                Text(
-                                  '30',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 20),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                              child: Row(
+                                children: const [
+                                  CircleAvatar(
+                                    radius: 12,
+                                    backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=8'),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Spacer(),
+                                  SizedBox(width: 12),
+                                  Icon(Icons.local_fire_department, color: Colors.orange, size: 16),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '12',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Icon(Icons.share, color: Colors.cyan, size: 16),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '30',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-              );
-            }),
+                    );
+                  },
+                );
+              }),
+            ),
           ),
         ),
         Positioned(
