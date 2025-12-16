@@ -1,0 +1,9 @@
+peers:
+  node:
+    server:
+      subserver:
+        oss:
+          enabled: true
+          path: /sub-oss
+          rds-name: oss
+          store-path: /tmp/oss

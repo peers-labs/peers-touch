@@ -1,10 +1,11 @@
 package server
 
 import (
-	"context"
-	"net/http"
+    "context"
+    "net/http"
 
-	"github.com/peers-labs/peers-touch/station/frame/core/option"
+    "github.com/cloudwego/hertz/pkg/app"
+    "github.com/peers-labs/peers-touch/station/frame/core/option"
 )
 
 type Method string
@@ -37,12 +38,13 @@ type Server interface {
 }
 
 type Handler interface {
-	Name() string
-	Path() string
-	Method() Method
-	// Handler returns a function that can handle different types of contexts
-	Handler() interface{}
-	Wrappers() []Wrapper
+    Name() string
+    Path() string
+    Method() Method
+    // Handler returns a function that can handle different types of contexts
+    Handler() interface{}
+    Wrappers() []Wrapper
+    HertzMiddlewares() []func(context.Context, *app.RequestContext)
 }
 
 // Routers interface defines a collection of handlers with a name
@@ -66,15 +68,16 @@ type RouterURL interface {
 type Wrapper func(next http.Handler) http.Handler
 
 type httpHandler struct {
-	name     string
-	method   Method
-	path     string
-	handler  interface{}
-	wrappers []Wrapper
+    name     string
+    method   Method
+    path     string
+    handler  interface{}
+    wrappers []Wrapper
+    hertzMws []func(context.Context, *app.RequestContext)
 }
 
 func (h *httpHandler) Wrappers() []Wrapper {
-	return h.wrappers
+    return h.wrappers
 }
 
 func (h *httpHandler) Name() string {
@@ -86,24 +89,29 @@ func (h *httpHandler) Path() string {
 }
 
 func (h *httpHandler) Handler() interface{} {
-	return h.handler
+    return h.handler
 }
 
 func (h *httpHandler) Method() Method {
-	return h.method
+    return h.method
+}
+
+func (h *httpHandler) HertzMiddlewares() []func(context.Context, *app.RequestContext) {
+    return h.hertzMws
 }
 
 func NewHandler(routerURL RouterURL, handler interface{}, opts ...HandlerOption) Handler {
-	config := &HandlerOptions{}
-	for _, opt := range opts {
-		opt(config)
-	}
+    config := &HandlerOptions{}
+    for _, opt := range opts {
+        opt(config)
+    }
 
-	return &httpHandler{
-		name:     routerURL.Name(),
-		path:     routerURL.SubPath(),
-		handler:  handler,
-		method:   config.Method,
-		wrappers: config.Wrappers,
-	}
+    return &httpHandler{
+        name:     routerURL.Name(),
+        path:     routerURL.SubPath(),
+        handler:  handler,
+        method:   config.Method,
+        wrappers: config.Wrappers,
+        hertzMws: config.HertzMiddlewares,
+    }
 }

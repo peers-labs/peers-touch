@@ -48,6 +48,7 @@
 ```
 
 ### Client
+### Client
 
 ```
 - 右侧面板优化 ：实现了点击非面板区域自动折叠功能，增强了交互体验。
@@ -135,3 +136,34 @@
 ### 明天 
 
 继续调整 GlobalContext 和 实现 Posting 功能
+
+## 20251216
+
+
+### Station
+
+```
+- 完成 auth 模块抽象性评审与落地方案：
+  1) 框架增强：server.Handler 增加 Hertz 中间件支持；Hertz 插件组合执行中间件；http.Handler 路径应用 wrappers。
+  2) 认证内核：新增 auth.Config 配置入口（支持环境变量 PEERS_AUTH_SECRET），提供 DefaultMiddleware；去除硬编码。
+  3) 路由接入：在 Mastodon 路由为需鉴权的接口注入 RequireJWT（verify_credentials、发帖、收藏/取消收藏、转发/取消转发、home 时间线）。
+- 整体效果：实现“常见 auth 内核 + handler 级植入”能力，统一鉴权入口，保持业务 handler 无侵入。
+- 编译与验证：框架层改动已通过静态检查；全仓构建需补充 protobuf 依赖后再验证。
+- 后续建议：迁移 ActivityPub/管理路由到中间件；替换 SessionStore 为 Redis；接入 OAuth2 Provider；清理历史硬编码与散落校验逻辑。
+```
+
+```
+- 新增 OSS 子服务：提供上传/下载/元数据接口，默认路由前缀 `/sub-oss`
+  1) 接口：`POST /sub-oss/upload`、`GET /sub-oss/file?key=`、`GET /sub-oss/meta?key=`
+  2) 安全：支持 `Bearer` 令牌与 HMAC 防盗链（`sig=HMAC(secret, key|exp)`）
+  3) 模型：`db/model/oss_files.go` 表 `oss_files` 存储文件索引与元信息
+  4) 插件：`oss/plugin.go` 绑定配置并注册自动迁移钩子
+- 对齐 SubServer 规范：功能按文件拆分（`handler.go`、`auth.go`、`options.go`、`db/model/oss_files.go`），统一生命周期与路由返回
+- 配置命名调整：将 `db-name` 更名为 `rds-name`，语义明确为选择 RDS 实例名；与 `peers.store.rds.gorm[].name` 对应
+- 框架级存储抽象：新增 `frame/core/storage`
+  1) 接口：`Driver`（`Save/Open/Delete`）
+  2) 实现：`LocalDriver` 封装 POSIX/NAS；预留后续 S3/IPFS 驱动接入
+  3) 服务：`Storage.Service` 提供通用 `Save/Open/Delete` 与 `SaveResult` 元数据
+  4) OSS 子服务改为依赖抽象驱动，其他子服务可复用
+- 构建验证：`station/app` 目录完成 `go build`，通过
+```
