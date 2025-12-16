@@ -1,8 +1,11 @@
 package server
 
 import (
-	"github.com/peers-labs/peers-touch/station/frame/core/option"
-	"github.com/peers-labs/peers-touch/station/frame/core/transport"
+    "context"
+
+    "github.com/cloudwego/hertz/pkg/app"
+    "github.com/peers-labs/peers-touch/station/frame/core/option"
+    "github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
 // region server options
@@ -137,14 +140,21 @@ func WithMethod(method Method) HandlerOption {
 }
 
 func WithWrappers(wrappers ...Wrapper) HandlerOption {
-	return func(opts *HandlerOptions) {
-		opts.Wrappers = wrappers
-	}
+    return func(opts *HandlerOptions) {
+        opts.Wrappers = wrappers
+    }
+}
+
+func WithHertzMiddlewares(middlewares ...func(context.Context, *app.RequestContext)) HandlerOption {
+    return func(opts *HandlerOptions) {
+        opts.HertzMiddlewares = middlewares
+    }
 }
 
 type HandlerOptions struct {
-	Method   Method
-	Wrappers []Wrapper
+    Method   Method
+    Wrappers []Wrapper
+    HertzMiddlewares []func(context.Context, *app.RequestContext)
 }
 
 // endregion
