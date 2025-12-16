@@ -2,6 +2,22 @@ peers:
   logger:
     name: slogrus
     level: info
+    caller-skip-count: 0
     persistence:
-       enabled: true
+       enable: true
        dir: /var/log/peers-touch
+       back-dir: /var/log/peers-touch/backup
+       max-file-size: 50
+       max-backup-size: 700
+       max-backup-keep-days: 14
+       file-name-pattern: peers-touch.log
+       backup-file-name-pattern: app-%Y%m%d-%H.zip
+    slogrus:
+      formatter: text
+      report-caller: false
+      split-level: false
+      without-key: false
+      without-quote: false
+      timestamp-format: "2006-01-02 15:04:05.999"
+      include-packages: []
+      exclude-packages: []
