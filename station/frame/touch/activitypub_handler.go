@@ -13,6 +13,8 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -30,16 +32,18 @@ import (
 
 // ActivityPubHandlerInfo represents a single handler's information
 type ActivityPubHandlerInfo struct {
-	RouterURL RouterPath
-	Handler   func(context.Context, *app.RequestContext)
-	Method    server.Method
-	Wrappers  []server.Wrapper
+	RouterURL   RouterPath
+	Handler     func(context.Context, *app.RequestContext)
+	Method      server.Method
+	Wrappers    []server.Wrapper
+	Middlewares []func(context.Context, *app.RequestContext)
 }
 
 // GetActivityPubHandlers returns all ActivityPub handler configurations
 func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 	commonWrapper := CommonAccessControlWrapper(model.RouteNameActivityPub)
 	actorWrapper := CommonAccessControlWrapper(model.RouteNameActor)
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 
 	return []ActivityPubHandlerInfo{
 		// Actor Management Endpoints (Client API)
@@ -56,10 +60,11 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
 		{
-			RouterURL: RouterURLActorProfile,
-			Handler:   GetActorProfile,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{actorWrapper},
+			RouterURL:   RouterURLActorProfile,
+			Handler:     GetActorProfile,
+			Method:      server.GET,
+			Wrappers:    []server.Wrapper{actorWrapper},
+			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
 		},
 		{
 			RouterURL: RouterURLPublicProfile,
@@ -68,10 +73,11 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper}, // Public access
 		},
 		{
-			RouterURL: RouterURLActorProfile,
-			Handler:   UpdateActorProfile,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{actorWrapper},
+			RouterURL:   RouterURLActorProfile,
+			Handler:     UpdateActorProfile,
+			Method:      server.POST,
+			Wrappers:    []server.Wrapper{actorWrapper},
+			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
 		},
 		{
 			RouterURL: RouterURLActorList,
@@ -93,10 +99,11 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 		{
-			RouterURL: ActivityPubRouterURLInbox,
-			Handler:   PostUserInbox,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper},
+			RouterURL:   ActivityPubRouterURLInbox,
+			Handler:     PostUserInbox,
+			Method:      server.POST,
+			Wrappers:    []server.Wrapper{commonWrapper},
+			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
 		},
 		{
 			RouterURL: ActivityPubRouterURLOutbox,
@@ -105,10 +112,11 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 		{
-			RouterURL: ActivityPubRouterURLOutbox,
-			Handler:   PostUserOutbox,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper},
+			RouterURL:   ActivityPubRouterURLOutbox,
+			Handler:     PostUserOutbox,
+			Method:      server.POST,
+			Wrappers:    []server.Wrapper{commonWrapper},
+			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
 		},
 		{
 			RouterURL: ActivityPubRouterURLFollowers,
@@ -144,10 +152,11 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 		},
 		// Shared Inbox endpoints
 		{
-			RouterURL: PostingRouterURLMedia,
-			Handler:   UploadMedia,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper},
+			RouterURL:   PostingRouterURLMedia,
+			Handler:     UploadMedia,
+			Method:      server.POST,
+			Wrappers:    []server.Wrapper{commonWrapper},
+			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
 		},
 		{
 			RouterURL: PostingRouterURLGetMedia,
@@ -156,10 +165,11 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 		{
-			RouterURL: PostingRouterURLPost,
-			Handler:   CreatePost,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper},
+			RouterURL:   PostingRouterURLPost,
+			Handler:     CreatePost,
+			Method:      server.POST,
+			Wrappers:    []server.Wrapper{commonWrapper},
+			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
 		},
 		{
 			RouterURL: ActivityPubRouterURLSharedInbox,
@@ -373,16 +383,13 @@ func resolveActorID(c context.Context, ctx *app.RequestContext) (uint64, error) 
 		return 0, errors.New("no_token")
 	}
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	rds, err := store.GetRDS(c)
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	subj, err := provider.Validate(c, token)
 	if err != nil {
 		return 0, err
 	}
-	provider := auth.NewJWTProvider(rds, "your-secret-key", auth.DefaultAccessTokenDuration, auth.DefaultRefreshTokenDuration)
-	ti, err := provider.ValidateToken(c, token)
-	if err != nil {
-		return 0, err
-	}
-	return ti.ActorID, nil
+	id, _ := strconv.ParseUint(subj.ID, 10, 64)
+	return id, nil
 }
 
 // User ActivityPub Handler Functions
