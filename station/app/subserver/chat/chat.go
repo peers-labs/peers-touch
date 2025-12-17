@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
@@ -69,20 +71,21 @@ func (s *chatSubServer) Address() server.SubserverAddress {
 func (s *chatSubServer) Status() server.Status { return s.status }
 
 func (s *chatSubServer) Handlers() []server.Handler {
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	return []server.Handler{
-		server.NewHandler(chatURL{name: "chat-peer-register", path: "/chat/peer/register"}, http.HandlerFunc(s.handlePeerRegister), server.WithMethod(server.POST)),
-		server.NewHandler(chatURL{name: "chat-peer-unregister", path: "/chat/peer/unregister"}, http.HandlerFunc(s.handlePeerUnregister), server.WithMethod(server.POST)),
+		server.NewHandler(chatURL{name: "chat-peer-register", path: "/chat/peer/register"}, http.HandlerFunc(s.handlePeerRegister), server.WithMethod(server.POST), server.WithWrappers(httpadapter.RequireJWT(provider))),
+		server.NewHandler(chatURL{name: "chat-peer-unregister", path: "/chat/peer/unregister"}, http.HandlerFunc(s.handlePeerUnregister), server.WithMethod(server.POST), server.WithWrappers(httpadapter.RequireJWT(provider))),
 		server.NewHandler(chatURL{name: "chat-peer-get", path: "/chat/peer/get"}, http.HandlerFunc(s.handlePeerGet), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-peers", path: "/chat/peers"}, http.HandlerFunc(s.handlePeers), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-stats", path: "/chat/stats"}, http.HandlerFunc(s.handleStats), server.WithMethod(server.GET)),
 		server.NewHandler(chatURL{name: "chat-sessions", path: "/chat/sessions"}, http.HandlerFunc(s.handleSessions), server.WithMethod(server.GET)),
-		server.NewHandler(chatURL{name: "chat-session-new", path: "/chat/session/new"}, http.HandlerFunc(s.handleSessionNew), server.WithMethod(server.POST)),
+		server.NewHandler(chatURL{name: "chat-session-new", path: "/chat/session/new"}, http.HandlerFunc(s.handleSessionNew), server.WithMethod(server.POST), server.WithWrappers(httpadapter.RequireJWT(provider))),
 		server.NewHandler(chatURL{name: "chat-session-get", path: "/chat/session/get"}, http.HandlerFunc(s.handleSessionGet), server.WithMethod(server.GET)),
-		server.NewHandler(chatURL{name: "chat-session-offer-post", path: "/chat/session/offer"}, http.HandlerFunc(s.handleOfferPost), server.WithMethod(server.POST)),
+		server.NewHandler(chatURL{name: "chat-session-offer-post", path: "/chat/session/offer"}, http.HandlerFunc(s.handleOfferPost), server.WithMethod(server.POST), server.WithWrappers(httpadapter.RequireJWT(provider))),
 		server.NewHandler(chatURL{name: "chat-session-offer-get", path: "/chat/session/offer"}, http.HandlerFunc(s.handleOfferGet), server.WithMethod(server.GET)),
-		server.NewHandler(chatURL{name: "chat-session-answer-post", path: "/chat/session/answer"}, http.HandlerFunc(s.handleAnswerPost), server.WithMethod(server.POST)),
+		server.NewHandler(chatURL{name: "chat-session-answer-post", path: "/chat/session/answer"}, http.HandlerFunc(s.handleAnswerPost), server.WithMethod(server.POST), server.WithWrappers(httpadapter.RequireJWT(provider))),
 		server.NewHandler(chatURL{name: "chat-session-answer-get", path: "/chat/session/answer"}, http.HandlerFunc(s.handleAnswerGet), server.WithMethod(server.GET)),
-		server.NewHandler(chatURL{name: "chat-session-candidate-post", path: "/chat/session/candidate"}, http.HandlerFunc(s.handleCandidatePost), server.WithMethod(server.POST)),
+		server.NewHandler(chatURL{name: "chat-session-candidate-post", path: "/chat/session/candidate"}, http.HandlerFunc(s.handleCandidatePost), server.WithMethod(server.POST), server.WithWrappers(httpadapter.RequireJWT(provider))),
 		server.NewHandler(chatURL{name: "chat-session-candidates-get", path: "/chat/session/candidates"}, http.HandlerFunc(s.handleCandidatesGet), server.WithMethod(server.GET)),
 	}
 }

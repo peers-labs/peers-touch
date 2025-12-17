@@ -190,37 +190,33 @@ func (l *logPersistence) Options() *lg.PersistenceOptions {
 }
 
 func (l *Logger) Options() []lg.Option {
-    var logOptions []lg.Option
+	var logOptions []lg.Option
 
-    if len(l.Name) > 0 {
-        logOptions = append(logOptions, lg.WithName(l.Name))
-    }
+	if len(l.Name) > 0 {
+		logOptions = append(logOptions, lg.WithName(l.Name))
+	}
 
-    if len(l.Level) > 0 {
-        level, err := lg.GetLevel(l.Level)
-        if err != nil {
-            err = fmt.Errorf("ilegal logger level error: %s", err)
-            log.Warn(err)
-        } else {
-            logOptions = append(logOptions, lg.WithLevel(level))
-        }
-    }
+	if len(l.Level) > 0 {
+		level, err := lg.GetLevel(l.Level)
+		if err != nil {
+			err = fmt.Errorf("ilegal logger level error: %s", err)
+			log.Warn(err)
+		} else {
+			logOptions = append(logOptions, lg.WithLevel(level))
+		}
+	}
 
-    if l.CallerSkipCount != 0 {
-        logOptions = append(logOptions, lg.WithCallerSkipCount(l.CallerSkipCount))
-    }
+	if l.Persistence.Enable {
+		logOptions = append(logOptions, lg.WithPersistence(l.Persistence.Options()))
+	}
 
-    if l.Persistence.Enable {
-        logOptions = append(logOptions, lg.WithPersistence(l.Persistence.Options()))
-    }
+	if plugin.LoggerPlugins[l.Name] != nil {
+		logOptions = append(logOptions, plugin.LoggerPlugins[l.Name].Options()...)
+	} else if len(l.Name) > 0 {
+		log.Warnf("seems you declared a logger name:[%s] which stack can't find out.", l.Name)
+	}
 
-    if plugin.LoggerPlugins[l.Name] != nil {
-        logOptions = append(logOptions, plugin.LoggerPlugins[l.Name].Options()...)
-    } else if len(l.Name) > 0 {
-        log.Warnf("seems you declared a logger name:[%s] which stack can't find out.", l.Name)
-    }
-
-    return logOptions
+	return logOptions
 }
 
 type PeersConfig struct {
