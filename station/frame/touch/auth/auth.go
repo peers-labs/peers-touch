@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"time"
 
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // AuthMethod represents different authentication methods
@@ -123,17 +126,24 @@ type SessionLoginResult struct {
 
 // LoginWithSession handles JWT authentication and session creation
 func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, userAgent string) (*SessionLoginResult, error) {
-	// Get database connection for JWT provider
+	// Get database connection
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize JWT provider
-	jwtProvider := NewJWTProvider(rds, "your-secret-key", 24*time.Hour, 7*24*time.Hour)
+	// Lookup user and verify password
+	var user db.Actor
+	if err := rds.WithContext(ctx).Where("email = ?", credentials.Email).First(&user).Error; err != nil {
+		return nil, ErrUserNotFound
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(credentials.Password)); err != nil {
+		return nil, ErrInvalidCredentials
+	}
 
-	// Authenticate user
-	authResult, err := jwtProvider.Authenticate(ctx, credentials)
+	// Issue token via core auth provider
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{SubjectID: fmt.Sprintf("%d", user.ID), Attributes: map[string]string{"email": user.Email}})
 	if err != nil {
 		return nil, err
 	}
@@ -145,26 +155,29 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 	}
 
 	// Create session manager and store session
-	sessionStore := NewMemorySessionStore(24 * time.Hour)
-	sessionManager := NewSessionManager(sessionStore, 24*time.Hour)
+	ss, ttl, err := NewSessionStoreFromEnv(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sessionManager := NewSessionManager(ss, ttl)
 
 	// Create session
-	session, err := sessionManager.CreateSession(ctx, authResult.Actor, sessionID, clientIP, userAgent)
+	session, err := sessionManager.CreateSession(ctx, &user, sessionID, clientIP, userAgent)
 	if err != nil {
 		return nil, err
 	}
 
 	// Return login result
 	return &SessionLoginResult{
-		AccessToken:  authResult.AccessToken,
-		RefreshToken: authResult.RefreshToken,
-		TokenType:    authResult.TokenType,
-		ExpiresAt:    authResult.ExpiresAt,
+		AccessToken:  token.Value,
+		RefreshToken: "",
+		TokenType:    token.Type,
+		ExpiresAt:    token.ExpiresAt,
 		SessionID:    session.ID,
 		User: map[string]interface{}{
-			"id":    authResult.Actor.ID,
-			"name":  authResult.Actor.Name,
-			"email": authResult.Actor.Email,
+			"id":    user.ID,
+			"name":  user.Name,
+			"email": user.Email,
 		},
 	}, nil
 }

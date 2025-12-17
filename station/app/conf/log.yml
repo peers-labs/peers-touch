@@ -10,7 +10,7 @@ peers:
        max-file-size: 50
        max-backup-size: 700
        max-backup-keep-days: 14
-       file-name-pattern: peers-touch.log
+       file-name-pattern: app.log
        backup-file-name-pattern: app-%Y%m%d-%H.zip
     slogrus:
       formatter: text

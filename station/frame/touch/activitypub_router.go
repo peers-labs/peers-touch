@@ -51,8 +51,8 @@ const (
 	// RouterURLActorList Actor list: enumerate local actors (for admin/testing)
 	RouterURLActorList RouterPath = "/list"
 
-	PostingRouterURLPost  RouterPath = "/:actor/post"
-	PostingRouterURLMedia RouterPath = "/:actor/media"
+	PostingRouterURLPost     RouterPath = "/:actor/post"
+	PostingRouterURLMedia    RouterPath = "/:actor/media"
 	PostingRouterURLGetMedia RouterPath = "/media/:filename"
 )
 
@@ -73,6 +73,7 @@ func (apr *ActivityPubRouters) Handlers() []server.Handler {
 			info.Handler,
 			server.WithMethod(info.Method),
 			server.WithWrappers(info.Wrappers...),
+			server.WithHertzMiddlewares(info.Middlewares...),
 		)
 	}
 

@@ -1,0 +1,33 @@
+package auth
+
+import (
+	"os"
+	"time"
+)
+
+type Config struct {
+	Secret    string
+	AccessTTL time.Duration
+}
+
+var cfg Config
+
+func Init(c Config) {
+	cfg = c
+	if cfg.AccessTTL == 0 {
+		cfg.AccessTTL = 24 * time.Hour
+	}
+}
+
+func Get() Config {
+	if cfg.Secret == "" {
+		cfg.Secret = os.Getenv("PEERS_AUTH_SECRET")
+	}
+	if cfg.AccessTTL == 0 {
+		cfg.AccessTTL = 24 * time.Hour
+	}
+	if cfg.Secret == "" {
+		panic("core/auth: missing PEERS_AUTH_SECRET")
+	}
+	return cfg
+}
