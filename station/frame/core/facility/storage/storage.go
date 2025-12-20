@@ -9,15 +9,13 @@ import (
 	"time"
 )
 
-type StorageBackend interface {
+type Backend interface {
 	Save(ctx context.Context, key string, r io.Reader) (string, error)
 	Open(ctx context.Context, key string) (io.ReadCloser, int64, string, error)
 	Delete(ctx context.Context, key string) error
 }
 
-type LocalBackend struct {
-	root string
-}
+type LocalBackend struct{ root string }
 
 func NewLocalBackend(root string) *LocalBackend { return &LocalBackend{root: root} }
 
@@ -49,23 +47,18 @@ func (b *LocalBackend) Open(ctx context.Context, key string) (io.ReadCloser, int
 }
 
 func (b *LocalBackend) Delete(ctx context.Context, key string) error {
-	full := filepath.Join(b.root, key)
-	return os.Remove(full)
+	return os.Remove(filepath.Join(b.root, key))
 }
 
 type SaveResult struct {
-	Key       string
-	Path      string
-	Size      int64
-	Mime      string
-	CreatedAt time.Time
+	Key, Path, Mime string
+	Size            int64
+	CreatedAt       time.Time
 }
 
-type Service struct {
-	backend StorageBackend
-}
+type Service struct{ backend Backend }
 
-func NewService(b StorageBackend) *Service { return &Service{backend: b} }
+func NewService(b Backend) *Service { return &Service{backend: b} }
 
 func (s *Service) Save(ctx context.Context, key string, r io.Reader, name string) (*SaveResult, error) {
 	path, err := s.backend.Save(ctx, key, r)
@@ -83,7 +76,4 @@ func (s *Service) Save(ctx context.Context, key string, r io.Reader, name string
 func (s *Service) Open(ctx context.Context, key string) (io.ReadCloser, int64, string, error) {
 	return s.backend.Open(ctx, key)
 }
-
-func (s *Service) Delete(ctx context.Context, key string) error {
-	return s.backend.Delete(ctx, key)
-}
+func (s *Service) Delete(ctx context.Context, key string) error { return s.backend.Delete(ctx, key) }

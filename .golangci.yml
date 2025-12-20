@@ -1,0 +1,34 @@
+run:
+  timeout: 5m
+  tests: true
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - gosimple
+    - unused
+    - typecheck
+    - gofmt
+    - goimports
+    - revive
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+      - name: var-naming
+      - name: receiver-naming
+      - name: package-comments
+      - name: indent-error-flow
+      - name: empty-lines
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  severity:
+    default-severity: error

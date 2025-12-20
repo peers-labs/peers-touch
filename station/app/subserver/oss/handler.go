@@ -12,8 +12,6 @@ import (
 	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
-	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
-	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/storage"
@@ -80,9 +78,8 @@ func (s *ossSubServer) Address() server.SubserverAddress {
 
 func (s *ossSubServer) Handlers() []server.Handler {
 	base := strings.TrimRight(s.pathBase, "/")
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	return []server.Handler{
-		server.NewHandler(ossURL{name: "oss-upload", path: base + "/upload"}, http.HandlerFunc(s.handleUpload), server.WithMethod(server.POST), server.WithWrappers(httpadapter.RequireJWT(provider))),
+		server.NewHandler(ossURL{name: "oss-upload", path: base + "/upload"}, http.HandlerFunc(s.handleUpload), server.WithMethod(server.POST)),
 		server.NewHandler(ossURL{name: "oss-file-get", path: base + "/file"}, http.HandlerFunc(s.handleFileGet), server.WithMethod(server.GET)),
 		server.NewHandler(ossURL{name: "oss-meta", path: base + "/meta"}, http.HandlerFunc(s.handleMetaGet), server.WithMethod(server.GET)),
 	}

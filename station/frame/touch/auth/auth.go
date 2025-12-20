@@ -155,11 +155,8 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 	}
 
 	// Create session manager and store session
-	ss, ttl, err := NewSessionStoreFromEnv(ctx)
-	if err != nil {
-		return nil, err
-	}
-	sessionManager := NewSessionManager(ss, ttl)
+	sessionStore := NewMemorySessionStore(DefaultSessionDuration)
+	sessionManager := NewSessionManager(sessionStore, DefaultSessionDuration)
 
 	// Create session
 	session, err := sessionManager.CreateSession(ctx, &user, sessionID, clientIP, userAgent)
