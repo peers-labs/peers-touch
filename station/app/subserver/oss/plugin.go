@@ -22,7 +22,6 @@ var ossOptions struct {
 						Path       string `pconf:"path"`
 						DBName     string `pconf:"rds-name"`
 						StorePath  string `pconf:"store-path"`
-						Token      string `pconf:"token"`
 						SignSecret string `pconf:"sign-secret"`
 					} `pconf:"oss"`
 				} `pconf:"subserver"`
@@ -39,7 +38,6 @@ func (p *ossPlugin) Options() []option.Option {
 		WithPath(ossOptions.Peers.Node.Server.Subserver.Oss.Path),
 		WithDBName(ossOptions.Peers.Node.Server.Subserver.Oss.DBName),
 		WithStorePath(ossOptions.Peers.Node.Server.Subserver.Oss.StorePath),
-		WithToken(ossOptions.Peers.Node.Server.Subserver.Oss.Token),
 		WithSignSecret(ossOptions.Peers.Node.Server.Subserver.Oss.SignSecret),
 	}
 }

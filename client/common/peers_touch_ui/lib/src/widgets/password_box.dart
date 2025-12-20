@@ -7,14 +7,19 @@ class PasswordBox extends StatefulWidget {
   final String? placeholder;
   final bool showLabel;
   final ValueChanged<String> onChanged;
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
+
   const PasswordBox({
-    super.key, 
-    required this.label, 
-    required this.value, 
-    this.description, 
-    this.placeholder, 
+    super.key,
+    required this.label,
+    required this.value,
+    this.description,
+    this.placeholder,
     this.showLabel = true,
-    required this.onChanged
+    required this.onChanged,
+    this.controller,
+    this.focusNode,
   });
 
   @override
@@ -22,25 +27,44 @@ class PasswordBox extends StatefulWidget {
 }
 
 class _PasswordBoxState extends State<PasswordBox> {
-  late TextEditingController _controller;
+  TextEditingController? _internalController;
   bool _obscure = true;
+
+  TextEditingController get _controller => widget.controller ?? _internalController!;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.value);
+    if (widget.controller == null) {
+      _internalController = TextEditingController(text: widget.value);
+    }
   }
 
   @override
   void didUpdateWidget(covariant PasswordBox oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final composing = _controller.value.composing;
-    if (!composing.isValid && _controller.text != widget.value) {
-      _controller.value = TextEditingValue(
+    
+    // Handle controller ownership changes
+    if (widget.controller != null && _internalController != null) {
+      _internalController!.dispose();
+      _internalController = null;
+    } else if (widget.controller == null && _internalController == null) {
+      _internalController = TextEditingController(text: widget.value);
+    }
+
+    // Sync value to internal controller if needed
+    if (_internalController != null && _internalController!.text != widget.value) {
+       _internalController!.value = TextEditingValue(
         text: widget.value,
         selection: TextSelection.collapsed(offset: widget.value.length),
       );
     }
+  }
+
+  @override
+  void dispose() {
+    _internalController?.dispose();
+    super.dispose();
   }
 
   @override
@@ -54,9 +78,6 @@ class _PasswordBoxState extends State<PasswordBox> {
             children: [
               Text(widget.label, style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
               const Spacer(),
-              // Move visibility toggle to inside field if label is hidden? 
-              // Actually keeping it here might be weird if label is hidden.
-              // But let's follow showLabel logic.
               if (widget.showLabel)
                 IconButton(
                   icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 18),
@@ -72,6 +93,7 @@ class _PasswordBoxState extends State<PasswordBox> {
         const SizedBox(height: 8),
         TextField(
           controller: _controller,
+          focusNode: widget.focusNode,
           obscureText: _obscure,
           enableSuggestions: false,
           autocorrect: false,

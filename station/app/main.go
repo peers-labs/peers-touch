@@ -4,6 +4,7 @@ import (
     "context"
 
     peers "github.com/peers-labs/peers-touch/station/frame"
+    "github.com/peers-labs/peers-touch/station/frame/core/auth"
     "github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
     "github.com/peers-labs/peers-touch/station/frame/core/node"
     "github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -26,6 +27,10 @@ func main() {
 	defer cancel()
 
 	p := peers.NewPeer()
+
+	// Initialize Auth Provider (Core)
+	jwtProvider := auth.NewJWTProvider(auth.Get().Secret, auth.Get().AccessTTL)
+
 	err := p.Init(
 		ctx,
 		node.WithPrivateKey("private.pem"),
@@ -35,7 +40,7 @@ func main() {
 		// server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
         server.WithSubServer("chat", chat.NewChatSubServer),
         server.WithSubServer("oauth", oauth.NewOAuthSubServer),
-        server.WithSubServer("oss", oss.NewOSSSubServer),
+        server.WithSubServer("oss", oss.NewOSSSubServer, oss.WithAuthProvider(jwtProvider)),
     )
 	if err != nil {
 		panic(err)

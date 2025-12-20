@@ -1184,6 +1184,18 @@ abstract class AppLocalizations {
   /// **'Your key and proxy URL will be encrypted using AES-GCM encryption algorithm'**
   String get encryptionNotice;
 
+  /// No description provided for @networkTypeTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'This indicates which network the current server belongs to.'**
+  String get networkTypeTooltip;
+
+  /// No description provided for @unknownNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown Network'**
+  String get unknownNetwork;
+
   /// No description provided for @clientRequestMode.
   ///
   /// In en, this message translates to:

@@ -8,8 +8,9 @@ import (
 )
 
 type jwtProvider struct {
-	secret    []byte
-	accessTTL time.Duration
+	secret     []byte
+	prevSecret []byte
+	accessTTL  time.Duration
 }
 
 type jwtClaims struct {
@@ -17,11 +18,29 @@ type jwtClaims struct {
 	jwt.RegisteredClaims
 }
 
-func NewJWTProvider(secret string, ttl time.Duration) Provider {
+type Option func(*jwtProvider)
+
+func WithPreviousSecret(secret string) Option {
+	return func(p *jwtProvider) {
+		p.prevSecret = []byte(secret)
+	}
+}
+
+func NewJWTProvider(secret string, ttl time.Duration, opts ...Option) Provider {
 	if ttl == 0 {
 		ttl = Get().AccessTTL
 	}
-	return &jwtProvider{secret: []byte(secret), accessTTL: ttl}
+	p := &jwtProvider{secret: []byte(secret), accessTTL: ttl}
+	for _, opt := range opts {
+		opt(p)
+	}
+	// Auto-load previous secret from config if not set and available
+	if len(p.prevSecret) == 0 {
+		if prev := Get().PreviousSecret; prev != "" {
+			p.prevSecret = []byte(prev)
+		}
+	}
+	return p
 }
 
 func (p *jwtProvider) Method() Method { return MethodJWT }
@@ -39,7 +58,14 @@ func (p *jwtProvider) Authenticate(ctx context.Context, cred Credentials) (*Subj
 }
 
 func (p *jwtProvider) Validate(ctx context.Context, token string) (*Subject, error) {
+	// Try primary secret
 	tok, err := jwt.ParseWithClaims(token, &jwtClaims{}, func(t *jwt.Token) (interface{}, error) { return p.secret, nil })
+	
+	// If failed and we have a previous secret, try that
+	if err != nil && len(p.prevSecret) > 0 {
+		tok, err = jwt.ParseWithClaims(token, &jwtClaims{}, func(t *jwt.Token) (interface{}, error) { return p.prevSecret, nil })
+	}
+
 	if err != nil {
 		return nil, err
 	}
