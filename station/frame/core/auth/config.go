@@ -6,8 +6,9 @@ import (
 )
 
 type Config struct {
-	Secret    string
-	AccessTTL time.Duration
+	Secret         string
+	PreviousSecret string
+	AccessTTL      time.Duration
 }
 
 var cfg Config
@@ -22,6 +23,9 @@ func Init(c Config) {
 func Get() Config {
 	if cfg.Secret == "" {
 		cfg.Secret = os.Getenv("PEERS_AUTH_SECRET")
+	}
+	if cfg.PreviousSecret == "" {
+		cfg.PreviousSecret = os.Getenv("PEERS_AUTH_PREVIOUS_SECRET")
 	}
 	if cfg.AccessTTL == 0 {
 		cfg.AccessTTL = 24 * time.Hour

@@ -33,7 +33,8 @@ class ShellPage extends StatelessWidget {
             behavior: HitTestBehavior.translucent,
             child: Focus(
               focusNode: controller.focusNode,
-              autofocus: true,
+              autofocus: false,
+              canRequestFocus: false, // 仅用于监听冒泡事件（如ESC），不主动抢占焦点，避免干扰输入框
               onKeyEvent: controller.handleKeyEvent,
               child: Padding(
               padding: EdgeInsets.only(
