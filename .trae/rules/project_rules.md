@@ -21,3 +21,6 @@ development:
 # base prompts
 
   - desktop： client\desktop\PROMPTs
+
+# Markdown Prompts
+  - content language: English by default. When file name contains ".zh.", use Chinese.
