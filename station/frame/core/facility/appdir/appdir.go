@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/peers-labs/peers-touch/station/frame/core/storage"
+	fstorage "github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 	"gopkg.in/yaml.v2"
 )
 
@@ -41,7 +41,11 @@ type Options struct {
 
 type Option func(*Options)
 
-func WithVendor(v string) Option    { return func(o *Options) { o.Vendor = v } }
+func WithVendor(v string) Option {
+	return func(o *Options) {
+		o.Vendor = v
+	}
+}
 func WithSuite(s string) Option     { return func(o *Options) { o.Suite = s } }
 func WithProfile(p string) Option   { return func(o *Options) { o.Profile = p } }
 func WithPathsFile(p string) Option { return func(o *Options) { o.PathsFile = p } }
@@ -193,11 +197,11 @@ func fillEmpty(d, def Dirs) Dirs {
 func defaults(vendor, suite, component string) Dirs {
 	segs := []string{vendor, suite, component}
 	join := func(root string) string { return filepath.Join(append([]string{root}, segs...)...) }
-	cfg := storage.AppConfigDir()
-	dat := storage.AppDataDir()
-	cac := storage.AppCacheDir()
-	log := storage.AppLogsDir()
-	run := storage.AppRuntimeDir()
+	cfg := fstorage.AppConfigDir()
+	dat := fstorage.AppDataDir()
+	cac := fstorage.AppCacheDir()
+	log := fstorage.AppLogsDir()
+	run := fstorage.AppRuntimeDir()
 	if runtime.GOOS == "windows" {
 		log = filepath.Join(log)
 	}

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+go fmt ./...
+gofmt -s -w .
+
+if ! command -v goimports >/dev/null 2>&1; then
+  go install golang.org/x/tools/cmd/goimports@latest
+fi
+
+goimports -w .
+
+bash tools/check-go-style.sh
+
+out=$(gofmt -l .)
+if [ -n "$out" ]; then
+  echo "$out"
+  exit 1
+fi
+
+if command -v golangci-lint >/dev/null 2>&1; then
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+  found=0
+  while IFS= read -r moddir; do
+    found=1
+    ( cd "$moddir" && golangci-lint run --config "$repo_root/.golangci.yml" )
+  done < <(find . -type f -name 'go.mod' -print0 | xargs -0 -n1 dirname | sort -u)
+  if [ "$found" -eq 0 ] && [ -f "$repo_root/go.mod" ]; then
+    golangci-lint run --config "$repo_root/.golangci.yml"
+  fi
+fi
+
+echo "OK"
