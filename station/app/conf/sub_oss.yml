@@ -7,3 +7,4 @@ peers:
           path: /sub-oss
           rds-name: oss
           store-path: /tmp/oss
+          sign-secret: ""

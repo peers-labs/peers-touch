@@ -1,13 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:peers_touch_desktop/core/network/network_initializer.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+
+enum ServerStatus {
+  unknown,
+  checking,
+  reachable,
+}
 
 class AuthController extends GetxController {
   final email = ''.obs;
@@ -23,10 +32,76 @@ class AuthController extends GetxController {
   final lastBody = RxnString();
   final authTab = 0.obs; // 0: login, 1: signup
   final protocol = 'peers-touch'.obs;
+  final serverStatus = ServerStatus.unknown.obs;
+  final SecureStorage _secureStorage = SecureStorage();
+
+  late final TextEditingController emailController;
+  late final TextEditingController passwordController;
+  late final TextEditingController confirmPasswordController;
+  late final TextEditingController usernameController;
+  late final TextEditingController displayNameController;
+  late final TextEditingController baseUrlController;
+
+  late final FocusNode emailFocus;
+  late final FocusNode passwordFocus;
+  late final FocusNode confirmPasswordFocus;
+  late final FocusNode usernameFocus;
+  late final FocusNode displayNameFocus;
+  late final FocusNode baseUrlFocus;
 
   @override
   void onInit() {
     super.onInit();
+    
+    // Initialize controllers
+    emailController = TextEditingController();
+    passwordController = TextEditingController();
+    confirmPasswordController = TextEditingController();
+    usernameController = TextEditingController();
+    displayNameController = TextEditingController();
+    baseUrlController = TextEditingController();
+
+    // Initialize focus nodes
+    emailFocus = FocusNode();
+    passwordFocus = FocusNode();
+    confirmPasswordFocus = FocusNode();
+    usernameFocus = FocusNode();
+    displayNameFocus = FocusNode();
+    baseUrlFocus = FocusNode();
+
+    // Bind controllers to Rx variables
+    emailController.addListener(() {
+      if (email.value != emailController.text) {
+        email.value = emailController.text;
+      }
+    });
+    passwordController.addListener(() {
+      if (password.value != passwordController.text) {
+        password.value = passwordController.text;
+      }
+    });
+    confirmPasswordController.addListener(() {
+      if (confirmPassword.value != confirmPasswordController.text) {
+        confirmPassword.value = confirmPasswordController.text;
+      }
+    });
+    usernameController.addListener(() {
+      if (username.value != usernameController.text) {
+        username.value = usernameController.text;
+      }
+    });
+    displayNameController.addListener(() {
+      if (displayName.value != displayNameController.text) {
+        displayName.value = displayNameController.text;
+      }
+    });
+    baseUrlController.addListener(() {
+      final t = baseUrlController.text;
+      if (baseUrl.value != t) {
+        updateBaseUrl(t);
+      }
+    });
+
     debounce(baseUrl, (String url) {
       final trimmed = url.trim();
       if (trimmed.isNotEmpty) {
@@ -42,8 +117,36 @@ class AuthController extends GetxController {
 
     // Restore user info from storage
     final box = GetStorage();
-    if (box.hasData('username')) username.value = box.read('username') ?? '';
-    if (box.hasData('email')) email.value = box.read('email') ?? '';
+    if (box.hasData('username')) {
+      username.value = box.read('username') ?? '';
+      usernameController.text = username.value;
+    }
+    if (box.hasData('email')) {
+      email.value = box.read('email') ?? '';
+      emailController.text = email.value;
+    }
+    
+    // Sync baseUrl
+    baseUrlController.text = baseUrl.value;
+  }
+
+  @override
+  void onClose() {
+    emailController.dispose();
+    passwordController.dispose();
+    confirmPasswordController.dispose();
+    usernameController.dispose();
+    displayNameController.dispose();
+    baseUrlController.dispose();
+
+    emailFocus.dispose();
+    passwordFocus.dispose();
+    confirmPasswordFocus.dispose();
+    usernameFocus.dispose();
+    displayNameFocus.dispose();
+    baseUrlFocus.dispose();
+
+    super.onClose();
   }
 
   @override
@@ -60,7 +163,9 @@ class AuthController extends GetxController {
   }
 
   void updateBaseUrl(String url) {
-    baseUrl.value = url;
+    if (baseUrl.value != url) {
+      baseUrl.value = url;
+    }
   }
 
   Future<void> loadPresetUsers(String baseUrl) async {
@@ -147,8 +252,10 @@ class AuthController extends GetxController {
             final ttype =
                 tokensMap['token_type']?.toString() ??
                 tokensMap['tokenType']?.toString();
-            if (refresh != null && refresh.isNotEmpty)
+            if (refresh != null && refresh.isNotEmpty) {
               GetStorage().write('refresh_token', refresh);
+              await _secureStorage.set(StorageKeys.refreshTokenKey, refresh);
+            }
             if (ttype != null && ttype.isNotEmpty)
               GetStorage().write('auth_token_type', ttype);
           } else {
@@ -190,6 +297,10 @@ class AuthController extends GetxController {
 
         if (token.isNotEmpty) {
           GetStorage().write('auth_token', token);
+          // Also save to SecureStorage for AuthInterceptor
+          await _secureStorage.set(StorageKeys.tokenKey, token);
+          LoggingService.info('Token stored in SecureStorage');
+          
           // Persist user info
           GetStorage().write('username', username.value);
           GetStorage().write('email', email.value);
@@ -211,6 +322,7 @@ class AuthController extends GetxController {
                 'accessToken': token,
                 'refreshToken': refresh,
               });
+              LoggingService.info('GlobalContext session updated for user: $handle');
             }
           } catch (_) {}
           Get.offAllNamed('/shell');
@@ -288,8 +400,10 @@ class AuthController extends GetxController {
   Future<void> detectProtocol(String baseUrl) async {
     try {
       final url = baseUrl.trim();
+      serverStatus.value = ServerStatus.checking;
       if (url.isEmpty) {
         protocol.value = 'peers-touch';
+        serverStatus.value = ServerStatus.unknown;
         try {
           if (Get.isRegistered<GlobalContext>()) {
             await Get.find<GlobalContext>().setProtocolTag(protocol.value);
@@ -305,6 +419,7 @@ class AuthController extends GetxController {
       lastStatus.value = resp.statusCode;
       lastBody.value = text;
       if (resp.statusCode == 200) {
+        serverStatus.value = ServerStatus.reachable;
         String ver = '';
         String title = '';
         try {
@@ -332,7 +447,8 @@ class AuthController extends GetxController {
           }
         } catch (_) {}
       } else {
-        protocol.value = 'other activitypub';
+        protocol.value = 'peers-touch';
+        serverStatus.value = ServerStatus.unknown;
         try {
           if (Get.isRegistered<GlobalContext>()) {
             await Get.find<GlobalContext>().setProtocolTag(protocol.value);
@@ -340,7 +456,8 @@ class AuthController extends GetxController {
         } catch (_) {}
       }
     } catch (_) {
-      protocol.value = 'other activitypub';
+      protocol.value = 'peers-touch';
+      serverStatus.value = ServerStatus.unknown;
       try {
         if (Get.isRegistered<GlobalContext>()) {
           await Get.find<GlobalContext>().setProtocolTag(protocol.value);

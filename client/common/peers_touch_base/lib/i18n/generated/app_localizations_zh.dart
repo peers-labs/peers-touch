@@ -570,6 +570,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get encryptionNotice => '您的密钥和代理地址将使用 AES-GCM 加密算法进行加密';
 
   @override
+  String get networkTypeTooltip => '指示当前服务器属于哪个网络。';
+
+  @override
+  String get unknownNetwork => '未知网络';
+
+  @override
   String get clientRequestMode => '使用客户端请求模式';
 
   @override

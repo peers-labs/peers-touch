@@ -198,6 +198,8 @@
   "connectivityCheckSubtitle": "Test if the API Key and proxy URL are correctly filled",
   "check": "Check",
   "encryptionNotice": "Your key and proxy URL will be encrypted using AES-GCM encryption algorithm",
+  "networkTypeTooltip": "This indicates which network the current server belongs to.",
+  "unknownNetwork": "Unknown Network",
   "clientRequestMode": "Use Client Request Mode",
   "clientRequestModeSubtitle": "Client will initiate session requests directly from the browser, which can improve response speed",
   "modelList": "Model List",

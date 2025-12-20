@@ -16,6 +16,7 @@ void main() async {
   if (!initialized) {
     return;
   }
+
   runApp(const App());
 }
 
@@ -27,17 +28,11 @@ class App extends StatefulWidget {
 }
 
 class _AppState extends State<App> {
-  bool _absorbing = true;
-
   @override
   void initState() {
     super.initState();
-    // Allow pointer events only after the first frame to avoid early hit tests
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        setState(() {
-          _absorbing = false;
-        });
         try {
           final orch = Get.find<AppLifecycleOrchestrator>();
           orch.awaitReadyGate().then((snapshot) {
@@ -70,8 +65,6 @@ class _AppState extends State<App> {
       initialRoute: AppRoutes.login,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      // Globally absorb pointer events until the first frame is rendered
-      builder: (context, child) => AbsorbPointer(absorbing: _absorbing, child: child ?? const SizedBox.shrink()),
     );
   }
 }

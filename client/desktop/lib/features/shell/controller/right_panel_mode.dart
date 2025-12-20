@@ -1,6 +1,7 @@
 enum RightPanelMode {
   cover, // 覆盖模式：悬浮在内容之上
   squeeze, // 挤压模式：挤压内容区域
+  hide,
 }
 
 enum RightPanelWidthMode {

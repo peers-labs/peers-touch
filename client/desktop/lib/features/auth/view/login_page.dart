@@ -25,7 +25,7 @@ class LoginPage extends GetView<AuthController> {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                color: selected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.7),
+                color: selected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withAlpha(179),
               ),
             ),
             if (selected)
@@ -70,89 +70,123 @@ class LoginPage extends GetView<AuthController> {
                   ],
                 )),
                 const SizedBox(height: 32),
-                Obx(() => IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: TextBox(
-                          label: l.serverUrl,
-                          value: controller.baseUrl.value,
-                          placeholder: l.serverUrl,
-                          showLabel: false,
-                          onChanged: (v) => controller.updateBaseUrl(v),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        height: UIKit.controlHeightMd,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: UIKit.inputFillLight(context),
-                            borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-                            border: Border.all(color: UIKit.dividerColor(context), width: UIKit.dividerThickness),
-                          ),
-                          alignment: Alignment.center,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(minWidth: 80),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.hub, size: 16, color: theme.colorScheme.primary.withOpacity(0.7)),
-                                const SizedBox(width: 6),
-                                Text(
-                                  controller.protocol.value ?? 'peers-touch',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: UIKit.textPrimary(context).withOpacity(0.85),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
+                Obx(() => Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: SizedBox(
+                            height: UIKit.controlHeightMd,
+                            child: TextField(
+                              key: const ValueKey('base_url_input'),
+                              controller: controller.baseUrlController,
+                              focusNode: controller.baseUrlFocus,
+                              textInputAction: TextInputAction.next,
+                              decoration: UIKit.inputDecoration(context).copyWith(
+                                hintText: l.serverUrl,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                )),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: UIKit.controlHeightMd,
+                          child: Tooltip(
+                            message: AppLocalizations.of(context)!.networkTypeTooltip,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: UIKit.inputFillLight(context),
+                                borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
+                                border: Border.all(
+                                  color: controller.serverStatus.value == ServerStatus.reachable
+                                      ? theme.colorScheme.primary.withAlpha(128)
+                                      : (controller.serverStatus.value == ServerStatus.unknown
+                                          ? theme.colorScheme.error
+                                          : UIKit.dividerColor(context)),
+                                  width: controller.serverStatus.value == ServerStatus.unknown ? 1.5 : UIKit.dividerThickness,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(minWidth: 80),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.hub,
+                                      size: 16,
+                                      color: controller.serverStatus.value == ServerStatus.unknown
+                                          ? theme.colorScheme.error
+                                          : theme.colorScheme.primary.withAlpha(179),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      controller.serverStatus.value == ServerStatus.unknown
+                                          ? AppLocalizations.of(context)!.unknownNetwork
+                                          : controller.protocol.value,
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: controller.serverStatus.value == ServerStatus.unknown
+                                            ? theme.colorScheme.error
+                                            : UIKit.textPrimary(context).withAlpha(217),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )),
                 const SizedBox(height: 12),
                 Obx(() => controller.authTab.value == 1
                     ? TextBox(
+                        key: const ValueKey('username_input'),
+                        controller: controller.usernameController,
+                        focusNode: controller.usernameFocus,
                         label: l.username,
-                        value: controller.username.value,
+                        value: '',
                         placeholder: l.username,
                         showLabel: false,
-                        onChanged: (v) => controller.username.value = v,
+                        onChanged: (v) {},
                       )
                     : TextBox(
+                        key: const ValueKey('email_input_login'),
+                        controller: controller.emailController,
+                        focusNode: controller.emailFocus,
                         label: l.email,
-                        value: controller.email.value,
+                        value: '',
                         placeholder: l.emailOrUsername,
                         showLabel: false,
-                        onChanged: (v) => controller.email.value = v,
+                        onChanged: (v) {},
                       )),
                 Obx(() => controller.authTab.value == 1
                     ? Padding(
                         padding: const EdgeInsets.only(top: 12.0),
                         child: TextBox(
+                          key: const ValueKey('email_input_signup'),
+                          controller: controller.emailController,
+                          focusNode: controller.emailFocus,
                           label: l.email,
-                          value: controller.email.value,
+                          value: '',
                           placeholder: l.email,
                           showLabel: false,
-                          onChanged: (v) => controller.email.value = v,
+                          onChanged: (v) {},
                         ),
                       )
                     : const SizedBox.shrink()),
                 const SizedBox(height: 12),
-                Obx(() => PasswordBox(
-                      label: l.password,
-                      value: controller.password.value,
-                      placeholder: l.password,
-                      showLabel: false,
-                      onChanged: (v) => controller.password.value = v,
-                    )),
+                PasswordBox(
+                  key: const ValueKey('password_input'),
+                  controller: controller.passwordController,
+                  focusNode: controller.passwordFocus,
+                  label: l.password,
+                  value: '',
+                  placeholder: l.password,
+                  showLabel: false,
+                  onChanged: (v) {},
+                ),
                 const SizedBox(height: 24),
                 Obx(() => PrimaryButton(
                       text: controller.authTab.value == 0 ? l.signIn : l.signUp,

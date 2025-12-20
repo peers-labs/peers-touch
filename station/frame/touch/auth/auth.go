@@ -8,10 +8,13 @@ import (
 	"time"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/session"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
 )
+
+const DefaultSessionDuration = 24 * time.Hour
 
 // AuthMethod represents different authentication methods
 type AuthMethod string
@@ -155,11 +158,11 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 	}
 
 	// Create session manager and store session
-	sessionStore := NewMemorySessionStore(DefaultSessionDuration)
-	sessionManager := NewSessionManager(sessionStore, DefaultSessionDuration)
+	sessionStore := session.NewMemoryStore(DefaultSessionDuration)
+	sessionManager := session.NewManager(sessionStore, DefaultSessionDuration)
 
 	// Create session
-	session, err := sessionManager.CreateSession(ctx, &user, sessionID, clientIP, userAgent)
+	sess, err := sessionManager.Create(ctx, uint64(user.ID), user.Email, sessionID, clientIP, userAgent)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +173,7 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 		RefreshToken: "",
 		TokenType:    token.Type,
 		ExpiresAt:    token.ExpiresAt,
-		SessionID:    session.ID,
+		SessionID:    sess.ID,
 		User: map[string]interface{}{
 			"id":    user.ID,
 			"name":  user.Name,

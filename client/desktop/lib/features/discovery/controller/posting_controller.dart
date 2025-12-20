@@ -8,10 +8,12 @@ import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/repository/discovery_repository.dart';
 import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_desktop/core/services/oss_service.dart';
 
 class PostingController extends GetxController {
   final DiscoveryRepository _repo = Get.find<DiscoveryRepository>();
   final GlobalContext _gctx = Get.find<GlobalContext>();
+  final OssService _ossService = Get.find<OssService>();
   // ignore: unused_field
   final AuthController _auth = Get.find<AuthController>();
   
@@ -74,12 +76,20 @@ class PostingController extends GetxController {
 
   Future<pb.MediaUploadResponse?> uploadMedia(File file, {String? alt}) async {
     try {
-      final data = await _repo.uploadMedia(_actor, file, alt: alt);
-      final responseData = data['data'] ?? data; // Handle wrapper if any
+      final data = await _ossService.uploadFile(file);
+      // OSS returns: { "key": "...", "url": "...", "mime": "..." }
+      
+      // We need to construct the full URL if it's relative
+      String url = data['url']?.toString() ?? '';
+      if (url.startsWith('/')) {
+        final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+        url = '$baseUrl$url';
+      }
+
       return pb.MediaUploadResponse(
-        mediaId: responseData['media_id'] ?? responseData['mediaId'] ?? '',
-        url: responseData['url'] ?? '',
-        mediaType: responseData['media_type'] ?? responseData['mediaType'] ?? '',
+        mediaId: data['key']?.toString() ?? '',
+        url: url,
+        mediaType: data['mime']?.toString() ?? 'application/octet-stream',
         alt: alt ?? '',
       );
     } catch (e) {
