@@ -582,6 +582,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your key and proxy URL will be encrypted using AES-GCM encryption algorithm';
 
   @override
+  String get networkTypeTooltip =>
+      'This indicates which network the current server belongs to.';
+
+  @override
+  String get unknownNetwork => 'Unknown Network';
+
+  @override
   String get clientRequestMode => 'Use Client Request Mode';
 
   @override

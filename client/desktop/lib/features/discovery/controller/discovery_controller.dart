@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 import 'package:peers_touch_desktop/features/discovery/repository/discovery_repository.dart';
+import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
+import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 
 class GroupItem {
@@ -51,12 +54,18 @@ class DiscoveryController extends GetxController {
   final scrollController = ScrollController();
   final isScrolling = false.obs;
   Timer? _scrollStopTimer;
+  RightPanelMode? _previousRightPanelMode;
   
   final DiscoveryRepository _repo = Get.find<DiscoveryRepository>();
 
   @override
   void onInit() {
     super.onInit();
+    try {
+      final shell = Get.find<ShellController>();
+      _previousRightPanelMode = shell.rightPanelMode.value;
+      shell.rightPanelMode.value = RightPanelMode.hide;
+    } catch (_) {}
     loadItems();
     loadGroups();
     loadFriends();
@@ -74,6 +83,17 @@ class DiscoveryController extends GetxController {
         isScrolling.value = false;
       });
     });
+  }
+  
+  @override
+  void onClose() {
+    try {
+      final shell = Get.find<ShellController>();
+      final prev = _previousRightPanelMode;
+      if (prev != null) shell.rightPanelMode.value = prev;
+    } catch (_) {}
+    _scrollStopTimer?.cancel();
+    super.onClose();
   }
 
   void setTab(int index) {
@@ -127,8 +147,15 @@ class DiscoveryController extends GetxController {
 
     if (tabName == 'Me') {
       try {
-        final auth = Get.find<AuthController>();
-        final username = auth.username.value;
+        String username = '';
+        if (Get.isRegistered<GlobalContext>()) {
+          username = Get.find<GlobalContext>().actorHandle ?? '';
+        }
+        // Fallback to AuthController if GlobalContext is empty
+        if (username.isEmpty && Get.isRegistered<AuthController>()) {
+          username = Get.find<AuthController>().username.value;
+        }
+        
         LoggingService.info('DiscoveryController: Fetching outbox for user: $username');
         
         if (username.isNotEmpty) {
@@ -146,6 +173,7 @@ class DiscoveryController extends GetxController {
                 DateTime timestamp = DateTime.now();
                 String type = item['type']?.toString() ?? 'Create';
                 
+                List<String> images = [];
                 if (item['object'] is Map) {
                    final obj = item['object'];
                    content = obj['content']?.toString() ?? '';
@@ -160,6 +188,22 @@ class DiscoveryController extends GetxController {
                    
                    if (obj['published'] != null) {
                      timestamp = DateTime.tryParse(obj['published'].toString()) ?? DateTime.now();
+                   }
+                   
+                   // Parse images from attachment
+                   if (obj['attachment'] is List) {
+                     for (var att in obj['attachment']) {
+                       if (att is Map) {
+                         final type = att['type']?.toString();
+                         final mediaType = att['mediaType']?.toString();
+                         if (type == 'Image' || (mediaType != null && mediaType.startsWith('image/'))) {
+                           final url = att['url']?.toString();
+                           if (url != null && url.isNotEmpty) {
+                             images.add(url);
+                           }
+                         }
+                       }
+                     }
                    }
                 } else if (item['published'] != null) {
                    timestamp = DateTime.tryParse(item['published'].toString()) ?? DateTime.now();
@@ -177,6 +221,7 @@ class DiscoveryController extends GetxController {
                   author: author,
                   timestamp: timestamp,
                   type: type,
+                  images: images,
                 ));
               }
             }

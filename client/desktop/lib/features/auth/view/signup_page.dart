@@ -53,72 +53,84 @@ class SignupPage extends GetView<AuthController> {
               const SizedBox(height: 32),
 
               // Server URL
-              Obx(() => _buildInput(
+              _buildInput(
                 context,
+                controller: controller.baseUrlController,
+                focusNode: controller.baseUrlFocus,
                 label: l10n.serverUrl,
-                value: controller.baseUrl.value,
-                onChanged: controller.updateBaseUrl,
+                value: '',
+                onChanged: (v) {},
                 placeholder: 'https://server.url',
                 fillColor: inputFillColor,
-              )),
+              ),
               const SizedBox(height: 16),
 
               // Display Name
-              Obx(() => _buildInput(
+              _buildInput(
                 context,
+                controller: controller.displayNameController,
+                focusNode: controller.displayNameFocus,
                 label: l10n.displayName,
-                value: controller.displayName.value,
-                onChanged: (v) => controller.displayName.value = v,
+                value: '',
+                onChanged: (v) {},
                 placeholder: l10n.displayName,
                 fillColor: inputFillColor,
-              )),
+              ),
               const SizedBox(height: 16),
 
               // Username
-              Obx(() => _buildInput(
+              _buildInput(
                 context,
+                controller: controller.usernameController,
+                focusNode: controller.usernameFocus,
                 label: l10n.username,
-                value: controller.username.value,
-                onChanged: (v) => controller.username.value = v,
+                value: '',
+                onChanged: (v) {},
                 placeholder: l10n.username,
                 prefixText: '@ ',
                 fillColor: inputFillColor,
-              )),
+              ),
               const SizedBox(height: 16),
 
               // Email
-              Obx(() => _buildInput(
+              _buildInput(
                 context,
+                controller: controller.emailController,
+                focusNode: controller.emailFocus,
                 label: l10n.email,
-                value: controller.email.value,
-                onChanged: (v) => controller.email.value = v,
+                value: '',
+                onChanged: (v) {},
                 placeholder: l10n.email,
                 fillColor: inputFillColor,
-              )),
+              ),
               const SizedBox(height: 16),
 
               // Password
-              Obx(() => _buildInput(
+              _buildInput(
                 context,
+                controller: controller.passwordController,
+                focusNode: controller.passwordFocus,
                 label: l10n.password,
-                value: controller.password.value,
-                onChanged: (v) => controller.password.value = v,
+                value: '',
+                onChanged: (v) {},
                 placeholder: l10n.password,
                 obscureText: true,
                 fillColor: inputFillColor,
-              )),
+              ),
               const SizedBox(height: 16),
 
               // Confirm Password
-              Obx(() => _buildInput(
+              _buildInput(
                 context,
+                controller: controller.confirmPasswordController,
+                focusNode: controller.confirmPasswordFocus,
                 label: l10n.confirmPassword,
-                value: controller.confirmPassword.value,
-                onChanged: (v) => controller.confirmPassword.value = v,
+                value: '',
+                onChanged: (v) {},
                 placeholder: l10n.confirmPassword,
                 obscureText: true,
                 fillColor: inputFillColor,
-              )),
+              ),
               const SizedBox(height: 8),
               
               Text(
@@ -161,12 +173,17 @@ class SignupPage extends GetView<AuthController> {
     bool obscureText = false,
     String? prefixText,
     Color? fillColor,
+    TextEditingController? controller,
+    FocusNode? focusNode,
   }) {
-    final controller = TextEditingController(text: value)
-      ..selection = TextSelection.collapsed(offset: value.length);
+    final effectiveController = controller ?? TextEditingController(text: value);
+    if (controller == null) {
+      effectiveController.selection = TextSelection.collapsed(offset: value.length);
+    }
       
     return TextField(
-      controller: controller,
+      controller: effectiveController,
+      focusNode: focusNode,
       onChanged: onChanged,
       obscureText: obscureText,
       decoration: InputDecoration(

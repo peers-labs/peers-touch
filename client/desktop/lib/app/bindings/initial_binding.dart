@@ -23,6 +23,8 @@ import 'package:peers_touch_desktop/core/repositories/actor_repository_desktop.d
 import 'package:peers_touch_base/network/token_provider.dart';
 import 'package:peers_touch_base/network/default_token_provider.dart';
 
+import 'package:peers_touch_desktop/core/services/oss_service.dart';
+
 /// Application dependency injection binding
 /// Focuses on GetX dependency injection registration and management
 class InitialBinding extends Bindings {
@@ -51,6 +53,7 @@ class InitialBinding extends Bindings {
       )..setBaseUrl(NetworkInitializer.currentBaseUrl),
       permanent: true,
     );
+    Get.put<OssService>(OssService(), permanent: true);
   }
 
   /// Register business services

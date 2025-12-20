@@ -198,6 +198,8 @@
   "connectivityCheckSubtitle": "测试 API Key 和代理地址是否填写正确",
   "check": "检查",
   "encryptionNotice": "您的密钥和代理地址将使用 AES-GCM 加密算法进行加密",
+  "networkTypeTooltip": "指示当前服务器属于哪个网络。",
+  "unknownNetwork": "未知网络",
   "clientRequestMode": "使用客户端请求模式",
   "clientRequestModeSubtitle": "客户端将直接从浏览器发起会话请求，这可以提高响应速度",
   "modelList": "模型列表",

@@ -1,5 +1,7 @@
 # SubServer 风格全览
 
+该规范用于限定 Subserver 的编码风格。
+
 ## 设计目标与原则
 
 - 面向“子服务组件化”：每个 SubServer 提供清晰的生命周期、独立配置与可插拔能力。
@@ -24,13 +26,48 @@
 
 ## 目录结构与命名规范
 
-- 目录：`native/subserver/<module>/`，例如 `bootstrap/`、`turn/`。
-- 文件命名：
-  - 通用：`options.go`（选项与注入）、`plugin.go`（注册与解析）。
-  - 实现：按功能拆分，如 `bootstrap.go`、`handler.go`、`host_notifee.go`、`store.go`、`namespace.go`、`dht_hook*.go`、`keys.go`、`util.go`。
-  - 模型分层：`model/do.go`（数据库对象）、`model/po.go`（对外展示对象）。
-- 类型命名：实现结构统一命名 `SubServer`，`Type()` 返回明确枚举（如 `Bootstrap`、`Turn`）。
-- 路由前缀：`/sub-<name>/...`，如 `/sub-bootstrap`、`/sub-turn`。
+- 标准结构：
+  - `README.md`：模块说明文档
+  - `options.go`：配置选项与依赖注入
+  - `plugin.go`：插件注册与生命周期工厂
+  - `<module>.go`：SubServer 接口实现（核心逻辑）
+  - `handler.go`：HTTP/Hertz 路由处理函数
+  - `auth.go`：认证与权限控制（可选）
+  - `db/`：数据访问层
+    - `model/`：数据模型定义（GORM/Proto）
+    - `repo/`：数据库操作封装（可选，复杂逻辑建议抽取）
+  - `service/`：业务逻辑层
+- 文件职责：
+  - `options.go`: 定义 `Options` 结构体、`WithXxx` 函数、`getOptions` 辅助函数。
+  - `plugin.go`: 实现 `plugin.Plugin` 接口，注册到 `plugin.SubserverPlugins`，负责配置映射。
+  - `<module>.go`: 实现 `server.Subserver` 接口 (`Init`, `Start`, `Stop`, `Name`, `Type` 等)，持有状态。
+  - `handler.go`: 实现 `server.Handler` 定义的方法，处理 HTTP 请求，调用 Service/Repo。
+- 类型命名：实现结构统一命名 `<Module>SubServer`，私有结构体首字母小写（如 `ossSubServer`）。
+- 路由前缀：`/sub-<name>/...`，如 `/sub-bootstrap`、`/sub-oss`。
+
+## 架构分层原则
+
+为了保持代码整洁和可维护性，建议采用以下分层架构：
+
+1.  **接口层 (Handlers)**: `handler.go`
+    - 负责 HTTP 请求解析、参数校验、Auth 中间件集成。
+    - 调用业务层逻辑。
+    - 返回标准 HTTP 响应。
+    - **禁止**在此层直接操作数据库或处理复杂业务逻辑。
+
+2.  **业务层 (Service)**: `service/` (可选)
+    - 负责核心业务逻辑、事务控制、第三方服务调用。
+    - 被接口层调用。
+    - 对于简单的 CRUD 子服务，此层可省略，逻辑合并入 Handler 或直接调用 Repo。
+
+3.  **数据层 (Repo/DB)**: `db/`
+    - `db/model/`: 定义数据库实体 (struct tags, gorm tags)。
+    - `db/repo/`: (可选) 封装 GORM 查询，提供语义化的数据访问接口 (e.g., `FindUserByEmail`)。
+    - **禁止**在 Handler 层直接编写 SQL 或复杂的 GORM 链式调用。
+
+4.  **配置与插件层 (Config/Plugin)**: `options.go`, `plugin.go`
+    - 负责与框架集成，解析 `pconf` 配置，注入依赖 (Auth Provider, Storage Backend 等)。
+    - 确保子服务的独立性，不直接依赖全局变量。
 
 ## 路由与接口规范
 

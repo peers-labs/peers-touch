@@ -12,6 +12,8 @@ class TextBox extends StatefulWidget {
   final String? placeholder;
   final bool showLabel;
   final ValueChanged<String> onChanged;
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
 
   const TextBox({
     super.key,
@@ -25,6 +27,8 @@ class TextBox extends StatefulWidget {
     this.placeholder,
     this.showLabel = true,
     required this.onChanged,
+    this.controller,
+    this.focusNode,
   });
 
   @override
@@ -32,30 +36,46 @@ class TextBox extends StatefulWidget {
 }
 
 class _TextBoxState extends State<TextBox> {
-  late final TextEditingController _controller;
+  TextEditingController? _internalController;
+
+  TextEditingController get _controller => widget.controller ?? _internalController!;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.value);
+    if (widget.controller == null) {
+      _internalController = TextEditingController(text: widget.value);
+    }
   }
 
   @override
   void didUpdateWidget(covariant TextBox oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final composing = _controller.value.composing;
-    if (!composing.isValid && _controller.text != widget.value) {
-      final selectionEnd = widget.value.length;
-      _controller.value = TextEditingValue(
+    
+    // Handle controller ownership changes
+    if (widget.controller != null && _internalController != null) {
+      _internalController!.dispose();
+      _internalController = null;
+    } else if (widget.controller == null && _internalController == null) {
+      _internalController = TextEditingController(text: widget.value);
+    }
+
+    // Sync value to internal controller if needed
+    if (_internalController != null && _internalController!.text != widget.value) {
+      // Only update if the value is different.
+      // Note: This resets selection to the end. 
+      // This is acceptable for programmatic updates but can be jarring if
+      // the parent updates 'value' asynchronously while typing.
+      _internalController!.value = TextEditingValue(
         text: widget.value,
-        selection: TextSelection.collapsed(offset: selectionEnd),
+        selection: TextSelection.collapsed(offset: widget.value.length),
       );
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _internalController?.dispose();
     super.dispose();
   }
 
@@ -66,20 +86,20 @@ class _TextBoxState extends State<TextBox> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.showLabel)
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(widget.label, style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
-            if (widget.showCopyButton)
-              IconButton(
-                icon: const Icon(Icons.content_copy, size: 16),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _controller.text));
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
-                },
-              ),
-          ],
-        ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(widget.label, style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
+              if (widget.showCopyButton)
+                IconButton(
+                  icon: const Icon(Icons.content_copy, size: 16),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: _controller.text));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
+                  },
+                ),
+            ],
+          ),
         if (widget.description != null) ...[
           const SizedBox(height: 4),
           Text(widget.description!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.6))),
@@ -88,6 +108,7 @@ class _TextBoxState extends State<TextBox> {
           const SizedBox(height: 8),
         TextField(
           controller: _controller,
+          focusNode: widget.focusNode,
           maxLines: widget.maxLines,
           minLines: widget.minLines,
           keyboardType: widget.keyboardType,
@@ -99,7 +120,7 @@ class _TextBoxState extends State<TextBox> {
             filled: true,
             fillColor: theme.colorScheme.surface,
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: theme.colorScheme.outline.withOpacity(0.3)),
@@ -113,7 +134,6 @@ class _TextBoxState extends State<TextBox> {
               borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
             ),
           ),
-          style: theme.textTheme.bodyMedium,
         ),
       ],
     );
