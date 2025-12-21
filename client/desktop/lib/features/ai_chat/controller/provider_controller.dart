@@ -4,7 +4,7 @@ import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/domain/ai_box/ai_models.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/capability/capability_resolver.dart';
@@ -105,7 +105,7 @@ class ProviderController extends GetxController {
             ? (jsonDecode(current.settingsJson) as Map<String, dynamic>)
             : {};
         isClientRequestMode.value =
-            (Get.find<LocalStorage>().get<bool>('client_request_mode_global') ??
+            (await Get.find<LocalStorage>().get<bool>('client_request_mode_global') ??
             false);
       }
     } catch (e) {

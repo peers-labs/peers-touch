@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:peers_touch_base/network/token_provider.dart';
+import 'package:peers_touch_base/network/token_refresher.dart';
 import 'http_service.dart';
 import 'http_service_impl.dart';
 
@@ -7,6 +9,11 @@ class HttpServiceLocator {
   static final HttpServiceLocator _instance = HttpServiceLocator._internal();
   late IHttpService _httpService;
   late String _baseUrl;
+  
+  HttpClientAdapter? _adapter;
+  List<Interceptor>? _interceptors;
+  TokenProvider? _tokenProvider;
+  TokenRefresher? _tokenRefresher;
 
   /// 工厂构造函数 - 返回单例
   factory HttpServiceLocator() {
@@ -21,42 +28,77 @@ class HttpServiceLocator {
     required String baseUrl,
     HttpClientAdapter? adapter,
     List<Interceptor>? interceptors,
+    TokenProvider? tokenProvider,
+    TokenRefresher? tokenRefresher,
   }) {
     _baseUrl = baseUrl;
+    _adapter = adapter;
+    _interceptors = interceptors;
+    _tokenProvider = tokenProvider;
+    _tokenRefresher = tokenRefresher;
+
     _httpService = HttpServiceImpl(
       baseUrl: baseUrl,
       httpClientAdapter: adapter,
       interceptors: interceptors,
+      tokenProvider: tokenProvider,
+      tokenRefresher: tokenRefresher,
     );
+  }
+
+  /// 设置认证提供者
+  void setAuthProviders({
+    TokenProvider? tokenProvider,
+    TokenRefresher? tokenRefresher,
+  }) {
+    _tokenProvider = tokenProvider;
+    _tokenRefresher = tokenRefresher;
+    
+    // Re-initialize service to apply changes
+    if (_isInitialized()) {
+      _httpService = HttpServiceImpl(
+        baseUrl: _baseUrl,
+        httpClientAdapter: _adapter,
+        interceptors: _interceptors,
+        tokenProvider: _tokenProvider,
+        tokenRefresher: _tokenRefresher,
+      );
+    }
   }
 
   /// 获取HTTP服务实例
   IHttpService get httpService {
-    if (!_isInitialized()) {
-      throw Exception('HttpServiceLocator has not been initialized. Call initialize() first.');
-    }
-    return _httpService;
+    // Note: This check relies on _baseUrl being initialized. 
+    // If not initialized, accessing _baseUrl throws LateInitializationError.
+    // Ideally we should have a flag.
+    return _httpService; 
   }
 
   /// 更新BaseURL
   void updateBaseUrl(String newBaseUrl) {
-    if (!_isInitialized()) {
-      throw Exception('HttpServiceLocator has not been initialized. Call initialize() first.');
-    }
-
     _baseUrl = newBaseUrl;
     // 如果是HttpServiceImpl实例，使用公共方法更新baseUrl
     if (_httpService is HttpServiceImpl) {
       (httpService as HttpServiceImpl).setBaseUrl(newBaseUrl);
     } else {
       // 对于其他实现，重新初始化服务
-      _httpService = HttpServiceImpl(baseUrl: newBaseUrl);
+      _httpService = HttpServiceImpl(
+        baseUrl: newBaseUrl,
+        httpClientAdapter: _adapter,
+        interceptors: _interceptors,
+        tokenProvider: _tokenProvider,
+        tokenRefresher: _tokenRefresher,
+      );
     }
   }
-
+  
   /// 检查是否已初始化
   bool _isInitialized() {
-    return _baseUrl.isNotEmpty;
+    try {
+      return _baseUrl.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 获取当前BaseURL

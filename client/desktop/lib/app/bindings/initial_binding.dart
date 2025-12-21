@@ -1,11 +1,10 @@
 import 'package:get/get.dart';
 
-import 'package:peers_touch_desktop/core/network/api_client.dart';
-import 'package:peers_touch_desktop/core/network/network_initializer.dart';
-import 'package:peers_touch_desktop/core/network/network_status_service.dart';
+import 'package:peers_touch_desktop/core/services/network_initializer.dart';
+import 'package:peers_touch_desktop/core/services/network_status_service.dart';
 import 'package:peers_touch_desktop/core/services/network_discovery/libp2p_network_service.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/features/shared/services/user_status_service.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
@@ -22,6 +21,7 @@ import 'package:peers_touch_base/repositories/actor_repository.dart';
 import 'package:peers_touch_desktop/core/repositories/actor_repository_desktop.dart';
 import 'package:peers_touch_base/network/token_provider.dart';
 import 'package:peers_touch_base/network/default_token_provider.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 import 'package:peers_touch_desktop/core/services/oss_service.dart';
 
@@ -38,21 +38,37 @@ class InitialBinding extends Bindings {
   /// Register storage services
   void _registerStorageServices() {
     Get.put<LocalStorage>(LocalStorage(), permanent: true);
-    Get.put<SecureStorage>(SecureStorage(), permanent: true);
+    // Use SecureStorageService interface and implementation from base
+    Get.put<SecureStorage>(SecureStorageImpl(), permanent: true);
+    Get.put<SecureStorageAdapter>(
+      DesktopSecureStorageAdapter(Get.find<SecureStorage>()),
+      permanent: true,
+    );
+    Get.put<LocalStorageAdapter>(
+      DesktopLocalStorageAdapter(Get.find<LocalStorage>()),
+      permanent: true,
+    );
   }
 
   /// Register network services
   void _registerNetworkServices() {
     Get.put<NetworkStatusService>(NetworkStatusService(), permanent: true);
-    Get.put<Libp2pNetworkService>(Libp2pNetworkService(), permanent: true);
-    Get.put<ApiClient>(
-      ApiClient(
-        secureStorage: Get.find<SecureStorage>(),
-        networkStatusService: Get.find<NetworkStatusService>(),
-        // tokenRefreshHandler: null, // Can be injected when real refresh interface is connected
-      )..setBaseUrl(NetworkInitializer.currentBaseUrl),
+    Get.put<ConnectivityAdapter>(
+      DesktopConnectivityAdapter(Get.find<NetworkStatusService>()),
       permanent: true,
     );
+    Get.put<Libp2pNetworkService>(Libp2pNetworkService(), permanent: true);
+
+    Get.put<TokenProvider>(
+      DefaultTokenProvider(secureStorage: Get.find<SecureStorageAdapter>()),
+      permanent: true,
+    );
+
+    NetworkInitializer.setupAuth(
+      tokenProvider: Get.find<TokenProvider>(),
+      // tokenRefresher: null, // Can be injected when real refresh interface is connected
+    );
+
     Get.put<OssService>(OssService(), permanent: true);
   }
 
@@ -61,18 +77,7 @@ class InitialBinding extends Bindings {
     Get.put<UserStatusService>(UserStatusService(), permanent: true);
     // Make AuthController permanent to persist user info session state
     Get.put<AuthController>(AuthController(), permanent: true);
-    Get.put<SecureStorageAdapter>(
-      DesktopSecureStorageAdapter(Get.find<SecureStorage>()),
-      permanent: true,
-    );
-    Get.put<ConnectivityAdapter>(
-      DesktopConnectivityAdapter(Get.find<NetworkStatusService>()),
-      permanent: true,
-    );
-    Get.put<LocalStorageAdapter>(
-      DesktopLocalStorageAdapter(Get.find<LocalStorage>()),
-      permanent: true,
-    );
+    
     Get.put<GlobalContext>(
       DefaultGlobalContext(
         secureStorage: Get.find<SecureStorageAdapter>(),
@@ -93,11 +98,7 @@ class InitialBinding extends Bindings {
       permanent: true,
     );
     Get.put<ActorRepository>(
-      DesktopActorRepository(Get.find<ApiClient>()),
-      permanent: true,
-    );
-    Get.put<TokenProvider>(
-      DefaultTokenProvider(secureStorage: Get.find<SecureStorageAdapter>()),
+      DesktopActorRepository(HttpServiceLocator().httpService),
       permanent: true,
     );
   }

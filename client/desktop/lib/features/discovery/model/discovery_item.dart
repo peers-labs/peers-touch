@@ -1,11 +1,39 @@
+class DiscoveryComment {
+  final String id;
+  final String authorName;
+  final String authorAvatar;
+  final String content;
+  final DateTime timestamp;
+
+  DiscoveryComment({
+    required this.id,
+    required this.authorName,
+    required this.authorAvatar,
+    required this.content,
+    required this.timestamp,
+  });
+}
+
 class DiscoveryItem {
   final String id;
   final String title;
   final String content;
   final String author;
+  final String authorAvatar;
   final DateTime timestamp;
   final String type; // 'post', 'group', 'user'
   final List<String> images;
+  
+  // Stats
+  final int likesCount;
+  int commentsCount; // Mutable
+  final int sharesCount;
+  
+  // Interaction state (mutable for UI)
+  bool isLiked;
+  
+  // Comments
+  final List<DiscoveryComment> comments;
 
   DiscoveryItem({
     required this.id,
@@ -14,6 +42,12 @@ class DiscoveryItem {
     required this.author,
     required this.timestamp,
     required this.type,
+    this.authorAvatar = '',
     this.images = const [],
+    this.likesCount = 0,
+    this.commentsCount = 0,
+    this.sharesCount = 0,
+    this.isLiked = false,
+    this.comments = const [],
   });
 }
