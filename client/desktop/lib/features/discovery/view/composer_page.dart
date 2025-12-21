@@ -5,11 +5,22 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/posting_controller.dart';
 
-class ComposerPage extends GetView<PostingController> {
+class ComposerPage extends StatelessWidget {
   const ComposerPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Initialize controller
+    final controller = Get.put(PostingController());
+
+    // Restore state if available (draft)
+    // Simple state restoration is handled by the controller being persistent in memory if not disposed.
+    // But since this is a dialog, controller might be recreated.
+    // For proper persistence, we should save to storage or use a service.
+    // For now, let's just make sure we populate fields if controller already has data.
+    final textController = TextEditingController(text: controller.text.value);
+    textController.addListener(() => controller.text.value = textController.text);
+
     // Adaptive sizing based on screen size
     final size = MediaQuery.of(context).size;
     final width = size.width > 800 ? 600.0 : size.width * 0.9;
@@ -70,7 +81,7 @@ class ComposerPage extends GetView<PostingController> {
                 children: [
                   // Main Text Input
                   TextField(
-                    onChanged: (v) => controller.text.value = v,
+                    controller: textController,
                     maxLines: null,
                     keyboardType: TextInputType.multiline,
                     textAlignVertical: TextAlignVertical.top,

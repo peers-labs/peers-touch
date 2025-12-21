@@ -141,6 +141,249 @@ class Actor extends $pb.GeneratedMessage {
   $pb.PbMap<$core.String, $core.String> get endpoints => $_getMap(6);
 }
 
+class UserLink extends $pb.GeneratedMessage {
+  factory UserLink({
+    $core.String? label,
+    $core.String? url,
+  }) {
+    final result = create();
+    if (label != null) result.label = label;
+    if (url != null) result.url = url;
+    return result;
+  }
+
+  UserLink._();
+
+  factory UserLink.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory UserLink.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'UserLink',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.actor.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'label')
+    ..aOS(2, _omitFieldNames ? '' : 'url')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UserLink clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UserLink copyWith(void Function(UserLink) updates) =>
+      super.copyWith((message) => updates(message as UserLink)) as UserLink;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static UserLink create() => UserLink._();
+  @$core.override
+  UserLink createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static UserLink getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<UserLink>(create);
+  static UserLink? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get label => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set label($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasLabel() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearLabel() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get url => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set url($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasUrl() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearUrl() => $_clearField(2);
+}
+
+class UpdateProfileRequest extends $pb.GeneratedMessage {
+  factory UpdateProfileRequest({
+    $core.String? displayName,
+    $core.String? note,
+    $core.String? avatar,
+    $core.String? header,
+    $core.String? region,
+    $core.String? timezone,
+    $core.Iterable<$core.String>? tags,
+    $core.Iterable<UserLink>? links,
+    $core.String? defaultVisibility,
+    $core.bool? manuallyApprovesFollowers,
+    $core.String? messagePermission,
+    $core.int? autoExpireDays,
+  }) {
+    final result = create();
+    if (displayName != null) result.displayName = displayName;
+    if (note != null) result.note = note;
+    if (avatar != null) result.avatar = avatar;
+    if (header != null) result.header = header;
+    if (region != null) result.region = region;
+    if (timezone != null) result.timezone = timezone;
+    if (tags != null) result.tags.addAll(tags);
+    if (links != null) result.links.addAll(links);
+    if (defaultVisibility != null) result.defaultVisibility = defaultVisibility;
+    if (manuallyApprovesFollowers != null)
+      result.manuallyApprovesFollowers = manuallyApprovesFollowers;
+    if (messagePermission != null) result.messagePermission = messagePermission;
+    if (autoExpireDays != null) result.autoExpireDays = autoExpireDays;
+    return result;
+  }
+
+  UpdateProfileRequest._();
+
+  factory UpdateProfileRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory UpdateProfileRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'UpdateProfileRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.actor.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'display_name')
+    ..aOS(2, _omitFieldNames ? '' : 'note')
+    ..aOS(3, _omitFieldNames ? '' : 'avatar')
+    ..aOS(4, _omitFieldNames ? '' : 'header')
+    ..aOS(5, _omitFieldNames ? '' : 'region')
+    ..aOS(6, _omitFieldNames ? '' : 'timezone')
+    ..pPS(7, _omitFieldNames ? '' : 'tags')
+    ..pPM<UserLink>(8, _omitFieldNames ? '' : 'links',
+        subBuilder: UserLink.create)
+    ..aOS(9, _omitFieldNames ? '' : 'default_visibility')
+    ..aOB(10, _omitFieldNames ? '' : 'manually_approves_followers')
+    ..aOS(11, _omitFieldNames ? '' : 'message_permission')
+    ..aI(12, _omitFieldNames ? '' : 'auto_expire_days')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateProfileRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateProfileRequest copyWith(void Function(UpdateProfileRequest) updates) =>
+      super.copyWith((message) => updates(message as UpdateProfileRequest))
+          as UpdateProfileRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static UpdateProfileRequest create() => UpdateProfileRequest._();
+  @$core.override
+  UpdateProfileRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static UpdateProfileRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<UpdateProfileRequest>(create);
+  static UpdateProfileRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get displayName => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set displayName($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasDisplayName() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearDisplayName() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get note => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set note($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasNote() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearNote() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get avatar => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set avatar($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasAvatar() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAvatar() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get header => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set header($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasHeader() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearHeader() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get region => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set region($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasRegion() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearRegion() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.String get timezone => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set timezone($core.String value) => $_setString(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasTimezone() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearTimezone() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $pb.PbList<$core.String> get tags => $_getList(6);
+
+  @$pb.TagNumber(8)
+  $pb.PbList<UserLink> get links => $_getList(7);
+
+  @$pb.TagNumber(9)
+  $core.String get defaultVisibility => $_getSZ(8);
+  @$pb.TagNumber(9)
+  set defaultVisibility($core.String value) => $_setString(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasDefaultVisibility() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearDefaultVisibility() => $_clearField(9);
+
+  @$pb.TagNumber(10)
+  $core.bool get manuallyApprovesFollowers => $_getBF(9);
+  @$pb.TagNumber(10)
+  set manuallyApprovesFollowers($core.bool value) => $_setBool(9, value);
+  @$pb.TagNumber(10)
+  $core.bool hasManuallyApprovesFollowers() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearManuallyApprovesFollowers() => $_clearField(10);
+
+  @$pb.TagNumber(11)
+  $core.String get messagePermission => $_getSZ(10);
+  @$pb.TagNumber(11)
+  set messagePermission($core.String value) => $_setString(10, value);
+  @$pb.TagNumber(11)
+  $core.bool hasMessagePermission() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearMessagePermission() => $_clearField(11);
+
+  @$pb.TagNumber(12)
+  $core.int get autoExpireDays => $_getIZ(11);
+  @$pb.TagNumber(12)
+  set autoExpireDays($core.int value) => $_setSignedInt32(11, value);
+  @$pb.TagNumber(12)
+  $core.bool hasAutoExpireDays() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearAutoExpireDays() => $_clearField(12);
+}
+
 class ActorList extends $pb.GeneratedMessage {
   factory ActorList({
     $core.Iterable<Actor>? items,

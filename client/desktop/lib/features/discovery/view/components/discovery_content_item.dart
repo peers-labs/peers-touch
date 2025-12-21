@@ -9,6 +9,7 @@ class DiscoveryContentItem extends StatelessWidget {
 
   // Observable state for local interactions (like expanding comments)
   final RxBool isCommentsExpanded = false.obs;
+  final RxBool showAllComments = false.obs;
   final TextEditingController commentController = TextEditingController();
 
   DiscoveryContentItem({
@@ -285,7 +286,37 @@ class DiscoveryContentItem extends StatelessWidget {
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
-            ...item.comments.map((c) => _buildCommentItem(c)).toList(),
+            Obx(() {
+              final comments = item.comments;
+              final count = comments.length;
+              final showAll = showAllComments.value;
+              // Show last 10 comments by default
+              final visibleComments = (count > 10 && !showAll)
+                  ? comments.sublist(count - 10)
+                  : comments;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (count > 10 && !showAll)
+                    GestureDetector(
+                      onTap: () => showAllComments.value = true,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Text(
+                          'View all $count comments',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ...visibleComments.map((c) => _buildCommentItem(c)),
+                ],
+              );
+            }),
           ],
         ],
       ),

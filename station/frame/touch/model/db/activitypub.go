@@ -63,6 +63,7 @@ type ActivityPubActivity struct {
 	ActorID       string    `gorm:"size:512;not null;index"`         // Actor who performed the activity
 	ObjectID      string    `gorm:"size:512;index"`                  // Target object ID
 	TargetID      string    `gorm:"size:512;index"`                  // Target collection/actor ID
+	InReplyTo     string    `gorm:"size:512;index"`                  // Reply target ID (for efficient filtering)
 	Published     time.Time `gorm:"not null;index"`                  // When the activity was published
 	Content       string    `gorm:"type:json"`                       // Full activity JSON
 	IsLocal       bool      `gorm:"default:false;not null;index"`    // Whether this is a local activity

@@ -48,6 +48,6 @@ class DiscoveryItem {
     this.commentsCount = 0,
     this.sharesCount = 0,
     this.isLiked = false,
-    this.comments = const [],
-  });
+    List<DiscoveryComment>? comments,
+  }) : comments = comments ?? [];
 }
