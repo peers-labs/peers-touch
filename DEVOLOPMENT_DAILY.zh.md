@@ -151,4 +151,7 @@
 - 后续建议：迁移 ActivityPub/管理路由到中间件；替换 SessionStore 为 Redis；接入 OAuth2 Provider；清理历史硬编码与散落校验逻辑。
 ```
 
+## 20251222
 
+1. 发帖功能还是无法正常展示图片与评论，且发贴数据在数据库中冗余数据体量太大，需要重新设计。且现在的数据结构无法支持多种交互，如评论，转发。
+2. 开始设计个人页，在 station\frame\docs\actor_description.zh.md 里

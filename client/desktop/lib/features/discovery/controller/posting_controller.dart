@@ -5,6 +5,8 @@ import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/post/post.pb.dart' as pb;
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
+import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
+import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/repository/discovery_repository.dart';
 import 'package:peers_touch_base/context/global_context.dart';
@@ -28,6 +30,11 @@ class PostingController extends GetxController {
   final cwEnabled = false.obs;
   final visibility = 'public'.obs;
   final attachments = <File>[].obs;
+  
+  // Keep state even when closed?
+  // We want to keep state if user closes dialog without submitting.
+  // But clear it on successful submit.
+  
   // TODO: Add Poll state
 
   void setActor(String name) => overrideActor = name;
@@ -115,46 +122,26 @@ class PostingController extends GetxController {
         }
       }
 
-      // 2. Construct ActivityPub Activity
-      final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+      // 2. Construct PostInput (Proto)
       final actorName = _actor;
-      final actorId = '$baseUrl/activitypub/$actorName/actor';
-      final followers = '$baseUrl/activitypub/$actorName/followers';
-      const public = 'https://www.w3.org/ns/activitystreams#Public';
-
-      final to = visibility.value == 'public' ? [public] : [followers];
-      final cc = visibility.value == 'public' ? [followers] : [];
-
-      final note = {
-        'type': 'Note',
-        'content': text.value,
-        'attributedTo': actorId,
-        'to': to,
-        'cc': cc,
-        'attachment': uploadedMedia.map((att) => {
-          'type': 'Document',
-          'mediaType': att.mediaType,
-          'url': att.url,
-          'name': att.alt,
-        }).toList(),
-      };
+      final input = pb.PostInput(
+        text: text.value,
+        visibility: visibility.value,
+        attachments: uploadedMedia.map((m) => pb.Attachment(
+          mediaId: m.mediaId,
+          url: m.url,
+          mediaType: m.mediaType,
+          alt: m.alt,
+        )),
+      );
 
       if (cwEnabled.value && cw.value.isNotEmpty) {
-        note['summary'] = cw.value;
-        note['sensitive'] = true;
+        input.cw = cw.value;
+        input.sensitive = true;
       }
 
-      final activity = {
-        '@context': 'https://www.w3.org/ns/activitystreams',
-        'type': 'Create',
-        'actor': actorId,
-        'object': note,
-        'to': to,
-        'cc': cc,
-      };
-
       // 3. Submit Post to Outbox
-      final data = await _repo.submitPost(actorName, activity);
+      final data = await _repo.submitPost(actorName, input);
       
       submitting.value = false;
       
@@ -164,6 +151,28 @@ class PostingController extends GetxController {
       cwEnabled.value = false;
       attachments.clear();
       Get.back(); // Close dialog
+
+      // OPTIMISTIC UPDATE: Add the new item to DiscoveryController immediately
+      if (Get.isRegistered<DiscoveryController>()) {
+        final discovery = Get.find<DiscoveryController>();
+        
+        // Convert local data to DiscoveryItem
+        final newItem = DiscoveryItem(
+          id: data['id']?.toString() ?? DateTime.now().toString(),
+          title: input.hasCw() && input.cw.isNotEmpty ? input.cw : (input.text.isNotEmpty ? input.text : 'New Post'), 
+          content: input.text,
+          author: actorName,
+          authorAvatar: 'https://i.pravatar.cc/150?u=$actorName', // Ideally get from user profile
+          timestamp: DateTime.now(),
+          type: 'Create',
+          images: uploadedMedia.map((e) => e.url).toList(), // Use uploadedMedia directly for URLs
+          likesCount: 0,
+          commentsCount: 0,
+          sharesCount: 0,
+        );
+        
+        discovery.addNewItem(newItem);
+      }
 
       return pb.PostResponse(
         postId: data['id'] ?? '', // ActivityPub returns 'id' (activity ID)

@@ -17,6 +17,10 @@ development:
     location: "peers-touch-go/example"
     description: "Contains example implementations and usage demonstrations for the framework"
     note: "When providing examples or demonstrating usage, refer to this directory for existing patterns and implementations"
+  
+  # Coding Standards
+  standards:
+    - "Backend Interaction: Use Protobuf defined structures instead of Map unless necessary."
 
 # base prompts
 
