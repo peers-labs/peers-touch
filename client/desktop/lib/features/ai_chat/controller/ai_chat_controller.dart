@@ -6,7 +6,7 @@ import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
@@ -126,12 +126,12 @@ class AIChatController extends GetxController {
     _persistSessions();
   }
 
-  void selectSession(String id) {
+  Future<void> selectSession(String id) async {
     selectedSessionId.value = id;
     // 懒加载消息
     var list = _sessionStore[id];
     if (list == null) {
-      list = _loadMessagesForSession(id);
+      list = await _loadMessagesForSession(id);
       _sessionStore[id] = list;
     }
     messages.assignAll(list);
@@ -223,7 +223,7 @@ class AIChatController extends GetxController {
       final finalList = preset.isNotEmpty ? preset : fetched;
       models.assignAll(finalList);
 
-      final preferred = storage.get<String>(AIConstants.selectedModel) ?? AIConstants.defaultOpenAIModel;
+      final preferred = await storage.get<String>(AIConstants.selectedModel) ?? AIConstants.defaultOpenAIModel;
       currentModel.value = models.contains(preferred) && preferred.isNotEmpty
           ? preferred
           : (models.isNotEmpty ? models.first : AIConstants.defaultOpenAIModel);
@@ -244,13 +244,13 @@ class AIChatController extends GetxController {
   Future<void> send() async {
     final text = inputText.value.trim();
     if (text.isEmpty) return;
-    if (!service.isConfigured) {
+    if (!await service.checkConfigured()) {
       error.value = 'AI提供商未配置';
       return;
     }
 
-    final enableStreaming = storage.get<bool>(AIConstants.enableStreaming) ?? true;
-    final tempStr = storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString();
+    final enableStreaming = await storage.get<bool>(AIConstants.enableStreaming) ?? true;
+    final tempStr = await storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString();
     final temperature = double.tryParse(tempStr) ?? AIConstants.defaultTemperature;
 
     // 确保存在会话
@@ -327,13 +327,13 @@ class AIChatController extends GetxController {
   Future<void> sendDraft(AiComposerDraft draft) async {
     final text = draft.text.trim();
     if (text.isEmpty && draft.attachments.isEmpty) return;
-    if (!service.isConfigured) {
+    if (!await service.checkConfigured()) {
       error.value = 'AI提供商未配置';
       return;
     }
 
-    final enableStreaming = storage.get<bool>(AIConstants.enableStreaming) ?? true;
-    final tempStr = storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString();
+    final enableStreaming = await storage.get<bool>(AIConstants.enableStreaming) ?? true;
+    final tempStr = await storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString();
     final temperature = double.tryParse(tempStr) ?? AIConstants.defaultTemperature;
 
     // 确保存在会话
@@ -355,7 +355,7 @@ class AIChatController extends GetxController {
     clearError();
 
     // 根据提供商拼装富内容参数
-    final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+    final provider = await storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
     List<Map<String, dynamic>>? openAIContent;
     List<String>? imagesBase64;
     if (provider.toLowerCase() == 'openai') {
@@ -470,12 +470,12 @@ class AIChatController extends GetxController {
   }
 
   // -------------------- 持久化 --------------------
-  void _loadPersistedState() {
+  Future<void> _loadPersistedState() async {
     // 右侧面板显隐
-    final show = storage.get<bool>(AIConstants.chatShowTopicPanel) ?? false;
+    final show = await storage.get<bool>(AIConstants.chatShowTopicPanel) ?? false;
     showTopicPanel.value = show;
     // topics
-    final rawTopics = storage.get<List<dynamic>>(AIConstants.chatTopics);
+    final rawTopics = await storage.get<List<dynamic>>(AIConstants.chatTopics);
     if (rawTopics != null) {
       // 使用 microtask 避免在 onInit 中直接修改 RxList 触发构建错误
       Future.microtask(() => topics.assignAll(rawTopics.map((e) => e.toString())));
@@ -483,26 +483,26 @@ class AIChatController extends GetxController {
       Future.microtask(() => topics.assignAll(['默认主题']));
     }
     // 会话-主题映射
-    final mapRaw = storage.get<Map<String, dynamic>>(AIConstants.chatSessionTopicMap);
+    final mapRaw = await storage.get<Map<String, dynamic>>(AIConstants.chatSessionTopicMap);
     if (mapRaw != null) {
       _sessionTopicMap = mapRaw.map((k, v) => MapEntry(k, v.toString()));
     }
     // sessions
-    final rawSessions = storage.get<List<dynamic>>(AIConstants.chatSessions);
+    final rawSessions = await storage.get<List<dynamic>>(AIConstants.chatSessions);
     if (rawSessions != null && rawSessions.isNotEmpty) {
       final parsed = rawSessions
           .whereType<Map<String, dynamic>>()
           .map((m) => ChatSession.create()..mergeFromProto3Json(m))
           .toList();
       // 使用 microtask 避免在 onInit 中直接修改 RxList 触发构建错误
-      Future.microtask(() {
+      Future.microtask(() async {
         sessions.assignAll(parsed);
         // 选择
-        final sid = storage.get<String>(AIConstants.chatSelectedSessionId);
+        final sid = await storage.get<String>(AIConstants.chatSelectedSessionId);
         if (sid != null && parsed.any((s) => s.id == sid)) {
-          selectSession(sid);
+          await selectSession(sid);
         } else {
-          selectSession(parsed.first.id);
+          await selectSession(parsed.first.id);
         }
       });
     } else {
@@ -511,7 +511,7 @@ class AIChatController extends GetxController {
     }
   }
 
-  void _persistSessions() {
+  Future<void> _persistSessions() async {
     final data = sessions.map((s) => s.toProto3Json()).toList();
     storage.set(AIConstants.chatSessions, data);
     if (selectedSessionId.value != null) {
@@ -519,15 +519,15 @@ class AIChatController extends GetxController {
     }
   }
 
-  void _persistTopics() {
+  Future<void> _persistTopics() async {
     storage.set(AIConstants.chatTopics, topics.toList());
   }
 
-  void _persistSessionTopicMap() {
+  Future<void> _persistSessionTopicMap() async {
     storage.set(AIConstants.chatSessionTopicMap, Map<String, String>.from(_sessionTopicMap));
   }
 
-  void _persistMessagesForSession(String id) {
+  Future<void> _persistMessagesForSession(String id) async {
     final msgs = _sessionStore[id] ?? <ChatMessage>[];
     final data = msgs.map((m) => m.toProto3Json()).toList();
     storage.set('${AIConstants.chatMessagesPrefix}$id', data);
@@ -544,12 +544,12 @@ class AIChatController extends GetxController {
         ..meta.clear()
         ..meta.addAll(newMeta);
       sessions.refresh();
-      _persistSessions();
+      await _persistSessions();
     }
   }
 
-  List<ChatMessage> _loadMessagesForSession(String id) {
-    final raw = storage.get<List<dynamic>>('${AIConstants.chatMessagesPrefix}$id');
+  Future<List<ChatMessage>> _loadMessagesForSession(String id) async {
+    final raw = await storage.get<List<dynamic>>('${AIConstants.chatMessagesPrefix}$id');
     if (raw == null) return <ChatMessage>[];
     return raw.whereType<Map<String, dynamic>>().map((m) {
       final r = m['role'];

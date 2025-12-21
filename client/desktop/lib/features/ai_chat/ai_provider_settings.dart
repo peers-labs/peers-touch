@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
 
@@ -24,17 +24,17 @@ class AIProviderSettings {
         description: '选择AI服务提供商（支持 OpenAI / Ollama）',
         icon: Icons.precision_manufacturing,
         type: SettingItemType.select,
-        value: Get.find<LocalStorage>().get<String>(AIConstants.providerType) ?? 'OpenAI',
+        value: 'OpenAI', // Loaded async by SettingController
         options: const ['OpenAI', 'Ollama', 'Google', 'Anthropic', 'Moonshot', 'Custom'],
-        onChanged: (value) {
+        onChanged: (value) async {
           final storage = Get.find<LocalStorage>();
           final v = (value is String) ? value : (value?.toString() ?? 'OpenAI');
-          storage.set(AIConstants.providerType, v);
+          await storage.set(AIConstants.providerType, v);
           Get.snackbar('提示', '当前选择: $v');
           // 同步作用域默认模型到UI
           final controller = Get.find<SettingController>();
           final selectedModelKey = v == 'Ollama' ? AIConstants.selectedModelOllama : AIConstants.selectedModelOpenAI;
-          final selectedModel = storage.get<String>(selectedModelKey);
+          final selectedModel = await storage.get<String>(selectedModelKey);
           controller.updateSettingValue('module_ai_provider', 'model_selection', selectedModel);
           controller.refreshSections(); // 刷新整个设置页面以触发 isVisible 的重新计算
         },
@@ -45,11 +45,11 @@ class AIProviderSettings {
         description: '设置OpenAI API访问密钥',
         icon: Icons.key,
         type: SettingItemType.password,
-        value: Get.find<LocalStorage>().get<String>(AIConstants.openaiApiKey) ?? '',
+        value: '', // Loaded async by SettingController
         placeholder: '请输入OpenAI API密钥',
-        onChanged: (value) {
+        onChanged: (value) async {
           final storage = Get.find<LocalStorage>();
-          storage.set(AIConstants.openaiApiKey, value ?? '');
+          await storage.set(AIConstants.openaiApiKey, value ?? '');
         },
         isVisible: (allItems) => allItems.firstWhere((i) => i.id == 'provider_type').value == 'OpenAI',
       ),
@@ -59,11 +59,11 @@ class AIProviderSettings {
         description: '设置OpenAI API基础URL（可选）',
         icon: Icons.link,
         type: SettingItemType.textInput,
-        value: Get.find<LocalStorage>().get<String>(AIConstants.openaiBaseUrl) ?? AIConstants.defaultOpenAIBaseUrl,
+        value: AIConstants.defaultOpenAIBaseUrl, // Loaded async by SettingController
         placeholder: '请输入OpenAI基础URL',
-        onChanged: (value) {
+        onChanged: (value) async {
           final storage = Get.find<LocalStorage>();
-          storage.set(AIConstants.openaiBaseUrl, value ?? AIConstants.defaultOpenAIBaseUrl);
+          await storage.set(AIConstants.openaiBaseUrl, value ?? AIConstants.defaultOpenAIBaseUrl);
         },
         isVisible: (allItems) => allItems.firstWhere((i) => i.id == 'provider_type').value == 'OpenAI',
       ),
@@ -74,11 +74,11 @@ class AIProviderSettings {
         description: '必须包含 http(s)://；本地默认 http://localhost:11434',
         icon: Icons.link,
         type: SettingItemType.textInput,
-        value: Get.find<LocalStorage>().get<String>(AIConstants.ollamaBaseUrl) ?? 'http://localhost:11434',
+        value: 'http://localhost:11434', // Loaded async by SettingController
         placeholder: '例如 http://127.0.0.1:11434',
-        onChanged: (value) {
+        onChanged: (value) async {
           final storage = Get.find<LocalStorage>();
-          storage.set(AIConstants.ollamaBaseUrl, value ?? 'http://localhost:11434');
+          await storage.set(AIConstants.ollamaBaseUrl, value ?? 'http://localhost:11434');
         },
         isVisible: (allItems) => allItems.firstWhere((i) => i.id == 'provider_type').value == 'Ollama',
       ),
@@ -88,10 +88,10 @@ class AIProviderSettings {
         description: '浏览器直接请求 Ollama，提高响应速度',
         icon: Icons.speed,
         type: SettingItemType.toggle,
-        value: false,
-        onChanged: (value) {
+        value: false, // Loaded async by SettingController
+        onChanged: (value) async {
           final storage = Get.find<LocalStorage>();
-          storage.set(AIConstants.ollamaClientSideMode, value == true);
+          await storage.set(AIConstants.ollamaClientSideMode, value == true);
         },
       ),
       SettingItem(
@@ -100,16 +100,11 @@ class AIProviderSettings {
         description: '选择默认使用的AI模型',
         icon: Icons.smart_toy,
         type: SettingItemType.select,
-        value: () {
-          final storage = Get.find<LocalStorage>();
-          final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
-          final key = provider == 'Ollama' ? AIConstants.selectedModelOllama : AIConstants.selectedModelOpenAI;
-          return storage.get<String>(key);
-        }(),
+        value: AIConstants.defaultOpenAIModel,
         options: const [],
         onChanged: (value) {
           final storage = Get.find<LocalStorage>();
-          final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+          final provider = await storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
           final key = provider == 'Ollama' ? AIConstants.selectedModelOllama : AIConstants.selectedModelOpenAI;
           final v = (value is String) ? value : (value?.toString() ?? AIConstants.defaultOpenAIModel);
           storage.set(key, v);
@@ -123,7 +118,7 @@ class AIProviderSettings {
         type: SettingItemType.button,
         onTap: () async {
           final storage = Get.find<LocalStorage>();
-          final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+          final provider = await storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
           final aiBoxFacadeService = AiBoxServiceFactory.createFacadeService();
           
           try {
@@ -161,7 +156,7 @@ class AIProviderSettings {
         type: SettingItemType.button,
         onTap: () async {
           final storage = Get.find<LocalStorage>();
-          final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+          final provider = await storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
           final aiBoxFacadeService = AiBoxServiceFactory.createFacadeService();
           try {
             Get.snackbar('连接测试', '开始测试 $provider 连接...');
@@ -245,7 +240,7 @@ class AIProviderSettings {
         description: '在消息气泡右下角显示Token数',
         icon: Icons.confirmation_number,
         type: SettingItemType.toggle,
-        value: Get.find<LocalStorage>().get<bool>(AIConstants.showTokens) ?? false,
+        value: false, // Loaded async by SettingController
         onChanged: (value) {
           final storage = Get.find<LocalStorage>();
           storage.set(AIConstants.showTokens, value == true);

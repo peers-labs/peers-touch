@@ -62,7 +62,7 @@ class _AppState extends State<App> {
       supportedLocales: AppLocalizations.supportedLocales,
       initialBinding: InitialBinding(),
       getPages: AppPages.pages,
-      initialRoute: AppRoutes.login,
+      initialRoute: AppInitializer().initialRoute,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
     );

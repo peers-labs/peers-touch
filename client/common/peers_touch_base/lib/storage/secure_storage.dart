@@ -1,32 +1,34 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 /// 安全存储服务接口
-abstract class SecureStorageService {
+abstract class SecureStorage {
   Future<void> set(String key, String value);
   Future<String?> get(String key);
   Future<void> remove(String key);
   Future<void> clear();
 }
 
-/// 安全存储服务实现（基础版本）
-class BasicSecureStorageService implements SecureStorageService {
-  final Map<String, String> _storage = {};
-  
+/// 安全存储服务实现（基于 FlutterSecureStorage）
+class SecureStorageImpl implements SecureStorage {
+  static const FlutterSecureStorage _fs = FlutterSecureStorage();
+
   @override
   Future<void> set(String key, String value) async {
-    _storage[key] = value;
+    await _fs.write(key: key, value: value);
   }
-  
+
   @override
   Future<String?> get(String key) async {
-    return _storage[key];
+    return _fs.read(key: key);
   }
-  
+
   @override
   Future<void> remove(String key) async {
-    _storage.remove(key);
+    await _fs.delete(key: key);
   }
-  
+
   @override
   Future<void> clear() async {
-    _storage.clear();
+    await _fs.deleteAll();
   }
 }

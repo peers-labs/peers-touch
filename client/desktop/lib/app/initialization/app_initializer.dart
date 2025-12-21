@@ -1,9 +1,10 @@
 import 'package:flutter/widgets.dart';
-import 'package:get_storage/get_storage.dart';
-
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/core/utils/window_options_manager.dart';
-import 'package:peers_touch_desktop/core/network/network_initializer.dart';
+import 'package:peers_touch_desktop/core/services/network_initializer.dart';
+import 'package:peers_touch_base/storage/secure_storage.dart';
+import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
+import 'package:peers_touch_desktop/app/routes/app_routes.dart';
 
 /// Application initializer
 /// Responsible for managing all asynchronous initialization operations, belongs to application-level core configuration
@@ -19,6 +20,9 @@ class AppInitializer {
   
   /// Initialization error information
   String? _initializationError;
+
+  /// Calculated initial route based on auth state
+  String _initialRoute = AppRoutes.login;
   
   /// Execute application initialization (instance method)
   /// Returns true if initialization is successful, false if failed
@@ -31,9 +35,8 @@ class AppInitializer {
       LoggingService.initialize();
       LoggingService.info('Starting application initialization...');
 
-      // Initialize GetStorage
-      await GetStorage.init();
-      LoggingService.info('Local storage initialized');
+      // Drift database is lazy loaded, no explicit init needed for LocalStorage
+      LoggingService.info('Local storage initialized (lazy)');
 
       // Initialize window manager
       await WindowOptionsManager.initializeWindowManager();
@@ -42,6 +45,21 @@ class AppInitializer {
       // Initialize network service
       NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
       LoggingService.info('Network service initialized with base URL: http://localhost:18080');
+
+      // Check auth state for initial route
+      try {
+        final secureStorage = SecureStorageImpl();
+        final token = await secureStorage.get(StorageKeys.tokenKey);
+        if (token != null && token.isNotEmpty) {
+          _initialRoute = AppRoutes.shell;
+          LoggingService.info('Auth token found, setting initial route to Shell');
+        } else {
+          LoggingService.info('No auth token found, setting initial route to Login');
+        }
+      } catch (e) {
+        LoggingService.error('Failed to check auth state', e);
+        // Fallback to login
+      }
 
       _isInitialized = true;
       LoggingService.info('Application initialization completed successfully');
@@ -68,6 +86,9 @@ class AppInitializer {
   
   /// Get initialization error information
   String? get initializationError => _initializationError;
+
+  /// Get calculated initial route
+  String get initialRoute => _initialRoute;
   
   /// Static method to get initialization error information
   static String? get appInitializationError => _instance.initializationError;
@@ -76,6 +97,7 @@ class AppInitializer {
   void reset() {
     _isInitialized = false;
     _initializationError = null;
+    _initialRoute = AppRoutes.login;
   }
   
   /// Static reset method (mainly for testing)

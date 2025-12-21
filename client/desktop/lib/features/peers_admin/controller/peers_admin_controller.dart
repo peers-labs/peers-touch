@@ -1,24 +1,24 @@
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart' as dio;
-import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_desktop/core/services/network_discovery/libp2p_network_service.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
-import 'package:peers_touch_desktop/core/network/network_initializer.dart';
+import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 import 'package:peers_touch_desktop/features/peers_admin/model/libp2p_test_result.dart';
 
 /// PeersAdmin 控制器：负责读取后端地址、执行管理与 Peer 相关请求
 class PeersAdminController extends GetxController {
-  final ApiClient apiClient;
+  final IHttpService httpService;
   final LocalStorage localStorage;
   final SecureStorage secureStorage;
   final Libp2pNetworkService libp2pNetworkService;
 
   PeersAdminController({
-    required this.apiClient,
+    required this.httpService,
     required this.localStorage,
     required this.secureStorage,
     required this.libp2pNetworkService,
@@ -68,7 +68,7 @@ class PeersAdminController extends GetxController {
   /// 从设置读取 backend_url 和 auth_token，并同步到运行时（包括拦截器读取的 token_key）
   Future<void> _syncSettingsToRuntime() async {
     // 后端地址存储键：settings:global_business:backend_url
-    final url = localStorage.get<String>('settings:global_business:backend_url') ?? '';
+    final url = await localStorage.get<String>('settings:global_business:backend_url') ?? '';
     backendUrl.value = _normalizeBaseUrl(url);
 
     // 令牌：settings:global_business:auth_token（敏感，存 SecureStorage）
@@ -138,8 +138,7 @@ class PeersAdminController extends GetxController {
     lastError.value = null;
     lastResponse.value = null;
     try {
-      // ApiClient.get uses named parameter `query` for query string
-      final resp = await apiClient.get<Map<String, dynamic>>(url, query: queryParameters);
+      final resp = await httpService.getResponse<Map<String, dynamic>>(url, queryParameters: queryParameters);
       lastResponse.value = _wrapResponse(resp);
     } on dio.DioException catch (e) {
       lastError.value = e.message ?? '请求失败';
@@ -159,7 +158,7 @@ class PeersAdminController extends GetxController {
     lastError.value = null;
     lastResponse.value = null;
     try {
-      final resp = await apiClient.post<Map<String, dynamic>>(url, data: data);
+      final resp = await httpService.postResponse<Map<String, dynamic>>(url, data: data);
       lastResponse.value = _wrapResponse(resp);
     } on dio.DioException catch (e) {
       lastError.value = e.message ?? '请求失败';

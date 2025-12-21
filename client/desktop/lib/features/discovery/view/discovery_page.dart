@@ -7,6 +7,7 @@ import 'package:peers_touch_ui/peers_touch_ui.dart';
 import '../controller/discovery_controller.dart';
 import '../model/discovery_item.dart';
 import 'composer_page.dart';
+import 'components/discovery_content_item.dart';
 
 class DiscoveryPage extends GetView<DiscoveryController> {
   const DiscoveryPage({super.key});
@@ -188,151 +189,9 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                   separatorBuilder: (_, __) => const SizedBox(height: 24),
                   itemBuilder: (ctx, i) {
                     final item = items[i];
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 20,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(20),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: _getTypeColor(item.type),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        _getMonth(item.timestamp),
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      Text(
-                                        item.timestamp.day.toString().padLeft(2, '0'),
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.title,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          Text(
-                                            item.type.toUpperCase(),
-                                            style: const TextStyle(
-                                              color: Colors.grey,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          const Icon(Icons.circle, size: 4, color: Colors.grey),
-                                          const SizedBox(width: 8),
-                                          const Text(
-                                            'Activity',
-                                            style: TextStyle(
-                                              color: Colors.grey,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const Icon(Icons.more_horiz, color: Colors.grey),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.content,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    height: 1.5,
-                                  ),
-                                ),
-                                if (item.images.isNotEmpty) ...[
-                                  const SizedBox(height: 12),
-                                  _buildImageGrid(item.images),
-                                ],
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                              child: Row(
-                                children: const [
-                                  CircleAvatar(
-                                    radius: 12,
-                                    backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=8'),
-                                  ),
-                                  SizedBox(width: 8),
-                                  Spacer(),
-                                  SizedBox(width: 12),
-                                  Icon(Icons.local_fire_department, color: Colors.orange, size: 16),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    '12',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  SizedBox(width: 12),
-                                  Icon(Icons.share, color: Colors.cyan, size: 16),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    '30',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                    return DiscoveryContentItem(
+                      item: item,
+                      controller: controller,
                     );
                   },
                 );
@@ -483,80 +342,6 @@ class DiscoveryPage extends GetView<DiscoveryController> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Color _getTypeColor(String type) {
-    switch (type.toLowerCase()) {
-      case 'create': return Colors.blue;
-      case 'like': return Colors.pink;
-      case 'follow': return Colors.purple;
-      case 'announce': return Colors.green;
-      case 'comment': return Colors.orange;
-      default: return Colors.cyanAccent;
-    }
-  }
-  
-  String _getMonth(DateTime date) {
-    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-    return months[date.month - 1];
-  }
-
-  Widget _buildImageGrid(List<String> images) {
-    if (images.isEmpty) return const SizedBox.shrink();
-
-    if (images.length == 1) {
-      return Container(
-        constraints: const BoxConstraints(maxHeight: 300, maxWidth: 300),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.network(
-            images.first,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-          ),
-        ),
-      );
-    }
-
-    final count = images.length > 9 ? 9 : images.length;
-    // 4 images case: 2x2 grid
-    if (count == 4) {
-      return SizedBox(
-        width: 220, // Approx 2 * 100 + gap
-        child: GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 4,
-          crossAxisSpacing: 4,
-          children: images.take(4).map((url) => _buildGridImage(url)).toList(),
-        ),
-      );
-    }
-
-    // Standard 3-column grid
-    return SizedBox(
-      width: 330, // Approx 3 * 100 + gaps
-      child: GridView.count(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisCount: 3,
-        mainAxisSpacing: 4,
-        crossAxisSpacing: 4,
-        children: images.take(count).map((url) => _buildGridImage(url)).toList(),
-      ),
-    );
-  }
-
-  Widget _buildGridImage(String url) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: Image.network(
-        url,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Container(color: Colors.grey[200]),
       ),
     );
   }

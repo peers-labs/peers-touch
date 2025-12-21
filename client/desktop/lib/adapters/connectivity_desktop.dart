@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:peers_touch_base/network/connectivity_adapter.dart';
-import 'package:peers_touch_desktop/core/network/network_status_service.dart';
+import 'package:peers_touch_desktop/core/services/network_status_service.dart';
 
 class DesktopConnectivityAdapter implements ConnectivityAdapter {
   final NetworkStatusService _svc;
