@@ -22,7 +22,7 @@ class HttpServiceImpl implements IHttpService {
       BaseOptions(
         baseUrl: baseUrl,
         connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 30), // Increased to avoid timeouts on slow operations
       ),
     );
 

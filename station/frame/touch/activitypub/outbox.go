@@ -120,7 +120,7 @@ func handleCreateActivity(c context.Context, dbConn *gorm.DB, username string, a
 	}
 
 	// 5. Persist Activity
-	return persistActivity(dbConn, username, activity, string(object.ID), baseURL)
+	return persistActivity(dbConn, username, activity, string(object.ID), baseURL, string(object.InReplyTo.GetLink()))
 }
 
 func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -151,7 +151,7 @@ func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, a
 		return fmt.Errorf("failed to create follow in DB: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, resolvedURI, baseURL)
+	return persistActivity(dbConn, username, activity, resolvedURI, baseURL, "")
 }
 
 func handleLikeActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -174,7 +174,7 @@ func handleLikeActivity(c context.Context, dbConn *gorm.DB, username string, act
 		return fmt.Errorf("failed to create like in DB: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, string(targetURI), baseURL)
+	return persistActivity(dbConn, username, activity, string(targetURI), baseURL, "")
 }
 
 func handleUndoActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -210,7 +210,7 @@ func handleUndoActivity(c context.Context, dbConn *gorm.DB, username string, act
 		log.Warnf(c, "Undo not fully implemented for activity type %s", originalActivity.Type)
 	}
 
-	return persistActivity(dbConn, username, activity, string(targetActivityURI), baseURL)
+	return persistActivity(dbConn, username, activity, string(targetActivityURI), baseURL, "")
 }
 
 func handleUpdateActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -245,7 +245,7 @@ func handleUpdateActivity(c context.Context, dbConn *gorm.DB, username string, a
 		return fmt.Errorf("failed to update object: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, string(object.ID), baseURL)
+	return persistActivity(dbConn, username, activity, string(object.ID), baseURL, "")
 }
 
 func handleDeleteActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -267,15 +267,28 @@ func handleDeleteActivity(c context.Context, dbConn *gorm.DB, username string, a
 		log.Warnf(c, "Failed to mark object as Tombstone: %v", err)
 	}
 
-	return persistActivity(dbConn, username, activity, string(targetURI), baseURL)
+	return persistActivity(dbConn, username, activity, string(targetURI), baseURL, "")
 }
 
-func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, objectID string, baseURL string) error {
+func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, objectID string, baseURL string, inReplyTo string) error {
+	// Helper to simplify local IRIs
+	simplify := func(iri string) string {
+		if len(iri) > len(baseURL) && iri[:len(baseURL)] == baseURL {
+			return iri[len(baseURL):]
+		}
+		return iri
+	}
+
+	actID := string(activity.ID)
+	actorID := string(activity.Actor.GetLink())
+
 	dbAct := &db.ActivityPubActivity{
-		ActivityPubID: string(activity.ID),
+		ActivityPubID: simplify(actID),
 		Type:          string(activity.Type),
-		ActorID:       string(activity.Actor.GetLink()),
-		ObjectID:      objectID,
+		ActorID:       simplify(actorID),
+		ObjectID:      simplify(objectID),
+		TargetID:      "", // TargetID not used in outbox yet (Announce uses ObjectID)
+		InReplyTo:     simplify(inReplyTo),
 		Published:     activity.Published,
 		IsLocal:       true,
 	}
@@ -293,7 +306,7 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 	// Add to Outbox collection
 	colItem := &db.ActivityPubCollection{
 		CollectionID: fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, username),
-		ItemID:       string(activity.ID),
+		ItemID:       simplify(actID),
 		ItemType:     "Activity",
 		AddedAt:      time.Now(),
 	}
@@ -417,7 +430,7 @@ func handleAnnounceActivity(c context.Context, dbConn *gorm.DB, username string,
 		activity.Published = time.Now()
 	}
 
-	if err := persistActivity(dbConn, username, activity, string(targetURI), baseURL); err != nil {
+	if err := persistActivity(dbConn, username, activity, string(targetURI), baseURL, ""); err != nil {
 		return err
 	}
 	return nil

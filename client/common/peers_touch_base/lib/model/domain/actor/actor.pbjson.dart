@@ -55,6 +55,121 @@ final $typed_data.Uint8List actorDescriptor = $convert.base64Decode(
     'eVIJZW5kcG9pbnRzGjwKDkVuZHBvaW50c0VudHJ5EhAKA2tleRgBIAEoCVIDa2V5EhQKBXZhbH'
     'VlGAIgASgJUgV2YWx1ZToCOAE=');
 
+@$core.Deprecated('Use userLinkDescriptor instead')
+const UserLink$json = {
+  '1': 'UserLink',
+  '2': [
+    {'1': 'label', '3': 1, '4': 1, '5': 9, '10': 'label'},
+    {'1': 'url', '3': 2, '4': 1, '5': 9, '10': 'url'},
+  ],
+};
+
+/// Descriptor for `UserLink`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List userLinkDescriptor = $convert.base64Decode(
+    'CghVc2VyTGluaxIUCgVsYWJlbBgBIAEoCVIFbGFiZWwSEAoDdXJsGAIgASgJUgN1cmw=');
+
+@$core.Deprecated('Use updateProfileRequestDescriptor instead')
+const UpdateProfileRequest$json = {
+  '1': 'UpdateProfileRequest',
+  '2': [
+    {
+      '1': 'display_name',
+      '3': 1,
+      '4': 1,
+      '5': 9,
+      '9': 0,
+      '10': 'display_name',
+      '17': true
+    },
+    {'1': 'note', '3': 2, '4': 1, '5': 9, '9': 1, '10': 'note', '17': true},
+    {'1': 'avatar', '3': 3, '4': 1, '5': 9, '9': 2, '10': 'avatar', '17': true},
+    {'1': 'header', '3': 4, '4': 1, '5': 9, '9': 3, '10': 'header', '17': true},
+    {'1': 'region', '3': 5, '4': 1, '5': 9, '9': 4, '10': 'region', '17': true},
+    {
+      '1': 'timezone',
+      '3': 6,
+      '4': 1,
+      '5': 9,
+      '9': 5,
+      '10': 'timezone',
+      '17': true
+    },
+    {'1': 'tags', '3': 7, '4': 3, '5': 9, '10': 'tags'},
+    {
+      '1': 'links',
+      '3': 8,
+      '4': 3,
+      '5': 11,
+      '6': '.peers_touch.model.actor.v1.UserLink',
+      '10': 'links'
+    },
+    {
+      '1': 'default_visibility',
+      '3': 9,
+      '4': 1,
+      '5': 9,
+      '9': 6,
+      '10': 'default_visibility',
+      '17': true
+    },
+    {
+      '1': 'manually_approves_followers',
+      '3': 10,
+      '4': 1,
+      '5': 8,
+      '9': 7,
+      '10': 'manually_approves_followers',
+      '17': true
+    },
+    {
+      '1': 'message_permission',
+      '3': 11,
+      '4': 1,
+      '5': 9,
+      '9': 8,
+      '10': 'message_permission',
+      '17': true
+    },
+    {
+      '1': 'auto_expire_days',
+      '3': 12,
+      '4': 1,
+      '5': 5,
+      '9': 9,
+      '10': 'auto_expire_days',
+      '17': true
+    },
+  ],
+  '8': [
+    {'1': '_display_name'},
+    {'1': '_note'},
+    {'1': '_avatar'},
+    {'1': '_header'},
+    {'1': '_region'},
+    {'1': '_timezone'},
+    {'1': '_default_visibility'},
+    {'1': '_manually_approves_followers'},
+    {'1': '_message_permission'},
+    {'1': '_auto_expire_days'},
+  ],
+};
+
+/// Descriptor for `UpdateProfileRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List updateProfileRequestDescriptor = $convert.base64Decode(
+    'ChRVcGRhdGVQcm9maWxlUmVxdWVzdBInCgxkaXNwbGF5X25hbWUYASABKAlIAFIMZGlzcGxheV'
+    '9uYW1liAEBEhcKBG5vdGUYAiABKAlIAVIEbm90ZYgBARIbCgZhdmF0YXIYAyABKAlIAlIGYXZh'
+    'dGFyiAEBEhsKBmhlYWRlchgEIAEoCUgDUgZoZWFkZXKIAQESGwoGcmVnaW9uGAUgASgJSARSBn'
+    'JlZ2lvbogBARIfCgh0aW1lem9uZRgGIAEoCUgFUgh0aW1lem9uZYgBARISCgR0YWdzGAcgAygJ'
+    'UgR0YWdzEjoKBWxpbmtzGAggAygLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuVXNlck'
+    'xpbmtSBWxpbmtzEjMKEmRlZmF1bHRfdmlzaWJpbGl0eRgJIAEoCUgGUhJkZWZhdWx0X3Zpc2li'
+    'aWxpdHmIAQESRQobbWFudWFsbHlfYXBwcm92ZXNfZm9sbG93ZXJzGAogASgISAdSG21hbnVhbG'
+    'x5X2FwcHJvdmVzX2ZvbGxvd2Vyc4gBARIzChJtZXNzYWdlX3Blcm1pc3Npb24YCyABKAlICFIS'
+    'bWVzc2FnZV9wZXJtaXNzaW9uiAEBEi8KEGF1dG9fZXhwaXJlX2RheXMYDCABKAVICVIQYXV0b1'
+    '9leHBpcmVfZGF5c4gBAUIPCg1fZGlzcGxheV9uYW1lQgcKBV9ub3RlQgkKB19hdmF0YXJCCQoH'
+    'X2hlYWRlckIJCgdfcmVnaW9uQgsKCV90aW1lem9uZUIVChNfZGVmYXVsdF92aXNpYmlsaXR5Qh'
+    '4KHF9tYW51YWxseV9hcHByb3Zlc19mb2xsb3dlcnNCFQoTX21lc3NhZ2VfcGVybWlzc2lvbkIT'
+    'ChFfYXV0b19leHBpcmVfZGF5cw==');
+
 @$core.Deprecated('Use actorListDescriptor instead')
 const ActorList$json = {
   '1': 'ActorList',

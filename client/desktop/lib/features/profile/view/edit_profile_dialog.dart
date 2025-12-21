@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
+import 'package:peers_touch_base/model/domain/actor/actor.pb.dart';
 
 class EditProfileDialog extends StatefulWidget {
   const EditProfileDialog({super.key});
@@ -64,17 +65,16 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
   void _save() {
     if (_formKey.currentState!.validate()) {
-      final updates = <String, dynamic>{
-        'display_name': _displayNameController.text,
-        'note': _summaryController.text,
-        'region': _regionController.text,
-        'timezone': _timezoneController.text,
-      };
+      final request = UpdateProfileRequest();
+      request.displayName = _displayNameController.text;
+      request.note = _summaryController.text;
+      request.region = _regionController.text;
+      request.timezone = _timezoneController.text;
       
-      if (_avatarUrl != null) updates['avatar'] = _avatarUrl;
-      if (_headerUrl != null) updates['header'] = _headerUrl;
+      if (_avatarUrl != null) request.avatar = _avatarUrl!;
+      if (_headerUrl != null) request.header = _headerUrl!;
       
-      _controller.updateProfile(updates);
+      _controller.updateProfile(request);
     }
   }
 

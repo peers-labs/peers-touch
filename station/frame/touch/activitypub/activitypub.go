@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"strings"
 	"time"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -269,7 +270,11 @@ func FetchOutbox(c context.Context, rds *gorm.DB, user string, baseURL string, p
 			}
 		}
 		// Fallback to Link/IRI if content not found
-		collection.OrderedItems[i] = ap.IRI(item.ItemID)
+		iri := item.ItemID
+		if strings.HasPrefix(iri, "/") {
+			iri = baseURL + iri
+		}
+		collection.OrderedItems[i] = ap.IRI(iri)
 	}
 
 	log.Infof(c, "Retrieving outbox activities page for user: %s", user)
@@ -471,11 +476,22 @@ func GetNodeInfo(baseURL string) map[string]interface{} {
 func PersistInboxActivity(c context.Context, rds *gorm.DB, user string, activity *ap.Activity, baseURL string, rawBody []byte) error {
 	activityID := string(activity.ID)
 	if activityID != "" {
+		var inReplyTo string
+		if activity.Object != nil {
+			_ = ap.OnObject(activity.Object, func(o *ap.Object) error {
+				if o.InReplyTo != nil {
+					inReplyTo = getLink(o.InReplyTo)
+				}
+				return nil
+			})
+		}
+
 		apActivity := db.ActivityPubActivity{
 			ActivityPubID: activityID,
 			Type:          string(activity.Type),
 			ActorID:       getLink(activity.Actor),
 			ObjectID:      getLink(activity.Object),
+			InReplyTo:     inReplyTo,
 			Content:       string(rawBody),
 		}
 		if err := rds.FirstOrCreate(&apActivity, db.ActivityPubActivity{ActivityPubID: activityID}).Error; err != nil {

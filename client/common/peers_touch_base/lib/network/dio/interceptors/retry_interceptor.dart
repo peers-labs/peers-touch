@@ -5,11 +5,10 @@ RetryInterceptor createRetryInterceptor(Dio dio) {
   return RetryInterceptor(
     dio: dio,
     logPrint: print, // Use the default print function for logging
-    retries: 3, // Number of retries
+    retries: 2, // Reduced from 3 to avoid long waits
     retryDelays: const [
+      Duration(milliseconds: 500),
       Duration(seconds: 1),
-      Duration(seconds: 3),
-      Duration(seconds: 5),
     ],
   );
 }

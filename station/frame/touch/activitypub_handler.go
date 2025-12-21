@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -151,19 +150,6 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 		// Shared Inbox endpoints
-		{
-			RouterURL:   PostingRouterURLMedia,
-			Handler:     UploadMedia,
-			Method:      server.POST,
-			Wrappers:    []server.Wrapper{commonWrapper},
-			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
-		},
-		{
-			RouterURL: PostingRouterURLGetMedia,
-			Handler:   GetMedia,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper},
-		},
 		{
 			RouterURL:   PostingRouterURLPost,
 			Handler:     CreatePost,
@@ -746,50 +732,6 @@ func CreatePost(c context.Context, ctx *app.RequestContext) {
 	}
 	resp := &modelpb.PostResponse{PostId: postID, ActivityId: actID}
 	SuccessResponse(ctx, "ok", resp)
-}
-
-func UploadMedia(c context.Context, ctx *app.RequestContext) {
-	actor := ctx.Param("actor")
-	if actor == "" {
-		ctx.JSON(http.StatusBadRequest, "actor required")
-		return
-	}
-	if _, err := resolveActorID(c, ctx); err != nil {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-	file, err := ctx.FormFile("file")
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, "file required")
-		return
-	}
-	alt := string(ctx.FormValue("alt"))
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-	baseURL := baseURLFrom(ctx)
-	url, mediaID, mediaType, err := posting.StoreMedia(c, rds, actor, baseURL, file, alt)
-	if err != nil {
-		FailedResponse(ctx, err)
-		return
-	}
-	resp := &modelpb.MediaUploadResponse{MediaId: mediaID, Url: url, MediaType: mediaType, Alt: alt}
-	SuccessResponse(ctx, "ok", resp)
-}
-
-func GetMedia(c context.Context, ctx *app.RequestContext) {
-	filename := ctx.Param("filename")
-	if filename == "" {
-		ctx.JSON(http.StatusBadRequest, "filename required")
-		return
-	}
-	// Serve file from uploads directory
-	// Be careful with path traversal, but ctx.File usually handles basic cases.
-	// Explicitly join with uploads dir.
-	path := filepath.Join("uploads", filename)
-	ctx.File(path)
 }
 
 func NodeInfoHandler(c context.Context, ctx *app.RequestContext) {
