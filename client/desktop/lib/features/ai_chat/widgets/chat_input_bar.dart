@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/ai_input_box.dart';
@@ -72,8 +72,10 @@ class ChatInputBar extends StatelessWidget {
 
     // 回退逻辑
     if (cap == null) {
-      final storage = Get.find<LocalStorage>();
-      final provider = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+      String provider = 'OpenAI';
+      if (Get.isRegistered<ProviderController>()) {
+        provider = Get.find<ProviderController>().currentProvider.value?.sourceType ?? 'OpenAI';
+      }
       cap = CapabilityResolver.resolve(provider: provider, modelId: currentModel);
     }
 

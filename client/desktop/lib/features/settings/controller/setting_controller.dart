@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'dart:convert';
 import 'package:peers_touch_desktop/core/services/setting_manager.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
@@ -239,7 +239,7 @@ class SettingController extends GetxController {
     sections.refresh();
   }
 
-  void _loadPersistedValues(List<SettingSection> targetSections) {
+  Future<void> _loadPersistedValues(List<SettingSection> targetSections) async {
     for (final section in targetSections) {
       for (var i = 0; i < section.items.length; i++) {
         final item = section.items[i];
@@ -247,56 +247,42 @@ class SettingController extends GetxController {
         dynamic stored;
         if (_isSensitive(item.id)) {
           // Async read from secure storage
-          _secureStorage.get(key).then((s) {
-            if (s != null) {
-              final idx = targetSections.indexWhere((sec) => sec.id == section.id);
-              if (idx != -1) {
-                final itemIdx = targetSections[idx].items.indexWhere((it) => it.id == item.id);
-                if (itemIdx != -1) {
-                  targetSections[idx].items[itemIdx] = SettingItem(
-                    id: item.id,
-                    title: item.title,
-                    description: item.description,
-                    icon: item.icon,
-                    type: item.type,
-                    value: s,
-                    options: item.options,
-                    placeholder: item.placeholder,
-                    onTap: item.onTap,
-                    onChanged: item.onChanged,
-                  );
-                  sections.refresh();
-                  if (item.type == SettingItemType.textInput) {
-                    final ctrlKey = _storageKey(section.id, item.id);
-                    final ctrl = _textControllers[ctrlKey];
-                    if (ctrl != null) ctrl.text = s.toString();
-                  }
-                }
-              }
-            }
-          });
-        } else {
-          stored = _localStorage.get<dynamic>(key);
-          if (stored != null) {
-            section.items[i] = SettingItem(
-              id: item.id,
-              title: item.title,
-              description: item.description,
-              icon: item.icon,
-              type: item.type,
-              value: stored,
-              options: item.options,
-              placeholder: item.placeholder,
-              onTap: item.onTap,
-              onChanged: item.onChanged,
-            );
-            // Sync text input controller content
-            if (item.type == SettingItemType.textInput) {
-              final ctrlKey = _storageKey(section.id, item.id);
-              final ctrl = _textControllers[ctrlKey];
-              if (ctrl != null) ctrl.text = stored.toString();
-            }
+          final s = await _secureStorage.get(key);
+          if (s != null) {
+            _updateSectionItem(targetSections, section.id, item, s);
           }
+        } else {
+          stored = await _localStorage.get<dynamic>(key);
+          if (stored != null) {
+            _updateSectionItem(targetSections, section.id, item, stored);
+          }
+        }
+      }
+    }
+  }
+
+  void _updateSectionItem(List<SettingSection> targetSections, String sectionId, SettingItem item, dynamic value) {
+    final idx = targetSections.indexWhere((sec) => sec.id == sectionId);
+    if (idx != -1) {
+      final itemIdx = targetSections[idx].items.indexWhere((it) => it.id == item.id);
+      if (itemIdx != -1) {
+        targetSections[idx].items[itemIdx] = SettingItem(
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          icon: item.icon,
+          type: item.type,
+          value: value,
+          options: item.options,
+          placeholder: item.placeholder,
+          onTap: item.onTap,
+          onChanged: item.onChanged,
+        );
+        sections.refresh();
+        if (item.type == SettingItemType.textInput) {
+          final ctrlKey = _storageKey(sectionId, item.id);
+          final ctrl = _textControllers[ctrlKey];
+          if (ctrl != null) ctrl.text = value.toString();
         }
       }
     }

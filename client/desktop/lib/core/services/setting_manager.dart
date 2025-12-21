@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
@@ -157,7 +157,7 @@ class SettingManager implements SettingRegistry {
                   ),
                   TextButton(
                     onPressed: () async {
-                      await LocalStorage().clearAll();
+                      await LocalStorage().clear();
                       Get.back(); // Close the dialog
                       Get.snackbar(l.success, l.dataClearedSuccess);
                     },

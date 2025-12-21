@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'ai_service.dart';
 
@@ -17,9 +17,9 @@ class OpenAIService implements AIService {
         _baseUrl = baseUrl;
   
   /// 获取配置的Dio实例
-  Dio get _dio {
-    final apiKey = _apiKey ?? _storage.get<String>(AIConstants.openaiApiKey) ?? '';
-    final baseUrl = _baseUrl ?? _storage.get<String>(AIConstants.openaiBaseUrl) ?? AIConstants.defaultOpenAIBaseUrl;
+  Future<Dio> _getDio() async {
+    final apiKey = _apiKey ?? await _storage.get<String>(AIConstants.openaiApiKey) ?? '';
+    final baseUrl = _baseUrl ?? await _storage.get<String>(AIConstants.openaiBaseUrl) ?? AIConstants.defaultOpenAIBaseUrl;
     
     return Dio(BaseOptions(
       baseUrl: baseUrl,
@@ -34,20 +34,21 @@ class OpenAIService implements AIService {
   
   /// 检查配置是否有效
   @override
-  bool get isConfigured {
-    final apiKey = _apiKey ?? _storage.get<String>(AIConstants.openaiApiKey) ?? '';
+  Future<bool> checkConfigured() async {
+    final apiKey = _apiKey ?? await _storage.get<String>(AIConstants.openaiApiKey) ?? '';
     return apiKey.isNotEmpty;
   }
   
   /// 拉取可用模型列表
   @override
   Future<List<String>> fetchModels() async {
-    if (!isConfigured) {
+    if (!await checkConfigured()) {
       throw Exception('OpenAI API密钥未配置');
     }
 
     try {
-      final response = await _dio.get('/models');
+      final dio = await _getDio();
+      final response = await dio.get('/models');
       final data = response.data;
       if (data is Map<String, dynamic> && data['data'] is List) {
         final list = (data['data'] as List)
@@ -80,19 +81,21 @@ class OpenAIService implements AIService {
     List<String>? imagesBase64,
     CancelHandle? cancel,
   }) async* {
-    if (!isConfigured) {
+    if (!await checkConfigured()) {
       throw Exception('OpenAI API密钥未配置');
     }
     
     final selectedModel = model ??
-        _storage.get<String>(AIConstants.selectedModelOpenAI) ??
-        _storage.get<String>(AIConstants.selectedModel) ??
+        await _storage.get<String>(AIConstants.selectedModelOpenAI) ??
+        await _storage.get<String>(AIConstants.selectedModel) ??
         AIConstants.defaultOpenAIModel;
-    final selectedTemperature = temperature ?? double.tryParse(_storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString()) ?? AIConstants.defaultTemperature;
+    final tempStr = await _storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString();
+    final selectedTemperature = temperature ?? double.tryParse(tempStr) ?? AIConstants.defaultTemperature;
     
     try {
-      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
-      final response = await _dio.post(
+      final dio = await _getDio();
+      final systemPrompt = await _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
+      final response = await dio.post(
         '/chat/completions',
         data: {
           'model': selectedModel,
@@ -156,19 +159,21 @@ class OpenAIService implements AIService {
     List<String>? imagesBase64,
     CancelHandle? cancel,
   }) async {
-    if (!isConfigured) {
+    if (!await checkConfigured()) {
       throw Exception('OpenAI API密钥未配置');
     }
     
     final selectedModel = model ??
-        _storage.get<String>(AIConstants.selectedModelOpenAI) ??
-        _storage.get<String>(AIConstants.selectedModel) ??
+        await _storage.get<String>(AIConstants.selectedModelOpenAI) ??
+        await _storage.get<String>(AIConstants.selectedModel) ??
         AIConstants.defaultOpenAIModel;
-    final selectedTemperature = temperature ?? double.tryParse(_storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString()) ?? AIConstants.defaultTemperature;
+    final tempStr = await _storage.get<String>(AIConstants.temperature) ?? AIConstants.defaultTemperature.toString();
+    final selectedTemperature = temperature ?? double.tryParse(tempStr) ?? AIConstants.defaultTemperature;
     
     try {
-      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
-      final response = await _dio.post(
+      final dio = await _getDio();
+      final systemPrompt = await _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
+      final response = await dio.post(
         '/chat/completions',
         data: {
           'model': selectedModel,
@@ -198,12 +203,13 @@ class OpenAIService implements AIService {
   /// 测试API连接
   @override
   Future<bool> testConnection() async {
-    if (!isConfigured) {
+    if (!await checkConfigured()) {
       return false;
     }
     
     try {
-      await _dio.get('/models');
+      final dio = await _getDio();
+      await dio.get('/models');
       return true;
     } catch (e) {
       LoggingService.warning('OpenAI连接测试失败', e);

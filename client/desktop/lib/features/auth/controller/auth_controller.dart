@@ -2,12 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:peers_touch_desktop/core/network/network_initializer.dart';
+import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
-import 'package:peers_touch_desktop/core/network/api_client.dart';
 import 'package:peers_touch_base/context/global_context.dart';
-import 'package:peers_touch_desktop/core/storage/secure_storage.dart';
+import 'package:peers_touch_base/storage/secure_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
@@ -33,7 +32,7 @@ class AuthController extends GetxController {
   final authTab = 0.obs; // 0: login, 1: signup
   final protocol = 'peers-touch'.obs;
   final serverStatus = ServerStatus.unknown.obs;
-  final SecureStorage _secureStorage = SecureStorage();
+  final SecureStorage _secureStorage = SecureStorageImpl();
 
   late final TextEditingController emailController;
   late final TextEditingController passwordController;
@@ -102,32 +101,35 @@ class AuthController extends GetxController {
       }
     });
 
-    debounce(baseUrl, (String url) {
+    debounce(baseUrl, (String url) async {
       final trimmed = url.trim();
       if (trimmed.isNotEmpty) {
-        GetStorage().write('base_url', trimmed);
+        await LocalStorage().set('base_url', trimmed);
         NetworkInitializer.initialize(baseUrl: trimmed);
-        try {
-          Get.find<ApiClient>().setBaseUrl(trimmed);
-        } catch (_) {}
         detectProtocol(trimmed);
         loadPresetUsers(trimmed);
       }
     }, time: const Duration(milliseconds: 800));
 
     // Restore user info from storage
-    final box = GetStorage();
-    if (box.hasData('username')) {
-      username.value = box.read('username') ?? '';
-      usernameController.text = username.value;
-    }
-    if (box.hasData('email')) {
-      email.value = box.read('email') ?? '';
-      emailController.text = email.value;
-    }
+    _restoreUserInfo();
     
     // Sync baseUrl
     baseUrlController.text = baseUrl.value;
+  }
+
+  Future<void> _restoreUserInfo() async {
+    final ls = LocalStorage();
+    final u = await ls.get<String>('username');
+    if (u != null) {
+      username.value = u;
+      usernameController.text = u;
+    }
+    final e = await ls.get<String>('email');
+    if (e != null) {
+      email.value = e;
+      emailController.text = e;
+    }
   }
 
   @override
@@ -154,9 +156,6 @@ class AuthController extends GetxController {
     super.onReady();
     final url = baseUrl.value.trim();
     if (url.isNotEmpty) {
-      try {
-        Get.find<ApiClient>().setBaseUrl(url);
-      } catch (_) {}
       loadPresetUsers(url);
       detectProtocol(url);
     }
@@ -253,11 +252,11 @@ class AuthController extends GetxController {
                 tokensMap['token_type']?.toString() ??
                 tokensMap['tokenType']?.toString();
             if (refresh != null && refresh.isNotEmpty) {
-              GetStorage().write('refresh_token', refresh);
+              await LocalStorage().set('refresh_token', refresh);
               await _secureStorage.set(StorageKeys.refreshTokenKey, refresh);
             }
             if (ttype != null && ttype.isNotEmpty)
-              GetStorage().write('auth_token_type', ttype);
+              await LocalStorage().set('auth_token_type', ttype);
           } else {
             token = obj['token']?.toString() ?? '';
           }
@@ -296,18 +295,18 @@ class AuthController extends GetxController {
         }
 
         if (token.isNotEmpty) {
-          GetStorage().write('auth_token', token);
+          await LocalStorage().set('auth_token', token);
           // Also save to SecureStorage for AuthInterceptor
           await _secureStorage.set(StorageKeys.tokenKey, token);
           LoggingService.info('Token stored in SecureStorage');
           
           // Persist user info
-          GetStorage().write('username', username.value);
-          GetStorage().write('email', email.value);
+          await LocalStorage().set('username', username.value);
+          await LocalStorage().set('email', email.value);
           
           try {
             if (Get.isRegistered<GlobalContext>()) {
-              final refresh = GetStorage().read<String>('refresh_token');
+              final refresh = await LocalStorage().get<String>('refresh_token');
               final gc = Get.find<GlobalContext>();
               final handle = username.value.isNotEmpty
                   ? username.value

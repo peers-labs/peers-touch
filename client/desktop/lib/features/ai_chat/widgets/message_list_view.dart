@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_base/ai_proxy/token/token_counter.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
@@ -19,6 +19,24 @@ class MessageListView extends StatefulWidget {
 
 class _MessageListViewState extends State<MessageListView> {
   final ScrollController _scrollController = ScrollController();
+  bool _showTokens = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final show = await Get.find<LocalStorage>().get<bool>(AIConstants.showTokens);
+      if (show != null && mounted) {
+        setState(() {
+          _showTokens = show;
+        });
+      }
+    } catch (_) {}
+  }
 
   void _scrollToBottom({bool animated = true}) {
     if (!_scrollController.hasClients) return;
@@ -92,7 +110,7 @@ class _MessageListViewState extends State<MessageListView> {
                     ),
                     child: SelectableText(m.content),
                   ),
-                  if ((Get.find<LocalStorage>().get<bool>(AIConstants.showTokens) ?? false))
+                  if (_showTokens)
                     Padding(
                       padding: const EdgeInsets.only(top: 2, left: 6, right: 6),
                       child: _TokenBadge(count: TokenCounter.countTextTokens(m.content)),

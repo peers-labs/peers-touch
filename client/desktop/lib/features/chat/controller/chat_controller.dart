@@ -4,7 +4,7 @@ import 'dart:async';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 import 'package:peers_touch_base/network/dio/http_service_impl.dart';
-import 'package:peers_touch_desktop/core/network/network_initializer.dart';
+import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 
 class ChatController extends GetxController {
