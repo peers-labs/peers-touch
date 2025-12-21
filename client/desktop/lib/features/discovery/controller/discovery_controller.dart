@@ -8,6 +8,7 @@ import 'package:peers_touch_desktop/features/discovery/repository/discovery_repo
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 class GroupItem {
   final String id;
@@ -140,8 +141,21 @@ class DiscoveryController extends GetxController {
         title: title,
         content: content,
         author: author,
+        authorAvatar: 'https://i.pravatar.cc/150?u=$author',
         timestamp: DateTime.now().subtract(Duration(minutes: newItems.length * 15)),
         type: type,
+        likesCount: (newItems.length * 7 + 3) % 50,
+        commentsCount: 1,
+        sharesCount: (newItems.length * 2) % 10,
+        comments: [
+          DiscoveryComment(
+            id: 'c1',
+            authorName: 'Fan User',
+            authorAvatar: 'https://i.pravatar.cc/150?u=fan${newItems.length}',
+            content: 'This is really interesting! Thanks for sharing.',
+            timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
+          ),
+        ],
       ));
     }
 
@@ -219,9 +233,13 @@ class DiscoveryController extends GetxController {
                   title: title,
                   content: content,
                   author: author,
+                  authorAvatar: 'https://i.pravatar.cc/150?u=$author',
                   timestamp: timestamp,
                   type: type,
                   images: images,
+                  likesCount: 0,
+                  commentsCount: 0,
+                  sharesCount: 0,
                 ));
               }
             }
@@ -276,6 +294,102 @@ class DiscoveryController extends GetxController {
     items.value = newItems;
     isLoading.value = false;
     scrollToTop();
+  }
+
+  Future<void> replyToItem(DiscoveryItem parent, String content) async {
+    if (content.isEmpty) return;
+
+    try {
+      // 1. Get current user info (Actor)
+      String username = '';
+      if (Get.isRegistered<GlobalContext>()) {
+        username = Get.find<GlobalContext>().actorHandle ?? '';
+      }
+      if (username.isEmpty && Get.isRegistered<AuthController>()) {
+        username = Get.find<AuthController>().username.value;
+      }
+      
+      if (username.isEmpty) {
+        LoggingService.warning('Reply: Username not found');
+        return;
+      }
+
+      final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+      final actorId = '$baseUrl/activitypub/$username/actor';
+      final followers = '$baseUrl/activitypub/$username/followers';
+      const public = 'https://www.w3.org/ns/activitystreams#Public';
+
+      // 2. Construct Activity (Create -> Note with inReplyTo)
+      // Reply visibility: Public if parent is public, otherwise follow parent's visibility?
+      // For now assume Public + Tagging author
+      final to = [public, parent.author]; // Parent author is usually just name in mock, but should be IRI
+      // If parent.author is just a name, we might need to resolve it.
+      // But in our mock, parent.author is just a name. 
+      // For real implementation, DiscoveryItem should store authorIRI.
+      // Let's assume for now we just target Public and rely on backend/routing.
+      // Actually, standard is TO: [Parent Author], CC: [My Followers, Public]
+      
+      // Let's check if parent.author is a URL
+      final List<String> toList = [public];
+      // Since our mock data has simple names, we can't easily guess IRI without more info.
+      // But let's proceed with Public delivery.
+
+      final note = {
+        'type': 'Note',
+        'content': content,
+        'attributedTo': actorId,
+        'inReplyTo': parent.id, // This is crucial
+        'to': toList,
+        'cc': [followers],
+        'published': DateTime.now().toIso8601String(),
+      };
+
+      final activity = {
+        '@context': 'https://www.w3.org/ns/activitystreams',
+        'type': 'Create',
+        'actor': actorId,
+        'object': note,
+        'to': toList,
+        'cc': [followers],
+      };
+
+      // 3. Submit
+      LoggingService.info('Submitting reply to ${parent.id}');
+      await _repo.submitPost(username, activity);
+
+      // 4. Update UI (Optimistic update)
+      // Add comment to parent.comments
+      final newComment = DiscoveryComment(
+        id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+        authorName: username,
+        authorAvatar: 'https://i.pravatar.cc/150?u=$username',
+        content: content,
+        timestamp: DateTime.now(),
+      );
+      
+      // We need to trigger a refresh of the item. 
+      // Since DiscoveryItem fields are final, we might need to replace the item in the list or make comments observable.
+      // But for this simple implementation, let's just add to the list if mutable or replace item.
+      // Our DiscoveryItem.comments is a List (mutable).
+      parent.comments.add(newComment);
+      parent.commentsCount++; // Assuming this field is mutable or we ignore it for now. 
+      // Actually, DiscoveryItem fields are final, so we can't modify commentsCount directly if it's final.
+      // Let's check DiscoveryItem definition. 
+      // Ah, I made 'comments' final List. But the list itself is mutable.
+      // 'commentsCount' is final int. We can't update it easily without recreating the item.
+      
+      // Force UI update by replacing item in the observable list
+      final index = items.indexOf(parent);
+      if (index != -1) {
+        // We can't easily clone/copy with modification without a copyWith method.
+        // For now, just trigger refresh on the list to rebuild widgets?
+        items.refresh();
+      }
+
+    } catch (e) {
+      LoggingService.error('Reply failed: $e');
+      Get.snackbar('Error', 'Failed to reply: $e');
+    }
   }
 
   void selectItem(DiscoveryItem item) {

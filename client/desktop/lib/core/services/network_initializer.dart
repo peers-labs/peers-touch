@@ -1,6 +1,6 @@
-import 'package:get/get.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_base/network/token_provider.dart';
+import 'package:peers_touch_base/network/token_refresher.dart';
 
 /// 网络服务初始化器
 class NetworkInitializer {
@@ -8,6 +8,17 @@ class NetworkInitializer {
   /// [baseUrl] - 默认API基础地址
   static void initialize({required String baseUrl}) {
     HttpServiceLocator().initialize(baseUrl: baseUrl);
+  }
+
+  /// 设置认证相关提供者
+  static void setupAuth({
+    TokenProvider? tokenProvider,
+    TokenRefresher? tokenRefresher,
+  }) {
+    HttpServiceLocator().setAuthProviders(
+      tokenProvider: tokenProvider,
+      tokenRefresher: tokenRefresher,
+    );
   }
 
   /// 获取当前基础URL

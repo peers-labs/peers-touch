@@ -111,6 +111,19 @@ class ProfileModule {
           }
         },
       ),
+      const SettingItem(
+        id: 'account_section',
+        title: '账户',
+        type: SettingItemType.sectionHeader,
+      ),
+      SettingItem(
+        id: 'logout',
+        title: '退出登录',
+        description: '退出当前账号',
+        icon: Icons.logout,
+        type: SettingItemType.button,
+        onTap: profileController.logout,
+      ),
     ]);
   }
 }

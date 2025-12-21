@@ -1,9 +1,13 @@
-import 'package:get/get.dart';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:dio/dio.dart';
+import 'package:get/get.dart' hide FormData, MultipartFile;
 import 'package:peers_touch_desktop/core/models/actor_base.dart';
 import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:get_storage/get_storage.dart';
-import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/repositories/actor_repository.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
@@ -65,11 +69,13 @@ class ProfileController extends GetxController {
         final repo = Get.find<ActorRepository>();
         data = await repo.fetchProfile(username: username);
       } else {
-        final client = Get.find<ApiClient>();
-        final response = await client.get('/activitypub/$username/profile');
-        if (response.statusCode == 200 && response.data is Map) {
-          data = (response.data as Map).cast<String, dynamic>();
-        }
+        final client = HttpServiceLocator().httpService;
+        try {
+          final response = await client.getResponse<dynamic>('/activitypub/$username/profile');
+          if (response.statusCode == 200 && response.data is Map) {
+            data = (response.data as Map).cast<String, dynamic>();
+          }
+        } catch (_) {}
       }
       if (data != null) {
         detail.value = UserDetail.fromJson(data);
@@ -183,10 +189,64 @@ class ProfileController extends GetxController {
       await LocalStorage().remove('auth_token');
       await LocalStorage().remove('refresh_token');
       await LocalStorage().remove('auth_token_type');
-      await GetStorage().remove('auth_token');
-      await GetStorage().remove('refresh_token');
-      await GetStorage().remove('auth_token_type');
     } catch (_) {}
     Get.offAllNamed('/login');
+  }
+
+  Future<String?> uploadImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        final fileName = result.files.single.name;
+        
+        final d = detail.value;
+        if (d == null) return null;
+        final username = d.handle;
+        
+        final client = HttpServiceLocator().httpService;
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(file.path, filename: fileName),
+          'alt': 'Profile image',
+        });
+        
+        // Use activitypub media endpoint: /activitypub/:actor/media
+        final response = await client.post<Map<String, dynamic>>(
+          '/activitypub/$username/media', 
+          data: formData,
+        );
+        
+        if (response != null && response['url'] != null) {
+          return response['url'] as String;
+        }
+      }
+    } catch (e) {
+      print('Upload failed: $e');
+    }
+    return null;
+  }
+
+  Future<void> updateProfile(Map<String, dynamic> updates) async {
+    try {
+      final client = HttpServiceLocator().httpService;
+      // Endpoint: /profile (RouterURLActorProfile) -> mapped to /activitypub/profile usually if routed via AP group
+      await client.post('/activitypub/profile', data: updates);
+      
+      await fetchProfile();
+      Get.back(); // Close dialog
+      
+      Get.snackbar('Success', 'Profile updated successfully', 
+        snackPosition: SnackPosition.BOTTOM, margin: const EdgeInsets.all(16));
+    } catch (e) {
+      print('Update failed: $e');
+      Get.snackbar('Error', 'Failed to update profile: $e', 
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        snackPosition: SnackPosition.BOTTOM, margin: const EdgeInsets.all(16));
+    }
   }
 }

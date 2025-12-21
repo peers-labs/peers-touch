@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'ai_service.dart';
@@ -15,8 +15,8 @@ class OllamaService implements AIService {
 
   OllamaService({String? baseUrl}) : _baseUrl = baseUrl;
 
-  Dio get _dio {
-    final baseUrl = _baseUrl ?? _storage.get<String>(AIConstants.ollamaBaseUrl) ?? 'http://localhost:11434';
+  Future<Dio> _getDio() async {
+    final baseUrl = _baseUrl ?? await _storage.get<String>(AIConstants.ollamaBaseUrl) ?? 'http://localhost:11434';
     return Dio(BaseOptions(
       baseUrl: baseUrl,
       headers: {
@@ -28,8 +28,8 @@ class OllamaService implements AIService {
   }
 
   @override
-  bool get isConfigured {
-    final baseUrl = _baseUrl ?? _storage.get<String>(AIConstants.ollamaBaseUrl) ?? '';
+  Future<bool> checkConfigured() async {
+    final baseUrl = _baseUrl ?? await _storage.get<String>(AIConstants.ollamaBaseUrl) ?? '';
     return baseUrl.isNotEmpty;
   }
 
@@ -37,7 +37,8 @@ class OllamaService implements AIService {
   @override
   Future<List<String>> fetchModels() async {
     try {
-      final response = await _dio.get('/api/tags');
+      final dio = await _getDio();
+      final response = await dio.get('/api/tags');
       final data = response.data;
       if (data is Map<String, dynamic> && data['models'] is List) {
         final list = (data['models'] as List)
@@ -70,16 +71,17 @@ class OllamaService implements AIService {
     CancelHandle? cancel,
   }) async* {
     final m = model ??
-        _storage.get<String>(AIConstants.selectedModelOllama) ??
-        _storage.get<String>(AIConstants.selectedModel) ??
+        await _storage.get<String>(AIConstants.selectedModelOllama) ??
+        await _storage.get<String>(AIConstants.selectedModel) ??
         '';
     if (m.isEmpty) {
       yield '模型未选择';
       return;
     }
     try {
-      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
-      final response = await _dio.post(
+      final dio = await _getDio();
+      final systemPrompt = await _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
+      final response = await dio.post(
         '/api/generate',
         data: {
           'model': m,
@@ -131,15 +133,16 @@ class OllamaService implements AIService {
     CancelHandle? cancel,
   }) async {
     final m = model ??
-        _storage.get<String>(AIConstants.selectedModelOllama) ??
-        _storage.get<String>(AIConstants.selectedModel) ??
+        await _storage.get<String>(AIConstants.selectedModelOllama) ??
+        await _storage.get<String>(AIConstants.selectedModel) ??
         '';
     if (m.isEmpty) {
       return '模型未选择';
     }
     try {
-      final systemPrompt = _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
-      final resp = await _dio.post(
+      final dio = await _getDio();
+      final systemPrompt = await _storage.get<String>(AIConstants.systemPrompt) ?? AIConstants.defaultSystemPrompt;
+      final resp = await dio.post(
         '/api/generate',
         data: {
           'model': m,
@@ -166,7 +169,8 @@ class OllamaService implements AIService {
   @override
   Future<bool> testConnection() async {
     try {
-      final r = await _dio.get('/api/tags');
+      final dio = await _getDio();
+      final r = await dio.get('/api/tags');
       return r.statusCode == 200;
     } catch (_) {
       return false;

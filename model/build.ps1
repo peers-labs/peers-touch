@@ -23,12 +23,25 @@ if (-not (Test-Path $GoOut)) {
 }
 
 # Find all .proto files in the domain directory, excluding ai_box_message.proto
-$protoFiles = Get-ChildItem -Path "$ProtoRoot\domain" -Filter *.proto -Recurse | Where-Object { $_.FullName -notlike '*\ai_box\ai_box_message.proto' } | ForEach-Object { $_.FullName }
+$domainProtoFiles = @(Get-ChildItem -Path "$ProtoRoot\domain" -Filter *.proto -Recurse | Where-Object { $_.FullName -notlike '*\ai_box\ai_box_message.proto' } | ForEach-Object { $_.FullName })
 
-if ($protoFiles.Count -eq 0) {
-    Write-Output "No .proto files found. Exiting."
+if ($domainProtoFiles.Count -eq 0) {
+    Write-Output "No .proto files found in domain. Exiting."
     exit
 }
+
+# Prepare files for Dart (includes Google protos)
+$dartProtoFiles = $domainProtoFiles.Clone()
+$googleProtos = @("struct.proto", "any.proto", "timestamp.proto")
+foreach ($gProto in $googleProtos) {
+    $gPath = "$ProtoRoot\google\protobuf\$gProto"
+    if (Test-Path $gPath) {
+        $dartProtoFiles += $gPath
+    }
+}
+
+# Prepare files for Go (domain only)
+$goProtoFiles = $domainProtoFiles
 
 # Ensure protoc-gen-dart is available and prefer Pub Cache version
 Write-Output "Resolving protoc-gen-dart plugin..."
@@ -55,9 +68,18 @@ Write-Output "Using protoc-gen-dart: $dartPluginPath"
 
 # Run protoc for Dart with explicit plugin path
 Write-Output "Running protoc for Dart..."
-protoc --plugin=protoc-gen-dart="$dartPluginPath" --dart_out=grpc:"$DartOut" -I"$ProtoRoot" $protoFiles
+foreach ($protoFile in $dartProtoFiles) {
+    # Calculate relative path from ProtoRoot
+    $relPath = $protoFile.Substring($ProtoRoot.Length + 1)
+    # Dart protoc usually mirrors the directory structure, replacing .proto with .pb.dart
+    $dartRelPath = $relPath -replace "\.proto$", ".pb.dart"
+    $fullDartPath = Join-Path $DartOut $dartRelPath
+    
+    Write-Output "Generating $protoFile to $fullDartPath"
+    protoc --plugin=protoc-gen-dart="$dartPluginPath" --dart_out="$DartOut" -I"$ProtoRoot" $protoFile
+}
 
-# Run protoc for Go (optional on Windows if Go is not installed)
+# Run protoc for Go
 Write-Output "Running protoc for Go..."
 $goCmd = Get-Command go -ErrorAction SilentlyContinue
 if ($goCmd) {
@@ -70,7 +92,40 @@ if ($goCmd) {
             Write-Output "Failed to install protoc-gen-go: $_"
         }
     }
-    protoc --go_out="$GoOut" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$ProtoRoot" $protoFiles
+    
+    $modulePrefix = "github.com/peers-labs/peers-touch/station/"
+    foreach ($protoFile in $goProtoFiles) {
+        # Read file to find go_package
+        $content = Get-Content -Path $protoFile -Raw
+        if ($content -match 'option\s+go_package\s*=\s*"([^"]+)"') {
+            $goPackage = $matches[1]
+            # Handle potential semicolon in go_package (e.g. "path/to/pkg;pkg_name")
+            if ($goPackage -match ";") {
+                $goPackage = $goPackage.Split(";")[0]
+            }
+            
+            # Remove module prefix to get relative path
+            if ($goPackage.StartsWith($modulePrefix)) {
+                $relGoDir = $goPackage.Substring($modulePrefix.Length)
+                # Replace / with \ for Windows path if needed, but Join-Path handles it
+                $relGoDir = $relGoDir -replace "/", "\"
+                
+                $fileName = Split-Path $protoFile -Leaf
+                $goFileName = $fileName -replace "\.proto$", ".pb.go"
+                $fullGoPath = Join-Path $GoOut $relGoDir
+                $fullGoPath = Join-Path $fullGoPath $goFileName
+                
+                Write-Output "Generating $protoFile to $fullGoPath"
+            } else {
+                Write-Output "Generating $protoFile (Could not determine exact output path from go_package: $goPackage)"
+            }
+        } else {
+             Write-Output "Generating $protoFile (No go_package option found)"
+        }
+        
+        protoc --go_out="$GoOut" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$ProtoRoot" $protoFile
+    }
+
 } else {
     Write-Output "Go not found. Skipping Go code generation."
 }

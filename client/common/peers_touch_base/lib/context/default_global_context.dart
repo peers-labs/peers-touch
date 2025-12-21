@@ -254,14 +254,14 @@ class DefaultGlobalContext implements GlobalContext {
     if (localStorage == null) return;
     // Prefer proto JSON if present
     try {
-      final sessPb = localStorage!.get<Map<String, dynamic>>('global:current_session_pb');
+      final sessPb = await localStorage!.get<Map<String, dynamic>>('global:current_session_pb');
       if (sessPb != null) {
         final snap = ActorSessionSnapshot();
         snap.mergeFromProto3Json(sessPb);
         await setSessionSnapshot(snap);
       }
     } catch (_) {}
-    final sess = localStorage!.get<Map<String, dynamic>>('global:current_session');
+    final sess = await localStorage!.get<Map<String, dynamic>>('global:current_session');
     if (sess != null) {
       _session = _normalizeSession(sess);
       _sessionCtrl.add(_session);
@@ -269,18 +269,18 @@ class DefaultGlobalContext implements GlobalContext {
         LoggingService.info('GlobalContext.hydrate session: ${_session?['handle']}');
       } catch (_) {}
     }
-    final accs = localStorage!.get<List>('global:accounts');
+    final accs = await localStorage!.get<List>('global:accounts');
     if (accs is List) {
       _accounts
         ..clear()
         ..addAll(accs.whereType<Map>().map((e) => _normalizeSession(e.cast<String, dynamic>())));
       _accountsCtrl.add(List.unmodifiable(_accounts));
-      final schema = localStorage!.get<int>('global:accounts_schema');
+      final schema = await localStorage!.get<int>('global:accounts_schema');
       if (schema == null) {
         await localStorage!.set('global:accounts_schema', 1);
       }
     }
-    final prefs = localStorage!.get<Map<String, dynamic>>('global:user_preferences');
+    final prefs = await localStorage!.get<Map<String, dynamic>>('global:user_preferences');
     if (prefs != null) {
       _preferences = Map<String, dynamic>.from(prefs);
       if (!_preferences.containsKey('schemaVersion')) {
@@ -293,7 +293,7 @@ class DefaultGlobalContext implements GlobalContext {
       } catch (_) {}
     }
     try {
-      final prefsPb = localStorage!.get<Map<String, dynamic>>('global:user_preferences_pb');
+      final prefsPb = await localStorage!.get<Map<String, dynamic>>('global:user_preferences_pb');
       if (prefsPb != null) {
         final pp = ActorPreferences();
         pp.mergeFromProto3Json(prefsPb);

@@ -8,7 +8,7 @@ abstract class CancelHandle {
 /// AI服务抽象接口
 abstract class AIService {
   /// 检查服务是否已配置
-  bool get isConfigured;
+  Future<bool> checkConfigured();
 
   /// 拉取可用模型列表
   Future<List<String>> fetchModels();

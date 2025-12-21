@@ -43,21 +43,60 @@ if [ -z "$DART_PROTO_FILES" ]; then
     exit 0
 fi
 
-# Check for protoc-gen-dart plugin
+# Determine plugin option
+PLUGIN_OPT=""
 if [ -n "$PROTOC_GEN_DART_PLUGIN" ]; then
-    PLUGIN="--plugin=protoc-gen-dart=$PROTOC_GEN_DART_PLUGIN"
-    echo "Running protoc for Dart with plugin..."
-    protoc $PLUGIN --dart_out="$DART_OUT" -I"$PROTO_ROOT" $DART_PROTO_FILES
-else
-    echo "Running protoc for Dart..."
-    protoc --dart_out="$DART_OUT" -I"$PROTO_ROOT" $DART_PROTO_FILES
+    PLUGIN_OPT="--plugin=protoc-gen-dart=$PROTOC_GEN_DART_PLUGIN"
+    echo "Using protoc-gen-dart plugin from env: $PROTOC_GEN_DART_PLUGIN"
 fi
+
+echo "Running protoc for Dart..."
+# Loop through Dart proto files
+for file in $DART_PROTO_FILES; do
+    # Calculate relative path from ProtoRoot
+    # Using python for reliable relative path calculation or simple string substitution
+    REL_PATH=${file#$PROTO_ROOT/}
+    # Replace .proto with .pb.dart
+    DART_REL_PATH="${REL_PATH%.proto}.pb.dart"
+    FULL_DART_PATH="$DART_OUT/$DART_REL_PATH"
+    
+    echo "Generating $file to $FULL_DART_PATH"
+    protoc $PLUGIN_OPT --dart_out="$DART_OUT" -I"$PROTO_ROOT" "$file"
+done
 
 # Protobuf 5.1.0+ supports toProto3Json natively
 
 GO_PROTO_FILES=$(find "$PROTO_ROOT/domain" -name "*.proto" -not -path "*/ai_box/ai_box_message.proto")
 
 echo "Running protoc for Go..."
-protoc --go_out="$GO_OUT" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$PROTO_ROOT" $GO_PROTO_FILES
+MODULE_PREFIX="github.com/peers-labs/peers-touch/station/"
+
+for file in $GO_PROTO_FILES; do
+    # Read file to find go_package
+    # Grep for option go_package = "..."
+    GO_PACKAGE_LINE=$(grep 'option[[:space:]]\+go_package' "$file")
+    
+    # Extract package path
+    if [[ "$GO_PACKAGE_LINE" =~ \"([^\"]+)\" ]]; then
+        GO_PACKAGE="${BASH_REMATCH[1]}"
+        # Remove anything after ;
+        GO_PACKAGE="${GO_PACKAGE%%;*}"
+        
+        # Check if it starts with module prefix
+        if [[ "$GO_PACKAGE" == "$MODULE_PREFIX"* ]]; then
+            REL_GO_DIR="${GO_PACKAGE#$MODULE_PREFIX}"
+            FILE_NAME=$(basename "$file")
+            GO_FILE_NAME="${FILE_NAME%.proto}.pb.go"
+            FULL_GO_PATH="$GO_OUT/$REL_GO_DIR/$GO_FILE_NAME"
+            echo "Generating $file to $FULL_GO_PATH"
+        else
+            echo "Generating $file (Could not determine exact output path from go_package: $GO_PACKAGE)"
+        fi
+    else
+        echo "Generating $file (No go_package option found)"
+    fi
+
+    protoc --go_out="$GO_OUT" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$PROTO_ROOT" "$file"
+done
 
 echo "Protobuf code generation complete."

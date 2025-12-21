@@ -1,26 +1,24 @@
-import 'dart:io';
-import 'package:dio/dio.dart';
 import 'package:get/get.dart' hide FormData, MultipartFile;
-import 'package:peers_touch_desktop/core/network/api_client.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 class DiscoveryRepository {
-  final ApiClient _apiClient = Get.find<ApiClient>();
+  final _httpService = HttpServiceLocator().httpService;
 
   /// Fetch user's outbox
   Future<Map<String, dynamic>> fetchOutbox(String username, {bool page = true}) async {
-    final response = await _apiClient.get<Map<String, dynamic>>(
+    final data = await _httpService.get<Map<String, dynamic>>(
       '/activitypub/$username/outbox',
-      query: {'page': page},
+      queryParameters: {'page': page},
     );
-    return response.data ?? {};
+    return data;
   }
 
   /// Submit a post (activity) to outbox
   Future<Map<String, dynamic>> submitPost(String username, Map<String, dynamic> activity) async {
-    final response = await _apiClient.post<Map<String, dynamic>>(
+    final data = await _httpService.post<Map<String, dynamic>>(
       '/activitypub/$username/outbox',
       data: activity,
     );
-    return response.data ?? {};
+    return data;
   }
 }
