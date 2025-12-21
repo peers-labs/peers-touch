@@ -9,6 +9,7 @@ import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.d
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/model/domain/post/post.pb.dart' as pb;
 
 class GroupItem {
   final String id;
@@ -127,8 +128,17 @@ class DiscoveryController extends GetxController {
     await loadItems();
   }
 
+  // New method to support optimistic updates
+  void addNewItem(DiscoveryItem item) {
+    items.insert(0, item);
+  }
+
   Future<void> loadItems() async {
-    isLoading.value = true;
+    // Only show full loading state if we have no items
+    if (items.isEmpty) {
+      isLoading.value = true;
+    }
+    
     LoggingService.info('DiscoveryController: Loading items for tab ${tabs[currentTab.value]}');
     
     final List<DiscoveryItem> newItems = [];
@@ -176,6 +186,8 @@ class DiscoveryController extends GetxController {
           final data = await _repo.fetchOutbox(username);
           LoggingService.info('DiscoveryController: Outbox response data: $data');
           
+          final Map<String, List<DiscoveryComment>> repliesMap = {};
+
           if (data['orderedItems'] is List) {
             final itemsList = data['orderedItems'] as List;
             LoggingService.info('DiscoveryController: Found ${itemsList.length} items');
@@ -190,6 +202,12 @@ class DiscoveryController extends GetxController {
                 List<String> images = [];
                 if (item['object'] is Map) {
                    final obj = item['object'];
+                   
+                   // Filter out replies/comments from the main feed
+                   if (obj['inReplyTo'] != null && obj['inReplyTo'].toString().isNotEmpty) {
+                     continue;
+                   }
+
                    content = obj['content']?.toString() ?? '';
                    if (obj['summary'] != null && obj['summary'].toString().isNotEmpty) {
                      title = obj['summary'].toString();
@@ -210,11 +228,27 @@ class DiscoveryController extends GetxController {
                        if (att is Map) {
                          final type = att['type']?.toString();
                          final mediaType = att['mediaType']?.toString();
-                         if (type == 'Image' || (mediaType != null && mediaType.startsWith('image/'))) {
-                           final url = att['url']?.toString();
-                           if (url != null && url.isNotEmpty) {
-                             images.add(url);
+                         final url = att['url']?.toString();
+                         
+                         bool isImage = false;
+                         if (type == 'Image') {
+                           isImage = true;
+                         } else if (mediaType != null && mediaType.startsWith('image/')) {
+                           isImage = true;
+                         } else if (url != null) {
+                           // Fallback: check extension
+                           final lowerUrl = url.toLowerCase();
+                           if (lowerUrl.endsWith('.jpg') || 
+                               lowerUrl.endsWith('.jpeg') || 
+                               lowerUrl.endsWith('.png') || 
+                               lowerUrl.endsWith('.gif') || 
+                               lowerUrl.endsWith('.webp')) {
+                             isImage = true;
                            }
+                         }
+
+                         if (isImage && url != null && url.isNotEmpty) {
+                           images.add(url);
                          }
                        }
                      }
@@ -243,6 +277,20 @@ class DiscoveryController extends GetxController {
                 ));
               }
             }
+            
+            // Second pass: Attach comments to their parent posts
+            for (var item in newItems) {
+              if (repliesMap.containsKey(item.id)) {
+                // We can't modify the 'comments' list directly if it's not the same reference we initialized?
+                // But DiscoveryItem constructor initializes 'comments' as a new list.
+                // However, 'comments' field is final. The list inside is mutable.
+                // Let's check DiscoveryItem again.
+                // Yes, I made it `comments = comments ?? []`.
+                item.comments.addAll(repliesMap[item.id]!);
+                item.commentsCount = item.comments.length;
+              }
+            }
+
           } else {
              LoggingService.warning('DiscoveryController: No orderedItems found in response');
           }
@@ -252,7 +300,11 @@ class DiscoveryController extends GetxController {
       } catch (e, stack) {
         LoggingService.error('DiscoveryController: Error fetching outbox: $e');
         LoggingService.error(stack.toString());
-        // Optionally add an error item or leave empty
+        // Do not clear items on error if we already have some
+        if (items.isNotEmpty) {
+          isLoading.value = false;
+          return;
+        }
       }
     }
 
@@ -314,48 +366,16 @@ class DiscoveryController extends GetxController {
         return;
       }
 
-      final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
-      final actorId = '$baseUrl/activitypub/$username/actor';
-      final followers = '$baseUrl/activitypub/$username/followers';
-      const public = 'https://www.w3.org/ns/activitystreams#Public';
-
-      // 2. Construct Activity (Create -> Note with inReplyTo)
-      // Reply visibility: Public if parent is public, otherwise follow parent's visibility?
-      // For now assume Public + Tagging author
-      final to = [public, parent.author]; // Parent author is usually just name in mock, but should be IRI
-      // If parent.author is just a name, we might need to resolve it.
-      // But in our mock, parent.author is just a name. 
-      // For real implementation, DiscoveryItem should store authorIRI.
-      // Let's assume for now we just target Public and rely on backend/routing.
-      // Actually, standard is TO: [Parent Author], CC: [My Followers, Public]
-      
-      // Let's check if parent.author is a URL
-      final List<String> toList = [public];
-      // Since our mock data has simple names, we can't easily guess IRI without more info.
-      // But let's proceed with Public delivery.
-
-      final note = {
-        'type': 'Note',
-        'content': content,
-        'attributedTo': actorId,
-        'inReplyTo': parent.id, // This is crucial
-        'to': toList,
-        'cc': [followers],
-        'published': DateTime.now().toIso8601String(),
-      };
-
-      final activity = {
-        '@context': 'https://www.w3.org/ns/activitystreams',
-        'type': 'Create',
-        'actor': actorId,
-        'object': note,
-        'to': toList,
-        'cc': [followers],
-      };
+      // 2. Construct PostInput (Proto)
+      final input = pb.PostInput(
+        text: content,
+        replyTo: parent.id,
+        visibility: 'public',
+      );
 
       // 3. Submit
       LoggingService.info('Submitting reply to ${parent.id}');
-      await _repo.submitPost(username, activity);
+      await _repo.submitPost(username, input);
 
       // 4. Update UI (Optimistic update)
       // Add comment to parent.comments
