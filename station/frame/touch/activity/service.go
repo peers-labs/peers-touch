@@ -1,18 +1,18 @@
-package posting
+package activity
 
 import (
-    "context"
-    "fmt"
-    "strings"
-    "time"
+	"context"
+	"fmt"
+	"strings"
+	"time"
 
-    "github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
-    modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
-    ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
-    "gorm.io/gorm"
+	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
+	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
+	"gorm.io/gorm"
 )
 
-func Create(ctx context.Context, db *gorm.DB, actor string, baseURL string, in *modelpb.PostInput) (string, string, error) {
+func Create(ctx context.Context, db *gorm.DB, actor string, baseURL string, in *modelpb.ActivityInput) (string, string, error) {
     actorIRI := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, actor)
     objectID := fmt.Sprintf("%s/activitypub/%s/objects/%d", baseURL, actor, time.Now().UnixNano())
     activityID := fmt.Sprintf("%s/activitypub/%s/activities/%d", baseURL, actor, time.Now().UnixNano())

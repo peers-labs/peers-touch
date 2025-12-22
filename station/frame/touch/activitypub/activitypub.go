@@ -47,11 +47,10 @@ func GetActorData(c context.Context, rds *gorm.DB, user string, baseURL string) 
 	actorID := fmt.Sprintf("%s/%s/actor", baseURL, user)
 
 	var actor db.Actor
-	var pubKey db.ActivityPubKey
 
 	// Try to find the actor by name and namespace 'peers'
 	// TODO: Support other namespaces if needed
-	err := rds.Where("name = ? AND namespace = ?", user, "peers").First(&actor).Error
+	err := rds.Where("preferred_username = ? AND namespace = ?", user, "peers").First(&actor).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Create new actor if not exists (for testing/dev)
@@ -66,13 +65,23 @@ func GetActorData(c context.Context, rds *gorm.DB, user string, baseURL string) 
 
 			// Create Actor
 			actor = db.Actor{
-				Name:         user,
-				Namespace:    "peers",
-				Type:         "Person",
-				DisplayName:  user,
-				PeersActorID: fmt.Sprintf("uuid-%s", user), // Temporary ID generation
-				CreatedAt:    time.Now(),
-				UpdatedAt:    time.Now(),
+				Name:              user, // Handle (JSON-LD: name)
+				PreferredUsername: user, // Handle (JSON-LD: preferredUsername)
+				Namespace:         "peers",
+				Type:              "Person",
+				// Name is DisplayName in new struct
+				PTID:       fmt.Sprintf("uuid-%s", user), // Temporary ID generation
+				PublicKey:  publicKey,
+				PrivateKey: privateKey,
+				Url:        fmt.Sprintf("%s/users/%s", baseURL, user),
+				Inbox:      fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user),
+				Outbox:     fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, user),
+				Followers:  fmt.Sprintf("%s/activitypub/%s/followers", baseURL, user),
+				Following:  fmt.Sprintf("%s/activitypub/%s/following", baseURL, user),
+				Liked:      fmt.Sprintf("%s/activitypub/%s/liked", baseURL, user),
+				Endpoints:  fmt.Sprintf(`{"sharedInbox": "%s/activitypub/inbox"}`, baseURL),
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
 			}
 			if err := tx.Create(&actor).Error; err != nil {
 				tx.Rollback()
@@ -81,18 +90,10 @@ func GetActorData(c context.Context, rds *gorm.DB, user string, baseURL string) 
 			}
 
 			// Create ActivityPubKey
-			pubKey = db.ActivityPubKey{
-				ActorID:       actor.ID,
-				PublicKeyPEM:  publicKey,
-				PrivateKeyPEM: privateKey,
-				CreatedAt:     time.Now(),
-				UpdatedAt:     time.Now(),
-			}
-			if err := tx.Create(&pubKey).Error; err != nil {
-				tx.Rollback()
-				log.Errorf(c, "Failed to save keys: %v", err)
-				return nil, fmt.Errorf("failed to save keys: %w", err)
-			}
+			// Deprecated: Keys now in Actor table
+			/*
+				// Removed
+			*/
 
 			tx.Commit()
 		} else {
@@ -100,37 +101,32 @@ func GetActorData(c context.Context, rds *gorm.DB, user string, baseURL string) 
 			return nil, fmt.Errorf("failed to retrieve actor: %w", err)
 		}
 	} else {
-		// Actor found, fetch keys
-		if err := rds.Where("actor_id = ?", actor.ID).First(&pubKey).Error; err != nil {
-			// If keys missing, generate them (recovery logic)
+		// Actor found, ensure keys exist (migration/check)
+		if actor.PublicKey == "" {
+			// If keys missing in Actor table, check old table or generate
+			// Since ActivityPubKey is deleted, we can only check if keys are missing and generate new ones
+			// or assume migration happened elsewhere.
+			// For safety, generate new keys if missing.
+
+			// Generate new keys
 			privateKey, publicKey, err := GenerateRSAKeyPair(2048)
 			if err != nil {
-				log.Errorf(c, "Failed to generate keys: %v", err)
 				return nil, fmt.Errorf("failed to generate keys: %w", err)
 			}
-
-			pubKey = db.ActivityPubKey{
-				ActorID:       actor.ID,
-				PublicKeyPEM:  publicKey,
-				PrivateKeyPEM: privateKey,
-				CreatedAt:     time.Now(),
-				UpdatedAt:     time.Now(),
-			}
-			if err := rds.Create(&pubKey).Error; err != nil {
-				log.Errorf(c, "Failed to save keys: %v", err)
-				return nil, fmt.Errorf("failed to save keys: %w", err)
-			}
+			actor.PublicKey = publicKey
+			actor.PrivateKey = privateKey
+			rds.Save(&actor)
 		}
 	}
 
 	// Construct ActivityPub Actor Object
 	actorObj := ap.PersonNew(ap.ID(actorID))
 	actorObj.PreferredUsername = ap.NaturalLanguageValuesNew()
-	actorObj.PreferredUsername.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(actor.Name)})
+	actorObj.PreferredUsername.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(actor.PreferredUsername)})
 
-	if actor.DisplayName != "" {
+	if actor.Name != "" {
 		actorObj.Name = ap.NaturalLanguageValuesNew()
-		actorObj.Name.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(actor.DisplayName)})
+		actorObj.Name.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(actor.Name)})
 	}
 
 	if actor.Summary != "" {
@@ -150,23 +146,52 @@ func GetActorData(c context.Context, rds *gorm.DB, user string, baseURL string) 
 		actorObj.Image = image
 	}
 
-	actorObj.Inbox = ap.IRI(fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user))
-	actorObj.Outbox = ap.IRI(fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, user))
-	actorObj.Followers = ap.IRI(fmt.Sprintf("%s/activitypub/%s/followers", baseURL, user))
-	actorObj.Following = ap.IRI(fmt.Sprintf("%s/activitypub/%s/following", baseURL, user))
-	actorObj.Liked = ap.IRI(fmt.Sprintf("%s/activitypub/%s/liked", baseURL, user))
+	if actor.Inbox != "" {
+		actorObj.Inbox = ap.IRI(actor.Inbox)
+	} else {
+		actorObj.Inbox = ap.IRI(fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, user))
+	}
+	if actor.Outbox != "" {
+		actorObj.Outbox = ap.IRI(actor.Outbox)
+	} else {
+		actorObj.Outbox = ap.IRI(fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, user))
+	}
+	if actor.Followers != "" {
+		actorObj.Followers = ap.IRI(actor.Followers)
+	} else {
+		actorObj.Followers = ap.IRI(fmt.Sprintf("%s/activitypub/%s/followers", baseURL, user))
+	}
+	if actor.Following != "" {
+		actorObj.Following = ap.IRI(actor.Following)
+	} else {
+		actorObj.Following = ap.IRI(fmt.Sprintf("%s/activitypub/%s/following", baseURL, user))
+	}
+	if actor.Liked != "" {
+		actorObj.Liked = ap.IRI(actor.Liked)
+	} else {
+		actorObj.Liked = ap.IRI(fmt.Sprintf("%s/activitypub/%s/liked", baseURL, user))
+	}
 
 	// Add Public Key
 	publicKeyID := fmt.Sprintf("%s#main-key", actorID)
 	actorObj.PublicKey = ap.PublicKey{
 		ID:           ap.ID(publicKeyID),
 		Owner:        ap.IRI(actorID),
-		PublicKeyPem: pubKey.PublicKeyPEM,
+		PublicKeyPem: actor.PublicKey,
 	}
 
 	// Endpoints including sharedInbox
 	actorObj.Endpoints = &ap.Endpoints{}
-	actorObj.Endpoints.SharedInbox = ap.IRI(fmt.Sprintf("%s/activitypub/inbox", baseURL))
+	if actor.Endpoints != "" {
+		var epMap map[string]string
+		if err := json.Unmarshal([]byte(actor.Endpoints), &epMap); err == nil {
+			if shared, ok := epMap["sharedInbox"]; ok {
+				actorObj.Endpoints.SharedInbox = ap.IRI(shared)
+			}
+		}
+	} else {
+		actorObj.Endpoints.SharedInbox = ap.IRI(fmt.Sprintf("%s/activitypub/inbox", baseURL))
+	}
 
 	return actorObj, nil
 }
@@ -477,13 +502,46 @@ func PersistInboxActivity(c context.Context, rds *gorm.DB, user string, activity
 	activityID := string(activity.ID)
 	if activityID != "" {
 		var inReplyTo string
+		var text string
+		var sensitive bool
+		var spoilerText string
+
 		if activity.Object != nil {
 			_ = ap.OnObject(activity.Object, func(o *ap.Object) error {
 				if o.InReplyTo != nil {
 					inReplyTo = getLink(o.InReplyTo)
 				}
+				if len(o.Content) > 0 {
+					text = string(o.Content.First().Value)
+				}
+				if len(o.Summary) > 0 {
+					spoilerText = string(o.Summary.First().Value)
+				}
 				return nil
 			})
+		}
+
+		// Determine Visibility
+		isPublic := false
+		for _, to := range activity.To {
+			if to.GetLink() == ap.PublicNS {
+				isPublic = true
+				break
+			}
+		}
+		if !isPublic {
+			for _, cc := range activity.CC {
+				if cc.GetLink() == ap.PublicNS {
+					isPublic = true
+					break
+				}
+			}
+		}
+		visibility := "private"
+		isPublicFlag := false
+		if isPublic {
+			visibility = "public"
+			isPublicFlag = true
 		}
 
 		apActivity := db.ActivityPubActivity{
@@ -492,6 +550,11 @@ func PersistInboxActivity(c context.Context, rds *gorm.DB, user string, activity
 			ActorID:       getLink(activity.Actor),
 			ObjectID:      getLink(activity.Object),
 			InReplyTo:     inReplyTo,
+			Text:          text,
+			Sensitive:     sensitive,
+			SpoilerText:   spoilerText,
+			Visibility:    visibility,
+			IsPublic:      isPublicFlag,
 			Content:       string(rawBody),
 		}
 		if err := rds.FirstOrCreate(&apActivity, db.ActivityPubActivity{ActivityPubID: activityID}).Error; err != nil {
@@ -530,15 +593,12 @@ func ApplyFollowInbox(c context.Context, rds *gorm.DB, user string, activity *ap
 	}
 
 	var myActor db.Actor
-	if e := rds.Where("name = ? AND namespace = ?", user, "peers").First(&myActor).Error; e != nil {
+	if e := rds.Where("preferred_username = ? AND namespace = ?", user, "peers").First(&myActor).Error; e != nil {
 		return nil
 	}
-	var myKey db.ActivityPubKey
-	if e := rds.Where("actor_id = ?", myActor.ID).First(&myKey).Error; e != nil {
-		return nil
-	}
+
 	keyID := fmt.Sprintf("%s#main-key", myActorID)
-	_, _ = DeliverActivity(c, targetInbox, accept, keyID, myKey.PrivateKeyPEM)
+	_, _ = DeliverActivity(c, targetInbox, accept, keyID, myActor.PrivateKey)
 	_ = targetURI
 	return nil
 }

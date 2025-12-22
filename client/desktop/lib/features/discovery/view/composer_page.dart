@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/features/discovery/controller/posting_controller.dart';
+import 'package:peers_touch_desktop/features/discovery/controller/activity_controller.dart';
 
 class ComposerPage extends StatelessWidget {
   const ComposerPage({super.key});
@@ -11,7 +11,7 @@ class ComposerPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Initialize controller
-    final controller = Get.put(PostingController());
+    final controller = Get.put(ActivityController());
 
     // Restore state if available (draft)
     // Simple state restoration is handled by the controller being persistent in memory if not disposed.

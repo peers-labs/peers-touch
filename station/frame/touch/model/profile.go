@@ -2,28 +2,26 @@ package model
 
 import (
 	"regexp"
-
-	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 // ProfileGetResponse represents the response for getting actor profile
 type ProfileGetResponse struct {
-	ProfilePhoto string    `json:"profile_photo"`
-	Name         string    `json:"name"`
-	Gender       db.Gender `json:"gender"`
-	Region       string    `json:"region"`
-	Email        string    `json:"email"`
-	PeersID      string    `json:"peers_id"`
-	WhatsUp      string    `json:"whats_up"`
+	ProfilePhoto string `json:"profile_photo"`
+	Name         string `json:"name"`
+	Gender       Gender `json:"gender"`
+	Region       string `json:"region"`
+	Email        string `json:"email"`
+	PeersID      string `json:"peers_id"`
+	WhatsUp      string `json:"whats_up"`
 }
 
 // ProfileUpdateParams represents the parameters for updating actor profile
 type ProfileUpdateParams struct {
-	ProfilePhoto *string    `json:"profile_photo,omitempty"`
-	Gender       *db.Gender `json:"gender,omitempty"`
-	Region       *string    `json:"region,omitempty"`
-	Email        *string    `json:"email,omitempty"`
-	WhatsUp      *string    `json:"whats_up,omitempty"`
+	ProfilePhoto *string `json:"profile_photo,omitempty"`
+	Gender       *Gender `json:"gender,omitempty"`
+	Region       *string `json:"region,omitempty"`
+	Email        *string `json:"email,omitempty"`
+	WhatsUp      *string `json:"whats_up,omitempty"`
 }
 
 // Validate validates the profile update parameters
@@ -31,7 +29,7 @@ func (p *ProfileUpdateParams) Validate() error {
 	// Validate gender if provided
 	if p.Gender != nil {
 		switch *p.Gender {
-		case db.GenderMale, db.GenderFemale, db.GenderOther:
+		case GenderMale, GenderFemale, GenderOther:
 			// Valid gender
 		default:
 			return NewError("t20001", "Invalid gender value")

@@ -43,14 +43,10 @@ foreach ($gProto in $googleProtos) {
 # Prepare files for Go (domain only)
 $goProtoFiles = $domainProtoFiles
 
-# Ensure protoc-gen-dart is available and prefer Pub Cache version
-Write-Output "Resolving protoc-gen-dart plugin..."
+# Ensure protoc-gen-dart is available and up to date
+Write-Output "Updating protoc-gen-dart plugin..."
+dart pub global activate protoc_plugin | Write-Output
 $dartPluginAll = Get-Command -All protoc-gen-dart -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
-if (-not $dartPluginAll) {
-    Write-Output "protoc-gen-dart not found. Activating protoc_plugin via Dart..."
-    dart pub global activate protoc_plugin | Write-Output
-    $dartPluginAll = Get-Command -All protoc-gen-dart -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
-}
 
 # Pick Pub Cache version to avoid repo-local broken plugin
 $dartPluginPath = $null
@@ -68,15 +64,27 @@ Write-Output "Using protoc-gen-dart: $dartPluginPath"
 
 # Run protoc for Dart with explicit plugin path
 Write-Output "Running protoc for Dart..."
-foreach ($protoFile in $dartProtoFiles) {
-    # Calculate relative path from ProtoRoot
-    $relPath = $protoFile.Substring($ProtoRoot.Length + 1)
-    # Dart protoc usually mirrors the directory structure, replacing .proto with .pb.dart
-    $dartRelPath = $relPath -replace "\.proto$", ".pb.dart"
-    $fullDartPath = Join-Path $DartOut $dartRelPath
-    
-    Write-Output "Generating $protoFile to $fullDartPath"
-    protoc --plugin=protoc-gen-dart="$dartPluginPath" --dart_out="$DartOut" -I"$ProtoRoot" $protoFile
+Write-Output "Generating all proto files in batch..."
+protoc --plugin=protoc-gen-dart="$dartPluginPath" --dart_out="$DartOut" -I"$ProtoRoot" $dartProtoFiles
+
+# Fix imports for well-known types in generated Dart files
+Write-Output "Fixing imports for well-known types..."
+$generatedFiles = Get-ChildItem -Path $DartOut -Filter *.dart -Recurse
+foreach ($file in $generatedFiles) {
+    $content = Get-Content -Path $file.FullName -Raw
+    if ($content -match "package:protobuf/well_known_types/") {
+        # Replace package:protobuf/well_known_types/google/protobuf/ with package:peers_touch_base/model/google/protobuf/
+        # Also handle if it's just package:protobuf/well_known_types/ without google/protobuf (though unlikely for these files)
+        
+        $newContent = $content -replace "package:protobuf/well_known_types/google/protobuf/", "package:peers_touch_base/model/google/protobuf/"
+        # Just in case some match pattern differs
+        $newContent = $newContent -replace "package:protobuf/well_known_types/", "package:peers_touch_base/model/"
+        
+        if ($content -ne $newContent) {
+            Set-Content -Path $file.FullName -Value $newContent -NoNewline
+            Write-Output "Fixed imports in $($file.Name)"
+        }
+    }
 }
 
 # Run protoc for Go

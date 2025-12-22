@@ -76,7 +76,7 @@ func GetWebProfile(c context.Context, rds *gorm.DB, username string, baseURL str
 	// 1. Fetch Basic Actor Info
 	var actor db.Actor
 	// Assuming "peers" namespace for now, similar to GetActor
-	err := rds.Where("name = ? AND namespace = ?", username, "peers").First(&actor).Error
+	err := rds.Where("preferred_username = ? AND namespace = ?", username, "peers").First(&actor).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, gorm.ErrRecordNotFound
@@ -101,29 +101,33 @@ func GetWebProfileByID(c context.Context, rds *gorm.DB, actorID uint64, baseURL 
 }
 
 func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, baseURL string) (*ProfileResponse, error) {
-	// 2. Fetch Extended Profile Info
-	var profile db.ActorProfile
-	err := rds.Where("actor_id = ?", actor.ID).First(&profile).Error
+	// 2. Fetch Extended Profile Info (Mastodon Meta)
+	var meta db.ActorMastodonMeta
+	err := rds.Where("actor_id = ?", actor.ID).First(&meta).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
-		log.Warnf(c, "Failed to fetch actor profile: %v", err)
+		log.Warnf(c, "Failed to fetch actor meta: %v", err)
 	}
 
-	activityPubID := fmt.Sprintf("%s/users/%s", baseURL, actor.Name) // Standard AP Actor ID format
+	activityPubID := fmt.Sprintf("%s/users/%s", baseURL, actor.PreferredUsername) // Standard AP Actor ID format
 
 	// 3. Fetch Stats
+	// If statistics are stored in meta and updated asynchronously, we could use them directly.
+	// However, for now, we might still count them dynamically or use the cached ones in meta.
+	// Since meta has Count fields, let's use them if available, or fall back to count.
+	// For this refactor, let's try to use the counts from Meta if > 0 (assuming sync mechanism exists),
+	// or just Count dynamically for accuracy if no async job yet.
+	// Given the instructions, let's assume dynamic count is safer for now, but fill meta fields if we were writing a job.
+	// Actually, let's stick to dynamic count as in original code to ensure correctness without background workers.
+
 	var statusesCount int64
-	// Count objects (Notes, Articles) attributed to this actor
-	// We check ActivityPubObject where AttributedTo matches the actor's AP ID
 	err = rds.Model(&db.ActivityPubObject{}).
 		Where("attributed_to = ?", activityPubID).
 		Count(&statusesCount).Error
 	if err != nil {
 		log.Warnf(c, "Failed to count statuses: %v", err)
-		// Continue, just default to 0
 	}
 
 	var followingCount int64
-	// Count active follows initiated by this actor
 	err = rds.Model(&db.ActivityPubFollow{}).
 		Where("follower_id = ? AND is_active = ?", activityPubID, true).
 		Count(&followingCount).Error
@@ -132,7 +136,6 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 	}
 
 	var followersCount int64
-	// Count active follows targeting this actor
 	err = rds.Model(&db.ActivityPubFollow{}).
 		Where("following_id = ? AND is_active = ?", activityPubID, true).
 		Count(&followersCount).Error
@@ -142,16 +145,16 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 
 	// Parse JSON fields
 	var tags []string
-	if profile.Tags != "" {
-		_ = json.Unmarshal([]byte(profile.Tags), &tags)
+	if meta.Tags != "" {
+		_ = json.Unmarshal([]byte(meta.Tags), &tags)
 	}
 	if tags == nil {
 		tags = []string{}
 	}
 
 	var links []UserLink
-	if profile.Links != "" {
-		_ = json.Unmarshal([]byte(profile.Links), &links)
+	if meta.Links != "" {
+		_ = json.Unmarshal([]byte(meta.Links), &links)
 	}
 	if links == nil {
 		links = []UserLink{}
@@ -160,28 +163,28 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 	// 4. Construct Response
 	response := &ProfileResponse{
 		ID:                        strconv.FormatUint(actor.ID, 10),
-		Username:                  actor.Name,
-		Acct:                      actor.Name, // Local user, so acct is just username
-		DisplayName:               actor.DisplayName,
+		Username:                  actor.PreferredUsername,
+		Acct:                      actor.PreferredUsername, // Local user, so acct is just username
+		DisplayName:               actor.Name,
 		Note:                      actor.Summary,
 		URL:                       activityPubID,
 		Avatar:                    actor.Icon,
 		Header:                    actor.Image,
-		Locked:                    false, // TODO: Add logic if we support locked accounts
+		Locked:                    meta.ManuallyApprovesFollowers,
 		CreatedAt:                 actor.CreatedAt,
 		StatusesCount:             statusesCount,
 		FollowingCount:            followingCount,
 		FollowersCount:            followersCount,
-		Region:                    profile.Region,
-		Timezone:                  profile.Timezone,
+		Region:                    meta.Region,
+		Timezone:                  meta.Timezone,
 		Tags:                      tags,
 		Links:                     links,
-		DefaultVisibility:         profile.DefaultVisibility,
-		ManuallyApprovesFollowers: profile.ManuallyApprovesFollowers,
-		MessagePermission:         profile.MessagePermission,
-		AutoExpireDays:            profile.AutoExpireDays,
+		DefaultVisibility:         meta.DefaultVisibility,
+		ManuallyApprovesFollowers: meta.ManuallyApprovesFollowers,
+		MessagePermission:         meta.MessagePermission,
+		AutoExpireDays:            meta.AutoExpireDays,
 		PeersTouch: PeersTouchInfo{
-			NetworkID: actor.PeersActorID, // Using Actor's PeersActorID
+			NetworkID: actor.PTID, // Using Actor's PTID
 		},
 	}
 
@@ -191,7 +194,7 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 // UpdateProfile updates the actor profile
 func UpdateProfile(c context.Context, rds *gorm.DB, username string, req UpdateProfileRequest) error {
 	var actor db.Actor
-	err := rds.Where("name = ? AND namespace = ?", username, "peers").First(&actor).Error
+	err := rds.Where("preferred_username = ? AND namespace = ?", username, "peers").First(&actor).Error
 	if err != nil {
 		return err
 	}
@@ -208,15 +211,15 @@ func UpdateProfileByID(c context.Context, rds *gorm.DB, actorID uint64, req Upda
 }
 
 func updateProfileInternal(c context.Context, rds *gorm.DB, actor *db.Actor, req UpdateProfileRequest) error {
-	var profile db.ActorProfile
-	err := rds.Where("actor_id = ?", actor.ID).First(&profile).Error
+	var meta db.ActorMastodonMeta
+	err := rds.Where("actor_id = ?", actor.ID).First(&meta).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Create profile if it doesn't exist
-			profile = db.ActorProfile{
+			// Create meta if it doesn't exist
+			meta = db.ActorMastodonMeta{
 				ActorID: actor.ID,
 			}
-			if err := rds.Create(&profile).Error; err != nil {
+			if err := rds.Create(&meta).Error; err != nil {
 				return err
 			}
 		} else {
@@ -227,7 +230,7 @@ func updateProfileInternal(c context.Context, rds *gorm.DB, actor *db.Actor, req
 	// Update Actor fields
 	actorUpdates := map[string]interface{}{}
 	if req.DisplayName != nil {
-		actorUpdates["display_name"] = *req.DisplayName
+		actorUpdates["name"] = *req.DisplayName // DisplayName maps to Name in new struct
 	}
 	if req.Note != nil {
 		actorUpdates["summary"] = *req.Note
@@ -245,37 +248,37 @@ func updateProfileInternal(c context.Context, rds *gorm.DB, actor *db.Actor, req
 		}
 	}
 
-	// Update Profile fields
-	profileUpdates := map[string]interface{}{}
+	// Update Meta fields
+	metaUpdates := map[string]interface{}{}
 	if req.Region != nil {
-		profileUpdates["region"] = *req.Region
+		metaUpdates["region"] = *req.Region
 	}
 	if req.Timezone != nil {
-		profileUpdates["timezone"] = *req.Timezone
+		metaUpdates["timezone"] = *req.Timezone
 	}
 	if req.Tags != nil {
 		tagsJSON, _ := json.Marshal(*req.Tags)
-		profileUpdates["tags"] = string(tagsJSON)
+		metaUpdates["tags"] = string(tagsJSON)
 	}
 	if req.Links != nil {
 		linksJSON, _ := json.Marshal(*req.Links)
-		profileUpdates["links"] = string(linksJSON)
+		metaUpdates["links"] = string(linksJSON)
 	}
 	if req.DefaultVisibility != nil {
-		profileUpdates["default_visibility"] = *req.DefaultVisibility
+		metaUpdates["default_visibility"] = *req.DefaultVisibility
 	}
 	if req.ManuallyApprovesFollowers != nil {
-		profileUpdates["manually_approves_followers"] = *req.ManuallyApprovesFollowers
+		metaUpdates["manually_approves_followers"] = *req.ManuallyApprovesFollowers
 	}
 	if req.MessagePermission != nil {
-		profileUpdates["message_permission"] = *req.MessagePermission
+		metaUpdates["message_permission"] = *req.MessagePermission
 	}
 	if req.AutoExpireDays != nil {
-		profileUpdates["auto_expire_days"] = *req.AutoExpireDays
+		metaUpdates["auto_expire_days"] = *req.AutoExpireDays
 	}
 
-	if len(profileUpdates) > 0 {
-		if err := rds.Model(&profile).Updates(profileUpdates).Error; err != nil {
+	if len(metaUpdates) > 0 {
+		if err := rds.Model(&meta).Updates(metaUpdates).Error; err != nil {
 			return err
 		}
 	}

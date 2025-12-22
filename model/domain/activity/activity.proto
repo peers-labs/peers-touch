@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package peers_touch.model.post.v1;
+package peers_touch.model.activity.v1;
 
 import "google/protobuf/timestamp.proto";
 
@@ -24,7 +24,7 @@ message Poll {
   bool hide_totals = 4;
 }
 
-message PostInput {
+message ActivityInput {
   string text = 1;
   repeated Attachment attachments = 2;
   repeated string tags = 3;
@@ -37,7 +37,7 @@ message PostInput {
   google.protobuf.Timestamp client_time = 10;
 }
 
-message PostResponse {
+message ActivityResponse {
   string post_id = 1;
   string activity_id = 2;
 }

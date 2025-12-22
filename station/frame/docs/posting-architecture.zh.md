@@ -8,17 +8,17 @@
 ## 架构概览
 - 客户端层（Flutter Desktop）
   - Composer：正文、媒体、话题/@提及、CW、可见性、投票
-  - 控制器：构造 `PostInput`，调用后端 API，处理上传与进度
+  - 控制器：构造 `ActivityInput`，调用后端 API，处理上传与进度
 - 服务层（Station/Frame/Touch）
-  - PostingService：接收 `PostInput`，校验、持久化、生成 ActivityPub 对象与投递计划
-  - APMapper：将 `PostInput` 映射为 `ap.Note` 与 `ap.Activity(Create)`
+  - ActivityService：接收 `ActivityInput`，校验、持久化、生成 ActivityPub 对象与投递计划
+  - APMapper：将 `ActivityInput` 映射为 `ap.Note` 与 `ap.Activity(Create)`
   - DeliveryEngine：基于 HTTP Signatures 将 Activity 投递到收件人 inbox
   - MediaStore：媒体上传与元数据（MIME、尺寸、哈希、alt 文本）
 - 适配层（Bridge/Adapters）
-  - PlatformAdapter：将 `PostInput` 转换为各平台 API 负载与能力降级
+  - PlatformAdapter：将 `ActivityInput` 转换为各平台 API 负载与能力降级
 
 ## 数据模型（服务端）
-- PostInput
+- ActivityInput
   - `text`、`attachments[]`、`altText[]`、`tags[]`（hashtag/mention）、`cw`、`sensitive`、`visibility`、`audience[]`、`replyTo`、`poll`、`clientId`
 - Persisted Entities
   - `post`（规范化存储，含渲染快照）、`media`、`ap_object`（Note/Question 等）、`ap_activity`（Create）、`delivery_job`
@@ -50,8 +50,8 @@
   - 编辑：生成 `Update`（保留历史），兼容对端策略
 
 ## API 设计（服务端）
-- `POST /touch/post`
-  - Body：`PostInput`
+- `POST /:actor/activity`
+  - Body：`ActivityInput`
   - Returns：`{ postId, activityId }`
 - `POST /touch/media`
   - 上传媒体，返回 `{ mediaId, url, mediaType, alt }`
@@ -87,7 +87,7 @@
   - 获取 Outbox：`station/frame/touch/activitypub/activitypub.go:227`
   - Followers 列表：`station/frame/touch/activitypub/activitypub.go:280`
 - 新增：
-  - `PostingService.CreatePost`：构造 `Note`/`Create`，持久化与投递
+  - `ActivityService.Create`：构造 `Note`/`Create`，持久化与投递
   - `DeliveryEngine.EnqueueAndSend`：签名 HTTP 投递
 
 ## 迭代计划
@@ -106,24 +106,24 @@
 ### V1（发帖、媒体、投递、可见性、CW、投票）
 - 接口
   - `POST /activitypub/:actor/media` 上传媒体，返回 `{ media_id, url, media_type, alt }`
-  - `POST /activitypub/:actor/post` 提交 `PostInput`，返回 `{ post_id, activity_id }`
+  - `POST /:actor/activity` 提交 `ActivityInput`，返回 `{ post_id, activity_id }`
 - 服务
-  - `posting.Create(ctx, db, actor, baseURL, in)` 构造 `Note` 与 `Create`，计算 `to/cc` 并调用 `activitypub.ProcessActivity`
-  - `posting.StoreMedia(ctx, db, actor, baseURL, file, alt)` 保存媒体并返回元数据
+  - `activity.Create(ctx, db, actor, baseURL, in)` 构造 `Note` 与 `Create`，计算 `to/cc` 并调用 `activitypub.ProcessActivity`
+  - `activity.StoreMedia(ctx, db, actor, baseURL, file, alt)` 保存媒体并返回元数据
 - 入库
   - `activitypub_objects` 写对象，`activitypub_activities` 写活动，`activitypub_collections` 写 Outbox 关联
 - 联邦投递
   - 复用 `deliverToRemote` 根据 `to/cc` 解析目标 actor，选择 sharedInbox/inbox，`DeliverActivity` 签名投递
 - 桌面端
-  - `PostingModule` 注册菜单；`ComposerPage` 编辑器；`PostingController` 负责媒体上传与发帖提交
+  - `ActivityModule` 注册菜单；`ComposerPage` 编辑器；`ActivityController` 负责媒体上传与发帖提交
   - UI 规范：圆角、阴影、透明度、间距遵循 Desktop Prompt；所见即所得，不暴露技术字段
 - 验证
   - Outbox 页可见新活动；对端收件箱收到 Create；桌面端弹成功提示并刷新时间线
 
 ### V1.1（编辑、删除、转发/引用、回复线程）
 - 接口
-  - `PUT /activitypub/:actor/post/:id` → 生成 `Update` 并保留历史
-  - `DELETE /activitypub/:actor/post/:id` → 生成 `Delete` 或 Tombstone 标记
+  - `PUT /activitypub/:actor/activity/:id` → 生成 `Update` 并保留历史
+  - `DELETE /activitypub/:actor/activity/:id` → 生成 `Delete` 或 Tombstone 标记
   - `POST /activitypub/:actor/repost` → `Announce`
   - `POST /activitypub/:actor/quote` → 新 `Note` 引用原帖链接并附评论
 - 回复
@@ -133,10 +133,10 @@
 
 ## 规范对齐说明（代码与目录）
 - 命名与目录
-  - 领域模型使用独立目录与通用命名：`model/domain/post/post.proto`，包名 `peers_touch.model.post.v1`
+  - 领域模型使用独立目录与通用命名：`model/domain/activity/activity.proto`，包名 `peers_touch.model.activity.v1`
   - Go 产物包名统一为 `model`，落位 `station/frame/touch/model`
 - 路由注册
-  - 作为 ActivityPub 家族路由常量注册：`PostingRouterURLPost`、`PostingRouterURLMedia`
+  - 作为 ActivityPub 家族路由常量注册：`ActivityRouterURLCreate`、`ActivityRouterURLMedia`
   - 通过 `GetActivityPubHandlers` 添加，包裹 `CommonAccessControlWrapper(model.RouteNameActivityPub)`
 - Handler 风格
   - 统一签名 `(context.Context, *app.RequestContext)`，`ctx.Bind` 参数解析，`store.GetRDS` 获取 DB，`SuccessResponse/FailedResponse` 返回

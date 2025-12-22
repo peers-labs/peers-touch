@@ -279,7 +279,7 @@ class ChatController extends GetxController {
       return;
     }
     final server = Uri.parse(base).resolve('/').toString();
-    actorListUrl.value = Uri.parse(server).resolve('/actor/list').toString();
+    actorListUrl.value = Uri.parse(server).resolve('/activitypub/list').toString();
   }
 
   Future<void> fetchConnections() async {

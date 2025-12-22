@@ -20,10 +20,10 @@ func GetAccount(ctx context.Context, username string) (*model.MastodonAccount, e
 		return nil, err
 	}
 	var actor db.Actor
-	if err := rds.Where("name = ?", username).First(&actor).Error; err != nil {
+	if err := rds.Where("preferred_username = ?", username).First(&actor).Error; err != nil {
 		return nil, err
 	}
-	return &model.MastodonAccount{Id: actor.PeersActorID, Username: actor.Name, Acct: actor.Name, DisplayName: actor.DisplayName, Note: actor.Summary, Avatar: actor.Icon, Header: actor.Image}, nil
+	return &model.MastodonAccount{Id: actor.PTID, Username: actor.PreferredUsername, Acct: actor.PreferredUsername, DisplayName: actor.Name, Note: actor.Summary, Avatar: actor.Icon, Header: actor.Image}, nil
 }
 
 func CreateStatus(ctx context.Context, username string, req model.MastodonCreateStatusRequest, baseURL string) (*model.MastodonStatus, error) {
@@ -180,7 +180,7 @@ func Directory(ctx context.Context, limit, offset int) ([]model.MastodonAccount,
 	items := make([]model.MastodonAccount, 0, len(actors))
 	for i := range actors {
 		a := actors[i]
-		items = append(items, model.MastodonAccount{Id: a.PeersActorID, Username: a.Name, Acct: a.Name, DisplayName: a.DisplayName, Note: a.Summary, Avatar: a.Icon, Header: a.Image})
+		items = append(items, model.MastodonAccount{Id: a.PTID, Username: a.PreferredUsername, Acct: a.PreferredUsername, DisplayName: a.Name, Note: a.Summary, Avatar: a.Icon, Header: a.Image})
 	}
 	return items, nil
 }
