@@ -1,6 +1,6 @@
 import 'package:get/get.dart' hide FormData, MultipartFile;
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_base/model/domain/post/post.pb.dart' as pb;
+import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
 
 class DiscoveryRepository {
   final _httpService = HttpServiceLocator().httpService;
@@ -14,8 +14,8 @@ class DiscoveryRepository {
     return data;
   }
 
-  /// Submit a post (activity) to outbox using Proto structure
-  Future<Map<String, dynamic>> submitPost(String username, pb.PostInput input) async {
+  /// Submit a activity to outbox using Proto structure
+  Future<Map<String, dynamic>> submitActivity(String username, pb.ActivityInput input) async {
     final activity = _convertToActivityPub(username, input);
     final data = await _httpService.post<Map<String, dynamic>>(
       '/activitypub/$username/outbox',
@@ -24,7 +24,7 @@ class DiscoveryRepository {
     return data;
   }
 
-  Map<String, dynamic> _convertToActivityPub(String username, pb.PostInput input) {
+  Map<String, dynamic> _convertToActivityPub(String username, pb.ActivityInput input) {
     final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
     final actorId = '$baseUrl/activitypub/$username/actor';
     final followers = '$baseUrl/activitypub/$username/followers';

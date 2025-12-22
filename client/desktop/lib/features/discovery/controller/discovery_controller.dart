@@ -8,8 +8,7 @@ import 'package:peers_touch_desktop/features/discovery/repository/discovery_repo
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_base/model/domain/post/post.pb.dart' as pb;
+import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
 
 class GroupItem {
   final String id;
@@ -366,8 +365,8 @@ class DiscoveryController extends GetxController {
         return;
       }
 
-      // 2. Construct PostInput (Proto)
-      final input = pb.PostInput(
+      // 2. Construct ActivityInput (Proto)
+      final input = pb.ActivityInput(
         text: content,
         replyTo: parent.id,
         visibility: 'public',
@@ -375,7 +374,7 @@ class DiscoveryController extends GetxController {
 
       // 3. Submit
       LoggingService.info('Submitting reply to ${parent.id}');
-      await _repo.submitPost(username, input);
+      await _repo.submitActivity(username, input);
 
       // 4. Update UI (Optimistic update)
       // Add comment to parent.comments

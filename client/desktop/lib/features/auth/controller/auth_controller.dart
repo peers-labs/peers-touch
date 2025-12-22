@@ -170,7 +170,7 @@ class AuthController extends GetxController {
   Future<void> loadPresetUsers(String baseUrl) async {
     try {
       final uri = Uri.parse(
-        baseUrl.endsWith('/') ? '${baseUrl}actor/list' : '$baseUrl/actor/list',
+        baseUrl.endsWith('/') ? '${baseUrl}activitypub/list' : '$baseUrl/activitypub/list',
       );
       final resp = await (await HttpClient().getUrl(uri)).close();
       if (resp.statusCode == 200) {
@@ -337,6 +337,50 @@ class AuthController extends GetxController {
     loading.value = false;
   }
 
+  Future<void> logout() async {
+    loading.value = true;
+    try {
+      // 1. Clear GlobalContext
+      try {
+        if (Get.isRegistered<GlobalContext>()) {
+          final gc = Get.find<GlobalContext>();
+          await gc.setSession(null);
+        }
+      } catch (_) {}
+
+      // 2. Clear LocalStorage
+      final ls = LocalStorage();
+      await ls.remove('auth_token');
+      await ls.remove('refresh_token');
+      await ls.remove('auth_token_type');
+      await ls.remove('username');
+      await ls.remove('email');
+      
+      // 3. Clear SecureStorage
+      await _secureStorage.remove(StorageKeys.tokenKey);
+      await _secureStorage.remove(StorageKeys.refreshTokenKey);
+
+      // 4. Reset Controller State
+      username.value = '';
+      email.value = '';
+      displayName.value = '';
+      password.value = '';
+      confirmPassword.value = '';
+      usernameController.clear();
+      emailController.clear();
+      passwordController.clear();
+      confirmPasswordController.clear();
+      displayNameController.clear();
+      
+      // 5. Navigate to Login
+      Get.offAllNamed('/login');
+    } catch (e) {
+      error.value = e.toString();
+    } finally {
+      loading.value = false;
+    }
+  }
+
   Future<void> signup([String? overrideBaseUrl]) async {
     loading.value = true;
     error.value = null;
@@ -354,8 +398,8 @@ class AuthController extends GetxController {
       final useUrl = (overrideBaseUrl ?? baseUrl.value).trim();
       final uri = Uri.parse(
         useUrl.endsWith('/')
-            ? '${useUrl}actor/sign-up'
-            : '$useUrl/actor/sign-up',
+            ? '${useUrl}activitypub/sign-up'
+            : '$useUrl/activitypub/sign-up',
       );
       final req = await HttpClient().postUrl(uri);
       req.headers.contentType = ContentType.json;
@@ -384,8 +428,6 @@ class AuthController extends GetxController {
 
   bool _validateSignupInputs() {
     final nameOk = username.value.trim().isNotEmpty;
-    // displayName is optional for backend currently but required for UI
-    final dispOk = displayName.value.trim().isNotEmpty;
     final emailText = email.value.trim();
     final emailOk =
         emailText.isNotEmpty &&
@@ -393,7 +435,7 @@ class AuthController extends GetxController {
     final pwd = password.value.trim();
     final pwdOk = pwd.length >= 8;
     final confirmOk = pwd == confirmPassword.value.trim();
-    return nameOk && dispOk && emailOk && pwdOk && confirmOk;
+    return nameOk && emailOk && pwdOk && confirmOk;
   }
 
   Future<void> detectProtocol(String baseUrl) async {

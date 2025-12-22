@@ -175,9 +175,10 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 		ExpiresAt:    token.ExpiresAt,
 		SessionID:    sess.ID,
 		User: map[string]interface{}{
-			"id":    user.ID,
-			"name":  user.Name,
-			"email": user.Email,
+			"id":           user.ID,
+			"name":         user.PreferredUsername,
+			"display_name": user.Name,
+			"email":        user.Email,
 		},
 	}, nil
 }

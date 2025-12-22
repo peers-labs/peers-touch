@@ -120,7 +120,7 @@ func handleCreateActivity(c context.Context, dbConn *gorm.DB, username string, a
 	}
 
 	// 5. Persist Activity
-	return persistActivity(dbConn, username, activity, string(object.ID), baseURL, string(object.InReplyTo.GetLink()))
+	return persistActivity(dbConn, username, activity, string(object.ID), baseURL, dbObj.InReplyTo, object)
 }
 
 func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -151,7 +151,7 @@ func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, a
 		return fmt.Errorf("failed to create follow in DB: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, resolvedURI, baseURL, "")
+	return persistActivity(dbConn, username, activity, resolvedURI, baseURL, "", nil)
 }
 
 func handleLikeActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -174,7 +174,7 @@ func handleLikeActivity(c context.Context, dbConn *gorm.DB, username string, act
 		return fmt.Errorf("failed to create like in DB: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, string(targetURI), baseURL, "")
+	return persistActivity(dbConn, username, activity, string(targetURI), baseURL, "", nil)
 }
 
 func handleUndoActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -210,7 +210,7 @@ func handleUndoActivity(c context.Context, dbConn *gorm.DB, username string, act
 		log.Warnf(c, "Undo not fully implemented for activity type %s", originalActivity.Type)
 	}
 
-	return persistActivity(dbConn, username, activity, string(targetActivityURI), baseURL, "")
+	return persistActivity(dbConn, username, activity, string(targetActivityURI), baseURL, "", nil)
 }
 
 func handleUpdateActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -245,7 +245,7 @@ func handleUpdateActivity(c context.Context, dbConn *gorm.DB, username string, a
 		return fmt.Errorf("failed to update object: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, string(object.ID), baseURL, "")
+	return persistActivity(dbConn, username, activity, string(object.ID), baseURL, "", object)
 }
 
 func handleDeleteActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -267,10 +267,10 @@ func handleDeleteActivity(c context.Context, dbConn *gorm.DB, username string, a
 		log.Warnf(c, "Failed to mark object as Tombstone: %v", err)
 	}
 
-	return persistActivity(dbConn, username, activity, string(targetURI), baseURL, "")
+	return persistActivity(dbConn, username, activity, string(targetURI), baseURL, "", nil)
 }
 
-func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, objectID string, baseURL string, inReplyTo string) error {
+func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, objectID string, baseURL string, inReplyTo string, metadata *ap.Object) error {
 	// Helper to simplify local IRIs
 	simplify := func(iri string) string {
 		if len(iri) > len(baseURL) && iri[:len(baseURL)] == baseURL {
@@ -291,6 +291,45 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 		InReplyTo:     simplify(inReplyTo),
 		Published:     activity.Published,
 		IsLocal:       true,
+		Visibility:    "public", // Default
+	}
+
+	// Extract Metadata if provided (mainly for Create Note)
+	if metadata != nil {
+		if len(metadata.Content) > 0 {
+			dbAct.Text = string(metadata.Content.First().Value)
+		}
+		// dbAct.Sensitive = metadata.Sensitive
+		if len(metadata.Summary) > 0 {
+			dbAct.SpoilerText = string(metadata.Summary.First().Value)
+		}
+		// Language could be extracted from ContentMap if available
+	}
+
+	// Determine Visibility
+	isPublic := false
+	for _, to := range activity.To {
+		if to.GetLink() == ap.PublicNS {
+			isPublic = true
+			break
+		}
+	}
+	if !isPublic {
+		for _, cc := range activity.CC {
+			if cc.GetLink() == ap.PublicNS {
+				isPublic = true
+				break
+			}
+		}
+	}
+
+	if isPublic {
+		dbAct.Visibility = "public"
+		dbAct.IsPublic = true
+	} else {
+		// Simplified visibility logic
+		dbAct.Visibility = "private" // or unlisted/direct
+		dbAct.IsPublic = false
 	}
 
 	// Save full JSON content
@@ -328,15 +367,8 @@ func deliverToRemote(username string, activity *ap.Activity, baseURL string) {
 
 	// Get Actor
 	var actor db.Actor
-	if err := rds.Where("name = ?", username).First(&actor).Error; err != nil {
+	if err := rds.Where("preferred_username = ?", username).First(&actor).Error; err != nil {
 		log.Errorf(ctx, "Delivery: Actor %s not found: %v", username, err)
-		return
-	}
-
-	// Get Keys
-	var keys db.ActivityPubKey
-	if err := rds.Where("actor_id = ?", actor.ID).First(&keys).Error; err != nil {
-		log.Errorf(ctx, "Delivery: Keys for actor %s not found: %v", username, err)
 		return
 	}
 
@@ -406,7 +438,7 @@ func deliverToRemote(username string, activity *ap.Activity, baseURL string) {
 
 		// Send
 		log.Infof(ctx, "Delivery: Sending activity %s to %s", activity.ID, inbox)
-		statusCode, err := DeliverActivity(ctx, inbox, activity, keyID, keys.PrivateKeyPEM)
+		statusCode, err := DeliverActivity(ctx, inbox, activity, keyID, actor.PrivateKey)
 		if err != nil {
 			log.Errorf(ctx, "Delivery: Failed to send to %s: %v", inbox, err)
 		} else {
@@ -430,7 +462,7 @@ func handleAnnounceActivity(c context.Context, dbConn *gorm.DB, username string,
 		activity.Published = time.Now()
 	}
 
-	if err := persistActivity(dbConn, username, activity, string(targetURI), baseURL, ""); err != nil {
+	if err := persistActivity(dbConn, username, activity, string(targetURI), baseURL, "", nil); err != nil {
 		return err
 	}
 	return nil

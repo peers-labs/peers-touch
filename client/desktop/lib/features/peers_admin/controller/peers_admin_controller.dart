@@ -263,7 +263,7 @@ class PeersAdminController extends GetxController {
 
   // ---------------- Actor 端点 ----------------
   Future<void> actorSignUp({required String name, required String email, required String password}) async {
-    await _post(_buildUrl('actor', '/sign-up'), data: {
+    await _post(_buildUrl('activitypub', '/sign-up'), data: {
       'name': name,
       'email': email,
       'password': password,
@@ -271,18 +271,18 @@ class PeersAdminController extends GetxController {
   }
 
   Future<void> actorLogin({required String email, required String password}) async {
-    await _post(_buildUrl('actor', '/login'), data: {
+    await _post(_buildUrl('activitypub', '/login'), data: {
       'email': email,
       'password': password,
     });
   }
 
   Future<void> getActorProfile() async {
-    await _get(_buildUrl('actor', '/profile'));
+    await _get(_buildUrl('activitypub', '/profile'));
   }
 
   Future<void> updateActorProfile({String? profilePhoto, String? gender, String? region, String? email, String? whatsUp}) async {
-    await _post(_buildUrl('actor', '/profile'), data: {
+    await _post(_buildUrl('activitypub', '/profile'), data: {
       if (profilePhoto != null && profilePhoto.isNotEmpty) 'profile_photo': profilePhoto,
       if (gender != null && gender.isNotEmpty) 'gender': gender,
       if (region != null && region.isNotEmpty) 'region': region,
