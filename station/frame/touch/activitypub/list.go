@@ -41,18 +41,37 @@ func ListActors(ctx context.Context) ([]PresetActor, error) {
 	base := "https://station.local"
 	out := make([]PresetActor, 0, len(rows))
 	for _, a := range rows {
-		uname := a.PeersActorID
+		uname := a.PTID
 		if uname == "" {
-			uname = a.Name
+			uname = a.PreferredUsername
 		}
-		id := fmt.Sprintf("%s/actor/%s", base, uname)
+
+		// Use DB values if present, otherwise fallback to dynamic generation
+		id := a.Url
+		if id == "" {
+			id = fmt.Sprintf("%s/actor/%s", base, uname)
+		}
+		inbox := a.Inbox
+		if inbox == "" {
+			inbox = fmt.Sprintf("%s/actor/%s/inbox", base, uname)
+		}
+		outbox := a.Outbox
+		if outbox == "" {
+			outbox = fmt.Sprintf("%s/actor/%s/outbox", base, uname)
+		}
+
+		// Parse endpoints if present (simple check for now)
+		endpoints := map[string]string{"sharedInbox": fmt.Sprintf("%s/inbox", base)}
+		// Real implementation would parse a.Endpoints JSON
+
 		out = append(out, PresetActor{
 			ID:          id,
-			Username:    uname,
+			Username:    a.PreferredUsername,
 			DisplayName: a.Name,
-			Inbox:       fmt.Sprintf("%s/actor/%s/inbox", base, uname),
-			Outbox:      fmt.Sprintf("%s/actor/%s/outbox", base, uname),
-			Endpoints:   map[string]string{"sharedInbox": fmt.Sprintf("%s/inbox", base)},
+			Email:       a.Email,
+			Inbox:       inbox,
+			Outbox:      outbox,
+			Endpoints:   endpoints,
 		})
 	}
 	return out, nil

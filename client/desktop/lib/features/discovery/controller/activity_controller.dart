@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:get/get.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
-import 'package:peers_touch_base/model/domain/post/post.pb.dart' as pb;
+import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
@@ -12,7 +12,7 @@ import 'package:peers_touch_desktop/features/discovery/repository/discovery_repo
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_desktop/core/services/oss_service.dart';
 
-class PostingController extends GetxController {
+class ActivityController extends GetxController {
   final DiscoveryRepository _repo = Get.find<DiscoveryRepository>();
   final GlobalContext _gctx = Get.find<GlobalContext>();
   final OssService _ossService = Get.find<OssService>();
@@ -106,7 +106,7 @@ class PostingController extends GetxController {
     }
   }
 
-  Future<pb.PostResponse?> submit() async {
+  Future<pb.ActivityResponse?> submit() async {
     if (text.value.isEmpty && attachments.isEmpty) return null;
     
     try {
@@ -122,9 +122,9 @@ class PostingController extends GetxController {
         }
       }
 
-      // 2. Construct PostInput (Proto)
+      // 2. Construct ActivityInput (Proto)
       final actorName = _actor;
-      final input = pb.PostInput(
+      final input = pb.ActivityInput(
         text: text.value,
         visibility: visibility.value,
         attachments: uploadedMedia.map((m) => pb.Attachment(
@@ -140,8 +140,8 @@ class PostingController extends GetxController {
         input.sensitive = true;
       }
 
-      // 3. Submit Post to Outbox
-      final data = await _repo.submitPost(actorName, input);
+      // 3. Submit Activity to Outbox
+      final data = await _repo.submitActivity(actorName, input);
       
       submitting.value = false;
       
@@ -174,13 +174,13 @@ class PostingController extends GetxController {
         discovery.addNewItem(newItem);
       }
 
-      return pb.PostResponse(
+      return pb.ActivityResponse(
         postId: data['id'] ?? '', // ActivityPub returns 'id' (activity ID)
         activityId: data['id'] ?? '',
       );
     } catch (e) {
       submitting.value = false;
-      LoggingService.error('CreatePost', e.toString());
+      LoggingService.error('CreateActivity', e.toString());
       errorText.value = e.toString();
       return null;
     }

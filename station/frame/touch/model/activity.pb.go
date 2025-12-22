@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        v6.32.1
-// source: domain/post/post.proto
+// source: domain/activity/activity.proto
 
 package model
 
@@ -34,7 +34,7 @@ type Attachment struct {
 
 func (x *Attachment) Reset() {
 	*x = Attachment{}
-	mi := &file_domain_post_post_proto_msgTypes[0]
+	mi := &file_domain_activity_activity_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -46,7 +46,7 @@ func (x *Attachment) String() string {
 func (*Attachment) ProtoMessage() {}
 
 func (x *Attachment) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_post_post_proto_msgTypes[0]
+	mi := &file_domain_activity_activity_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,7 +59,7 @@ func (x *Attachment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Attachment.ProtoReflect.Descriptor instead.
 func (*Attachment) Descriptor() ([]byte, []int) {
-	return file_domain_post_post_proto_rawDescGZIP(), []int{0}
+	return file_domain_activity_activity_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Attachment) GetMediaId() string {
@@ -99,7 +99,7 @@ type PollOption struct {
 
 func (x *PollOption) Reset() {
 	*x = PollOption{}
-	mi := &file_domain_post_post_proto_msgTypes[1]
+	mi := &file_domain_activity_activity_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -111,7 +111,7 @@ func (x *PollOption) String() string {
 func (*PollOption) ProtoMessage() {}
 
 func (x *PollOption) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_post_post_proto_msgTypes[1]
+	mi := &file_domain_activity_activity_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -124,7 +124,7 @@ func (x *PollOption) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PollOption.ProtoReflect.Descriptor instead.
 func (*PollOption) Descriptor() ([]byte, []int) {
-	return file_domain_post_post_proto_rawDescGZIP(), []int{1}
+	return file_domain_activity_activity_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *PollOption) GetText() string {
@@ -146,7 +146,7 @@ type Poll struct {
 
 func (x *Poll) Reset() {
 	*x = Poll{}
-	mi := &file_domain_post_post_proto_msgTypes[2]
+	mi := &file_domain_activity_activity_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -158,7 +158,7 @@ func (x *Poll) String() string {
 func (*Poll) ProtoMessage() {}
 
 func (x *Poll) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_post_post_proto_msgTypes[2]
+	mi := &file_domain_activity_activity_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -171,7 +171,7 @@ func (x *Poll) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Poll.ProtoReflect.Descriptor instead.
 func (*Poll) Descriptor() ([]byte, []int) {
-	return file_domain_post_post_proto_rawDescGZIP(), []int{2}
+	return file_domain_activity_activity_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Poll) GetOptions() []*PollOption {
@@ -202,7 +202,7 @@ func (x *Poll) GetHideTotals() bool {
 	return false
 }
 
-type PostInput struct {
+type ActivityInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
 	Attachments   []*Attachment          `protobuf:"bytes,2,rep,name=attachments,proto3" json:"attachments,omitempty"`
@@ -218,21 +218,21 @@ type PostInput struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *PostInput) Reset() {
-	*x = PostInput{}
-	mi := &file_domain_post_post_proto_msgTypes[3]
+func (x *ActivityInput) Reset() {
+	*x = ActivityInput{}
+	mi := &file_domain_activity_activity_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *PostInput) String() string {
+func (x *ActivityInput) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PostInput) ProtoMessage() {}
+func (*ActivityInput) ProtoMessage() {}
 
-func (x *PostInput) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_post_post_proto_msgTypes[3]
+func (x *ActivityInput) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_activity_activity_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -243,82 +243,82 @@ func (x *PostInput) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PostInput.ProtoReflect.Descriptor instead.
-func (*PostInput) Descriptor() ([]byte, []int) {
-	return file_domain_post_post_proto_rawDescGZIP(), []int{3}
+// Deprecated: Use ActivityInput.ProtoReflect.Descriptor instead.
+func (*ActivityInput) Descriptor() ([]byte, []int) {
+	return file_domain_activity_activity_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *PostInput) GetText() string {
+func (x *ActivityInput) GetText() string {
 	if x != nil {
 		return x.Text
 	}
 	return ""
 }
 
-func (x *PostInput) GetAttachments() []*Attachment {
+func (x *ActivityInput) GetAttachments() []*Attachment {
 	if x != nil {
 		return x.Attachments
 	}
 	return nil
 }
 
-func (x *PostInput) GetTags() []string {
+func (x *ActivityInput) GetTags() []string {
 	if x != nil {
 		return x.Tags
 	}
 	return nil
 }
 
-func (x *PostInput) GetVisibility() string {
+func (x *ActivityInput) GetVisibility() string {
 	if x != nil {
 		return x.Visibility
 	}
 	return ""
 }
 
-func (x *PostInput) GetAudience() []string {
+func (x *ActivityInput) GetAudience() []string {
 	if x != nil {
 		return x.Audience
 	}
 	return nil
 }
 
-func (x *PostInput) GetCw() string {
+func (x *ActivityInput) GetCw() string {
 	if x != nil {
 		return x.Cw
 	}
 	return ""
 }
 
-func (x *PostInput) GetSensitive() bool {
+func (x *ActivityInput) GetSensitive() bool {
 	if x != nil {
 		return x.Sensitive
 	}
 	return false
 }
 
-func (x *PostInput) GetReplyTo() string {
+func (x *ActivityInput) GetReplyTo() string {
 	if x != nil {
 		return x.ReplyTo
 	}
 	return ""
 }
 
-func (x *PostInput) GetPoll() *Poll {
+func (x *ActivityInput) GetPoll() *Poll {
 	if x != nil {
 		return x.Poll
 	}
 	return nil
 }
 
-func (x *PostInput) GetClientTime() *timestamppb.Timestamp {
+func (x *ActivityInput) GetClientTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ClientTime
 	}
 	return nil
 }
 
-type PostResponse struct {
+type ActivityResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PostId        string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
 	ActivityId    string                 `protobuf:"bytes,2,opt,name=activity_id,json=activityId,proto3" json:"activity_id,omitempty"`
@@ -326,21 +326,21 @@ type PostResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *PostResponse) Reset() {
-	*x = PostResponse{}
-	mi := &file_domain_post_post_proto_msgTypes[4]
+func (x *ActivityResponse) Reset() {
+	*x = ActivityResponse{}
+	mi := &file_domain_activity_activity_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *PostResponse) String() string {
+func (x *ActivityResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PostResponse) ProtoMessage() {}
+func (*ActivityResponse) ProtoMessage() {}
 
-func (x *PostResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_post_post_proto_msgTypes[4]
+func (x *ActivityResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_activity_activity_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -351,19 +351,19 @@ func (x *PostResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PostResponse.ProtoReflect.Descriptor instead.
-func (*PostResponse) Descriptor() ([]byte, []int) {
-	return file_domain_post_post_proto_rawDescGZIP(), []int{4}
+// Deprecated: Use ActivityResponse.ProtoReflect.Descriptor instead.
+func (*ActivityResponse) Descriptor() ([]byte, []int) {
+	return file_domain_activity_activity_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *PostResponse) GetPostId() string {
+func (x *ActivityResponse) GetPostId() string {
 	if x != nil {
 		return x.PostId
 	}
 	return ""
 }
 
-func (x *PostResponse) GetActivityId() string {
+func (x *ActivityResponse) GetActivityId() string {
 	if x != nil {
 		return x.ActivityId
 	}
@@ -382,7 +382,7 @@ type MediaUploadResponse struct {
 
 func (x *MediaUploadResponse) Reset() {
 	*x = MediaUploadResponse{}
-	mi := &file_domain_post_post_proto_msgTypes[5]
+	mi := &file_domain_activity_activity_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -394,7 +394,7 @@ func (x *MediaUploadResponse) String() string {
 func (*MediaUploadResponse) ProtoMessage() {}
 
 func (x *MediaUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_post_post_proto_msgTypes[5]
+	mi := &file_domain_activity_activity_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -407,7 +407,7 @@ func (x *MediaUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MediaUploadResponse.ProtoReflect.Descriptor instead.
 func (*MediaUploadResponse) Descriptor() ([]byte, []int) {
-	return file_domain_post_post_proto_rawDescGZIP(), []int{5}
+	return file_domain_activity_activity_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MediaUploadResponse) GetMediaId() string {
@@ -438,11 +438,11 @@ func (x *MediaUploadResponse) GetAlt() string {
 	return ""
 }
 
-var File_domain_post_post_proto protoreflect.FileDescriptor
+var File_domain_activity_activity_proto protoreflect.FileDescriptor
 
-const file_domain_post_post_proto_rawDesc = "" +
+const file_domain_activity_activity_proto_rawDesc = "" +
 	"\n" +
-	"\x16domain/post/post.proto\x12\x19peers_touch.model.post.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"j\n" +
+	"\x1edomain/activity/activity.proto\x12\x1dpeers_touch.model.activity.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"j\n" +
 	"\n" +
 	"Attachment\x12\x19\n" +
 	"\bmedia_id\x18\x01 \x01(\tR\amediaId\x12\x10\n" +
@@ -452,17 +452,17 @@ const file_domain_post_post_proto_rawDesc = "" +
 	"\x03alt\x18\x04 \x01(\tR\x03alt\" \n" +
 	"\n" +
 	"PollOption\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\xa3\x01\n" +
-	"\x04Poll\x12?\n" +
-	"\aoptions\x18\x01 \x03(\v2%.peers_touch.model.post.v1.PollOptionR\aoptions\x12\x1d\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xa7\x01\n" +
+	"\x04Poll\x12C\n" +
+	"\aoptions\x18\x01 \x03(\v2).peers_touch.model.activity.v1.PollOptionR\aoptions\x12\x1d\n" +
 	"\n" +
 	"expires_in\x18\x02 \x01(\x05R\texpiresIn\x12\x1a\n" +
 	"\bmultiple\x18\x03 \x01(\bR\bmultiple\x12\x1f\n" +
 	"\vhide_totals\x18\x04 \x01(\bR\n" +
-	"hideTotals\"\xf3\x02\n" +
-	"\tPostInput\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\x12G\n" +
-	"\vattachments\x18\x02 \x03(\v2%.peers_touch.model.post.v1.AttachmentR\vattachments\x12\x12\n" +
+	"hideTotals\"\xff\x02\n" +
+	"\rActivityInput\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12K\n" +
+	"\vattachments\x18\x02 \x03(\v2).peers_touch.model.activity.v1.AttachmentR\vattachments\x12\x12\n" +
 	"\x04tags\x18\x03 \x03(\tR\x04tags\x12\x1e\n" +
 	"\n" +
 	"visibility\x18\x04 \x01(\tR\n" +
@@ -470,12 +470,12 @@ const file_domain_post_post_proto_rawDesc = "" +
 	"\baudience\x18\x05 \x03(\tR\baudience\x12\x0e\n" +
 	"\x02cw\x18\x06 \x01(\tR\x02cw\x12\x1c\n" +
 	"\tsensitive\x18\a \x01(\bR\tsensitive\x12\x19\n" +
-	"\breply_to\x18\b \x01(\tR\areplyTo\x123\n" +
-	"\x04poll\x18\t \x01(\v2\x1f.peers_touch.model.post.v1.PollR\x04poll\x12;\n" +
+	"\breply_to\x18\b \x01(\tR\areplyTo\x127\n" +
+	"\x04poll\x18\t \x01(\v2#.peers_touch.model.activity.v1.PollR\x04poll\x12;\n" +
 	"\vclient_time\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"clientTime\"H\n" +
-	"\fPostResponse\x12\x17\n" +
+	"clientTime\"L\n" +
+	"\x10ActivityResponse\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12\x1f\n" +
 	"\vactivity_id\x18\x02 \x01(\tR\n" +
 	"activityId\"s\n" +
@@ -487,32 +487,32 @@ const file_domain_post_post_proto_rawDesc = "" +
 	"\x03alt\x18\x04 \x01(\tR\x03altBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
-	file_domain_post_post_proto_rawDescOnce sync.Once
-	file_domain_post_post_proto_rawDescData []byte
+	file_domain_activity_activity_proto_rawDescOnce sync.Once
+	file_domain_activity_activity_proto_rawDescData []byte
 )
 
-func file_domain_post_post_proto_rawDescGZIP() []byte {
-	file_domain_post_post_proto_rawDescOnce.Do(func() {
-		file_domain_post_post_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_domain_post_post_proto_rawDesc), len(file_domain_post_post_proto_rawDesc)))
+func file_domain_activity_activity_proto_rawDescGZIP() []byte {
+	file_domain_activity_activity_proto_rawDescOnce.Do(func() {
+		file_domain_activity_activity_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_domain_activity_activity_proto_rawDesc), len(file_domain_activity_activity_proto_rawDesc)))
 	})
-	return file_domain_post_post_proto_rawDescData
+	return file_domain_activity_activity_proto_rawDescData
 }
 
-var file_domain_post_post_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
-var file_domain_post_post_proto_goTypes = []any{
-	(*Attachment)(nil),            // 0: peers_touch.model.post.v1.Attachment
-	(*PollOption)(nil),            // 1: peers_touch.model.post.v1.PollOption
-	(*Poll)(nil),                  // 2: peers_touch.model.post.v1.Poll
-	(*PostInput)(nil),             // 3: peers_touch.model.post.v1.PostInput
-	(*PostResponse)(nil),          // 4: peers_touch.model.post.v1.PostResponse
-	(*MediaUploadResponse)(nil),   // 5: peers_touch.model.post.v1.MediaUploadResponse
+var file_domain_activity_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_domain_activity_activity_proto_goTypes = []any{
+	(*Attachment)(nil),            // 0: peers_touch.model.activity.v1.Attachment
+	(*PollOption)(nil),            // 1: peers_touch.model.activity.v1.PollOption
+	(*Poll)(nil),                  // 2: peers_touch.model.activity.v1.Poll
+	(*ActivityInput)(nil),         // 3: peers_touch.model.activity.v1.ActivityInput
+	(*ActivityResponse)(nil),      // 4: peers_touch.model.activity.v1.ActivityResponse
+	(*MediaUploadResponse)(nil),   // 5: peers_touch.model.activity.v1.MediaUploadResponse
 	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
 }
-var file_domain_post_post_proto_depIdxs = []int32{
-	1, // 0: peers_touch.model.post.v1.Poll.options:type_name -> peers_touch.model.post.v1.PollOption
-	0, // 1: peers_touch.model.post.v1.PostInput.attachments:type_name -> peers_touch.model.post.v1.Attachment
-	2, // 2: peers_touch.model.post.v1.PostInput.poll:type_name -> peers_touch.model.post.v1.Poll
-	6, // 3: peers_touch.model.post.v1.PostInput.client_time:type_name -> google.protobuf.Timestamp
+var file_domain_activity_activity_proto_depIdxs = []int32{
+	1, // 0: peers_touch.model.activity.v1.Poll.options:type_name -> peers_touch.model.activity.v1.PollOption
+	0, // 1: peers_touch.model.activity.v1.ActivityInput.attachments:type_name -> peers_touch.model.activity.v1.Attachment
+	2, // 2: peers_touch.model.activity.v1.ActivityInput.poll:type_name -> peers_touch.model.activity.v1.Poll
+	6, // 3: peers_touch.model.activity.v1.ActivityInput.client_time:type_name -> google.protobuf.Timestamp
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name
@@ -520,26 +520,26 @@ var file_domain_post_post_proto_depIdxs = []int32{
 	0, // [0:4] is the sub-list for field type_name
 }
 
-func init() { file_domain_post_post_proto_init() }
-func file_domain_post_post_proto_init() {
-	if File_domain_post_post_proto != nil {
+func init() { file_domain_activity_activity_proto_init() }
+func file_domain_activity_activity_proto_init() {
+	if File_domain_activity_activity_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_post_post_proto_rawDesc), len(file_domain_post_post_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_activity_activity_proto_rawDesc), len(file_domain_activity_activity_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_domain_post_post_proto_goTypes,
-		DependencyIndexes: file_domain_post_post_proto_depIdxs,
-		MessageInfos:      file_domain_post_post_proto_msgTypes,
+		GoTypes:           file_domain_activity_activity_proto_goTypes,
+		DependencyIndexes: file_domain_activity_activity_proto_depIdxs,
+		MessageInfos:      file_domain_activity_activity_proto_msgTypes,
 	}.Build()
-	File_domain_post_post_proto = out.File
-	file_domain_post_post_proto_goTypes = nil
-	file_domain_post_post_proto_depIdxs = nil
+	File_domain_activity_activity_proto = out.File
+	file_domain_activity_activity_proto_goTypes = nil
+	file_domain_activity_activity_proto_depIdxs = nil
 }

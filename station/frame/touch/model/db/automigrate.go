@@ -13,9 +13,9 @@ import (
 func init() {
 	store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
 		err := rds.AutoMigrate(
-			&Actor{}, &PeerAddress{},
+			&Actor{}, &ActorMastodonMeta{}, &PeerAddress{},
 			// ActivityPub models
-			&ActivityPubKey{}, &ActivityPubActivity{}, &ActivityPubObject{},
+			&ActivityPubActivity{}, &ActivityPubObject{},
 			&ActivityPubFollow{}, &ActivityPubLike{}, &ActivityPubCollection{},
 			// OAuth models
 			&OAuthClient{}, &OAuthAuthCode{}, &OAuthToken{},

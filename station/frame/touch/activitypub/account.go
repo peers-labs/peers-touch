@@ -3,6 +3,7 @@ package activitypub
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -18,16 +19,16 @@ const (
 	bcryptCost = 12
 )
 
-func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
+func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL string) error {
 	rds, err := store.GetRDS(c)
 	if err != nil {
 		log.Warnf(c, "[SignUp] Get db err: %v", err)
 		return err
 	}
 
-	// query the exists actor by name or email
+	// query the exists actor by preferred_username or email
 	var existsActors []db.Actor
-	if err = rds.Where("name = ? OR email = ?", actorParams.Name, actorParams.Email).Find(&existsActors).Error; err != nil {
+	if err = rds.Where("preferred_username = ? OR email = ?", actorParams.Name, actorParams.Email).Find(&existsActors).Error; err != nil {
 		log.Warnf(c, "[SignUp] Check existing actor err: %v", err)
 		return err
 	}
@@ -37,13 +38,31 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 		return model.ErrActorActorExists
 	}
 
-	// Part 1: Create actor with actor's input
+	// Part 1: Generate Keys
+	pubPEM, privPEM, err := GenerateRSAKeyPair(2048)
+	if err != nil {
+		log.Warnf(c, "[SignUp] Generate RSA keys err: %v", err)
+		return err
+	}
+
+	// Part 2: Create actor with actor's input
+	actorPath := fmt.Sprintf("%s/activitypub/%s", baseURL, actorParams.Name)
 	a := db.Actor{
-		Name:        actorParams.Name,
-		Email:       actorParams.Email,
-		DisplayName: actorParams.Name, // Default display name to username
-		Type:        "Person",         // Default to Person
-		Namespace:   "peers",          // Default namespace
+		PreferredUsername: actorParams.Name,
+		Email:             actorParams.Email,
+		Name:              actorParams.Name, // Default display name to username
+		Type:              "Person",         // Default to Person
+		Namespace:         "peers",          // Default namespace
+		PublicKey:         pubPEM,
+		PrivateKey:        privPEM,
+		// Populate standard ActivityPub URIs
+		Url:       fmt.Sprintf("%s/users/%s", baseURL, actorParams.Name), // Public Profile URL
+		Inbox:     fmt.Sprintf("%s/inbox", actorPath),
+		Outbox:    fmt.Sprintf("%s/outbox", actorPath),
+		Followers: fmt.Sprintf("%s/followers", actorPath),
+		Following: fmt.Sprintf("%s/following", actorPath),
+		Liked:     fmt.Sprintf("%s/liked", actorPath),
+		Endpoints: fmt.Sprintf(`{"sharedInbox": "%s/activitypub/inbox"}`, baseURL),
 	}
 
 	// hash the password before storing it
@@ -63,7 +82,7 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 		return err
 	}
 
-	a.PeersActorID = createdIdentity.PTID
+	a.PTID = createdIdentity.PTID
 
 	// Create the actor
 	if err = rds.Create(&a).Error; err != nil {
@@ -71,43 +90,22 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams) error {
 		return err
 	}
 
-	// Part 2: Create actor profile with default values if missing
-	profile := db.ActorProfile{
+	// Part 3: Create actor mastodon meta (extensions) with default values
+	meta := db.ActorMastodonMeta{
 		ActorID: a.ID,
-		Email:   a.Email,        // Use actor's email
-		Gender:  db.GenderOther, // Default gender
-		PeersID: a.PeersActorID, // Use the same peers actor ID
+		// Default values
+		Discoverable:              true,
+		ManuallyApprovesFollowers: false,
+		DefaultVisibility:         "public",
+		MessagePermission:         "everyone",
 	}
 
-	// Set default values for optional fields if not provided
-	profile.ProfilePhoto = "" // Default empty profile photo
-	profile.Region = ""       // Default empty region
-	profile.WhatsUp = ""      // Default empty what's up message
-
-	if err = rds.Create(&profile).Error; err != nil {
-		log.Warnf(c, "[SignUp] Create profile err: %v", err)
+	if err = rds.Create(&meta).Error; err != nil {
+		log.Warnf(c, "[SignUp] Create meta err: %v", err)
 		return err
 	}
 
-	// Part 3: Generate and store ActivityPub RSA Keys
-	pubPEM, privPEM, err := GenerateRSAKeyPair(2048)
-	if err != nil {
-		log.Warnf(c, "[SignUp] Generate RSA keys err: %v", err)
-		return err
-	}
-
-	apKey := db.ActivityPubKey{
-		ActorID:       a.ID,
-		PublicKeyPEM:  pubPEM,
-		PrivateKeyPEM: privPEM,
-	}
-
-	if err = rds.Create(&apKey).Error; err != nil {
-		log.Warnf(c, "[SignUp] Create ActivityPub keys err: %v", err)
-		return err
-	}
-
-	log.Infof(c, "[SignUp] Actor and profile created successfully for actor %s with peers ID %s", a.Name, a.PeersActorID)
+	log.Infof(c, "[SignUp] Actor and meta created successfully for actor %s with peers ID %s", a.PreferredUsername, a.PTID)
 	return nil
 }
 
@@ -119,7 +117,7 @@ func GetActorByName(c context.Context, name string) (*db.Actor, error) {
 	}
 
 	var presentActor db.Actor
-	if err = rds.Where("name = ?", name).First(&presentActor).Error; err != nil {
+	if err = rds.Where("preferred_username = ?", name).First(&presentActor).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
