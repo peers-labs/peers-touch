@@ -1,5 +1,14 @@
 package model
 
+// Gender represents actor gender options
+type Gender string
+
+const (
+	GenderMale   Gender = "male"
+	GenderFemale Gender = "female"
+	GenderOther  Gender = "other"
+)
+
 const (
 	// Content types
 	ContentTypeActivityJSON     = "application/activity+json"

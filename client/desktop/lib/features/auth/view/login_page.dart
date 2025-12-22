@@ -187,6 +187,21 @@ class LoginPage extends GetView<AuthController> {
                   showLabel: false,
                   onChanged: (v) {},
                 ),
+                Obx(() => controller.authTab.value == 1
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 12.0),
+                        child: PasswordBox(
+                          key: const ValueKey('confirm_password_input'),
+                          controller: controller.confirmPasswordController,
+                          focusNode: controller.confirmPasswordFocus,
+                          label: l.confirmPassword,
+                          value: '',
+                          placeholder: l.confirmPassword,
+                          showLabel: false,
+                          onChanged: (v) {},
+                        ),
+                      )
+                    : const SizedBox.shrink()),
                 const SizedBox(height: 24),
                 Obx(() => PrimaryButton(
                       text: controller.authTab.value == 0 ? l.signIn : l.signUp,

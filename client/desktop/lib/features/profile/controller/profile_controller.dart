@@ -1,17 +1,16 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:get/get.dart' hide Response, FormData, MultipartFile;
 import 'package:dio/dio.dart';
-import 'package:peers_touch_base/model/domain/actor/actor.pb.dart';
+import 'package:get/get.dart' hide FormData, MultipartFile;
 import 'package:peers_touch_desktop/core/models/actor_base.dart';
 import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/utils/toast.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/repositories/actor_repository.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
-import 'package:peers_touch_desktop/core/services/oss_service.dart';
 
 class ProfileController extends GetxController {
   final Rx<ActorBase?> user = Rx<ActorBase?>(null);
@@ -181,17 +180,24 @@ class ProfileController extends GetxController {
 
   Future<void> logout() async {
     try {
-      try {
-        if (Get.isRegistered<GlobalContext>()) {
-          final gc = Get.find<GlobalContext>();
-          await gc.setSession(null);
-        }
-      } catch (_) {}
-      await LocalStorage().remove('auth_token');
-      await LocalStorage().remove('refresh_token');
-      await LocalStorage().remove('auth_token_type');
-    } catch (_) {}
-    Get.offAllNamed('/login');
+      if (Get.isRegistered<AuthController>()) {
+        await Get.find<AuthController>().logout();
+      } else {
+        // Fallback if AuthController is somehow not registered (unlikely)
+        try {
+          if (Get.isRegistered<GlobalContext>()) {
+            final gc = Get.find<GlobalContext>();
+            await gc.setSession(null);
+          }
+        } catch (_) {}
+        await LocalStorage().remove('auth_token');
+        await LocalStorage().remove('refresh_token');
+        await LocalStorage().remove('auth_token_type');
+        Get.offAllNamed('/login');
+      }
+    } catch (_) {
+      Get.offAllNamed('/login');
+    }
   }
 
   Future<String?> uploadImage() async {
@@ -203,57 +209,51 @@ class ProfileController extends GetxController {
 
       if (result != null && result.files.single.path != null) {
         final file = File(result.files.single.path!);
+        final fileName = result.files.single.name;
         
-        final ossService = Get.find<OssService>();
-        final response = await ossService.uploadFile(file);
+        final d = detail.value;
+        if (d == null) return null;
+        final username = d.handle;
         
-        // OssService.uploadFile returns Map<String, dynamic>
-        // and ossFile.toJson() returns keys like 'url', 'key', etc.
-        if (response.containsKey('url') && response['url'] != null) {
-          String url = response['url'] as String;
-          if (url.startsWith('/')) {
-            final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
-            url = '$baseUrl$url';
-          }
-          Toast.showSuccess('Image uploaded successfully');
-          return url;
+        final client = HttpServiceLocator().httpService;
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(file.path, filename: fileName),
+          'alt': 'Profile image',
+        });
+        
+        // Use activitypub media endpoint: /activitypub/:actor/media
+        final response = await client.post<Map<String, dynamic>>(
+          '/activitypub/$username/media', 
+          data: formData,
+        );
+        
+        if (response != null && response['url'] != null) {
+          return response['url'] as String;
         }
       }
     } catch (e) {
       print('Upload failed: $e');
-      if (e is DioException) {
-         Toast.showError('Upload failed: ${e.response?.data ?? e.message}');
-      } else if (e is TypeError) {
-         Toast.showError('Upload failed: Response format error');
-      } else {
-         Toast.showError('Upload failed: $e');
-      }
     }
     return null;
   }
 
-  Future<void> updateProfile(UpdateProfileRequest request) async {
+  Future<void> updateProfile(Map<String, dynamic> updates) async {
     try {
       final client = HttpServiceLocator().httpService;
-      print('Updating profile with: ${request.toProto3Json()}');
-      
-      // Endpoint: /activitypub/profile
-      await client.post('/activitypub/profile', data: request.toProto3Json());
+      // Endpoint: /profile (RouterURLActorProfile) -> mapped to /activitypub/profile usually if routed via AP group
+      await client.post('/activitypub/profile', data: updates);
       
       await fetchProfile();
       Get.back(); // Close dialog
       
-      Toast.showSuccess('Profile updated successfully');
+      Get.snackbar('Success', 'Profile updated successfully', 
+        snackPosition: SnackPosition.BOTTOM, margin: const EdgeInsets.all(16));
     } catch (e) {
       print('Update failed: $e');
-      String errorMessage = 'Failed to update profile';
-      if (e is DioException) {
-        errorMessage += ': ${e.response?.data ?? e.message}';
-        print('Server response: ${e.response?.data}');
-      } else {
-        errorMessage += ': $e';
-      }
-      Toast.showError(errorMessage);
+      Get.snackbar('Error', 'Failed to update profile: $e', 
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        snackPosition: SnackPosition.BOTTOM, margin: const EdgeInsets.all(16));
     }
   }
 }

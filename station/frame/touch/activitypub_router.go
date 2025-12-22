@@ -51,7 +51,7 @@ const (
 	// RouterURLActorList Actor list: enumerate local actors (for admin/testing)
 	RouterURLActorList RouterPath = "/list"
 
-	PostingRouterURLPost     RouterPath = "/:actor/post"
+	ActivityRouterURLCreate  RouterPath = "/:actor/activity"
 )
 
 // ActivityPubRouters provides general ActivityPub endpoints

@@ -74,7 +74,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
       if (_avatarUrl != null) request.avatar = _avatarUrl!;
       if (_headerUrl != null) request.header = _headerUrl!;
       
-      _controller.updateProfile(request);
+      _controller.updateProfile(request.writeToJsonMap());
     }
   }
 
