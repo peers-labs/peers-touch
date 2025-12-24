@@ -2,21 +2,20 @@ import 'dart:async';
 // 遵循 desktop/PROMPTs 规范：不在控制器层直接依赖 Dio，
 // 通过 AIService 抽象的 CancelHandle 进行取消。
 import 'dart:convert';
+
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
-
-import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/ai_service_factory.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_attachment.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
-
-import '../service/ai_service_factory.dart';
 
 // 保存主题操作的结果状态
 enum SaveTopicStatus {
@@ -25,12 +24,12 @@ enum SaveTopicStatus {
 }
 
 class AIChatController extends GetxController {
+
+  AIChatController({required this.storage});
   final LocalStorage storage;
   late final ProviderController _providerController;
   final activeService = Rx<AIService>(AIServiceFactory.defaultService);
   AIService get service => activeService.value;
-
-  AIChatController({required this.storage});
 
   // 状态
   final messages = <ChatMessage>[].obs;
@@ -539,7 +538,7 @@ class AIChatController extends GetxController {
       if (msgs.isNotEmpty) {
         newMeta['lastMessage'] = jsonEncode(msgs.last.toProto3Json());
       }
-      sessions[idx] = (s.deepCopy() as ChatSession)
+      sessions[idx] = s.deepCopy()
         ..updatedAt = $fixnum.Int64(DateTime.now().millisecondsSinceEpoch)
         ..meta.clear()
         ..meta.addAll(newMeta);

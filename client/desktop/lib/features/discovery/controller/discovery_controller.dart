@@ -1,29 +1,25 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 import 'package:peers_touch_desktop/features/discovery/repository/discovery_repository.dart';
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
-import 'package:peers_touch_desktop/core/services/logging_service.dart';
-import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
 
 class GroupItem {
+  
+  GroupItem({required this.id, required this.name, required this.iconUrl});
   final String id;
   final String name;
   final String iconUrl;
-  
-  GroupItem({required this.id, required this.name, required this.iconUrl});
 }
 
 class FriendItem {
-  final String id;
-  final String name;
-  final String avatarUrl;
-  final String timeOrStatus;
-  final bool isOnline;
 
   FriendItem({
     required this.id,
@@ -32,6 +28,11 @@ class FriendItem {
     required this.timeOrStatus,
     this.isOnline = false,
   });
+  final String id;
+  final String name;
+  final String avatarUrl;
+  final String timeOrStatus;
+  final bool isOnline;
 }
 
 class DiscoveryController extends GetxController {
@@ -194,11 +195,11 @@ class DiscoveryController extends GetxController {
               if (item is Map) {
                 String title = 'New Post';
                 String content = '';
-                String author = username;
+                final String author = username;
                 DateTime timestamp = DateTime.now();
-                String type = item['type']?.toString() ?? 'Create';
+                final String type = item['type']?.toString() ?? 'Create';
                 
-                List<String> images = [];
+                final List<String> images = [];
                 if (item['object'] is Map) {
                    final obj = item['object'];
                    
@@ -214,7 +215,7 @@ class DiscoveryController extends GetxController {
                      // Simple truncation for title
                      final plainText = content.replaceAll(RegExp(r'<[^>]*>'), ''); // Remove HTML tags roughly
                      title = plainText.split('\n').first;
-                     if (title.length > 50) title = title.substring(0, 50) + '...';
+                     if (title.length > 50) title = '${title.substring(0, 50)}...';
                    }
                    
                    if (obj['published'] != null) {

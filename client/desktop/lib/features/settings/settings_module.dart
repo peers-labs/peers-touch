@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_desktop/features/settings/binding/setting_binding.dart';
+import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
+import 'package:peers_touch_desktop/features/settings/view/setting_page.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
-import 'binding/setting_binding.dart';
-import 'controller/setting_controller.dart';
-import 'view/setting_page.dart';
 
 class SettingsModule {
   static void register() {

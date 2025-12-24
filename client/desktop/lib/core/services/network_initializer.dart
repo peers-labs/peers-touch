@@ -7,7 +7,13 @@ class NetworkInitializer {
   /// 初始化网络服务
   /// [baseUrl] - 默认API基础地址
   static void initialize({required String baseUrl}) {
-    HttpServiceLocator().initialize(baseUrl: baseUrl);
+    try {
+      // If already initialized, only update base url to preserve auth interceptors
+      final _ = HttpServiceLocator().baseUrl;
+      HttpServiceLocator().updateBaseUrl(baseUrl);
+    } catch (_) {
+      HttpServiceLocator().initialize(baseUrl: baseUrl);
+    }
   }
 
   /// 设置认证相关提供者

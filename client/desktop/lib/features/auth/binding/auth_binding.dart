@@ -1,5 +1,5 @@
 import 'package:get/get.dart';
-import '../controller/auth_controller.dart';
+import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 
 class AuthBinding extends Bindings {
   @override

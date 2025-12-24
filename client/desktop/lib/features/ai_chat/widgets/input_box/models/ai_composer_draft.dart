@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_attachment.dart';
 
-class AiComposerDraft {
-  final String text;
-  final List<AiAttachment> attachments;
-  final String sendMode; // 'enter' | 'ctrlEnter'
+class AiComposerDraft { // 'enter' | 'ctrlEnter'
 
   AiComposerDraft({required this.text, required this.attachments, this.sendMode = 'enter'});
+  final String text;
+  final List<AiAttachment> attachments;
+  final String sendMode;
 
   /// 序列化为 OpenAI `messages.content[]` 结构
   List<Map<String, dynamic>> toOpenAIContent() {

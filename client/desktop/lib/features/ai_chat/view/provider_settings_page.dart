@@ -141,7 +141,7 @@ class ProviderSettingsPage extends GetView<ProviderController> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(UIKit.radiusSm(context))),
               dense: true,
             ));
-      }).toList(),
+      }),
     ];
   }
 

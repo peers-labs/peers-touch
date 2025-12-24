@@ -13,17 +13,6 @@ enum SettingItemType {
 
 /// 设置项定义
 class SettingItem {
-  final String id;
-  final String title;
-  final String? description;
-  final IconData? icon;
-  final SettingItemType type;
-  final dynamic value;
-  final List<String>? options; // 用于select类型
-  final String? placeholder;   // 用于textInput类型
-  final VoidCallback? onTap;
-  final ValueChanged<dynamic>? onChanged;
-  final bool Function(List<SettingItem> allItems)? isVisible;
 
   const SettingItem({
     required this.id,
@@ -39,17 +28,6 @@ class SettingItem {
     this.isVisible,
   });
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'description': description,
-        'icon': icon?.codePoint,
-        'type': type.name,
-        'value': value,
-        'options': options,
-        'placeholder': placeholder,
-      };
-
   factory SettingItem.fromJson(Map<String, dynamic> json) => SettingItem(
         id: json['id'] as String,
         title: json['title'] as String,
@@ -60,21 +38,32 @@ class SettingItem {
         options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
         placeholder: json['placeholder'] as String?,
       );
+  final String id;
+  final String title;
+  final String? description;
+  final IconData? icon;
+  final SettingItemType type;
+  final dynamic value;
+  final List<String>? options; // 用于select类型
+  final String? placeholder;   // 用于textInput类型
+  final VoidCallback? onTap;
+  final ValueChanged<dynamic>? onChanged;
+  final bool Function(List<SettingItem> allItems)? isVisible;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'description': description,
+        'icon': icon?.codePoint,
+        'type': type.name,
+        'value': value,
+        'options': options,
+        'placeholder': placeholder,
+      };
 }
 
 /// 设置分区定义
 class SettingSection {
-  final String id;
-  final String title;
-  final IconData? icon;
-  final List<SettingItem> items;
-  final Widget? page;
-  final String? panelId;
-  final bool refreshOnShow;
-  final bool refreshOnTabSwitch;
-  final bool keepAlive;
-  final Future<void> Function()? onLoad;
-  final Future<void> Function()? onRefresh;
 
   const SettingSection({
     required this.id,
@@ -90,17 +79,28 @@ class SettingSection {
     this.onRefresh,
   });
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'icon': icon?.codePoint,
-        'items': items.map((e) => e.toJson()).toList(),
-      };
-
   factory SettingSection.fromJson(Map<String, dynamic> json) => SettingSection(
         id: json['id'] as String,
         title: json['title'] as String,
         icon: json['icon'] != null ? IconData(json['icon'] as int, fontFamily: 'MaterialIcons') : null,
         items: (json['items'] as List).map((e) => SettingItem.fromJson(e as Map<String, dynamic>)).toList(),
       );
+  final String id;
+  final String title;
+  final IconData? icon;
+  final List<SettingItem> items;
+  final Widget? page;
+  final String? panelId;
+  final bool refreshOnShow;
+  final bool refreshOnTabSwitch;
+  final bool keepAlive;
+  final Future<void> Function()? onLoad;
+  final Future<void> Function()? onRefresh;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'icon': icon?.codePoint,
+        'items': items.map((e) => e.toJson()).toList(),
+      };
 }

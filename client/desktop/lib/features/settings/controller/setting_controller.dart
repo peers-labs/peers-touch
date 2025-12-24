@@ -1,15 +1,16 @@
-import 'package:get/get.dart';
-import 'package:flutter/material.dart';
-import 'package:peers_touch_base/logger/logging_service.dart';
 import 'dart:convert';
-import 'package:peers_touch_desktop/core/services/setting_manager.dart';
+
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
+import 'package:peers_touch_base/network/dio/http_service_impl.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
+import 'package:peers_touch_desktop/core/services/setting_manager.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_base/network/dio/http_service_impl.dart';
-import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 class SettingController extends GetxController {
   final SettingManager _settingManager = SettingManager();

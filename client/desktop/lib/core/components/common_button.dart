@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 
 class CommonButton extends StatelessWidget {
-  final String text;
-  final VoidCallback? onPressed;
-  final ButtonStyle? style;
 
   const CommonButton({
     super.key,
@@ -11,6 +8,9 @@ class CommonButton extends StatelessWidget {
     this.onPressed,
     this.style,
   });
+  final String text;
+  final VoidCallback? onPressed;
+  final ButtonStyle? style;
 
   @override
   Widget build(BuildContext context) {

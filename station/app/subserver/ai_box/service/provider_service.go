@@ -10,22 +10,17 @@ import (
 
 	dbModel "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/db/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/core/types"
 	"gorm.io/gorm"
 )
 
-// ProviderService 提供商服务
-type ProviderService struct {
-	db *gorm.DB
-}
-
-// NewProviderService 创建提供商服务
-func NewProviderService(db *gorm.DB) *ProviderService {
-	return &ProviderService{db: db}
-}
-
 // CreateProvider 创建提供商
-func (s *ProviderService) CreateProvider(ctx context.Context, req *model.Provider) (*model.Provider, error) {
+func CreateProvider(ctx context.Context, req *model.Provider) (*model.Provider, error) {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// todo userid
 	encryptedKeyVaults, err := encryptKeyVaults(req.KeyVaults)
 	if err != nil {
@@ -37,11 +32,11 @@ func (s *ProviderService) CreateProvider(ctx context.Context, req *model.Provide
 		Name:        req.Name,
 		Description: req.Description,
 		Logo:        req.Logo,
-		Sort:        0,                // 默认排序
-		Enabled:     true,             // 默认启用
-		CheckModel:  "",               // 默认检测模型
-		SourceType:  "",               // 默认源类型
-		KeyVaults:   encryptedKeyVaults, // 默认密钥配置
+		Sort:        0,                        // 默认排序
+		Enabled:     true,                     // 默认启用
+		CheckModel:  "",                       // 默认检测模型
+		SourceType:  "",                       // 默认源类型
+		KeyVaults:   encryptedKeyVaults,       // 默认密钥配置
 		Settings:    []byte(req.SettingsJson), // 默认设置
 		Config:      []byte(req.ConfigJson),   // 默认配置
 		AccessedAt:  time.Now(),
@@ -49,7 +44,7 @@ func (s *ProviderService) CreateProvider(ctx context.Context, req *model.Provide
 		UpdatedAt:   time.Now(),
 	}
 
-	if err := s.db.Create(provider).Error; err != nil {
+	if err := rds.Create(provider).Error; err != nil {
 		return nil, fmt.Errorf("failed to create provider: %w", err)
 	}
 
@@ -58,11 +53,15 @@ func (s *ProviderService) CreateProvider(ctx context.Context, req *model.Provide
 }
 
 // UpdateProvider 更新提供商
-func (s *ProviderService) UpdateProvider(ctx context.Context, req *model.Provider) (*model.Provider, error) {
+func UpdateProvider(ctx context.Context, req *model.Provider) (*model.Provider, error) {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// todo userid
 
-	var provider model.Provider
-	if err := s.db.Where("id = ?", req.Id).First(&provider).Error; err != nil {
+	var provider dbModel.Provider
+	if err := rds.Where("id = ?", req.Id).First(&provider).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("provider not found")
 		}
@@ -82,7 +81,7 @@ func (s *ProviderService) UpdateProvider(ctx context.Context, req *model.Provide
 		provider.KeyVaults = encryptedKeyVaults
 	}
 
-	if err := s.db.Save(&provider).Error; err != nil {
+	if err := rds.Save(&provider).Error; err != nil {
 		return nil, fmt.Errorf("failed to update provider: %w", err)
 	}
 
@@ -92,14 +91,18 @@ func (s *ProviderService) UpdateProvider(ctx context.Context, req *model.Provide
 }
 
 // DeleteProvider 删除提供商
-func (s *ProviderService) DeleteProvider(ctx context.Context, providerID string) error {
+func DeleteProvider(ctx context.Context, providerID string) error {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return err
+	}
 	// TODO: get user id
 	userID := ""
 	if userID == "" {
 		return fmt.Errorf("user ID not found in context")
 	}
 
-	result := s.db.Where("id = ? AND peers_user_id = ?", providerID, userID).Delete(&model.Provider{})
+	result := rds.Where("id = ? AND peers_user_id = ?", providerID, userID).Delete(&dbModel.Provider{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete provider: %w", result.Error)
 	}
@@ -111,15 +114,19 @@ func (s *ProviderService) DeleteProvider(ctx context.Context, providerID string)
 }
 
 // GetProvider 获取提供商
-func (s *ProviderService) GetProvider(ctx context.Context, providerID string) (*model.Provider, error) {
+func GetProvider(ctx context.Context, providerID string) (*model.Provider, error) {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// TODO: get user id
 	userID := ""
 	if userID == "" {
 		return nil, fmt.Errorf("user ID not found in context")
 	}
 
-	var provider model.Provider
-	if err := s.db.Where("id = ? AND peers_user_id = ?", providerID, userID).First(&provider).Error; err != nil {
+	var provider dbModel.Provider
+	if err := rds.Where("id = ? AND peers_user_id = ?", providerID, userID).First(&provider).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("provider not found")
 		}
@@ -132,26 +139,31 @@ func (s *ProviderService) GetProvider(ctx context.Context, providerID string) (*
 	}
 	provider.KeyVaults = decryptedKeyVaults
 
-	return s.convertToProto(&provider), nil
+	return convertToProto(&provider), nil
+}
 
-// ListProviders 列出提供商
-func (s *ProviderService) ListProviders(ctx context.Context, query types.PageQuery, enabledOnly bool) (*types.PageData, error) {
+// ListProviders 列出提供商（返回 total 与 items）
+func ListProviders(ctx context.Context, query types.PageQuery, enabledOnly bool) (map[string]interface{}, error) {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// TODO: get user id
 	userID := ""
 	if userID == "" {
 		return nil, fmt.Errorf("user ID not found in context")
 	}
 
-	var providers []*model.Provider
+	var providers []*dbModel.Provider
 
-	dbQuery := s.db.Where("peers_user_id = ?", userID)
+	dbQuery := rds.Where("peers_user_id = ?", userID)
 	if enabledOnly {
 		dbQuery = dbQuery.Where("enabled = ?", true)
 	}
 
 	// 获取总数
 	var total64 int64
-	if err := dbQuery.Model(&model.Provider{}).Count(&total64).Error; err != nil {
+	if err := dbQuery.Model(&dbModel.Provider{}).Count(&total64).Error; err != nil {
 		return nil, fmt.Errorf("failed to count providers: %w", err)
 	}
 
@@ -164,33 +176,33 @@ func (s *ProviderService) ListProviders(ctx context.Context, query types.PageQue
 	// 转换为req provider
 	protoProviders := make([]interface{}, len(providers))
 	for i, p := range providers {
-		protoProviders[i] = s.convertToProto(p)
+		protoProviders[i] = convertToProto(p)
 	}
-
-	return &types.PageData{
-		Total: total64,
-		List:  protoProviders,
-	}, nil
+	return map[string]interface{}{"total": total64, "items": protoProviders}, nil
 }
 
-func (s *ProviderService) convertToProto(provider *dbModel.Provider) *model.Provider {
+func convertToProto(provider *dbModel.Provider) *model.Provider {
 	return &model.Provider{
-		Id:          provider.ID,
-		Name:        provider.Name,
-		PeersUserId: provider.PeersUserID,
-		Sort:        int32(provider.Sort),
-		Enabled:     provider.Enabled,
-		CheckModel:  provider.CheckModel,
-		Logo:        provider.Logo,
-		Description: provider.Description,
-		KeyVaults:   provider.KeyVaults,
-		SourceType:  provider.SourceType,
+		Id:           provider.ID,
+		Name:         provider.Name,
+		PeersUserId:  provider.PeersUserID,
+		Sort:         int32(provider.Sort),
+		Enabled:      provider.Enabled,
+		CheckModel:   provider.CheckModel,
+		Logo:         provider.Logo,
+		Description:  provider.Description,
+		KeyVaults:    provider.KeyVaults,
+		SourceType:   provider.SourceType,
 		SettingsJson: string(provider.Settings),
 		ConfigJson:   string(provider.Config),
-		AccessedAt:  provider.AccessedAt.Unix(),
-		CreatedAt:   provider.CreatedAt.Unix(),
-		UpdatedAt:   provider.UpdatedAt.Unix(),
+		// 时间字段按需求填充（此处省略具体 Timestamp 转换）
 	}
+}
+
+// TestProvider 测试提供商可用性（占位实现）
+func TestProvider(ctx context.Context, providerID string) (bool, string, error) {
+	// TODO: 根据 providerID 加载配置并进行健康检查
+	return true, "ok", nil
 }
 
 // generateProviderID 生成提供商ID

@@ -4,8 +4,8 @@ import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/controlle
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_attachment.dart';
 
 class AttachmentTray extends StatelessWidget {
-  final AiInputController controller;
   const AttachmentTray({super.key, required this.controller});
+  final AiInputController controller;
 
   @override
   Widget build(BuildContext context) {
