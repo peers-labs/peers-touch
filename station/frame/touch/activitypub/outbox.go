@@ -13,15 +13,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreateOutboxActivity has been moved to activitypub_handler.go as PostUserOutbox to comply with architectural rules.
-
-func ProcessActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
+func ProcessActivity(c context.Context, username string, activity *ap.Activity, baseURL string) error {
 	// Ensure Actor is set
 	if activity.Actor == nil {
 		activity.Actor = ap.IRI(fmt.Sprintf("%s/%s/actor", baseURL, username))
 	}
-		activity.Actor = ap.IRI(fmt.Sprintf("%s/%s/actor", baseURL, username))
-	}
+
 	if activity.Published.IsZero() {
 		activity.Published = time.Now()
 	}
@@ -29,19 +26,24 @@ func ProcessActivity(c context.Context, dbConn *gorm.DB, username string, activi
 		activity.ID = ap.ID(fmt.Sprintf("%s/activities/%d", activity.Actor, time.Now().UnixNano()))
 	}
 
-		return handleCreateActivity(c, dbConn, username, activity, baseURL)
+	dbConn, err := store.GetRDS(c)
+	if err != nil {
+		return fmt.Errorf("failed to get DB: %w", err)
+	}
+
+	switch activity.Type {
 	case ap.CreateType:
-		return handleFollowActivity(c, dbConn, username, activity, baseURL)
+		return handleCreateActivity(c, dbConn, username, activity, baseURL)
 	case ap.FollowType:
-		return handleLikeActivity(c, dbConn, username, activity, baseURL)
+		return handleFollowActivity(c, dbConn, username, activity, baseURL)
 	case ap.LikeType:
-		return handleUndoActivity(c, dbConn, username, activity, baseURL)
+		return handleLikeActivity(c, dbConn, username, activity, baseURL)
 	case ap.UndoType:
-		return handleAnnounceActivity(c, dbConn, username, activity, baseURL)
+		return handleUndoActivity(c, dbConn, username, activity, baseURL)
 	case ap.AnnounceType:
-		return handleUpdateActivity(c, dbConn, username, activity, baseURL)
+		return handleAnnounceActivity(c, dbConn, username, activity, baseURL)
 	case ap.UpdateType:
-		return handleDeleteActivity(c, dbConn, username, activity, baseURL)
+		return handleUpdateActivity(c, dbConn, username, activity, baseURL)
 	case ap.DeleteType:
 		return handleDeleteActivity(c, dbConn, username, activity, baseURL)
 	default:
