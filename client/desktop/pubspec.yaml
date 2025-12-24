@@ -41,11 +41,12 @@ dependencies:
   get: ^4.6.6
   window_manager: ^0.5.1
   logging: ^1.2.0
-  intl: ^0.20.2
+  intl: any # Relaxed constraint to compatible with webf
   get_storage: ^2.1.1
   flutter_secure_storage: ^9.0.0
   connectivity_plus: ^7.0.0
   flutter_svg: ^2.0.10+1
+  webf: ^0.16.0
   
   # Local packages
   peers_touch_base:
@@ -68,6 +69,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
   build_runner: ^2.7.1
+
+dependency_overrides:
+  # Force use newer intl version to resolve conflict between flutter_localizations(0.20.2) and webf(<0.20.0)
+  intl: ^0.20.2
 
 flutter_launcher_icons:
   # Only generate for desktop platforms

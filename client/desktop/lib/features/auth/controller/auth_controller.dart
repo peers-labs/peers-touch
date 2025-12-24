@@ -15,6 +15,8 @@ enum ServerStatus {
   unknown,
   checking,
   reachable,
+  unreachable,
+  notFound,
 }
 
 class AuthController extends GetxController {
@@ -266,7 +268,6 @@ class AuthController extends GetxController {
           }
 
           // Try to extract user info from response
-          final data = obj['data'];
           Map<String, dynamic>? userMap;
           if (data is Map) {
             // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
@@ -494,6 +495,14 @@ class AuthController extends GetxController {
             await Get.find<GlobalContext>().setProtocolTag(protocol.value);
           }
         } catch (_) {}
+      } else if (resp.statusCode == 404) {
+        protocol.value = 'peers-touch';
+        serverStatus.value = ServerStatus.notFound;
+        try {
+          if (Get.isRegistered<GlobalContext>()) {
+            await Get.find<GlobalContext>().setProtocolTag(protocol.value);
+          }
+        } catch (_) {}
       } else {
         protocol.value = 'peers-touch';
         serverStatus.value = ServerStatus.unknown;
@@ -503,6 +512,14 @@ class AuthController extends GetxController {
           }
         } catch (_) {}
       }
+    } on SocketException {
+      protocol.value = 'peers-touch';
+      serverStatus.value = ServerStatus.unreachable;
+      try {
+        if (Get.isRegistered<GlobalContext>()) {
+          await Get.find<GlobalContext>().setProtocolTag(protocol.value);
+        }
+      } catch (_) {}
     } catch (_) {
       protocol.value = 'peers-touch';
       serverStatus.value = ServerStatus.unknown;
