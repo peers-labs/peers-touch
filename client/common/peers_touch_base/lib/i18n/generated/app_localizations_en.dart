@@ -589,6 +589,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get unknownNetwork => 'Unknown Network';
 
   @override
+  String get networkCheckingLabel => 'Checking';
+
+  @override
+  String get networkUnreachableLabel => 'Unreachable';
+
+  @override
+  String get networkNotFoundLabel => 'Not Found';
+
+  @override
+  String get networkCheckingTooltip => 'Detecting server network type';
+
+  @override
+  String get networkUnreachableTooltip =>
+      'Network unreachable, please check address or connectivity';
+
+  @override
+  String get networkNotFoundTooltip =>
+      'Node interface not found (404), please verify server address';
+
+  @override
+  String get networkUnknownTooltip => 'Unknown network type';
+
+  @override
   String get clientRequestMode => 'Use Client Request Mode';
 
   @override

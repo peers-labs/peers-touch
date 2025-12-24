@@ -277,7 +277,23 @@ class _LoginPageState extends State<LoginPage> {
                         SizedBox(
                           height: UIKit.controlHeightMd,
                           child: Tooltip(
-                            message: AppLocalizations.of(context)!.networkTypeTooltip,
+                            message: () {
+                              final s = controller.serverStatus.value;
+                              final l = AppLocalizations.of(context)!;
+                              if (s == ServerStatus.reachable) {
+                                return l.networkTypeTooltip;
+                              }
+                              if (s == ServerStatus.checking) {
+                                return l.networkCheckingTooltip;
+                              }
+                              if (s == ServerStatus.unreachable) {
+                                return l.networkUnreachableTooltip;
+                              }
+                              if (s == ServerStatus.notFound) {
+                                return l.networkNotFoundTooltip;
+                              }
+                              return l.networkUnknownTooltip;
+                            }(),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12),
                               decoration: BoxDecoration(
@@ -286,10 +302,16 @@ class _LoginPageState extends State<LoginPage> {
                                 border: Border.all(
                                   color: controller.serverStatus.value == ServerStatus.reachable
                                       ? theme.colorScheme.primary.withAlpha(128)
-                                      : (controller.serverStatus.value == ServerStatus.unknown
+                                      : (controller.serverStatus.value == ServerStatus.unknown ||
+                                          controller.serverStatus.value == ServerStatus.unreachable ||
+                                          controller.serverStatus.value == ServerStatus.notFound
                                           ? theme.colorScheme.error
                                           : UIKit.dividerColor(context)),
-                                  width: controller.serverStatus.value == ServerStatus.unknown ? 1.5 : UIKit.dividerThickness,
+                                  width: (controller.serverStatus.value == ServerStatus.unknown ||
+                                          controller.serverStatus.value == ServerStatus.unreachable ||
+                                          controller.serverStatus.value == ServerStatus.notFound)
+                                      ? 1.5
+                                      : UIKit.dividerThickness,
                                 ),
                               ),
                               alignment: Alignment.center,
@@ -301,17 +323,27 @@ class _LoginPageState extends State<LoginPage> {
                                     Icon(
                                       Icons.hub,
                                       size: 16,
-                                      color: controller.serverStatus.value == ServerStatus.unknown
+                                      color: (controller.serverStatus.value == ServerStatus.unknown ||
+                                              controller.serverStatus.value == ServerStatus.unreachable ||
+                                              controller.serverStatus.value == ServerStatus.notFound)
                                           ? theme.colorScheme.error
                                           : theme.colorScheme.primary.withAlpha(179),
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      controller.serverStatus.value == ServerStatus.unknown
-                                          ? AppLocalizations.of(context)!.unknownNetwork
-                                          : controller.protocol.value,
+                                      () {
+                                        final s = controller.serverStatus.value;
+                                        final l = AppLocalizations.of(context)!;
+                                        if (s == ServerStatus.reachable) return controller.protocol.value;
+                                        if (s == ServerStatus.checking) return l.networkCheckingLabel;
+                                        if (s == ServerStatus.unreachable) return l.networkUnreachableLabel;
+                                        if (s == ServerStatus.notFound) return l.networkNotFoundLabel;
+                                        return l.unknownNetwork;
+                                      }(),
                                       style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: controller.serverStatus.value == ServerStatus.unknown
+                                        color: (controller.serverStatus.value == ServerStatus.unknown ||
+                                                controller.serverStatus.value == ServerStatus.unreachable ||
+                                                controller.serverStatus.value == ServerStatus.notFound)
                                             ? theme.colorScheme.error
                                             : UIKit.textPrimary(context).withAlpha(217),
                                         fontWeight: FontWeight.w500,
