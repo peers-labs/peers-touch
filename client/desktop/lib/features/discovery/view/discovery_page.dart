@@ -157,6 +157,7 @@ class DiscoveryPage extends GetView<DiscoveryController> {
   }
 
   Widget _buildContentList(BuildContext context, ShellController shell) {
+    final theme = Theme.of(context);
     return Stack(
       children: [
         Positioned.fill(
@@ -169,15 +170,13 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                   return _buildSkeletonList();
                 }
 
+                if (controller.error.value != null && controller.items.isEmpty) {
+                  return _buildErrorState(context, controller.error.value!);
+                }
+
                 final items = controller.items;
                 if (items.isEmpty) {
-                  return ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: const [
-                      SizedBox(height: 200),
-                      Center(child: Text('No items found')),
-                    ],
-                  );
+                  return _buildEmptyState(context);
                 }
 
                 return ListView.separated(
@@ -301,47 +300,130 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                     Container(
                       width: 200,
                       height: 16,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                      color: Colors.grey[200],
                     ),
                     const SizedBox(height: 8),
-                    // Type Skeleton
+                    // Subtitle Skeleton
                     Container(
-                      width: 80,
+                      width: 100,
                       height: 12,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                      color: Colors.grey[100],
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          // Content Skeleton
+          const SizedBox(height: 20),
+          // Content Skeletons
           Container(
             width: double.infinity,
             height: 14,
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(4),
-            ),
+            color: Colors.grey[100],
           ),
           const SizedBox(height: 8),
           Container(
-            width: 200,
+            width: double.infinity,
             height: 14,
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(4),
-            ),
+            color: Colors.grey[100],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: 250,
+            height: 14,
+            color: Colors.grey[100],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[300]),
+              const SizedBox(height: 16),
+              Text(
+                'No items found',
+                style: TextStyle(
+                  color: Colors.grey[500],
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Try switching to another tab or refresh later.',
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildErrorState(BuildContext context, String message) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer.withOpacity(0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.cloud_off_outlined, 
+                    size: 64, 
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Loading Failed',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                FilledButton.icon(
+                  onPressed: controller.refreshItems,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Try Again'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

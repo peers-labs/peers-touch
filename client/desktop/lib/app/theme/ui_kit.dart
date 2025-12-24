@@ -18,6 +18,7 @@ class UIKit {
   static const double rightPanelCollapsedWidth = controlHeightMd * 1.2; // 48px（基于 40px 按钮）
   static const double topBarHeight = 64; // 顶部栏统一高度
   static const double controlHeightMd = 40; // 中等控件高度（如按钮）
+  static const double controlHeightLg = 48; // 大型控件高度（如主按钮）
   static const double buttonMinWidthSm = 92; // 小按钮最小宽度
   static const double dividerThickness = 1; // 细分割线厚度
   static const double contentMaxWidth = 1200; // 页面内容最大宽度（仅用于某些居中显示场景）

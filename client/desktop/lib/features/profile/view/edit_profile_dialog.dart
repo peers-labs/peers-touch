@@ -113,7 +113,11 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                         Positioned.fill(
                           bottom: 40,
                           child: GestureDetector(
-                            onTap: _pickHeader,
+                            onTap: () {
+                              if (!_controller.uploadingHeader.value && !_controller.updatingProfile.value) {
+                                _pickHeader();
+                              }
+                            },
                             child: Container(
                               decoration: BoxDecoration(
                                 color: theme.colorScheme.surfaceContainerHighest,
@@ -125,16 +129,19 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                                 })(),
                               ),
                               child: Center(
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: const Text(
-                                    '点击修改 Header (背景图)', 
-                                    style: TextStyle(color: Colors.white),
-                                  ),
+                                child: Obx(() => _controller.uploadingHeader.value 
+                                  ? const CircularProgressIndicator(color: Colors.white)
+                                  : Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: const Text(
+                                        '点击修改 Header (背景图)', 
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                    ),
                                 ),
                               ),
                             ),
@@ -145,7 +152,11 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                           left: 20,
                           bottom: 0,
                           child: GestureDetector(
-                            onTap: _pickAvatar,
+                            onTap: () {
+                              if (!_controller.uploadingAvatar.value && !_controller.updatingProfile.value) {
+                                _pickAvatar();
+                              }
+                            },
                             child: Container(
                               width: 80,
                               height: 80,
@@ -172,10 +183,15 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                                     })(),
                                       
                                     Positioned.fill(
-                                      child: Container(
+                                      child: Obx(() => Container(
                                         color: Colors.black38,
-                                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 24),
-                                      ),
+                                        child: _controller.uploadingAvatar.value 
+                                          ? const Padding(
+                                              padding: EdgeInsets.all(24.0),
+                                              child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
+                                            )
+                                          : const Icon(Icons.camera_alt, color: Colors.white, size: 24),
+                                      )),
                                     ),
                                   ],
                                 ),
@@ -244,15 +260,25 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      TextButton(
-                        onPressed: () => Get.back(),
+                      Obx(() => TextButton(
+                        onPressed: (_controller.updatingProfile.value || _controller.uploadingAvatar.value || _controller.uploadingHeader.value) 
+                          ? null 
+                          : () => Get.back(),
                         child: const Text('取消'),
-                      ),
+                      )),
                       SizedBox(width: UIKit.spaceMd(context)),
-                      FilledButton(
-                        onPressed: _save,
-                        child: const Text('保存'),
-                      ),
+                      Obx(() => FilledButton(
+                        onPressed: (_controller.updatingProfile.value || _controller.uploadingAvatar.value || _controller.uploadingHeader.value)
+                          ? null
+                          : _save,
+                        child: _controller.updatingProfile.value
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('保存'),
+                      )),
                     ],
                   ),
                 ],
