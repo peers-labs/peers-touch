@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
+import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
+import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
+import 'package:peers_touch_desktop/features/discovery/view/components/discovery_content_item.dart';
+import 'package:peers_touch_desktop/features/discovery/view/composer_page.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
-import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
+import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
-import '../controller/discovery_controller.dart';
-import '../model/discovery_item.dart';
-import 'composer_page.dart';
-import 'components/discovery_content_item.dart';
 
 class DiscoveryPage extends GetView<DiscoveryController> {
   const DiscoveryPage({super.key});
@@ -348,8 +347,8 @@ class DiscoveryPage extends GetView<DiscoveryController> {
 }
 
 class _DiscoveryDetailView extends StatelessWidget {
-  final DiscoveryItem item;
   const _DiscoveryDetailView({required this.item});
+  final DiscoveryItem item;
 
   @override
   Widget build(BuildContext context) {

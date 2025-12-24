@@ -1,9 +1,4 @@
 class ChatSession {
-  final String id;
-  final String title;
-  final DateTime createdAt;
-  final DateTime? lastActiveAt;
-  final String? lastMessage;
   ChatSession({
     required this.id,
     required this.title,
@@ -11,14 +6,6 @@ class ChatSession {
     this.lastActiveAt,
     this.lastMessage,
   });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'createdAt': createdAt.toIso8601String(),
-        if (lastActiveAt != null) 'lastActiveAt': lastActiveAt!.toIso8601String(),
-        if (lastMessage != null) 'lastMessage': lastMessage,
-      };
 
   factory ChatSession.fromJson(Map<String, dynamic> json) => ChatSession(
         id: json['id'] as String,
@@ -29,4 +16,17 @@ class ChatSession {
             : null,
         lastMessage: json['lastMessage'] as String?,
       );
+  final String id;
+  final String title;
+  final DateTime createdAt;
+  final DateTime? lastActiveAt;
+  final String? lastMessage;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'createdAt': createdAt.toIso8601String(),
+        if (lastActiveAt != null) 'lastActiveAt': lastActiveAt!.toIso8601String(),
+        if (lastMessage != null) 'lastMessage': lastMessage,
+      };
 }

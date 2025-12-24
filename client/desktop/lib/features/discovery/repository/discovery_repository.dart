@@ -1,6 +1,5 @@
-import 'package:get/get.dart' hide FormData, MultipartFile;
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 class DiscoveryRepository {
   final _httpService = HttpServiceLocator().httpService;

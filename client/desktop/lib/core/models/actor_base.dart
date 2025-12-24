@@ -1,7 +1,4 @@
 class ActorBase {
-  final String id;
-  final String name;
-  final String? avatar;
 
   ActorBase({required this.id, required this.name, this.avatar});
 
@@ -10,6 +7,9 @@ class ActorBase {
         name: (json['name'] as String?) ?? '',
         avatar: json['avatar'] as String?,
       );
+  final String id;
+  final String name;
+  final String? avatar;
 
   Map<String, dynamic> toJson() => {
         'id': id,

@@ -1,7 +1,7 @@
 import 'package:get/get.dart';
-import '../controller/discovery_controller.dart';
-import '../controller/activity_controller.dart';
-import '../repository/discovery_repository.dart';
+import 'package:peers_touch_desktop/features/discovery/controller/activity_controller.dart';
+import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
+import 'package:peers_touch_desktop/features/discovery/repository/discovery_repository.dart';
 
 class DiscoveryBinding extends Bindings {
   @override

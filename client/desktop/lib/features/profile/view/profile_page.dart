@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/core/utils/image_utils.dart';
+import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
+import 'package:peers_touch_desktop/features/profile/view/edit_profile_dialog.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 
-import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
-import 'edit_profile_dialog.dart';
-
 class ProfilePage extends StatelessWidget {
-  final bool embedded;
   const ProfilePage({super.key, this.embedded = false});
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) {
@@ -38,22 +38,21 @@ class ProfilePage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Header Image
-                        if (d.coverUrl != null && d.coverUrl!.isNotEmpty)
-                          SizedBox(
-                            height: 150,
-                            width: double.infinity,
-                            child: Image.network(
-                              d.coverUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(color: theme.colorScheme.surfaceVariant),
-                            ),
-                          )
-                        else
-                          Container(
+                        (() {
+                          final p = imageProviderFor(d.coverUrl);
+                          if (p != null) {
+                            return SizedBox(
+                              height: 150,
+                              width: double.infinity,
+                              child: Image(image: p, fit: BoxFit.cover),
+                            );
+                          }
+                          return Container(
                             height: 100,
                             width: double.infinity,
-                            color: theme.colorScheme.surfaceVariant,
-                          ),
+                            color: theme.colorScheme.surfaceContainerHighest,
+                          );
+                        })(),
                         
                         Padding(
                           padding: EdgeInsets.all(UIKit.spaceLg(context)),
@@ -70,16 +69,14 @@ class ProfilePage extends StatelessWidget {
                                     child: Container(
                                       width: UIKit.avatarBlockHeight,
                                       height: UIKit.avatarBlockHeight,
-                                      color: wx?.bgLevel3 ?? theme.colorScheme.surfaceVariant,
-                                      child: d.avatarUrl != null
-                                          ? Image.network(
-                                              d.avatarUrl!, 
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return Icon(Icons.person, size: UIKit.indicatorSizeSm, color: UIKit.textSecondary(context));
-                                              },
-                                            )
-                                          : Icon(Icons.person, size: UIKit.indicatorSizeSm, color: UIKit.textSecondary(context)),
+                                      color: wx?.bgLevel3 ?? theme.colorScheme.surfaceContainerHighest,
+                                      child: (() {
+                                        final p = imageProviderFor(d.avatarUrl);
+                                        if (p != null) {
+                                          return Image(image: p, fit: BoxFit.cover);
+                                        }
+                                        return Icon(Icons.person, size: UIKit.indicatorSizeSm, color: UIKit.textSecondary(context));
+                                      })(),
                                     ),
                                   ),
                                   SizedBox(width: UIKit.spaceLg(context)),
@@ -157,12 +154,14 @@ class ProfilePage extends StatelessWidget {
                                                   child: Container(
                                                     width: UIKit.controlHeightMd,
                                                     height: UIKit.controlHeightMd,
-                                                    color: wx?.bgLevel3 ?? theme.colorScheme.surfaceVariant,
-                                                    child: Image.network(
-                                                      url, 
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (_, __, ___) => const SizedBox(),
-                                                    ),
+                                                    color: wx?.bgLevel3 ?? theme.colorScheme.surfaceContainerHighest,
+                                                    child: (() {
+                                                      final p = imageProviderFor(url);
+                                                      if (p != null) {
+                                                        return Image(image: p, fit: BoxFit.cover);
+                                                      }
+                                                      return const SizedBox();
+                                                    })(),
                                                   ),
                                                 ),
                                               ))
@@ -239,8 +238,8 @@ class ProfilePage extends StatelessWidget {
 }
 
 class _InfoChip extends StatelessWidget {
-  final String label;
   const _InfoChip({required this.label});
+  final String label;
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -250,7 +249,7 @@ class _InfoChip extends StatelessWidget {
         vertical: UIKit.spaceXs(context),
       ),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant,
+        color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
         border: Border.all(color: UIKit.dividerColor(context), width: UIKit.dividerThickness),
       ),
@@ -263,9 +262,9 @@ class _InfoChip extends StatelessWidget {
 }
 
 class _StatItem extends StatelessWidget {
+  const _StatItem({required this.label, required this.count});
   final String label;
   final int count;
-  const _StatItem({required this.label, required this.count});
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -283,4 +282,3 @@ class _StatItem extends StatelessWidget {
     );
   }
 }
-

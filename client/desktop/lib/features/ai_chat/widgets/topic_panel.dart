@@ -1,15 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 
 class TopicPanel extends StatelessWidget {
-  final List<String> topics;
-  final VoidCallback onAddTopic;
-  final ValueChanged<int> onDeleteTopic;
-  final ValueChanged<int>? onSelectTopic;
-  final ValueChanged<int>? onRenameTopic;
-  // 闪动高亮的项索引
-  final int? flashIndex;
   const TopicPanel({
     super.key,
     required this.topics,
@@ -19,6 +12,13 @@ class TopicPanel extends StatelessWidget {
     this.onRenameTopic,
     this.flashIndex,
   });
+  final List<String> topics;
+  final VoidCallback onAddTopic;
+  final ValueChanged<int> onDeleteTopic;
+  final ValueChanged<int>? onSelectTopic;
+  final ValueChanged<int>? onRenameTopic;
+  // 闪动高亮的项索引
+  final int? flashIndex;
 
   @override
   Widget build(BuildContext context) {

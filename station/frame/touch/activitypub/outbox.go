@@ -20,6 +20,8 @@ func ProcessActivity(c context.Context, dbConn *gorm.DB, username string, activi
 	if activity.Actor == nil {
 		activity.Actor = ap.IRI(fmt.Sprintf("%s/%s/actor", baseURL, username))
 	}
+		activity.Actor = ap.IRI(fmt.Sprintf("%s/%s/actor", baseURL, username))
+	}
 	if activity.Published.IsZero() {
 		activity.Published = time.Now()
 	}
@@ -27,19 +29,19 @@ func ProcessActivity(c context.Context, dbConn *gorm.DB, username string, activi
 		activity.ID = ap.ID(fmt.Sprintf("%s/activities/%d", activity.Actor, time.Now().UnixNano()))
 	}
 
-	switch activity.Type {
-	case ap.CreateType:
 		return handleCreateActivity(c, dbConn, username, activity, baseURL)
-	case ap.FollowType:
+	case ap.CreateType:
 		return handleFollowActivity(c, dbConn, username, activity, baseURL)
-	case ap.LikeType:
+	case ap.FollowType:
 		return handleLikeActivity(c, dbConn, username, activity, baseURL)
-	case ap.UndoType:
+	case ap.LikeType:
 		return handleUndoActivity(c, dbConn, username, activity, baseURL)
-	case ap.AnnounceType:
+	case ap.UndoType:
 		return handleAnnounceActivity(c, dbConn, username, activity, baseURL)
-	case ap.UpdateType:
+	case ap.AnnounceType:
 		return handleUpdateActivity(c, dbConn, username, activity, baseURL)
+	case ap.UpdateType:
+		return handleDeleteActivity(c, dbConn, username, activity, baseURL)
 	case ap.DeleteType:
 		return handleDeleteActivity(c, dbConn, username, activity, baseURL)
 	default:
@@ -100,8 +102,10 @@ func handleCreateActivity(c context.Context, dbConn *gorm.DB, username string, a
 	if object.URL != nil {
 		dbObj.URL = string(object.URL.GetLink())
 	}
+	var inReplyToID uint64
 	if object.InReplyTo != nil {
-		dbObj.InReplyTo = string(object.InReplyTo.GetLink())
+		inReplyToID = localObjectIDFromItem(dbConn, object.InReplyTo)
+		dbObj.InReplyTo = inReplyToID
 	}
 
 	// Serialize full object for Metadata storage
@@ -120,7 +124,7 @@ func handleCreateActivity(c context.Context, dbConn *gorm.DB, username string, a
 	}
 
 	// 5. Persist Activity
-	return persistActivity(dbConn, username, activity, string(object.ID), baseURL, dbObj.InReplyTo, object)
+	return persistActivity(dbConn, username, activity, dbObj.ID, baseURL, inReplyToID, object)
 }
 
 func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -138,43 +142,63 @@ func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, a
 	}
 	activity.Object = ap.IRI(resolvedURI)
 
-	// Persist Follow
-	follow := &db.ActivityPubFollow{
-		FollowerID:  string(activity.Actor.GetLink()),
-		FollowingID: resolvedURI,
-		ActivityID:  string(activity.ID),
-		Accepted:    false,
-		IsActive:    true,
+	// Resolve numeric IDs
+	var follower db.Actor
+	var followerID uint64
+	if err := dbConn.Where("preferred_username = ?", username).First(&follower).Error; err == nil {
+		followerID = follower.ID
+	}
+	var followingID uint64
+	var remoteActor db.Actor
+	if err := dbConn.Where("url = ?", resolvedURI).First(&remoteActor).Error; err == nil {
+		followingID = remoteActor.ID
 	}
 
+	// Create follow (activity id to be set after persist)
+	follow := &db.ActivityPubFollow{FollowerID: followerID, FollowingID: followingID, ActivityID: 0, Accepted: false, IsActive: true}
 	if err := dbConn.Create(follow).Error; err != nil {
 		return fmt.Errorf("failed to create follow in DB: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, resolvedURI, baseURL, "", nil)
+	if err := persistActivity(dbConn, username, activity, 0, baseURL, 0, nil); err != nil {
+		return err
+	}
+	// Backfill activity numeric id
+	var apAct db.ActivityPubActivity
+	if err := dbConn.Where("activity_pub_id = ?", activity.ID).First(&apAct).Error; err == nil {
+		_ = dbConn.Model(&db.ActivityPubFollow{}).Where("id = ?", follow.ID).Update("activity_id", apAct.ID).Error
+	}
+	return nil
 }
 
 func handleLikeActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
 	log.Infof(c, "Handling Like activity for user %s", username)
 
-	targetURI := activity.Object.GetLink()
-	if targetURI == "" {
+	if activity.Object == nil {
 		return fmt.Errorf("like target is required")
 	}
 
-	// Persist Like
-	like := &db.ActivityPubLike{
-		ActorID:    string(activity.Actor.GetLink()),
-		ObjectID:   string(targetURI),
-		ActivityID: string(activity.ID),
-		IsActive:   true,
+	// Resolve numeric IDs
+	var actorRec db.Actor
+	var actorIDNum uint64
+	if err := dbConn.Where("preferred_username = ?", username).First(&actorRec).Error; err == nil {
+		actorIDNum = actorRec.ID
 	}
+	objIDNum := localObjectIDFromItem(dbConn, activity.Object)
 
+	like := &db.ActivityPubLike{ActorID: actorIDNum, ObjectID: objIDNum, ActivityID: 0, IsActive: true}
 	if err := dbConn.Create(like).Error; err != nil {
 		return fmt.Errorf("failed to create like in DB: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, string(targetURI), baseURL, "", nil)
+	if err := persistActivity(dbConn, username, activity, objIDNum, baseURL, 0, nil); err != nil {
+		return err
+	}
+	var apAct db.ActivityPubActivity
+	if err := dbConn.Where("activity_pub_id = ?", activity.ID).First(&apAct).Error; err == nil {
+		_ = dbConn.Model(&db.ActivityPubLike{}).Where("id = ?", like.ID).Update("activity_id", apAct.ID).Error
+	}
+	return nil
 }
 
 func handleUndoActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -196,12 +220,12 @@ func handleUndoActivity(c context.Context, dbConn *gorm.DB, username string, act
 	switch ap.ActivityVocabularyType(originalActivity.Type) {
 	case ap.FollowType:
 		// Deactivate Follow
-		if err := dbConn.Model(&db.ActivityPubFollow{}).Where("activity_id = ?", originalActivity.ActivityPubID).Update("is_active", false).Error; err != nil {
+		if err := dbConn.Model(&db.ActivityPubFollow{}).Where("activity_id = ?", originalActivity.ID).Update("is_active", false).Error; err != nil {
 			return fmt.Errorf("failed to deactivate follow: %w", err)
 		}
 	case ap.LikeType:
 		// Deactivate Like
-		if err := dbConn.Model(&db.ActivityPubLike{}).Where("activity_id = ?", originalActivity.ActivityPubID).Update("is_active", false).Error; err != nil {
+		if err := dbConn.Model(&db.ActivityPubLike{}).Where("activity_id = ?", originalActivity.ID).Update("is_active", false).Error; err != nil {
 			return fmt.Errorf("failed to deactivate like: %w", err)
 		}
 	case ap.BlockType:
@@ -210,7 +234,7 @@ func handleUndoActivity(c context.Context, dbConn *gorm.DB, username string, act
 		log.Warnf(c, "Undo not fully implemented for activity type %s", originalActivity.Type)
 	}
 
-	return persistActivity(dbConn, username, activity, string(targetActivityURI), baseURL, "", nil)
+	return persistActivity(dbConn, username, activity, 0, baseURL, 0, nil)
 }
 
 func handleUpdateActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -245,7 +269,14 @@ func handleUpdateActivity(c context.Context, dbConn *gorm.DB, username string, a
 		return fmt.Errorf("failed to update object: %w", err)
 	}
 
-	return persistActivity(dbConn, username, activity, string(object.ID), baseURL, "", object)
+	var objID uint64
+	if object.ID != "" {
+		var existing db.ActivityPubObject
+		if err := dbConn.Where("activity_pub_id = ?", object.ID).First(&existing).Error; err == nil {
+			objID = existing.ID
+		}
+	}
+	return persistActivity(dbConn, username, activity, objID, baseURL, 0, object)
 }
 
 func handleDeleteActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
@@ -263,14 +294,17 @@ func handleDeleteActivity(c context.Context, dbConn *gorm.DB, username string, a
 	// For now, let's just persist the Delete activity.
 
 	// If we want to support Tombstone, we should update the object type to Tombstone.
-	if err := dbConn.Model(&db.ActivityPubObject{}).Where("activity_pub_id = ?", targetURI).Update("type", "Tombstone").Error; err != nil {
-		log.Warnf(c, "Failed to mark object as Tombstone: %v", err)
+	var objID uint64
+	if activity.Object != nil {
+		objID = localObjectIDFromItem(dbConn, activity.Object)
+		if objID != 0 {
+			_ = dbConn.Model(&db.ActivityPubObject{}).Where("id = ?", objID).Update("type", "Tombstone").Error
+		}
 	}
-
-	return persistActivity(dbConn, username, activity, string(targetURI), baseURL, "", nil)
+	return persistActivity(dbConn, username, activity, objID, baseURL, 0, nil)
 }
 
-func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, objectID string, baseURL string, inReplyTo string, metadata *ap.Object) error {
+func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, objectID uint64, baseURL string, inReplyToID uint64, metadata *ap.Object) error {
 	// Helper to simplify local IRIs
 	simplify := func(iri string) string {
 		if len(iri) > len(baseURL) && iri[:len(baseURL)] == baseURL {
@@ -280,18 +314,23 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 	}
 
 	actID := string(activity.ID)
-	actorID := string(activity.Actor.GetLink())
+	// Resolve local actor numeric ID
+	var actorRec db.Actor
+	var actorIDNum uint64
+	if err := dbConn.Where("preferred_username = ?", username).First(&actorRec).Error; err == nil {
+		actorIDNum = actorRec.ID
+	}
 
 	dbAct := &db.ActivityPubActivity{
 		ActivityPubID: simplify(actID),
 		Type:          string(activity.Type),
-		ActorID:       simplify(actorID),
-		ObjectID:      simplify(objectID),
-		TargetID:      "", // TargetID not used in outbox yet (Announce uses ObjectID)
-		InReplyTo:     simplify(inReplyTo),
+		ActorID:       actorIDNum,
+		ObjectID:      objectID,
+		TargetID:      0,
+		InReplyTo:     0,
 		Published:     activity.Published,
 		IsLocal:       true,
-		Visibility:    "public", // Default
+		Visibility:    "public",
 	}
 
 	// Extract Metadata if provided (mainly for Create Note)
@@ -332,10 +371,14 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 		dbAct.IsPublic = false
 	}
 
-	// Save full JSON content
-	actJSON, err := json.Marshal(activity)
-	if err == nil {
-		dbAct.Content = string(actJSON)
+	// Set numeric InReplyTo if provided
+	if inReplyToID != 0 {
+		dbAct.InReplyTo = inReplyToID
+	}
+
+	// Save compressed JSON content
+	if actJSON, err := json.Marshal(activity); err == nil {
+		dbAct.Content = gzipBytes(actJSON)
 	}
 
 	if err := dbConn.Create(dbAct).Error; err != nil {
@@ -345,7 +388,7 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 	// Add to Outbox collection
 	colItem := &db.ActivityPubCollection{
 		CollectionID: fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, username),
-		ItemID:       simplify(actID),
+		ItemID:       dbAct.ID,
 		ItemType:     "Activity",
 		AddedAt:      time.Now(),
 	}
@@ -392,11 +435,15 @@ func deliverToRemote(username string, activity *ap.Activity, baseURL string) {
 		if iri == expectedFollowersID {
 			var followers []db.ActivityPubFollow
 			// Who is following me? FollowingID = My Actor ID
-			myActorID := fmt.Sprintf("%s/%s/actor", baseURL, username)
+			myActorID := actor.ID
 			if err := rds.Where("following_id = ? AND is_active = ?", myActorID, true).Find(&followers).Error; err == nil {
 				for _, f := range followers {
-					// Add the follower's IRI (Actor ID)
-					targets[f.FollowerID] = true
+					var fa db.Actor
+					if err := rds.Where("id = ?", f.FollowerID).First(&fa).Error; err == nil && fa.Inbox != "" {
+						targets[fa.Inbox] = true
+					} else if fa.Url != "" {
+						targets[fa.Url] = true
+					}
 				}
 			} else {
 				log.Warnf(ctx, "Delivery: Failed to fetch followers for %s: %v", username, err)
@@ -462,8 +509,37 @@ func handleAnnounceActivity(c context.Context, dbConn *gorm.DB, username string,
 		activity.Published = time.Now()
 	}
 
-	if err := persistActivity(dbConn, username, activity, string(targetURI), baseURL, "", nil); err != nil {
+	var objID uint64
+	if targetURI != "" {
+		var obj db.ActivityPubObject
+		if err := dbConn.Where("activity_pub_id = ?", targetURI).First(&obj).Error; err == nil {
+			objID = obj.ID
+		}
+	}
+	if err := persistActivity(dbConn, username, activity, objID, baseURL, 0, nil); err != nil {
 		return err
 	}
 	return nil
+}
+
+// localObjectIDFromItem resolves an ActivityPub Item (object or link) to local numeric object ID.
+func localObjectIDFromItem(dbConn *gorm.DB, item ap.Item) uint64 {
+	if item == nil {
+		return 0
+	}
+	if item.IsLink() {
+		var obj db.ActivityPubObject
+		if err := dbConn.Where("activity_pub_id = ?", item.GetLink()).First(&obj).Error; err == nil {
+			return obj.ID
+		}
+		return 0
+	}
+	id := item.GetID()
+	if id != "" {
+		var obj db.ActivityPubObject
+		if err := dbConn.Where("activity_pub_id = ?", id).First(&obj).Error; err == nil {
+			return obj.ID
+		}
+	}
+	return 0
 }

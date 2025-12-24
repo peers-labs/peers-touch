@@ -2,9 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_facade_service.dart';
-import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/storage/kv/kv_database.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
+
 import 'provider_service_test.mocks.dart';
 
 @GenerateMocks([AiBoxFacadeService])

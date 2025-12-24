@@ -1,6 +1,6 @@
-import 'ai_service.dart';
-import 'openai_service.dart';
-import 'ollama_service.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/ollama_service.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/openai_service.dart';
 
 /// AI服务提供商类型
 enum AIProviderType {

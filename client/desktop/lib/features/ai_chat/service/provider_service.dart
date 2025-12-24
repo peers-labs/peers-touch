@@ -8,10 +8,10 @@ import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 
 /// AI服务提供商管理服务
 class ProviderService extends GetxService {
-  late final AiBoxFacadeService _aiBoxFacadeService;
 
   ProviderService({AiBoxFacadeService? aiBoxFacadeService})
       : _aiBoxFacadeService = aiBoxFacadeService ?? Get.find();
+  late final AiBoxFacadeService _aiBoxFacadeService;
 
   /// 获取所有提供商
   Future<List<Provider>> getProviders() async {

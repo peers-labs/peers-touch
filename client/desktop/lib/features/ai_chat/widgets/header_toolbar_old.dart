@@ -1,15 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 
 class AIChatHeaderBar extends StatelessWidget {
-  final String title;
-  final List<String> models;
-  final String currentModel;
-  final ValueChanged<String> onModelChanged;
-  final VoidCallback onToggleTopicPanel;
-  final bool isSending;
-  final VoidCallback onNewChat;
   const AIChatHeaderBar({
     super.key,
     required this.title,
@@ -20,6 +13,13 @@ class AIChatHeaderBar extends StatelessWidget {
     required this.isSending,
     required this.onNewChat,
   });
+  final String title;
+  final List<String> models;
+  final String currentModel;
+  final ValueChanged<String> onModelChanged;
+  final VoidCallback onToggleTopicPanel;
+  final bool isSending;
+  final VoidCallback onNewChat;
 
   @override
   Widget build(BuildContext context) {

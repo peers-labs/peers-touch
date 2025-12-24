@@ -1,19 +1,12 @@
-import 'package:flutter/material.dart';
 import 'dart:math' as math;
-import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+
+import 'package:flutter/material.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 
 enum ScrollPolicy { none, auto, always }
 
 class PaneProps {
-  final double? width; // 初始宽度（仅左 pane 使用）
-  final double? minWidth; // 最小宽度
-  final double? maxWidth; // 最大宽度
-  final EdgeInsets? padding;
-  // 垂直滚动策略（原 scrollPolicy）
-  final ScrollPolicy scrollPolicy;
-  // 水平滚动策略
-  final ScrollPolicy horizontalPolicy;
   const PaneProps({
     this.width,
     this.minWidth,
@@ -22,19 +15,20 @@ class PaneProps {
     this.scrollPolicy = ScrollPolicy.auto,
     this.horizontalPolicy = ScrollPolicy.auto,
   });
+  final double? width; // 初始宽度（仅左 pane 使用）
+  final double? minWidth; // 最小宽度
+  final double? maxWidth; // 最大宽度
+  final EdgeInsets? padding;
+  // 垂直滚动策略（原 scrollPolicy）
+  final ScrollPolicy scrollPolicy;
+  // 水平滚动策略
+  final ScrollPolicy horizontalPolicy;
 }
 
 /// 三段式骨架：left（可选，可调宽，受限范围）+ center（填充）
 /// 右扩展页仍由 ShellPage 控制，不在此组件内处理。
 class ShellThreePane extends StatelessWidget {
-  final WidgetBuilder? leftBuilder;
-  final WidgetBuilder centerBuilder;
-  final PaneProps leftProps;
-  final PaneProps centerProps;
-  final double goldenMaxRatio;
-  final double? leftWidth;
-  final ValueChanged<double>? onLeftWidthChange;
-  ShellThreePane({
+  const ShellThreePane({
     super.key,
     this.leftBuilder,
     required this.centerBuilder,
@@ -44,6 +38,13 @@ class ShellThreePane extends StatelessWidget {
     this.leftWidth,
     this.onLeftWidthChange,
   });
+  final WidgetBuilder? leftBuilder;
+  final WidgetBuilder centerBuilder;
+  final PaneProps leftProps;
+  final PaneProps centerProps;
+  final double goldenMaxRatio;
+  final double? leftWidth;
+  final ValueChanged<double>? onLeftWidthChange;
 
   static const double _handleWidth = UIKit.splitHandleWidth;
 

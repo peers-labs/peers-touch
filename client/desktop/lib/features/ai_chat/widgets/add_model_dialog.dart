@@ -10,9 +10,9 @@ import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
 class AddModelDialog extends StatelessWidget {
-  final base.Provider provider;
 
   AddModelDialog({super.key, required this.provider});
+  final base.Provider provider;
 
   // Text controllers
   final _idCtrl = TextEditingController();

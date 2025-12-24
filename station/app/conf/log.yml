@@ -5,8 +5,8 @@ peers:
     caller-skip-count: 0
     persistence:
        enable: true
-       dir: /var/log/peers-touch
-       back-dir: /var/log/peers-touch/backup
+       dir: /var/logs/peers-touch
+       back-dir: /var/logs/peers-touch/backup
        max-file-size: 50
        max-backup-size: 700
        max-backup-keep-days: 14

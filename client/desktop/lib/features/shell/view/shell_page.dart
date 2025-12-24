@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/constants/app_constants.dart';
-import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
-import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
-import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/core/constants/app_constants.dart';
+import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
+import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 
 class ShellPage extends StatelessWidget {
   const ShellPage({super.key});

@@ -2,7 +2,6 @@ import 'package:peers_touch_base/network/libp2p/config/config.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/basic/basic_host.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm.dart';
 
 class Libp2pNetworkService {
   BasicHost? _host;

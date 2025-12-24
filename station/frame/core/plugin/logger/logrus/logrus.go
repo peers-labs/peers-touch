@@ -1,17 +1,17 @@
 package logrus
 
 import (
-    "context"
-    "fmt"
-    "os"
-    "path/filepath"
-    "runtime"
-    "strings"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 
-    "github.com/peers-labs/peers-touch/station/frame/core/logger"
-    sLog "github.com/peers-labs/peers-touch/station/frame/core/logger"
-    "github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
-    "github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus/lumberjack.v2"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	sLog "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus/lumberjack.v2"
 )
 
 var (
@@ -73,46 +73,46 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 	}
 
 	if l.opts.Formatter != nil {
-        if txtFormatter, ok := l.opts.Formatter.(*logrus.TextFormatter); ok {
-            if l.opts.WithoutKey {
-                txtFormatter.WithoutKey = l.opts.WithoutKey
-            }
-            if l.opts.WithoutQuote {
-                txtFormatter.WithoutQuote = l.opts.WithoutQuote
-            }
-            if len(l.opts.TimestampFormat) > 0 {
-                txtFormatter.TimestampFormat = l.opts.TimestampFormat // "2006-01-02 15:04:05.999"
-            }
-            if l.opts.ReportCaller {
-                skip := l.opts.CallerSkipCount
-                txtFormatter.CallerPrettyfier = func(f *runtime.Frame) (string, string) {
-                    file := f.File
-                    if skip > 0 {
-                        parts := strings.Split(filepath.ToSlash(file), "/")
-                        if len(parts) > 0 {
-                            start := len(parts) - skip
-                            if start < 0 {
-                                start = 0
-                            }
-                            if start >= len(parts) {
-                                start = len(parts) - 1
-                            }
-                            file = strings.Join(parts[start:], "/")
-                        }
-                    } else {
-                        if idx := strings.LastIndex(file, string(os.PathSeparator)); idx != -1 {
-                            prev := strings.LastIndex(file[:idx], string(os.PathSeparator))
-                            if prev != -1 {
-                                file = file[prev+1:]
-                            }
-                        }
-                        file = filepath.ToSlash(file)
-                    }
-                    return f.Function, fmt.Sprintf("%s:%d", file, f.Line)
-                }
-            }
-        }
-    }
+		if txtFormatter, ok := l.opts.Formatter.(*logrus.TextFormatter); ok {
+			if l.opts.WithoutKey {
+				txtFormatter.WithoutKey = l.opts.WithoutKey
+			}
+			if l.opts.WithoutQuote {
+				txtFormatter.WithoutQuote = l.opts.WithoutQuote
+			}
+			if len(l.opts.TimestampFormat) > 0 {
+				txtFormatter.TimestampFormat = l.opts.TimestampFormat // "2006-01-02 15:04:05.999"
+			}
+			if l.opts.ReportCaller {
+				skip := l.opts.CallerSkipCount
+				txtFormatter.CallerPrettyfier = func(f *runtime.Frame) (string, string) {
+					file := f.File
+					if skip > 0 {
+						parts := strings.Split(filepath.ToSlash(file), "/")
+						if len(parts) > 0 {
+							start := len(parts) - skip
+							if start < 0 {
+								start = 0
+							}
+							if start >= len(parts) {
+								start = len(parts) - 1
+							}
+							file = strings.Join(parts[start:], "/")
+						}
+					} else {
+						if idx := strings.LastIndex(file, string(os.PathSeparator)); idx != -1 {
+							prev := strings.LastIndex(file[:idx], string(os.PathSeparator))
+							if prev != -1 {
+								file = file[prev+1:]
+							}
+						}
+						file = filepath.ToSlash(file)
+					}
+					return f.Function, fmt.Sprintf("%s:%d", file, f.Line)
+				}
+			}
+		}
+	}
 
 	// If package filtering is configured, wrap formatter with FilteringFormatter
 	if (len(l.opts.IncludePackages) > 0 || len(l.opts.ExcludePackages) > 0) && l.opts.Formatter != nil {
@@ -159,23 +159,23 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 		if l.opts.Persistence.MaxFileSize != 0 {
 			maxBackups = l.opts.Persistence.MaxBackupSize / l.opts.Persistence.MaxFileSize
 		}
-        fileName := fmt.Sprintf("%s%sapp.log", l.opts.Persistence.Dir, pathSeparator)
-        if fn := l.opts.Persistence.FileNamePattern; fn != "" {
-            if filepath.IsAbs(fn) {
-                fileName = fn
-            } else {
-                fileName = filepath.Join(l.opts.Persistence.Dir, fn)
-            }
-        }
-        l.opts.Out = &lumberjack.Logger{
-            Filename:   fileName,
-            MaxSize:    l.opts.Persistence.MaxFileSize,
-            MaxBackups: maxBackups,
-            MaxAge:     l.opts.Persistence.MaxBackupKeepDays,
-            Compress:   true,
-            LocalTime:  true,
-            BackupDir:  l.opts.Persistence.BackupDir,
-        }
+		fileName := fmt.Sprintf("%s%sapp.log", l.opts.Persistence.Dir, pathSeparator)
+		if fn := l.opts.Persistence.FileNamePattern; fn != "" {
+			if filepath.IsAbs(fn) {
+				fileName = fn
+			} else {
+				fileName = filepath.Join(l.opts.Persistence.Dir, fn)
+			}
+		}
+		l.opts.Out = &lumberjack.Logger{
+			Filename:   fileName,
+			MaxSize:    l.opts.Persistence.MaxFileSize,
+			MaxBackups: maxBackups,
+			MaxAge:     l.opts.Persistence.MaxBackupKeepDays,
+			Compress:   true,
+			LocalTime:  true,
+			BackupDir:  l.opts.Persistence.BackupDir,
+		}
 	}
 
 	if l.opts.Out == nil {

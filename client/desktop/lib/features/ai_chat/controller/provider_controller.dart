@@ -1,16 +1,14 @@
 import 'dart:convert';
 
 import 'package:get/get.dart';
-import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_base/model/domain/ai_box/ai_models.pb.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/capability/capability_resolver.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/model_capability.dart';
-
-import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 /// AI服务提供商控制器
 class ProviderController extends GetxController {
@@ -79,7 +77,7 @@ class ProviderController extends GetxController {
           changed = true;
         }
         if (changed) {
-          final updated = (p.deepCopy() as Provider)
+          final updated = p.deepCopy()
             ..settingsJson = jsonEncode(settings)
             ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
           await _providerService.updateProvider(updated);
@@ -120,7 +118,7 @@ class ProviderController extends GetxController {
   /// 更新提供商
   Future<void> updateProvider(Provider provider) async {
     try {
-      final updatedProvider = (provider.deepCopy() as Provider)
+      final updatedProvider = provider.deepCopy()
             ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
 
       await _providerService.updateProvider(updatedProvider);
@@ -156,7 +154,7 @@ class ProviderController extends GetxController {
           providers.firstWhereOrNull((e) => e.id == providerId) ??
           currentProvider.value;
       if (p == null) return;
-      final updated = (p.deepCopy() as Provider)
+      final updated = p.deepCopy()
             ..name = newName
             ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
       await _providerService.updateProvider(updated);
@@ -271,7 +269,7 @@ class ProviderController extends GetxController {
       }
       settings['modelInfos'] = infos;
 
-      final updated = (provider.deepCopy() as Provider)
+      final updated = provider.deepCopy()
             ..settingsJson = jsonEncode(settings)
             ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
       await _providerService.updateProvider(updated);
@@ -333,7 +331,7 @@ class ProviderController extends GetxController {
       }
       settings['modelInfos'] = infos;
 
-      final updated = (cp.deepCopy() as Provider)
+      final updated = cp.deepCopy()
             ..settingsJson = jsonEncode(settings)
             ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
       await _providerService.updateProvider(updated);
@@ -388,7 +386,7 @@ class ProviderController extends GetxController {
         ? (jsonDecode(cp.settingsJson) as Map<String, dynamic>)
         : {};
     settings[key] = value;
-    final updated = (cp.deepCopy() as Provider)
+    final updated = cp.deepCopy()
           ..settingsJson = jsonEncode(settings)
           ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
     await _providerService.updateProvider(updated);
@@ -398,7 +396,7 @@ class ProviderController extends GetxController {
   Future<void> toggleEnabled(bool on) async {
     final cp = currentProvider.value;
     if (cp == null) return;
-    final updated = (cp.deepCopy() as Provider)
+    final updated = cp.deepCopy()
           ..enabled = on
           ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
     await _providerService.updateProvider(updated);
@@ -433,7 +431,7 @@ class ProviderController extends GetxController {
       enabled.remove(modelId);
     }
     settings['enabledModels'] = enabled;
-    final updated = (cp.deepCopy() as Provider)
+    final updated = cp.deepCopy()
           ..settingsJson = jsonEncode(settings)
           ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
     await _providerService.updateProvider(updated);
@@ -462,7 +460,7 @@ class ProviderController extends GetxController {
     final List<dynamic> infos = List<dynamic>.from(settings['modelInfos'] ?? <dynamic>[]);
     infos.removeWhere((e) => e is Map && e['id']?.toString() == modelId);
     settings['modelInfos'] = infos;
-    final updated = (cp.deepCopy() as Provider)
+    final updated = cp.deepCopy()
           ..settingsJson = jsonEncode(settings)
           ..updatedAt = Timestamp.fromDateTime(DateTime.now().toUtc());
     await _providerService.updateProvider(updated);
@@ -482,5 +480,6 @@ class ProviderController extends GetxController {
 
   Future<void> load() async => loadProviders();
 
+  @override
   Future<void> refresh() async => loadProviders();
 }

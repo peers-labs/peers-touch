@@ -45,15 +45,32 @@ func CreateStatus(ctx context.Context, username string, req model.MastodonCreate
 }
 
 func GetStatus(ctx context.Context, id string) (*model.MastodonStatus, error) {
-	rds, err := store.GetRDS(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var obj db.ActivityPubObject
-	if err := rds.Where("activity_pub_id = ?", id).First(&obj).Error; err != nil {
-		return nil, err
-	}
-	return &model.MastodonStatus{Id: obj.ActivityPubID, Content: obj.Content}, nil
+    rds, err := store.GetRDS(ctx)
+    if err != nil {
+        return nil, err
+    }
+    var obj db.ActivityPubObject
+    // Prefer numeric ID lookup (Mastodon-style), fallback to IRI
+    if isDigits(id) {
+        var oid uint64
+        _, _ = fmt.Sscan(id, &oid)
+        if err := rds.Where("id = ?", oid).First(&obj).Error; err != nil {
+            return nil, err
+        }
+        return &model.MastodonStatus{Id: fmt.Sprintf("%d", obj.ID), Content: obj.Content}, nil
+    }
+    if err := rds.Where("activity_pub_id = ?", id).First(&obj).Error; err != nil {
+        return nil, err
+    }
+    return &model.MastodonStatus{Id: obj.ActivityPubID, Content: obj.Content}, nil
+}
+
+func isDigits(s string) bool {
+    if s == "" { return false }
+    for i := 0; i < len(s); i++ {
+        if s[i] < '0' || s[i] > '9' { return false }
+    }
+    return true
 }
 
 func Favourite(ctx context.Context, username, id, baseURL string) (*model.MastodonStatus, error) {

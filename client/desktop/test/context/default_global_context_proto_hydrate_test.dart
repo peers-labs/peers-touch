@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:peers_touch_base/context/default_global_context.dart';
-import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
 import 'package:peers_touch_base/model/domain/actor/preferences.pb.dart';
-import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
+import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
 import 'package:peers_touch_base/storage/local_storage_adapter.dart';
+import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
 
 class FakeSecureStorage implements SecureStorageAdapter {
   @override

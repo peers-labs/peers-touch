@@ -1,16 +1,6 @@
-import 'package:flutter/foundation.dart';
 
 /// 模型能力描述，用于驱动输入框按钮的启用/禁用与上限校验。
 class ModelCapability {
-  final bool supportsText;
-  final bool supportsImageInput;
-  final bool supportsFileInput;
-  final bool supportsAudioInput;
-  final bool supportsStreaming;
-  final int maxImages;
-  final int maxFiles;
-  final int maxAudio;
-  final List<String> allowedMimeTypes;
 
   const ModelCapability({
     this.supportsText = true,
@@ -33,6 +23,15 @@ class ModelCapability {
       'audio/mpeg',
     ],
   });
+  final bool supportsText;
+  final bool supportsImageInput;
+  final bool supportsFileInput;
+  final bool supportsAudioInput;
+  final bool supportsStreaming;
+  final int maxImages;
+  final int maxFiles;
+  final int maxAudio;
+  final List<String> allowedMimeTypes;
 
   static const ModelCapability textOnly = ModelCapability();
 

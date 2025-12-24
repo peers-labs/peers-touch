@@ -16,12 +16,17 @@ class DefaultGlobalContext implements GlobalContext {
   Map<String, dynamic> _preferences = {};
   String? _protocolTag;
   final _sessionCtrl = StreamController<Map<String, dynamic>?>.broadcast();
-  final _accountsCtrl = StreamController<List<Map<String, dynamic>>>.broadcast();
+  final _accountsCtrl =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
   final _prefsCtrl = StreamController<Map<String, dynamic>>.broadcast();
   final _protocolCtrl = StreamController<String?>.broadcast();
   final _netCtrl = StreamController<List<String>>.broadcast();
 
-  DefaultGlobalContext({required this.secureStorage, this.connectivity, this.localStorage});
+  DefaultGlobalContext({
+    required this.secureStorage,
+    this.connectivity,
+    this.localStorage,
+  });
 
   void _bindConnectivity() {
     if (connectivity == null) return;
@@ -42,13 +47,16 @@ class DefaultGlobalContext implements GlobalContext {
   @override
   String? get protocolTag => _protocolTag;
   @override
-  String? get actorId => _session?['actorId']?.toString() ?? _session?['userId']?.toString();
+  String? get actorId =>
+      _session?['actorId']?.toString() ?? _session?['userId']?.toString();
   @override
-  String? get actorHandle => _session?['handle']?.toString() ?? _session?['username']?.toString();
+  String? get actorHandle =>
+      _session?['handle']?.toString() ?? _session?['username']?.toString();
   @override
   Stream<Map<String, dynamic>?> get onSessionChange => _sessionCtrl.stream;
   @override
-  Stream<List<Map<String, dynamic>>> get onAccountChange => _accountsCtrl.stream;
+  Stream<List<Map<String, dynamic>>> get onAccountChange =>
+      _accountsCtrl.stream;
   @override
   Stream<Map<String, dynamic>> get onPreferencesChange => _prefsCtrl.stream;
   @override
@@ -58,8 +66,10 @@ class DefaultGlobalContext implements GlobalContext {
 
   Map<String, dynamic> _normalizeSession(Map<String, dynamic> raw) {
     final m = Map<String, dynamic>.from(raw);
-    final actorId = (m['actorId']?.toString()) ?? (m['userId']?.toString()) ?? '';
-    final handle = (m['handle']?.toString()) ?? (m['username']?.toString()) ?? '';
+    final actorId =
+        (m['actorId']?.toString()) ?? (m['userId']?.toString()) ?? '';
+    final handle =
+        (m['handle']?.toString()) ?? (m['username']?.toString()) ?? '';
     m['actorId'] = actorId;
     m['handle'] = handle;
     m['userId'] = actorId; // compatibility
@@ -71,11 +81,25 @@ class DefaultGlobalContext implements GlobalContext {
     _session = session != null ? _normalizeSession(session) : null;
     _sessionCtrl.add(_session);
     try {
-      LoggingService.info('GlobalContext.setSession: ${_session != null ? _session!['handle'] : 'null'}');
+      LoggingService.info(
+        'GlobalContext.setSession: ${_session != null ? _session!['handle'] : 'null'}',
+      );
     } catch (_) {}
     if (session == null) {
-      await secureStorage.remove('token_key');
-      await secureStorage.remove('refresh_token_key');
+      try {
+        await secureStorage.remove('token_key');
+      } catch (e) {
+        LoggingService.warning(
+          'Failed to remove token from secure storage: $e',
+        );
+      }
+      try {
+        await secureStorage.remove('refresh_token_key');
+      } catch (e) {
+        LoggingService.warning(
+          'Failed to remove refresh token from secure storage: $e',
+        );
+      }
       if (localStorage != null) {
         await localStorage!.remove('global:current_session');
         await localStorage!.remove('global:current_session_pb');
@@ -85,10 +109,20 @@ class DefaultGlobalContext implements GlobalContext {
     final access = _session?['accessToken']?.toString() ?? '';
     final refresh = _session?['refreshToken']?.toString();
     if (access.isNotEmpty) {
-      await secureStorage.set('token_key', access);
+      try {
+        await secureStorage.set('token_key', access);
+      } catch (e) {
+        LoggingService.warning('Failed to write token to secure storage: $e');
+      }
     }
     if (refresh != null && refresh.isNotEmpty) {
-      await secureStorage.set('refresh_token_key', refresh);
+      try {
+        await secureStorage.set('refresh_token_key', refresh);
+      } catch (e) {
+        LoggingService.warning(
+          'Failed to write refresh token to secure storage: $e',
+        );
+      }
     }
     if (localStorage != null) {
       await localStorage!.set('global:current_session', _session);
@@ -100,14 +134,21 @@ class DefaultGlobalContext implements GlobalContext {
           baseUrl: (_session?['baseUrl']?.toString() ?? ''),
           accessToken: access,
           refreshToken: refresh ?? '',
-          roles: (_session?['roles'] is List ? List<String>.from(_session?['roles']) : <String>[]) ,
+          roles: (_session?['roles'] is List
+              ? List<String>.from(_session?['roles'])
+              : <String>[]),
         );
-        await localStorage!.set('global:current_session_pb', snap.toProto3Json());
+        await localStorage!.set(
+          'global:current_session_pb',
+          snap.toProto3Json(),
+        );
       } catch (_) {}
     }
-    final idx = _accounts.indexWhere((a) =>
-        (a['actorId']?.toString() == _session?['actorId']?.toString()) &&
-        (a['baseUrl']?.toString() == _session?['baseUrl']?.toString()));
+    final idx = _accounts.indexWhere(
+      (a) =>
+          (a['actorId']?.toString() == _session?['actorId']?.toString()) &&
+          (a['baseUrl']?.toString() == _session?['baseUrl']?.toString()),
+    );
     if (idx >= 0) {
       _accounts[idx] = _session!;
     } else {
@@ -119,7 +160,9 @@ class DefaultGlobalContext implements GlobalContext {
       await localStorage!.set('global:accounts_schema', 1);
     }
     try {
-      LoggingService.info('GlobalContext.accounts updated: count=${_accounts.length}');
+      LoggingService.info(
+        'GlobalContext.accounts updated: count=${_accounts.length}',
+      );
     } catch (_) {}
   }
 
@@ -132,13 +175,17 @@ class DefaultGlobalContext implements GlobalContext {
       'baseUrl': snapshot.baseUrl,
       'accessToken': snapshot.accessToken,
       'refreshToken': snapshot.refreshToken,
-      if (snapshot.hasExpiresAt()) 'expiresAt': snapshot.expiresAt.toDateTime().toIso8601String(),
+      if (snapshot.hasExpiresAt())
+        'expiresAt': snapshot.expiresAt.toDateTime().toIso8601String(),
       'roles': snapshot.roles,
     };
     await setSession(map);
     try {
       if (localStorage != null) {
-        await localStorage!.set('global:current_session_pb', snapshot.toProto3Json());
+        await localStorage!.set(
+          'global:current_session_pb',
+          snapshot.toProto3Json(),
+        );
       }
     } catch (_) {}
   }
@@ -162,7 +209,9 @@ class DefaultGlobalContext implements GlobalContext {
   @override
   Future<void> switchAccount(String userId, String baseUrl) async {
     final found = _accounts.firstWhere(
-      (a) => a['userId']?.toString() == userId && a['baseUrl']?.toString() == baseUrl,
+      (a) =>
+          a['userId']?.toString() == userId &&
+          a['baseUrl']?.toString() == baseUrl,
       orElse: () => {},
     );
     if (found.isEmpty) return;
@@ -180,14 +229,14 @@ class DefaultGlobalContext implements GlobalContext {
       await localStorage!.set('global:user_preferences', _preferences);
       try {
         final entriesOverrides = (_preferences['endpoint_overrides'] is Map)
-            ? ( _preferences['endpoint_overrides'] as Map)
-                .entries
-                .map((e) => MapEntry(e.key.toString(), e.value.toString()))
+            ? (_preferences['endpoint_overrides'] as Map).entries.map(
+                (e) => MapEntry(e.key.toString(), e.value.toString()),
+              )
             : const <MapEntry<String, String>>[];
         final entriesFlags = (_preferences['feature_flags'] is Map)
-            ? ( _preferences['feature_flags'] as Map)
-                .entries
-                .map((e) => MapEntry(e.key.toString(), e.value == true))
+            ? (_preferences['feature_flags'] as Map).entries.map(
+                (e) => MapEntry(e.key.toString(), e.value == true),
+              )
             : const <MapEntry<String, bool>>[];
         final snap = ActorPreferences(
           theme: (_preferences['theme']?.toString() ?? ''),
@@ -197,13 +246,19 @@ class DefaultGlobalContext implements GlobalContext {
           featureFlags: entriesFlags,
           schemaVersion: (_preferences['schemaVersion'] is int)
               ? (_preferences['schemaVersion'] as int)
-              : int.tryParse(_preferences['schemaVersion']?.toString() ?? '') ?? 1,
+              : int.tryParse(_preferences['schemaVersion']?.toString() ?? '') ??
+                    1,
         );
-        await localStorage!.set('global:user_preferences_pb', snap.toProto3Json());
+        await localStorage!.set(
+          'global:user_preferences_pb',
+          snap.toProto3Json(),
+        );
       } catch (_) {}
     }
     try {
-      LoggingService.info('GlobalContext.updatePreferences schema=${_preferences['schemaVersion']}');
+      LoggingService.info(
+        'GlobalContext.updatePreferences schema=${_preferences['schemaVersion']}',
+      );
     } catch (_) {}
   }
 
@@ -220,7 +275,10 @@ class DefaultGlobalContext implements GlobalContext {
     await updatePreferences(map);
     try {
       if (localStorage != null) {
-        await localStorage!.set('global:user_preferences_pb', prefs.toProto3Json());
+        await localStorage!.set(
+          'global:user_preferences_pb',
+          prefs.toProto3Json(),
+        );
       }
     } catch (_) {}
   }
@@ -233,14 +291,14 @@ class DefaultGlobalContext implements GlobalContext {
       locale: (p['locale']?.toString() ?? ''),
       telemetry: p['telemetry'] == true,
       endpointOverrides: (p['endpoint_overrides'] is Map)
-          ? (p['endpoint_overrides'] as Map)
-              .entries
-              .map((e) => MapEntry(e.key.toString(), e.value.toString()))
+          ? (p['endpoint_overrides'] as Map).entries.map(
+              (e) => MapEntry(e.key.toString(), e.value.toString()),
+            )
           : const <MapEntry<String, String>>[],
       featureFlags: (p['feature_flags'] is Map)
-          ? (p['feature_flags'] as Map)
-              .entries
-              .map((e) => MapEntry(e.key.toString(), e.value == true))
+          ? (p['feature_flags'] as Map).entries.map(
+              (e) => MapEntry(e.key.toString(), e.value == true),
+            )
           : const <MapEntry<String, bool>>[],
       schemaVersion: (p['schemaVersion'] is int)
           ? (p['schemaVersion'] as int)
@@ -254,33 +312,45 @@ class DefaultGlobalContext implements GlobalContext {
     if (localStorage == null) return;
     // Prefer proto JSON if present
     try {
-      final sessPb = await localStorage!.get<Map<String, dynamic>>('global:current_session_pb');
+      final sessPb = await localStorage!.get<Map<String, dynamic>>(
+        'global:current_session_pb',
+      );
       if (sessPb != null) {
         final snap = ActorSessionSnapshot();
         snap.mergeFromProto3Json(sessPb);
         await setSessionSnapshot(snap);
       }
     } catch (_) {}
-    final sess = await localStorage!.get<Map<String, dynamic>>('global:current_session');
+    final sess = await localStorage!.get<Map<String, dynamic>>(
+      'global:current_session',
+    );
     if (sess != null) {
       _session = _normalizeSession(sess);
       _sessionCtrl.add(_session);
       try {
-        LoggingService.info('GlobalContext.hydrate session: ${_session?['handle']}');
+        LoggingService.info(
+          'GlobalContext.hydrate session: ${_session?['handle']}',
+        );
       } catch (_) {}
     }
     final accs = await localStorage!.get<List>('global:accounts');
     if (accs is List) {
       _accounts
         ..clear()
-        ..addAll(accs.whereType<Map>().map((e) => _normalizeSession(e.cast<String, dynamic>())));
+        ..addAll(
+          accs.whereType<Map>().map(
+            (e) => _normalizeSession(e.cast<String, dynamic>()),
+          ),
+        );
       _accountsCtrl.add(List.unmodifiable(_accounts));
       final schema = await localStorage!.get<int>('global:accounts_schema');
       if (schema == null) {
         await localStorage!.set('global:accounts_schema', 1);
       }
     }
-    final prefs = await localStorage!.get<Map<String, dynamic>>('global:user_preferences');
+    final prefs = await localStorage!.get<Map<String, dynamic>>(
+      'global:user_preferences',
+    );
     if (prefs != null) {
       _preferences = Map<String, dynamic>.from(prefs);
       if (!_preferences.containsKey('schemaVersion')) {
@@ -289,11 +359,15 @@ class DefaultGlobalContext implements GlobalContext {
       }
       _prefsCtrl.add(Map.unmodifiable(_preferences));
       try {
-        LoggingService.info('GlobalContext.hydrate preferences schema: ${_preferences['schemaVersion']}');
+        LoggingService.info(
+          'GlobalContext.hydrate preferences schema: ${_preferences['schemaVersion']}',
+        );
       } catch (_) {}
     }
     try {
-      final prefsPb = await localStorage!.get<Map<String, dynamic>>('global:user_preferences_pb');
+      final prefsPb = await localStorage!.get<Map<String, dynamic>>(
+        'global:user_preferences_pb',
+      );
       if (prefsPb != null) {
         final pp = ActorPreferences();
         pp.mergeFromProto3Json(prefsPb);
@@ -306,7 +380,9 @@ class DefaultGlobalContext implements GlobalContext {
     _protocolTag = tag;
     _protocolCtrl.add(_protocolTag);
     try {
-      LoggingService.info('GlobalContext.setProtocolTag: ${_protocolTag ?? ''}');
+      LoggingService.info(
+        'GlobalContext.setProtocolTag: ${_protocolTag ?? ''}',
+      );
     } catch (_) {}
   }
 

@@ -1,37 +1,26 @@
-import 'dart:typed_data';
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/attachment_tray.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/controller/ai_input_controller.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/model_capability.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/view/provider_settings_page.dart';
-import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/attachment_tray.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/controller/ai_input_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/ai_composer_draft.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/input_box/models/model_capability.dart';
 
 typedef SendDraftCallback = void Function(AiComposerDraft draft);
 
 /// LobeChat 风格的专业多模态输入框（按钮按模型能力动态启用）
 class AIInputBox extends StatelessWidget {
-  final ModelCapability capability;
-  final bool isSending;
-  final SendDraftCallback onSendDraft;
-  final ValueChanged<String>? onTextChanged;
-  final TextEditingController? externalTextController;
-  // 注入的模型选择（ai_input 不读取配置）
-  final List<String>? models;
-  final String? currentModel;
-  final ValueChanged<String>? onModelChanged;
-  // 按 Provider 分组的模型选择（可选）
-  final Map<String, List<String>>? groupedModelsByProvider;
 
-  AIInputBox({
+  const AIInputBox({
     super.key,
     required this.capability,
     required this.isSending,
@@ -43,6 +32,17 @@ class AIInputBox extends StatelessWidget {
     this.onModelChanged,
     this.groupedModelsByProvider,
   });
+  final ModelCapability capability;
+  final bool isSending;
+  final SendDraftCallback onSendDraft;
+  final ValueChanged<String>? onTextChanged;
+  final TextEditingController? externalTextController;
+  // 注入的模型选择（ai_input 不读取配置）
+  final List<String>? models;
+  final String? currentModel;
+  final ValueChanged<String>? onModelChanged;
+  // 按 Provider 分组的模型选择（可选）
+  final Map<String, List<String>>? groupedModelsByProvider;
 
   @override
   Widget build(BuildContext context) {
@@ -683,7 +683,7 @@ class AIInputBox extends StatelessWidget {
 
   /// 从文件选择器添加图片
   Future<void> _pickImage(AiInputController ctrl) async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.image,
       allowMultiple: false,
     );
@@ -697,7 +697,7 @@ class AIInputBox extends StatelessWidget {
 
   /// 从文件选择器添加文件
   Future<void> _pickFile(AiInputController ctrl) async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.any,
       allowMultiple: false,
     );
@@ -712,7 +712,7 @@ class AIInputBox extends StatelessWidget {
 
   /// 从文件选择器添加音频
   Future<void> _pickAudio(AiInputController ctrl) async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
       allowMultiple: false,
     );
@@ -727,12 +727,6 @@ class AIInputBox extends StatelessWidget {
 }
 
 class _ProviderEntry {
-  final String id;
-  final String name;
-  final String sourceType;
-  final String? logoUrl;
-  final List<String> models;
-  final Map<String, String> idToDisplayName;
 
   _ProviderEntry({
     required this.id,
@@ -742,4 +736,10 @@ class _ProviderEntry {
     required this.models,
     required this.idToDisplayName,
   });
+  final String id;
+  final String name;
+  final String sourceType;
+  final String? logoUrl;
+  final List<String> models;
+  final Map<String, String> idToDisplayName;
 }

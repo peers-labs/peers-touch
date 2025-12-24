@@ -6,14 +6,14 @@ import 'package:get/get.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
-import 'ai_service.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 
 /// Ollama 服务实现
 class OllamaService implements AIService {
-  final LocalStorage _storage = Get.find<LocalStorage>();
-  final String? _baseUrl;
 
   OllamaService({String? baseUrl}) : _baseUrl = baseUrl;
+  final LocalStorage _storage = Get.find<LocalStorage>();
+  final String? _baseUrl;
 
   Future<Dio> _getDio() async {
     final baseUrl = _baseUrl ?? await _storage.get<String>(AIConstants.ollamaBaseUrl) ?? 'http://localhost:11434';

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+import 'package:peers_touch_desktop/features/ai_chat/binding/ai_chat_binding.dart';
+import 'package:peers_touch_desktop/features/ai_chat/view/ai_chat_page.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
-import 'binding/ai_chat_binding.dart';
-import 'view/ai_chat_page.dart';
 
 class AiChatModule {
   static void register() {

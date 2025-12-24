@@ -53,6 +53,7 @@ dependencies:
   peers_touch_ui:
     path: ../common/peers_touch_ui
 
+  fixnum: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

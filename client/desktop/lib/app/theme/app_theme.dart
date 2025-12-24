@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
+import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 
 // 自定义颜色扩展
 extension CustomColorScheme on ColorScheme {

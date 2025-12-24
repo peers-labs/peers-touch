@@ -2,8 +2,8 @@ import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/repositories/actor_repository.dart';
 
 class DesktopActorRepository implements ActorRepository {
-  final IHttpService client;
   DesktopActorRepository(this.client);
+  final IHttpService client;
   
   @override
   Future<Map<String, dynamic>?> fetchProfile({required String username}) async {

@@ -1,7 +1,30 @@
 import 'package:flutter/material.dart';
 
 /// LobeChat 风格设计 tokens
-class LobeTokens extends ThemeExtension<LobeTokens> {
+class LobeTokens extends ThemeExtension<LobeTokens> { // 菜单按钮正方形占栏宽比例（例如 0.618）
+
+  const LobeTokens({
+    required this.bgLevel0,
+    required this.bgLevel1,
+    required this.bgLevel2,
+    required this.bgLevel3,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.textTertiary,
+    required this.divider,
+    required this.brandAccent,
+    required this.menuSelected,
+    required this.radiusSm,
+    required this.radiusMd,
+    required this.radiusLg,
+    required this.spaceXs,
+    required this.spaceSm,
+    required this.spaceMd,
+    required this.spaceLg,
+    required this.spaceXl,
+    required this.menuBarWidth,
+    required this.menuItemBoxRatio,
+  });
   // 背景层级
   final Color bgLevel0; // 页面背景
   final Color bgLevel1; // 主内容区背景
@@ -30,30 +53,7 @@ class LobeTokens extends ThemeExtension<LobeTokens> {
 
   // 布局尺寸（避免硬编码）
   final double menuBarWidth; // 一级菜单栏宽度
-  final double menuItemBoxRatio; // 菜单按钮正方形占栏宽比例（例如 0.618）
-
-  const LobeTokens({
-    required this.bgLevel0,
-    required this.bgLevel1,
-    required this.bgLevel2,
-    required this.bgLevel3,
-    required this.textPrimary,
-    required this.textSecondary,
-    required this.textTertiary,
-    required this.divider,
-    required this.brandAccent,
-    required this.menuSelected,
-    required this.radiusSm,
-    required this.radiusMd,
-    required this.radiusLg,
-    required this.spaceXs,
-    required this.spaceSm,
-    required this.spaceMd,
-    required this.spaceLg,
-    required this.spaceXl,
-    required this.menuBarWidth,
-    required this.menuItemBoxRatio,
-  });
+  final double menuItemBoxRatio;
 
   @override
   ThemeExtension<LobeTokens> copyWith({
