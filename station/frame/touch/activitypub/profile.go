@@ -8,6 +8,7 @@ import (
 	"time"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
@@ -72,11 +73,16 @@ type UpdateProfileRequest struct {
 
 // GetWebProfile retrieves the extended actor profile
 // Logic only, no HTTP dependency
-func GetWebProfile(c context.Context, rds *gorm.DB, username string, baseURL string) (*ProfileResponse, error) {
+func GetWebProfile(c context.Context, username string, baseURL string) (*ProfileResponse, error) {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		return nil, err
+	}
+
 	// 1. Fetch Basic Actor Info
 	var actor db.Actor
 	// Assuming "peers" namespace for now, similar to GetActor
-	err := rds.Where("preferred_username = ? AND namespace = ?", username, "peers").First(&actor).Error
+	err = rds.Where("preferred_username = ? AND namespace = ?", username, "peers").First(&actor).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, gorm.ErrRecordNotFound
@@ -88,7 +94,12 @@ func GetWebProfile(c context.Context, rds *gorm.DB, username string, baseURL str
 }
 
 // GetWebProfileByID retrieves the extended actor profile by Actor ID
-func GetWebProfileByID(c context.Context, rds *gorm.DB, actorID uint64, baseURL string) (*ProfileResponse, error) {
+func GetWebProfileByID(c context.Context, actorID uint64, baseURL string) (*ProfileResponse, error) {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		return nil, err
+	}
+
 	var actor db.Actor
 	if err := rds.First(&actor, actorID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -192,9 +203,13 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 }
 
 // UpdateProfile updates the actor profile
-func UpdateProfile(c context.Context, rds *gorm.DB, username string, req UpdateProfileRequest) error {
+func UpdateProfile(c context.Context, username string, req UpdateProfileRequest) error {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		return err
+	}
 	var actor db.Actor
-	err := rds.Where("preferred_username = ? AND namespace = ?", username, "peers").First(&actor).Error
+	err = rds.Where("preferred_username = ? AND namespace = ?", username, "peers").First(&actor).Error
 	if err != nil {
 		return err
 	}
@@ -202,7 +217,11 @@ func UpdateProfile(c context.Context, rds *gorm.DB, username string, req UpdateP
 }
 
 // UpdateProfileByID updates the actor profile by Actor ID
-func UpdateProfileByID(c context.Context, rds *gorm.DB, actorID uint64, req UpdateProfileRequest) error {
+func UpdateProfileByID(c context.Context, actorID uint64, req UpdateProfileRequest) error {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		return err
+	}
 	var actor db.Actor
 	if err := rds.First(&actor, actorID).Error; err != nil {
 		return err

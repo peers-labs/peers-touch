@@ -17,7 +17,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/activity"
 	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
@@ -259,15 +258,8 @@ func GetActorProfile(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	resp, err := activitypub.GetWebProfileByID(c, rds, actorID, baseURL)
+	resp, err := activitypub.GetWebProfileByID(c, actorID, baseURL)
 	if err != nil {
 		log.Warnf(c, "Get actor profile failed: %v", err)
 		FailedResponse(ctx, err)
@@ -284,15 +276,8 @@ func PublicProfile(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	resp, err := activitypub.GetWebProfile(c, rds, username, baseURL)
+	resp, err := activitypub.GetWebProfile(c, username, baseURL)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, "User not found")
@@ -320,14 +305,7 @@ func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
-	if err := activitypub.UpdateProfileByID(c, rds, actorID, params); err != nil {
+	if err := activitypub.UpdateProfileByID(c, actorID, params); err != nil {
 		log.Warnf(c, "Update profile failed: %v", err)
 		FailedResponse(ctx, err)
 		return
@@ -388,15 +366,8 @@ func GetUserActor(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	actor, err := activitypub.GetActorData(c, rds, user, baseURL)
+	actor, err := activitypub.GetActorData(c, user, baseURL)
 	if err != nil {
 		log.Warnf(c, "Failed to get actor data: %v", err)
 		ctx.JSON(http.StatusNotFound, "Actor not found")
@@ -415,14 +386,8 @@ func GetUserInbox(c context.Context, ctx *app.RequestContext) {
 	}
 
 	page := string(ctx.Query("page")) == "true"
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	inbox, err := activitypub.FetchInbox(c, rds, user, baseURL, page)
+	inbox, err := activitypub.FetchInbox(c, user, baseURL, page)
 	if err != nil {
 		log.Warnf(c, "Failed to fetch inbox: %v", err)
 		ctx.JSON(http.StatusInternalServerError, err.Error())
@@ -466,22 +431,16 @@ func PostUserInbox(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
 
 	// 3. Process Activity
 	// Persist raw activity
-	_ = activitypub.PersistInboxActivity(c, rds, user, &activity, baseURL, body)
+	_ = activitypub.PersistInboxActivity(c, user, &activity, baseURL, body)
 
 	// Apply side effects
 	switch activity.Type {
 	case ap.FollowType:
-		_ = activitypub.ApplyFollowInbox(c, rds, user, &activity, baseURL)
+		_ = activitypub.ApplyFollowInbox(c, user, &activity, baseURL)
 		// emit event
 		payload := map[string]string{
 			"type":       "follow.requested",
@@ -494,7 +453,7 @@ func PostUserInbox(c context.Context, ctx *app.RequestContext) {
 		ctx.JSON(http.StatusOK, "Follow received")
 
 	case ap.UndoType:
-		_ = activitypub.ApplyUndoInbox(c, rds, user, &activity, baseURL)
+		_ = activitypub.ApplyUndoInbox(c, user, &activity, baseURL)
 		payload := map[string]string{
 			"type":       "follow.undone",
 			"actor":      getLinkH(activity.Actor),
@@ -529,14 +488,8 @@ func GetUserOutbox(c context.Context, ctx *app.RequestContext) {
 	}
 
 	page := string(ctx.Query("page")) == "true"
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	outbox, err := activitypub.FetchOutbox(c, rds, user, baseURL, page)
+	outbox, err := activitypub.FetchOutbox(c, user, baseURL, page)
 	if err != nil {
 		log.Warnf(c, "Failed to fetch outbox: %v", err)
 		ctx.JSON(http.StatusInternalServerError, err.Error())
@@ -576,19 +529,13 @@ func PostUserOutbox(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	// 3. Get Database Connection
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
+	// 3. Get Database Connection (Removed as service handles it)
 
 	// 4. Determine Base URL
 	baseURL := baseURLFrom(ctx)
 
 	// 5. Dispatch based on Type
-	err = activitypub.ProcessActivity(c, rds, user, &activity, baseURL)
+	err = activitypub.ProcessActivity(c, user, &activity, baseURL)
 	if err != nil {
 		log.Errorf(c, "Failed to process activity: %v", err)
 		ctx.JSON(http.StatusInternalServerError, fmt.Sprintf("Failed to process activity: %v", err))
@@ -608,14 +555,8 @@ func GetUserFollowers(c context.Context, ctx *app.RequestContext) {
 	}
 
 	page := string(ctx.Query("page")) == "true"
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	followers, err := activitypub.FetchFollowers(c, rds, user, baseURL, page)
+	followers, err := activitypub.FetchFollowers(c, user, baseURL, page)
 	if err != nil {
 		log.Warnf(c, "Failed to fetch followers: %v", err)
 		ctx.JSON(http.StatusInternalServerError, err.Error())
@@ -634,14 +575,8 @@ func GetUserFollowing(c context.Context, ctx *app.RequestContext) {
 	}
 
 	page := string(ctx.Query("page")) == "true"
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	following, err := activitypub.FetchFollowing(c, rds, user, baseURL, page)
+	following, err := activitypub.FetchFollowing(c, user, baseURL, page)
 	if err != nil {
 		log.Warnf(c, "Failed to fetch following: %v", err)
 		ctx.JSON(http.StatusInternalServerError, err.Error())
@@ -660,14 +595,8 @@ func GetUserLiked(c context.Context, ctx *app.RequestContext) {
 	}
 
 	page := string(ctx.Query("page")) == "true"
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	liked, err := activitypub.FetchLiked(c, rds, user, baseURL, page)
+	liked, err := activitypub.FetchLiked(c, user, baseURL, page)
 	if err != nil {
 		log.Warnf(c, "Failed to fetch liked: %v", err)
 		ctx.JSON(http.StatusInternalServerError, err.Error())
@@ -680,14 +609,8 @@ func GetUserLiked(c context.Context, ctx *app.RequestContext) {
 // Shared Inbox Handlers
 func GetSharedInbox(c context.Context, ctx *app.RequestContext) {
 	page := string(ctx.Query("page")) == "true"
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
-
 	baseURL := baseURLFrom(ctx)
-	inbox, err := activitypub.FetchSharedInbox(c, rds, baseURL, page)
+	inbox, err := activitypub.FetchSharedInbox(c, baseURL, page)
 	if err != nil {
 		log.Warnf(c, "Failed to fetch shared inbox: %v", err)
 		ctx.JSON(http.StatusInternalServerError, err.Error())
@@ -719,13 +642,8 @@ func CreateActivity(c context.Context, ctx *app.RequestContext) {
 		FailedResponse(ctx, err)
 		return
 	}
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, "Database connection failed")
-		return
-	}
 	baseURL := baseURLFrom(ctx)
-	postID, actID, err := activity.Create(c, rds, actor, baseURL, &in)
+	postID, actID, err := activity.Create(c, actor, baseURL, &in)
 	if err != nil {
 		FailedResponse(ctx, err)
 		return
@@ -736,7 +654,12 @@ func CreateActivity(c context.Context, ctx *app.RequestContext) {
 
 func NodeInfoHandler(c context.Context, ctx *app.RequestContext) {
 	baseURL := baseURLFrom(ctx)
-	data := activitypub.GetNodeInfo(baseURL)
+	data, err := activitypub.GetNodeInfo(c, baseURL)
+	if err != nil {
+		log.Warnf(c, "Failed to get node info: %v", err)
+		ctx.JSON(http.StatusInternalServerError, "Internal Server Error")
+		return
+	}
 	ctx.Header("Content-Type", "application/json; profile=http://nodeinfo.diaspora.software/ns/schema/2.1")
 	ctx.JSON(http.StatusOK, data)
 }
