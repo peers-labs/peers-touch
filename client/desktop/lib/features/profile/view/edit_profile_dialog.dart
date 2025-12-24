@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/core/utils/image_utils.dart';
 import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
-import 'package:peers_touch_base/model/domain/actor/actor.pb.dart';
 
 class EditProfileDialog extends StatefulWidget {
   const EditProfileDialog({super.key});
@@ -22,6 +22,8 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   
   String? _avatarUrl;
   String? _headerUrl;
+  String? _avatarLocalPath;
+  String? _headerLocalPath;
 
   @override
   void initState() {
@@ -46,35 +48,40 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   }
 
   Future<void> _pickAvatar() async {
-    final url = await _controller.uploadImage();
-    if (url != null) {
+    final res = await _controller.uploadImage(category: 'avatar');
+    if (res != null) {
       setState(() {
-        _avatarUrl = url;
+        _avatarUrl = res.remoteUrl;
+        _avatarLocalPath = res.localPath;
       });
     }
   }
 
   Future<void> _pickHeader() async {
-    final url = await _controller.uploadImage();
-    if (url != null) {
+    final res = await _controller.uploadImage(category: 'header');
+    if (res != null) {
       setState(() {
-        _headerUrl = url;
+        _headerUrl = res.remoteUrl;
+        _headerLocalPath = res.localPath;
       });
     }
   }
 
   void _save() {
     if (_formKey.currentState!.validate()) {
-      final request = UpdateProfileRequest();
-      request.displayName = _displayNameController.text;
-      request.note = _summaryController.text;
-      request.region = _regionController.text;
-      request.timezone = _timezoneController.text;
-      
-      if (_avatarUrl != null) request.avatar = _avatarUrl!;
-      if (_headerUrl != null) request.header = _headerUrl!;
-      
-      _controller.updateProfile(request.writeToJsonMap());
+      final updates = <String, dynamic>{
+        'display_name': _displayNameController.text,
+        'note': _summaryController.text,
+        'region': _regionController.text,
+        'timezone': _timezoneController.text,
+      };
+      if (_avatarUrl != null && _avatarUrl!.trim().isNotEmpty) {
+        updates['avatar'] = _avatarUrl;
+      }
+      if (_headerUrl != null && _headerUrl!.trim().isNotEmpty) {
+        updates['header'] = _headerUrl;
+      }
+      _controller.updateProfile(updates);
     }
   }
 
@@ -109,14 +116,13 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                             onTap: _pickHeader,
                             child: Container(
                               decoration: BoxDecoration(
-                                color: theme.colorScheme.surfaceVariant,
+                                color: theme.colorScheme.surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
-                                image: _headerUrl != null
-                                    ? DecorationImage(
-                                        image: NetworkImage(_headerUrl!),
-                                        fit: BoxFit.cover,
-                                      )
-                                    : null,
+                                image: (() {
+                                  final p = imageProviderFor(_headerLocalPath ?? _headerUrl);
+                                  if (p == null) return null;
+                                  return DecorationImage(image: p, fit: BoxFit.cover);
+                                })(),
                               ),
                               child: Center(
                                 child: Container(
@@ -157,12 +163,13 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                               child: ClipOval(
                                 child: Stack(
                                   children: [
-                                    if (_avatarUrl != null)
-                                      Positioned.fill(
-                                        child: Image.network(_avatarUrl!, fit: BoxFit.cover),
-                                      )
-                                    else
-                                      const Center(child: Icon(Icons.person, size: 40)),
+                                    (() {
+                                      final p = imageProviderFor(_avatarLocalPath ?? _avatarUrl);
+                                      if (p != null) {
+                                        return Positioned.fill(child: Image(image: p, fit: BoxFit.cover));
+                                      }
+                                      return const Center(child: Icon(Icons.person, size: 40));
+                                    })(),
                                       
                                     Positioned.fill(
                                       child: Container(

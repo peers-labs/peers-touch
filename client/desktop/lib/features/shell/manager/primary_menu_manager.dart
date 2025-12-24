@@ -1,14 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// 一级菜单项定义
-class PrimaryMenuItem {
-  final String id;
-  final String label;
-  final IconData icon;
-  final bool isHead; // true=头部区域，false=尾部区域
-  final int order; // 区域内的排序权重
-  final WidgetBuilder contentBuilder; // 完整的模块内容页面构建器
-  final bool toDIsplayPageTitle; // 二级页是否显示功能标题（默认不显示）
+class PrimaryMenuItem { // 二级页是否显示功能标题（默认不显示）
 
   const PrimaryMenuItem({
     required this.id,
@@ -19,6 +12,13 @@ class PrimaryMenuItem {
     required this.contentBuilder,
     this.toDIsplayPageTitle = false,
   });
+  final String id;
+  final String label;
+  final IconData icon;
+  final bool isHead; // true=头部区域，false=尾部区域
+  final int order; // 区域内的排序权重
+  final WidgetBuilder contentBuilder; // 完整的模块内容页面构建器
+  final bool toDIsplayPageTitle;
 }
 
 /// 一级菜单管理器 - 负责管理头像块、头部区域、尾部区域

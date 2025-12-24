@@ -13,12 +13,12 @@ enum RequestFormatType {
 }
 
 class RequestFormat {
+
+  RequestFormat({required this.type, required this.name, required this.icon, required this.defaultUrl});
   final RequestFormatType type;
   final String name;
   final Widget icon;
   final String defaultUrl;
-
-  RequestFormat({required this.type, required this.name, required this.icon, required this.defaultUrl});
 
   static List<RequestFormat> get supportedFormats => [
         RequestFormat(

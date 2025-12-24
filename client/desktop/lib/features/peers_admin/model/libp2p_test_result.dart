@@ -1,8 +1,4 @@
 class Libp2pTestResult {
-  final bool success;
-  final String message;
-  final String? details;
-  final DateTime timestamp;
 
   Libp2pTestResult({
     required this.success,
@@ -26,6 +22,10 @@ class Libp2pTestResult {
       details: details,
     );
   }
+  final bool success;
+  final String message;
+  final String? details;
+  final DateTime timestamp;
 
   @override
   String toString() {

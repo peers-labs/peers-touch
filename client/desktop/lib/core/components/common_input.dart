@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 
 class CommonInput extends StatelessWidget {
-  final String? hintText;
-  final TextEditingController? controller;
-  final ValueChanged<String>? onChanged;
-  final bool obscureText;
 
   const CommonInput({
     super.key,
@@ -13,6 +9,10 @@ class CommonInput extends StatelessWidget {
     this.onChanged,
     this.obscureText = false,
   });
+  final String? hintText;
+  final TextEditingController? controller;
+  final ValueChanged<String>? onChanged;
+  final bool obscureText;
 
   @override
   Widget build(BuildContext context) {

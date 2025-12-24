@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_ui/peers_touch_ui.dart';
-import '../../../app/theme/ui_kit.dart';
-import '../controller/auth_controller.dart';
-
-import 'package:peers_touch_desktop/core/components/language_selector.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/core/components/language_selector.dart';
+import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 class LoginPage extends GetView<AuthController> {
   const LoginPage({super.key});

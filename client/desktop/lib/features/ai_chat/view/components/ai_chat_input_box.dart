@@ -6,11 +6,6 @@ import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_input_co
 /// AI聊天输入框组件
 /// 专门为AI聊天场景设计的复杂输入框，包含模型选择、格式化、参数设置等功能
 class AIChatInputBox extends StatelessWidget {
-  final TextEditingController textController;
-  final VoidCallback onSend;
-  final bool isLoading;
-  final VoidCallback? onShowModelSelector;
-  final String? currentModelName;
 
   const AIChatInputBox({
     super.key,
@@ -20,6 +15,11 @@ class AIChatInputBox extends StatelessWidget {
     this.onShowModelSelector,
     this.currentModelName,
   });
+  final TextEditingController textController;
+  final VoidCallback onSend;
+  final bool isLoading;
+  final VoidCallback? onShowModelSelector;
+  final String? currentModelName;
 
   @override
   Widget build(BuildContext context) {

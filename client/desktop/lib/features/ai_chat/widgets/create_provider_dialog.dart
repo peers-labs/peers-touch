@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/create_provider_controller.dart';
 import 'package:peers_touch_desktop/features/ai_chat/model/request_format.dart';
-
-import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 class CreateProviderForm extends StatelessWidget {
   const CreateProviderForm({super.key});
@@ -77,8 +76,8 @@ class CreateProviderForm extends StatelessWidget {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: controller.createProvider,
-                style: UIKit.primaryButtonStyle(context)?.copyWith(
-                  padding: MaterialStateProperty.all(const EdgeInsets.symmetric(vertical: 20)),
+                style: UIKit.primaryButtonStyle(context).copyWith(
+                  padding: WidgetStateProperty.all(const EdgeInsets.symmetric(vertical: 20)),
                 ),
                 child: Text(l.create, style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
@@ -143,7 +142,7 @@ class CreateProviderForm extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Obx(() => DropdownButtonFormField<RequestFormatType>(
-            value: controller.requestFormat.value,
+            initialValue: controller.requestFormat.value,
             decoration: UIKit.inputDecoration(context).copyWith(
               hintText: hint,
             ),

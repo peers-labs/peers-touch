@@ -7,12 +7,6 @@ import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 /// - 高度：与一级菜单选中边框的盒子高度一致（menuBarWidth * menuItemBoxRatio）
 /// - 宽度：输入框占据父容器剩余空间，按钮为等高正方形
 class FrameActionCombo extends StatelessWidget {
-  final String? hintText;
-  final TextEditingController? controller;
-  final ValueChanged<String>? onChanged;
-  final IconData? prefixIcon;
-  final VoidCallback? onAction;
-  final IconData actionIcon;
 
   const FrameActionCombo({
     super.key,
@@ -23,6 +17,12 @@ class FrameActionCombo extends StatelessWidget {
     this.onAction,
     this.actionIcon = Icons.add,
   });
+  final String? hintText;
+  final TextEditingController? controller;
+  final ValueChanged<String>? onChanged;
+  final IconData? prefixIcon;
+  final VoidCallback? onAction;
+  final IconData actionIcon;
 
   @override
   Widget build(BuildContext context) {

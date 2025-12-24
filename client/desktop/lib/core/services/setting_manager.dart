@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 
 /// Setting registry interface
 abstract class SettingRegistry {
@@ -16,11 +16,11 @@ abstract class SettingRegistry {
 
 /// Setting manager - manages all settings
 class SettingManager implements SettingRegistry {
-  static final SettingManager _instance = SettingManager._internal();
   
   factory SettingManager() => _instance;
   
   SettingManager._internal();
+  static final SettingManager _instance = SettingManager._internal();
   
   final List<SettingSection> _sections = [];
   

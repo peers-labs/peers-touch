@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:intl/intl.dart';
-import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
-import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
+import 'package:intl/intl.dart';
 import 'package:peers_touch_base/ai_proxy/token/token_counter.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 
 class MessageListView extends StatefulWidget {
-  final List<ChatMessage> messages;
   const MessageListView({super.key, required this.messages});
+  final List<ChatMessage> messages;
 
   @override
   State<MessageListView> createState() => _MessageListViewState();
@@ -126,8 +126,8 @@ class _MessageListViewState extends State<MessageListView> {
 }
 
 class _TokenBadge extends StatelessWidget {
-  final int count;
   const _TokenBadge({required this.count});
+  final int count;
   @override
   Widget build(BuildContext context) {
     return Container(

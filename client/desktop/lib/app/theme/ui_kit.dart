@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
+import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 
 /// 统一 UI 尺寸与间距访问入口
 /// - 避免在业务代码中散落“魔法数字”
@@ -55,7 +55,7 @@ class UIKit {
   static Color assistantBubbleBg(BuildContext context) {
     final theme = Theme.of(context);
     final lobe = _lobe(context);
-    final base = lobe?.bgLevel3 ?? theme.colorScheme.surfaceVariant;
+    final base = lobe?.bgLevel3 ?? theme.colorScheme.surfaceContainerHighest;
     return base.withOpacity(0.12);
   }
 
@@ -93,7 +93,7 @@ class UIKit {
   static Color assistantSidebarBg(BuildContext context) {
     final wx = _wx(context);
     final lobe = _lobe(context);
-    return wx?.bgLevel2 ?? lobe?.bgLevel2 ?? Theme.of(context).colorScheme.surfaceVariant;
+    return wx?.bgLevel2 ?? lobe?.bgLevel2 ?? Theme.of(context).colorScheme.surfaceContainerHighest;
   }
 
   // - 中间聊天内容区背景
@@ -134,7 +134,7 @@ class UIKit {
   static Color inputFillLight(BuildContext context) {
     final wx = _wx(context);
     final lobe = _lobe(context);
-    final base = wx?.bgLevel3 ?? lobe?.bgLevel3 ?? Theme.of(context).colorScheme.surfaceVariant;
+    final base = wx?.bgLevel3 ?? lobe?.bgLevel3 ?? Theme.of(context).colorScheme.surfaceContainerHighest;
     return _lighten(base, 0.06);
   }
 

@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 
 class SettingsPanelCard extends StatelessWidget {
+
+  const SettingsPanelCard({super.key, required this.title, this.subtitle, this.actions, required this.child, this.onRefresh});
   final String title;
   final String? subtitle;
   final List<Widget>? actions;
   final Widget child;
   final VoidCallback? onRefresh;
-
-  const SettingsPanelCard({super.key, required this.title, this.subtitle, this.actions, required this.child, this.onRefresh});
 
   @override
   Widget build(BuildContext context) {

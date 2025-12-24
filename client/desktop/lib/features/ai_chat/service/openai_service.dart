@@ -1,20 +1,21 @@
 import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
-import 'ai_service.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/ai_service.dart';
 
 /// OpenAI服务实现
 class OpenAIService implements AIService {
-  final LocalStorage _storage = Get.find<LocalStorage>();
-  final String? _apiKey;
-  final String? _baseUrl;
 
   OpenAIService({String? apiKey, String? baseUrl})
       : _apiKey = apiKey,
         _baseUrl = baseUrl;
+  final LocalStorage _storage = Get.find<LocalStorage>();
+  final String? _apiKey;
+  final String? _baseUrl;
   
   /// 获取配置的Dio实例
   Future<Dio> _getDio() async {

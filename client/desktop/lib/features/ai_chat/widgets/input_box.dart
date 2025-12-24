@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_input_controller.dart';
 
 
 class InputBox extends StatelessWidget {
-  final TextEditingController textController;
-  final VoidCallback onSend;
-  final bool isLoading;
 
   const InputBox({
     super.key,
@@ -15,6 +10,9 @@ class InputBox extends StatelessWidget {
     required this.onSend,
     this.isLoading = false,
   });
+  final TextEditingController textController;
+  final VoidCallback onSend;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {

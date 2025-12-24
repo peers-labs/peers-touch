@@ -1,6 +1,8 @@
 package db
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"time"
 
@@ -14,19 +16,19 @@ type ActivityPubActivity struct {
 	ID            uint64    `gorm:"primary_key;autoIncrement:false"` // Snowflake ID
 	ActivityPubID string    `gorm:"uniqueIndex;size:512;not null"`   // ActivityPub IRI
 	Type          string    `gorm:"size:50;not null;index"`          // Activity type (Create, Follow, Like, etc.)
-	ActorID       string    `gorm:"size:512;not null;index"`         // Actor who performed the activity
-	ObjectID      string    `gorm:"size:512;index"`                  // Target object ID
-	TargetID      string    `gorm:"size:512;index"`                  // Target collection/actor ID
-	InReplyTo     string    `gorm:"size:512;index"`                  // Reply target ID (for efficient filtering)
-	Text          string    `gorm:"type:text"`                       // Content text (for Note)
-	Sensitive     bool      `gorm:"default:false"`                   // Sensitive content flag
-	SpoilerText   string    `gorm:"type:text"`                       // Content warning text
-	Visibility    string    `gorm:"size:50;index"`                   // Visibility (public, unlisted, private, direct)
-	Language      string    `gorm:"size:10"`                         // Language code
-	Published     time.Time `gorm:"not null;index"`                  // When the activity was published
-	Content       string    `gorm:"type:json"`                       // Full activity JSON
-	IsLocal       bool      `gorm:"default:false;not null;index"`    // Whether this is a local activity
-	IsPublic      bool      `gorm:"default:true;not null;index"`     // Whether the activity is public
+	ActorID       uint64    `gorm:"index"`
+	ObjectID      uint64    `gorm:"index"`
+	TargetID      uint64    `gorm:"index"`
+	InReplyTo     uint64    `gorm:"index"`
+	Text          string    `gorm:"type:text"`      // Content text (for Note)
+	Sensitive     bool      `gorm:"default:false"`  // Sensitive content flag
+	SpoilerText   string    `gorm:"type:text"`      // Content warning text
+	Visibility    string    `gorm:"size:50;index"`  // Visibility (public, unlisted, private, direct)
+	Language      string    `gorm:"size:10"`        // Language code
+	Published     time.Time `gorm:"not null;index"` // When the activity was published
+	Content       []byte    `gorm:"type:blob"`
+	IsLocal       bool      `gorm:"default:false;not null;index"` // Whether this is a local activity
+	IsPublic      bool      `gorm:"default:true;not null;index"`  // Whether the activity is public
 
 	CreatedAt time.Time `gorm:"created_at"`
 	UpdatedAt time.Time `gorm:"updated_at"`
@@ -49,19 +51,41 @@ func (a *ActivityPubActivity) SetContent(activity o.Activity) error {
 	if err != nil {
 		return err
 	}
-	a.Content = string(jsonData)
+	a.Content = gzipBytes(jsonData)
 	return nil
 }
 
 // GetContent gets the activity content from JSON
 func (a *ActivityPubActivity) GetContent() (*o.Activity, error) {
-	if a.Content == "" {
+	if len(a.Content) == 0 {
 		return nil, nil
 	}
-	var activity o.Activity
-	err := json.Unmarshal([]byte(a.Content), &activity)
+	bz, err := gunzipBytes(a.Content)
 	if err != nil {
 		return nil, err
 	}
+	var activity o.Activity
+	if err := json.Unmarshal(bz, &activity); err != nil {
+		return nil, err
+	}
 	return &activity, nil
+}
+
+func gzipBytes(b []byte) []byte {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write(b)
+	_ = zw.Close()
+	return buf.Bytes()
+}
+
+func gunzipBytes(b []byte) ([]byte, error) {
+	zr, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	var out bytes.Buffer
+	_, _ = out.ReadFrom(zr)
+	return out.Bytes(), nil
 }

@@ -45,7 +45,7 @@ class Toast {
       'Info',
       message,
       snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: theme.colorScheme.surfaceVariant,
+      backgroundColor: theme.colorScheme.surfaceContainerHighest,
       colorText: theme.colorScheme.onSurfaceVariant,
       margin: EdgeInsets.all(UIKit.spaceMd(Get.context!)),
       borderRadius: UIKit.radiusMd(Get.context!),

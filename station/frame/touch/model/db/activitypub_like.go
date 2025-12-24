@@ -9,11 +9,11 @@ import (
 
 // ActivityPubLike represents a like relationship in the database
 type ActivityPubLike struct {
-	ID         uint64 `gorm:"primary_key;autoIncrement:false"` // Snowflake ID
-	ActorID    string `gorm:"size:512;not null;index"`         // Actor who liked
-	ObjectID   string `gorm:"size:512;not null;index"`         // Object being liked
-	ActivityID string `gorm:"size:512;uniqueIndex"`            // Like activity ID
-	IsActive   bool   `gorm:"default:true;not null;index"`     // Whether the like is still active
+    ID         uint64 `gorm:"primary_key;autoIncrement:false"`
+    ActorID    uint64 `gorm:"index"`
+    ObjectID   uint64 `gorm:"index"`
+    ActivityID uint64 `gorm:"index"`
+    IsActive   bool   `gorm:"default:true;not null;index"`
 
 	CreatedAt time.Time `gorm:"created_at"`
 	UpdatedAt time.Time `gorm:"updated_at"`

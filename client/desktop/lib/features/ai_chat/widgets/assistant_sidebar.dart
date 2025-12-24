@@ -1,20 +1,14 @@
-import 'package:flutter/material.dart';
-import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
 import 'dart:convert';
-import 'package:fixnum/fixnum.dart' as $fixnum;
-import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 
+import 'package:fixnum/fixnum.dart' as $fixnum;
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
 
 class AssistantSidebar extends StatelessWidget {
-  final VoidCallback onNewChat;
-  final List<ChatSession> sessions;
-  final String? selectedId;
-  final ValueChanged<String> onSelectSession;
-  final ValueChanged<ChatSession> onRenameSession;
-  final ValueChanged<ChatSession> onDeleteSession;
   const AssistantSidebar({
     super.key,
     required this.onNewChat,
@@ -24,6 +18,12 @@ class AssistantSidebar extends StatelessWidget {
     required this.onRenameSession,
     required this.onDeleteSession,
   });
+  final VoidCallback onNewChat;
+  final List<ChatSession> sessions;
+  final String? selectedId;
+  final ValueChanged<String> onSelectSession;
+  final ValueChanged<ChatSession> onRenameSession;
+  final ValueChanged<ChatSession> onDeleteSession;
 
   @override
   Widget build(BuildContext context) {

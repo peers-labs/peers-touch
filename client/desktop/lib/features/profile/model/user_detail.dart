@@ -1,10 +1,10 @@
 class UserLink {
-  final String label;
-  final String url;
   const UserLink({required this.label, required this.url});
 
   factory UserLink.fromJson(Map<String, dynamic> json) =>
       UserLink(label: (json['label'] as String?) ?? '', url: (json['url'] as String?) ?? '');
+  final String label;
+  final String url;
 
   Map<String, dynamic> toJson() => {
         'label': label,
@@ -13,54 +13,17 @@ class UserLink {
 }
 
 class PeersTouchInfo {
-  final String networkId;
   const PeersTouchInfo({required this.networkId});
 
   factory PeersTouchInfo.fromJson(Map<String, dynamic> json) => PeersTouchInfo(
         networkId: (json['network_id'] as String?) ?? '',
       );
+  final String networkId;
 
   Map<String, dynamic> toJson() => {'network_id': networkId};
 }
 
-class UserDetail {
-  final String id;
-  final String displayName;
-  final String handle; // @handle (username)
-  final String? summary; // bio / note
-  final String? avatarUrl;
-  final String? coverUrl;
-  final String? region;
-  final String? timezone;
-  final List<String> tags;
-  final List<UserLink> links;
-
-  // Identity / federation
-  final String? actorUrl; // url
-  final String? serverDomain;
-  final String? keyFingerprint;
-  final List<String> verifications; // e.g., peer/server/self
-  
-  // Peers Touch extensions
-  final PeersTouchInfo? peersTouch;
-  final String? acct;
-  final bool? locked;
-  final String? createdAt;
-
-  // Stats
-  final int? followersCount;
-  final int? followingCount;
-  final int? statusesCount;
-  final bool showCounts;
-
-  // Moments preview
-  final List<String> moments;
-
-  // Privacy settings
-  final String defaultVisibility; // public/unlisted/followers/private
-  final bool manuallyApprovesFollowers;
-  final String messagePermission; // everyone/mutual/none
-  final int? autoExpireDays; // e.g., 7/30/90
+class UserDetail { // e.g., 7/30/90
 
   const UserDetail({
     required this.id,
@@ -125,6 +88,43 @@ class UserDetail {
         messagePermission: (json['messagePermission'] as String?) ?? 'everyone',
         autoExpireDays: (json['autoExpireDays'] as num?)?.toInt(),
       );
+  final String id;
+  final String displayName;
+  final String handle; // @handle (username)
+  final String? summary; // bio / note
+  final String? avatarUrl;
+  final String? coverUrl;
+  final String? region;
+  final String? timezone;
+  final List<String> tags;
+  final List<UserLink> links;
+
+  // Identity / federation
+  final String? actorUrl; // url
+  final String? serverDomain;
+  final String? keyFingerprint;
+  final List<String> verifications; // e.g., peer/server/self
+  
+  // Peers Touch extensions
+  final PeersTouchInfo? peersTouch;
+  final String? acct;
+  final bool? locked;
+  final String? createdAt;
+
+  // Stats
+  final int? followersCount;
+  final int? followingCount;
+  final int? statusesCount;
+  final bool showCounts;
+
+  // Moments preview
+  final List<String> moments;
+
+  // Privacy settings
+  final String defaultVisibility; // public/unlisted/followers/private
+  final bool manuallyApprovesFollowers;
+  final String messagePermission; // everyone/mutual/none
+  final int? autoExpireDays;
 
   Map<String, dynamic> toJson() => {
         'id': id,

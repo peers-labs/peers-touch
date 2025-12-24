@@ -1,9 +1,4 @@
 class DiscoveryComment {
-  final String id;
-  final String authorName;
-  final String authorAvatar;
-  final String content;
-  final DateTime timestamp;
 
   DiscoveryComment({
     required this.id,
@@ -12,9 +7,30 @@ class DiscoveryComment {
     required this.content,
     required this.timestamp,
   });
+  final String id;
+  final String authorName;
+  final String authorAvatar;
+  final String content;
+  final DateTime timestamp;
 }
 
 class DiscoveryItem {
+
+  DiscoveryItem({
+    required this.id,
+    required this.title,
+    required this.content,
+    required this.author,
+    required this.timestamp,
+    required this.type,
+    this.authorAvatar = '',
+    this.images = const [],
+    this.likesCount = 0,
+    this.commentsCount = 0,
+    this.sharesCount = 0,
+    this.isLiked = false,
+    List<DiscoveryComment>? comments,
+  }) : comments = comments ?? [];
   final String id;
   final String title;
   final String content;
@@ -34,20 +50,4 @@ class DiscoveryItem {
   
   // Comments
   final List<DiscoveryComment> comments;
-
-  DiscoveryItem({
-    required this.id,
-    required this.title,
-    required this.content,
-    required this.author,
-    required this.timestamp,
-    required this.type,
-    this.authorAvatar = '',
-    this.images = const [],
-    this.likesCount = 0,
-    this.commentsCount = 0,
-    this.sharesCount = 0,
-    this.isLiked = false,
-    List<DiscoveryComment>? comments,
-  }) : comments = comments ?? [];
 }

@@ -10,9 +10,9 @@ import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
 class ProviderDetailPanel extends StatelessWidget {
-  final base.Provider provider;
 
   const ProviderDetailPanel({super.key, required this.provider});
+  final base.Provider provider;
 
   @override
   Widget build(BuildContext context) {
@@ -153,7 +153,7 @@ class ProviderDetailPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildValueField(BuildContext context, String value, {bool obscureText = false, IconData? suffixIcon, VoidCallback? onSuffixIconTap}) {
+  Widget _buildValueField(BuildContext context, String value, {IconData? suffixIcon, VoidCallback? onSuffixIconTap}) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -229,7 +229,7 @@ class ProviderDetailPanel extends StatelessWidget {
         ElevatedButton(
           onPressed: () => Get.find<ProviderController>().testProviderConnection(provider.id),
           style: UIKit.primaryButtonStyle(context).copyWith(
-            padding: MaterialStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+            padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
           ),
           child: Text(l.check),
         ),
@@ -262,7 +262,7 @@ class ProviderDetailPanel extends StatelessWidget {
         ElevatedButton(
           onPressed: () => ctl.testProviderConnection(provider.id),
           style: UIKit.primaryButtonStyle(context).copyWith(
-            padding: MaterialStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+            padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
           ),
           child: Text(l.check),
         ),
@@ -357,7 +357,7 @@ class ProviderDetailPanel extends StatelessWidget {
                     icon: const Icon(Icons.sync, size: 16),
                     label: Text(l.fetchModels),
                     style: UIKit.primaryButtonStyle(context).copyWith(
-                      padding: MaterialStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+                      padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
                     ),
                   ),
                   const SizedBox(width: 8),

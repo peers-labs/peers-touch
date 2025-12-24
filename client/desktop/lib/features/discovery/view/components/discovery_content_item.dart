@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../model/discovery_item.dart';
-import '../../controller/discovery_controller.dart';
+import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
+import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 
 class DiscoveryContentItem extends StatelessWidget {
+
+  DiscoveryContentItem({
+    super.key,
+    required this.item,
+    this.controller,
+  });
   final DiscoveryItem item;
   final DiscoveryController? controller;
 
@@ -11,12 +17,6 @@ class DiscoveryContentItem extends StatelessWidget {
   final RxBool isCommentsExpanded = false.obs;
   final RxBool showAllComments = false.obs;
   final TextEditingController commentController = TextEditingController();
-
-  DiscoveryContentItem({
-    super.key,
-    required this.item,
-    this.controller,
-  });
 
   @override
   Widget build(BuildContext context) {

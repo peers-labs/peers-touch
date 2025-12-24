@@ -9,12 +9,12 @@ import (
 
 // ActivityPubFollow represents a follow relationship in the database
 type ActivityPubFollow struct {
-	ID          uint64 `gorm:"primary_key;autoIncrement:false"` // Snowflake ID
-	FollowerID  string `gorm:"size:512;not null;index"`         // Actor who is following
-	FollowingID string `gorm:"size:512;not null;index"`         // Actor being followed
-	ActivityID  string `gorm:"size:512;uniqueIndex"`            // Follow activity ID
-	Accepted    bool   `gorm:"default:false;not null;index"`    // Whether the follow was accepted
-	IsActive    bool   `gorm:"default:true;not null;index"`     // Whether the follow is still active
+    ID          uint64 `gorm:"primary_key;autoIncrement:false"`
+    FollowerID  uint64 `gorm:"index"`
+    FollowingID uint64 `gorm:"index"`
+    ActivityID  uint64 `gorm:"index"`
+    Accepted    bool   `gorm:"default:false;not null;index"`
+    IsActive    bool   `gorm:"default:true;not null;index"`
 
 	CreatedAt time.Time `gorm:"created_at"`
 	UpdatedAt time.Time `gorm:"updated_at"`

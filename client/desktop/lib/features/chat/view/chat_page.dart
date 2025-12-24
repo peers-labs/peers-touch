@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
+import 'package:peers_touch_desktop/features/chat/controller/chat_controller.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
-import '../controller/chat_controller.dart';
+import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 
 class ChatPage extends GetView<ChatController> {
-  const ChatPage({Key? key}) : super(key: key);
+  const ChatPage({super.key});
 
   void _showDebugDialog(BuildContext context) {
     controller.fetchDebugStats();
@@ -42,7 +42,7 @@ class ChatPage extends GetView<ChatController> {
                   if (stats.isEmpty)
                     const Text('No stats available (check connection)')
                   else
-                    ...stats.entries.map((e) => _buildInfoRow(e.key, e.value.toString())).toList(),
+                    ...stats.entries.map((e) => _buildInfoRow(e.key, e.value.toString())),
                 ],
               ),
             );

@@ -1,20 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/lobe_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
 import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
-import 'package:peers_touch_desktop/core/components/frame_action_combo.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 
 class SettingPage extends StatelessWidget {
-  final SettingController controller;
 
   const SettingPage({super.key, required this.controller});
+  final SettingController controller;
 
   @override
   Widget build(BuildContext context) {
