@@ -16,7 +16,7 @@ class FakeSecureStorage implements SecureStorageAdapter {
 class FakeLocalStorage implements LocalStorageAdapter {
   final Map<String, dynamic> _store = {};
   @override
-  T? get<T>(String key) => _store[key] as T?;
+  Future<T?> get<T>(String key) async => _store[key] as T?;
   @override
   Future<void> remove(String key) async => _store.remove(key);
   @override

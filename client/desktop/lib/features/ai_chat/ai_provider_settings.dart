@@ -101,7 +101,7 @@ class AIProviderSettings {
         type: SettingItemType.select,
         value: AIConstants.defaultOpenAIModel,
         options: const [],
-        onChanged: (value) {
+        onChanged: (value) async {
           final storage = Get.find<LocalStorage>();
           final provider = await storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
           final key = provider == 'Ollama' ? AIConstants.selectedModelOllama : AIConstants.selectedModelOpenAI;
@@ -197,7 +197,7 @@ class AIProviderSettings {
           if (result == true) {
             final providerController = Get.find<ProviderController>();
             final storage = Get.find<LocalStorage>();
-            final providerId = storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
+            final providerId = await storage.get<String>(AIConstants.providerType) ?? 'OpenAI';
             await providerController.deleteProvider(providerId);
           }
         },
