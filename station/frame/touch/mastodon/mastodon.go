@@ -34,52 +34,48 @@ func CreateStatus(ctx context.Context, username string, req model.MastodonCreate
 	obj.Published = time.Now()
 	obj.AttributedTo = actorIRI
 	act := ap.Activity{Type: ap.CreateType, Actor: actorIRI, Object: obj, Published: time.Now()}
-	rds, err := store.GetRDS(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := activitypub.ProcessActivity(ctx, rds, username, &act, baseURL); err != nil {
+	if err := activitypub.ProcessActivity(ctx, username, &act, baseURL); err != nil {
 		return nil, err
 	}
 	return &model.MastodonStatus{Id: string(act.ID), Content: req.Status}, nil
 }
 
 func GetStatus(ctx context.Context, id string) (*model.MastodonStatus, error) {
-    rds, err := store.GetRDS(ctx)
-    if err != nil {
-        return nil, err
-    }
-    var obj db.ActivityPubObject
-    // Prefer numeric ID lookup (Mastodon-style), fallback to IRI
-    if isDigits(id) {
-        var oid uint64
-        _, _ = fmt.Sscan(id, &oid)
-        if err := rds.Where("id = ?", oid).First(&obj).Error; err != nil {
-            return nil, err
-        }
-        return &model.MastodonStatus{Id: fmt.Sprintf("%d", obj.ID), Content: obj.Content}, nil
-    }
-    if err := rds.Where("activity_pub_id = ?", id).First(&obj).Error; err != nil {
-        return nil, err
-    }
-    return &model.MastodonStatus{Id: obj.ActivityPubID, Content: obj.Content}, nil
-}
-
-func isDigits(s string) bool {
-    if s == "" { return false }
-    for i := 0; i < len(s); i++ {
-        if s[i] < '0' || s[i] > '9' { return false }
-    }
-    return true
-}
-
-func Favourite(ctx context.Context, username, id, baseURL string) (*model.MastodonStatus, error) {
-	act := ap.Activity{Type: ap.LikeType, Actor: ap.IRI(baseURL + "/" + username + "/actor"), Object: ap.IRI(id), Published: time.Now()}
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := activitypub.ProcessActivity(ctx, rds, username, &act, baseURL); err != nil {
+	var obj db.ActivityPubObject
+	// Prefer numeric ID lookup (Mastodon-style), fallback to IRI
+	if isDigits(id) {
+		var oid uint64
+		_, _ = fmt.Sscan(id, &oid)
+		if err := rds.Where("id = ?", oid).First(&obj).Error; err != nil {
+			return nil, err
+		}
+		return &model.MastodonStatus{Id: fmt.Sprintf("%d", obj.ID), Content: obj.Content}, nil
+	}
+	if err := rds.Where("activity_pub_id = ?", id).First(&obj).Error; err != nil {
+		return nil, err
+	}
+	return &model.MastodonStatus{Id: obj.ActivityPubID, Content: obj.Content}, nil
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func Favourite(ctx context.Context, username, id, baseURL string) (*model.MastodonStatus, error) {
+	act := ap.Activity{Type: ap.LikeType, Actor: ap.IRI(baseURL + "/" + username + "/actor"), Object: ap.IRI(id), Published: time.Now()}
+	if err := activitypub.ProcessActivity(ctx, username, &act, baseURL); err != nil {
 		return nil, err
 	}
 	return &model.MastodonStatus{Id: id}, nil
@@ -87,11 +83,7 @@ func Favourite(ctx context.Context, username, id, baseURL string) (*model.Mastod
 
 func Unfavourite(ctx context.Context, username, id, baseURL string) (*model.MastodonStatus, error) {
 	act := ap.Activity{Type: ap.UndoType, Actor: ap.IRI(baseURL + "/" + username + "/actor"), Object: ap.IRI(id), Published: time.Now()}
-	rds, err := store.GetRDS(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := activitypub.ProcessActivity(ctx, rds, username, &act, baseURL); err != nil {
+	if err := activitypub.ProcessActivity(ctx, username, &act, baseURL); err != nil {
 		return nil, err
 	}
 	return &model.MastodonStatus{Id: id}, nil
@@ -99,11 +91,7 @@ func Unfavourite(ctx context.Context, username, id, baseURL string) (*model.Mast
 
 func Reblog(ctx context.Context, username, id, baseURL string) (*model.MastodonStatus, error) {
 	act := ap.Activity{Type: ap.AnnounceType, Actor: ap.IRI(baseURL + "/" + username + "/actor"), Object: ap.IRI(id), Published: time.Now()}
-	rds, err := store.GetRDS(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := activitypub.ProcessActivity(ctx, rds, username, &act, baseURL); err != nil {
+	if err := activitypub.ProcessActivity(ctx, username, &act, baseURL); err != nil {
 		return nil, err
 	}
 	return &model.MastodonStatus{Id: id}, nil
@@ -111,11 +99,7 @@ func Reblog(ctx context.Context, username, id, baseURL string) (*model.MastodonS
 
 func Unreblog(ctx context.Context, username, id, baseURL string) (*model.MastodonStatus, error) {
 	act := ap.Activity{Type: ap.UndoType, Actor: ap.IRI(baseURL + "/" + username + "/actor"), Object: ap.IRI(id), Published: time.Now()}
-	rds, err := store.GetRDS(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := activitypub.ProcessActivity(ctx, rds, username, &act, baseURL); err != nil {
+	if err := activitypub.ProcessActivity(ctx, username, &act, baseURL); err != nil {
 		return nil, err
 	}
 	return &model.MastodonStatus{Id: id}, nil
