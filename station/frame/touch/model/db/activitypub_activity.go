@@ -26,7 +26,7 @@ type ActivityPubActivity struct {
 	Visibility    string    `gorm:"size:50;index"`  // Visibility (public, unlisted, private, direct)
 	Language      string    `gorm:"size:10"`        // Language code
 	Published     time.Time `gorm:"not null;index"` // When the activity was published
-	Content       []byte    `gorm:"type:blob"`
+	Content       []byte    `gorm:"type:bytea"`
 	IsLocal       bool      `gorm:"default:false;not null;index"` // Whether this is a local activity
 	IsPublic      bool      `gorm:"default:true;not null;index"`  // Whether the activity is public
 
