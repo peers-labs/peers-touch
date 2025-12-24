@@ -576,6 +576,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get unknownNetwork => '未知网络';
 
   @override
+  String get networkCheckingLabel => '检测中';
+
+  @override
+  String get networkUnreachableLabel => '连接失败';
+
+  @override
+  String get networkNotFoundLabel => '接口未发现';
+
+  @override
+  String get networkCheckingTooltip => '正在检测服务器网络类型';
+
+  @override
+  String get networkUnreachableTooltip => '网络连接失败，请检查地址或网络';
+
+  @override
+  String get networkNotFoundTooltip => '未发现节点接口（404），请确认服务器地址';
+
+  @override
+  String get networkUnknownTooltip => '无法识别网络类型';
+
+  @override
   String get clientRequestMode => '使用客户端请求模式';
 
   @override
