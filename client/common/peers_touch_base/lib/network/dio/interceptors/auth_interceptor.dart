@@ -5,8 +5,9 @@ import '../../token_refresher.dart';
 class AuthInterceptor extends Interceptor {
   final TokenProvider? tokenProvider;
   final TokenRefresher? tokenRefresher;
+  final void Function()? onUnauthenticated;
 
-  AuthInterceptor({this.tokenProvider, this.tokenRefresher});
+  AuthInterceptor({this.tokenProvider, this.tokenRefresher, this.onUnauthenticated});
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
@@ -29,51 +30,54 @@ class AuthInterceptor extends Interceptor {
     final opts = err.requestOptions;
 
     // Check if we should try to refresh
-    if (status == 401 && 
-        tokenProvider != null && 
-        tokenRefresher != null && 
-        opts.extra['retryAfterRefresh'] != true) {
-      
-      opts.extra['retryAfterRefresh'] = true;
-
-      try {
-        final refreshToken = await tokenProvider!.readRefreshToken();
-        if (refreshToken == null) {
-          return handler.next(err);
-        }
-
-        final newPair = await tokenRefresher!.refresh(refreshToken);
-        if (newPair == null) {
-          return handler.next(err);
-        }
-
-        await tokenProvider!.writeTokens(
-          accessToken: newPair.accessToken,
-          refreshToken: newPair.refreshToken,
-        );
-
-        // Update the header with the new token
-        final newHeaders = Map<String, dynamic>.from(opts.headers);
-        newHeaders['Authorization'] = 'Bearer ${newPair.accessToken}';
-        opts.headers = newHeaders;
-
-        // Retry the request
-        final dio = Dio(BaseOptions(
-          baseUrl: opts.baseUrl,
-          connectTimeout: opts.connectTimeout,
-          receiveTimeout: opts.receiveTimeout,
-          sendTimeout: opts.sendTimeout,
-        ));
+    if (status == 401) {
+      if (tokenProvider != null && 
+          tokenRefresher != null && 
+          opts.extra['retryAfterRefresh'] != true) {
         
-        // We shouldn't use the same interceptors to avoid infinite loops, 
-        // but we might need some (like logging). 
-        // For simplicity, just fetch.
-        final response = await dio.fetch(opts);
-        return handler.resolve(response);
+        opts.extra['retryAfterRefresh'] = true;
 
-      } catch (_) {
-        // If refresh fails, pass the original error
-        return handler.next(err);
+        try {
+          final refreshToken = await tokenProvider!.readRefreshToken();
+          if (refreshToken == null) {
+            onUnauthenticated?.call();
+            return handler.next(err);
+          }
+
+          final newPair = await tokenRefresher!.refresh(refreshToken);
+          if (newPair == null) {
+            onUnauthenticated?.call();
+            return handler.next(err);
+          }
+
+          await tokenProvider!.writeTokens(
+            accessToken: newPair.accessToken,
+            refreshToken: newPair.refreshToken,
+          );
+
+          // Update the header with the new token
+          final newHeaders = Map<String, dynamic>.from(opts.headers);
+          newHeaders['Authorization'] = 'Bearer ${newPair.accessToken}';
+          opts.headers = newHeaders;
+
+          // Retry the request
+          final dio = Dio(BaseOptions(
+            baseUrl: opts.baseUrl,
+            connectTimeout: opts.connectTimeout,
+            receiveTimeout: opts.receiveTimeout,
+            sendTimeout: opts.sendTimeout,
+          ));
+          
+          final response = await dio.fetch(opts);
+          return handler.resolve(response);
+
+        } catch (_) {
+          onUnauthenticated?.call();
+          return handler.next(err);
+        }
+      } else {
+        // 401 but no refresher or already retried
+        onUnauthenticated?.call();
       }
     }
 

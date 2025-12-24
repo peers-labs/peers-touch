@@ -20,10 +20,12 @@ class NetworkInitializer {
   static void setupAuth({
     TokenProvider? tokenProvider,
     TokenRefresher? tokenRefresher,
+    void Function()? onUnauthenticated,
   }) {
     HttpServiceLocator().setAuthProviders(
       tokenProvider: tokenProvider,
       tokenRefresher: tokenRefresher,
+      onUnauthenticated: onUnauthenticated,
     );
   }
 

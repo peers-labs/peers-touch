@@ -17,6 +17,7 @@ class HttpServiceImpl implements IHttpService {
     List<Interceptor>? interceptors,
     TokenProvider? tokenProvider,
     TokenRefresher? tokenRefresher,
+    void Function()? onUnauthenticated,
   }) {
     _dio = Dio(
       BaseOptions(
@@ -34,7 +35,11 @@ class HttpServiceImpl implements IHttpService {
       if (kDebugMode) LoggingInterceptor(),
       ...?interceptors,
       if (interceptors?.any((i) => i is AuthInterceptor) != true) 
-        AuthInterceptor(tokenProvider: tokenProvider, tokenRefresher: tokenRefresher),
+        AuthInterceptor(
+          tokenProvider: tokenProvider, 
+          tokenRefresher: tokenRefresher,
+          onUnauthenticated: onUnauthenticated,
+        ),
       createRetryInterceptor(_dio),
       ErrorInterceptor(),
     ]);

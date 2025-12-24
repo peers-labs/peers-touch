@@ -142,7 +142,7 @@ class CreateProviderForm extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Obx(() => DropdownButtonFormField<RequestFormatType>(
-            initialValue: controller.requestFormat.value,
+            value: controller.requestFormat.value,
             decoration: UIKit.inputDecoration(context).copyWith(
               hintText: hint,
             ),
