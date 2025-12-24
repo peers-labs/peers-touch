@@ -68,6 +68,11 @@ class InitialBinding extends Bindings {
     NetworkInitializer.setupAuth(
       tokenProvider: Get.find<TokenProvider>(),
       // tokenRefresher: null, // Can be injected when real refresh interface is connected
+      onUnauthenticated: () {
+        if (Get.isRegistered<AuthController>()) {
+          Get.find<AuthController>().logout();
+        }
+      },
     );
 
     Get.put<OssService>(OssService(), permanent: true);

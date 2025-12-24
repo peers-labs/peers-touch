@@ -14,6 +14,7 @@ class HttpServiceLocator {
   List<Interceptor>? _interceptors;
   TokenProvider? _tokenProvider;
   TokenRefresher? _tokenRefresher;
+  void Function()? _onUnauthenticated;
 
   /// 工厂构造函数 - 返回单例
   factory HttpServiceLocator() {
@@ -30,12 +31,14 @@ class HttpServiceLocator {
     List<Interceptor>? interceptors,
     TokenProvider? tokenProvider,
     TokenRefresher? tokenRefresher,
+    void Function()? onUnauthenticated,
   }) {
     _baseUrl = baseUrl;
     _adapter = adapter;
     _interceptors = interceptors;
     _tokenProvider = tokenProvider;
     _tokenRefresher = tokenRefresher;
+    _onUnauthenticated = onUnauthenticated;
 
     _httpService = HttpServiceImpl(
       baseUrl: baseUrl,
@@ -43,6 +46,7 @@ class HttpServiceLocator {
       interceptors: interceptors,
       tokenProvider: tokenProvider,
       tokenRefresher: tokenRefresher,
+      onUnauthenticated: onUnauthenticated,
     );
   }
 
@@ -50,9 +54,13 @@ class HttpServiceLocator {
   void setAuthProviders({
     TokenProvider? tokenProvider,
     TokenRefresher? tokenRefresher,
+    void Function()? onUnauthenticated,
   }) {
     _tokenProvider = tokenProvider;
     _tokenRefresher = tokenRefresher;
+    if (onUnauthenticated != null) {
+      _onUnauthenticated = onUnauthenticated;
+    }
     
     // Re-initialize service to apply changes
     if (_isInitialized()) {
@@ -62,6 +70,7 @@ class HttpServiceLocator {
         interceptors: _interceptors,
         tokenProvider: _tokenProvider,
         tokenRefresher: _tokenRefresher,
+        onUnauthenticated: _onUnauthenticated,
       );
     }
   }

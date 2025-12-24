@@ -41,8 +41,12 @@ class DiscoveryController extends GetxController {
   final friends = <FriendItem>[].obs;
   final selectedItem = Rx<DiscoveryItem?>(null);
   final isLoading = false.obs;
+  final error = Rx<String?>(null);
   final searchQuery = ''.obs;
   final currentTab = 0.obs;
+
+  // Track the latest request to prevent race conditions
+  int _activeRequestId = 0;
   final tabs = ['Home', 'Me', 'Like', 'Follow', 'Announce', 'Comment'];
   final tabIcons = <IconData>[
     Icons.home_filled,
@@ -134,218 +138,167 @@ class DiscoveryController extends GetxController {
   }
 
   Future<void> loadItems() async {
-    // Only show full loading state if we have no items
-    if (items.isEmpty) {
-      isLoading.value = true;
+    final requestId = ++_activeRequestId;
+    
+    // Reset state for new tab
+    error.value = null;
+    isLoading.value = true;
+    items.clear();
+
+    LoggingService.info('DiscoveryController: Loading items for tab ${tabs[currentTab.value]} (Request ID: $requestId)');
+
+    try {
+      final List<DiscoveryItem> fetchedItems = await _fetchDataByTab(tabs[currentTab.value]);
+
+      // Guard: Only update if this is still the active request
+      if (requestId != _activeRequestId) {
+        LoggingService.info('DiscoveryController: Discarding stale data for Request ID: $requestId');
+        return;
+      }
+
+      items.value = fetchedItems;
+    } catch (e, stack) {
+      // Guard: Only update error if this is still the active request
+      if (requestId != _activeRequestId) return;
+
+      LoggingService.error('DiscoveryController: Error loading items: $e');
+      String errorMessage = 'Failed to load content';
+      if (e.toString().contains('SocketException') || e.toString().contains('Connection refused')) {
+        errorMessage = 'Network connection failed. Please ensure the server is running.';
+      }
+      error.value = errorMessage;
+      
+      Get.snackbar(
+        'Error',
+        errorMessage,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+      );
+    } finally {
+      if (requestId == _activeRequestId) {
+        isLoading.value = false;
+        scrollToTop();
+      }
     }
-    
-    LoggingService.info('DiscoveryController: Loading items for tab ${tabs[currentTab.value]}');
-    
+  }
+
+  /// 策略模式：根据 Tab 名称分发数据加载任务，避免在主流程中写死逻辑
+  Future<List<DiscoveryItem>> _fetchDataByTab(String tabName) async {
+    switch (tabName) {
+      case 'Me':
+        return await _fetchOutboxItems();
+      case 'Home':
+      case 'Like':
+      case 'Follow':
+      case 'Announce':
+      case 'Comment':
+        return _generateMockItems(tabName);
+      default:
+        return [];
+    }
+  }
+
+  Future<List<DiscoveryItem>> _fetchOutboxItems() async {
     final List<DiscoveryItem> newItems = [];
-    final tabName = tabs[currentTab.value];
-    
-    // Helper to add items
+    try {
+      String username = '';
+      if (Get.isRegistered<GlobalContext>()) {
+        username = Get.find<GlobalContext>().actorHandle ?? '';
+      }
+      if (username.isEmpty && Get.isRegistered<AuthController>()) {
+        username = Get.find<AuthController>().username.value;
+      }
+      
+      if (username.isEmpty) return [];
+      
+      final data = await _repo.fetchOutbox(username);
+      if (data['orderedItems'] is List) {
+        final itemsList = data['orderedItems'] as List;
+        for (var item in itemsList) {
+          if (item is Map) {
+            String title = 'New Post';
+            String content = '';
+            final String author = username;
+            DateTime timestamp = DateTime.now();
+            final String type = item['type']?.toString() ?? 'Create';
+            
+            final List<String> images = [];
+            if (item['object'] is Map) {
+               final obj = item['object'];
+               if (obj['inReplyTo'] != null && obj['inReplyTo'].toString().isNotEmpty) continue;
+
+               content = obj['content']?.toString() ?? '';
+               if (obj['summary'] != null && obj['summary'].toString().isNotEmpty) {
+                 title = obj['summary'].toString();
+               } else if (content.isNotEmpty) {
+                 final plainText = content.replaceAll(RegExp(r'<[^>]*>'), '');
+                 title = plainText.split('\n').first;
+                 if (title.length > 50) title = '${title.substring(0, 50)}...';
+               }
+               
+               if (obj['published'] != null) {
+                 timestamp = DateTime.tryParse(obj['published'].toString()) ?? DateTime.now();
+               }
+               
+               if (obj['attachment'] is List) {
+                 for (var att in obj['attachment']) {
+                   if (att is Map) {
+                     final url = att['url']?.toString();
+                     if (url != null && url.isNotEmpty) images.add(url);
+                   }
+                 }
+               }
+            }
+            newItems.add(DiscoveryItem(
+              id: item['id']?.toString() ?? DateTime.now().toString(),
+              title: title,
+              content: content,
+              author: author,
+              authorAvatar: 'https://i.pravatar.cc/150?u=$author',
+              timestamp: timestamp,
+              type: type,
+              images: images,
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      rethrow; // Let loadItems handle it
+    }
+    return newItems;
+  }
+
+  List<DiscoveryItem> _generateMockItems(String tabName) {
+    final List<DiscoveryItem> mockItems = [];
     void add(String title, String content, String author, String type) {
-      newItems.add(DiscoveryItem(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${newItems.length}',
+      mockItems.add(DiscoveryItem(
+        id: '${DateTime.now().microsecondsSinceEpoch}_${mockItems.length}',
         title: title,
         content: content,
         author: author,
         authorAvatar: 'https://i.pravatar.cc/150?u=$author',
-        timestamp: DateTime.now().subtract(Duration(minutes: newItems.length * 15)),
+        timestamp: DateTime.now().subtract(Duration(minutes: mockItems.length * 15)),
         type: type,
-        likesCount: (newItems.length * 7 + 3) % 50,
-        commentsCount: 1,
-        sharesCount: (newItems.length * 2) % 10,
-        comments: [
-          DiscoveryComment(
-            id: 'c1',
-            authorName: 'Fan User',
-            authorAvatar: 'https://i.pravatar.cc/150?u=fan${newItems.length}',
-            content: 'This is really interesting! Thanks for sharing.',
-            timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
-          ),
-        ],
       ));
     }
 
-    if (tabName == 'Me') {
-      try {
-        String username = '';
-        if (Get.isRegistered<GlobalContext>()) {
-          username = Get.find<GlobalContext>().actorHandle ?? '';
-        }
-        // Fallback to AuthController if GlobalContext is empty
-        if (username.isEmpty && Get.isRegistered<AuthController>()) {
-          username = Get.find<AuthController>().username.value;
-        }
-        
-        LoggingService.info('DiscoveryController: Fetching outbox for user: $username');
-        
-        if (username.isNotEmpty) {
-          final data = await _repo.fetchOutbox(username);
-          LoggingService.info('DiscoveryController: Outbox response data: $data');
-          
-          final Map<String, List<DiscoveryComment>> repliesMap = {};
-
-          if (data['orderedItems'] is List) {
-            final itemsList = data['orderedItems'] as List;
-            LoggingService.info('DiscoveryController: Found ${itemsList.length} items');
-            for (var item in itemsList) {
-              if (item is Map) {
-                String title = 'New Post';
-                String content = '';
-                final String author = username;
-                DateTime timestamp = DateTime.now();
-                final String type = item['type']?.toString() ?? 'Create';
-                
-                final List<String> images = [];
-                if (item['object'] is Map) {
-                   final obj = item['object'];
-                   
-                   // Filter out replies/comments from the main feed
-                   if (obj['inReplyTo'] != null && obj['inReplyTo'].toString().isNotEmpty) {
-                     continue;
-                   }
-
-                   content = obj['content']?.toString() ?? '';
-                   if (obj['summary'] != null && obj['summary'].toString().isNotEmpty) {
-                     title = obj['summary'].toString();
-                   } else if (content.isNotEmpty) {
-                     // Simple truncation for title
-                     final plainText = content.replaceAll(RegExp(r'<[^>]*>'), ''); // Remove HTML tags roughly
-                     title = plainText.split('\n').first;
-                     if (title.length > 50) title = '${title.substring(0, 50)}...';
-                   }
-                   
-                   if (obj['published'] != null) {
-                     timestamp = DateTime.tryParse(obj['published'].toString()) ?? DateTime.now();
-                   }
-                   
-                   // Parse images from attachment
-                   if (obj['attachment'] is List) {
-                     for (var att in obj['attachment']) {
-                       if (att is Map) {
-                         final type = att['type']?.toString();
-                         final mediaType = att['mediaType']?.toString();
-                         final url = att['url']?.toString();
-                         
-                         bool isImage = false;
-                         if (type == 'Image') {
-                           isImage = true;
-                         } else if (mediaType != null && mediaType.startsWith('image/')) {
-                           isImage = true;
-                         } else if (url != null) {
-                           // Fallback: check extension
-                           final lowerUrl = url.toLowerCase();
-                           if (lowerUrl.endsWith('.jpg') || 
-                               lowerUrl.endsWith('.jpeg') || 
-                               lowerUrl.endsWith('.png') || 
-                               lowerUrl.endsWith('.gif') || 
-                               lowerUrl.endsWith('.webp')) {
-                             isImage = true;
-                           }
-                         }
-
-                         if (isImage && url != null && url.isNotEmpty) {
-                           images.add(url);
-                         }
-                       }
-                     }
-                   }
-                } else if (item['published'] != null) {
-                   timestamp = DateTime.tryParse(item['published'].toString()) ?? DateTime.now();
-                }
-
-                // If content is still empty, maybe it's just an activity without rich object details here
-                if (content.isEmpty && item['object'] is String) {
-                   content = 'Object ID: ${item['object']}';
-                }
-
-                newItems.add(DiscoveryItem(
-                  id: item['id']?.toString() ?? DateTime.now().toString(),
-                  title: title,
-                  content: content,
-                  author: author,
-                  authorAvatar: 'https://i.pravatar.cc/150?u=$author',
-                  timestamp: timestamp,
-                  type: type,
-                  images: images,
-                  likesCount: 0,
-                  commentsCount: 0,
-                  sharesCount: 0,
-                ));
-              }
-            }
-            
-            // Second pass: Attach comments to their parent posts
-            for (var item in newItems) {
-              if (repliesMap.containsKey(item.id)) {
-                // We can't modify the 'comments' list directly if it's not the same reference we initialized?
-                // But DiscoveryItem constructor initializes 'comments' as a new list.
-                // However, 'comments' field is final. The list inside is mutable.
-                // Let's check DiscoveryItem again.
-                // Yes, I made it `comments = comments ?? []`.
-                item.comments.addAll(repliesMap[item.id]!);
-                item.commentsCount = item.comments.length;
-              }
-            }
-
-          } else {
-             LoggingService.warning('DiscoveryController: No orderedItems found in response');
-          }
-        } else {
-           LoggingService.warning('DiscoveryController: Username is empty');
-        }
-      } catch (e, stack) {
-        LoggingService.error('DiscoveryController: Error fetching outbox: $e');
-        LoggingService.error(stack.toString());
-        // Do not clear items on error if we already have some
-        if (items.isNotEmpty) {
-          isLoading.value = false;
-          return;
-        }
-      }
-    }
-
     if (tabName == 'Home') {
-      add('How To Manage Your Time & Get More Done', 'It may not be possible to squeeze more time in the day without sacrificing sleep. So how do you achieve more...', 'Valentino Del More', 'Create');
-      add('The Future of Flutter', 'Flutter is evolving rapidly. Here are the new features coming in 2025. The ecosystem is growing stronger every day.', 'Tech Insider', 'Create');
-      add('My Travel Diary: Japan', 'Japan was an amazing experience. The food, the culture, the people...', 'Traveler Joe', 'Create');
-    }
-    
-    if (tabName == 'Home' || tabName == 'Like') {
+      add('How To Manage Your Time & Get More Done', 'It may not be possible to squeeze more time in the day...', 'Valentino Del More', 'Create');
+      add('The Future of Flutter', 'Flutter is evolving rapidly. Here are the new features coming in 2025.', 'Tech Insider', 'Create');
+    } else if (tabName == 'Like') {
       add('Liked "Best Coffee in Town"', 'Alice liked a post about coffee shops.', 'Alice', 'Like');
-      add('Liked your photo', 'Bob liked your profile picture.', 'Bob', 'Like');
-      add('Liked "Flutter 4.0"', 'Charlie liked the announcement.', 'Charlie', 'Like');
-    }
-
-    if (tabName == 'Home' || tabName == 'Follow') {
+    } else if (tabName == 'Follow') {
       add('Followed you', 'Started following you.', 'Charlie', 'Follow');
-      add('Followed "Flutter Devs"', 'David followed the group Flutter Devs.', 'David', 'Follow');
-      add('Followed "Dart Lang"', 'Eve followed the topic Dart Lang.', 'Eve', 'Follow');
-    }
-
-    if (tabName == 'Home' || tabName == 'Announce') {
-      add('Boosted: "New Release"', 'Eve boosted a post about the new software release.', 'Eve', 'Announce');
-      add('Boosted: "Global News"', 'Frank shared a breaking news story.', 'Frank', 'Announce');
-    }
-
-    if (tabName == 'Home' || tabName == 'Comment') {
+    } else if (tabName == 'Announce') {
+      add('Boosted: "New Release"', 'Eve boosted a post about the new release.', 'Eve', 'Announce');
+    } else if (tabName == 'Comment') {
       add('Commented on "My Trip"', 'Great photos! Looks like an amazing place.', 'Frank', 'Comment');
-      add('Reply to your post', 'I agree with this point completely. The architecture is scalable.', 'Grace', 'Comment');
-      add('Commented on "Daily Updates"', 'Thanks for sharing this info.', 'Heidi', 'Comment');
     }
 
-    // Shuffle for Home to look natural, but keep some order if needed. 
-    // For mock, shuffle is fine.
-    if (tabName == 'Home') {
-      newItems.shuffle();
-    }
-
-    items.value = newItems;
-    isLoading.value = false;
-    scrollToTop();
+    if (tabName == 'Home') mockItems.shuffle();
+    return mockItems;
   }
 
   Future<void> replyToItem(DiscoveryItem parent, String content) async {
