@@ -16,7 +16,7 @@ class FakeSecureStorage implements SecureStorageAdapter {
 class FakeLocalStorage implements LocalStorageAdapter {
   final Map<String, dynamic> _store = {};
   @override
-  T? get<T>(String key) => _store[key] as T?;
+  Future<T?> get<T>(String key) async => _store[key] as T?;
   @override
   Future<void> remove(String key) async => _store.remove(key);
   @override
@@ -30,8 +30,8 @@ void main() {
     final ctx = DefaultGlobalContext(secureStorage: ss, localStorage: ls);
     await ctx.setSession({'actorId': 'alice', 'handle': 'alice', 'baseUrl': 'http://localhost', 'accessToken': 't'});
     await ctx.updatePreferences({'theme': 'dark', 'telemetry': true});
-    final sessPb = ls.get<Map<String, dynamic>>('global:current_session_pb');
-    final prefsPb = ls.get<Map<String, dynamic>>('global:user_preferences_pb');
+    final sessPb = await ls.get<Map<String, dynamic>>('global:current_session_pb');
+    final prefsPb = await ls.get<Map<String, dynamic>>('global:user_preferences_pb');
     expect(sessPb != null, true);
     expect(prefsPb != null, true);
   });
