@@ -2,7 +2,7 @@ syntax = "proto3";
 package peers.actor;
 
 import "google/protobuf/timestamp.proto";
-option go_package = "github.com/peers-labs/peers-touch/station/domain/actor;actor";
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/actor;actor";
 
 message ActorSessionSnapshot {
   string actor_id = 1;

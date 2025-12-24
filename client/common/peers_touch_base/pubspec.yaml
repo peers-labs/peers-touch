@@ -19,7 +19,7 @@ dependencies:
   dio_smart_retry: ^7.0.1
   logging: ^1.2.0
   fixnum: ^1.1.0
-  intl: ^0.20.2
+  intl: any # Relaxed constraint for webf compatibility
   drift: any
   path: ^1.8.3
   synchronized: ^3.4.0
@@ -43,6 +43,9 @@ dev_dependencies:
   test: ^1.24.0
   mockito: ^5.4.4
   build_runner: ^2.4.9
+  # Pinned version to ensure consistent code generation across platforms (Windows/macOS).
+  # DO NOT change this version without verifying diffs in generated .pb.dart files.
+  protoc_plugin: ^24.0.0
 
 flutter:
   generate: true

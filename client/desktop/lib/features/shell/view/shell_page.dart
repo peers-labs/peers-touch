@@ -7,6 +7,8 @@ import 'package:peers_touch_desktop/core/constants/app_constants.dart';
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
+import 'package:peers_touch_desktop/features/shell/view/widgets/applet_dock.dart';
+import 'package:peers_touch_desktop/modules/applet_launcher/view/applet_container.dart';
 
 class ShellPage extends StatelessWidget {
   const ShellPage({super.key});
@@ -133,10 +135,34 @@ class ShellPage extends StatelessWidget {
           _buildAvatarBlock(context, controller, theme),
           
           // 头部区域 - 自适应高度（业务功能菜单）
-          Expanded(
+          Flexible(
+            fit: FlexFit.tight,
             child: _buildHeadMenuArea(context, controller, theme),
           ),
           
+          // Pinned Applets Dock
+          Builder(builder: (context) {
+            return Obx(() {
+              // Explicitly access the list to register dependency for GetX
+              final applets = controller.pinnedApplets.toList();
+              return PinnedAppletsDock(
+                pinnedApplets: applets,
+                onAppletTap: (applet) {
+                   // Open Applet
+                   const mockUrl = 'https://raw.githubusercontent.com/openwebf/webf/master/examples/vue/dist/bundle.js';
+                   Get.to(() => AppletContainer(manifest: applet, bundleUrl: mockUrl));
+                },
+                onReorder: (oldIndex, newIndex) {
+                  if (oldIndex < newIndex) {
+                    newIndex -= 1;
+                  }
+                  final item = controller.pinnedApplets.removeAt(oldIndex);
+                  controller.pinnedApplets.insert(newIndex, item);
+                },
+              );
+            });
+          }),
+
           // 尾部区域 - 固定80px（最底部，重要入口）
           _buildTailMenuArea(context, controller, theme),
           ],
