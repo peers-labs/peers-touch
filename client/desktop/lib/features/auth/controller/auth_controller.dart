@@ -27,6 +27,7 @@ class AuthController extends GetxController {
   final error = RxnString();
   final presetUsers = <Map<String, dynamic>>[].obs;
   final baseUrl = NetworkInitializer.currentBaseUrl.obs;
+  final loginHistory = <Map<String, String>>[].obs;
   final lastStatus = RxnInt();
   final lastBody = RxnString();
   final authTab = 0.obs; // 0: login, 1: signup
@@ -114,6 +115,7 @@ class AuthController extends GetxController {
 
     // Restore user info from storage
     _restoreUserInfo();
+    _loadLoginHistory();
     
     // Sync baseUrl
     baseUrlController.text = baseUrl.value;
@@ -130,6 +132,52 @@ class AuthController extends GetxController {
     if (e != null) {
       email.value = e;
       emailController.text = e;
+    }
+  }
+
+  Future<void> _loadLoginHistory() async {
+    try {
+      final ls = LocalStorage();
+      final list = await ls.get<List>('login_history');
+      if (list != null) {
+        loginHistory.value = list.map((e) => Map<String, String>.from(e)).toList();
+      }
+    } catch (e) {
+      LoggingService.warning('Failed to load login history: $e');
+    }
+  }
+
+  Future<void> saveLoginHistory(String emailStr, String url, {String? avatar, String? name}) async {
+    if (emailStr.isEmpty) return;
+    
+    // Remove existing entry for same email+url
+    final index = loginHistory.indexWhere((e) => e['email'] == emailStr && e['baseUrl'] == url);
+    if (index >= 0) {
+      loginHistory.removeAt(index);
+    }
+    
+    // Add to top
+    loginHistory.insert(0, {
+      'email': emailStr,
+      'baseUrl': url,
+      'avatar': avatar ?? '',
+      'displayName': name ?? '',
+      'lastLogin': DateTime.now().toIso8601String(),
+    });
+    
+    // Keep max 5
+    if (loginHistory.length > 5) {
+      loginHistory.removeRange(5, loginHistory.length);
+    }
+    
+    // Save
+    await LocalStorage().set('login_history', loginHistory.toList());
+  }
+
+  Future<void> removeLoginHistory(int index) async {
+    if (index >= 0 && index < loginHistory.length) {
+      loginHistory.removeAt(index);
+      await LocalStorage().set('login_history', loginHistory.toList());
     }
   }
 
@@ -266,7 +314,6 @@ class AuthController extends GetxController {
           }
 
           // Try to extract user info from response
-          final data = obj['data'];
           Map<String, dynamic>? userMap;
           if (data is Map) {
             // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
@@ -329,6 +376,22 @@ class AuthController extends GetxController {
               LoggingService.info('GlobalContext session updated for user: $handle');
             }
           } catch (_) {}
+
+          // Save to history
+          String? avatarUrl;
+          try {
+             // Try to find avatar from previously parsed userMap if possible, 
+             // but userMap scope is lost above. 
+             // We can just rely on what we have or try to fetch it later.
+             // For now passing null is fine, or we can improve extraction later.
+          } catch(_) {}
+          
+          await saveLoginHistory(
+            email.value,
+            (overrideBaseUrl ?? baseUrl.value).trim(),
+            name: displayName.value.isNotEmpty ? displayName.value : username.value,
+          );
+
           Get.offAllNamed('/shell');
         } else {
           error.value = 'Invalid login response';

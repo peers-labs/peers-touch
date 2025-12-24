@@ -18,37 +18,111 @@ class ProfileController extends GetxController {
   final Rx<ActorBase?> user = Rx<ActorBase?>(null);
   final Rx<UserDetail?> detail = Rx<UserDetail?>(null);
   final RxBool following = false.obs;
+  final RxBool uploadingAvatar = false.obs;
+  final RxBool uploadingHeader = false.obs;
+  final RxBool updatingProfile = false.obs;
 
   @override
   void onInit() {
     super.onInit();
-    // Initialize with placeholder data to avoid empty UI
-    user.value = ActorBase(id: '0', name: 'User', avatar: null);
-    detail.value = const UserDetail(
-      id: '0',
-      displayName: 'User',
-      handle: 'user',
-      summary: '',
-      region: '',
-      timezone: '',
-      tags: [],
-      links: [],
-      followersCount: 0,
-      followingCount: 0,
-      showCounts: false,
-      moments: [],
-      defaultVisibility: 'public',
-      manuallyApprovesFollowers: true,
-      messagePermission: 'mutual',
-      actorUrl: '',
-      serverDomain: '',
-      keyFingerprint: '',
-      verifications: [],
-      peersTouch: PeersTouchInfo(networkId: ''),
-    );
+    
+    // 1. Initial sync
+    _syncWithSession();
 
-    // Fetch real data
+    // 2. Listen for session changes (Root Cause: React to login/logout/switch)
+    if (Get.isRegistered<GlobalContext>()) {
+      final gc = Get.find<GlobalContext>();
+      gc.onSessionChange.listen((session) {
+        _syncWithSession();
+        fetchProfile();
+      });
+    }
+    
+    // 3. Listen for auth controller state (for immediate feedback during login)
+    if (Get.isRegistered<AuthController>()) {
+      final auth = Get.find<AuthController>();
+      ever(auth.username, (_) => _onAuthChanged());
+    }
+
+    // 4. Initial fetch
     fetchProfile();
+  }
+
+  void _onAuthChanged() {
+    _syncWithSession();
+    fetchProfile();
+  }
+
+  void _syncWithSession() {
+    String? handle;
+    String? name;
+
+    // 1. Try GlobalContext first (Source of Truth)
+    if (Get.isRegistered<GlobalContext>()) {
+      final gc = Get.find<GlobalContext>();
+      handle = gc.actorHandle;
+    }
+
+    // 2. Fallback to AuthController (Active input/restored state)
+    if ((handle == null || handle.isEmpty) && Get.isRegistered<AuthController>()) {
+      final auth = Get.find<AuthController>();
+      handle = auth.username.value;
+      if (handle.isEmpty && auth.email.value.isNotEmpty) {
+        handle = auth.email.value.split('@').first;
+      }
+      name = auth.displayName.value;
+    }
+
+    if (handle == null || handle.isEmpty) {
+      // If GlobalContext hasn't loaded yet, don't reset state immediately.
+      // The onSessionChange listener will trigger another sync when hydration completes.
+      if (Get.isRegistered<GlobalContext>()) {
+        final gc = Get.find<GlobalContext>();
+        if (gc.currentSession == null) {
+          // If session is explicitly null, then we are not logged in.
+          _resetState();
+        }
+      } else {
+        _resetState();
+      }
+      return;
+    }
+
+    name ??= handle;
+
+    // Update state
+    user.value = ActorBase(id: '0', name: name, avatar: null);
+    
+    // Update UserDetail if handle changed or it was null
+    if (detail.value == null || detail.value!.id == '0' || detail.value!.handle != handle) {
+      detail.value = UserDetail(
+        id: '0',
+        displayName: name,
+        handle: handle,
+        summary: '',
+        region: '',
+        timezone: '',
+        tags: [],
+        links: [],
+        followersCount: 0,
+        followingCount: 0,
+        showCounts: false,
+        moments: [],
+        defaultVisibility: 'public',
+        manuallyApprovesFollowers: true,
+        messagePermission: 'mutual',
+        actorUrl: '',
+        serverDomain: '',
+        keyFingerprint: '',
+        verifications: [],
+        peersTouch: const PeersTouchInfo(networkId: ''),
+      );
+    }
+  }
+
+  void _resetState() {
+    user.value = null;
+    detail.value = null;
   }
 
   Future<void> fetchProfile() async {
@@ -56,20 +130,49 @@ class ProfileController extends GetxController {
       final auth = Get.find<AuthController>();
       // Try to determine username from auth controller inputs
       String username = auth.username.value;
+      
+      // 1. Try from AuthController email
       if (username.isEmpty && auth.email.value.isNotEmpty) {
         username = auth.email.value.split('@').first;
       }
 
+      // 2. Try from GlobalContext (Session)
+      if (username.isEmpty && Get.isRegistered<GlobalContext>()) {
+        final gc = Get.find<GlobalContext>();
+        username = gc.actorHandle ?? '';
+      }
+      
       if (username.isEmpty) {
-        // If username is still empty, we cannot fetch profile.
-        // Should handle this case (e.g. redirect to login or show error)
+        // If username is still empty but we are supposed to be logged in (ProfileController is active),
+        // it means the session is invalid or incomplete.
+        // Check if we have a token
+        final hasToken = await LocalStorage().get<String>('auth_token') != null;
+        if (hasToken) {
+           // We have a token but no user info. 
+           // We could try to fetch "whoami" here if API supported it.
+           // For now, let's trigger a logout if we really can't identify the user, 
+           // OR just return and let the UI stay empty (but user complained about this).
+           // Let's try to logout to force re-login which fixes the state.
+           print('Critical: Logged in but no username found. Forcing logout.');
+           logout();
+        }
         return;
       }
-
+      
       Map<String, dynamic>? data;
       if (Get.isRegistered<ActorRepository>()) {
         final repo = Get.find<ActorRepository>();
-        data = await repo.fetchProfile(username: username);
+        try {
+          data = await repo.fetchProfile(username: username);
+        } catch (e) {
+          // If repo throws error (it might not, depending on impl, but let's be safe)
+          final errStr = e.toString();
+          if (errStr.contains('401') || errStr.contains('403') || errStr.contains('404')) {
+             print('Auth error or user not found during profile fetch: $e. Logging out.');
+             logout();
+             return;
+          }
+        }
       } else {
         final client = HttpServiceLocator().httpService;
         try {
@@ -79,7 +182,18 @@ class ProfileController extends GetxController {
           if (response.statusCode == 200 && response.data is Map) {
             data = (response.data as Map).cast<String, dynamic>();
           }
-        } catch (_) {}
+        } catch (e) {
+           // Handle specific errors
+           if (e.toString().contains('401') || e.toString().contains('403')) {
+             logout();
+             return;
+           }
+           if (e.toString().contains('404')) {
+             // User does not exist
+             logout();
+             return;
+           }
+        }
       }
       if (data != null) {
         detail.value = UserDetail.fromJson(data);
@@ -205,6 +319,7 @@ class ProfileController extends GetxController {
   }
 
   Future<UploadResult?> uploadImage({required String category}) async {
+    final isLoading = category == 'avatar' ? uploadingAvatar : uploadingHeader;
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
@@ -212,7 +327,27 @@ class ProfileController extends GetxController {
       );
 
       if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
+        final path = result.files.single.path!;
+        final file = File(path);
+        
+        // 1. Validate file size (WeChat style limits)
+        final bytes = await file.length();
+        final mb = bytes / (1024 * 1024);
+        final maxMb = category == 'avatar' ? 5.0 : 10.0;
+        
+        if (mb > maxMb) {
+          Get.snackbar(
+            '文件过大',
+            '${category == 'avatar' ? '头像' : '背景图'}大小不能超过 ${maxMb.toInt()}MB',
+            backgroundColor: Get.theme.colorScheme.errorContainer,
+            colorText: Get.theme.colorScheme.onErrorContainer,
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(16),
+          );
+          return null;
+        }
+
+        isLoading.value = true;
         final oss = Get.find<OssService>();
         final meta = await oss.uploadFile(file);
         final url = meta['url']?.toString() ?? '';
@@ -232,12 +367,29 @@ class ProfileController extends GetxController {
       }
     } catch (e) {
       print('Upload failed: $e');
+      String message = '上传失败，请检查网络连接';
+      if (e.toString().contains('Connection refused') || e.toString().contains('SocketException')) {
+        message = '无法连接到服务器，请确保服务端已启动 (Connection Refused)';
+      }
+      
+      Get.snackbar(
+        '上传错误',
+        message,
+        backgroundColor: Get.theme.colorScheme.errorContainer,
+        colorText: Get.theme.colorScheme.onErrorContainer,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 5),
+      );
+    } finally {
+      isLoading.value = false;
     }
     return null;
   }
 
   Future<void> updateProfile(Map<String, dynamic> updates) async {
     try {
+      updatingProfile.value = true;
       final client = HttpServiceLocator().httpService;
       final payload = <String, dynamic>{};
       // Normalize keys to protobuf json field names
@@ -282,6 +434,8 @@ class ProfileController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
         margin: const EdgeInsets.all(16),
       );
+    } finally {
+      updatingProfile.value = false;
     }
   }
 }
