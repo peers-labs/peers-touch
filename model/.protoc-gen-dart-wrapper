@@ -1,0 +1,3 @@
+#!/bin/bash
+cd "/Users/bytedance/Documents/Projects/peers-touch/peers-touch/client/common/peers_touch_base"
+exec dart run protoc_plugin:protoc-gen-dart "$@"
