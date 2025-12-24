@@ -159,3 +159,23 @@
 ## 20251223
 
 个人页还是不完善，登录态也有交叉的现象，没有把个人页、登录等基本功能搞完，其它的不能进行
+
+## 20251224
+
+1. 完善了 Applet 容器与市场的设计与实现，为 Peers Touch 生态扩展奠定了基础。
+2. 解决了跨平台 Proto 生成与 WebF 依赖冲突的工程化难题。
+3. 详细设计文档已归档至：`station/frame/docs/applet/architecture.md`。
+
+**Applet 核心进展:**
+- **架构落地**: 完成了 Station (Store) -> Client Base (Bridge/Manager) -> Desktop UI (Launcher/Market) 的全链路 MVP。
+- **技术选型**: 确认使用 WebF (0.16.x) 作为容器，通过 MethodChannel 实现 JS <-> Flutter 通信。
+- **UI 实现**: 
+    - 实现了 Applet 市场页面。
+    - 在左侧导航栏新增了 Pinned Applets Dock，支持呼吸动画与拖拽排序。
+- **工程优化**: 锁定了 `protoc_plugin` 版本，解决了 Windows/Mac 生成代码不一致问题；解决了 `intl` 库版本冲突。
+
+**遗留与下一步:**
+- 恢复 Bridge 回调（因 evaluateJavascript API 变动暂时注释）。
+- 对接真实 Station 接口（目前为 Mock 数据）。
+
+
