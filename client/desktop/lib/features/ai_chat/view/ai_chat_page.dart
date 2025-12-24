@@ -2,21 +2,19 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
-
-import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/assistant_sidebar.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/ai_chat_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/assistant_sidebar.dart';
+import 'package:peers_touch_desktop/features/ai_chat/widgets/chat_input_bar.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/header_toolbar.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/message_list_view.dart';
-import 'package:peers_touch_desktop/features/ai_chat/widgets/chat_input_bar.dart';
 import 'package:peers_touch_desktop/features/ai_chat/widgets/topic_panel.dart';
-import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
+import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
 
 class AIChatPage extends GetView<AIChatController> {
   const AIChatPage({super.key});

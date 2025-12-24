@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
-import '../controller/auth_controller.dart';
+import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 class SignupPage extends GetView<AuthController> {
   const SignupPage({super.key});
@@ -12,7 +12,7 @@ class SignupPage extends GetView<AuthController> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
     // Darker fill color for inputs to match the reference style slightly, or just standard surface
-    final inputFillColor = theme.colorScheme.surfaceVariant.withOpacity(0.3);
+    final inputFillColor = theme.colorScheme.surfaceContainerHighest.withOpacity(0.3);
 
     return Scaffold(
       appBar: AppBar(

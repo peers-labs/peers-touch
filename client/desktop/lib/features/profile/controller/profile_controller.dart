@@ -1,16 +1,18 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+
 import 'package:file_picker/file_picker.dart';
-import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide FormData, MultipartFile;
-import 'package:peers_touch_desktop/core/models/actor_base.dart';
-import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/repositories/actor_repository.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/models/actor_base.dart';
+import 'package:peers_touch_desktop/core/services/oss_service.dart';
+import 'package:peers_touch_desktop/core/services/file_cache_service.dart';
+import 'package:peers_touch_desktop/core/models/upload_result.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
+import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
 
 class ProfileController extends GetxController {
   final Rx<ActorBase?> user = Rx<ActorBase?>(null);
@@ -57,13 +59,13 @@ class ProfileController extends GetxController {
       if (username.isEmpty && auth.email.value.isNotEmpty) {
         username = auth.email.value.split('@').first;
       }
-      
+
       if (username.isEmpty) {
         // If username is still empty, we cannot fetch profile.
         // Should handle this case (e.g. redirect to login or show error)
         return;
       }
-      
+
       Map<String, dynamic>? data;
       if (Get.isRegistered<ActorRepository>()) {
         final repo = Get.find<ActorRepository>();
@@ -71,7 +73,9 @@ class ProfileController extends GetxController {
       } else {
         final client = HttpServiceLocator().httpService;
         try {
-          final response = await client.getResponse<dynamic>('/activitypub/$username/profile');
+          final response = await client.getResponse<dynamic>(
+            '/activitypub/$username/profile',
+          );
           if (response.statusCode == 200 && response.data is Map) {
             data = (response.data as Map).cast<String, dynamic>();
           }
@@ -200,7 +204,7 @@ class ProfileController extends GetxController {
     }
   }
 
-  Future<String?> uploadImage() async {
+  Future<UploadResult?> uploadImage({required String category}) async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
@@ -209,26 +213,21 @@ class ProfileController extends GetxController {
 
       if (result != null && result.files.single.path != null) {
         final file = File(result.files.single.path!);
-        final fileName = result.files.single.name;
-        
-        final d = detail.value;
-        if (d == null) return null;
-        final username = d.handle;
-        
-        final client = HttpServiceLocator().httpService;
-        final formData = FormData.fromMap({
-          'file': await MultipartFile.fromFile(file.path, filename: fileName),
-          'alt': 'Profile image',
-        });
-        
-        // Use activitypub media endpoint: /activitypub/:actor/media
-        final response = await client.post<Map<String, dynamic>>(
-          '/activitypub/$username/media', 
-          data: formData,
-        );
-        
-        if (response != null && response['url'] != null) {
-          return response['url'] as String;
+        final oss = Get.find<OssService>();
+        final meta = await oss.uploadFile(file);
+        final url = meta['url']?.toString() ?? '';
+        final key = meta['key']?.toString() ?? '';
+
+        if (url.isNotEmpty) {
+          final username = detail.value?.handle ?? 'user';
+          final cache = FileCacheService();
+          final local = await cache.downloadToUserDir(
+            username: username,
+            category: category,
+            urlPath: url,
+            suggestedName: key.isNotEmpty ? key.split('/').last : null,
+          );
+          return UploadResult(remoteUrl: url, localPath: local.path);
         }
       }
     } catch (e) {
@@ -240,20 +239,49 @@ class ProfileController extends GetxController {
   Future<void> updateProfile(Map<String, dynamic> updates) async {
     try {
       final client = HttpServiceLocator().httpService;
-      // Endpoint: /profile (RouterURLActorProfile) -> mapped to /activitypub/profile usually if routed via AP group
-      await client.post('/activitypub/profile', data: updates);
-      
+      final payload = <String, dynamic>{};
+      // Normalize keys to protobuf json field names
+      // Accept both camelCase and snake_case inputs
+      void putIfPresent(String key, String altKey) {
+        final v = updates.containsKey(key) ? updates[key] : updates[altKey];
+        if (v != null) payload[altKey] = v;
+      }
+
+      putIfPresent('displayName', 'display_name');
+      putIfPresent('note', 'note');
+      putIfPresent('avatar', 'avatar');
+      putIfPresent('header', 'header');
+      putIfPresent('region', 'region');
+      putIfPresent('timezone', 'timezone');
+      putIfPresent('defaultVisibility', 'default_visibility');
+      putIfPresent('manuallyApprovesFollowers', 'manually_approves_followers');
+      putIfPresent('messagePermission', 'message_permission');
+      putIfPresent('autoExpireDays', 'auto_expire_days');
+
+      if (updates['tags'] is List) payload['tags'] = updates['tags'];
+      if (updates['links'] is List) payload['links'] = updates['links'];
+
+      await client.post('/activitypub/profile', data: payload);
+
       await fetchProfile();
       Get.back(); // Close dialog
-      
-      Get.snackbar('Success', 'Profile updated successfully', 
-        snackPosition: SnackPosition.BOTTOM, margin: const EdgeInsets.all(16));
+
+      Get.snackbar(
+        'Success',
+        'Profile updated successfully',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+      );
     } catch (e) {
       print('Update failed: $e');
-      Get.snackbar('Error', 'Failed to update profile: $e', 
+      Get.snackbar(
+        'Error',
+        'Failed to update profile: $e',
         backgroundColor: Get.theme.colorScheme.errorContainer,
         colorText: Get.theme.colorScheme.onErrorContainer,
-        snackPosition: SnackPosition.BOTTOM, margin: const EdgeInsets.all(16));
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+      );
     }
   }
 }

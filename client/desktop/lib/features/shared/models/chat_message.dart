@@ -1,9 +1,4 @@
 class ChatMessage {
-  final String id;
-  final String from;
-  final String to;
-  final String content;
-  final DateTime time;
 
   ChatMessage({
     required this.id,
@@ -12,4 +7,9 @@ class ChatMessage {
     required this.content,
     required this.time,
   });
+  final String id;
+  final String from;
+  final String to;
+  final String content;
+  final DateTime time;
 }

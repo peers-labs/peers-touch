@@ -1,9 +1,9 @@
-import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
+import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
 
 class DesktopSecureStorageAdapter implements SecureStorageAdapter {
-  final SecureStorage _inner;
   DesktopSecureStorageAdapter(this._inner);
+  final SecureStorage _inner;
   @override
   Future<void> set(String key, String value) => _inner.set(key, value);
   @override

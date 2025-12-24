@@ -1,19 +1,17 @@
 import 'package:flutter/widgets.dart';
-import 'package:peers_touch_desktop/core/services/logging_service.dart';
-import 'package:peers_touch_desktop/core/utils/window_options_manager.dart';
-import 'package:peers_touch_desktop/core/services/network_initializer.dart';
-import 'package:peers_touch_base/storage/secure_storage.dart';
-import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 import 'package:peers_touch_desktop/app/routes/app_routes.dart';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_desktop/core/services/network_initializer.dart';
+import 'package:peers_touch_desktop/core/utils/window_options_manager.dart';
 
 /// Application initializer
 /// Responsible for managing all asynchronous initialization operations, belongs to application-level core configuration
 class AppInitializer {
-  static final AppInitializer _instance = AppInitializer._internal();
   
   factory AppInitializer() => _instance;
   
   AppInitializer._internal();
+  static final AppInitializer _instance = AppInitializer._internal();
   
   /// Initialization status
   bool _isInitialized = false;
@@ -46,20 +44,7 @@ class AppInitializer {
       NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
       LoggingService.info('Network service initialized with base URL: http://localhost:18080');
 
-      // Check auth state for initial route
-      try {
-        final secureStorage = SecureStorageImpl();
-        final token = await secureStorage.get(StorageKeys.tokenKey);
-        if (token != null && token.isNotEmpty) {
-          _initialRoute = AppRoutes.shell;
-          LoggingService.info('Auth token found, setting initial route to Shell');
-        } else {
-          LoggingService.info('No auth token found, setting initial route to Login');
-        }
-      } catch (e) {
-        LoggingService.error('Failed to check auth state', e);
-        // Fallback to login
-      }
+
 
       _isInitialized = true;
       LoggingService.info('Application initialization completed successfully');

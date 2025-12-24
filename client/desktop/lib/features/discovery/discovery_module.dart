@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:peers_touch_desktop/features/discovery/binding/discovery_binding.dart';
+import 'package:peers_touch_desktop/features/discovery/view/discovery_page.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
-import 'binding/discovery_binding.dart';
-import 'view/discovery_page.dart';
 
 class DiscoveryModule {
   static void register() {

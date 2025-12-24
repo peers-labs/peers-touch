@@ -1,15 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/services/network_initializer.dart';
-import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_base/context/global_context.dart';
-import 'package:peers_touch_base/storage/secure_storage.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
-
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
+import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 
 enum ServerStatus {
   unknown,
@@ -32,7 +32,7 @@ class AuthController extends GetxController {
   final authTab = 0.obs; // 0: login, 1: signup
   final protocol = 'peers-touch'.obs;
   final serverStatus = ServerStatus.unknown.obs;
-  final SecureStorage _secureStorage = SecureStorageImpl();
+  late final SecureStorageAdapter _secureStorage;
 
   late final TextEditingController emailController;
   late final TextEditingController passwordController;
@@ -51,6 +51,7 @@ class AuthController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _secureStorage = Get.find<SecureStorageAdapter>();
     
     // Initialize controllers
     emailController = TextEditingController();
@@ -105,7 +106,7 @@ class AuthController extends GetxController {
       final trimmed = url.trim();
       if (trimmed.isNotEmpty) {
         await LocalStorage().set('base_url', trimmed);
-        NetworkInitializer.initialize(baseUrl: trimmed);
+        NetworkInitializer.updateBaseUrl(trimmed);
         detectProtocol(trimmed);
         loadPresetUsers(trimmed);
       }
@@ -212,7 +213,7 @@ class AuthController extends GetxController {
       final useUrl = (overrideBaseUrl ?? baseUrl.value).trim();
       var ident = email.value.trim();
       if (!ident.contains('@') && ident.isNotEmpty) {
-        ident = ident + '@station.local';
+        ident = '$ident@station.local';
       }
       final uri = Uri.parse(
         useUrl.endsWith('/')
@@ -253,52 +254,56 @@ class AuthController extends GetxController {
                 tokensMap['tokenType']?.toString();
             if (refresh != null && refresh.isNotEmpty) {
               await LocalStorage().set('refresh_token', refresh);
-              await _secureStorage.set(StorageKeys.refreshTokenKey, refresh);
+              try {
+                await _secureStorage.set(StorageKeys.refreshTokenKey, refresh);
+              } catch (_) {}
             }
-            if (ttype != null && ttype.isNotEmpty)
+            if (ttype != null && ttype.isNotEmpty) {
               await LocalStorage().set('auth_token_type', ttype);
+            }
           } else {
             token = obj['token']?.toString() ?? '';
           }
 
           // Try to extract user info from response
-          if (obj is Map) {
-            final data = obj['data'];
-            Map<String, dynamic>? userMap;
-            if (data is Map) {
-              // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
-              if (data['user'] is Map) {
-                userMap = data['user'];
-              } else if (data['actor'] is Map) {
-                userMap = data['actor'];
-              } else {
-                // Assume data itself might contain user fields if not nested
-                userMap = data as Map<String, dynamic>;
-              }
-            } else if (obj['user'] is Map) {
-              userMap = obj['user'];
-            } else if (obj['actor'] is Map) {
-              userMap = obj['actor'];
+          final data = obj['data'];
+          Map<String, dynamic>? userMap;
+          if (data is Map) {
+            // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
+            if (data['user'] is Map) {
+              userMap = data['user'];
+            } else if (data['actor'] is Map) {
+              userMap = data['actor'];
+            } else {
+              // Assume data itself might contain user fields if not nested
+              userMap = data as Map<String, dynamic>;
             }
-
-            if (userMap != null) {
-              final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
-              if (name != null) username.value = name.toString();
-              
-              final mail = userMap['email'];
-              if (mail != null) email.value = mail.toString();
-              
-              final disp = userMap['display_name'] ?? userMap['displayName'];
-              if (disp != null) displayName.value = disp.toString();
-            }
+          } else if (obj['user'] is Map) {
+            userMap = obj['user'];
+          } else if (obj['actor'] is Map) {
+            userMap = obj['actor'];
           }
-        }
+
+          if (userMap != null) {
+            final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
+            if (name != null) username.value = name.toString();
+            
+            final mail = userMap['email'];
+            if (mail != null) email.value = mail.toString();
+            
+            final disp = userMap['display_name'] ?? userMap['displayName'];
+            if (disp != null) displayName.value = disp.toString();
+          }
+                }
 
         if (token.isNotEmpty) {
           await LocalStorage().set('auth_token', token);
-          // Also save to SecureStorage for AuthInterceptor
-          await _secureStorage.set(StorageKeys.tokenKey, token);
-          LoggingService.info('Token stored in SecureStorage');
+          try {
+            await _secureStorage.set(StorageKeys.tokenKey, token);
+            LoggingService.info('Token stored in SecureStorage');
+          } catch (e) {
+            LoggingService.warning('SecureStorage write failed: $e');
+          }
           
           // Persist user info
           await LocalStorage().set('username', username.value);
@@ -357,8 +362,10 @@ class AuthController extends GetxController {
       await ls.remove('email');
       
       // 3. Clear SecureStorage
-      await _secureStorage.remove(StorageKeys.tokenKey);
-      await _secureStorage.remove(StorageKeys.refreshTokenKey);
+      try {
+        await _secureStorage.remove(StorageKeys.tokenKey);
+        await _secureStorage.remove(StorageKeys.refreshTokenKey);
+      } catch (_) {}
 
       // 4. Reset Controller State
       username.value = '';
@@ -431,7 +438,7 @@ class AuthController extends GetxController {
     final emailText = email.value.trim();
     final emailOk =
         emailText.isNotEmpty &&
-        RegExp(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").hasMatch(emailText);
+        RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(emailText);
     final pwd = password.value.trim();
     final pwdOk = pwd.length >= 8;
     final confirmOk = pwd == confirmPassword.value.trim();

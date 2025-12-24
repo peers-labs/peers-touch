@@ -2,14 +2,13 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/ai_proxy/provider/template/template_factory.dart';
-import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart' as $pb_timestamp;
-import 'package:peers_touch_desktop/features/ai_chat/model/request_format.dart';
-import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
-import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
-
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
+import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart' as $pb_timestamp;
+import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
+import 'package:peers_touch_desktop/features/ai_chat/model/request_format.dart';
+import 'package:peers_touch_desktop/features/ai_chat/service/provider_service.dart';
 
 class CreateProviderController extends GetxController {
   final ProviderService _providerService = Get.find();

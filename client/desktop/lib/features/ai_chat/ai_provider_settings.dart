@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
-import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
-
 import 'package:peers_touch_base/ai_proxy/service/ai_box_service_factory.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/constants/ai_constants.dart';
 import 'package:peers_touch_desktop/features/ai_chat/controller/provider_controller.dart';
+import 'package:peers_touch_desktop/features/settings/controller/setting_controller.dart';
+import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 
 /// AI Provider设置模块 - 演示业务模块设置注入
 class AIProviderSettings {

@@ -1,21 +1,17 @@
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
-import 'package:dio/dio.dart' as dio;
 import 'package:peers_touch_base/network/dio/http_service.dart';
-import 'package:peers_touch_desktop/core/services/network_discovery/libp2p_network_service.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
-import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
+import 'package:peers_touch_desktop/core/services/network_discovery/libp2p_network_service.dart';
 import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 import 'package:peers_touch_desktop/features/peers_admin/model/libp2p_test_result.dart';
+import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 
 /// PeersAdmin 控制器：负责读取后端地址、执行管理与 Peer 相关请求
 class PeersAdminController extends GetxController {
-  final IHttpService httpService;
-  final LocalStorage localStorage;
-  final SecureStorage secureStorage;
-  final Libp2pNetworkService libp2pNetworkService;
 
   PeersAdminController({
     required this.httpService,
@@ -23,6 +19,10 @@ class PeersAdminController extends GetxController {
     required this.secureStorage,
     required this.libp2pNetworkService,
   });
+  final IHttpService httpService;
+  final LocalStorage localStorage;
+  final SecureStorage secureStorage;
+  final Libp2pNetworkService libp2pNetworkService;
 
   // 后端地址（从设置中读取）
   final backendUrl = ''.obs;

@@ -20,10 +20,10 @@ type ActivityPubObject struct {
 	URL           string     `gorm:"size:512"`                        // Object URL
 	Published     time.Time  `gorm:"index"`                           // When the object was published
 	Updated       *time.Time `gorm:"index"`                           // When the object was last updated
-	InReplyTo     string     `gorm:"size:512;index"`                  // Reply target
-	IsLocal       bool       `gorm:"default:false;not null;index"`    // Whether this is a local object
-	IsPublic      bool       `gorm:"default:true;not null;index"`     // Whether the object is public
-	Metadata      string     `gorm:"type:json"`                       // Additional metadata as JSON
+	InReplyTo     uint64     `gorm:"index"`
+	IsLocal       bool       `gorm:"default:false;not null;index"` // Whether this is a local object
+	IsPublic      bool       `gorm:"default:true;not null;index"`  // Whether the object is public
+	Metadata      string     `gorm:"type:json"`                    // Additional metadata as JSON
 
 	CreatedAt time.Time `gorm:"created_at"`
 	UpdatedAt time.Time `gorm:"updated_at"`
