@@ -1,9 +1,11 @@
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
+import 'package:peers_touch_base/applet/models/applet_manifest.dart';
 
 class ShellController extends GetxController {
   // 当前选中的一级菜单项
@@ -36,6 +38,9 @@ class ShellController extends GetxController {
   // 焦点节点
   final focusNode = FocusNode();
 
+  // Pinned Applets (Mock data for now)
+  final pinnedApplets = <AppletManifest>[].obs;
+
   @override
   void onClose() {
     focusNode.dispose();
@@ -47,6 +52,27 @@ class ShellController extends GetxController {
     super.onInit();
     // 初始化左侧面板宽度为响应式，避免 Obx 未使用可观察变量的误用警告
     leftPaneWidth ??= UIKit.secondaryNavWidth.obs;
+    
+    // 初始化 Pinned Applets (Mock)
+    pinnedApplets.addAll([
+      AppletManifest(
+        appId: 'com.peers.demo',
+        version: '1.0.0',
+        name: 'Demo',
+        entryPoint: '',
+        permissions: [],
+        icon: 'assets/icons/ai-chat/chat.svg', // Placeholder
+      ),
+      AppletManifest(
+        appId: 'com.peers.calc',
+        version: '1.0.0',
+        name: 'Calc',
+        entryPoint: '',
+        permissions: [],
+        icon: null,
+      ),
+    ]);
+    
     // 初始化右侧面板状态
     // 默认显示右侧折叠栏，由其自身按钮控制展开/收起
     isRightPanelVisible.value = true;
