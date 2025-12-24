@@ -1196,6 +1196,27 @@ abstract class AppLocalizations {
   /// **'Unknown Network'**
   String get unknownNetwork;
 
+  /// No description provided for @networkCheckingLabel.
+  String get networkCheckingLabel;
+
+  /// No description provided for @networkUnreachableLabel.
+  String get networkUnreachableLabel;
+
+  /// No description provided for @networkNotFoundLabel.
+  String get networkNotFoundLabel;
+
+  /// No description provided for @networkCheckingTooltip.
+  String get networkCheckingTooltip;
+
+  /// No description provided for @networkUnreachableTooltip.
+  String get networkUnreachableTooltip;
+
+  /// No description provided for @networkNotFoundTooltip.
+  String get networkNotFoundTooltip;
+
+  /// No description provided for @networkUnknownTooltip.
+  String get networkUnknownTooltip;
+
   /// No description provided for @clientRequestMode.
   ///
   /// In en, this message translates to:

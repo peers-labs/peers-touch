@@ -1,6 +1,6 @@
 syntax = "proto3";
 package peers.actor;
-option go_package = "github.com/peers-labs/peers-touch/station/domain/actor;actor";
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/actor;actor";
 
 message ActorPreferences {
   string theme = 1;

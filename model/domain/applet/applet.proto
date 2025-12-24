@@ -1,0 +1,71 @@
+
+syntax = "proto3";
+
+package peers_touch.domain.applet;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/applet_store/model";
+
+// AppletInfo represents the public information of an applet
+message AppletInfo {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string icon_url = 4;
+  string developer_id = 5;
+  int64 download_count = 6;
+  string latest_version = 7;
+  int64 updated_at = 8; // Unix timestamp
+}
+
+// AppletVersionInfo represents details of a specific version
+message AppletVersionInfo {
+  string id = 1;
+  string applet_id = 2;
+  string version = 3;
+  string bundle_url = 4;
+  string bundle_hash = 5;
+  int64 bundle_size = 6;
+  string min_sdk_version = 7;
+  string changelog = 8;
+  int64 created_at = 9; // Unix timestamp
+}
+
+// Request to list applets
+message ListAppletsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  string search_keyword = 3; // Optional
+}
+
+// Response for listing applets
+message ListAppletsResponse {
+  repeated AppletInfo applets = 1;
+  int64 total_count = 2;
+}
+
+// Request to get applet details
+message GetAppletDetailsRequest {
+  string applet_id = 1;
+}
+
+// Response for applet details
+message GetAppletDetailsResponse {
+  AppletInfo info = 1;
+  AppletVersionInfo latest_version = 2;
+}
+
+// Request to publish/update applet (Metadata part)
+// File upload is handled separately via multipart/form-data
+message PublishAppletRequest {
+  string name = 1;
+  string description = 2;
+  string version = 3;
+  string min_sdk_version = 4;
+  string changelog = 5;
+}
+
+message PublishAppletResponse {
+  string applet_id = 1;
+  string version_id = 2;
+  bool is_new_applet = 3;
+}
