@@ -16,7 +16,7 @@ class FakeSecureStorage implements SecureStorageAdapter {
 class FakeLocalStorage implements LocalStorageAdapter {
   final Map<String, dynamic> _store = {};
   @override
-  T? get<T>(String key) => _store[key] as T?;
+  Future<T?> get<T>(String key) async => _store[key] as T?;
   @override
   Future<void> remove(String key) async => _store.remove(key);
   @override
@@ -28,7 +28,7 @@ void main() {
     final ls = FakeLocalStorage();
     final ctx = DefaultGlobalContext(secureStorage: FakeSecureStorage(), localStorage: ls);
     await ctx.updatePreferences({'theme': 'light'});
-    final saved = ls.get<Map<String, dynamic>>('global:user_preferences');
+    final saved = await ls.get<Map<String, dynamic>>('global:user_preferences');
     expect(saved?['schemaVersion'], 1);
     ls._store['global:user_preferences'] = {'theme': 'dark'};
     await ctx.hydrate();
