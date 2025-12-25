@@ -7,6 +7,7 @@ import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/repositories/actor_repository.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_desktop/core/models/actor_base.dart';
 import 'package:peers_touch_desktop/core/services/oss_service.dart';
 import 'package:peers_touch_desktop/core/services/file_cache_service.dart';
@@ -153,8 +154,10 @@ class ProfileController extends GetxController {
            // For now, let's trigger a logout if we really can't identify the user, 
            // OR just return and let the UI stay empty (but user complained about this).
            // Let's try to logout to force re-login which fixes the state.
-           print('Critical: Logged in but no username found. Forcing logout.');
-           logout();
+           LoggingService.warning('Critical: Logged in but no username found. Retrying in 1s...');
+           await Future.delayed(const Duration(seconds: 1));
+           _syncWithSession();
+           // logout(); // Temporarily disable auto-logout to debug "No user" issue
         }
         return;
       }
@@ -319,7 +322,6 @@ class ProfileController extends GetxController {
   }
 
   Future<UploadResult?> uploadImage({required String category}) async {
-    final isLoading = category == 'avatar' ? uploadingAvatar : uploadingHeader;
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
@@ -329,44 +331,68 @@ class ProfileController extends GetxController {
       if (result != null && result.files.single.path != null) {
         final path = result.files.single.path!;
         final file = File(path);
-        
-        // 1. Validate file size (WeChat style limits)
-        final bytes = await file.length();
-        final mb = bytes / (1024 * 1024);
-        final maxMb = category == 'avatar' ? 5.0 : 10.0;
-        
-        if (mb > maxMb) {
-          Get.snackbar(
-            '文件过大',
-            '${category == 'avatar' ? '头像' : '背景图'}大小不能超过 ${maxMb.toInt()}MB',
-            backgroundColor: Get.theme.colorScheme.errorContainer,
-            colorText: Get.theme.colorScheme.onErrorContainer,
-            snackPosition: SnackPosition.BOTTOM,
-            margin: const EdgeInsets.all(16),
-          );
-          return null;
+        return await uploadFile(file, category: category);
+      }
+    } catch (e) {
+      print('Pick file failed: $e');
+    }
+    return null;
+  }
+
+  Future<UploadResult?> uploadFile(File file, {required String category}) async {
+    final isLoading = category == 'avatar' ? uploadingAvatar : uploadingHeader;
+    try {
+      // 1. Validate file size (WeChat style limits)
+      final bytes = await file.length();
+      final mb = bytes / (1024 * 1024);
+      final maxMb = category == 'avatar' ? 5.0 : 10.0;
+      
+      if (mb > maxMb) {
+        Get.snackbar(
+          '文件过大',
+          '${category == 'avatar' ? '头像' : '背景图'}大小不能超过 ${maxMb.toInt()}MB',
+          backgroundColor: Get.theme.colorScheme.errorContainer,
+          colorText: Get.theme.colorScheme.onErrorContainer,
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16),
+        );
+        return null;
+      }
+
+      isLoading.value = true;
+      final oss = Get.find<OssService>();
+      final meta = await oss.uploadFile(file);
+      var url = meta['url']?.toString() ?? '';
+      final key = meta['key']?.toString() ?? '';
+
+      if (url.isNotEmpty) {
+        // Fix backslashes and relative path
+        url = url.replaceAll('\\', '/');
+        if (url.startsWith('/')) {
+           final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+           url = '$baseUrl$url';
         }
 
-        isLoading.value = true;
-        final oss = Get.find<OssService>();
-        final meta = await oss.uploadFile(file);
-        final url = meta['url']?.toString() ?? '';
-        final key = meta['key']?.toString() ?? '';
-
-        if (url.isNotEmpty) {
+        String? localPath;
+        try {
           final username = detail.value?.handle ?? 'user';
           final cache = FileCacheService();
-          final local = await cache.downloadToUserDir(
+          // Use saveLocalFileToUserDir to avoid downloading what we already have
+          final local = await cache.saveLocalFileToUserDir(
             username: username,
             category: category,
             urlPath: url,
-            suggestedName: key.isNotEmpty ? key.split('/').last : null,
+            sourceFile: file,
+            suggestedName: key.isNotEmpty ? key.replaceAll('\\', '/').split('/').last : null,
           );
-          return UploadResult(remoteUrl: url, localPath: local.path);
+          localPath = local.path;
+        } catch (e) {
+          LoggingService.warning('Save to cache failed: $e');
         }
+        return UploadResult(remoteUrl: url, localPath: localPath);
       }
     } catch (e) {
-      print('Upload failed: $e');
+      LoggingService.error('Upload failed: $e');
       String message = '上传失败，请检查网络连接';
       if (e.toString().contains('Connection refused') || e.toString().contains('SocketException')) {
         message = '无法连接到服务器，请确保服务端已启动 (Connection Refused)';
@@ -425,7 +451,7 @@ class ProfileController extends GetxController {
         margin: const EdgeInsets.all(16),
       );
     } catch (e) {
-      print('Update failed: $e');
+      LoggingService.error('Update failed: $e');
       Get.snackbar(
         'Error',
         'Failed to update profile: $e',

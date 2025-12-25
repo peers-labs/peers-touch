@@ -55,6 +55,9 @@ dependencies:
     path: ../common/peers_touch_ui
 
   fixnum: any
+  extended_image: ^10.0.1
+  path_provider: ^2.1.5
+  image: ^4.3.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

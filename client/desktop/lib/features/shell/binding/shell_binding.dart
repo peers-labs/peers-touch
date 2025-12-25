@@ -10,7 +10,7 @@ import 'package:peers_touch_desktop/features/shell/controller/shell_controller.d
 class ShellBinding extends Bindings {
   @override
   void dependencies() {
-    Get.lazyPut<ShellController>(() => ShellController());
+    Get.put<ShellController>(ShellController());
 
     // Register Feature Modules
     SettingsModule.register();
