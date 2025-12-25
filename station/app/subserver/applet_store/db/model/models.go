@@ -26,9 +26,13 @@ type AppletVersion struct {
 	Version  string `gorm:"type:varchar(32);not null" json:"version"` // e.g. "1.0.0"
 
 	// Bundle information
-	BundleHash string `gorm:"type:varchar(128)" json:"bundle_hash"` // SHA256 of the JS bundle
-	BundleSize int64  `json:"bundle_size"`
-	BundleURL  string `gorm:"type:varchar(255)" json:"bundle_url"` // Local path or remote URL
+	BundleHash   string `gorm:"type:varchar(128)" json:"bundle_hash"` // SHA256 of the JS bundle
+	BundleSize   int64  `json:"bundle_size"`
+	BundlePath   string `gorm:"type:varchar(255)" json:"bundle_path"`   // Relative path
+	BundleDomain string `gorm:"type:varchar(255)" json:"bundle_domain"` // Domain part
+
+	// Computed field for API response
+	BundleURL string `gorm:"-" json:"bundle_url"`
 
 	// Requirements
 	MinSDKVersion string `gorm:"type:varchar(32)" json:"min_sdk_version"`
