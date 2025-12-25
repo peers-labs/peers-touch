@@ -1,17 +1,18 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:peers_touch_base/storage/file_storage_manager.dart';
 import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 
 class FileCacheService {
   Future<Directory> _userCategoryDir(String username, String category) async {
-    final support = await getApplicationSupportDirectory();
-    final base = Directory(p.join(support.path, 'PeersTouchDesktop', username, 'media', category));
-    if (!await base.exists()) {
-      await base.create(recursive: true);
-    }
-    return base;
+    // Migrate to use unified FileStorageManager
+    // Path: Support/PeersTouchDesktop/{username}/media/{category}
+    return await FileStorageManager().getDirectory(
+      StorageLocation.support,
+      StorageNamespace.peersTouchDesktop,
+      subDir: p.join(username, 'media', category),
+    );
   }
 
   Future<File> downloadToUserDir({

@@ -1,15 +1,13 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 	"mime/multipart"
-	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/peers-touch/peers-touch/station/app/subserver/applet_store/db/model"
-	"github.com/peers-touch/peers-touch/station/app/subserver/applet_store/storage"
+	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store/db/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store/storage"
 	"gorm.io/gorm"
 )
 
@@ -85,12 +83,16 @@ func (s *StoreService) PublishApplet(
 		return nil, err
 	}
 
+	// Calculate Hash (Simple placeholder, real impl should stream and calc)
+	// bundleHash := calculateHash(bundleFile)
+
 	// 3. Create Version Record
 	appletVersion := model.AppletVersion{
-		ID:         uuid.New().String(),
-		AppletID:   applet.ID,
-		Version:    version,
-		BundleURL:  savedPath, // In real world, this should be a public URL
+		ID:        uuid.New().String(),
+		AppletID:  applet.ID,
+		Version:   version,
+		BundleURL: savedPath, // In real world, this should be a public URL
+		// BundleHash: bundleHash,
 		BundleSize: bundleHeader.Size,
 		Status:     "published",
 		CreatedAt:  time.Now(),
@@ -101,4 +103,52 @@ func (s *StoreService) PublishApplet(
 	}
 
 	return &appletVersion, nil
+}
+
+// GenerateMockApplets creates mock data for demo purposes
+// It returns a list of applets that point to the native templates
+func (s *StoreService) GenerateMockApplets() ([]model.Applet, error) {
+	// Check if mocks exist, if not create them
+	var count int64
+	s.db.Model(&model.Applet{}).Count(&count)
+	if count > 0 {
+		return s.ListApplets(10, 0)
+	}
+
+	demos := []struct {
+		Name  string
+		Desc  string
+		Color string
+	}{
+		{"Demo Calculator", "A simple calculator applet", "#e3f2fd"},
+		{"Demo Weather", "Check local weather", "#fff3e0"},
+		{"Demo Todo", "Manage your tasks", "#e8f5e9"},
+	}
+
+	for _, d := range demos {
+		// Create Applet
+		applet := model.Applet{
+			ID:          uuid.New().String(),
+			Name:        d.Name,
+			Description: d.Desc,
+			DeveloperID: "system",
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+		s.db.Create(&applet)
+
+		// Create Version with special URL that indicates it's a template
+		// Format: template://{color}
+		ver := model.AppletVersion{
+			ID:        uuid.New().String(),
+			AppletID:  applet.ID,
+			Version:   "1.0.0",
+			BundleURL: "template://" + d.Color,
+			Status:    "published",
+			CreatedAt: time.Now(),
+		}
+		s.db.Create(&ver)
+	}
+
+	return s.ListApplets(10, 0)
 }
