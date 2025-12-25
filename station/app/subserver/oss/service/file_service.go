@@ -31,7 +31,8 @@ func (s *fileService) SaveFile(ctx context.Context, file multipart.File, header 
 	rnd, _ := touchutil.RandomString(16)
 	ext := filepath.Ext(header.Filename)
 	day := time.Now().Format("2006/01/02")
-	key := filepath.Join(day, rnd+ext)
+	// Use forward slash explicitly for OSS keys to be cross-platform and URL friendly
+	key := day + "/" + rnd + ext
 
 	fullPath, err := s.backend.Save(ctx, key, file)
 	if err != nil {
