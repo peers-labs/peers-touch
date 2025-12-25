@@ -41,12 +41,34 @@ class FileCacheService {
     return file;
   }
 
+  Future<File> saveLocalFileToUserDir({
+    required String username,
+    required String category,
+    required String urlPath,
+    required File sourceFile,
+    String? suggestedName,
+  }) async {
+    final dir = await _userCategoryDir(username, category);
+    final name = (suggestedName?.trim().isNotEmpty == true)
+        ? suggestedName!.trim()
+        : _deriveNameFromUrl(urlPath);
+    final file = File(p.join(dir.path, name));
+
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    
+    // Copy content
+    await sourceFile.copy(file.path);
+    return file;
+  }
+
   String _deriveNameFromUrl(String urlPath) {
     try {
       final uri = Uri.parse(urlPath);
       final key = uri.queryParameters['key'] ?? '';
       if (key.isNotEmpty) {
-        final seg = key.split('/').last;
+        final seg = key.replaceAll('\\', '/').split('/').last;
         return seg.isNotEmpty ? seg : _hash(urlPath);
       }
     } catch (_) {}

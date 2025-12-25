@@ -1,7 +1,13 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/core/utils/image_utils.dart';
+import 'package:peers_touch_desktop/core/widgets/image_cropper_dialog.dart';
 import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
 
 class EditProfileDialog extends StatefulWidget {
@@ -48,7 +54,35 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   }
 
   Future<void> _pickAvatar() async {
-    final res = await _controller.uploadImage(category: 'avatar');
+    // 1. Pick Image
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+    );
+    
+    if (result == null || result.files.single.path == null) return;
+    
+    final originalFile = File(result.files.single.path!);
+
+    // 2. Crop Image
+    final Uint8List? croppedBytes = await Get.dialog(
+      ImageCropperDialog(
+        imageFile: originalFile,
+        isCircular: true,
+      ),
+      useSafeArea: false,
+    );
+
+    if (croppedBytes == null) return;
+
+    // 3. Save to Temp File
+    final tempDir = await getTemporaryDirectory();
+    final ext = p.extension(originalFile.path);
+    final tempFile = File(p.join(tempDir.path, 'avatar_crop_${DateTime.now().millisecondsSinceEpoch}$ext'));
+    await tempFile.writeAsBytes(croppedBytes);
+
+    // 4. Upload
+    final res = await _controller.uploadFile(tempFile, category: 'avatar');
     if (res != null) {
       setState(() {
         _avatarUrl = res.remoteUrl;
