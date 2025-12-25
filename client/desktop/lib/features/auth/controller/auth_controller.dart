@@ -1,22 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_base/context/global_context.dart';
-import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
-import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
-import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/core/services/network_initializer.dart';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_base/storage/secure_storage.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
+
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
 enum ServerStatus {
   unknown,
   checking,
   reachable,
-  unreachable,
-  notFound,
 }
 
 class AuthController extends GetxController {
@@ -29,13 +27,12 @@ class AuthController extends GetxController {
   final error = RxnString();
   final presetUsers = <Map<String, dynamic>>[].obs;
   final baseUrl = NetworkInitializer.currentBaseUrl.obs;
-  final loginHistory = <Map<String, String>>[].obs;
   final lastStatus = RxnInt();
   final lastBody = RxnString();
   final authTab = 0.obs; // 0: login, 1: signup
   final protocol = 'peers-touch'.obs;
   final serverStatus = ServerStatus.unknown.obs;
-  late final SecureStorageAdapter _secureStorage;
+  final SecureStorage _secureStorage = SecureStorageImpl();
 
   late final TextEditingController emailController;
   late final TextEditingController passwordController;
@@ -54,7 +51,6 @@ class AuthController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    _secureStorage = Get.find<SecureStorageAdapter>();
     
     // Initialize controllers
     emailController = TextEditingController();
@@ -109,7 +105,7 @@ class AuthController extends GetxController {
       final trimmed = url.trim();
       if (trimmed.isNotEmpty) {
         await LocalStorage().set('base_url', trimmed);
-        NetworkInitializer.updateBaseUrl(trimmed);
+        NetworkInitializer.initialize(baseUrl: trimmed);
         detectProtocol(trimmed);
         loadPresetUsers(trimmed);
       }
@@ -117,7 +113,6 @@ class AuthController extends GetxController {
 
     // Restore user info from storage
     _restoreUserInfo();
-    _loadLoginHistory();
     
     // Sync baseUrl
     baseUrlController.text = baseUrl.value;
@@ -134,52 +129,6 @@ class AuthController extends GetxController {
     if (e != null) {
       email.value = e;
       emailController.text = e;
-    }
-  }
-
-  Future<void> _loadLoginHistory() async {
-    try {
-      final ls = LocalStorage();
-      final list = await ls.get<List>('login_history');
-      if (list != null) {
-        loginHistory.value = list.map((e) => Map<String, String>.from(e)).toList();
-      }
-    } catch (e) {
-      LoggingService.warning('Failed to load login history: $e');
-    }
-  }
-
-  Future<void> saveLoginHistory(String emailStr, String url, {String? avatar, String? name}) async {
-    if (emailStr.isEmpty) return;
-    
-    // Remove existing entry for same email+url
-    final index = loginHistory.indexWhere((e) => e['email'] == emailStr && e['baseUrl'] == url);
-    if (index >= 0) {
-      loginHistory.removeAt(index);
-    }
-    
-    // Add to top
-    loginHistory.insert(0, {
-      'email': emailStr,
-      'baseUrl': url,
-      'avatar': avatar ?? '',
-      'displayName': name ?? '',
-      'lastLogin': DateTime.now().toIso8601String(),
-    });
-    
-    // Keep max 5
-    if (loginHistory.length > 5) {
-      loginHistory.removeRange(5, loginHistory.length);
-    }
-    
-    // Save
-    await LocalStorage().set('login_history', loginHistory.toList());
-  }
-
-  Future<void> removeLoginHistory(int index) async {
-    if (index >= 0 && index < loginHistory.length) {
-      loginHistory.removeAt(index);
-      await LocalStorage().set('login_history', loginHistory.toList());
     }
   }
 
@@ -263,7 +212,7 @@ class AuthController extends GetxController {
       final useUrl = (overrideBaseUrl ?? baseUrl.value).trim();
       var ident = email.value.trim();
       if (!ident.contains('@') && ident.isNotEmpty) {
-        ident = '$ident@station.local';
+        ident = ident + '@station.local';
       }
       final uri = Uri.parse(
         useUrl.endsWith('/')
@@ -304,55 +253,52 @@ class AuthController extends GetxController {
                 tokensMap['tokenType']?.toString();
             if (refresh != null && refresh.isNotEmpty) {
               await LocalStorage().set('refresh_token', refresh);
-              try {
-                await _secureStorage.set(StorageKeys.refreshTokenKey, refresh);
-              } catch (_) {}
+              await _secureStorage.set(StorageKeys.refreshTokenKey, refresh);
             }
-            if (ttype != null && ttype.isNotEmpty) {
+            if (ttype != null && ttype.isNotEmpty)
               await LocalStorage().set('auth_token_type', ttype);
-            }
           } else {
             token = obj['token']?.toString() ?? '';
           }
 
           // Try to extract user info from response
-          Map<String, dynamic>? userMap;
-          if (data is Map) {
-            // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
-            if (data['user'] is Map) {
-              userMap = data['user'];
-            } else if (data['actor'] is Map) {
-              userMap = data['actor'];
-            } else {
-              // Assume data itself might contain user fields if not nested
-              userMap = data as Map<String, dynamic>;
+          if (obj is Map) {
+            final data = obj['data'];
+            Map<String, dynamic>? userMap;
+            if (data is Map) {
+              // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
+              if (data['user'] is Map) {
+                userMap = data['user'];
+              } else if (data['actor'] is Map) {
+                userMap = data['actor'];
+              } else {
+                // Assume data itself might contain user fields if not nested
+                userMap = data as Map<String, dynamic>;
+              }
+            } else if (obj['user'] is Map) {
+              userMap = obj['user'];
+            } else if (obj['actor'] is Map) {
+              userMap = obj['actor'];
             }
-          } else if (obj['user'] is Map) {
-            userMap = obj['user'];
-          } else if (obj['actor'] is Map) {
-            userMap = obj['actor'];
-          }
 
-          if (userMap != null) {
-            final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
-            if (name != null) username.value = name.toString();
-            
-            final mail = userMap['email'];
-            if (mail != null) email.value = mail.toString();
-            
-            final disp = userMap['display_name'] ?? userMap['displayName'];
-            if (disp != null) displayName.value = disp.toString();
+            if (userMap != null) {
+              final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
+              if (name != null) username.value = name.toString();
+              
+              final mail = userMap['email'];
+              if (mail != null) email.value = mail.toString();
+              
+              final disp = userMap['display_name'] ?? userMap['displayName'];
+              if (disp != null) displayName.value = disp.toString();
+            }
           }
-                }
+        }
 
         if (token.isNotEmpty) {
           await LocalStorage().set('auth_token', token);
-          try {
-            await _secureStorage.set(StorageKeys.tokenKey, token);
-            LoggingService.info('Token stored in SecureStorage');
-          } catch (e) {
-            LoggingService.warning('SecureStorage write failed: $e');
-          }
+          // Also save to SecureStorage for AuthInterceptor
+          await _secureStorage.set(StorageKeys.tokenKey, token);
+          LoggingService.info('Token stored in SecureStorage');
           
           // Persist user info
           await LocalStorage().set('username', username.value);
@@ -378,22 +324,6 @@ class AuthController extends GetxController {
               LoggingService.info('GlobalContext session updated for user: $handle');
             }
           } catch (_) {}
-
-          // Save to history
-          String? avatarUrl;
-          try {
-             // Try to find avatar from previously parsed userMap if possible, 
-             // but userMap scope is lost above. 
-             // We can just rely on what we have or try to fetch it later.
-             // For now passing null is fine, or we can improve extraction later.
-          } catch(_) {}
-          
-          await saveLoginHistory(
-            email.value,
-            (overrideBaseUrl ?? baseUrl.value).trim(),
-            name: displayName.value.isNotEmpty ? displayName.value : username.value,
-          );
-
           Get.offAllNamed('/shell');
         } else {
           error.value = 'Invalid login response';
@@ -405,52 +335,6 @@ class AuthController extends GetxController {
       error.value = e.toString();
     }
     loading.value = false;
-  }
-
-  Future<void> logout() async {
-    loading.value = true;
-    try {
-      // 1. Clear GlobalContext
-      try {
-        if (Get.isRegistered<GlobalContext>()) {
-          final gc = Get.find<GlobalContext>();
-          await gc.setSession(null);
-        }
-      } catch (_) {}
-
-      // 2. Clear LocalStorage
-      final ls = LocalStorage();
-      await ls.remove('auth_token');
-      await ls.remove('refresh_token');
-      await ls.remove('auth_token_type');
-      await ls.remove('username');
-      await ls.remove('email');
-      
-      // 3. Clear SecureStorage
-      try {
-        await _secureStorage.remove(StorageKeys.tokenKey);
-        await _secureStorage.remove(StorageKeys.refreshTokenKey);
-      } catch (_) {}
-
-      // 4. Reset Controller State
-      username.value = '';
-      email.value = '';
-      displayName.value = '';
-      password.value = '';
-      confirmPassword.value = '';
-      usernameController.clear();
-      emailController.clear();
-      passwordController.clear();
-      confirmPasswordController.clear();
-      displayNameController.clear();
-      
-      // 5. Navigate to Login
-      Get.offAllNamed('/login');
-    } catch (e) {
-      error.value = e.toString();
-    } finally {
-      loading.value = false;
-    }
   }
 
   Future<void> signup([String? overrideBaseUrl]) async {
@@ -503,7 +387,7 @@ class AuthController extends GetxController {
     final emailText = email.value.trim();
     final emailOk =
         emailText.isNotEmpty &&
-        RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(emailText);
+        RegExp(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").hasMatch(emailText);
     final pwd = password.value.trim();
     final pwdOk = pwd.length >= 8;
     final confirmOk = pwd == confirmPassword.value.trim();
@@ -559,14 +443,6 @@ class AuthController extends GetxController {
             await Get.find<GlobalContext>().setProtocolTag(protocol.value);
           }
         } catch (_) {}
-      } else if (resp.statusCode == 404) {
-        protocol.value = 'peers-touch';
-        serverStatus.value = ServerStatus.notFound;
-        try {
-          if (Get.isRegistered<GlobalContext>()) {
-            await Get.find<GlobalContext>().setProtocolTag(protocol.value);
-          }
-        } catch (_) {}
       } else {
         protocol.value = 'peers-touch';
         serverStatus.value = ServerStatus.unknown;
@@ -576,14 +452,6 @@ class AuthController extends GetxController {
           }
         } catch (_) {}
       }
-    } on SocketException {
-      protocol.value = 'peers-touch';
-      serverStatus.value = ServerStatus.unreachable;
-      try {
-        if (Get.isRegistered<GlobalContext>()) {
-          await Get.find<GlobalContext>().setProtocolTag(protocol.value);
-        }
-      } catch (_) {}
     } catch (_) {
       protocol.value = 'peers-touch';
       serverStatus.value = ServerStatus.unknown;
