@@ -2,10 +2,12 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/applet/models/applet_manifest.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
-import 'package:peers_touch_base/applet/models/applet_manifest.dart';
+
+
 
 class ShellController extends GetxController {
   // 当前选中的一级菜单项
@@ -40,6 +42,12 @@ class ShellController extends GetxController {
 
   // Pinned Applets (Mock data for now)
   final pinnedApplets = <AppletManifest>[].obs;
+  
+  // Applet Keep-Alive State
+  // 运行中的小程序列表
+  final runningApplets = <AppletManifest>[].obs;
+  // 当前激活的小程序ID（null表示显示主面板）
+  final activeAppletId = RxnString();
 
   @override
   void onClose() {
@@ -209,5 +217,39 @@ class ShellController extends GetxController {
       }
     }
     return KeyEventResult.ignored;
+  }
+
+  // --- Applet Management ---
+
+  /// 打开小程序
+  void openApplet(AppletManifest applet) {
+    // 如果不在运行列表中，则添加
+    if (!runningApplets.any((m) => m.appId == applet.appId)) {
+      runningApplets.add(applet);
+    }
+    // 激活该小程序
+    activeAppletId.value = applet.appId;
+    
+    // 打开小程序时，建议关闭右侧面板以获得更多空间
+    if (isRightPanelVisible.value) {
+      closeRightPanel();
+    }
+    update();
+  }
+
+  /// 关闭小程序
+  void closeApplet(String appId) {
+    runningApplets.removeWhere((m) => m.appId == appId);
+    // 如果关闭的是当前激活的小程序，则返回主界面
+    if (activeAppletId.value == appId) {
+      activeAppletId.value = null;
+    }
+    update();
+  }
+
+  /// 最小化小程序（返回主界面，但保持运行状态）
+  void minimizeApplet() {
+    activeAppletId.value = null;
+    update();
   }
 }

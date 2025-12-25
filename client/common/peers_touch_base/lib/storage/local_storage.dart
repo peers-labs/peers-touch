@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:peers_touch_base/storage/kv/kv_database.dart';
 
 /// A wrapper for key-value storage, implemented using Drift.

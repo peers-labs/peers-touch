@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
+import 'package:peers_touch_base/storage/file_storage_manager.dart';
 
 /// Logging service - provides structured logging capabilities
 /// Belongs to underlying kernel services, no UI, core functionality
@@ -12,12 +14,27 @@ class LoggingService {
   
   static final Logger _logger = Logger('PeersTouch');
   static bool _isInitialized = false;
+  static IOSink? _logSink;
   
   /// Initialize the logging system
-  static void initialize({Level level = Level.INFO}) {
+  static Future<void> initialize({Level level = Level.INFO, bool writeToFile = false}) async {
     if (_isInitialized) return;
     
     Logger.root.level = level;
+    
+    if (writeToFile) {
+      try {
+        // Initialize log file sink
+        final logFile = await FileStorageManager().getFile(
+          StorageLocation.support, 
+          StorageNamespace.logs, 
+          'app.log'
+        );
+        _logSink = logFile.openWrite(mode: FileMode.append);
+      } catch (e) {
+        debugPrint('Failed to initialize log file: $e');
+      }
+    }
     
     // Setup log record listener
     Logger.root.onRecord.listen((LogRecord record) {
@@ -26,10 +43,10 @@ class LoggingService {
       // Use debugPrint for development environment output (respects Flutter's logging preferences)
       debugPrint(message);
       
-      // In production environment, can be extended to:
-      // - Write to file
-      // - Send to remote logging service
-      // - Filter sensitive information
+      // Write to file if enabled
+      if (_logSink != null) {
+        _logSink!.writeln(message);
+      }
     });
     
     _isInitialized = true;

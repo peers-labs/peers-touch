@@ -8,6 +8,7 @@ class AppletManifest {
   final String entryPoint;
   final String? minSdkVersion;
   final List<String> permissions;
+  final String? bundleHash; // SHA-256 hash of the bundle file
 
   AppletManifest({
     required this.appId,
@@ -18,6 +19,7 @@ class AppletManifest {
     required this.entryPoint,
     this.minSdkVersion,
     required this.permissions,
+    this.bundleHash,
   });
 
   factory AppletManifest.fromJson(Map<String, dynamic> json) {
@@ -30,6 +32,7 @@ class AppletManifest {
       entryPoint: json['entry_point'] as String,
       minSdkVersion: json['min_sdk_version'] as String?,
       permissions: (json['permissions'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+      bundleHash: json['bundle_hash'] as String?,
     );
   }
 
@@ -43,6 +46,7 @@ class AppletManifest {
       'entry_point': entryPoint,
       'min_sdk_version': minSdkVersion,
       'permissions': permissions,
+      'bundle_hash': bundleHash,
     };
   }
 }

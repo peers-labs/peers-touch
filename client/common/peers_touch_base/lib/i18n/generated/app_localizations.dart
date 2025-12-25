@@ -1197,24 +1197,45 @@ abstract class AppLocalizations {
   String get unknownNetwork;
 
   /// No description provided for @networkCheckingLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking'**
   String get networkCheckingLabel;
 
   /// No description provided for @networkUnreachableLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Unreachable'**
   String get networkUnreachableLabel;
 
   /// No description provided for @networkNotFoundLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Not Found'**
   String get networkNotFoundLabel;
 
   /// No description provided for @networkCheckingTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Detecting server network type'**
   String get networkCheckingTooltip;
 
   /// No description provided for @networkUnreachableTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Network unreachable, please check address or connectivity'**
   String get networkUnreachableTooltip;
 
   /// No description provided for @networkNotFoundTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Node interface not found (404), please verify server address'**
   String get networkNotFoundTooltip;
 
   /// No description provided for @networkUnknownTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown network type'**
   String get networkUnknownTooltip;
 
   /// No description provided for @clientRequestMode.

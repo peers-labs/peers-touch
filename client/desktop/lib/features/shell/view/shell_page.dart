@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/applet/models/applet_manifest.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
@@ -148,9 +149,8 @@ class ShellPage extends StatelessWidget {
               return PinnedAppletsDock(
                 pinnedApplets: applets,
                 onAppletTap: (applet) {
-                   // Open Applet
-                   const mockUrl = 'https://raw.githubusercontent.com/openwebf/webf/master/examples/vue/dist/bundle.js';
-                   Get.to(() => AppletContainer(manifest: applet, bundleUrl: mockUrl));
+                   // Open Applet using Keep-Alive mechanism
+                   controller.openApplet(applet);
                 },
                 onReorder: (oldIndex, newIndex) {
                   if (oldIndex < newIndex) {
@@ -276,13 +276,110 @@ class ShellPage extends StatelessWidget {
 
   Widget _buildContentArea(BuildContext context, ShellController controller, ThemeData theme, AppLocalizations? localizations) {
     final tokens = theme.extension<WeChatTokens>()!;
-    final currentItem = controller.currentMenuItem.value;
     
+    return Obx(() {
+      final activeId = controller.activeAppletId.value;
+      // Explicitly convert to list to ensure GetX dependency registration
+      final running = controller.runningApplets.toList();
+      final currentItem = controller.currentMenuItem.value;
+      
+      int stackIndex = 0;
+      if (activeId != null) {
+        final index = running.indexWhere((m) => m.appId == activeId);
+        if (index != -1) {
+          stackIndex = index + 1;
+        }
+      }
+
+      return IndexedStack(
+        index: stackIndex,
+        children: [
+          // Index 0: Dashboard Content
+          Container(
+            color: tokens.bgLevel1,
+            child: currentItem != null
+                ? Builder(builder: currentItem.contentBuilder) 
+                : Container(color: tokens.bgLevel1),
+          ),
+          
+          // Index 1..N: Running Applets
+          ...running.map((manifest) {
+            return _buildAppletWrapper(context, controller, theme, manifest);
+          }),
+        ],
+      );
+    });
+  }
+
+  Widget _buildAppletWrapper(BuildContext context, ShellController controller, ThemeData theme, AppletManifest manifest) {
+    final tokens = theme.extension<WeChatTokens>()!;
+    // Using local Hello World example to ensure it loads.
+    // Use triple slash to ensure path is correctly parsed: assets:///assets/webf/hello.js
+    const mockUrl = 'assets:///assets/webf/hello.js';
+
     return Container(
-      color: tokens.bgLevel1,
-      child: currentItem != null
-          ? Builder(builder: currentItem.contentBuilder) // 显示选中的模块内容
-          : Container(color: tokens.bgLevel1), // 中心区留白
+      color: tokens.bgLevel0,
+      child: Column(
+        children: [
+          // Applet Header
+          Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: tokens.bgLevel2,
+              border: Border(bottom: BorderSide(color: tokens.divider)),
+            ),
+            child: Row(
+              children: [
+                // Close Button
+                IconButton(
+                  icon: Icon(Icons.close, size: 18, color: tokens.textSecondary),
+                  onPressed: () => controller.closeApplet(manifest.appId),
+                  tooltip: 'Close',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(24, 24),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Minimize Button
+                IconButton(
+                  icon: Icon(Icons.remove, size: 18, color: tokens.textSecondary),
+                  onPressed: () => controller.minimizeApplet(),
+                  tooltip: 'Minimize',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(24, 24),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Applet Title
+                Text(
+                  manifest.name,
+                  style: TextStyle(
+                    color: tokens.textPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const Spacer(),
+                Icon(Icons.more_horiz, color: tokens.textSecondary, size: 20),
+              ],
+            ),
+          ),
+          // Applet Content
+          Expanded(
+            child: AppletContainer(
+              key: ValueKey(manifest.appId),
+              manifest: manifest,
+              bundleUrl: mockUrl,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
