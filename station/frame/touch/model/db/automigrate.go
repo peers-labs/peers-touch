@@ -26,6 +26,7 @@ func init() {
 			&Receipt{},
 			&Reaction{},
 			&KeyEpoch{},
+			&ActorStatus{},
 		)
 		if err != nil {
 			panic(fmt.Errorf("auto migrate failed: %v", err))
