@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS applet_versions (
     bundle_hash VARCHAR(128),
     bundle_size BIGINT,
     bundle_url VARCHAR(255),
-    min_sdk_version VARCHAR(32),
     changelog TEXT,
     status VARCHAR(20) DEFAULT 'published',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
