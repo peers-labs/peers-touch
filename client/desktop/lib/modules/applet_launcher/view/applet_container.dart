@@ -1,14 +1,14 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:webf/webf.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:peers_touch_base/applet/models/applet_manifest.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import '../controller/applet_controller.dart';
 
 class AppletContainer extends StatelessWidget {
   final AppletManifest manifest;
-  final String bundleUrl; // Local path or Remote URL
+  final String bundleUrl; // Local path (file://) or Remote URL (http://)
 
   const AppletContainer({
     Key? key,
@@ -27,17 +27,24 @@ class AppletContainer extends StatelessWidget {
       tag: manifest.appId,
     );
 
+    // Initialize WebView when building
+    // We pass the bundleUrl to the controller to load
+    controller.initializeWebView(bundleUrl);
+
     return Scaffold(
       backgroundColor: tokens.bgLevel1,
       body: Stack(
         children: [
-          // The WebF View
-          WebF(
-            key: Key(manifest.appId),
-            bundle: WebFBundle.fromUrl(bundleUrl),
-            onControllerCreated: controller.onWebFCreated,
-            onLoadError: (error, stack) => controller.onWebFError(error, stack),
-          ),
+          // The WebView
+          Obx(() {
+            if (controller.webViewController.value != null) {
+              return WebViewWidget(
+                key: Key(manifest.appId),
+                controller: controller.webViewController.value!,
+              );
+            }
+            return const SizedBox.shrink();
+          }),
 
           // Loading Indicator
           Obx(() {

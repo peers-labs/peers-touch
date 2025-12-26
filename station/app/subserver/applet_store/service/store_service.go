@@ -27,6 +27,19 @@ func NewStoreService(db *gorm.DB, storagePath string) *StoreService {
 func (s *StoreService) ListApplets(limit, offset int) ([]model.Applet, error) {
 	var applets []model.Applet
 	result := s.db.Limit(limit).Offset(offset).Order("download_count desc").Find(&applets)
+	// Fill computed URL for all applets
+	for i := range applets {
+		// Need to load latest version to get URL
+		var latestVersion model.AppletVersion
+		if err := s.db.Where("applet_id = ?", applets[i].ID).Order("created_at desc").First(&latestVersion).Error; err == nil {
+			if latestVersion.BundleDomain == "mock" {
+				// Keep template URL for mocks
+				// In real scenario we might want to construct a real URL even for mocks if we served them
+			} else {
+				applets[i].LatestVersionURL = fmt.Sprintf("%s/api/v1/applets/bundle?path=%s", latestVersion.BundleDomain, latestVersion.BundlePath)
+			}
+		}
+	}
 	return applets, result.Error
 }
 
@@ -88,10 +101,11 @@ func (s *StoreService) PublishApplet(
 
 	// 3. Create Version Record
 	appletVersion := model.AppletVersion{
-		ID:        uuid.New().String(),
-		AppletID:  applet.ID,
-		Version:   version,
-		BundleURL: savedPath, // In real world, this should be a public URL
+		ID:           uuid.New().String(),
+		AppletID:     applet.ID,
+		Version:      version,
+		BundlePath:   savedPath,
+		BundleDomain: "http://localhost:8080", // TODO: Get from config
 		// BundleHash: bundleHash,
 		BundleSize: bundleHeader.Size,
 		Status:     "published",
@@ -101,6 +115,9 @@ func (s *StoreService) PublishApplet(
 	if err := s.db.Create(&appletVersion).Error; err != nil {
 		return nil, err
 	}
+
+	// Fill computed URL
+	appletVersion.BundleURL = fmt.Sprintf("%s/api/v1/applets/bundle?path=%s", appletVersion.BundleDomain, appletVersion.BundlePath)
 
 	return &appletVersion, nil
 }
@@ -137,15 +154,16 @@ func (s *StoreService) GenerateMockApplets() ([]model.Applet, error) {
 		}
 		s.db.Create(&applet)
 
-		// Create Version with special URL that indicates it's a template
-		// Format: template://{color}
+		// Create Version
 		ver := model.AppletVersion{
-			ID:        uuid.New().String(),
-			AppletID:  applet.ID,
-			Version:   "1.0.0",
-			BundleURL: "template://" + d.Color,
-			Status:    "published",
-			CreatedAt: time.Now(),
+			ID:           uuid.New().String(),
+			AppletID:     applet.ID,
+			Version:      "1.0.0",
+			BundlePath:   "mock_bundles/" + d.Name + ".zip", // Mock ZIP path
+			BundleDomain: "mock",
+			BundleURL:    "mock_zip://" + d.Color, // Use a mock protocol to indicate client should simulate a download/unzip
+			Status:       "published",
+			CreatedAt:    time.Now(),
 		}
 		s.db.Create(&ver)
 	}

@@ -46,7 +46,6 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   connectivity_plus: ^7.0.0
   flutter_svg: ^2.0.10+1
-  webf: ^0.16.0
   
   # Local packages
   peers_touch_base:
@@ -58,6 +57,8 @@ dependencies:
   extended_image: ^10.0.1
   path_provider: ^2.1.5
   image: ^4.3.0
+  webview_flutter: ^4.13.0
+  webview_flutter_wkwebview: ^3.23.5
 dev_dependencies:
   flutter_test:
     sdk: flutter

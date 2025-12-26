@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package peers_touch.model.actor.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+import "domain/actor/actor.proto";
+
+message OnlineActorsResponse {
+    repeated OnlineActor actors = 1;
+}
+
+message OnlineActor {
+    uint64 id = 1;
+    string name = 2;
+    string preferred_username = 3;
+    string avatar_url = 4;
+    int32 status = 5;
+    string last_heartbeat = 6;
+}
+
+message HeartbeatRequest {
+    // Empty for now, can be extended
+}
+
+message HeartbeatResponse {
+    // Empty for now
+}

@@ -4,6 +4,7 @@ import 'package:peers_touch_desktop/features/discovery/controller/discovery_cont
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 import 'package:peers_touch_desktop/features/discovery/view/components/discovery_content_item.dart';
 import 'package:peers_touch_desktop/features/discovery/view/composer_page.dart';
+import 'package:peers_touch_desktop/features/discovery/view/radar_view.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
@@ -163,38 +164,43 @@ class DiscoveryPage extends GetView<DiscoveryController> {
         Positioned.fill(
           child: Container(
             color: const Color(0xFFF5F7FB),
-            child: RefreshableList(
-              onRefresh: controller.refreshItems,
-              child: Obx(() {
-                if (controller.isLoading.value) {
-                  return _buildSkeletonList();
-                }
+            child: Obx(() {
+              if (controller.tabs[controller.currentTab.value] == 'Radar') {
+                return const RadarView();
+              }
+              return RefreshableList(
+                onRefresh: controller.refreshItems,
+                child: Obx(() {
+                  if (controller.isLoading.value) {
+                    return _buildSkeletonList();
+                  }
 
-                if (controller.error.value != null && controller.items.isEmpty) {
-                  return _buildErrorState(context, controller.error.value!);
-                }
+                  if (controller.error.value != null && controller.items.isEmpty) {
+                    return _buildErrorState(context, controller.error.value!);
+                  }
 
-                final items = controller.items;
-                if (items.isEmpty) {
-                  return _buildEmptyState(context);
-                }
+                  final items = controller.items;
+                  if (items.isEmpty) {
+                    return _buildEmptyState(context);
+                  }
 
-                return ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  controller: controller.scrollController,
-                  padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
-                  itemCount: items.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 24),
-                  itemBuilder: (ctx, i) {
-                    final item = items[i];
-                    return DiscoveryContentItem(
-                      item: item,
-                      controller: controller,
-                    );
-                  },
-                );
-              }),
-            ),
+                  return ListView.separated(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    controller: controller.scrollController,
+                    padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 24),
+                    itemBuilder: (ctx, i) {
+                      final item = items[i];
+                      return DiscoveryContentItem(
+                        item: item,
+                        controller: controller,
+                      );
+                    },
+                  );
+                }),
+              );
+            }),
           ),
         ),
         Positioned(

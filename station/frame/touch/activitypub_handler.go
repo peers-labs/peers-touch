@@ -17,11 +17,11 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	"github.com/peers-labs/peers-touch/station/frame/touch/activity"
 	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -42,6 +42,9 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 	commonWrapper := CommonAccessControlWrapper(model.RouteNameActivityPub)
 	actorWrapper := CommonAccessControlWrapper(model.RouteNameActor)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+
+	// Init Status Manager
+	activitypub.InitStatusManager()
 
 	return []ActivityPubHandlerInfo{
 		// Actor Management Endpoints (Client API)
@@ -82,6 +85,21 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Handler:   ListActors,
 			Method:    server.GET,
 			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		// Online Status Endpoints
+		{
+			RouterURL:   RouterURLActorsOnline,
+			Handler:     GetOnlineActorsHandler,
+			Method:      server.GET,
+			Wrappers:    []server.Wrapper{actorWrapper},
+			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+		},
+		{
+			RouterURL:   RouterURLHeartbeat,
+			Handler:     HeartbeatHandler,
+			Method:      server.POST,
+			Wrappers:    []server.Wrapper{actorWrapper},
+			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
 		},
 		// User-specific ActivityPub endpoints
 		{
@@ -227,6 +245,11 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 		log.Warnf(c, "Login failed: %v", err)
 		FailedResponse(ctx, err)
 		return
+	}
+
+	// Update user status
+	if userID, ok := result.User["id"].(uint64); ok {
+		_ = activitypub.UpdateActorStatus(c, userID, db.ActorStatusOnline, userAgent)
 	}
 
 	// Set session cookie
@@ -643,7 +666,7 @@ func CreateActivity(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 	baseURL := baseURLFrom(ctx)
-	postID, actID, err := activity.Create(c, actor, baseURL, &in)
+	postID, actID, err := activitypub.Create(c, actor, baseURL, &in)
 	if err != nil {
 		FailedResponse(ctx, err)
 		return
