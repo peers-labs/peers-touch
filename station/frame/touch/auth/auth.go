@@ -42,6 +42,14 @@ type AuthProvider interface {
 	GetMethod() AuthMethod
 }
 
+// Global session manager (in-memory for now, should be moved to service/dependency injection)
+var GlobalSessionManager *session.Manager
+
+func init() {
+	sessionStore := session.NewMemoryStore(DefaultSessionDuration)
+	GlobalSessionManager = session.NewManager(sessionStore, DefaultSessionDuration)
+}
+
 // Credentials represents user login credentials
 type Credentials struct {
 	Email    string `json:"email"`
@@ -157,12 +165,8 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 		return nil, err
 	}
 
-	// Create session manager and store session
-	sessionStore := session.NewMemoryStore(DefaultSessionDuration)
-	sessionManager := session.NewManager(sessionStore, DefaultSessionDuration)
-
-	// Create session
-	sess, err := sessionManager.Create(ctx, uint64(user.ID), user.Email, sessionID, clientIP, userAgent)
+	// Create session using GlobalSessionManager
+	sess, err := GlobalSessionManager.Create(ctx, uint64(user.ID), user.Email, sessionID, clientIP, userAgent)
 	if err != nil {
 		return nil, err
 	}

@@ -12,7 +12,6 @@ import (
 
 	"github.com/ipfs/boxo/ipns"
 	"github.com/ipfs/go-cid"
-	log "github.com/ipfs/go-log/v2"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -112,17 +111,11 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	}
 	r.store = r.options.Store
 
-	// Set the logging level to Warn
-	err := log.SetLogLevel("dht", "debug")
-	if err != nil {
-		panic(err)
-	}
-
 	if r.options.PrivateKey == "" {
 		return errors.New("private key for Registry is required")
 	}
 
-	if err = r.autoMigrate(ctx); err != nil {
+	if err := r.autoMigrate(ctx); err != nil {
 		return errors.New("auto migrate table error: " + err.Error())
 	}
 
@@ -136,6 +129,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	}
 	r.host.Network().Notify(notifee)
 
+	var err error
 	// Create DHT instance in server mode using injected host
 	r.dht, err = dht.New(ctx, r.host,
 		dht.Mode(r.extOpts.runMode),

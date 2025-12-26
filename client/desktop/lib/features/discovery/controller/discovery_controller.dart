@@ -47,11 +47,11 @@ class DiscoveryController extends GetxController {
 
   // Track the latest request to prevent race conditions
   int _activeRequestId = 0;
-  final tabs = ['Home', 'Me', 'Like', 'Follow', 'Announce', 'Comment'];
+  final tabs = ['Home', 'Me', 'Radar', 'Follow', 'Announce', 'Comment'];
   final tabIcons = <IconData>[
     Icons.home_filled,
     Icons.person,
-    Icons.favorite,
+    Icons.radar,
     Icons.person_add,
     Icons.campaign,
     Icons.chat_bubble,
@@ -190,7 +190,7 @@ class DiscoveryController extends GetxController {
       case 'Me':
         return await _fetchOutboxItems();
       case 'Home':
-      case 'Like':
+      case 'Radar':
       case 'Follow':
       case 'Announce':
       case 'Comment':
@@ -287,8 +287,8 @@ class DiscoveryController extends GetxController {
     if (tabName == 'Home') {
       add('How To Manage Your Time & Get More Done', 'It may not be possible to squeeze more time in the day...', 'Valentino Del More', 'Create');
       add('The Future of Flutter', 'Flutter is evolving rapidly. Here are the new features coming in 2025.', 'Tech Insider', 'Create');
-    } else if (tabName == 'Like') {
-      add('Liked "Best Coffee in Town"', 'Alice liked a post about coffee shops.', 'Alice', 'Like');
+    } else if (tabName == 'Radar') {
+      add('Found: Alice', 'Alice is nearby.', 'Alice', 'Radar');
     } else if (tabName == 'Follow') {
       add('Followed you', 'Started following you.', 'Charlie', 'Follow');
     } else if (tabName == 'Announce') {

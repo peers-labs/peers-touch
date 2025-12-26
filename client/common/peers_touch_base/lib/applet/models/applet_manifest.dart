@@ -5,7 +5,7 @@ class AppletManifest {
   final String name;
   final String? description;
   final String? icon;
-  final String entryPoint;
+  String entryPoint;
   final String? minSdkVersion;
   final List<String> permissions;
   final String? bundleHash; // SHA-256 hash of the bundle file

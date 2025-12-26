@@ -17,6 +17,9 @@ type Applet struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// Computed fields
+	LatestVersionURL string `gorm:"-" json:"latest_version_url,omitempty"`
 }
 
 // AppletVersion represents a specific version of an applet

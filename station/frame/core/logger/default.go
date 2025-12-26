@@ -108,9 +108,31 @@ func logCallerfilePath(loggingFilePath string) string {
 	return loggingFilePath[idx+1:]
 }
 
+func (l *defaultLogger) getEffectiveLevel(skip int) Level {
+	// Fast path: if no package levels are defined, return global level
+	if len(l.opts.PackageLevels) == 0 {
+		return l.opts.Level
+	}
+
+	// Get caller file path
+	_, file, _, ok := runtime.Caller(skip + 1) // +1 for getEffectiveLevel itself
+	if !ok {
+		return l.opts.Level
+	}
+
+	// Check if any package level matches
+	for path, level := range l.opts.PackageLevels {
+		if strings.Contains(file, path) {
+			return level
+		}
+	}
+
+	return l.opts.Level
+}
+
 func (l *defaultLogger) Log(level Level, v ...interface{}) {
 	// TODO decide does we need to write message if log level not used?
-	if !l.opts.Level.Enabled(level) {
+	if !l.getEffectiveLevel(l.opts.CallerSkipCount).Enabled(level) {
 		return
 	}
 
@@ -153,7 +175,7 @@ func (l *defaultLogger) Log(level Level, v ...interface{}) {
 
 func (l *defaultLogger) Logf(level Level, format string, v ...interface{}) {
 	//	 TODO decide does we need to write message if log level not used?
-	if !l.opts.Level.Enabled(level) {
+	if !l.getEffectiveLevel(l.opts.CallerSkipCount).Enabled(level) {
 		return
 	}
 
