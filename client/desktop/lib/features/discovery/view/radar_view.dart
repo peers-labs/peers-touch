@@ -22,37 +22,31 @@ class RadarView extends StatelessWidget {
         children: [
           Expanded(
             flex: 5,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Radar Animation
-                AnimatedBuilder(
-                  animation: controller.animationController,
-                  builder: (context, child) {
-                    return CustomPaint(
-                      size: const Size(400, 400),
-                      painter: RadarPainter(controller.animationController.value),
-                    );
-                  },
-                ),
-                // Center Icon
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.2),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.blue, width: 2),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final mapSize = Size(constraints.maxWidth, constraints.maxHeight);
+                return InteractiveViewer(
+                  minScale: 0.6,
+                  maxScale: 5.0,
+                  child: Stack(
+                    children: [
+                      // World map background (simple neutral map)
+                      Positioned.fill(
+                        child: Image.network(
+                          'https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.png',
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      // Actor markers with simple clustering
+                      Obx(() {
+                        final friends = discoveryController.friends;
+                        final markers = _computeMarkers(friends, mapSize);
+                        return Stack(children: markers);
+                      }),
+                    ],
                   ),
-                  child: const Icon(Icons.person_pin_circle, color: Colors.blue, size: 32),
-                ),
-                // Scattered Peers
-                Obx(() => Stack(
-                  children: controller.radarItems.map((item) {
-                    return _buildPeerDot(item.offsetX, item.offsetY, item.friend);
-                  }).toList(),
-                )),
-              ],
+                );
+              },
             ),
           ),
           Expanded(
@@ -136,6 +130,98 @@ class RadarView extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  List<Widget> _computeMarkers(List<FriendItem> friends, Size mapSize) {
+    List<Offset> positions = friends.map((f) {
+      if (f.lat != null && f.lon != null) {
+        return _latLonToPosition(f.lat!, f.lon!, mapSize);
+      }
+      return _hashToPosition(f.id, mapSize);
+    }).toList();
+    // Density management: merge markers closer than threshold
+    const double threshold = 24.0;
+    final used = List<bool>.filled(positions.length, false);
+    final widgets = <Widget>[];
+    for (int i = 0; i < positions.length; i++) {
+      if (used[i]) continue;
+      final cluster = <int>[i];
+      for (int j = i + 1; j < positions.length; j++) {
+        if (used[j]) continue;
+        if ((positions[i] - positions[j]).distance < threshold) {
+          cluster.add(j);
+          used[j] = true;
+        }
+      }
+      final center = positions[i];
+      if (cluster.length == 1) {
+        widgets.add(_marker(center, friends[i]));
+      } else {
+        widgets.add(_clusterMarker(center, cluster.length));
+      }
+    }
+    return widgets;
+  }
+
+  Offset _hashToPosition(String id, Size size) {
+    final h = id.hashCode;
+    final x = (h & 0xFFFF) / 0xFFFF;
+    final y = ((h >> 16) & 0xFFFF) / 0xFFFF;
+    return Offset(x * size.width, y * size.height);
+  }
+
+  // Simple Web Mercator projection
+  Offset _latLonToPosition(double lat, double lon, Size size) {
+    final x = (lon + 180.0) / 360.0 * size.width;
+    final radLat = lat * math.pi / 180.0;
+    final y = (0.5 - (math.log((1 + math.sin(radLat)) / (1 - math.sin(radLat))) / (4 * math.pi))) * size.height;
+    // Clamp to bounds
+    final cx = x.clamp(0.0, size.width);
+    final cy = y.clamp(0.0, size.height);
+    return Offset(cx, cy);
+  }
+
+  Widget _marker(Offset pos, FriendItem friend) {
+    return Positioned(
+      left: pos.dx - 12,
+      top: pos.dy - 12,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 12,
+            backgroundImage: NetworkImage(friend.avatarUrl),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(friend.name, style: const TextStyle(color: Colors.white, fontSize: 10)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _clusterMarker(Offset pos, int count) {
+    return Positioned(
+      left: pos.dx - 14,
+      top: pos.dy - 14,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: Colors.blue.withOpacity(0.2),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.blue, width: 2),
+        ),
+        alignment: Alignment.center,
+        child: Text('$count', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
       ),
     );
   }

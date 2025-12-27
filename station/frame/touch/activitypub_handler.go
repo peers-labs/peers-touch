@@ -16,6 +16,7 @@ import (
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	coreoption "github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
@@ -43,8 +44,8 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 	actorWrapper := CommonAccessControlWrapper(model.RouteNameActor)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 
-	// Init Status Manager
-	activitypub.InitStatusManager()
+	// Init Status Manager with runtime context from peers.Init
+	activitypub.InitStatusManager(coreoption.GetOptions().Ctx())
 
 	return []ActivityPubHandlerInfo{
 		// Actor Management Endpoints (Client API)
@@ -191,6 +192,63 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 
 // Handler implementations
 
+// GetOnlineActorsHandler handles GET /actors/online
+func GetOnlineActorsHandler(c context.Context, ctx *app.RequestContext) {
+	currentActorID, err := resolveActorID(c, ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	actors, err := activitypub.GetOnlineActors(c, currentActorID)
+	if err != nil {
+		log.Warnf(c, "Failed to get online actors: %v", err)
+		FailedResponse(ctx, err)
+		return
+	}
+
+	SuccessResponse(ctx, "Online actors retrieved", actors)
+}
+
+// HeartbeatHandler handles POST /heartbeat
+func HeartbeatHandler(c context.Context, ctx *app.RequestContext) {
+	currentActorID, err := resolveActorID(c, ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	clientInfo := string(ctx.GetHeader("User-Agent"))
+	var lat, lon float64
+	if b := ctx.GetHeader("X-Lat"); len(b) > 0 {
+		if v, err := strconv.ParseFloat(string(b), 64); err == nil {
+			lat = v
+		}
+	}
+	if b := ctx.GetHeader("X-Lon"); len(b) > 0 {
+		if v, err := strconv.ParseFloat(string(b), 64); err == nil {
+			lon = v
+		}
+	}
+
+	// Touch session if available
+	sessionID := string(ctx.Cookie("session_id"))
+	if sessionID != "" && auth.GlobalSessionManager != nil {
+		if _, e := auth.GlobalSessionManager.Validate(c, sessionID); e != nil {
+			log.Warnf(c, "Session validation failed during heartbeat: %v", e)
+		}
+	}
+
+	// Update status
+	if err = activitypub.UpdateActorStatus(c, currentActorID, db.ActorStatusOnline, clientInfo, lat, lon); err != nil {
+		log.Warnf(c, "Failed to update heartbeat: %v", err)
+		FailedResponse(ctx, err)
+		return
+	}
+
+	SuccessResponse(ctx, "Heartbeat received", nil)
+}
+
 func ActorSignup(c context.Context, ctx *app.RequestContext) {
 	var params model.ActorSignParams
 	if err := ctx.Bind(&params); err != nil {
@@ -249,7 +307,7 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 
 	// Update user status
 	if userID, ok := result.User["id"].(uint64); ok {
-		_ = activitypub.UpdateActorStatus(c, userID, db.ActorStatusOnline, userAgent)
+		_ = activitypub.UpdateActorStatus(c, userID, db.ActorStatusOnline, userAgent, 0, 0)
 	}
 
 	// Set session cookie

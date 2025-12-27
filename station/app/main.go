@@ -9,7 +9,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
 	"github.com/peers-labs/peers-touch/station/app/subserver/chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss"
@@ -21,6 +20,7 @@ import (
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite"
+	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
 )
 
 func main() {

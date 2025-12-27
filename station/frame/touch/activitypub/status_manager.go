@@ -2,6 +2,7 @@ package activitypub
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -18,13 +19,16 @@ type StatusManager struct {
 
 // GlobalStatusManager is the singleton instance
 var GlobalStatusManager *StatusManager
+var initOnce sync.Once
 
-func InitStatusManager() {
-	GlobalStatusManager = &StatusManager{
-		OfflineThreshold: 5 * time.Minute,
-		AwayThreshold:    2 * time.Minute,
-	}
-	go GlobalStatusManager.StartWatchDog(context.Background())
+func InitStatusManager(ctx context.Context) {
+	initOnce.Do(func() {
+		GlobalStatusManager = &StatusManager{
+			OfflineThreshold: 5 * time.Minute,
+			AwayThreshold:    2 * time.Minute,
+		}
+		go GlobalStatusManager.StartWatchDog(ctx)
+	})
 }
 
 // StartWatchDog starts the background routine to clean up stale sessions
@@ -75,5 +79,5 @@ func (m *StatusManager) ScanTimeouts(ctx context.Context) {
 func (m *StatusManager) KeepAlive(ctx context.Context, actorID uint64, clientInfo string) error {
 	// This is just a wrapper around the existing service function logic
 	// Ideally, the logic from status_service.go should be moved here
-	return UpdateActorStatus(ctx, actorID, db.ActorStatusOnline, clientInfo)
+	return UpdateActorStatus(ctx, actorID, db.ActorStatusOnline, clientInfo, 0, 0)
 }

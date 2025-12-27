@@ -11,11 +11,13 @@ const (
 )
 
 type ActorStatus struct {
-	ActorID       uint64    `gorm:"primary_key;autoIncrement:false"`
-	Status        int       `gorm:"default:0"` // 0: Offline, 1: Online, 2: Away
-	LastHeartbeat time.Time `gorm:"index"`
-	ClientInfo    string    `gorm:"size:255"`
-	UpdatedAt     time.Time
+    ActorID       uint64    `gorm:"primary_key;autoIncrement:false"`
+    Status        int       `gorm:"default:0"` // 0: Offline, 1: Online, 2: Away
+    LastHeartbeat time.Time `gorm:"index"`
+    ClientInfo    string    `gorm:"size:255"`
+    Lat           float64   `gorm:"default:0"`
+    Lon           float64   `gorm:"default:0"`
+    UpdatedAt     time.Time
 }
 
 func (*ActorStatus) TableName() string {

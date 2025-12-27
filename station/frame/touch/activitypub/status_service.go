@@ -10,7 +10,7 @@ import (
 )
 
 // UpdateActorStatus updates the online status and heartbeat of an actor
-func UpdateActorStatus(ctx context.Context, actorID uint64, status int, clientInfo string) error {
+func UpdateActorStatus(ctx context.Context, actorID uint64, status int, clientInfo string, lat float64, lon float64) error {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return err
@@ -21,6 +21,8 @@ func UpdateActorStatus(ctx context.Context, actorID uint64, status int, clientIn
 		Status:        status,
 		LastHeartbeat: time.Now(),
 		ClientInfo:    clientInfo,
+		Lat:           lat,
+		Lon:           lon,
 	}
 
 	// Use Save to update all fields including zero values if needed,
@@ -45,6 +47,8 @@ func GetOnlineActors(ctx context.Context, currentActorID uint64) ([]*model.Onlin
 		AvatarUrl         string    `json:"avatar_url"`
 		Status            int       `json:"status"`
 		LastHeartbeat     time.Time `json:"last_heartbeat"`
+		Lat               float64   `json:"lat"`
+		Lon               float64   `json:"lon"`
 	}
 
 	// Define timeout threshold (e.g., 5 minutes without heartbeat = offline)
@@ -52,7 +56,7 @@ func GetOnlineActors(ctx context.Context, currentActorID uint64) ([]*model.Onlin
 
 	err = rds.WithContext(ctx).
 		Table("touch_actor_status").
-		Select("touch_actor_status.actor_id, touch_actor.name, touch_actor.preferred_username, touch_actor.icon as avatar_url, touch_actor_status.status, touch_actor_status.last_heartbeat").
+		Select("touch_actor_status.actor_id, touch_actor.name, touch_actor.preferred_username, touch_actor.icon as avatar_url, touch_actor_status.status, touch_actor_status.last_heartbeat, touch_actor_status.lat, touch_actor_status.lon").
 		Joins("JOIN touch_actor ON touch_actor.id = touch_actor_status.actor_id").
 		Where("touch_actor_status.actor_id != ?", currentActorID).
 		Where("touch_actor_status.status = ?", db.ActorStatusOnline).
@@ -74,6 +78,8 @@ func GetOnlineActors(ctx context.Context, currentActorID uint64) ([]*model.Onlin
 			AvatarUrl:         r.AvatarUrl,
 			Status:            int32(r.Status),
 			LastHeartbeat:     r.LastHeartbeat.Format(time.RFC3339),
+			Lat:               r.Lat,
+			Lon:               r.Lon,
 		})
 	}
 
