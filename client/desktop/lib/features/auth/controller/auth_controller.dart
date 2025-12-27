@@ -15,6 +15,8 @@ enum ServerStatus {
   unknown,
   checking,
   reachable,
+  unreachable,
+  notFound,
 }
 
 class AuthController extends GetxController {
@@ -443,6 +445,14 @@ class AuthController extends GetxController {
             await Get.find<GlobalContext>().setProtocolTag(protocol.value);
           }
         } catch (_) {}
+      } else if (resp.statusCode == 404) {
+        protocol.value = 'peers-touch';
+        serverStatus.value = ServerStatus.notFound;
+        try {
+          if (Get.isRegistered<GlobalContext>()) {
+            await Get.find<GlobalContext>().setProtocolTag(protocol.value);
+          }
+        } catch (_) {}
       } else {
         protocol.value = 'peers-touch';
         serverStatus.value = ServerStatus.unknown;
@@ -454,12 +464,26 @@ class AuthController extends GetxController {
       }
     } catch (_) {
       protocol.value = 'peers-touch';
-      serverStatus.value = ServerStatus.unknown;
+      serverStatus.value = ServerStatus.unreachable;
       try {
         if (Get.isRegistered<GlobalContext>()) {
           await Get.find<GlobalContext>().setProtocolTag(protocol.value);
         }
       } catch (_) {}
     }
+  }
+
+  Future<void> logout() async {
+    try {
+      await LocalStorage().remove('auth_token');
+      await LocalStorage().remove('refresh_token');
+      await LocalStorage().remove('username');
+      await LocalStorage().remove('email');
+      final ctx = Get.isRegistered<GlobalContext>() ? Get.find<GlobalContext>() : null;
+      if (ctx != null) {
+        await ctx.setSession(null);
+      }
+    } catch (_) {}
+    Get.offAllNamed('/auth');
   }
 }

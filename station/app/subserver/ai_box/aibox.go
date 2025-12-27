@@ -12,7 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model"
 )
 
-//go:embed db/models/init.sql
+//go:embed db/model/init.sql
 var initSQL string
 
 var (
