@@ -1,5 +1,6 @@
 import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
 import 'package:peers_touch_base/model/domain/actor/preferences.pb.dart';
+import 'session_state.dart';
 
 /// Global Application Context (single source of truth)
 ///
@@ -41,6 +42,12 @@ abstract class GlobalContext {
 
   /// Event: network status changes (forwarded from connectivity adapter)
   Stream<List<String>> get onNetworkStatusChange;
+
+  SessionState get sessionState;
+  Stream<SessionState> get onSessionStateChange;
+
+  void startHeartbeat();
+  void stopHeartbeat();
 
   /// Set/clear session (Map layer). Also sync to secure storage and local
   /// persistence (including Proto JSON snapshot).
