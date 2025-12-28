@@ -144,9 +144,10 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 		return fmt.Errorf("failed to create libp2p host: %w", err)
 	}
 
-	t.host = h
-	t.initialized = true
-	return nil
+    t.host = h
+    t.initialized = true
+
+    return nil
 }
 
 func (t *libp2pTransport) Options() transport.Options {
@@ -241,10 +242,11 @@ func (t *libp2pTransport) Listen(addr string, opts ...transport.ListenOption) (t
 }
 
 func (t *libp2pTransport) Close() error {
-	if t.host != nil {
-		return t.host.Close()
-	}
-	return nil
+    if t.host != nil {
+        return t.host.Close()
+    }
+
+    return nil
 }
 
 func (t *libp2pTransport) Host() host.Host {
@@ -272,10 +274,11 @@ func (c *libp2pClient) Send(msg *transport.Message) error {
 }
 
 func (c *libp2pClient) Close() error {
-	if c.stream != nil {
-		return c.stream.Close()
-	}
-	return nil
+    if c.stream != nil {
+        return c.stream.Close()
+    }
+
+    return nil
 }
 
 func (c *libp2pClient) Local() string {

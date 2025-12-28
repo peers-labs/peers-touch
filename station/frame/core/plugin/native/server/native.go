@@ -2,9 +2,10 @@ package native
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
@@ -36,6 +37,7 @@ func NewServer(opts ...option.Option) *Server {
 		psRouter:   make(map[string]server.StreamHandler),
 		done:       make(chan struct{}),
 	}
+
 	return s
 }
 
@@ -73,6 +75,7 @@ func (s *Server) Handle(handler server.Handler) error {
 	// Since we can't safely type assert between conflicting interfaces,
 	// we'll store this in the base server handlers and let the base server handle it
 	s.Options().Handlers = append(s.Options().Handlers, handler)
+
 	return nil
 }
 
@@ -114,7 +117,11 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 				return err
 			}
 			s.listener = l
-			go l.Accept(func(sock transport.Socket) { s.handleSocket(ctx, sock) })
+			go func() {
+				if err := l.Accept(func(sock transport.Socket) { s.handleSocket(ctx, sock) }); err != nil {
+					logger.Errorf(ctx, "listener accept error: %v", err)
+				}
+			}()
 		}
 	}
 	if s.Options().ReadyChan != nil {
@@ -122,6 +129,7 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	}
 
 	<-s.done
+
 	return nil
 }
 
@@ -206,7 +214,7 @@ func (r *request) Path() string {
 }
 
 func (r *request) Body() []byte {
-	body, _ := ioutil.ReadAll(r.r.Body)
+	body, _ := io.ReadAll(r.r.Body)
 	return body
 }
 

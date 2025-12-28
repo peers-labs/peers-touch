@@ -15,12 +15,12 @@ import (
 	touchactivitypub "github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 
 	// default plugins
+	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite"
-	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
 )
 
 func main() {

@@ -28,16 +28,9 @@ func (n *nativeServerPlugin) Name() string {
 }
 
 func (n *nativeServerPlugin) Options() []option.Option {
-	var opts []option.Option
-	if options.Peers.Service.Server.Native.Enabled {
-		// todo append opts
-	}
+    var opts []option.Option
 
-	if options.Peers.Service.Server.Native.EnableDebug {
-		// todo append opts
-	}
-
-	return opts
+    return opts
 }
 
 func (n *nativeServerPlugin) New(opts ...option.Option) server.Server {

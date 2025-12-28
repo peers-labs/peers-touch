@@ -14,7 +14,6 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	identity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
-	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 	"gorm.io/gorm"
@@ -22,20 +21,6 @@ import (
 
 // Re-export Create for backward compatibility
 // TODO: Refactor handlers to use service package directly
-func Create(c context.Context, actor string, baseURL string, in *modelpb.ActivityInput) (string, string, error) {
-	// Logic from previous activity/service.go
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		return "", "", err
-	}
-	// 1. Convert Input to ActivityPub Activity
-	// For simplicity, assuming Create Note for now as placeholder
-	// In real implementation, need to map ActivityInput to ap.Activity
-
-	// This is a placeholder to fix build error. The original logic needs to be restored from history if needed.
-	// For now, we return a dummy success to satisfy the interface.
-	return "post_id_placeholder", "activity_id_placeholder", nil
-}
 
 func GenerateRSAKeyPair(bits int) (string, string, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, bits)

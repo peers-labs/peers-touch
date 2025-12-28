@@ -714,21 +714,25 @@ func CreateActivity(c context.Context, ctx *app.RequestContext) {
 		ctx.JSON(http.StatusBadRequest, "actor required")
 		return
 	}
+
 	if _, err := resolveActorID(c, ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+
 	var in modelpb.ActivityInput
 	if err := ctx.Bind(&in); err != nil {
 		FailedResponse(ctx, err)
 		return
 	}
+
 	baseURL := baseURLFrom(ctx)
 	postID, actID, err := activitypub.Create(c, actor, baseURL, &in)
 	if err != nil {
 		FailedResponse(ctx, err)
 		return
 	}
+
 	resp := &modelpb.ActivityResponse{PostId: postID, ActivityId: actID}
 	SuccessResponse(ctx, "ok", resp)
 }
