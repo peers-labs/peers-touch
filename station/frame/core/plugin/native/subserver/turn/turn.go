@@ -81,12 +81,14 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusRunning
 
 	// listPeers graceful shutdown
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
-		s.Stop(ctx)
-	}()
+    go func() {
+        sigCh := make(chan os.Signal, 1)
+        signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+        <-sigCh
+        if err := s.Stop(ctx); err != nil {
+            logger.Errorf(ctx, "TURN server stop error: %v", err)
+        }
+    }()
 
 	// logs debug information
 	logger.Infof(ctx, "Starting TURN server\nPort: %d\nRealm: %s\nPublic IP: %s\nAuth Secret: [%t]",
@@ -94,14 +96,14 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	return nil
 }
 
-func (s *SubServer) Stop(ctx context.Context) error {
+func (s *SubServer) Stop(_ context.Context) error {
 	s.status = server.StatusStopping
 	defer func() { s.status = server.StatusStopped }()
 
-	if err := s.server.Close(); err != nil {
-		return err
-	}
-	return nil
+    if err := s.server.Close(); err != nil {
+        return err
+    }
+    return nil
 }
 
 func (s *SubServer) Name() string { return "turn" }

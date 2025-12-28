@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/libp2p/go-libp2p/core/crypto/pb"
+	"google.golang.org/protobuf/proto"
 )
 
 func (r *nativeRegistry) unmarshalPeer(data []byte) (peerReg *Peer, err error) {

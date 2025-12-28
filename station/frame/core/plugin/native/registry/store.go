@@ -23,7 +23,7 @@ func (r *nativeRegistry) setRegisterRecord(ctx context.Context, record *Register
 	}
 
 	var existingRecord RegisterRecord
-	err = rds.WithContext(ctx).Where("peer_id =?", record.PeerId).First(&existingRecord).Error
+	err = rds.WithContext(ctx).Where("peer_id =?", record.PeerID).First(&existingRecord).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// Record does not exist, create a new one
@@ -37,7 +37,7 @@ func (r *nativeRegistry) setRegisterRecord(ctx context.Context, record *Register
 	existingRecord.EndStationMap = record.EndStationMap
 	existingRecord.Version = record.Version
 	existingRecord.Signature = record.Signature
-	existingRecord.Libp2pId = record.Libp2pId
+	existingRecord.Libp2pID = record.Libp2pID
 
 	// Record exists, update it
 	return rds.WithContext(ctx).Updates(&existingRecord).Error

@@ -33,6 +33,7 @@ func (r *nativeRegistry) peerDiscoveryWatcher(ctx context.Context, callback regi
 			peers, err := r.listPeers(ctx, &registry.QueryOptions{})
 			if err != nil {
 				logger.Errorf(ctx, "[peerDiscoveryWatcher] failed to list peers: %v", err)
+
 				continue
 			}
 

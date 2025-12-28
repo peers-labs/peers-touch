@@ -12,21 +12,21 @@ var (
 )
 
 type TransportConfig struct {
-    Peers struct {
-        Node struct {
-            Transport struct {
-                Name   string   `json:"name" pconf:"name"`
-                Addrs  []string `json:"addrs" pconf:"addrs"`
-                Native struct {
-                    EnableRelay bool `json:"enable-relay" pconf:"enable-relay"`
-                    Libp2pIdentityKeyFile string `json:"libp2p-identity-key-file" pconf:"libp2p-identity-key-file"`
-                } `json:"native" pconf:"native"`
+	Peers struct {
+		Node struct {
+			Transport struct {
+				Name   string   `json:"name" pconf:"name"`
+				Addrs  []string `json:"addrs" pconf:"addrs"`
+				Native struct {
+					EnableRelay           bool   `json:"enable-relay" pconf:"enable-relay"`
+					Libp2pIdentityKeyFile string `json:"libp2p-identity-key-file" pconf:"libp2p-identity-key-file"`
+				} `json:"native" pconf:"native"`
 
-                Secure  bool   `json:"secure" pconf:"secure"`
-                Timeout string `json:"timeout" pconf:"timeout"`
-            } `json:"transport" pconf:"transport"`
-        } `json:"node" pconf:"node"`
-    } `json:"peers" pconf:"peers"`
+				Secure  bool   `json:"secure" pconf:"secure"`
+				Timeout string `json:"timeout" pconf:"timeout"`
+			} `json:"transport" pconf:"transport"`
+		} `json:"node" pconf:"node"`
+	} `json:"peers" pconf:"peers"`
 }
 
 func (c *TransportConfig) Options() []option.Option {
@@ -42,15 +42,15 @@ func (c *TransportConfig) Options() []option.Option {
 		opts = append(opts, transport.Timeout(c.Peers.Node.Transport.Timeout))
 	}
 
-    if c.Peers.Node.Transport.Native.EnableRelay {
-        opts = append(opts, EnableRelay())
-    }
+	if c.Peers.Node.Transport.Native.EnableRelay {
+		opts = append(opts, EnableRelay())
+	}
 
-    if len(c.Peers.Node.Transport.Native.Libp2pIdentityKeyFile) > 0 {
-        opts = append(opts, WithLibp2pIdentityKeyFile(c.Peers.Node.Transport.Native.Libp2pIdentityKeyFile))
-    }
+	if len(c.Peers.Node.Transport.Native.Libp2pIdentityKeyFile) > 0 {
+		opts = append(opts, WithLibp2pIdentityKeyFile(c.Peers.Node.Transport.Native.Libp2pIdentityKeyFile))
+	}
 
-    return opts
+	return opts
 }
 
 type nativeTransportPlugin struct{}
