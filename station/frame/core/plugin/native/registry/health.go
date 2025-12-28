@@ -89,8 +89,11 @@ func (sdm *ServiceDiscoveryManager) Start() error {
 	if sdm.registry == nil {
 		return errors.New("registry not initialized")
 	}
-	go sdm.periodicHealthCheck()
-	go sdm.monitorServiceDiscovery()
+	hc := sdm.periodicHealthCheck
+	go hc()
+
+	msd := sdm.monitorServiceDiscovery
+	go msd()
 	logger.Infof(sdm.ctx, "Service discovery manager started")
 	return nil
 }
