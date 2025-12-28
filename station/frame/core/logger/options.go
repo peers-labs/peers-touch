@@ -22,6 +22,9 @@ type Options struct {
 	// The logging level the logger should log at. default is `InfoLevel`
 	Level Level
 
+	// PackageLevels maps package/path substrings to specific log levels
+	PackageLevels map[string]Level
+
 	Persistence *PersistenceOptions
 }
 
@@ -54,6 +57,18 @@ func WithFields(fields map[string]interface{}) Option {
 func WithLevel(level Level) Option {
 	return func(args *Options) {
 		args.Level = level
+	}
+}
+
+// WithPackageLevel sets the log level for a specific package/path substring.
+// When logging, if the caller's file path contains the given substring,
+// the specified level will be used.
+func WithPackageLevel(path string, level Level) Option {
+	return func(args *Options) {
+		if args.PackageLevels == nil {
+			args.PackageLevels = make(map[string]Level)
+		}
+		args.PackageLevels[path] = level
 	}
 }
 

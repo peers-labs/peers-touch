@@ -13,7 +13,7 @@ import (
 
 var (
 	networkNamespace = "/" + registry.DefaultPeersNetworkNamespace
-	networkId        = protocol.ID(networkNamespace)
+	networkID        = protocol.ID(networkNamespace)
 
 	// networkBootstrapNamespace is the namespace for bootstrap peers.
 	// pb equals to peers-bootstrap
@@ -25,7 +25,7 @@ var (
 type NamespaceValidator struct {
 }
 
-func (*NamespaceValidator) Validate(key string, val []byte) error {
+func (*NamespaceValidator) Validate(key string, _ []byte) error {
 	if len(key) < len(networkNamespace) || key[:len(networkNamespace)] != networkNamespace {
 		return fmt.Errorf("invalid key for name record: %s", key)
 	}
@@ -47,6 +47,6 @@ func (*NamespaceValidator) Validate(key string, val []byte) error {
 	return err
 }
 
-func (v *NamespaceValidator) Select(key string, vals [][]byte) (int, error) {
+func (v *NamespaceValidator) Select(_ string, _ [][]byte) (int, error) {
 	return 0, nil
 }

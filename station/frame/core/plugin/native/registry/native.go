@@ -134,7 +134,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	r.dht, err = dht.New(ctx, r.host,
 		dht.Mode(r.extOpts.runMode),
 		// Isolate network namespace via /peers-touch
-		dht.ProtocolPrefix(networkId),
+		dht.ProtocolPrefix(networkID),
 		dht.Validator(
 			record.NamespacedValidator{
 				// actually, these validators are the defaults in libp2p[see github.com/libp2p/go-libp2p-kad-dht/internal/config/config.go#ApplyFallbacks]
@@ -200,7 +200,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 		// Set up discovery callback for bootstrap nodes
 		r.mdnsService.Watch(func(discoveredPeer *types.Peer) {
 			// Check if this is a bootstrap node
-			if discoveredPeer.Nodes != nil && len(discoveredPeer.Nodes) > 0 {
+			if len(discoveredPeer.Nodes) > 0 {
 				for _, node := range discoveredPeer.Nodes {
 					if node.Type == "bootstrap" {
 						// Convert peer to AddrInfo
@@ -249,6 +249,8 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 						// Connect to the discovered peer
 						if err := r.host.Connect(ctx, pi); err != nil {
 							logger.Errorf(ctx, "Failed to connect to discovered bootstrap peer: %v", err)
+
+							return
 						}
 					}
 				}
@@ -364,7 +366,7 @@ func (r *nativeRegistry) Register(ctx context.Context, registration *registry.Re
 	}
 
 	doNow := make(chan struct{})
-	go func(registration *registry.Registration, regOpts *registry.RegisterOptions) {
+	runRegister := func(registration *registry.Registration, regOpts *registry.RegisterOptions) {
 		ticker := time.NewTicker(r.options.Interval)
 		defer ticker.Stop()
 
@@ -386,7 +388,8 @@ func (r *nativeRegistry) Register(ctx context.Context, registration *registry.Re
 				return
 			}
 		}
-	}(registration, regOpts)
+	}
+	go runRegister(registration, regOpts)
 
 	doNow <- struct{}{}
 	return nil
@@ -482,7 +485,7 @@ func (r *nativeRegistry) Query(ctx context.Context, opts ...registry.QueryOption
 		}
 
 		// Handle TURN addresses
-		if time.Now().Sub(r.turnUpdateTime) > 8*time.Second {
+		if time.Since(r.turnUpdateTime) > 8*time.Second {
 			r.refreshTurn(ctx)
 		}
 
@@ -697,9 +700,9 @@ func (r *nativeRegistry) register(ctx context.Context, registration *registry.Re
 	{
 		rd := &RegisterRecord{
 			Version:       "0.0.1",
-			PeerId:        registration.ID,
+			PeerID:        registration.ID,
 			PeerName:      registration.Name,
-			Libp2pId:      r.host.ID().String(),
+			Libp2pID:      r.host.ID().String(),
 			EndStationMap: make(map[string]interface{}), // Convert to interface{} for V2 compatibility
 		}
 
@@ -788,7 +791,8 @@ func (r *nativeRegistry) bootstrap(ctx context.Context) {
 			logger.Debugf(ctx, "[health] host=%s peers=%d rtable=%d mdns_discovered=%d mdns_bootstrap=%d mdns_connected=%d",
 				stats.HostID, stats.ConnectedPeers, stats.RoutingTableSize, stats.MDNSDiscovered, stats.MDNSBootstrapDiscovered, stats.MDNSConnectedBootstrap)
 			// Also refresh routing table periodically
-			go r.refreshRoutingTable(ctx)
+			rrt := r.refreshRoutingTable
+			go rrt(ctx)
 		case <-ctx.Done():
 			logger.Warnf(ctx, "[bootstrap] bootstrap stopped %+v", ctx.Err())
 			return
@@ -803,13 +807,15 @@ func (r *nativeRegistry) connectActiveBootstraps(ctx context.Context) {
 		filtered := peer.AddrInfo{ID: pi.ID, Addrs: preferIPv4Addrs(pi.Addrs)}
 		cctx, cancel := context.WithTimeout(ctx, r.options.ConnectTimeout)
 		err := r.host.Connect(cctx, filtered)
+
 		cancel()
 		r.onBootstrapResult(pi.ID, err == nil)
 		if err != nil {
 			logger.Warnf(ctx, "[bootstrap] connect to %s failed: %v", pi.ID.String(), err)
 		}
 	}
-	go r.retryBackoff(ctx)
+	rb := r.retryBackoff
+	go rb(ctx)
 }
 
 func (r *nativeRegistry) retryBackoff(ctx context.Context) {
@@ -824,6 +830,7 @@ func (r *nativeRegistry) retryBackoff(ctx context.Context) {
 				filtered := peer.AddrInfo{ID: pi.ID, Addrs: preferIPv4Addrs(pi.Addrs)}
 				cctx, cancel := context.WithTimeout(ctx, r.options.ConnectTimeout)
 				err := r.host.Connect(cctx, filtered)
+
 				cancel()
 				r.onBootstrapResult(pi.ID, err == nil)
 				if err != nil {
@@ -906,8 +913,6 @@ func (r *nativeRegistry) refreshTurn(ctx context.Context) {
 	}
 
 	r.turnUpdateTime = time.Now()
-
-	return
 }
 
 // updateBootstrapStatus function removed - no longer needed since bootstrap connections

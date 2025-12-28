@@ -73,6 +73,7 @@ func WithBootstrapNodes(bootstraps []string) option.Option {
 			// some short strings are used for placeholder or just is an empty dash(-).
 			if len(bootstrap) < 10 {
 				log.Infof(context.Background(), "bootstrap node[%s] is too short, ignoring bootstrap node", bootstrap)
+
 				continue
 			}
 
