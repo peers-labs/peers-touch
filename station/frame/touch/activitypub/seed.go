@@ -47,9 +47,9 @@ func SeedPresetUsers(c context.Context) error {
 		var exists db.Actor
 		if err := rds.Where("email = ?", email).Or("preferred_username = ?", p.Username).First(&exists).Error; err == nil {
 			// ensure meta exists
-			var meta db.ActorMastodonMeta
+			var meta db.ActorTouchMeta
 			if e := rds.Where("actor_id = ?", exists.ID).First(&meta).Error; e != nil {
-				meta = db.ActorMastodonMeta{ActorID: exists.ID}
+				meta = db.ActorTouchMeta{ActorID: exists.ID}
 				_ = rds.Create(&meta).Error
 			}
 			continue
@@ -81,7 +81,7 @@ func SeedPresetUsers(c context.Context) error {
 			continue
 		}
 		
-		meta := db.ActorMastodonMeta{ActorID: a.ID}
+		meta := db.ActorTouchMeta{ActorID: a.ID}
 		if err := rds.Create(&meta).Error; err != nil {
 			log.Warnf(c, "seed create meta err: %v", err)
 		}

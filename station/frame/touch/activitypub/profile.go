@@ -112,8 +112,8 @@ func GetWebProfileByID(c context.Context, actorID uint64, baseURL string) (*Prof
 }
 
 func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, baseURL string) (*ProfileResponse, error) {
-	// 2. Fetch Extended Profile Info (Mastodon Meta)
-	var meta db.ActorMastodonMeta
+	// 2. Fetch Extended Profile Info (Touch Meta)
+	var meta db.ActorTouchMeta
 	err := rds.Where("actor_id = ?", actor.ID).First(&meta).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		log.Warnf(c, "Failed to fetch actor meta: %v", err)
@@ -122,37 +122,10 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 	activityPubID := fmt.Sprintf("%s/users/%s", baseURL, actor.PreferredUsername) // Standard AP Actor ID format
 
 	// 3. Fetch Stats
-	// If statistics are stored in meta and updated asynchronously, we could use them directly.
-	// However, for now, we might still count them dynamically or use the cached ones in meta.
-	// Since meta has Count fields, let's use them if available, or fall back to count.
-	// For this refactor, let's try to use the counts from Meta if > 0 (assuming sync mechanism exists),
-	// or just Count dynamically for accuracy if no async job yet.
-	// Given the instructions, let's assume dynamic count is safer for now, but fill meta fields if we were writing a job.
-	// Actually, let's stick to dynamic count as in original code to ensure correctness without background workers.
-
-	var statusesCount int64
-	err = rds.Model(&db.ActivityPubObject{}).
-		Where("attributed_to = ?", activityPubID).
-		Count(&statusesCount).Error
-	if err != nil {
-		log.Warnf(c, "Failed to count statuses: %v", err)
-	}
-
-	var followingCount int64
-	err = rds.Model(&db.ActivityPubFollow{}).
-		Where("follower_id = ? AND is_active = ?", activityPubID, true).
-		Count(&followingCount).Error
-	if err != nil {
-		log.Warnf(c, "Failed to count following: %v", err)
-	}
-
-	var followersCount int64
-	err = rds.Model(&db.ActivityPubFollow{}).
-		Where("following_id = ? AND is_active = ?", activityPubID, true).
-		Count(&followersCount).Error
-	if err != nil {
-		log.Warnf(c, "Failed to count followers: %v", err)
-	}
+	// Use redundant counters from meta for performance and consistency
+	statusesCount := int64(meta.StatusesCount)
+	followingCount := int64(meta.FollowingCount)
+	followersCount := int64(meta.FollowersCount)
 
 	// Parse JSON fields
 	var tags []string
@@ -230,12 +203,12 @@ func UpdateProfileByID(c context.Context, actorID uint64, req UpdateProfileReque
 }
 
 func updateProfileInternal(c context.Context, rds *gorm.DB, actor *db.Actor, req UpdateProfileRequest) error {
-	var meta db.ActorMastodonMeta
+	var meta db.ActorTouchMeta
 	err := rds.Where("actor_id = ?", actor.ID).First(&meta).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Create meta if it doesn't exist
-			meta = db.ActorMastodonMeta{
+			meta = db.ActorTouchMeta{
 				ActorID: actor.ID,
 			}
 			if err := rds.Create(&meta).Error; err != nil {

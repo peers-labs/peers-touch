@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/radar_controller.dart';
+import 'package:peers_touch_desktop/features/discovery/view/components/discovery_avatar.dart';
 
 class RadarView extends StatelessWidget {
   const RadarView({super.key});
@@ -104,9 +105,10 @@ class RadarView extends StatelessWidget {
                         final friend = discoveryController.friends[index];
                         return ListTile(
                           contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                          leading: CircleAvatar(
+                          leading: DiscoveryAvatar(
+                            url: friend.avatarUrl,
+                            fallbackName: friend.name,
                             radius: 24,
-                            backgroundImage: NetworkImage(friend.avatarUrl),
                           ),
                           title: Text(
                             friend.name,
@@ -191,9 +193,10 @@ class RadarView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircleAvatar(
+          DiscoveryAvatar(
+            url: friend.avatarUrl,
+            fallbackName: friend.name,
             radius: 12,
-            backgroundImage: NetworkImage(friend.avatarUrl),
           ),
           const SizedBox(height: 4),
           Container(
@@ -242,9 +245,10 @@ class RadarView extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
             ),
-            child: CircleAvatar(
+            child: DiscoveryAvatar(
+              url: friend.avatarUrl,
+              fallbackName: friend.name,
               radius: 16,
-              backgroundImage: NetworkImage(friend.avatarUrl),
             ),
           ),
           const SizedBox(height: 4),
