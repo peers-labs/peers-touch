@@ -1,14 +1,15 @@
 package server
 
 import (
-    "context"
+	"context"
 
-    "github.com/cloudwego/hertz/pkg/app"
-    "github.com/peers-labs/peers-touch/station/frame/core/option"
-    "github.com/peers-labs/peers-touch/station/frame/core/transport"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
 // region server options
+// serverOptionsKey is the context key for server options.
 type serverOptionsKey struct{}
 
 var (
@@ -22,7 +23,7 @@ var (
 	})
 )
 
-// Options is the server options
+// Options holds configuration for the server.
 type Options struct {
 	*option.Options
 
@@ -46,34 +47,35 @@ type Options struct {
 	Transport transport.Transport
 }
 
-// WithAddress sets the server address
+// WithAddress sets the server address.
 func WithAddress(address string) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Address = address
 	})
 }
 
-// WithTimeout sets the server timeout
+// WithTimeout sets the server timeout.
 func WithTimeout(timeout int) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Timeout = timeout
 	})
 }
 
-// WithMetadata associated with the server
+// WithMetadata associates metadata with the server.
 func WithMetadata(md map[string]string) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Metadata = md
 	})
 }
 
+// WithHandlers adds handlers to the server options.
 func WithHandlers(handlers ...Handler) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Handlers = append(opts.Handlers, handlers...)
 	})
 }
 
-// WithRouters converts routers to handlers and adds them to the server
+// WithRouters converts routers to handlers and adds them to the server.
 // Each handler's path will be prefixed with the router's name
 func WithRouters(routers ...Routers) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
@@ -104,7 +106,7 @@ func WithRouters(routers ...Routers) option.Option {
 	})
 }
 
-// WithSubServer adds a subserver to the server
+// WithSubServer adds a subserver to the server.
 func WithSubServer(name string, newFunc func(opts ...option.Option) Subserver, subServerOptions ...option.Option) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.SubServers[name] = subServerNewFunctions{
@@ -114,12 +116,14 @@ func WithSubServer(name string, newFunc func(opts ...option.Option) Subserver, s
 	})
 }
 
+// WithReadyChan sets the readiness channel.
 func WithReadyChan(c chan interface{}) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.ReadyChan = c
 	})
 }
 
+// WithTransport injects a transport into server options.
 func WithTransport(t transport.Transport) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Transport = t
@@ -130,35 +134,40 @@ func WithTransport(t transport.Transport) option.Option {
 
 // region handler options
 
-// HandlerOption is a function that can be used to configure a handler
+// HandlerOption configures HandlerOptions.
 type HandlerOption func(*HandlerOptions)
 
+// WithMethod sets handler method.
 func WithMethod(method Method) HandlerOption {
 	return func(opts *HandlerOptions) {
 		opts.Method = method
 	}
 }
 
+// WithWrappers sets middleware wrappers.
 func WithWrappers(wrappers ...Wrapper) HandlerOption {
-    return func(opts *HandlerOptions) {
-        opts.Wrappers = wrappers
-    }
+	return func(opts *HandlerOptions) {
+		opts.Wrappers = wrappers
+	}
 }
 
+// WithHertzMiddlewares sets Hertz middlewares.
 func WithHertzMiddlewares(middlewares ...func(context.Context, *app.RequestContext)) HandlerOption {
-    return func(opts *HandlerOptions) {
-        opts.HertzMiddlewares = middlewares
-    }
+	return func(opts *HandlerOptions) {
+		opts.HertzMiddlewares = middlewares
+	}
 }
 
+// HandlerOptions holds per-handler configuration.
 type HandlerOptions struct {
-    Method   Method
-    Wrappers []Wrapper
-    HertzMiddlewares []func(context.Context, *app.RequestContext)
+	Method           Method
+	Wrappers         []Wrapper
+	HertzMiddlewares []func(context.Context, *app.RequestContext)
 }
 
 // endregion
 
+// GetOptions retrieves typed server options from the global option context.
 func GetOptions() *Options {
 	return option.GetOptions().Ctx().Value(serverOptionsKey{}).(*Options)
 }

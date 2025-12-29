@@ -22,19 +22,23 @@ type libp2pStream struct {
 	mutex   sync.Mutex
 }
 
+// Context returns the stream context.
 func (s *libp2pStream) Context() context.Context {
 	return s.ctx
 }
 
+// Request returns the stream request.
 func (s *libp2pStream) Request() client.Request {
 	return s.req
 }
 
+// Response returns the stream response (nil for this implementation).
 func (s *libp2pStream) Response() client.Response {
 	// Not implemented in this simplified version
 	return nil
 }
 
+// Send writes a message to the stream using the codec.
 func (s *libp2pStream) Send(msg interface{}) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -52,6 +56,7 @@ func (s *libp2pStream) Send(msg interface{}) error {
 	return s.codec.Write(codecMsg, msg)
 }
 
+// Recv reads a message from the stream using the codec.
 func (s *libp2pStream) Recv(msg interface{}) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -68,11 +73,13 @@ func (s *libp2pStream) Recv(msg interface{}) error {
 	return s.codec.ReadBody(msg)
 }
 
+// Error returns the last stream error (not tracked).
 func (s *libp2pStream) Error() error {
 	// Not implemented in this simplified version
 	return nil
 }
 
+// Close closes the codec and client.
 func (s *libp2pStream) Close() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -91,7 +98,8 @@ func (s *libp2pStream) Close() error {
 	return s.client.Close()
 }
 
+// CloseSend closes the sending side of the stream.
 func (s *libp2pStream) CloseSend() error {
-	// For this implementation, CloseSend is the same as Close
+	// Same as Close for this implementation
 	return s.Close()
 }

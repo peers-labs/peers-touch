@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	// DefaultProtocolID is the libp2p protocol used by the native transport.
 	DefaultProtocolID = "/peers-touch/transport/1.0.0"
 )
 
@@ -35,6 +36,7 @@ var (
 	_ transport.Socket    = &libp2pSocket{}
 )
 
+// LibP2pTransport exposes the underlying libp2p host for the transport.
 type LibP2pTransport interface {
 	transport.Transport
 	Host() host.Host
@@ -81,6 +83,7 @@ func NewTransport(opts ...option.Option) LibP2pTransport {
 	return t
 }
 
+// Init initializes the transport and underlying libp2p host.
 func (t *libp2pTransport) Init(opts ...option.Option) error {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
@@ -146,13 +149,16 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 
 	t.host = h
 	t.initialized = true
+
 	return nil
 }
 
+// Options returns effective transport options.
 func (t *libp2pTransport) Options() transport.Options {
 	return *t.opts
 }
 
+// Dial connects to a remote peer at addr and returns a transport client.
 func (t *libp2pTransport) Dial(addr string, opts ...transport.DialOption) (transport.Client, error) {
 	if !t.initialized || t.host == nil {
 		return nil, fmt.Errorf("transport not initialized")
@@ -209,7 +215,9 @@ func (t *libp2pTransport) Dial(addr string, opts ...transport.DialOption) (trans
 	}, nil
 }
 
+// Listen verifies the host listens on addr and returns a listener.
 func (t *libp2pTransport) Listen(addr string, opts ...transport.ListenOption) (transport.Listener, error) {
+	_ = opts
 	if !t.initialized || t.host == nil {
 		return nil, fmt.Errorf("transport not initialized")
 	}
@@ -225,6 +233,7 @@ func (t *libp2pTransport) Listen(addr string, opts ...transport.ListenOption) (t
 	for _, laddr := range t.host.Addrs() {
 		if laddr.Equal(maddr) {
 			found = true
+
 			break
 		}
 	}
@@ -240,21 +249,26 @@ func (t *libp2pTransport) Listen(addr string, opts ...transport.ListenOption) (t
 	}, nil
 }
 
+// Close shuts down the underlying host.
 func (t *libp2pTransport) Close() error {
 	if t.host != nil {
 		return t.host.Close()
 	}
+
 	return nil
 }
 
+// Host returns the underlying libp2p host.
 func (t *libp2pTransport) Host() host.Host {
 	return t.host
 }
 
+// String returns the transport name.
 func (t *libp2pTransport) String() string {
 	return "libp2p"
 }
 
+// Recv reads a message from the client stream.
 func (c *libp2pClient) Recv(msg *transport.Message) error {
 	if c.stream == nil {
 		return fmt.Errorf("stream closed")
@@ -263,6 +277,7 @@ func (c *libp2pClient) Recv(msg *transport.Message) error {
 	return readMessage(c.stream, msg)
 }
 
+// Send writes a message to the client stream.
 func (c *libp2pClient) Send(msg *transport.Message) error {
 	if c.stream == nil {
 		return fmt.Errorf("stream closed")
@@ -271,25 +286,31 @@ func (c *libp2pClient) Send(msg *transport.Message) error {
 	return writeMessage(c.stream, msg)
 }
 
+// Close closes the client stream.
 func (c *libp2pClient) Close() error {
 	if c.stream != nil {
 		return c.stream.Close()
 	}
+
 	return nil
 }
 
+// Local returns the local peer ID.
 func (c *libp2pClient) Local() string {
 	return c.host.ID().String()
 }
 
+// Remote returns the remote peer ID.
 func (c *libp2pClient) Remote() string {
 	return c.remotePeer.String()
 }
 
+// Addr returns the listener address.
 func (l *libp2pListener) Addr() string {
 	return l.addr
 }
 
+// Close stops accepting streams and removes handlers.
 func (l *libp2pListener) Close() error {
 	// Remove stream handler and signal closure
 	l.host.RemoveStreamHandler(l.protocolID)
@@ -299,6 +320,7 @@ func (l *libp2pListener) Close() error {
 	return nil
 }
 
+// Accept waits for new streams and invokes fn with a socket.
 func (l *libp2pListener) Accept(fn func(transport.Socket)) error {
 	// Set the actual stream handler
 	l.host.SetStreamHandler(l.protocolID, func(stream network.Stream) {
@@ -307,6 +329,7 @@ func (l *libp2pListener) Accept(fn func(transport.Socket)) error {
 			local:  stream.Conn().LocalMultiaddr().String(),
 			remote: stream.Conn().RemoteMultiaddr().String(),
 		}
+
 		fn(socket)
 	})
 
@@ -315,22 +338,27 @@ func (l *libp2pListener) Accept(fn func(transport.Socket)) error {
 	return nil
 }
 
+// Recv reads a message from the socket.
 func (s *libp2pSocket) Recv(msg *transport.Message) error {
 	return readMessage(s.stream, msg)
 }
 
+// Send writes a message to the socket.
 func (s *libp2pSocket) Send(msg *transport.Message) error {
 	return writeMessage(s.stream, msg)
 }
 
+// Close closes the underlying stream.
 func (s *libp2pSocket) Close() error {
 	return s.stream.Close()
 }
 
+// Local returns local address.
 func (s *libp2pSocket) Local() string {
 	return s.local
 }
 
+// Remote returns remote address.
 func (s *libp2pSocket) Remote() string {
 	return s.remote
 }

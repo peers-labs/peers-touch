@@ -60,7 +60,7 @@ func (p *jwtProvider) Authenticate(ctx context.Context, cred Credentials) (*Subj
 func (p *jwtProvider) Validate(ctx context.Context, token string) (*Subject, error) {
 	// Try primary secret
 	tok, err := jwt.ParseWithClaims(token, &jwtClaims{}, func(t *jwt.Token) (interface{}, error) { return p.secret, nil })
-	
+
 	// If failed and we have a previous secret, try that
 	if err != nil && len(p.prevSecret) > 0 {
 		tok, err = jwt.ParseWithClaims(token, &jwtClaims{}, func(t *jwt.Token) (interface{}, error) { return p.prevSecret, nil })

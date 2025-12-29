@@ -14,7 +14,6 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	identity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
-	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 	"gorm.io/gorm"
@@ -22,21 +21,8 @@ import (
 
 // Re-export Create for backward compatibility
 // TODO: Refactor handlers to use service package directly
-func Create(c context.Context, actor string, baseURL string, in *modelpb.ActivityInput) (string, string, error) {
-	// Logic from previous activity/service.go
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		return "", "", err
-	}
-	// 1. Convert Input to ActivityPub Activity
-	// For simplicity, assuming Create Note for now as placeholder
-	// In real implementation, need to map ActivityInput to ap.Activity
 
-	// This is a placeholder to fix build error. The original logic needs to be restored from history if needed.
-	// For now, we return a dummy success to satisfy the interface.
-	return "post_id_placeholder", "activity_id_placeholder", nil
-}
-
+// GenerateRSAKeyPair returns PEM-encoded RSA private/public keys.
 func GenerateRSAKeyPair(bits int) (string, string, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
@@ -52,6 +38,7 @@ func GenerateRSAKeyPair(bits int) (string, string, error) {
 	return string(privPEM), string(pubPEM), nil
 }
 
+// GetActorData loads or creates an ActivityPub Person for the user.
 func GetActorData(c context.Context, user string, baseURL string) (*ap.Person, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -166,6 +153,7 @@ func GetActorData(c context.Context, user string, baseURL string) (*ap.Person, e
 	return person, nil
 }
 
+// FetchInbox returns the user's inbox collection or a page.
 func FetchInbox(c context.Context, user string, baseURL string, page bool) (interface{}, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -216,6 +204,7 @@ func FetchInbox(c context.Context, user string, baseURL string, page bool) (inte
 	return col, nil
 }
 
+// FetchOutbox returns the user's outbox collection or a page.
 func FetchOutbox(c context.Context, user string, baseURL string, page bool) (interface{}, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -266,6 +255,7 @@ func FetchOutbox(c context.Context, user string, baseURL string, page bool) (int
 	return col, nil
 }
 
+// FetchFollowers returns the user's followers collection or a page.
 func FetchFollowers(c context.Context, user string, baseURL string, page bool) (interface{}, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -308,6 +298,7 @@ func FetchFollowers(c context.Context, user string, baseURL string, page bool) (
 	return col, nil
 }
 
+// FetchFollowing returns the user's following collection or a page.
 func FetchFollowing(c context.Context, user string, baseURL string, page bool) (interface{}, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -350,6 +341,7 @@ func FetchFollowing(c context.Context, user string, baseURL string, page bool) (
 	return col, nil
 }
 
+// FetchLiked returns the user's liked collection or a page.
 func FetchLiked(c context.Context, user string, baseURL string, page bool) (interface{}, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -392,6 +384,7 @@ func FetchLiked(c context.Context, user string, baseURL string, page bool) (inte
 	return col, nil
 }
 
+// FetchSharedInbox returns the shared inbox collection or a page.
 func FetchSharedInbox(c context.Context, baseURL string, page bool) (interface{}, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -441,6 +434,7 @@ func FetchSharedInbox(c context.Context, baseURL string, page bool) (interface{}
 	return col, nil
 }
 
+// PersistInboxActivity saves an incoming inbox activity and indexes it.
 func PersistInboxActivity(c context.Context, user string, activity *ap.Activity, baseURL string, rawBody []byte) error {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -514,6 +508,7 @@ func PersistInboxActivity(c context.Context, user string, activity *ap.Activity,
 	return nil
 }
 
+// ApplyFollowInbox persists follow state derived from an inbox activity.
 func ApplyFollowInbox(c context.Context, user string, activity *ap.Activity, baseURL string) error {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -537,6 +532,7 @@ func ApplyFollowInbox(c context.Context, user string, activity *ap.Activity, bas
 	return nil
 }
 
+// ApplyUndoInbox clears follow/like relations derived from an undo activity.
 func ApplyUndoInbox(c context.Context, user string, activity *ap.Activity, baseURL string) error {
 	rds, err := store.GetRDS(c)
 	if err != nil {

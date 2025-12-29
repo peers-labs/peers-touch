@@ -12,6 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 )
 
+// modeOpt aliases DHT ModeOpt for registry configuration.
 type modeOpt = dht.ModeOpt
 
 const (
@@ -73,6 +74,7 @@ func WithBootstrapNodes(bootstraps []string) option.Option {
 			// some short strings are used for placeholder or just is an empty dash(-).
 			if len(bootstrap) < 10 {
 				log.Infof(context.Background(), "bootstrap node[%s] is too short, ignoring bootstrap node", bootstrap)
+
 				continue
 			}
 
@@ -98,30 +100,35 @@ func WithRelayNodes(relayNodes []string) option.Option {
 	})
 }
 
+// WithMDNSEnable enables mDNS discovery for the registry plugin.
 func WithMDNSEnable(enableMDNS bool) option.Option {
 	return wrapOptions(func(o *options) {
 		o.mdnsEnable = enableMDNS
 	})
 }
 
+// WithRunningMode sets the DHT running mode.
 func WithRunningMode(mod modeOpt) option.Option {
 	return wrapOptions(func(o *options) {
 		o.runMode = mod
 	})
 }
 
+// WithBootstrapNodeRetryTimes sets retry attempts for connecting bootstrap nodes.
 func WithBootstrapNodeRetryTimes(times int) option.Option {
 	return wrapOptions(func(o *options) {
 		o.bootstrapNodeRetryTimes = times
 	})
 }
 
+// WithBootstrapRefreshInterval sets interval for refreshing bootstrap connections.
 func WithBootstrapRefreshInterval(interval time.Duration) option.Option {
 	return wrapOptions(func(o *options) {
 		o.bootstrapRefreshInterval = interval
 	})
 }
 
+// WithLibp2pIdentityKeyFile sets the path of the libp2p identity key file.
 func WithLibp2pIdentityKeyFile(keyFile string) option.Option {
 	return wrapOptions(func(o *options) {
 		o.libp2pIdentityKeyFile = keyFile
