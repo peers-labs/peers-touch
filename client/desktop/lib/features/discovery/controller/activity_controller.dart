@@ -158,6 +158,7 @@ class ActivityController extends GetxController {
         // Convert local data to DiscoveryItem
         final newItem = DiscoveryItem(
           id: data['id']?.toString() ?? DateTime.now().toString(),
+          objectId: data['object']?['id']?.toString() ?? '', // Try to get object ID from response, or use activity ID fallback? Or empty.
           title: input.hasCw() && input.cw.isNotEmpty ? input.cw : (input.text.isNotEmpty ? input.text : 'New Post'), 
           content: input.text,
           author: actorName,

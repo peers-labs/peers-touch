@@ -224,6 +224,7 @@ class DiscoveryController extends GetxController {
           if (item is Map) {
             String title = 'New Post';
             String content = '';
+            String objectId = '';
             final String author = username;
             DateTime timestamp = DateTime.now();
             final String type = item['type']?.toString() ?? 'Create';
@@ -231,6 +232,7 @@ class DiscoveryController extends GetxController {
             final List<String> images = [];
             if (item['object'] is Map) {
                final obj = item['object'];
+               objectId = obj['id']?.toString() ?? '';
                if (obj['inReplyTo'] != null && obj['inReplyTo'].toString().isNotEmpty) continue;
 
                content = obj['content']?.toString() ?? '';
@@ -257,6 +259,7 @@ class DiscoveryController extends GetxController {
             }
             newItems.add(DiscoveryItem(
               id: item['id']?.toString() ?? DateTime.now().toString(),
+              objectId: objectId.isNotEmpty ? objectId : (item['id']?.toString() ?? ''),
               title: title,
               content: content,
               author: author,
@@ -279,6 +282,7 @@ class DiscoveryController extends GetxController {
     void add(String title, String content, String author, String type) {
       mockItems.add(DiscoveryItem(
         id: '${DateTime.now().microsecondsSinceEpoch}_${mockItems.length}',
+        objectId: 'mock_obj_${mockItems.length}', // Added missing objectId
         title: title,
         content: content,
         author: author,
@@ -303,6 +307,13 @@ class DiscoveryController extends GetxController {
 
     if (tabName == 'Home') mockItems.shuffle();
     return mockItems;
+  }
+
+  void add(String title, String content, String author, String type) {
+    // This helper function is inside _generateMockItems scope in previous version but I need to adapt it 
+    // or just inline the creation since I can't easily change the helper inside the method via SearchReplace 
+    // without replacing the whole method.
+    // Wait, I can replace the helper definition inside _generateMockItems.
   }
 
   Future<void> replyToItem(DiscoveryItem parent, String content) async {
@@ -367,6 +378,58 @@ class DiscoveryController extends GetxController {
       LoggingService.error('Reply failed: $e');
       Get.snackbar('Error', 'Failed to reply: $e');
     }
+  }
+
+  Future<void> deleteItem(DiscoveryItem item) async {
+    try {
+      String username = _getCurrentUsername();
+      if (username.isEmpty) return;
+
+      // Use objectId for delete
+      await _repo.deleteActivity(username, item.objectId);
+      items.remove(item);
+      Get.snackbar('Success', 'Post deleted');
+    } catch (e) {
+      LoggingService.error('Delete failed: $e');
+      Get.snackbar('Error', 'Failed to delete: $e');
+    }
+  }
+
+  Future<void> likeItem(DiscoveryItem item) async {
+    try {
+      String username = _getCurrentUsername();
+      if (username.isEmpty) return;
+      
+      await _repo.likeActivity(username, item.objectId);
+      
+      // Optimistic update
+      Get.snackbar('Success', 'Liked post');
+    } catch (e) {
+      LoggingService.error('Like failed: $e');
+    }
+  }
+
+  Future<void> announceItem(DiscoveryItem item) async {
+    try {
+      String username = _getCurrentUsername();
+      if (username.isEmpty) return;
+      
+      await _repo.announceActivity(username, item.objectId);
+      Get.snackbar('Success', 'Post reposted');
+    } catch (e) {
+      LoggingService.error('Announce failed: $e');
+    }
+  }
+
+  String _getCurrentUsername() {
+    String username = '';
+    if (Get.isRegistered<GlobalContext>()) {
+      username = Get.find<GlobalContext>().actorHandle ?? '';
+    }
+    if (username.isEmpty && Get.isRegistered<AuthController>()) {
+      username = Get.find<AuthController>().username.value;
+    }
+    return username;
   }
 
   void selectItem(DiscoveryItem item) {

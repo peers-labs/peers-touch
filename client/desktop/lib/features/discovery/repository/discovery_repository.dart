@@ -23,6 +23,61 @@ class DiscoveryRepository {
     return data;
   }
 
+  Future<void> deleteActivity(String username, String objectId) async {
+    final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+    final actorId = '$baseUrl/activitypub/$username/actor';
+    
+    final activity = {
+      '@context': 'https://www.w3.org/ns/activitystreams',
+      'type': 'Delete',
+      'actor': actorId,
+      'object': objectId,
+    };
+
+    await _httpService.post<Map<String, dynamic>>(
+      '/activitypub/$username/outbox',
+      data: activity,
+    );
+  }
+
+  Future<void> likeActivity(String username, String objectId) async {
+    final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+    final actorId = '$baseUrl/activitypub/$username/actor';
+    
+    final activity = {
+      '@context': 'https://www.w3.org/ns/activitystreams',
+      'type': 'Like',
+      'actor': actorId,
+      'object': objectId,
+    };
+
+    await _httpService.post<Map<String, dynamic>>(
+      '/activitypub/$username/outbox',
+      data: activity,
+    );
+  }
+
+  Future<void> announceActivity(String username, String objectId) async {
+    final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+    final actorId = '$baseUrl/activitypub/$username/actor';
+    const public = 'https://www.w3.org/ns/activitystreams#Public';
+    final followers = '$baseUrl/activitypub/$username/followers';
+
+    final activity = {
+      '@context': 'https://www.w3.org/ns/activitystreams',
+      'type': 'Announce',
+      'actor': actorId,
+      'object': objectId,
+      'to': [public],
+      'cc': [followers],
+    };
+
+    await _httpService.post<Map<String, dynamic>>(
+      '/activitypub/$username/outbox',
+      data: activity,
+    );
+  }
+
   Map<String, dynamic> _convertToActivityPub(String username, pb.ActivityInput input) {
     final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
     final actorId = '$baseUrl/activitypub/$username/actor';

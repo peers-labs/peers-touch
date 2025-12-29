@@ -108,6 +108,11 @@ func handleCreateActivity(c context.Context, dbConn *gorm.DB, username string, a
 	var inReplyToID uint64
 	if object.InReplyTo != nil {
 		inReplyToID = localObjectIDFromItem(dbConn, object.InReplyTo)
+		// If resolution failed by ID, try resolving by URL/Link if needed,
+		// but localObjectIDFromItem handles both Link and Object ID lookups.
+		// However, it relies on the parent object already existing in our DB.
+		// If replying to a remote object that hasn't been fetched yet, this will be 0.
+		// We might need to fetch it if missing? For now assuming it exists (fetched via inbox or search).
 		dbObj.InReplyTo = inReplyToID
 	}
 
@@ -124,6 +129,15 @@ func handleCreateActivity(c context.Context, dbConn *gorm.DB, username string, a
 
 	if err := dbConn.Create(dbObj).Error; err != nil {
 		return fmt.Errorf("failed to create object in DB: %w", err)
+	}
+
+	// Update Statuses Count for the actor
+	var actor db.Actor
+	if err := dbConn.Where("preferred_username = ?", username).First(&actor).Error; err == nil {
+		// Ensure meta exists or create it? Usually exists for local users.
+		// Using gorm.Expr to be safe against concurrency (simple +1)
+		_ = dbConn.Model(&db.ActorTouchMeta{}).Where("actor_id = ?", actor.ID).
+			Update("statuses_count", gorm.Expr("statuses_count + ?", 1)).Error
 	}
 
 	// 5. Persist Activity
@@ -162,6 +176,18 @@ func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, a
 	if err := dbConn.Create(follow).Error; err != nil {
 		return fmt.Errorf("failed to create follow in DB: %w", err)
 	}
+
+	// Update Counts
+	// 1. Increment Following count for Follower (Local User)
+	_ = dbConn.Model(&db.ActorTouchMeta{}).Where("actor_id = ?", followerID).
+		Update("following_count", gorm.Expr("following_count + ?", 1)).Error
+
+	// 2. Increment Followers count for Following (Remote/Local User)
+	// Even if remote, if we have a record in our DB, we might want to track it,
+	// though usually we only care about local users' meta.
+	// But `remoteActor` was found in DB, so it exists.
+	_ = dbConn.Model(&db.ActorTouchMeta{}).Where("actor_id = ?", followingID).
+		Update("followers_count", gorm.Expr("followers_count + ?", 1)).Error
 
 	if err := persistActivity(dbConn, username, activity, 0, baseURL, 0, nil); err != nil {
 		return err
@@ -223,9 +249,20 @@ func handleUndoActivity(c context.Context, dbConn *gorm.DB, username string, act
 	switch ap.ActivityVocabularyType(originalActivity.Type) {
 	case ap.FollowType:
 		// Deactivate Follow
-		if err := dbConn.Model(&db.ActivityPubFollow{}).Where("activity_id = ?", originalActivity.ID).Update("is_active", false).Error; err != nil {
+		var follow db.ActivityPubFollow
+		if err := dbConn.Where("activity_id = ?", originalActivity.ID).First(&follow).Error; err != nil {
+			return fmt.Errorf("follow record not found for undo: %w", err)
+		}
+
+		if err := dbConn.Model(&follow).Update("is_active", false).Error; err != nil {
 			return fmt.Errorf("failed to deactivate follow: %w", err)
 		}
+
+		// Decrement Counts
+		_ = dbConn.Model(&db.ActorTouchMeta{}).Where("actor_id = ?", follow.FollowerID).
+			Update("following_count", gorm.Expr("following_count - ?", 1)).Error
+		_ = dbConn.Model(&db.ActorTouchMeta{}).Where("actor_id = ?", follow.FollowingID).
+			Update("followers_count", gorm.Expr("followers_count - ?", 1)).Error
 	case ap.LikeType:
 		// Deactivate Like
 		if err := dbConn.Model(&db.ActivityPubLike{}).Where("activity_id = ?", originalActivity.ID).Update("is_active", false).Error; err != nil {
