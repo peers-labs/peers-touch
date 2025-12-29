@@ -1,7 +1,8 @@
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:peers_touch_base/applet/models/applet_manifest.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import '../controller/applet_controller.dart';
@@ -27,8 +28,7 @@ class AppletContainer extends StatelessWidget {
       tag: manifest.appId,
     );
 
-    // Initialize WebView when building
-    // We pass the bundleUrl to the controller to load
+    // Initialize WebView settings in controller
     controller.initializeWebView(bundleUrl);
 
     return Scaffold(
@@ -36,15 +36,33 @@ class AppletContainer extends StatelessWidget {
       body: Stack(
         children: [
           // The WebView
-          Obx(() {
-            if (controller.webViewController.value != null) {
-              return WebViewWidget(
-                key: Key(manifest.appId),
-                controller: controller.webViewController.value!,
-              );
-            }
-            return const SizedBox.shrink();
-          }),
+          InAppWebView(
+            key: Key(manifest.appId),
+            initialSettings: InAppWebViewSettings(
+              isInspectable: kDebugMode,
+              transparentBackground: true,
+              javaScriptEnabled: true,
+              allowFileAccessFromFileURLs: true,
+              allowUniversalAccessFromFileURLs: true,
+            ),
+            onWebViewCreated: (webController) {
+              controller.onWebViewCreated(webController);
+            },
+            onLoadStart: (webController, url) {
+              controller.onLoadStart(url?.toString());
+            },
+            onLoadStop: (webController, url) {
+              controller.onLoadStop(url?.toString());
+            },
+            onReceivedError: (webController, request, error) {
+              controller.onReceivedError(error.description);
+            },
+            onConsoleMessage: (webController, consoleMessage) {
+              if (kDebugMode) {
+                print('[Applet Console] ${consoleMessage.message}');
+              }
+            },
+          ),
 
           // Loading Indicator
           Obx(() {
@@ -63,7 +81,7 @@ class AppletContainer extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.error_outline, color: Colors.red, size: 48),
+                    const Icon(Icons.error_outline, color: Colors.red, size: 48),
                     const SizedBox(height: 16),
                     Text(
                       "Applet Error",
