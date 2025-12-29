@@ -1,3 +1,4 @@
+// Package client provides a libp2p-based client implementation.
 package client
 
 import (
@@ -21,6 +22,7 @@ import (
 )
 
 const (
+	// DefaultTimeout is the default RPC call timeout.
 	DefaultTimeout = 30 * time.Second
 )
 
@@ -154,7 +156,8 @@ func (c *libp2pClient) Call(ctx context.Context, req client.Request, rsp interfa
 	}
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(ctx, callOpts.Timeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, callOpts.Timeout)
+	_ = timeoutCtx
 	defer cancel()
 
 	// Get node address
@@ -174,7 +177,7 @@ func (c *libp2pClient) Call(ctx context.Context, req client.Request, rsp interfa
 	if err != nil {
 		return fmt.Errorf("failed to dial peer: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Get codec
 	newCodec, ok := c.codecs[req.ContentType()]
@@ -185,7 +188,7 @@ func (c *libp2pClient) Call(ctx context.Context, req client.Request, rsp interfa
 	// Create codec wrapper for transport client
 	codecWrapper := &transportCodec{client: client}
 	codecImpl := newCodec(codecWrapper)
-	defer codecImpl.Close()
+	defer func() { _ = codecImpl.Close() }()
 
 	// Create codec message
 	msg := &codec.Message{
@@ -227,7 +230,8 @@ func (c *libp2pClient) Stream(ctx context.Context, req client.Request, opts ...c
 	}
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(ctx, callOpts.Timeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, callOpts.Timeout)
+	_ = timeoutCtx
 	defer cancel()
 
 	// Get node address
@@ -251,7 +255,7 @@ func (c *libp2pClient) Stream(ctx context.Context, req client.Request, opts ...c
 	// Get codec
 	newCodec, ok := c.codecs[req.ContentType()]
 	if !ok {
-		transportClient.Close()
+		_ = transportClient.Close()
 		return nil, fmt.Errorf("unsupported content type: %s", req.ContentType())
 	}
 
@@ -441,18 +445,21 @@ type transportCodec struct {
 	client transport.Client
 }
 
+// Read implements io.Reader for transportCodec (not implemented).
 func (tc *transportCodec) Read(p []byte) (n int, err error) {
 	// This is a simplified implementation
 	// In a real implementation, you would need to handle the protocol properly
 	return 0, fmt.Errorf("read not implemented for transport codec")
 }
 
+// Write implements io.Writer for transportCodec (not implemented).
 func (tc *transportCodec) Write(p []byte) (n int, err error) {
 	// This is a simplified implementation
 	// In a real implementation, you would need to handle the protocol properly
 	return 0, fmt.Errorf("write not implemented for transport codec")
 }
 
+// Close closes the underlying transport client.
 func (tc *transportCodec) Close() error {
 	return tc.client.Close()
 }

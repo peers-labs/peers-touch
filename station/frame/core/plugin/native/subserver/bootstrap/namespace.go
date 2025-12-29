@@ -22,9 +22,10 @@ var (
 	peerKeyFormat = "%s/%s"
 )
 
-type NamespaceValidator struct {
-}
+// NamespaceValidator validates bootstrap DHT keys under the peers namespace.
+type NamespaceValidator struct{}
 
+// Validate ensures the key is under network namespace and peer ID is valid.
 func (*NamespaceValidator) Validate(key string, _ []byte) error {
 	if len(key) < len(networkNamespace) || key[:len(networkNamespace)] != networkNamespace {
 		return fmt.Errorf("invalid key for name record: %s", key)
@@ -47,6 +48,7 @@ func (*NamespaceValidator) Validate(key string, _ []byte) error {
 	return err
 }
 
+// Select resolves conflicts among values (first wins).
 func (v *NamespaceValidator) Select(_ string, _ [][]byte) (int, error) {
 	return 0, nil
 }

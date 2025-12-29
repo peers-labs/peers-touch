@@ -10,16 +10,23 @@ import (
 
 const ProviderName = "activitypub"
 
+// Adapter implements identity.Adapter for ActivityPub actor URIs.
 type Adapter struct {
 	domain string
 }
 
+// NewAdapter constructs an ActivityPub provider adapter for a domain.
 func NewAdapter(domain string) *Adapter {
 	return &Adapter{domain: domain}
 }
 
-func (a *Adapter) Name() string { return ProviderName }
+// Name returns the provider name.
+func (a *Adapter) Name() string {
 
+	return ProviderName
+}
+
+// Issue issues a provider ID (actor IRI) for the identity.
 func (a *Adapter) Issue(ctx context.Context, identityModel *identity.Identity) (string, error) {
 	if identityModel.Username == "" {
 		return "", fmt.Errorf("username is required for ActivityPub identity")
@@ -27,6 +34,7 @@ func (a *Adapter) Issue(ctx context.Context, identityModel *identity.Identity) (
 	return fmt.Sprintf("https://%s/activitypub/%s/actor", a.domain, identityModel.Username), nil
 }
 
+// Verify checks whether providerID matches the identity for this domain.
 func (a *Adapter) Verify(ctx context.Context, identityModel *identity.Identity, providerID string) (bool, error) {
 	expected, err := a.Issue(ctx, identityModel)
 	if err != nil {
@@ -35,6 +43,7 @@ func (a *Adapter) Verify(ctx context.Context, identityModel *identity.Identity, 
 	return expected == providerID, nil
 }
 
+// Parse validates an actor IRI for this domain and returns it.
 func (a *Adapter) Parse(ctx context.Context, input string) (string, error) {
 	prefix := fmt.Sprintf("https://%s/activitypub/", a.domain)
 	if !strings.HasPrefix(input, prefix) {
@@ -43,10 +52,12 @@ func (a *Adapter) Parse(ctx context.Context, input string) (string, error) {
 	return input, nil
 }
 
+// To converts an identity into a provider ID.
 func (a *Adapter) To(ctx context.Context, identityModel *identity.Identity) (string, error) {
 	return a.Issue(ctx, identityModel)
 }
 
+// From parses a provider ID into an identity reference (lookup not implemented).
 func (a *Adapter) From(ctx context.Context, providerID string) (*identity.Identity, error) {
 	prefix := fmt.Sprintf("https://%s/activitypub/", a.domain)
 	if !strings.HasPrefix(providerID, prefix) {
@@ -61,6 +72,7 @@ func (a *Adapter) From(ctx context.Context, providerID string) (*identity.Identi
 	return nil, fmt.Errorf("lookup by username %s not implemented", username)
 }
 
+// Capabilities reports adapter capabilities.
 func (a *Adapter) Capabilities() map[string]interface{} {
 	return map[string]interface{}{
 		"version":   "1.0.0",

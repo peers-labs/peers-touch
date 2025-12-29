@@ -1,3 +1,4 @@
+// Package native provides libp2p-based transport options.
 package native
 
 import (
@@ -69,6 +70,7 @@ func WithMultiplexers(multiplexers []string) option.Option {
 	})
 }
 
+// WithLibp2pIdentityKeyFile sets the path to the libp2p identity key file.
 func WithLibp2pIdentityKeyFile(path string) option.Option {
 	return wrapOptions(func(o *options) {
 		o.libp2pIdentityKeyFile = path

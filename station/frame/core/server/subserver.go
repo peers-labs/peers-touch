@@ -58,6 +58,7 @@ type Subserver interface {
 
 type Status string
 
+// IsRunning reports whether the status equals StatusRunning.
 func (s Status) IsRunning() bool {
 	return s == StatusRunning
 }

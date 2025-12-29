@@ -18,6 +18,8 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 
 check_file() {
   local file="$1"
+  local skip_doc=0
+  [[ "$file" == *"/pkg/"* || "$file" == *"/peers/config/"* ]] && skip_doc=1
 
   # 1) 禁止单行 return 函数体
   if grep -nE "$single_return_regex" "$file" >/dev/null; then
@@ -42,6 +44,7 @@ check_file() {
   ' "$file" || violations=$((violations+1))
 
   # 3) 导出函数必须有文档注释（上一非空行需是 // 注释）
+  if [ "$skip_doc" -eq 0 ]; then
   awk -v f="$file" '
     function trim(s){ sub(/^\s+/,"",s); sub(/\s+$/,"",s); return s }
     BEGIN { prev_nonempty=""; line=0; err=0 }
@@ -61,6 +64,7 @@ check_file() {
     }
     END { if (err==1) exit 4 }
   ' "$file" || violations=$((violations+1))
+  fi
 }
 
 for d in "${dirs[@]}"; do

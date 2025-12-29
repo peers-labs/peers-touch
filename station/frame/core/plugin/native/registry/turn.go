@@ -59,14 +59,14 @@ func (s *turnClient) Get() (*turn.Client, error) {
 		LoggerFactory:  s.cfg.LoggerFactory,
 	})
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("failed to create TURN client: %w", err)
 	}
 
 	// Start listening
 	if err := newClient.Listen(); err != nil {
 		newClient.Close()
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("failed to start TURN listener: %w", err)
 	}
 

@@ -1,3 +1,4 @@
+// Package native wires built-in plugins via blank imports and init side-effects.
 package native
 
 import (

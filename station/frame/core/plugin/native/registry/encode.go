@@ -55,8 +55,7 @@ func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *Peer) ([]byte
 		return nil, fmt.Errorf("[marshal] marshal peerReg: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	// context with timeout not required here; signing and marshaling is CPU-bound
 
 	pk := &pb.PublicKey{
 		Type: pb.KeyType_RSA.Enum(),

@@ -12,6 +12,7 @@ var (
 )
 
 type TransportConfig struct {
+	// Peers holds node transport configuration loaded from config.
 	Peers struct {
 		Node struct {
 			Transport struct {
@@ -29,6 +30,7 @@ type TransportConfig struct {
 	} `json:"peers" pconf:"peers"`
 }
 
+// Options converts TransportConfig into transport options.
 func (c *TransportConfig) Options() []option.Option {
 	var opts []option.Option
 
@@ -55,14 +57,17 @@ func (c *TransportConfig) Options() []option.Option {
 
 type nativeTransportPlugin struct{}
 
+// Name returns the plugin identifier.
 func (p *nativeTransportPlugin) Name() string {
 	return plugin.NativePluginName
 }
 
+// Options returns transport options derived from configuration.
 func (p *nativeTransportPlugin) Options() []option.Option {
 	return transportConfig.Options()
 }
 
+// New constructs a transport with plugin options.
 func (p *nativeTransportPlugin) New(opts ...option.Option) transport.Transport {
 	return NewTransport(append(p.Options(), opts...)...)
 }

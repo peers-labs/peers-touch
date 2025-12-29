@@ -1,16 +1,11 @@
 import 'dart:async';
-import 'package:peers_touch_base/context/global_context.dart';
-import 'package:peers_touch_base/context/session_state.dart';
-import 'package:peers_touch_base/context/heartbeat/heartbeat_executor.dart';
-import 'package:peers_touch_base/context/heartbeat/http_heartbeat_executor.dart';
+import 'global_context.dart';
+import '../storage/secure_storage_adapter.dart';
+import '../storage/local_storage_adapter.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
-import 'package:peers_touch_base/model/domain/actor/preferences.pb.dart';
 import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
-import 'package:peers_touch_base/network/connectivity_adapter.dart';
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_base/network/default_token_provider.dart';
-import 'package:peers_touch_base/storage/local_storage_adapter.dart';
-import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
+import 'package:peers_touch_base/model/domain/actor/preferences.pb.dart';
+import '../network/connectivity_adapter.dart';
 
 class DefaultGlobalContext implements GlobalContext {
   final SecureStorageAdapter secureStorage;
@@ -26,10 +21,6 @@ class DefaultGlobalContext implements GlobalContext {
   final _prefsCtrl = StreamController<Map<String, dynamic>>.broadcast();
   final _protocolCtrl = StreamController<String?>.broadcast();
   final _netCtrl = StreamController<List<String>>.broadcast();
-  final _sessionStateCtrl = StreamController<SessionState>.broadcast();
-  SessionState _sessionState = SessionState.inactive;
-  Timer? _heartbeatTimer;
-  final HeartbeatExecutor _hbExecutor = HttpHeartbeatExecutor();
 
   DefaultGlobalContext({
     required this.secureStorage,
@@ -72,10 +63,6 @@ class DefaultGlobalContext implements GlobalContext {
   Stream<String?> get onProtocolChange => _protocolCtrl.stream;
   @override
   Stream<List<String>> get onNetworkStatusChange => _netCtrl.stream;
-  @override
-  SessionState get sessionState => _sessionState;
-  @override
-  Stream<SessionState> get onSessionStateChange => _sessionStateCtrl.stream;
 
   Map<String, dynamic> _normalizeSession(Map<String, dynamic> raw) {
     final m = Map<String, dynamic>.from(raw);
@@ -117,7 +104,6 @@ class DefaultGlobalContext implements GlobalContext {
         await localStorage!.remove('global:current_session');
         await localStorage!.remove('global:current_session_pb');
       }
-      stopHeartbeat();
       return;
     }
     final access = _session?['accessToken']?.toString() ?? '';
@@ -178,9 +164,6 @@ class DefaultGlobalContext implements GlobalContext {
         'GlobalContext.accounts updated: count=${_accounts.length}',
       );
     } catch (_) {}
-
-    _configureHttpForSession();
-    _restartHeartbeat();
   }
 
   @override
@@ -375,80 +358,22 @@ class DefaultGlobalContext implements GlobalContext {
         await localStorage!.set('global:user_preferences', _preferences);
       }
       _prefsCtrl.add(Map.unmodifiable(_preferences));
+      try {
+        LoggingService.info(
+          'GlobalContext.hydrate preferences schema: ${_preferences['schemaVersion']}',
+        );
+      } catch (_) {}
+    }
     try {
-      LoggingService.info(
-        'GlobalContext.hydrate preferences schema: ${_preferences['schemaVersion']}',
+      final prefsPb = await localStorage!.get<Map<String, dynamic>>(
+        'global:user_preferences_pb',
       );
+      if (prefsPb != null) {
+        final pp = ActorPreferences();
+        pp.mergeFromProto3Json(prefsPb);
+        await updatePreferencesSnapshot(pp);
+      }
     } catch (_) {}
-    }
-  }
-
-  @override
-  void startHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _performHeartbeat();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _performHeartbeat();
-    });
-  }
-
-  @override
-  void stopHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    _updateSessionState(SessionState.inactive);
-  }
-
-  void _updateSessionState(SessionState s) {
-    if (_sessionState == s) return;
-    _sessionState = s;
-    _sessionStateCtrl.add(s);
-  }
-
-  void _configureHttpForSession() {
-    final baseUrl = _session?['baseUrl']?.toString() ?? '';
-    if (baseUrl.isNotEmpty) {
-      HttpServiceLocator().updateBaseUrl(baseUrl);
-    }
-    final tokenProvider = DefaultTokenProvider(
-      secureStorage: secureStorage,
-      localStorage: localStorage,
-    );
-    HttpServiceLocator().setAuthProviders(
-      tokenProvider: tokenProvider,
-      tokenRefresher: null,
-      onUnauthenticated: () {
-        _updateSessionState(SessionState.expired);
-      },
-    );
-  }
-
-  void _restartHeartbeat() {
-    stopHeartbeat();
-    startHeartbeat();
-  }
-
-  Future<void> _performHeartbeat() async {
-    if (_session == null) {
-      _updateSessionState(SessionState.inactive);
-      return;
-    }
-    final online = await isOnline();
-    if (!online) {
-      _updateSessionState(SessionState.inactive);
-      return;
-    }
-    final baseUrl = _session?['baseUrl']?.toString() ?? '';
-    if (baseUrl.isEmpty) {
-      _updateSessionState(SessionState.inactive);
-      return;
-    }
-    try {
-      await _hbExecutor.beat();
-      _updateSessionState(SessionState.active);
-    } catch (_) {
-      _updateSessionState(SessionState.inactive);
-    }
   }
 
   Future<void> setProtocolTag(String? tag) async {

@@ -146,7 +146,10 @@ func GetOptions(opts ...Option) *Options {
 		ret = &Options{}
 	}
 
-	ret.Apply(opts...)
+	if len(opts) > 0 {
+		ret.Apply(opts...)
+	}
+
 	if ret.ctx == nil {
 		panic("WithRootCtx should be conveyed within.")
 	}

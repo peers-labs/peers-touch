@@ -15,6 +15,7 @@ type memoryNodeStorage struct {
 	nodes map[string]*Node
 }
 
+// Register stores a node entry.
 func (m *memoryNodeStorage) Register(ctx context.Context, node *Node) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -23,6 +24,7 @@ func (m *memoryNodeStorage) Register(ctx context.Context, node *Node) error {
 	return nil
 }
 
+// Deregister removes a node by ID.
 func (m *memoryNodeStorage) Deregister(ctx context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -31,6 +33,7 @@ func (m *memoryNodeStorage) Deregister(ctx context.Context, id string) error {
 	return nil
 }
 
+// GetNode returns a node by ID.
 func (m *memoryNodeStorage) GetNode(ctx context.Context, id string) (*Node, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -42,6 +45,7 @@ func (m *memoryNodeStorage) GetNode(ctx context.Context, id string) (*Node, erro
 	return node, nil
 }
 
+// ListNodes returns nodes matching the filter and total count.
 func (m *memoryNodeStorage) ListNodes(ctx context.Context, filter *NodeFilter) ([]*Node, int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -108,6 +112,7 @@ func (m *memoryNodeStorage) ListNodes(ctx context.Context, filter *NodeFilter) (
 	return nodes, total, nil
 }
 
+// UpdateNode updates an existing node entry.
 func (m *memoryNodeStorage) UpdateNode(ctx context.Context, node *Node) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -120,6 +125,7 @@ func (m *memoryNodeStorage) UpdateNode(ctx context.Context, node *Node) error {
 	return nil
 }
 
+// Heartbeat updates last seen timestamps for the node.
 func (m *memoryNodeStorage) Heartbeat(ctx context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -139,14 +145,14 @@ type NodeRegistry struct {
 	storage NodeStorage
 }
 
-// NewMemoryStorage creates a new in-memory node storage
+// NewMemoryStorage creates a new in-memory node storage.
 func NewMemoryStorage() NodeStorage {
 	return &memoryNodeStorage{
 		nodes: make(map[string]*Node),
 	}
 }
 
-// NewNodeRegistry creates a new node registry
+// NewNodeRegistry creates a new node registry.
 func NewNodeRegistry(storage NodeStorage) *NodeRegistry {
 	if storage == nil {
 		storage = NewMemoryStorage()
@@ -156,7 +162,7 @@ func NewNodeRegistry(storage NodeStorage) *NodeRegistry {
 	}
 }
 
-// GetStats returns statistics about the registry
+// GetStats returns statistics about the registry.
 func (n *NodeRegistry) GetStats(ctx context.Context) (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
 	stats["total_nodes"] = 0
@@ -166,26 +172,32 @@ func (n *NodeRegistry) GetStats(ctx context.Context) (map[string]interface{}, er
 	return stats, nil
 }
 
+// Register stores a node entry.
 func (n *NodeRegistry) Register(ctx context.Context, node *Node) error {
 	return n.storage.Register(ctx, node)
 }
 
+// Deregister removes a node by ID.
 func (n *NodeRegistry) Deregister(ctx context.Context, id string) error {
 	return n.storage.Deregister(ctx, id)
 }
 
+// GetNode returns a node by ID.
 func (n *NodeRegistry) GetNode(ctx context.Context, id string) (*Node, error) {
 	return n.storage.GetNode(ctx, id)
 }
 
+// ListNodes returns nodes matching the filter and total count.
 func (n *NodeRegistry) ListNodes(ctx context.Context, filter *NodeFilter) ([]*Node, int, error) {
 	return n.storage.ListNodes(ctx, filter)
 }
 
+// UpdateNode updates an existing node entry.
 func (n *NodeRegistry) UpdateNode(ctx context.Context, node *Node) error {
 	return n.storage.UpdateNode(ctx, node)
 }
 
+// Heartbeat updates last seen timestamps for the node.
 func (n *NodeRegistry) Heartbeat(ctx context.Context, id string) error {
 	return n.storage.Heartbeat(ctx, id)
 }
