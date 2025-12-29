@@ -56,6 +56,7 @@ func (s *SubServer) listPeerInfos(_ context.Context, ctx *app.RequestContext) {
 	touch.SuccessResponse(ctx, "query peers infos success", page)
 }
 
+// queryDHTPeer queries DHT for a peer by ID and returns its addresses.
 func (s *SubServer) queryDHTPeer(c context.Context, ctx *app.RequestContext) {
 	peerIDStr := ctx.Query("peer_id")
 	if peerIDStr == "" {
@@ -101,6 +102,8 @@ func (s *SubServer) queryDHTPeer(c context.Context, ctx *app.RequestContext) {
 //	  "mdns_enabled": true,
 //	  "dht_mode": "server"
 //	}
+//
+// info returns server basic information (peer ID and listen addresses).
 func (s *SubServer) info(_ context.Context, ctx *app.RequestContext) {
 	// Collect raw listen addresses
 	var rawAddrs []string

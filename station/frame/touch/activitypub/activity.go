@@ -10,6 +10,7 @@ import (
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 )
 
+// Create builds an ActivityPub Note and Create activity, persists and delivers it.
 func Create(ctx context.Context, actor string, baseURL string, in *modelpb.ActivityInput) (string, string, error) {
 	actorIRI := fmt.Sprintf("%s/activitypub/%s/actor", baseURL, actor)
 	objectID := fmt.Sprintf("%s/activitypub/%s/objects/%d", baseURL, actor, time.Now().UnixNano())
@@ -77,6 +78,7 @@ func Create(ctx context.Context, actor string, baseURL string, in *modelpb.Activ
 
 	// Persist & deliver via existing ActivityPub pipeline
 	if err := ProcessActivity(ctx, actor, act, baseURL); err != nil {
+
 		return "", "", err
 	}
 	return objectID, activityID, nil

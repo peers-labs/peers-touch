@@ -5,8 +5,6 @@ import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
-import 'package:peers_touch_base/network/core/activity_pub_client.dart';
-import 'package:peers_touch_base/model/domain/actor/online_actor.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 import 'package:peers_touch_desktop/features/discovery/repository/discovery_repository.dart';
@@ -122,25 +120,16 @@ class DiscoveryController extends GetxController {
   }
 
   void loadFriends() {
-    _loadFriendsFromBackend();
-  }
-
-  Future<void> _loadFriendsFromBackend() async {
-    try {
-      final client = ActivityPubClient();
-      final List<OnlineActor> actors = await client.getOnlineActors();
-      friends.value = actors.map((a) => FriendItem(
-        id: a.id.toString(),
-        name: a.name.isNotEmpty ? a.name : (a.preferredUsername ?? 'Actor ${a.id}'),
-        avatarUrl: a.avatarUrl.isNotEmpty ? a.avatarUrl : 'https://i.pravatar.cc/150?u=${a.id}',
-        timeOrStatus: 'Online',
-        isOnline: true,
-        lat: double.tryParse(a.lat.toString()),
-        lon: double.tryParse(a.lon.toString()),
-      )).toList();
-    } catch (e) {
-      LoggingService.warning('Load friends failed: $e');
-    }
+    // Mock data
+    friends.value = [
+      FriendItem(id: '1', name: 'Eleanor Pena', avatarUrl: 'https://i.pravatar.cc/150?u=1', timeOrStatus: '11 min', isOnline: false),
+      FriendItem(id: '2', name: 'Leslie Alexander', avatarUrl: 'https://i.pravatar.cc/150?u=2', timeOrStatus: 'Online', isOnline: true),
+      FriendItem(id: '3', name: 'Brooklyn Simmons', avatarUrl: 'https://i.pravatar.cc/150?u=3', timeOrStatus: 'Online', isOnline: true),
+      FriendItem(id: '4', name: 'Arlene McCoy', avatarUrl: 'https://i.pravatar.cc/150?u=4', timeOrStatus: '11 min', isOnline: false),
+      FriendItem(id: '5', name: 'Jerome Bell', avatarUrl: 'https://i.pravatar.cc/150?u=5', timeOrStatus: '9 min', isOnline: false),
+      FriendItem(id: '6', name: 'Darlene Robertson', avatarUrl: 'https://i.pravatar.cc/150?u=6', timeOrStatus: 'Online', isOnline: true),
+      FriendItem(id: '7', name: 'Kathryn Murphy', avatarUrl: 'https://i.pravatar.cc/150?u=7', timeOrStatus: 'Online', isOnline: true),
+    ];
   }
 
   Future<void> refreshItems() async {

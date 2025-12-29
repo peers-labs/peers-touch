@@ -22,10 +22,12 @@ type BaseServer struct {
 	subServers       map[string]Subserver
 }
 
+// Options returns the server options.
 func (b *BaseServer) Options() *Options {
 	return b.opts
 }
 
+// Init initializes base server and subservers once.
 func (b *BaseServer) Init(opts ...option.Option) error {
 	b.once.Do(func() {
 		if err := b.init(opts...); err != nil {
@@ -37,7 +39,7 @@ func (b *BaseServer) Init(opts ...option.Option) error {
 	return nil
 }
 
-// Start : current job helps to start the subservers.
+// Start starts all subservers sequentially.
 func (b *BaseServer) Start(opts ...option.Option) error {
 	if b.subServerStarted {
 		return errors.New("server is already started")
@@ -58,6 +60,7 @@ func (b *BaseServer) Start(opts ...option.Option) error {
 	return nil
 }
 
+// Stop stops all subservers.
 func (b *BaseServer) Stop(ctx context.Context) error {
 	// stop the subservers
 	for _, sub := range b.subServers {
@@ -69,6 +72,7 @@ func (b *BaseServer) Stop(ctx context.Context) error {
 	return nil
 }
 
+// init applies options, constructs subservers, and merges their handlers.
 func (b *BaseServer) init(opts ...option.Option) error {
 	for _, opt := range opts {
 		b.opts.Apply(opt)
@@ -100,6 +104,7 @@ func (b *BaseServer) init(opts ...option.Option) error {
 	return nil
 }
 
+// NewServer constructs a BaseServer and applies options.
 func NewServer(opts ...option.Option) *BaseServer {
 	s := &BaseServer{
 		subServers: make(map[string]Subserver),

@@ -1,8 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_base/network/core/activity_pub_client.dart';
-import 'package:peers_touch_base/model/domain/actor/online_actor.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 
 class RadarItem {
@@ -35,7 +33,6 @@ class RadarController extends GetxController with GetSingleTickerProviderStateMi
     ever(_discoveryController.friends, _updateRadarItems);
     // Initial update
     _updateRadarItems(_discoveryController.friends);
-    _loadOnlineActors();
   }
 
   @override
@@ -61,22 +58,5 @@ class RadarController extends GetxController with GetSingleTickerProviderStateMi
     // Add more if needed, or loop
     
     radarItems.value = items;
-  }
-
-  Future<void> _loadOnlineActors() async {
-    try {
-      final client = ActivityPubClient();
-      final List<OnlineActor> actors = await client.getOnlineActors();
-      final mapped = actors.map((a) => FriendItem(
-        id: a.id.toString(),
-        name: a.name.isNotEmpty ? a.name : (a.preferredUsername ?? 'Actor ${a.id}'),
-        avatarUrl: a.avatarUrl.isNotEmpty ? a.avatarUrl : 'https://i.pravatar.cc/150?u=${a.id}',
-        timeOrStatus: 'Online',
-        isOnline: true,
-      )).toList();
-      _discoveryController.friends.value = mapped;
-    } catch (_) {
-      // keep existing friends
-    }
   }
 }

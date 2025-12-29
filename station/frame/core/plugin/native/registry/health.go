@@ -10,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 )
 
+// HealthCheck performs connectivity checks for host and DHT.
 func (r *nativeRegistry) HealthCheck(ctx context.Context) error {
 	if r.host == nil {
 		return errors.New("host not initialized")
@@ -38,6 +39,7 @@ func (r *nativeRegistry) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
+// GetDiscoveryStats returns discovery-related metrics.
 func (r *nativeRegistry) GetDiscoveryStats() DiscoveryStats {
 	stats := DiscoveryStats{Timestamp: time.Now()}
 	if r.host != nil {
@@ -61,6 +63,7 @@ func (r *nativeRegistry) GetDiscoveryStats() DiscoveryStats {
 	return stats
 }
 
+// DiscoveryStats captures discovery system metrics.
 type DiscoveryStats struct {
 	Timestamp               time.Time
 	HostID                  string
@@ -74,17 +77,20 @@ type DiscoveryStats struct {
 	TURNStunAddresses       int
 }
 
+// ServiceDiscoveryManager orchestrates health checks and discovery monitors.
 type ServiceDiscoveryManager struct {
 	registry *nativeRegistry
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
 
+// NewServiceDiscoveryManager creates a discovery manager.
 func NewServiceDiscoveryManager(ctx context.Context, registry *nativeRegistry) *ServiceDiscoveryManager {
 	ctx, cancel := context.WithCancel(ctx)
 	return &ServiceDiscoveryManager{registry: registry, ctx: ctx, cancel: cancel}
 }
 
+// Start begins periodic checks and monitoring.
 func (sdm *ServiceDiscoveryManager) Start() error {
 	if sdm.registry == nil {
 		return errors.New("registry not initialized")
@@ -98,6 +104,7 @@ func (sdm *ServiceDiscoveryManager) Start() error {
 	return nil
 }
 
+// Stop cancels background routines.
 func (sdm *ServiceDiscoveryManager) Stop() error {
 	sdm.cancel()
 	logger.Infof(sdm.ctx, "Service discovery manager stopped")
@@ -135,6 +142,7 @@ func (sdm *ServiceDiscoveryManager) monitorServiceDiscovery() {
 	}
 }
 
+// GetServiceHealth summarizes discovery health state.
 func (sdm *ServiceDiscoveryManager) GetServiceHealth() (bool, string) {
 	if sdm.registry == nil {
 		return false, "registry not initialized"

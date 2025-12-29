@@ -1,18 +1,18 @@
 package server
 
 import (
-    "context"
-    "net/http"
+	"context"
+	"net/http"
 
-    "github.com/cloudwego/hertz/pkg/app"
-    "github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
 )
 
+// Method represents an HTTP method.
 type Method string
 
-func (m Method) Me() string {
-	return string(m)
-}
+// Me returns the string representation of the HTTP method.
+func (m Method) Me() string { return string(m) }
 
 const (
 	GET     Method = "GET"
@@ -27,6 +27,7 @@ const (
 	ANY     Method = "ANY"
 )
 
+// Server represents a service server.
 type Server interface {
 	Init(...option.Option) error
 	Options() *Options
@@ -37,17 +38,19 @@ type Server interface {
 	Name() string
 }
 
+// Handler describes an endpoint handler.
 type Handler interface {
-    Name() string
-    Path() string
-    Method() Method
-    // Handler returns a function that can handle different types of contexts
-    Handler() interface{}
-    Wrappers() []Wrapper
-    HertzMiddlewares() []func(context.Context, *app.RequestContext)
+	Name() string
+	Path() string
+	Method() Method
+	// Handler returns a function that can handle different types of contexts
+	Handler() interface{}
+	Wrappers() []Wrapper
+	HertzMiddlewares() []func(context.Context, *app.RequestContext)
 }
 
 // Routers interface defines a collection of handlers with a name
+// Routers defines a collection of handlers with a cluster name.
 type Routers interface {
 	Handlers() []Handler
 
@@ -59,59 +62,58 @@ type Routers interface {
 }
 
 // RouterURL interface defines methods for router URL handling
+// RouterURL defines methods for router URL handling.
 type RouterURL interface {
 	Name() string
 	SubPath() string
 }
 
 // Wrapper defines a function type for Wrapper
+// Wrapper decorates an http.Handler.
 type Wrapper func(next http.Handler) http.Handler
 
 type httpHandler struct {
-    name     string
-    method   Method
-    path     string
-    handler  interface{}
-    wrappers []Wrapper
-    hertzMws []func(context.Context, *app.RequestContext)
+	name     string
+	method   Method
+	path     string
+	handler  interface{}
+	wrappers []Wrapper
+	hertzMws []func(context.Context, *app.RequestContext)
 }
 
-func (h *httpHandler) Wrappers() []Wrapper {
-    return h.wrappers
-}
+// Wrappers returns middleware wrappers.
+func (h *httpHandler) Wrappers() []Wrapper { return h.wrappers }
 
-func (h *httpHandler) Name() string {
-	return h.name
-}
+// Name returns handler name.
+func (h *httpHandler) Name() string { return h.name }
 
-func (h *httpHandler) Path() string {
-	return h.path
-}
+// Path returns handler path.
+func (h *httpHandler) Path() string { return h.path }
 
-func (h *httpHandler) Handler() interface{} {
-    return h.handler
-}
+// Handler returns the underlying handler function.
+func (h *httpHandler) Handler() interface{} { return h.handler }
 
-func (h *httpHandler) Method() Method {
-    return h.method
-}
+// Method returns HTTP method.
+func (h *httpHandler) Method() Method { return h.method }
 
+// HertzMiddlewares returns Hertz middlewares.
 func (h *httpHandler) HertzMiddlewares() []func(context.Context, *app.RequestContext) {
-    return h.hertzMws
+	return h.hertzMws
 }
 
+// NewHandler constructs a Handler from RouterURL, handler and options.
 func NewHandler(routerURL RouterURL, handler interface{}, opts ...HandlerOption) Handler {
-    config := &HandlerOptions{}
-    for _, opt := range opts {
-        opt(config)
-    }
+	config := &HandlerOptions{}
+	for _, opt := range opts {
+		opt(config)
+	}
 
-    return &httpHandler{
-        name:     routerURL.Name(),
-        path:     routerURL.SubPath(),
-        handler:  handler,
-        method:   config.Method,
-        wrappers: config.Wrappers,
-        hertzMws: config.HertzMiddlewares,
-    }
+	return &httpHandler{
+		name:     routerURL.Name(),
+		path:     routerURL.SubPath(),
+		handler:  handler,
+		method:   config.Method,
+		wrappers: config.Wrappers,
+		hertzMws: config.HertzMiddlewares,
+	}
 }

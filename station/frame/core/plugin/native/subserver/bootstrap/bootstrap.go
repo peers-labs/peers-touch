@@ -1,3 +1,4 @@
+// Package bootstrap provides a libp2p-based bootstrap subserver.
 package bootstrap
 
 import (
@@ -35,14 +36,17 @@ type bootstrapRouterURL struct {
 	url  string
 }
 
+// Name returns the route name.
 func (b bootstrapRouterURL) Name() string {
 	return b.name
 }
 
+// SubPath returns the sub path of the route.
 func (b bootstrapRouterURL) SubPath() string {
 	return b.url
 }
 
+// SubServer implements the bootstrap discovery service.
 type SubServer struct {
 	opts *Options
 
@@ -57,6 +61,7 @@ type SubServer struct {
 	mdnsService *mdns.Service
 }
 
+// Init initializes the bootstrap server state and services.
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error) {
 	defer func() {
 		if err != nil {
@@ -122,6 +127,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 	return
 }
 
+// Start launches the bootstrap server.
 func (s *SubServer) Start(ctx context.Context, opts ...option.Option) (err error) {
 	s.runningLock.Lock()
 	defer s.runningLock.Unlock()
@@ -177,6 +183,7 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) (err error
 	return nil
 }
 
+// Stop shuts down DHT, mDNS and host, and updates status.
 func (s *SubServer) Stop(ctx context.Context) (err error) {
 	s.runningLock.Lock()
 	defer s.runningLock.Unlock()
@@ -212,20 +219,24 @@ func (s *SubServer) Stop(ctx context.Context) (err error) {
 	return nil
 }
 
+// Name returns the subserver identifier.
 func (s *SubServer) Name() string {
 	return "libp2p-bootstrap"
 }
 
+// Address returns dial addresses.
 func (s *SubServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{
 		Address: s.addrs,
 	}
 }
 
+// Status returns the current running status.
 func (s *SubServer) Status() server.Status {
 	return s.status
 }
 
+// Handlers returns HTTP handlers for listing peers, DHT query and info.
 func (s *SubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
@@ -246,6 +257,7 @@ func (s *SubServer) Handlers() []server.Handler {
 	}
 }
 
+// Type returns the bootstrap subserver type.
 func (s *SubServer) Type() server.SubserverType {
 	return server.SubserverTypeBootstrap
 }
@@ -334,14 +346,14 @@ func (s *SubServer) createHost(ctx context.Context) (host.Host, *dht.IpfsDHT, er
 
 	// Ensure host actually has listen addresses
 	if len(h.Addrs()) == 0 {
-		h.Close()
+		_ = h.Close()
 		return nil, nil, fmt.Errorf("bootstrap host has no active listen addresses; check listen-addrs configuration")
 	}
 
 	// Create DHT instance
 	dhtInstance, err := dht.New(ctx, h, dht.Mode(dht.ModeServer))
 	if err != nil {
-		h.Close()
+		_ = h.Close()
 		return nil, nil, fmt.Errorf("create DHT: %w", err)
 	}
 

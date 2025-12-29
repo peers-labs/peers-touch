@@ -21,6 +21,7 @@ type StatusManager struct {
 var GlobalStatusManager *StatusManager
 var initOnce sync.Once
 
+// InitStatusManager initializes the global status manager and starts watchdog.
 func InitStatusManager(ctx context.Context) {
 	initOnce.Do(func() {
 		GlobalStatusManager = &StatusManager{
