@@ -18,6 +18,7 @@ class DiscoveryItem {
 
   DiscoveryItem({
     required this.id,
+    required this.objectId,
     required this.title,
     required this.content,
     required this.author,
@@ -32,6 +33,7 @@ class DiscoveryItem {
     List<DiscoveryComment>? comments,
   }) : comments = comments ?? [];
   final String id;
+  final String objectId;
   final String title;
   final String content;
   final String author;

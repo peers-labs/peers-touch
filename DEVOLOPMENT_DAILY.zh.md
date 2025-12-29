@@ -184,4 +184,23 @@
 
 个人页修改信息基本功能可以了，还没有完全测试，还有可能的 bug 会暴露出来，需要继续跟进
 
+## 20251230
 
+**核心修复与功能完善 (Station & Desktop):**
+
+1.  **ActivityPub 核心修复**:
+    *   **Feed 过滤**: 修复了 Feed 流中显示冗余 `Like` 和 `Comment`（作为独立卡片）的问题。现在主 Feed 只展示 `Create` (Note) 和 `Announce` (Share)，评论正确地折叠在主贴下方。
+    *   **数据结构修正**: 修复了 `AttributedTo` 的类型处理错误，正确地将其解析为 `ap.Item` 接口，并从数据库扩展出包含头像 (`Icon`) 的 `Person` 对象，解决了头像显示默认图的问题。
+    *   **统计修复**: 修正了 `Like`、`Reply`、`Share` 计数的查询逻辑和集合初始化逻辑，确保前端能收到正确的统计数据。
+
+2.  **前端体验优化**:
+    *   **Avatar 组件化**: 移除了硬编码的 Demo 头像逻辑，封装了通用的 `DiscoveryAvatar` 组件。支持空 URL、加载失败时自动显示用户首字母占位符，视觉体验更统一。
+    *   **编译修复**: 修复了 Desktop 端因缺失 import 和类型定义导致的编译错误。
+
+3.  **架构重构 (Backend)**:
+    *   **元数据表迁移**: 将 `ActorMastodonMeta` 重构为 `ActorTouchMeta`，并将表名迁移至 `touch_actor_meta`，解耦了对 Mastodon 命名的依赖，为 Peers Touch 自有元数据扩展铺平道路。
+    *   **数据流分析**: 梳理并验证了 `touch_ap_activity` 表的写入与读取链路，确认了 `activity_pub_id` 与本地 `id` 的关系及 `InReplyTo` 的持久化逻辑。
+
+**下一步**:
+*   验证 `InReplyTo` 关联在复杂评论场景下的表现。
+*   继续完善个人页与 Feed 流的交互细节。

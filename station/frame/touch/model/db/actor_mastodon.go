@@ -7,12 +7,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// ActorMastodonMeta stores Mastodon-compatible extension fields and statistics
-// Corresponds to Phase 2 "touch_actor_mastodon_meta" table
-type ActorMastodonMeta struct {
+// ActorTouchMeta stores Peers-Touch extension fields and statistics
+// Corresponds to "touch_actor_meta" table
+type ActorTouchMeta struct {
 	ActorID uint64 `gorm:"primary_key;autoIncrement:false"` // Foreign key to Actor (1:1)
 
-	// Extension Fields
+	// Extension Fields (TODO: Mastodon compatibility fields moved to todo)
 	Discoverable              bool   `gorm:"default:true"`
 	ManuallyApprovesFollowers bool   `gorm:"default:false"`
 	Url                       string `gorm:"size:512"` // Profile URL (e.g. https://domain/@user)
@@ -24,7 +24,7 @@ type ActorMastodonMeta struct {
 	FollowingCount int `gorm:"default:0"`
 	StatusesCount  int `gorm:"default:0"`
 
-	// Extended Profile Fields (Peers-Touch specific or extra extensions)
+	// Extended Profile Fields (Peers-Touch specific)
 	Region            string `gorm:"size:100"`
 	Timezone          string `gorm:"size:50"`
 	Tags              string `gorm:"type:text"`                // JSON list of strings (Feature tags)
@@ -40,11 +40,11 @@ type ActorMastodonMeta struct {
 	UpdatedAt time.Time `gorm:"updated_at"`
 }
 
-func (*ActorMastodonMeta) TableName() string {
-	return "touch_actor_mastodon_meta"
+func (*ActorTouchMeta) TableName() string {
+	return "touch_actor_meta"
 }
 
-func (m *ActorMastodonMeta) BeforeCreate(tx *gorm.DB) error {
+func (m *ActorTouchMeta) BeforeCreate(tx *gorm.DB) error {
 	// ID is same as ActorID, which is manually set, but just in case
 	if m.ActorID == 0 {
 		m.ActorID = id.NextID() // Should be set from Actor

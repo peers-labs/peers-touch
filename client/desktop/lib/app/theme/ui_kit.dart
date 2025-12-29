@@ -15,7 +15,7 @@ class UIKit {
   static const double rightPanelMaxWidth = 420; // 右侧辅助面板最大宽度
   static const double splitHandleWidth = 8; // 面板分隔拖拽把手宽度
   // 折叠态宽度：采用折叠按钮尺寸的 120%，两侧各留 10%
-  static const double rightPanelCollapsedWidth = controlHeightMd * 1.2; // 48px（基于 40px 按钮）
+  static const double rightPanelCollapsedWidth = 32; // 32px
   static const double topBarHeight = 64; // 顶部栏统一高度
   static const double controlHeightMd = 40; // 中等控件高度（如按钮）
   static const double controlHeightLg = 48; // 大型控件高度（如主按钮）

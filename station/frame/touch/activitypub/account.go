@@ -91,8 +91,8 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL strin
 		return err
 	}
 
-	// Part 3: Create actor mastodon meta (extensions) with default values
-	meta := db.ActorMastodonMeta{
+	// Part 3: Create actor touch meta (extensions) with default values
+	meta := db.ActorTouchMeta{
 		ActorID: a.ID,
 		// Default values
 		Discoverable:              true,

@@ -181,10 +181,18 @@ func FetchInbox(c context.Context, user string, baseURL string, page bool) (inte
 	col := ap.OrderedCollectionPageNew(inbox)
 	col.ID = ap.ID(pageID)
 	col.PartOf = ap.IRI(inboxID)
-	col.OrderedItems = make(ap.ItemCollection, len(items))
-	for i, it := range items {
+	col.OrderedItems = make(ap.ItemCollection, 0, len(items))
+	for _, it := range items {
 		var act db.ActivityPubActivity
 		if err := rds.Where("id = ?", it.ItemID).First(&act).Error; err == nil {
+			// Filtering
+			if act.Type != string(ap.CreateType) && act.Type != string(ap.AnnounceType) {
+				continue
+			}
+			if act.Type == string(ap.CreateType) && act.InReplyTo != 0 {
+				continue
+			}
+
 			var a ap.Activity
 			var data []byte
 			if len(act.Content) > 0 {
@@ -194,18 +202,18 @@ func FetchInbox(c context.Context, user string, baseURL string, page bool) (inte
 			}
 			if data != nil {
 				if json.Unmarshal(data, &a) == nil {
-					col.OrderedItems[i] = &a
+					col.OrderedItems = append(col.OrderedItems, &a)
 					continue
 				}
 			}
 		}
-		col.OrderedItems[i] = ap.IRI(it.ItemID)
+		col.OrderedItems = append(col.OrderedItems, ap.IRI(it.ItemID))
 	}
 	return col, nil
 }
 
 // FetchOutbox returns the user's outbox collection or a page.
-func FetchOutbox(c context.Context, user string, baseURL string, page bool) (interface{}, error) {
+func FetchOutbox(c context.Context, user string, baseURL string, page bool, viewerID uint64) (interface{}, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
 		return nil, err
@@ -232,10 +240,34 @@ func FetchOutbox(c context.Context, user string, baseURL string, page bool) (int
 	col := ap.OrderedCollectionPageNew(out)
 	col.ID = ap.ID(pageID)
 	col.PartOf = ap.IRI(outboxID)
-	col.OrderedItems = make(ap.ItemCollection, len(items))
-	for i, it := range items {
+	col.OrderedItems = make(ap.ItemCollection, 0, len(items))
+
+	for _, it := range items {
 		var act db.ActivityPubActivity
 		if err := rds.Where("id = ?", it.ItemID).First(&act).Error; err == nil {
+			// Skip activities that shouldn't appear in the feed
+			// 1. Skip non-content types (Like, Follow, Undo, Delete, Block, Update, etc.)
+			//    Only allow Create and Announce.
+			if act.Type != string(ap.CreateType) && act.Type != string(ap.AnnounceType) {
+				continue
+			}
+
+			// 2. Skip replies (Create activities where InReplyTo is set)
+			//    Replies should be shown under the parent post, not as main feed items.
+			if act.Type == string(ap.CreateType) && act.InReplyTo != 0 {
+				continue
+			}
+
+			// Check if object is deleted (Tombstone)
+			if act.ObjectID != 0 {
+				var obj db.ActivityPubObject
+				if err := rds.Where("id = ?", act.ObjectID).First(&obj).Error; err == nil {
+					if obj.Type == "Tombstone" {
+						continue // Skip deleted items
+					}
+				}
+			}
+
 			var a ap.Activity
 			var data []byte
 			if len(act.Content) > 0 {
@@ -245,14 +277,117 @@ func FetchOutbox(c context.Context, user string, baseURL string, page bool) (int
 			}
 			if data != nil {
 				if json.Unmarshal(data, &a) == nil {
-					col.OrderedItems[i] = &a
+					// Enrich with dynamic stats and viewer state
+					enrichActivity(c, rds, &a, act.ObjectID, viewerID)
+					col.OrderedItems = append(col.OrderedItems, &a)
 					continue
 				}
 			}
 		}
-		col.OrderedItems[i] = ap.IRI(it.ItemID)
+		col.OrderedItems = append(col.OrderedItems, ap.IRI(it.ItemID))
 	}
 	return col, nil
+}
+
+func enrichActivity(c context.Context, rds *gorm.DB, a *ap.Activity, objectID uint64, viewerID uint64) {
+	if objectID == 0 {
+		return
+	}
+
+	// 1. Get Like Count
+	var likesCount int64
+	rds.Model(&db.ActivityPubLike{}).Where("object_id = ? AND is_active = ?", objectID, true).Count(&likesCount)
+
+	// 2. Get Comment Count (Replies)
+	var repliesCount int64
+	rds.Model(&db.ActivityPubObject{}).Where("in_reply_to = ?", objectID).Count(&repliesCount)
+
+	// 3. Get Announce Count (Shares)
+	var sharesCount int64
+	// Find activities of type Announce pointing to this object
+	rds.Model(&db.ActivityPubActivity{}).Where("type = ? AND object_id = ?", "Announce", objectID).Count(&sharesCount)
+
+	// 4. Check if viewer liked
+	// liked := false // Unused variable
+	if viewerID != 0 {
+		var count int64
+		// Note: ActivityPubLike table uses ActorID (numeric) and ObjectID (numeric)
+		rds.Model(&db.ActivityPubLike{}).Where("object_id = ? AND actor_id = ? AND is_active = ?", objectID, viewerID, true).Count(&count)
+		// liked = count > 0 // Unused variable
+	}
+
+	// Inject into Activity Object if it's a full object
+	// We use the 'Object' field of the Activity
+	_ = ap.OnObject(a.Object, func(o *ap.Object) error {
+		// Likes
+		// Always initialize collections even if empty, so frontend sees 0 instead of null/undefined
+		col := ap.OrderedCollectionNew(ap.ID(""))
+		col.TotalItems = uint(likesCount)
+		o.Likes = col
+
+		// Replies
+		colReplies := ap.OrderedCollectionNew(ap.ID(""))
+		colReplies.TotalItems = uint(repliesCount)
+		o.Replies = colReplies
+
+		// Shares
+		colShares := ap.OrderedCollectionNew(ap.ID(""))
+		colShares.TotalItems = uint(sharesCount)
+		o.Shares = colShares
+
+		// AttributedTo (Avatar) expansion
+		// If AttributedTo is a link, try to fetch actor and set icon
+		// Note: o.AttributedTo is ap.Item (interface), which can be Object or Link.
+		// It is usually a single Item, not a collection, though the spec allows multiple.
+		// In our ap package, AttributedTo is defined as `Item`.
+		// If it's a link, we can check directly.
+		if o.AttributedTo != nil {
+			if o.AttributedTo.IsLink() {
+				actorIRI := string(o.AttributedTo.GetLink())
+				// Try to fetch actor from DB
+				var actor db.Actor
+				// We need to match either URL or specific ActivityPub IDs
+				if err := rds.Where("url = ?", actorIRI).Or("activity_pub_id = ?", actorIRI).Or("id = ?", actorIRI).First(&actor).Error; err == nil {
+					// Found actor, expand it to a Person object with Icon
+					person := ap.PersonNew(ap.ID(actorIRI))
+
+					// Set Name/PreferredUsername if available
+					if actor.Name != "" {
+						person.Name = ap.NaturalLanguageValuesNew()
+						person.Name.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(actor.Name)})
+					}
+					person.PreferredUsername = ap.NaturalLanguageValuesNew()
+					person.PreferredUsername.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(actor.PreferredUsername)})
+
+					// Set Icon
+					if actor.Icon != "" {
+						ic := ap.ObjectNew(ap.ImageType)
+						ic.URL = ap.IRI(actor.Icon)
+						person.Icon = ic
+					}
+					// Replace the link with the expanded object
+					o.AttributedTo = person
+				}
+			}
+		}
+
+		// Tag "liked" state in the object itself (non-standard but useful for client)
+		// Or we can rely on client checking Likes collection if we exposed who liked it,
+		// but typically we just add a boolean flag or the client checks if "viewer" is in "likes".
+		// Since we don't standardly return "isLiked" in AP, we might need a custom property or
+		// ensure the client logic works.
+		// For now, let's assume client looks at o.Likes.TotalItems for count.
+		// For "isLiked" state, standard Mastodon API puts it in 'favourited'.
+		// Since we are returning raw ActivityPub, we might need to add a custom field or Context.
+		// Let's add it to the 'context' or a custom property if possible, but ap.Object is strict.
+		// We will rely on the "viewer" knowing they liked it via a separate mechanism or
+		// if we are emulating Mastodon API (which is done in profile.go/status.go, not here).
+		// Wait, this function enriches the ActivityPub object which is then returned.
+		// If the frontend expects `isLiked`, it might be looking for a specific field.
+		// But here we are just returning standard AP.
+
+		return nil
+	})
 }
 
 // FetchFollowers returns the user's followers collection or a page.
@@ -411,10 +546,18 @@ func FetchSharedInbox(c context.Context, baseURL string, page bool) (interface{}
 	col := ap.OrderedCollectionPageNew(inx)
 	col.ID = ap.ID(pageID)
 	col.PartOf = ap.IRI(inboxID)
-	col.OrderedItems = make(ap.ItemCollection, len(items))
-	for i, it := range items {
+	col.OrderedItems = make(ap.ItemCollection, 0, len(items))
+	for _, it := range items {
 		var act db.ActivityPubActivity
 		if err := rds.Where("id = ?", it.ItemID).First(&act).Error; err == nil {
+			// Filtering
+			if act.Type != string(ap.CreateType) && act.Type != string(ap.AnnounceType) {
+				continue
+			}
+			if act.Type == string(ap.CreateType) && act.InReplyTo != 0 {
+				continue
+			}
+
 			var a ap.Activity
 			var data []byte
 			if len(act.Content) > 0 {
@@ -424,12 +567,12 @@ func FetchSharedInbox(c context.Context, baseURL string, page bool) (interface{}
 			}
 			if data != nil {
 				if json.Unmarshal(data, &a) == nil {
-					col.OrderedItems[i] = &a
+					col.OrderedItems = append(col.OrderedItems, &a)
 					continue
 				}
 			}
 		}
-		col.OrderedItems[i] = ap.IRI(it.ItemID)
+		col.OrderedItems = append(col.OrderedItems, ap.IRI(it.ItemID))
 	}
 	return col, nil
 }
