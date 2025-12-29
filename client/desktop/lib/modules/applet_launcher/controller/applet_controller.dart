@@ -1,9 +1,11 @@
 
 import 'dart:convert';
-import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:logging/logging.dart';
+import 'package:path/path.dart' as p;
 import 'package:peers_touch_base/applet/bridge/bridge_manager.dart';
 import 'package:peers_touch_base/applet/models/applet_manifest.dart';
 
@@ -12,66 +14,99 @@ class AppletController extends GetxController {
   final _logger = Logger('AppletController');
   
   // Observable state for UI
-  final Rx<WebViewController?> webViewController = Rx<WebViewController?>(null);
+  final Rx<InAppWebViewController?> webViewController = Rx<InAppWebViewController?>(null);
   final RxBool isLoading = true.obs;
   final RxString error = ''.obs;
 
+  String? _initialUrl;
+
   AppletController({required this.manifest});
 
+  /// Called by the view to set the initial URL
   void initializeWebView(String initialUrl) {
-    if (webViewController.value != null) return;
+    _initialUrl = initialUrl;
+  }
 
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (int progress) {
-            // Update loading bar.
-          },
-          onPageStarted: (String url) {
-            isLoading.value = true;
-          },
-          onPageFinished: (String url) {
-            isLoading.value = false;
-            // If we just loaded the shell, inject the bundle
-            if (url.contains('applet_shell.html')) {
-               _injectBundle(initialUrl);
-            }
-          },
-          onWebResourceError: (WebResourceError e) {
-            _logger.severe("WebView resource error: ${e.description}");
-            // Don't block UI on resource error, but log it
-          },
-        ),
-      )
-      ..addJavaScriptChannel(
-        'PeersBridge',
-        onMessageReceived: (JavaScriptMessage message) {
-          handleBridgeMessage(message.message);
-        },
-      );
+  void onWebViewCreated(InAppWebViewController controller) {
+    webViewController.value = controller;
+    
+    controller.addJavaScriptHandler(
+      handlerName: 'PeersBridge',
+      callback: (args) {
+        if (args.isNotEmpty) {
+          handleBridgeMessage(args[0].toString());
+        }
+      }
+    );
 
-      // Handle loading based on URL type
+    if (_initialUrl != null) {
+      _loadContent(_initialUrl!);
+    }
+  }
+
+  Future<void> _loadContent(String initialUrl) async {
+    final controller = webViewController.value;
+    if (controller == null) return;
+
+    try {
       if (initialUrl.startsWith('http') || initialUrl.startsWith('template://')) {
         // For remote URLs or Templates, we load the local shell first
-        // Then inject the bundle URL
-        controller.loadFlutterAsset('assets/applet/applet_shell.html');
+        final shellUrl = await _resolveAssetUrl('assets/applet/applet_shell.html');
+        await controller.loadUrl(urlRequest: URLRequest(url: WebUri(shellUrl)));
       } else if (initialUrl.startsWith('file://')) {
-        controller.loadFile(initialUrl.replaceFirst('file://', ''));
+        await controller.loadUrl(urlRequest: URLRequest(url: WebUri(initialUrl)));
       } else if (initialUrl.startsWith('assets://')) {
         final assetKey = initialUrl.replaceFirst('assets:///', '');
-        controller.loadFlutterAsset(assetKey);
+        final url = await _resolveAssetUrl(assetKey);
+        await controller.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
       } else {
         error.value = "Unsupported URL scheme: $initialUrl";
       }
+    } catch (e) {
+      error.value = "Failed to load content: $e";
+      _logger.severe("Load content error", e);
+    }
+  }
 
-    webViewController.value = controller;
+  Future<String> _resolveAssetUrl(String assetKey) async {
+    if (kIsWeb) return 'assets/$assetKey';
+    
+    if (Platform.isWindows || Platform.isLinux) {
+       final basePath = p.dirname(Platform.resolvedExecutable);
+       final assetPath = p.join(basePath, 'data', 'flutter_assets', assetKey);
+       return Uri.file(assetPath).toString();
+    }
+    
+    // For macOS, we might need to find the Resources folder.
+    // But typically InAppWebView on macOS handles assets if referenced correctly?
+    // Let's try the standard Flutter asset path for Android as fallback, 
+    // but for macOS desktop it is usually inside Resources/flutter_assets.
+    // If running from IDE, it might be different.
+    
+    // Simple fallback for now (works on Android/iOS)
+    return 'file:///android_asset/flutter_assets/$assetKey';
   }
   
+  void onLoadStart(String? url) {
+    isLoading.value = true;
+  }
+
+  void onLoadStop(String? url) {
+    isLoading.value = false;
+    // If we just loaded the shell, inject the bundle
+    if (url != null && url.contains('applet_shell.html') && _initialUrl != null) {
+       _injectBundle(_initialUrl!);
+    }
+  }
+
+  void onReceivedError(String description) {
+    _logger.severe("WebView resource error: $description");
+  }
+
   void _injectBundle(String bundleUrl) {
     if (webViewController.value != null) {
       _logger.info("Injecting bundle: $bundleUrl");
-      webViewController.value!.runJavaScript('window.loadAppletBundle("$bundleUrl")');
+      webViewController.value!.evaluateJavascript(source: 'window.loadAppletBundle("$bundleUrl")');
     }
   }
   
@@ -82,7 +117,6 @@ class AppletController extends GetxController {
       final Map<String, dynamic> args = jsonDecode(messageJson);
       
       // Check structure: { module: '...', action: '...', params: {...}, callbackId: '...' }
-      // This matches the protocol we defined in base/applet/bridge/protocol.dart
       
       final response = await BridgeManager().handleInvoke(manifest.appId, args);
       
@@ -90,10 +124,8 @@ class AppletController extends GetxController {
       final callbackId = args['callbackId'];
       if (callbackId != null && webViewController.value != null) {
          final responseJson = jsonEncode(response.toMap());
-         // Execute JS callback
-         // Assuming JS side exposes a global callback handler: window.PeersBridge.onCallback(id, response)
          final jsCode = 'window.PeersBridge.onCallback("$callbackId", $responseJson)';
-         webViewController.value!.runJavaScript(jsCode);
+         webViewController.value!.evaluateJavascript(source: jsCode);
       }
       
     } catch (e, stack) {
@@ -103,7 +135,6 @@ class AppletController extends GetxController {
 
   @override
   void onClose() {
-    // WebViewController doesn't need explicit disposal
     super.onClose();
   }
 }

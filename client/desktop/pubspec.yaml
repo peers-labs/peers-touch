@@ -57,8 +57,7 @@ dependencies:
   extended_image: ^10.0.1
   path_provider: ^2.1.5
   image: ^4.3.0
-  webview_flutter: ^4.13.0
-  webview_flutter_wkwebview: ^3.23.5
+  flutter_inappwebview: ^6.1.5
 dev_dependencies:
   flutter_test:
     sdk: flutter
