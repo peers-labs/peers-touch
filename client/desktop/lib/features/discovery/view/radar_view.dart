@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/radar_controller.dart';
 
@@ -32,8 +33,8 @@ class RadarView extends StatelessWidget {
                     children: [
                       // World map background (simple neutral map)
                       Positioned.fill(
-                        child: Image.network(
-                          'https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.png',
+                        child: SvgPicture.asset(
+                          'assets/maps/world_map.svg',
                           fit: BoxFit.cover,
                         ),
                       ),

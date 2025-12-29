@@ -31,6 +31,7 @@ type Store interface {
 	Name() string
 }
 
+// GetRDS returns a GORM DB instance from the injected store.
 func GetRDS(ctx context.Context, opts ...RDSDMLOption) (*gorm.DB, error) {
 	st, err := GetStore(ctx)
 	if err != nil {
@@ -40,6 +41,7 @@ func GetRDS(ctx context.Context, opts ...RDSDMLOption) (*gorm.DB, error) {
 	return st.RDS(ctx, opts...)
 }
 
+// GetStore returns the injected Store.
 func GetStore(ctx context.Context, opts ...GetOption) (Store, error) {
 	return store, nil
 }
@@ -47,6 +49,7 @@ func GetStore(ctx context.Context, opts ...GetOption) (Store, error) {
 // InjectStore is the entry point for saving Store implement for the application.
 // It must be used after completing the initialization of Store.
 // We use the store injected to access RDS or other resources.
+// InjectStore stores a Store implementation for global access.
 func InjectStore(ctx context.Context, s Store) (err error) {
 	initLock.Lock()
 	defer initLock.Unlock()

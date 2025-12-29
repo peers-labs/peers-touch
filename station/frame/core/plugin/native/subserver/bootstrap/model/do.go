@@ -1,3 +1,4 @@
+// Package model defines bootstrap persistence models.
 package model
 
 import (
@@ -48,11 +49,13 @@ type ConnectionInfo struct {
 	Latency      time.Duration     `gorm:"-"`
 }
 
+// TableName sets the database table name with bootstrap_ prefix.
 func (*ConnectionInfo) TableName() string {
 	return "bootstrap_connection_info"
 }
 
 // BeforeCreate generates Snowflake ID before database insertion
+// BeforeCreate generates Snowflake ID before database insertion.
 func (p *ConnectionInfo) BeforeCreate(tx *gorm.DB) error {
 	if p.ID == 0 {
 		p.ID = id.NextID() // Assume you have a Snowflake ID generator function

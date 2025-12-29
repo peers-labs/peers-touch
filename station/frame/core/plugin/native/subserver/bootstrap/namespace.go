@@ -13,7 +13,7 @@ import (
 
 var (
 	networkNamespace = "/" + registry.DefaultPeersNetworkNamespace
-	networkId        = protocol.ID(networkNamespace)
+	networkID        = protocol.ID(networkNamespace)
 
 	// networkBootstrapNamespace is the namespace for bootstrap peers.
 	// pb equals to peers-bootstrap
@@ -22,10 +22,11 @@ var (
 	peerKeyFormat = "%s/%s"
 )
 
-type NamespaceValidator struct {
-}
+// NamespaceValidator validates bootstrap DHT keys under the peers namespace.
+type NamespaceValidator struct{}
 
-func (*NamespaceValidator) Validate(key string, val []byte) error {
+// Validate ensures the key is under network namespace and peer ID is valid.
+func (*NamespaceValidator) Validate(key string, _ []byte) error {
 	if len(key) < len(networkNamespace) || key[:len(networkNamespace)] != networkNamespace {
 		return fmt.Errorf("invalid key for name record: %s", key)
 	}
@@ -47,6 +48,7 @@ func (*NamespaceValidator) Validate(key string, val []byte) error {
 	return err
 }
 
-func (v *NamespaceValidator) Select(key string, vals [][]byte) (int, error) {
+// Select resolves conflicts among values (first wins).
+func (v *NamespaceValidator) Select(_ string, _ [][]byte) (int, error) {
 	return 0, nil
 }

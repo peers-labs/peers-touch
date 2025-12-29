@@ -1,3 +1,4 @@
+// Package actuator provides a simple debug server for health and introspection.
 package actuator
 
 import (
@@ -31,10 +32,12 @@ func (d debugRouterURL) SubPath() string {
 	return d.url
 }
 
+// debugSubServer implements a lightweight debug Subserver.
 type debugSubServer struct {
 	opts *DebugServerOptions
 }
 
+// NewDebugSubServer constructs a debug subserver.
 func NewDebugSubServer(opts ...option.Option) server.Subserver {
 	s := &debugSubServer{
 		opts: option.GetOptions(opts...).Ctx().Value(debugServerOptionsKey{}).(*DebugServerOptions),
@@ -42,6 +45,7 @@ func NewDebugSubServer(opts ...option.Option) server.Subserver {
 	return s
 }
 
+// Init loads options and resolves registry dependency.
 func (d *debugSubServer) Init(ctx context.Context, opts ...option.Option) error {
 	for _, o := range opts {
 		d.opts.Apply(o)
@@ -55,28 +59,33 @@ func (d *debugSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	return nil
 }
 
+// Start starts the debug subserver (no-op for now).
 func (d *debugSubServer) Start(ctx context.Context, opts ...option.Option) error {
 	return nil
 }
 
+// Stop stops the debug subserver (no-op for now).
 func (d *debugSubServer) Stop(ctx context.Context) error {
 	return nil
 }
 
+// Name returns subserver identifier.
 func (d *debugSubServer) Name() string {
 	return "peers-debug-server"
 }
 
+// Address returns the debug server address.
 func (d *debugSubServer) Address() server.SubserverAddress {
 	// todo implement me
 	return server.SubserverAddress{}
 }
 
+// Status returns current status (not tracked).
 func (d *debugSubServer) Status() server.Status {
-	//TODO implement me
-	panic("implement me")
+	return server.StatusRunning
 }
 
+// Handlers returns debug endpoints.
 func (d *debugSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
