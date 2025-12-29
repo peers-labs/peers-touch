@@ -1,6 +1,8 @@
+// Package native wires built-in plugins via blank imports and init side-effects.
 package native
 
 import (
+	// plugin and submodule registration via init() side-effects
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/client"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/node"

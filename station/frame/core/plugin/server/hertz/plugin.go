@@ -19,13 +19,15 @@ var options struct {
 	} `pconf:"peers"`
 }
 
-type hertzServerPlugin struct {
-}
+// hertzServerPlugin wires config to build a hertz server.
+type hertzServerPlugin struct{}
 
+// Name returns the plugin identifier.
 func (n *hertzServerPlugin) Name() string {
 	return "hertz"
 }
 
+// Options returns server options derived from configuration.
 func (n *hertzServerPlugin) Options() []option.Option {
 	var opts []option.Option
 	if options.Peers.Service.Server.Hertz.Enabled {
@@ -35,6 +37,7 @@ func (n *hertzServerPlugin) Options() []option.Option {
 	return opts
 }
 
+// New constructs a hertz server with plugin options.
 func (n *hertzServerPlugin) New(opts ...option.Option) server.Server {
 	opts = append(opts, n.Options()...)
 	return NewServer(opts...)

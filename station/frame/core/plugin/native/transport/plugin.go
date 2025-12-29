@@ -12,23 +12,25 @@ var (
 )
 
 type TransportConfig struct {
-    Peers struct {
-        Node struct {
-            Transport struct {
-                Name   string   `json:"name" pconf:"name"`
-                Addrs  []string `json:"addrs" pconf:"addrs"`
-                Native struct {
-                    EnableRelay bool `json:"enable-relay" pconf:"enable-relay"`
-                    Libp2pIdentityKeyFile string `json:"libp2p-identity-key-file" pconf:"libp2p-identity-key-file"`
-                } `json:"native" pconf:"native"`
+	// Peers holds node transport configuration loaded from config.
+	Peers struct {
+		Node struct {
+			Transport struct {
+				Name   string   `json:"name" pconf:"name"`
+				Addrs  []string `json:"addrs" pconf:"addrs"`
+				Native struct {
+					EnableRelay           bool   `json:"enable-relay" pconf:"enable-relay"`
+					Libp2pIdentityKeyFile string `json:"libp2p-identity-key-file" pconf:"libp2p-identity-key-file"`
+				} `json:"native" pconf:"native"`
 
-                Secure  bool   `json:"secure" pconf:"secure"`
-                Timeout string `json:"timeout" pconf:"timeout"`
-            } `json:"transport" pconf:"transport"`
-        } `json:"node" pconf:"node"`
-    } `json:"peers" pconf:"peers"`
+				Secure  bool   `json:"secure" pconf:"secure"`
+				Timeout string `json:"timeout" pconf:"timeout"`
+			} `json:"transport" pconf:"transport"`
+		} `json:"node" pconf:"node"`
+	} `json:"peers" pconf:"peers"`
 }
 
+// Options converts TransportConfig into transport options.
 func (c *TransportConfig) Options() []option.Option {
 	var opts []option.Option
 
@@ -42,27 +44,30 @@ func (c *TransportConfig) Options() []option.Option {
 		opts = append(opts, transport.Timeout(c.Peers.Node.Transport.Timeout))
 	}
 
-    if c.Peers.Node.Transport.Native.EnableRelay {
-        opts = append(opts, EnableRelay())
-    }
+	if c.Peers.Node.Transport.Native.EnableRelay {
+		opts = append(opts, EnableRelay())
+	}
 
-    if len(c.Peers.Node.Transport.Native.Libp2pIdentityKeyFile) > 0 {
-        opts = append(opts, WithLibp2pIdentityKeyFile(c.Peers.Node.Transport.Native.Libp2pIdentityKeyFile))
-    }
+	if len(c.Peers.Node.Transport.Native.Libp2pIdentityKeyFile) > 0 {
+		opts = append(opts, WithLibp2pIdentityKeyFile(c.Peers.Node.Transport.Native.Libp2pIdentityKeyFile))
+	}
 
-    return opts
+	return opts
 }
 
 type nativeTransportPlugin struct{}
 
+// Name returns the plugin identifier.
 func (p *nativeTransportPlugin) Name() string {
 	return plugin.NativePluginName
 }
 
+// Options returns transport options derived from configuration.
 func (p *nativeTransportPlugin) Options() []option.Option {
 	return transportConfig.Options()
 }
 
+// New constructs a transport with plugin options.
 func (p *nativeTransportPlugin) New(opts ...option.Option) transport.Transport {
 	return NewTransport(append(p.Options(), opts...)...)
 }

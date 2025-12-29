@@ -20,7 +20,6 @@ import (
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite"
-	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
 )
 
 func main() {
@@ -42,7 +41,6 @@ func main() {
 		server.WithSubServer("chat", chat.NewChatSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
 		server.WithSubServer("oss", oss.NewOSSSubServer, oss.WithAuthProvider(jwtProvider)),
-		server.WithSubServer("applet_store", applet_store.NewAppletStoreSubServer, applet_store.WithStoragePath("./data/applets")),
 	)
 	if err != nil {
 		panic(err)
