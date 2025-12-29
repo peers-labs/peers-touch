@@ -1,6 +1,8 @@
+// Package turn provides a TURN subserver implementation.
 package turn
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -13,10 +15,7 @@ import (
 	"github.com/pion/turn/v4"
 )
 
-import (
-	"context"
-)
-
+// SubServer implements a TURN service.
 type SubServer struct {
 	opts *Options
 
@@ -28,6 +27,7 @@ type SubServer struct {
 	address string
 }
 
+// Init initializes TURN server and listeners.
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 	for _, opt := range opts {
 		s.opts.Apply(opt)
@@ -43,7 +43,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 
 	tcpLis, err := net.ListenTCP("tcp4", &net.TCPAddr{Port: s.opts.Port})
 	if err != nil {
-		udpConn.Close()
+		_ = udpConn.Close()
 		return fmt.Errorf("TCP listen error: %w", err)
 	}
 
@@ -77,6 +77,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 	return err
 }
 
+// Start begins TURN service and signal handling.
 func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusRunning
 
@@ -85,7 +86,9 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
-		s.Stop(ctx)
+		if err := s.Stop(ctx); err != nil {
+			logger.Errorf(ctx, "TURN server stop error: %v", err)
+		}
 	}()
 
 	// logs debug information
@@ -94,7 +97,8 @@ func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	return nil
 }
 
-func (s *SubServer) Stop(ctx context.Context) error {
+// Stop shuts down listeners and the TURN server.
+func (s *SubServer) Stop(_ context.Context) error {
 	s.status = server.StatusStopping
 	defer func() { s.status = server.StatusStopped }()
 
@@ -104,16 +108,23 @@ func (s *SubServer) Stop(ctx context.Context) error {
 	return nil
 }
 
+// Name returns the subserver identifier.
 func (s *SubServer) Name() string { return "turn" }
+
+// Address returns the listening address.
 func (s *SubServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{
 		Address: []string{s.address},
 	}
 }
 
-func (s *SubServer) Status() server.Status      { return s.status }
+// Status returns current server status.
+func (s *SubServer) Status() server.Status { return s.status }
+
+// Handlers returns HTTP handlers (none for TURN).
 func (s *SubServer) Handlers() []server.Handler { return nil }
 
+// Type returns the subserver type.
 func (s *SubServer) Type() server.SubserverType {
 	return server.SubserverTypeTurn
 }

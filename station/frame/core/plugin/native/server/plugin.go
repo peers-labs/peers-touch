@@ -23,23 +23,19 @@ var options struct {
 type nativeServerPlugin struct {
 }
 
+// Name returns the plugin identifier.
 func (n *nativeServerPlugin) Name() string {
 	return "native"
 }
 
+// Options returns server options provided by the plugin.
 func (n *nativeServerPlugin) Options() []option.Option {
 	var opts []option.Option
-	if options.Peers.Service.Server.Native.Enabled {
-		// todo append opts
-	}
-
-	if options.Peers.Service.Server.Native.EnableDebug {
-		// todo append opts
-	}
 
 	return opts
 }
 
+// New constructs a new native server with plugin options.
 func (n *nativeServerPlugin) New(opts ...option.Option) server.Server {
 	opts = append(opts, n.Options()...)
 	return NewServer(opts...)

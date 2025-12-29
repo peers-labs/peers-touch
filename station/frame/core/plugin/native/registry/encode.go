@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/libp2p/go-libp2p/core/crypto/pb"
+	"google.golang.org/protobuf/proto"
 )
 
 func (r *nativeRegistry) unmarshalPeer(data []byte) (peerReg *Peer, err error) {
@@ -55,8 +55,7 @@ func (r *nativeRegistry) marshalPeer(ctx context.Context, peerReg *Peer) ([]byte
 		return nil, fmt.Errorf("[marshal] marshal peerReg: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	// context with timeout not required here; signing and marshaling is CPU-bound
 
 	pk := &pb.PublicKey{
 		Type: pb.KeyType_RSA.Enum(),

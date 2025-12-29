@@ -12,7 +12,7 @@ type Logger struct {
 }
 
 // NewLogger creates a new instance of Logger with the same underlying logger
-func (l *Logger) NewLogger(scope string) logging.LeveledLogger {
+func (l *Logger) NewLogger(_ string) logging.LeveledLogger {
 	return &Logger{
 		logger: l.logger,
 	}
@@ -86,7 +86,7 @@ func NewLoggerFactory() *LoggerFactory {
 }
 
 // NewLogger creates a new logger instance implementing logging.LeveledLogger.
-func (lf *LoggerFactory) NewLogger(scope string) logging.LeveledLogger {
+func (lf *LoggerFactory) NewLogger(_ string) logging.LeveledLogger {
 	return &Logger{
 		logger: lf.logger,
 	}

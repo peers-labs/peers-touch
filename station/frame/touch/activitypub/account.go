@@ -19,6 +19,7 @@ const (
 	bcryptCost = 12
 )
 
+// SignUp creates a new actor account with keys and default metadata.
 func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL string) error {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -109,6 +110,7 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL strin
 	return nil
 }
 
+// GetActorByName looks up an actor by preferred username.
 func GetActorByName(c context.Context, name string) (*db.Actor, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -126,6 +128,7 @@ func GetActorByName(c context.Context, name string) (*db.Actor, error) {
 	return &presentActor, nil
 }
 
+// GetActorByEmail looks up an actor by email.
 func GetActorByEmail(c context.Context, email string) (*db.Actor, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {

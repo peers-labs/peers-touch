@@ -17,8 +17,6 @@ message OnlineActor {
     string avatar_url = 4;
     int32 status = 5;
     string last_heartbeat = 6;
-    double lat = 7;
-    double lon = 8;
 }
 
 message HeartbeatRequest {

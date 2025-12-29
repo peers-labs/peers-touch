@@ -10,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
+// GetHost returns the underlying libp2p host.
 func (r *nativeRegistry) GetHost() host.Host {
 	return r.host
 }

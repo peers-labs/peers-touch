@@ -1,10 +1,10 @@
+// Package native provides a node implementation integrating transport, registry and server.
 package native
 
 import (
 	"context"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/client"
@@ -25,30 +25,34 @@ var (
 type native struct {
 	opts *node.Options
 	node.AbstractService
-
-	once sync.Once
 }
 
+// Name returns the service name.
 func (s *native) Name() string {
 	return s.opts.Name
 }
 
+// Options returns the node options.
 func (s *native) Options() *node.Options {
 	return s.opts
 }
 
+// Client returns the node client.
 func (s *native) Client() client.Client {
 	return s.opts.Client
 }
 
+// Server returns the node server.
 func (s *native) Server() server.Server {
 	return s.opts.Server
 }
 
+// String returns the node identifier.
 func (s *native) String() string {
 	return "peers"
 }
 
+// Start runs pre-hooks, starts server, registers node and runs post-hooks.
 func (s *native) Start(ctx context.Context) error {
 	for _, fn := range s.opts.BeforeStart {
 		if err := fn(); err != nil {
@@ -92,6 +96,7 @@ func (s *native) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop runs stop hooks, stops server, closes config and runs post-stop hooks.
 func (s *native) Stop(ctx context.Context) error {
 	var gerr error
 
@@ -126,6 +131,7 @@ func (s *native) Stop(ctx context.Context) error {
 	return gerr
 }
 
+// Run starts and blocks on signals or context cancellation.
 func (s *native) Run() error {
 	ctx, cancel := context.WithCancel(s.opts.Ctx())
 	defer cancel()
@@ -154,6 +160,7 @@ func (s *native) Run() error {
 
 // todo, update to one node supports multiple peers
 // now there is a node for one peer, it's not graceful.
+// toPeer builds a peer registration for the node.
 func (s *native) toPeer() *registry.Registration {
 	registration := &registry.Registration{
 		ID:         s.opts.Id,
@@ -175,7 +182,7 @@ func (s *native) toPeer() *registry.Registration {
 	return registration
 }
 
-// NewService
+// NewService constructs a native node service.
 // todo remove rootOptions, not graceful
 func NewService(rootOpts *option.Options, opts ...option.Option) node.Node {
 	defaultOpts := []option.Option{

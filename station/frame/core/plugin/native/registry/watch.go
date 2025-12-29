@@ -8,6 +8,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 )
 
+// Watch emits add/update/delete events for peers via callbacks.
 func (r *nativeRegistry) Watch(ctx context.Context, callback registry.WatchCallback, opts ...registry.WatchOption) error {
 	watchOpts := &registry.WatchOptions{}
 	for _, opt := range opts {
@@ -33,6 +34,7 @@ func (r *nativeRegistry) peerDiscoveryWatcher(ctx context.Context, callback regi
 			peers, err := r.listPeers(ctx, &registry.QueryOptions{})
 			if err != nil {
 				logger.Errorf(ctx, "[peerDiscoveryWatcher] failed to list peers: %v", err)
+
 				continue
 			}
 

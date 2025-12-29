@@ -1,10 +1,12 @@
+// Package native provides a net/http-based server implementation.
 package native
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
@@ -29,6 +31,7 @@ type Server struct {
 	psHandlers   []server.StreamHandler
 }
 
+// NewServer creates a new native Server with provided options.
 func NewServer(opts ...option.Option) *Server {
 	s := &Server{
 		BaseServer: server.NewServer(opts...),
@@ -36,6 +39,7 @@ func NewServer(opts ...option.Option) *Server {
 		psRouter:   make(map[string]server.StreamHandler),
 		done:       make(chan struct{}),
 	}
+
 	return s
 }
 
@@ -54,6 +58,7 @@ func (s *Server) AddStreamHandlers(handlers ...server.StreamHandler) {
 	s.psHandlers = append(s.psHandlers, handlers...)
 }
 
+// Init initializes the server and its transport using given options.
 func (s *Server) Init(option ...option.Option) (err error) {
 	err = s.BaseServer.Init(option...)
 	if err != nil {
@@ -69,13 +74,16 @@ func (s *Server) Init(option ...option.Option) (err error) {
 	return nil
 }
 
+// Handle records a legacy handler; base server will dispatch it.
 func (s *Server) Handle(handler server.Handler) error {
 	// Since we can't safely type assert between conflicting interfaces,
 	// we'll store this in the base server handlers and let the base server handle it
 	s.Options().Handlers = append(s.Options().Handlers, handler)
+
 	return nil
 }
 
+// Start applies options, registers handlers, starts HTTP and P2P listeners, then blocks.
 func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	for _, o := range opts {
 		s.Options().Apply(o)
@@ -87,6 +95,7 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 		for _, wrapper := range h.Wrappers() {
 			handler = wrapper(handler)
 		}
+
 		s.httpRouter.HandleFunc(h.Path(), func(w http.ResponseWriter, r *http.Request) {
 			if h.Method() != server.ANYV2 && string(h.Method()) != r.Method {
 				w.WriteHeader(http.StatusMethodNotAllowed)
@@ -114,7 +123,11 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 				return err
 			}
 			s.listener = l
-			go l.Accept(func(sock transport.Socket) { s.handleSocket(ctx, sock) })
+			go func() {
+				if err := l.Accept(func(sock transport.Socket) { s.handleSocket(ctx, sock) }); err != nil {
+					logger.Errorf(ctx, "listener accept error: %v", err)
+				}
+			}()
 		}
 	}
 	if s.Options().ReadyChan != nil {
@@ -122,13 +135,16 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	}
 
 	<-s.done
+
 	return nil
 }
 
+// ServeHTTP implements http.Handler using the internal router.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.httpRouter.ServeHTTP(w, r)
 }
 
+// Stop shuts down listeners and the base server.
 func (s *Server) Stop(ctx context.Context) error {
 	close(s.done)
 	if s.listener != nil {
@@ -140,6 +156,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	return s.BaseServer.Stop(ctx)
 }
 
+// Name returns the server identifier.
 func (s *Server) Name() string {
 	return "native"
 }
@@ -183,12 +200,15 @@ type request struct {
 	r *http.Request
 }
 
+// Context returns the request context.
 func (r *request) Context() context.Context {
 	return r.r.Context()
 }
 
+// Header returns the first value for each header key.
 func (r *request) Header() map[string]string {
 	h := make(map[string]string)
+
 	for k, v := range r.r.Header {
 		if len(v) > 0 {
 			h[k] = v[0]
@@ -197,16 +217,19 @@ func (r *request) Header() map[string]string {
 	return h
 }
 
+// Method returns the HTTP method as server.MethodV2.
 func (r *request) Method() server.MethodV2 {
 	return server.MethodV2(r.r.Method)
 }
 
+// Path returns the request path.
 func (r *request) Path() string {
 	return r.r.URL.Path
 }
 
+// Body reads and returns the request body.
 func (r *request) Body() []byte {
-	body, _ := ioutil.ReadAll(r.r.Body)
+	body, _ := io.ReadAll(r.r.Body)
 	return body
 }
 
@@ -216,6 +239,7 @@ type response struct {
 	header map[string]string
 }
 
+// Header returns the response header map to set before writing.
 func (r *response) Header() map[string]string {
 	if r.header == nil {
 		r.header = make(map[string]string)
@@ -223,6 +247,7 @@ func (r *response) Header() map[string]string {
 	return r.header
 }
 
+// Write writes the bytes to the underlying ResponseWriter.
 func (r *response) Write(b []byte) (int, error) {
 	for k, v := range r.header {
 		r.w.Header().Set(k, v)
@@ -233,10 +258,12 @@ func (r *response) Write(b []byte) (int, error) {
 	return r.w.Write(b)
 }
 
+// WriteHeader sets the pending response status code.
 func (r *response) WriteHeader(status int) {
 	r.status = status
 }
 
+// Status returns the pending response status code.
 func (r *response) Status() int {
 	return r.status
 }
@@ -248,6 +275,7 @@ type messageSocket struct {
 	received bool
 }
 
+// Recv returns the first received message once, then delegates to underlying socket.
 func (s *messageSocket) Recv(msg *transport.Message) error {
 	if s.received {
 		// Return the already received message

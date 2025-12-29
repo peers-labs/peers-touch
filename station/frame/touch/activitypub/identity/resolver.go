@@ -17,10 +17,12 @@ type Store interface {
 	CreateBinding(ctx context.Context, b *Binding) error
 }
 
+// Resolver resolves input identifiers into Identity records.
 type Resolver struct {
 	store Store
 }
 
+// NewResolver constructs a resolver backed by the given store.
 func NewResolver(store Store) *Resolver {
 	return &Resolver{store: store}
 }

@@ -15,9 +15,8 @@ var (
 
 type Node = service
 
-// service is an interface that wraps the lower level libraries
-// within stack. It's a convenience method for building
-// and initialising services.
+// service wraps the lower level libraries within the stack and exposes
+// a convenience interface for building and initialising services.
 type service interface {
 	// Name The node name
 	Name() string
@@ -39,9 +38,8 @@ type AbstractService struct {
 	doOnce sync.Once
 }
 
-// Finish tells the root that the real node's initialization
-// Call this method in the real node's Init method or after starting
-// todo Stop event empty s
+// Finish registers the real node implementation into the global accessor.
+// Call this in the real node's Init or after starting.
 func (as *AbstractService) Finish(sIn service) {
 	as.doOnce.Do(func() {
 		as.service = sIn
@@ -49,6 +47,7 @@ func (as *AbstractService) Finish(sIn service) {
 	})
 }
 
+// GetService returns the registered node service.
 func GetService() service {
 	if s == nil {
 		panic("node not initialized")
