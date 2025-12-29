@@ -43,10 +43,12 @@ type RegisterRecord struct {
 	Signature string `gorm:"size:512"`
 }
 
+// TableName returns the DB table name for RegisterRecord.
 func (r *RegisterRecord) TableName() string {
 	return "core_register_record"
 }
 
+// BeforeCreate assigns an ID if missing.
 func (r *RegisterRecord) BeforeCreate(tx *gorm.DB) error {
 	if r.ID == 0 {
 		r.ID = id.NextID()
@@ -54,6 +56,7 @@ func (r *RegisterRecord) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// BeforeSave serializes EndStationMap into EndStation.
 func (r *RegisterRecord) BeforeSave(tx *gorm.DB) error {
 	stationBytes, err := json.Marshal(r.EndStationMap)
 	if err != nil {

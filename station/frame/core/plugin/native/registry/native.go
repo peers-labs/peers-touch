@@ -79,6 +79,7 @@ type nativeRegistry struct {
 	bootstrapBackoff map[peer.ID]*bootstrapNode
 }
 
+// NewRegistry creates a native registry with injected host and options.
 func NewRegistry(opts ...option.Option) registry.Registry {
 	regOnce.Lock()
 	defer regOnce.Unlock()
@@ -102,6 +103,7 @@ func NewRegistry(opts ...option.Option) registry.Registry {
 	return regInstance
 }
 
+// Init initializes registry state, storage, host and DHT.
 func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error {
 	r.options.Apply(opts...)
 	r.extOpts = r.options.ExtOptions.(*options)
@@ -345,6 +347,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	return nil
 }
 
+// Options returns the effective registry options.
 func (r *nativeRegistry) Options() registry.Options {
 	return *r.options
 }
@@ -354,6 +357,7 @@ func (r *nativeRegistry) Options() registry.Options {
 // only accepts IDs generated from public keys. We do not support individual IDs for peers.
 // All peers use the same public key belonging to the host to generate their IDs.
 // Consequently, we can only support registering one peer at present.
+// Register adds a peer registration, announces provider and persists metadata.
 func (r *nativeRegistry) Register(ctx context.Context, registration *registry.Registration, opts ...registry.RegisterOption) error {
 	regOpts := &registry.RegisterOptions{}
 	for _, opt := range opts {
@@ -416,6 +420,7 @@ func (r *nativeRegistry) Deregister(ctx context.Context, id string, opts ...regi
 	return r.dht.PutValue(ctx, key, []byte{})
 }
 
+// Query returns registrations matching query options (including Me).
 func (r *nativeRegistry) Query(ctx context.Context, opts ...registry.QueryOption) ([]*registry.Registration, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -532,7 +537,6 @@ func (r *nativeRegistry) listPeersToRegistrations(ctx context.Context, queryOpts
 }
 
 func (r *nativeRegistry) listPeers(ctx context.Context, queryOpts *registry.QueryOptions) ([]*Peer, error) {
-
 	// Create CID for provider lookup
 	prefix := cid.Prefix{
 		Version:  1,
@@ -599,6 +603,7 @@ func (r *nativeRegistry) listPeers(ctx context.Context, queryOpts *registry.Quer
 	return peers, nil
 }
 
+// ListPeersOld returns peers using legacy routing-table probing.
 func (r *nativeRegistry) ListPeers_old(ctx context.Context, queryOpts *registry.QueryOptions) ([]*Peer, error) {
 	var connectedPeers []*Peer
 
@@ -663,6 +668,7 @@ func (r *nativeRegistry) ListPeers_old(ctx context.Context, queryOpts *registry.
 	return connectedPeers, nil
 }
 
+// String returns the registry name.
 func (r *nativeRegistry) String() string {
 	return "native-registry"
 }
@@ -867,7 +873,6 @@ func (r *nativeRegistry) refreshRoutingTable(ctx context.Context) {
 }
 
 func (r *nativeRegistry) refreshTurn(ctx context.Context) {
-
 	if r.turn == nil {
 		logger.Infof(ctx, "[refreshTurn] turn peer not initialized")
 		return
@@ -903,14 +908,14 @@ func (r *nativeRegistry) refreshTurn(ctx context.Context) {
 	if err != nil {
 		logger.Errorf(ctx, "[refreshTurn] Failed to send binding request: %s", err)
 		return
-	} else {
-		logger.Infof(ctx, "STUN traversal address=%s", mappedAddr.String())
-		r.turnStunAddresses = append(r.turnStunAddresses, mappedAddr.String())
-		/*errAdd := r.addListenAddr(ctx, mappedAddr.String(), "peers-stun")
-		if errAdd != nil {
-			logger.Errorf(ctx, "[refreshTurn] Failed to add listen stun-address: %v", errAdd)
-		}*/
 	}
+
+	logger.Infof(ctx, "STUN traversal address=%s", mappedAddr.String())
+	r.turnStunAddresses = append(r.turnStunAddresses, mappedAddr.String())
+	/*errAdd := r.addListenAddr(ctx, mappedAddr.String(), "peers-stun")
+	  if errAdd != nil {
+	      logger.Errorf(ctx, "[refreshTurn] Failed to add listen stun-address: %v", errAdd)
+	  }*/
 
 	r.turnUpdateTime = time.Now()
 }

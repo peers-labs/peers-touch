@@ -13,6 +13,7 @@ func appID() string {
 	return "peers-touch"
 }
 
+// AppConfigDir returns the platform-specific app configuration directory.
 func AppConfigDir() string {
 	id := appID()
 	switch runtime.GOOS {
@@ -35,6 +36,7 @@ func AppConfigDir() string {
 	}
 }
 
+// AppDataDir returns the platform-specific app data directory.
 func AppDataDir() string {
 	id := appID()
 	switch runtime.GOOS {
@@ -57,6 +59,7 @@ func AppDataDir() string {
 	}
 }
 
+// AppCacheDir returns the platform-specific app cache directory.
 func AppCacheDir() string {
 	id := appID()
 	switch runtime.GOOS {
@@ -79,6 +82,7 @@ func AppCacheDir() string {
 	}
 }
 
+// AppLogsDir returns the platform-specific app logs directory.
 func AppLogsDir() string {
 	id := appID()
 	switch runtime.GOOS {
@@ -97,6 +101,7 @@ func AppLogsDir() string {
 	}
 }
 
+// AppRuntimeDir returns the platform-specific app runtime (temporary) directory.
 func AppRuntimeDir() string {
 	id := appID()
 	switch runtime.GOOS {
@@ -117,6 +122,7 @@ func AppRuntimeDir() string {
 	}
 }
 
+// EnsureAppDirs creates all required app directories.
 func EnsureAppDirs() error {
 	dirs := []string{AppConfigDir(), AppDataDir(), AppCacheDir(), AppLogsDir(), AppRuntimeDir()}
 	for _, d := range dirs {

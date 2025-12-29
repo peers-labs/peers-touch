@@ -8,6 +8,7 @@ import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
+import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
 
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 
@@ -28,6 +29,9 @@ class AuthController extends GetxController {
   final loading = false.obs;
   final error = RxnString();
   final presetUsers = <Map<String, dynamic>>[].obs;
+  final recentUsers = <String>[].obs;
+  final recentAvatars = <String, String>{}.obs;
+  final loginPreviewAvatar = RxnString();
   final baseUrl = NetworkInitializer.currentBaseUrl.obs;
   final lastStatus = RxnInt();
   final lastBody = RxnString();
@@ -49,6 +53,8 @@ class AuthController extends GetxController {
   late final FocusNode usernameFocus;
   late final FocusNode displayNameFocus;
   late final FocusNode baseUrlFocus;
+  final emailFocused = false.obs;
+  final usernameFocused = false.obs;
 
   @override
   void onInit() {
@@ -69,6 +75,10 @@ class AuthController extends GetxController {
     usernameFocus = FocusNode();
     displayNameFocus = FocusNode();
     baseUrlFocus = FocusNode();
+
+    // Focus listeners for silky dropdown behavior
+    emailFocus.addListener(() => emailFocused.value = emailFocus.hasFocus);
+    usernameFocus.addListener(() => usernameFocused.value = usernameFocus.hasFocus);
 
     // Bind controllers to Rx variables
     emailController.addListener(() {
@@ -110,6 +120,7 @@ class AuthController extends GetxController {
         NetworkInitializer.initialize(baseUrl: trimmed);
         detectProtocol(trimmed);
         loadPresetUsers(trimmed);
+        updateLoginPreviewAvatar();
       }
     }, time: const Duration(milliseconds: 800));
 
@@ -118,6 +129,11 @@ class AuthController extends GetxController {
     
     // Sync baseUrl
     baseUrlController.text = baseUrl.value;
+
+    // React to input changes to update avatar preview
+    ever(email, (_) => updateLoginPreviewAvatar());
+    ever(username, (_) => updateLoginPreviewAvatar());
+    ever(authTab, (_) => updateLoginPreviewAvatar());
   }
 
   Future<void> _restoreUserInfo() async {
@@ -132,6 +148,15 @@ class AuthController extends GetxController {
       email.value = e;
       emailController.text = e;
     }
+    final recent = await ls.get<List>('recent_users');
+    if (recent != null) {
+      recentUsers.assignAll(recent.whereType<String>());
+    }
+    final avatars = await ls.get<Map>('recent_avatars');
+    if (avatars != null) {
+      recentAvatars.assignAll(avatars.map((k, v) => MapEntry(k.toString(), v.toString())));
+    }
+    updateLoginPreviewAvatar();
   }
 
   @override
@@ -193,6 +218,7 @@ class AuthController extends GetxController {
               .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
               .toList(),
         );
+        updateLoginPreviewAvatar();
         lastStatus.value = resp.statusCode;
         lastBody.value = text;
         LoggingService.info(
@@ -205,6 +231,30 @@ class AuthController extends GetxController {
   void switchTab(int i) {
     authTab.value = i;
     error.value = null;
+  }
+
+  Future<void> logout() async {
+    // Clear storage
+    await LocalStorage().remove('auth_token');
+    await LocalStorage().remove('refresh_token');
+    await LocalStorage().remove('auth_token_type');
+    await _secureStorage.remove(StorageKeys.tokenKey);
+    await _secureStorage.remove(StorageKeys.refreshTokenKey);
+    
+    // Clear Rx variables
+    email.value = '';
+    password.value = '';
+    username.value = '';
+    displayName.value = '';
+    
+    // Clear GlobalContext session
+    try {
+      if (Get.isRegistered<GlobalContext>()) {
+        await Get.find<GlobalContext>().setSession(null);
+      }
+    } catch (_) {}
+    
+    Get.offAllNamed('/login');
   }
 
   Future<void> login([String? overrideBaseUrl]) async {
@@ -324,6 +374,13 @@ class AuthController extends GetxController {
                 'refreshToken': refresh,
               });
               LoggingService.info('GlobalContext session updated for user: $handle');
+              await _saveRecentUserAvatar(handle, baseUrl: (overrideBaseUrl ?? baseUrl.value).trim());
+              // Try refresh profile page if already registered
+              try {
+                if (Get.isRegistered<ProfileController>()) {
+                  Get.find<ProfileController>().fetchProfile();
+                }
+              } catch (_) {}
             }
           } catch (_) {}
           Get.offAllNamed('/shell');
@@ -337,6 +394,76 @@ class AuthController extends GetxController {
       error.value = e.toString();
     }
     loading.value = false;
+  }
+
+  void updateLoginPreviewAvatar() async {
+    final handle = _currentHandle();
+    if (handle.isEmpty) {
+      loginPreviewAvatar.value = null;
+      return;
+    }
+    // Prefer recent avatars stored locally
+    final local = recentAvatars[handle];
+    if (local != null && local.isNotEmpty) {
+      loginPreviewAvatar.value = local;
+      return;
+    }
+    // Fallback to preset users list
+    final found = presetUsers.firstWhereOrNull((u) {
+      final name = (u['username'] ?? u['handle'] ?? u['name'] ?? '').toString();
+      return name == handle;
+    });
+    if (found != null) {
+      final url = (found['avatar'] ?? found['avatar_url'] ?? found['avatarUrl'] ?? '').toString();
+      loginPreviewAvatar.value = url.isNotEmpty ? url : null;
+      return;
+    }
+    loginPreviewAvatar.value = null;
+  }
+
+  String _currentHandle() {
+    if (authTab.value == 1) {
+      final h = username.value.trim();
+      return h;
+    }
+    final ident = email.value.trim();
+    if (ident.isEmpty) return '';
+    if (ident.contains('@')) return ident.split('@').first;
+    return ident;
+  }
+
+  Future<void> _saveRecentUserAvatar(String handle, {required String baseUrl}) async {
+    try {
+      final uri = Uri.parse(baseUrl.endsWith('/')
+          ? '${baseUrl}activitypub/$handle/profile'
+          : '$baseUrl/activitypub/$handle/profile');
+      final resp = await (await HttpClient().getUrl(uri)).close();
+      if (resp.statusCode == 200) {
+        final text = await resp.transform(const Utf8Decoder()).join();
+        final obj = json.decode(text);
+        Map<String, dynamic>? data;
+        if (obj is Map) {
+          data = (obj['data'] is Map) ? (obj['data'] as Map).cast<String, dynamic>() : obj.cast<String, dynamic>();
+        }
+        String url = '';
+        if (data != null) {
+          url = (data['avatar'] ?? data['avatar_url'] ?? data['avatarUrl'] ?? '').toString();
+        }
+        final ls = LocalStorage();
+        // Update recent users and avatars maps
+        final ru = (await ls.get<List>('recent_users'))?.whereType<String>().toList() ?? <String>[];
+        if (!ru.contains(handle)) ru.add(handle);
+        await ls.set('recent_users', ru);
+        recentUsers.assignAll(ru);
+        if (url.isNotEmpty) {
+          final ram = (await ls.get<Map>('recent_avatars')) ?? <String, dynamic>{};
+          ram[handle] = url;
+          await ls.set('recent_avatars', ram);
+          recentAvatars[handle] = url;
+          loginPreviewAvatar.value = url;
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> signup([String? overrideBaseUrl]) async {
@@ -445,14 +572,6 @@ class AuthController extends GetxController {
             await Get.find<GlobalContext>().setProtocolTag(protocol.value);
           }
         } catch (_) {}
-      } else if (resp.statusCode == 404) {
-        protocol.value = 'peers-touch';
-        serverStatus.value = ServerStatus.notFound;
-        try {
-          if (Get.isRegistered<GlobalContext>()) {
-            await Get.find<GlobalContext>().setProtocolTag(protocol.value);
-          }
-        } catch (_) {}
       } else {
         protocol.value = 'peers-touch';
         serverStatus.value = ServerStatus.unknown;
@@ -464,26 +583,12 @@ class AuthController extends GetxController {
       }
     } catch (_) {
       protocol.value = 'peers-touch';
-      serverStatus.value = ServerStatus.unreachable;
+      serverStatus.value = ServerStatus.unknown;
       try {
         if (Get.isRegistered<GlobalContext>()) {
           await Get.find<GlobalContext>().setProtocolTag(protocol.value);
         }
       } catch (_) {}
     }
-  }
-
-  Future<void> logout() async {
-    try {
-      await LocalStorage().remove('auth_token');
-      await LocalStorage().remove('refresh_token');
-      await LocalStorage().remove('username');
-      await LocalStorage().remove('email');
-      final ctx = Get.isRegistered<GlobalContext>() ? Get.find<GlobalContext>() : null;
-      if (ctx != null) {
-        await ctx.setSession(null);
-      }
-    } catch (_) {}
-    Get.offAllNamed('/auth');
   }
 }

@@ -13,6 +13,7 @@ var (
 	lock sync.Mutex
 )
 
+// RegisterDriver registers a gorm dialector factory under a name.
 func RegisterDriver(name string, open func(dsn string) gorm.Dialector) {
 	lock.Lock()
 	defer lock.Unlock()
@@ -23,6 +24,7 @@ func RegisterDriver(name string, open func(dsn string) gorm.Dialector) {
 	drivers[name] = open
 }
 
+// GetDialector fetches a dialector factory by name.
 func GetDialector(name string) func(name string) gorm.Dialector {
 	lock.Lock()
 	defer lock.Unlock()
@@ -30,6 +32,7 @@ func GetDialector(name string) func(name string) gorm.Dialector {
 	return drivers[name]
 }
 
+// GetAfterInitHooks returns registered hooks to run after init.
 func GetAfterInitHooks() []func(ctx context.Context, rds *gorm.DB) {
 	return afterInitHooks
 }

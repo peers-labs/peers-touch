@@ -1,3 +1,4 @@
+// Package native provides a GORM logger adapter using the core logger.
 package native
 
 import (

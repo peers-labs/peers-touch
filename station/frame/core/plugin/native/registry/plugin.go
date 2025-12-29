@@ -30,13 +30,15 @@ var configOptions struct {
 	} `pconf:"peers"`
 }
 
-type nativeRegistryPlugin struct {
-}
+// nativeRegistryPlugin wires native registry configuration into plugin options.
+type nativeRegistryPlugin struct{}
 
+// Name returns the plugin identifier.
 func (n *nativeRegistryPlugin) Name() string {
 	return plugin.NativePluginName
 }
 
+// Options converts configuration into registry options.
 func (n *nativeRegistryPlugin) Options() []option.Option {
 	var opts []option.Option
 	if configOptions.Peers.RunMode != ModeAuto {
@@ -98,6 +100,7 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 	return opts
 }
 
+// New constructs a registry using plugin options.
 func (n *nativeRegistryPlugin) New(opts ...option.Option) registry.Registry {
 	opts = append(opts, n.Options()...)
 	return NewRegistry(opts...)

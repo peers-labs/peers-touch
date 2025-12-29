@@ -22,9 +22,10 @@ var (
 	peerKeyFormat = "%s/%s"
 )
 
-type NamespaceValidator struct {
-}
+// NamespaceValidator validates registry records under the peers namespace.
+type NamespaceValidator struct{}
 
+// Validate checks that the key is within namespace and the peer ID is valid.
 func (*NamespaceValidator) Validate(key string, val []byte) error {
 	if len(key) < len(networkNamespace) || key[:len(networkNamespace)] != networkNamespace {
 		return fmt.Errorf("invalid key for name record: %s", key)
@@ -47,6 +48,7 @@ func (*NamespaceValidator) Validate(key string, val []byte) error {
 	return err
 }
 
+// Select chooses a value among candidates; currently first value wins.
 func (v *NamespaceValidator) Select(key string, vals [][]byte) (int, error) {
 	return 0, nil
 }

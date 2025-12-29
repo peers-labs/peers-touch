@@ -13,6 +13,7 @@ type hertzLoggerAdapter struct {
 	logger log.Logger
 }
 
+// NewHertzLogger constructs a Hertz-compatible logger that forwards to the core logger.
 func NewHertzLogger() hlog.FullLogger {
 	return &hertzLoggerAdapter{
 		logger: log.DefaultLogger,

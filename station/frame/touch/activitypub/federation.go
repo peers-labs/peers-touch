@@ -21,6 +21,7 @@ import (
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 )
 
+// ResolveActorIRI resolves a resource (acct: or URL) to an actor IRI.
 func ResolveActorIRI(ctx context.Context, resource string) (string, error) {
 	if strings.HasPrefix(resource, "acct:") {
 		return resolveViaWebFinger(ctx, resource)
@@ -79,6 +80,7 @@ func extractDomainFromAcct(resource string) string {
 	return s
 }
 
+// FetchActorDoc fetches and decodes an ActivityPub actor document.
 func FetchActorDoc(ctx context.Context, actorIRI string) (*ap.Actor, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorIRI, nil)
 	if err != nil {
@@ -105,6 +107,7 @@ func FetchActorDoc(ctx context.Context, actorIRI string) (*ap.Actor, error) {
 	return &a, nil
 }
 
+// ChooseInbox returns the preferred inbox (shared or actor inbox) for delivery.
 func ChooseInbox(a *ap.Actor, preferShared bool) (string, error) {
 	if a == nil {
 		return "", errors.New("nil actor")
@@ -118,6 +121,7 @@ func ChooseInbox(a *ap.Actor, preferShared bool) (string, error) {
 	return "", errors.New("no inbox available")
 }
 
+// DeliverActivity signs and posts an activity to the target inbox.
 func DeliverActivity(ctx context.Context, target string, activity *ap.Activity, keyID string, privateKeyPEM string) (int, error) {
 	if activity == nil {
 		return 0, errors.New("nil activity")
