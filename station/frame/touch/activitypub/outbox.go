@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// ProcessActivity persists and delivers an outgoing ActivityPub activity.
 func ProcessActivity(c context.Context, username string, activity *ap.Activity, baseURL string) error {
 	// Ensure Actor is set
 	if activity.Actor == nil {
@@ -495,6 +496,7 @@ func deliverToRemote(username string, activity *ap.Activity, baseURL string) {
 		}
 	}
 }
+
 func handleAnnounceActivity(c context.Context, dbConn *gorm.DB, username string, activity *ap.Activity, baseURL string) error {
 	log.Infof(c, "Handling Announce activity for user %s", username)
 

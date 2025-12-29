@@ -1,3 +1,4 @@
+// Package turn provides logging adapter for the TURN subserver.
 package turn
 
 import (
@@ -12,7 +13,7 @@ type Logger struct {
 }
 
 // NewLogger creates a new instance of Logger with the same underlying logger
-func (l *Logger) NewLogger(scope string) logging.LeveledLogger {
+func (l *Logger) NewLogger(_ string) logging.LeveledLogger {
 	return &Logger{
 		logger: l.logger,
 	}
@@ -62,8 +63,7 @@ func (l *Logger) Warnf(format string, args ...interface{}) {
 	l.logger.Logf(logger.WarnLevel, "[TURN] "+format, args...)
 }
 
-// Error Level Logging
-// Error logs an error message.
+// Error Level Logging, logs an error message.
 func (l *Logger) Error(msg string) {
 	l.logger.Logf(logger.ErrorLevel, "[TURN] "+msg)
 }
@@ -86,7 +86,7 @@ func NewLoggerFactory() *LoggerFactory {
 }
 
 // NewLogger creates a new logger instance implementing logging.LeveledLogger.
-func (lf *LoggerFactory) NewLogger(scope string) logging.LeveledLogger {
+func (lf *LoggerFactory) NewLogger(_ string) logging.LeveledLogger {
 	return &Logger{
 		logger: lf.logger,
 	}

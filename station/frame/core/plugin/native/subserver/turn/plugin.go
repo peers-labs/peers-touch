@@ -27,10 +27,12 @@ var turnOptions struct {
 
 type turnPlugin struct{}
 
+// Name returns the plugin identifier.
 func (p *turnPlugin) Name() string {
 	return "turn"
 }
 
+// Options converts configuration into subserver options.
 func (p *turnPlugin) Options() []option.Option {
 	var opts []option.Option
 
@@ -55,10 +57,12 @@ func (p *turnPlugin) Options() []option.Option {
 	return opts
 }
 
+// Enabled reports whether the TURN subserver is enabled.
 func (p *turnPlugin) Enabled() bool {
 	return turnOptions.Peers.Service.Server.Subserver.TURN.Enabled
 }
 
+// New constructs a new TURN subserver with plugin options.
 func (p *turnPlugin) New(opts ...option.Option) server.Subserver {
 	opts = append(opts, p.Options()...)
 

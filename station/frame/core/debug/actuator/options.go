@@ -1,3 +1,4 @@
+// Package actuator provides a simple debug server for health and info endpoints.
 package actuator
 
 import (
@@ -13,6 +14,7 @@ var debugOptionWrapper = option.NewWrapper[DebugServerOptions](debugServerOption
 	}
 })
 
+// DebugServerOptions holds options for the debug server.
 type DebugServerOptions struct {
 	*option.Options
 
@@ -20,12 +22,14 @@ type DebugServerOptions struct {
 	registry registry.Registry
 }
 
+// WithDebugServerRegistry injects a registry for debug endpoints.
 func WithDebugServerRegistry(reg registry.Registry) option.Option {
 	return debugOptionWrapper.Wrap(func(opts *DebugServerOptions) {
 		opts.registry = reg
 	})
 }
 
+// WithDebugServerPath sets the path prefix for debug server.
 func WithDebugServerPath(path string) option.Option {
 	return debugOptionWrapper.Wrap(func(opts *DebugServerOptions) {
 		opts.path = path

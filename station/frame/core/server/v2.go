@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
@@ -62,13 +63,25 @@ type handlerV2 struct {
 	t        HandlerTypeV2
 }
 
-func (h *handlerV2) Name() string               { return h.name }
-func (h *handlerV2) Path() string               { return h.path }
-func (h *handlerV2) Method() MethodV2           { return h.method }
-func (h *handlerV2) Handler() EndpointHandlerV2 { return h.h }
-func (h *handlerV2) Wrappers() []WrapperV2      { return h.wrappers }
-func (h *handlerV2) Type() HandlerTypeV2        { return h.t }
+// Name returns handler name.
+func (h *handlerV2) Name() string { return h.name }
 
+// Path returns handler path.
+func (h *handlerV2) Path() string { return h.path }
+
+// Method returns HTTP method.
+func (h *handlerV2) Method() MethodV2 { return h.method }
+
+// Handler returns endpoint function.
+func (h *handlerV2) Handler() EndpointHandlerV2 { return h.h }
+
+// Wrappers returns middleware wrappers.
+func (h *handlerV2) Wrappers() []WrapperV2 { return h.wrappers }
+
+// Type returns handler type.
+func (h *handlerV2) Type() HandlerTypeV2 { return h.t }
+
+// NewHandlerV2 constructs a HandlerV2.
 func NewHandlerV2(name, path string, method MethodV2, typ HandlerTypeV2, handler EndpointHandlerV2, wrappers ...WrapperV2) HandlerV2 {
 	return &handlerV2{name: name, path: path, method: method, t: typ, h: handler, wrappers: wrappers}
 }
@@ -95,13 +108,25 @@ type streamHandler struct {
 	t        HandlerTypeV2
 }
 
-func (h *streamHandler) Name() string                { return h.name }
-func (h *streamHandler) Path() string                { return h.path }
-func (h *streamHandler) Method() MethodV2            { return h.method }
-func (h *streamHandler) Handler() StreamEndpointV2   { return h.h }
-func (h *streamHandler) Wrappers() []StreamWrapperV2 { return h.wrappers }
-func (h *streamHandler) Type() HandlerTypeV2         { return h.t }
+// Name returns handler name.
+func (h *streamHandler) Name() string { return h.name }
 
+// Path returns handler path.
+func (h *streamHandler) Path() string { return h.path }
+
+// Method returns HTTP method.
+func (h *streamHandler) Method() MethodV2 { return h.method }
+
+// Handler returns stream endpoint func.
+func (h *streamHandler) Handler() StreamEndpointV2 { return h.h }
+
+// Wrappers returns middleware wrappers.
+func (h *streamHandler) Wrappers() []StreamWrapperV2 { return h.wrappers }
+
+// Type returns handler type.
+func (h *streamHandler) Type() HandlerTypeV2 { return h.t }
+
+// NewStreamHandlerV2 constructs a StreamHandler.
 func NewStreamHandlerV2(name, path string, method MethodV2, typ HandlerTypeV2, handler StreamEndpointV2, wrappers ...StreamWrapperV2) StreamHandler {
 	return &streamHandler{name: name, path: path, method: method, t: typ, h: handler, wrappers: wrappers}
 }

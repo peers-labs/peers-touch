@@ -26,14 +26,13 @@ type hertzRouterURL struct {
 	url  string
 }
 
-func (h hertzRouterURL) Name() string {
-	return h.name
-}
+// Name returns route name.
+func (h hertzRouterURL) Name() string { return h.name }
 
-func (h hertzRouterURL) SubPath() string {
-	return h.url
-}
+// SubPath returns route subpath.
+func (h hertzRouterURL) SubPath() string { return h.url }
 
+// Server implements server.Server using CloudWeGo Hertz.
 type Server struct {
 	*server.BaseServer
 
@@ -43,6 +42,7 @@ type Server struct {
 	started bool
 }
 
+// NewServer constructs a Hertz server.
 func NewServer(opts ...option.Option) *Server {
 	s := &Server{
 		BaseServer: server.NewServer(opts...),
@@ -51,6 +51,7 @@ func NewServer(opts ...option.Option) *Server {
 	return s
 }
 
+// Init initializes base server and Hertz engine.
 func (s *Server) Init(opts ...option.Option) error {
 	err := s.BaseServer.Init(opts...)
 	if err != nil {
@@ -69,6 +70,7 @@ func (s *Server) Init(opts ...option.Option) error {
 	return nil
 }
 
+// Handle registers a handler on the Hertz engine.
 func (s *Server) Handle(h server.Handler) error {
 	if hdl, ok := h.Handler().(func(context.Context, *app.RequestContext)); ok {
 		mws := h.HertzMiddlewares()
@@ -87,6 +89,7 @@ func (s *Server) Handle(h server.Handler) error {
 	return nil
 }
 
+// Start starts base server and spins Hertz.
 func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -175,6 +178,7 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	return nil
 }
 
+// Stop shuts down base server and Hertz engine.
 func (s *Server) Stop(ctx context.Context) error {
 	// Add fresh shutdown context with longer timeout
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -200,15 +204,18 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 }
 
+// Name returns the server identifier.
 func (s *Server) Name() string {
 	return "hertz"
 }
 
 // responseWriter implements http.ResponseWriter for Hertz
+// responseWriter translates Hertz responses to http.ResponseWriter.
 type responseWriter struct {
 	ctx *app.RequestContext
 }
 
+// Header returns response header map.
 func (w *responseWriter) Header() http.Header {
 	// Convert Hertz headers to http.Header
 	h := make(http.Header)
@@ -218,15 +225,18 @@ func (w *responseWriter) Header() http.Header {
 	return h
 }
 
+// Write writes response bytes.
 func (w *responseWriter) Write(data []byte) (int, error) {
 	w.ctx.Write(data)
 	return len(data), nil
 }
 
+// WriteHeader sets HTTP status code.
 func (w *responseWriter) WriteHeader(statusCode int) {
 	w.ctx.SetStatusCode(statusCode)
 }
 
+// composeHertz composes middlewares and handler for Hertz.
 func composeHertz(middlewares []func(context.Context, *app.RequestContext), h func(context.Context, *app.RequestContext)) func(context.Context, *app.RequestContext) {
 	return func(c context.Context, ctx *app.RequestContext) {
 		for _, mw := range middlewares {

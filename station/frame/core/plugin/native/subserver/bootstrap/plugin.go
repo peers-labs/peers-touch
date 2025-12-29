@@ -33,10 +33,12 @@ var bootstrapOptions struct {
 
 type bootstrap struct{}
 
+// Name returns the plugin identifier.
 func (p *bootstrap) Name() string {
 	return "bootstrap"
 }
 
+// Options converts configuration into subserver options.
 func (p *bootstrap) Options() []option.Option {
 	var opts []option.Option
 
@@ -83,10 +85,12 @@ func (p *bootstrap) Options() []option.Option {
 	return opts
 }
 
+// Enabled reports whether the bootstrap subserver is enabled.
 func (p *bootstrap) Enabled() bool {
 	return bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Enabled
 }
 
+// New constructs a new bootstrap subserver with plugin options.
 func (p *bootstrap) New(opts ...option.Option) server.Subserver {
 	opts = append(opts, p.Options()...)
 

@@ -14,17 +14,20 @@ var (
 	_ network.Notifiee = &libp2pHostNotifee{}
 )
 
+// libp2pHostNotifee implements libp2p network.Notifiee for bootstrap server.
 type libp2pHostNotifee struct {
 	ctx context.Context
 
 	*SubServer
 }
 
+// Listen is called when the host starts listening on an address.
 func (l libp2pHostNotifee) Listen(n network.Network, multiaddr multiaddr.Multiaddr) {
 	ctx := context.Background()
 	logger.Infof(ctx, "Host started listening on: %s", multiaddr.String())
 }
 
+// ListenClose is called when the host stops listening on an address.
 func (l libp2pHostNotifee) ListenClose(n network.Network, multiaddr multiaddr.Multiaddr) {
 	ctx := context.Background()
 	logger.Infof(ctx, "Host stopped listening on: %s", multiaddr.String())
@@ -32,15 +35,18 @@ func (l libp2pHostNotifee) ListenClose(n network.Network, multiaddr multiaddr.Mu
 
 // Connected listens to the connected event that the peer connects to,
 // which means that it works for the active outgoing connection, not the ones passive incoming.
+// Connected is called after an outbound connection has been established.
 func (l libp2pHostNotifee) Connected(n network.Network, conn network.Conn) {
 	logger.Infof(l.ctx, "Connected to peer: %s, direction: %s. ", conn.RemotePeer().String(), conn.Stat().Direction)
 	l.saveConnInfo(n, conn, true)
 }
 
+// Disconnected is called after a connection has been closed.
 func (l libp2pHostNotifee) Disconnected(n network.Network, conn network.Conn) {
 	l.saveConnInfo(n, conn, false)
 }
 
+// saveConnInfo persists peer and connection information.
 func (l libp2pHostNotifee) saveConnInfo(n network.Network, conn network.Conn, isActive bool) {
 	ctx := context.Background()
 	peerInfo, connInfo := l.GetPeerAndConnectionInfo(conn, isActive)
@@ -56,6 +62,7 @@ func (l libp2pHostNotifee) saveConnInfo(n network.Network, conn network.Conn, is
 }
 
 // getIpv4AndIpv6 extracts IPv4 and IPv6 addresses from a multiaddr
+// getIpv4AndIpv6 extracts IPv4 and IPv6 strings from multiaddr.
 func (l libp2pHostNotifee) getIpv4AndIpv6(addr multiaddr.Multiaddr) (ipv4, ipv6 string) {
 	if addr == nil {
 		return "", ""
@@ -74,6 +81,7 @@ func (l libp2pHostNotifee) getIpv4AndIpv6(addr multiaddr.Multiaddr) (ipv4, ipv6 
 }
 
 // GetPeerAndConnectionInfo extracts PeerInfo and ConnectionInfo from a libp2p connection
+// GetPeerAndConnectionInfo builds peer and connection info from a conn.
 func (l libp2pHostNotifee) GetPeerAndConnectionInfo(conn network.Conn, isActive bool) (model.PeerInfo, model.ConnectionInfo) {
 	pid := conn.RemotePeer()
 	remoteAddr := conn.RemoteMultiaddr()
