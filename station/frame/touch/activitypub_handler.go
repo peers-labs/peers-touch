@@ -84,20 +84,20 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
 		// Online Status Endpoints
-		{
-			RouterURL:   RouterURLActorsOnline,
-			Handler:     GetOnlineActorsHandler,
-			Method:      server.GET,
-			Wrappers:    []server.Wrapper{actorWrapper},
-			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
-		},
-		{
-			RouterURL:   RouterURLHeartbeat,
-			Handler:     HeartbeatHandler,
-			Method:      server.POST,
-			Wrappers:    []server.Wrapper{actorWrapper},
-			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
-		},
+		/*	{
+				RouterURL:   RouterURLActorsOnline,
+				Handler:     GetOnlineActorsHandler,
+				Method:      server.GET,
+				Wrappers:    []server.Wrapper{actorWrapper},
+				Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+			},
+			{
+				RouterURL:   RouterURLHeartbeat,
+				Handler:     HeartbeatHandler,
+				Method:      server.POST,
+				Wrappers:    []server.Wrapper{actorWrapper},
+				Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+			},*/
 		// User-specific ActivityPub endpoints
 		{
 			RouterURL: ActivityPubRouterURLActor,
@@ -509,7 +509,14 @@ func GetUserOutbox(c context.Context, ctx *app.RequestContext) {
 
 	page := string(ctx.Query("page")) == "true"
 	baseURL := baseURLFrom(ctx)
-	outbox, err := activitypub.FetchOutbox(c, user, baseURL, page)
+
+	// Get current viewer if authorized
+	var viewerID uint64
+	if id, err := resolveActorID(c, ctx); err == nil {
+		viewerID = id
+	}
+
+	outbox, err := activitypub.FetchOutbox(c, user, baseURL, page, viewerID)
 	if err != nil {
 		log.Warnf(c, "Failed to fetch outbox: %v", err)
 		ctx.JSON(http.StatusInternalServerError, err.Error())

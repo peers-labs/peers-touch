@@ -167,6 +167,7 @@ class ProfileController extends GetxController {
         final repo = Get.find<ActorRepository>();
         try {
           data = await repo.fetchProfile(username: username);
+          print('DEBUG: Profile data from repo for $username: $data');
         } catch (e) {
           // If repo throws error (it might not, depending on impl, but let's be safe)
           final errStr = e.toString();
@@ -184,6 +185,7 @@ class ProfileController extends GetxController {
           );
           if (response.statusCode == 200 && response.data is Map) {
             data = (response.data as Map).cast<String, dynamic>();
+            print('DEBUG: Profile data from http for $username: $data');
           }
         } catch (e) {
            // Handle specific errors

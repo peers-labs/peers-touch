@@ -469,71 +469,83 @@ class ShellPage extends StatelessWidget {
       return const SizedBox.shrink();
     }
     
+    // 如果是展开状态，使用 Stack 布局实现内容全屏 + 悬浮折叠按钮
+    if (!collapsed) {
+      return Container(
+        width: panelWidth,
+        decoration: BoxDecoration(color: tokens.bgLevel1),
+        child: Stack(
+          children: [
+            // 1. 内容层 (全屏填充)
+            if (builder != null)
+              Positioned.fill(
+                child: _buildRightPanelScrollable(context, builder, controller),
+              ),
+              
+            // 2. 悬浮折叠按钮 (右上角)
+            Obx(() {
+              final showCollapse = controller.showRightPanelCollapseButton.value;
+              if (!showCollapse) return const SizedBox.shrink();
+              
+              return Positioned(
+                top: 8,
+                right: 8,
+                child: Tooltip(
+                  message: localizations?.collapse ?? 'Collapse',
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: tokens.bgLevel2.withOpacity(0.8), // 半透明背景，防止遮挡文字看不清
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    width: 24,
+                    height: 24,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      iconSize: 18,
+                      icon: const Icon(Icons.keyboard_double_arrow_right),
+                      onPressed: () => controller.toggleCollapseRightPanel(),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      );
+    }
+    
+    // 折叠状态保持原有列布局 (因为宽度很窄，按钮居中显示即可)
     return Container(
       width: panelWidth, // 折叠/展开态的固定宽度
       decoration: BoxDecoration(
         color: tokens.bgLevel1, // 辅助面板背景色
-        // 取消阴影，靠区域底色区分
       ),
       child: Column(
         mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-            // 顶部控制区 - 固定64px，显式尺寸包装避免未布局
-            Obx(() {
-              final showCollapse = controller.showRightPanelCollapseButton.value;
-              final isCollapsed = controller.isRightPanelCollapsed.value;
-              return SizedBox(
-                height: UIKit.topBarHeight,
-                child: ColoredBox(
-                  color: tokens.bgLevel2,
-                  child: LayoutBuilder(
-                    builder: (ctx, c) {
-                      final isNarrow = c.maxWidth.isFinite && c.maxWidth < 80;
-                      final useCollapsedLayout = isCollapsed || isNarrow;
-                      return Padding(
-                        padding: EdgeInsets.symmetric(horizontal: UIKit.spaceSm(context)),
-                        child: useCollapsedLayout
-                            // 窄宽或折叠态：仅居中显示小号按钮
-                            ? Center(
-                                child: Tooltip(
-                                  message: localizations?.expand ?? 'Expand',
-                                  child: IconButton(
-                                    padding: EdgeInsets.zero,
-                                    iconSize: 18,
-                                    icon: const Icon(Icons.keyboard_double_arrow_left),
-                                    onPressed: () => controller.toggleCollapseRightPanel(),
-                                  ),
-                                ),
-                              )
-                            // 展开态且宽度充裕：右上角显示折叠按钮
-                            : Row(
-                                children: [
-                                  const Spacer(),
-                                  if (showCollapse)
-                                    Tooltip(
-                                      message: localizations?.collapse ?? 'Collapse',
-                                      child: IconButton(
-                                        style: UIKit.squareIconButtonStyle(context),
-                                        icon: const Icon(Icons.keyboard_double_arrow_right),
-                                        onPressed: () => controller.toggleCollapseRightPanel(),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                      );
-                    },
+            // 顶部控制区 - 固定64px
+            SizedBox(
+              height: UIKit.topBarHeight,
+              child: ColoredBox(
+                color: tokens.bgLevel2,
+                child: Center(
+                  child: Tooltip(
+                    message: localizations?.expand ?? 'Expand',
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      iconSize: 18,
+                      icon: const Icon(Icons.keyboard_double_arrow_left),
+                      onPressed: () => controller.toggleCollapseRightPanel(),
+                    ),
                   ),
                 ),
-              );
-            }),
-          // 内容区域 - 自适应高度
+              ),
+            ),
+          // 内容区域 (折叠态通常不显示内容，或显示图标)
           Expanded(
             child: Container(
               color: tokens.bgLevel1,
-              child: (!collapsed && builder != null)
-                  ? _buildRightPanelScrollable(context, builder, controller)
-                  : const SizedBox.shrink(),
             ),
           ),
         ],

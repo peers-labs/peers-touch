@@ -13,7 +13,7 @@ import (
 func init() {
 	store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
 		err := rds.AutoMigrate(
-			&Actor{}, &ActorMastodonMeta{}, &PeerAddress{},
+			&Actor{}, &ActorTouchMeta{}, &PeerAddress{},
 			// ActivityPub models
 			&ActivityPubActivity{}, &ActivityPubObject{},
 			&ActivityPubFollow{}, &ActivityPubLike{}, &ActivityPubCollection{},

@@ -1,7 +1,11 @@
+import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
+import 'package:peers_touch_desktop/features/discovery/view/components/discovery_avatar.dart';
 
 class DiscoveryContentItem extends StatelessWidget {
 
@@ -117,9 +121,27 @@ class DiscoveryContentItem extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
+          PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz, color: Colors.grey),
-            onPressed: () {},
+            onSelected: (value) {
+              if (value == 'delete') {
+                controller?.deleteItem(item);
+              }
+            },
+            itemBuilder: (BuildContext context) {
+              return [
+                const PopupMenuItem<String>(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete, color: Colors.red, size: 20),
+                      SizedBox(width: 8),
+                      Text('Delete', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ];
+            },
           ),
         ],
       ),
@@ -156,11 +178,10 @@ class DiscoveryContentItem extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: Row(
         children: [
-          CircleAvatar(
+          DiscoveryAvatar(
+            url: item.authorAvatar,
+            fallbackName: item.author,
             radius: 12,
-            backgroundImage: item.authorAvatar.isNotEmpty 
-                ? NetworkImage(item.authorAvatar)
-                : const NetworkImage('https://i.pravatar.cc/150?u=user'),
           ),
           const SizedBox(width: 8),
           const Spacer(),
@@ -170,7 +191,7 @@ class DiscoveryContentItem extends StatelessWidget {
             icon: Icons.local_fire_department,
             color: Colors.orange,
             count: item.likesCount,
-            onTap: () {},
+            onTap: () => controller?.likeItem(item),
           ),
           const SizedBox(width: 16),
           
@@ -190,7 +211,7 @@ class DiscoveryContentItem extends StatelessWidget {
             icon: Icons.share,
             color: Colors.cyan,
             count: item.sharesCount,
-            onTap: () {},
+            onTap: () => controller?.announceItem(item),
           ),
         ],
       ),
@@ -226,6 +247,21 @@ class DiscoveryContentItem extends StatelessWidget {
   }
 
   Widget _buildCommentsSection(BuildContext context) {
+    // Get current user avatar
+    String myAvatar = 'https://i.pravatar.cc/150?u=me';
+    if (Get.isRegistered<GlobalContext>()) {
+      final ctx = Get.find<GlobalContext>();
+      // Use currentSession map to access avatarUrl since GlobalContext interface doesn't expose actorIcon directly
+      final session = ctx.currentSession;
+      if (session != null && session['avatarUrl'] != null && (session['avatarUrl'] as String).isNotEmpty) {
+        myAvatar = session['avatarUrl'] as String;
+        if (myAvatar.startsWith('/')) {
+           final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+           myAvatar = '$baseUrl$myAvatar';
+        }
+      }
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -241,9 +277,9 @@ class DiscoveryContentItem extends StatelessWidget {
           // Input
           Row(
             children: [
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 16,
-                backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=me'),
+                backgroundImage: NetworkImage(myAvatar),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -329,9 +365,10 @@ class DiscoveryContentItem extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
+          DiscoveryAvatar(
+            url: comment.authorAvatar,
+            fallbackName: comment.authorName,
             radius: 14,
-            backgroundImage: NetworkImage(comment.authorAvatar),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -356,14 +393,6 @@ class DiscoveryContentItem extends StatelessWidget {
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  comment.content,
-                  style: TextStyle(
-                    color: Colors.grey[800],
-                    fontSize: 13,
-                  ),
                 ),
               ],
             ),
@@ -402,8 +431,16 @@ class DiscoveryContentItem extends StatelessWidget {
     if (images.isEmpty) return const SizedBox.shrink();
 
     if (images.length == 1) {
-      return Container(
-        constraints: const BoxConstraints(maxHeight: 300, maxWidth: double.infinity),
+      // WeChat style: 
+      // - Max width/height limited (e.g. 2/3 screen width)
+      // - Preserve aspect ratio if possible
+      // - If very tall/wide, crop? WeChat crops very tall images.
+      // Here we set a reasonable constraint.
+      return ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: 240, // Reduced from full width
+          maxHeight: 240,
+        ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: Image.network(
@@ -419,7 +456,7 @@ class DiscoveryContentItem extends StatelessWidget {
     // 4 images case: 2x2 grid
     if (count == 4) {
       return SizedBox(
-        width: 300,
+        width: 240, // Constrain width for 2x2
         child: GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -434,7 +471,7 @@ class DiscoveryContentItem extends StatelessWidget {
 
     // Standard 3-column grid
     return SizedBox(
-      width: double.infinity,
+      width: 360, // Constrain width for 3-column (approx 3 * 120)
       child: GridView.count(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),

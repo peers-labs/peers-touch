@@ -80,5 +80,5 @@ func (m *StatusManager) ScanTimeouts(ctx context.Context) {
 func (m *StatusManager) KeepAlive(ctx context.Context, actorID uint64, clientInfo string) error {
 	// This is just a wrapper around the existing service function logic
 	// Ideally, the logic from status_service.go should be moved here
-	return UpdateActorStatus(ctx, actorID, db.ActorStatusOnline, clientInfo, 0, 0)
+	return UpdateActorStatus(ctx, actorID, db.ActorStatusOnline, clientInfo)
 }
