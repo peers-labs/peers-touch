@@ -1,74 +1,173 @@
-# Declare repository type as network framework
-project:
-  type: network_framework
-  description: Peer-to-peer network framework for decentralized applications
-  features:
-    - peer-to-peer communication
-    - distributed data synchronization
-    - network protocol handling
-    - libp2p protocol implementation
-  
-  # Project structure information
-  examples_directory: peers-touch-go/example
-  
-# Development Guidelines
-development:
-  examples:
-    location: "peers-touch-go/example"
-    description: "Contains example implementations and usage demonstrations for the framework"
-    note: "When providing examples or demonstrating usage, refer to this directory for existing patterns and implementations"
-  
-  # Coding Standards
-  standards:
-    - "Backend Interaction: Use Protobuf defined structures instead of Map unless necessary."
+# Peers-Touch Project Rules
 
-# base prompts
+> **⚠️ IMPORTANT: This file now points to the new unified prompt system.**  
+> **All detailed prompts have been moved to `.prompts/`**
 
-  - desktop： client\desktop\PROMPTs
+---
 
-# Markdown Prompts
-  - content language: English by default. When file name contains ".zh.", use Chinese.
+## 🎯 Quick Start for AI
 
-# Dart/Flutter Code Style Guidelines
-# AI MUST follow these rules when generating Dart/Flutter code under client/
-dart_flutter:
-  lint_config: client/analysis_options.yaml
-  
-  rules:
-    # Import ordering (directives_ordering)
-    - "dart: imports first, then package: imports, then relative imports"
-    - "Sort imports alphabetically within each section"
-    
-    # String style (prefer_single_quotes)
-    - "Use single quotes for strings, except when the string contains a single quote"
-    
-    # Flow control (curly_braces_in_flow_control_structures)
-    - "Always use curly braces for if/else/for/while statements"
-    
-    # Variable declarations (prefer_final_locals, prefer_final_fields)
-    - "Use final for local variables that are not reassigned"
-    - "Use final for fields that are not reassigned"
-    
-    # Constructors (sort_constructors_first)
-    - "Place constructor declarations before other members"
-    
-    # Package imports (always_use_package_imports)
-    - "Use package: imports for files in lib/ directory"
-    
-    # Avoid deprecated APIs
-    - "Use Color.withValues(alpha: x) instead of withOpacity(x) or withAlpha(x)"
-    
-    # Avoid print in production
-    - "Use LoggingService instead of print() for logging"
+**ALWAYS READ THESE FIRST (in order):**
 
-  example_import_order: |
-    // Correct import order:
-    import 'dart:async';
-    import 'dart:convert';
-    
-    import 'package:flutter/material.dart';
-    import 'package:get/get.dart';
-    
-    import 'package:peers_touch_base/context/global_context.dart';
-    import 'package:peers_touch_desktop/core/services/logging_service.dart';
+1. **[.prompts/00-META/INDEX.md](../../.prompts/00-META/INDEX.md)** - Navigation guide
+2. **[.prompts/10-GLOBAL/10-project-identity.md](../../.prompts/10-GLOBAL/10-project-identity.md)** - What is Peers-Touch?
+3. **[.prompts/10-GLOBAL/12-domain-model.md](../../.prompts/10-GLOBAL/12-domain-model.md)** - Proto-based models
 
+**Then read based on your task:**
+- **Desktop work**: [.prompts/20-CLIENT/21-DESKTOP/21.0-base.md](../../.prompts/20-CLIENT/21-DESKTOP/21.0-base.md)
+- **Mobile work**: [.prompts/20-CLIENT/22-MOBILE/22.0-base.md](../../.prompts/20-CLIENT/22-MOBILE/22.0-base.md)
+- **Station work**: [.prompts/30-STATION/30-station-base.md](../../.prompts/30-STATION/30-station-base.md)
+
+---
+
+## 📚 Full Prompt System
+
+All prompts are now organized in `.prompts/` with the following structure:
+
+```
+.prompts/
+├── 00-META/           # Navigation and meta info
+├── 10-GLOBAL/         # Cross-platform rules (READ FIRST)
+├── 20-CLIENT/         # Client-side prompts
+│   ├── 21-DESKTOP/    # Desktop-specific
+│   └── 22-MOBILE/     # Mobile-specific
+├── 30-STATION/        # Backend prompts
+└── 90-CONTEXT/        # Historical context & ADRs
+```
+
+**See [.prompts/00-META/INDEX.md](../../.prompts/00-META/INDEX.md) for complete navigation.**
+
+---
+
+## 🔑 Core Principles (Quick Reference)
+
+### Universal Rules (All Platforms)
+
+1. **Proto-First**: All models MUST be defined in `.proto` files
+   - Location: `model/domain/*.proto`
+   - Generated for Dart (client) and Go (station)
+   - **NEVER** create manual model classes
+
+2. **Package Imports Only**: No relative imports
+   ```dart
+   // ✅ CORRECT
+   import 'package:peers_touch_desktop/features/home/view/home_page.dart';
+   
+   // ❌ WRONG
+   import '../features/home/view/home_page.dart';
+   ```
+
+3. **Markdown Language Rule**: 
+   - English by default
+   - Chinese if filename contains `.zh.`
+
+---
+
+### Dart/Flutter Rules (Client)
+
+1. **GetX Mandatory**: All state management via GetX
+   - Controllers extend `GetxController`
+   - State uses Rx variables (`.obs`)
+   - DI via `Get.put()` / `Get.lazyPut()`
+
+2. **No StatefulWidget**: STRICTLY FORBIDDEN
+   - Use `StatelessWidget` + `GetxController`
+   - See [ADR-002](../../.prompts/90-CONTEXT/decisions/002-no-stateful-widget.md)
+
+3. **Import Ordering**:
+   ```dart
+   // 1. Dart SDK
+   import 'dart:async';
+   
+   // 2. Flutter
+   import 'package:flutter/material.dart';
+   
+   // 3. Third-party
+   import 'package:get/get.dart';
+   
+   // 4. Project
+   import 'package:peers_touch_base/...';
+   ```
+
+4. **Code Style**:
+   - Single quotes for strings
+   - Use `final` for non-reassigned variables
+   - Always use braces for flow control
+   - Use `LoggingService` instead of `print()`
+   - Use `Color.withValues(alpha: x)` not `withOpacity(x)`
+
+5. **Lint Config**: `client/analysis_options.yaml`
+
+---
+
+### Go Rules (Station)
+
+1. **Follow gofmt**: All code must pass `gofmt`
+2. **Proto Structs**: Use Proto-generated models
+3. **Error Handling**: Always check errors
+4. **Context Everywhere**: Pass `context.Context`
+5. **Structured Logging**: Use logging framework
+
+**See [.prompts/30-STATION/31-go-standards.md](../../.prompts/30-STATION/31-go-standards.md) for details.**
+
+---
+
+## 🚫 Absolute Prohibitions
+
+These are **NON-NEGOTIABLE** across all platforms:
+
+1. ❌ **No StatefulWidget** (use GetX Controllers)
+2. ❌ **No Relative Imports** (use package imports)
+3. ❌ **No Manual Models** (use Proto-generated)
+4. ❌ **No Hardcoded Strings** (use i18n)
+5. ❌ **No Direct Dio Usage** (use HttpService)
+6. ❌ **No print()** (use LoggingService)
+
+---
+
+## 📖 Terminology
+
+For definitions of key terms, see [.prompts/00-META/GLOSSARY.md](../../.prompts/00-META/GLOSSARY.md).
+
+Key terms:
+- **Actor**: Federated user identity
+- **Station**: Backend server instance
+- **Proto**: Protocol Buffers (model definitions)
+- **GetX**: State management framework
+- **Binding**: GetX dependency injection
+- **Feature Module**: Self-contained business module
+
+---
+
+## 🎓 Learning Path
+
+**New to Peers-Touch?** Follow this order:
+
+1. [Project Identity](../../.prompts/10-GLOBAL/10-project-identity.md) - What is this project?
+2. [Architecture](../../.prompts/10-GLOBAL/11-architecture.md) - How does it work?
+3. [Domain Models](../../.prompts/10-GLOBAL/12-domain-model.md) - Proto system
+4. [Coding Standards](../../.prompts/10-GLOBAL/13-coding-standards.md) - Code style
+5. Platform-specific base file (21.0, 22.0, or 30.0)
+
+---
+
+## 🔄 Maintenance
+
+- **Prompt Version**: 2.0.0 (2025-12-31)
+- **Last Updated**: 2025-12-31
+- **Changelog**: [.prompts/00-META/CHANGELOG.md](../../.prompts/00-META/CHANGELOG.md)
+
+---
+
+## ⚠️ Migration Notice
+
+**Old prompt locations** (deprecated):
+- ~~`client/desktop/PROMPTs/`~~ → `.prompts/20-CLIENT/21-DESKTOP/`
+- ~~`client/mobile/PROMPTs/`~~ → `.prompts/20-CLIENT/22-MOBILE/`
+- ~~`station/GO_FORMAT_SPEC.zh.md`~~ → `.prompts/30-STATION/31-go-standards.md`
+
+**All old files have been removed. Use the new `.prompts/` system.**
+
+---
+
+*For complete documentation, start at [.prompts/00-META/INDEX.md](../../.prompts/00-META/INDEX.md)*

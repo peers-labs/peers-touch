@@ -13,7 +13,7 @@ class HomeController extends GetxController {
       String username = 'alice';
       if (Get.isRegistered<GlobalContext>()) {
         final gc = Get.find<GlobalContext>();
-        username = gc.currentSession?['handle']?.toString() ?? gc.currentSession?['username']?.toString() ?? username;
+        username = gc.session?.handle ?? username;
       }
       if (Get.isRegistered<ActorRepository>()) {
         final repo = Get.find<ActorRepository>();

@@ -165,6 +165,302 @@ func (x *UserLink) GetUrl() string {
 	return ""
 }
 
+type PeersTouchInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NetworkId     string                 `protobuf:"bytes,1,opt,name=network_id,proto3" json:"network_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PeersTouchInfo) Reset() {
+	*x = PeersTouchInfo{}
+	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PeersTouchInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PeersTouchInfo) ProtoMessage() {}
+
+func (x *PeersTouchInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PeersTouchInfo.ProtoReflect.Descriptor instead.
+func (*PeersTouchInfo) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PeersTouchInfo) GetNetworkId() string {
+	if x != nil {
+		return x.NetworkId
+	}
+	return ""
+}
+
+type ActorProfile struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	Id                        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	DisplayName               string                 `protobuf:"bytes,2,opt,name=display_name,proto3" json:"display_name,omitempty"`
+	Username                  string                 `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
+	Note                      string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	Avatar                    string                 `protobuf:"bytes,5,opt,name=avatar,proto3" json:"avatar,omitempty"`
+	Header                    string                 `protobuf:"bytes,6,opt,name=header,proto3" json:"header,omitempty"`
+	Region                    string                 `protobuf:"bytes,7,opt,name=region,proto3" json:"region,omitempty"`
+	Timezone                  string                 `protobuf:"bytes,8,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	Tags                      []string               `protobuf:"bytes,9,rep,name=tags,proto3" json:"tags,omitempty"`
+	Links                     []*UserLink            `protobuf:"bytes,10,rep,name=links,proto3" json:"links,omitempty"`
+	Url                       string                 `protobuf:"bytes,11,opt,name=url,proto3" json:"url,omitempty"`
+	ServerDomain              string                 `protobuf:"bytes,12,opt,name=server_domain,proto3" json:"server_domain,omitempty"`
+	KeyFingerprint            string                 `protobuf:"bytes,13,opt,name=key_fingerprint,proto3" json:"key_fingerprint,omitempty"`
+	Verifications             []string               `protobuf:"bytes,14,rep,name=verifications,proto3" json:"verifications,omitempty"`
+	PeersTouch                *PeersTouchInfo        `protobuf:"bytes,15,opt,name=peers_touch,proto3" json:"peers_touch,omitempty"`
+	Acct                      string                 `protobuf:"bytes,16,opt,name=acct,proto3" json:"acct,omitempty"`
+	Locked                    bool                   `protobuf:"varint,17,opt,name=locked,proto3" json:"locked,omitempty"`
+	CreatedAt                 string                 `protobuf:"bytes,18,opt,name=created_at,proto3" json:"created_at,omitempty"`
+	FollowersCount            int64                  `protobuf:"varint,19,opt,name=followers_count,proto3" json:"followers_count,omitempty"`
+	FollowingCount            int64                  `protobuf:"varint,20,opt,name=following_count,proto3" json:"following_count,omitempty"`
+	StatusesCount             int64                  `protobuf:"varint,21,opt,name=statuses_count,proto3" json:"statuses_count,omitempty"`
+	ShowCounts                bool                   `protobuf:"varint,22,opt,name=show_counts,proto3" json:"show_counts,omitempty"`
+	Moments                   []string               `protobuf:"bytes,23,rep,name=moments,proto3" json:"moments,omitempty"`
+	DefaultVisibility         string                 `protobuf:"bytes,24,opt,name=default_visibility,proto3" json:"default_visibility,omitempty"`
+	ManuallyApprovesFollowers bool                   `protobuf:"varint,25,opt,name=manually_approves_followers,proto3" json:"manually_approves_followers,omitempty"`
+	MessagePermission         string                 `protobuf:"bytes,26,opt,name=message_permission,proto3" json:"message_permission,omitempty"`
+	AutoExpireDays            int32                  `protobuf:"varint,27,opt,name=auto_expire_days,proto3" json:"auto_expire_days,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *ActorProfile) Reset() {
+	*x = ActorProfile{}
+	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorProfile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorProfile) ProtoMessage() {}
+
+func (x *ActorProfile) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorProfile.ProtoReflect.Descriptor instead.
+func (*ActorProfile) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ActorProfile) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetAvatar() string {
+	if x != nil {
+		return x.Avatar
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetHeader() string {
+	if x != nil {
+		return x.Header
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *ActorProfile) GetLinks() []*UserLink {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
+func (x *ActorProfile) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetServerDomain() string {
+	if x != nil {
+		return x.ServerDomain
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetKeyFingerprint() string {
+	if x != nil {
+		return x.KeyFingerprint
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetVerifications() []string {
+	if x != nil {
+		return x.Verifications
+	}
+	return nil
+}
+
+func (x *ActorProfile) GetPeersTouch() *PeersTouchInfo {
+	if x != nil {
+		return x.PeersTouch
+	}
+	return nil
+}
+
+func (x *ActorProfile) GetAcct() string {
+	if x != nil {
+		return x.Acct
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetLocked() bool {
+	if x != nil {
+		return x.Locked
+	}
+	return false
+}
+
+func (x *ActorProfile) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetFollowersCount() int64 {
+	if x != nil {
+		return x.FollowersCount
+	}
+	return 0
+}
+
+func (x *ActorProfile) GetFollowingCount() int64 {
+	if x != nil {
+		return x.FollowingCount
+	}
+	return 0
+}
+
+func (x *ActorProfile) GetStatusesCount() int64 {
+	if x != nil {
+		return x.StatusesCount
+	}
+	return 0
+}
+
+func (x *ActorProfile) GetShowCounts() bool {
+	if x != nil {
+		return x.ShowCounts
+	}
+	return false
+}
+
+func (x *ActorProfile) GetMoments() []string {
+	if x != nil {
+		return x.Moments
+	}
+	return nil
+}
+
+func (x *ActorProfile) GetDefaultVisibility() string {
+	if x != nil {
+		return x.DefaultVisibility
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetManuallyApprovesFollowers() bool {
+	if x != nil {
+		return x.ManuallyApprovesFollowers
+	}
+	return false
+}
+
+func (x *ActorProfile) GetMessagePermission() string {
+	if x != nil {
+		return x.MessagePermission
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetAutoExpireDays() int32 {
+	if x != nil {
+		return x.AutoExpireDays
+	}
+	return 0
+}
+
 type UpdateProfileRequest struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
 	DisplayName               *string                `protobuf:"bytes,1,opt,name=display_name,proto3,oneof" json:"display_name,omitempty"`
@@ -185,7 +481,7 @@ type UpdateProfileRequest struct {
 
 func (x *UpdateProfileRequest) Reset() {
 	*x = UpdateProfileRequest{}
-	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	mi := &file_domain_actor_actor_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -197,7 +493,7 @@ func (x *UpdateProfileRequest) String() string {
 func (*UpdateProfileRequest) ProtoMessage() {}
 
 func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[2]
+	mi := &file_domain_actor_actor_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -210,7 +506,7 @@ func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProfileRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProfileRequest) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{2}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *UpdateProfileRequest) GetDisplayName() string {
@@ -307,7 +603,7 @@ type ActorList struct {
 
 func (x *ActorList) Reset() {
 	*x = ActorList{}
-	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	mi := &file_domain_actor_actor_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -319,7 +615,7 @@ func (x *ActorList) String() string {
 func (*ActorList) ProtoMessage() {}
 
 func (x *ActorList) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[3]
+	mi := &file_domain_actor_actor_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -332,7 +628,7 @@ func (x *ActorList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorList.ProtoReflect.Descriptor instead.
 func (*ActorList) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{3}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ActorList) GetItems() []*Actor {
@@ -367,7 +663,42 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"2\n" +
 	"\bUserLink\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x10\n" +
-	"\x03url\x18\x02 \x01(\tR\x03url\"\xad\x05\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\"0\n" +
+	"\x0ePeersTouchInfo\x12\x1e\n" +
+	"\n" +
+	"network_id\x18\x01 \x01(\tR\n" +
+	"network_id\"\xce\a\n" +
+	"\fActorProfile\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\"\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\fdisplay_name\x12\x1a\n" +
+	"\busername\x18\x03 \x01(\tR\busername\x12\x12\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12\x16\n" +
+	"\x06avatar\x18\x05 \x01(\tR\x06avatar\x12\x16\n" +
+	"\x06header\x18\x06 \x01(\tR\x06header\x12\x16\n" +
+	"\x06region\x18\a \x01(\tR\x06region\x12\x1a\n" +
+	"\btimezone\x18\b \x01(\tR\btimezone\x12\x12\n" +
+	"\x04tags\x18\t \x03(\tR\x04tags\x12:\n" +
+	"\x05links\x18\n" +
+	" \x03(\v2$.peers_touch.model.actor.v1.UserLinkR\x05links\x12\x10\n" +
+	"\x03url\x18\v \x01(\tR\x03url\x12$\n" +
+	"\rserver_domain\x18\f \x01(\tR\rserver_domain\x12(\n" +
+	"\x0fkey_fingerprint\x18\r \x01(\tR\x0fkey_fingerprint\x12$\n" +
+	"\rverifications\x18\x0e \x03(\tR\rverifications\x12L\n" +
+	"\vpeers_touch\x18\x0f \x01(\v2*.peers_touch.model.actor.v1.PeersTouchInfoR\vpeers_touch\x12\x12\n" +
+	"\x04acct\x18\x10 \x01(\tR\x04acct\x12\x16\n" +
+	"\x06locked\x18\x11 \x01(\bR\x06locked\x12\x1e\n" +
+	"\n" +
+	"created_at\x18\x12 \x01(\tR\n" +
+	"created_at\x12(\n" +
+	"\x0ffollowers_count\x18\x13 \x01(\x03R\x0ffollowers_count\x12(\n" +
+	"\x0ffollowing_count\x18\x14 \x01(\x03R\x0ffollowing_count\x12&\n" +
+	"\x0estatuses_count\x18\x15 \x01(\x03R\x0estatuses_count\x12 \n" +
+	"\vshow_counts\x18\x16 \x01(\bR\vshow_counts\x12\x18\n" +
+	"\amoments\x18\x17 \x03(\tR\amoments\x12.\n" +
+	"\x12default_visibility\x18\x18 \x01(\tR\x12default_visibility\x12@\n" +
+	"\x1bmanually_approves_followers\x18\x19 \x01(\bR\x1bmanually_approves_followers\x12.\n" +
+	"\x12message_permission\x18\x1a \x01(\tR\x12message_permission\x12*\n" +
+	"\x10auto_expire_days\x18\x1b \x01(\x05R\x10auto_expire_days\"\xad\x05\n" +
 	"\x14UpdateProfileRequest\x12'\n" +
 	"\fdisplay_name\x18\x01 \x01(\tH\x00R\fdisplay_name\x88\x01\x01\x12\x17\n" +
 	"\x04note\x18\x02 \x01(\tH\x01R\x04note\x88\x01\x01\x12\x1b\n" +
@@ -408,23 +739,27 @@ func file_domain_actor_actor_proto_rawDescGZIP() []byte {
 	return file_domain_actor_actor_proto_rawDescData
 }
 
-var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_domain_actor_actor_proto_goTypes = []any{
 	(*Actor)(nil),                // 0: peers_touch.model.actor.v1.Actor
 	(*UserLink)(nil),             // 1: peers_touch.model.actor.v1.UserLink
-	(*UpdateProfileRequest)(nil), // 2: peers_touch.model.actor.v1.UpdateProfileRequest
-	(*ActorList)(nil),            // 3: peers_touch.model.actor.v1.ActorList
-	nil,                          // 4: peers_touch.model.actor.v1.Actor.EndpointsEntry
+	(*PeersTouchInfo)(nil),       // 2: peers_touch.model.actor.v1.PeersTouchInfo
+	(*ActorProfile)(nil),         // 3: peers_touch.model.actor.v1.ActorProfile
+	(*UpdateProfileRequest)(nil), // 4: peers_touch.model.actor.v1.UpdateProfileRequest
+	(*ActorList)(nil),            // 5: peers_touch.model.actor.v1.ActorList
+	nil,                          // 6: peers_touch.model.actor.v1.Actor.EndpointsEntry
 }
 var file_domain_actor_actor_proto_depIdxs = []int32{
-	4, // 0: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
-	1, // 1: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
-	0, // 2: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6, // 0: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
+	1, // 1: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
+	2, // 2: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
+	1, // 3: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
+	0, // 4: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }
@@ -432,14 +767,14 @@ func file_domain_actor_actor_proto_init() {
 	if File_domain_actor_actor_proto != nil {
 		return
 	}
-	file_domain_actor_actor_proto_msgTypes[2].OneofWrappers = []any{}
+	file_domain_actor_actor_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_actor_actor_proto_rawDesc), len(file_domain_actor_actor_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

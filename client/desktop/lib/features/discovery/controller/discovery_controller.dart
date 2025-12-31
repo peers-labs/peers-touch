@@ -505,8 +505,6 @@ class DiscoveryController extends GetxController {
       final String username = _getCurrentUsername();
       if (username.isEmpty) return;
       
-      final wasLiked = item.isLiked;
-      
       item.isLiked = !item.isLiked;
       if (item.isLiked) {
         item.likesCount++;

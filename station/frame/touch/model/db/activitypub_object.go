@@ -25,6 +25,10 @@ type ActivityPubObject struct {
 	IsPublic      bool       `gorm:"default:true;not null;index"`  // Whether the object is public
 	Metadata      string     `gorm:"type:json"`                    // Additional metadata as JSON
 
+	LikesCount   int64 `gorm:"default:0;not null"` // Cached likes count
+	RepliesCount int64 `gorm:"default:0;not null"` // Cached replies count
+	SharesCount  int64 `gorm:"default:0;not null"` // Cached shares/reblogs count
+
 	CreatedAt time.Time `gorm:"created_at"`
 	UpdatedAt time.Time `gorm:"updated_at"`
 }
