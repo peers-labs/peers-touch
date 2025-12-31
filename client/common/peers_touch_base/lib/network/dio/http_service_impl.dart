@@ -138,4 +138,27 @@ class HttpServiceImpl implements IHttpService {
       queryParameters: queryParameters,
     );
   }
+
+  @override
+  Future<T> patch<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    final response = await patchResponse<T>(path, data: data, queryParameters: queryParameters);
+    return response.data as T;
+  }
+
+  @override
+  Future<Response<T>> patchResponse<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    return await _dio.patch<T>(
+      path,
+      data: data,
+      queryParameters: queryParameters,
+    );
+  }
 }

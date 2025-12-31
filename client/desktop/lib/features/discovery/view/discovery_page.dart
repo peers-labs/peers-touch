@@ -187,7 +187,7 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                     controller: controller.scrollController,
                     padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
                     itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 24),
+                    separatorBuilder: (_, _) => const SizedBox(height: 24),
                     itemBuilder: (ctx, i) {
                       final item = items[i];
                       return DiscoveryContentItem(
@@ -262,7 +262,7 @@ class DiscoveryPage extends GetView<DiscoveryController> {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
       itemCount: 5,
-      separatorBuilder: (_, __) => const SizedBox(height: 24),
+      separatorBuilder: (_, _) => const SizedBox(height: 24),
       itemBuilder: (ctx, i) => _buildSkeletonItem(),
     );
   }

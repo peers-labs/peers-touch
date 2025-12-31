@@ -19,6 +19,40 @@ message UserLink {
   string url = 2;
 }
 
+message PeersTouchInfo {
+  string network_id = 1 [json_name = "network_id"];
+}
+
+message ActorProfile {
+  string id = 1;
+  string display_name = 2 [json_name = "display_name"];
+  string username = 3;
+  string note = 4;
+  string avatar = 5;
+  string header = 6;
+  string region = 7;
+  string timezone = 8;
+  repeated string tags = 9;
+  repeated UserLink links = 10;
+  string url = 11;
+  string server_domain = 12 [json_name = "server_domain"];
+  string key_fingerprint = 13 [json_name = "key_fingerprint"];
+  repeated string verifications = 14;
+  PeersTouchInfo peers_touch = 15 [json_name = "peers_touch"];
+  string acct = 16;
+  bool locked = 17;
+  string created_at = 18 [json_name = "created_at"];
+  int64 followers_count = 19 [json_name = "followers_count"];
+  int64 following_count = 20 [json_name = "following_count"];
+  int64 statuses_count = 21 [json_name = "statuses_count"];
+  bool show_counts = 22 [json_name = "show_counts"];
+  repeated string moments = 23;
+  string default_visibility = 24 [json_name = "default_visibility"];
+  bool manually_approves_followers = 25 [json_name = "manually_approves_followers"];
+  string message_permission = 26 [json_name = "message_permission"];
+  int32 auto_expire_days = 27 [json_name = "auto_expire_days"];
+}
+
 message UpdateProfileRequest {
   optional string display_name = 1 [json_name = "display_name"];
   optional string note = 2;
@@ -38,4 +72,3 @@ message ActorList {
   repeated Actor items = 1;
   int64 total = 2;
 }
-

@@ -73,8 +73,6 @@ type OnlineActor struct {
 	AvatarUrl         string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
 	Status            int32                  `protobuf:"varint,5,opt,name=status,proto3" json:"status,omitempty"`
 	LastHeartbeat     string                 `protobuf:"bytes,6,opt,name=last_heartbeat,json=lastHeartbeat,proto3" json:"last_heartbeat,omitempty"`
-	Lat               float64                `protobuf:"fixed64,7,opt,name=lat,proto3" json:"lat,omitempty"`
-	Lon               float64                `protobuf:"fixed64,8,opt,name=lon,proto3" json:"lon,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -149,20 +147,6 @@ func (x *OnlineActor) GetLastHeartbeat() string {
 		return x.LastHeartbeat
 	}
 	return ""
-}
-
-func (x *OnlineActor) GetLat() float64 {
-	if x != nil {
-		return x.Lat
-	}
-	return 0
-}
-
-func (x *OnlineActor) GetLon() float64 {
-	if x != nil {
-		return x.Lon
-	}
-	return 0
 }
 
 type HeartbeatRequest struct {
@@ -243,7 +227,7 @@ const file_domain_actor_actor_status_proto_rawDesc = "" +
 	"\n" +
 	"\x1fdomain/actor/actor_status.proto\x12\x1apeers_touch.model.actor.v1\x1a\x18domain/actor/actor.proto\"W\n" +
 	"\x14OnlineActorsResponse\x12?\n" +
-	"\x06actors\x18\x01 \x03(\v2'.peers_touch.model.actor.v1.OnlineActorR\x06actors\"\xe2\x01\n" +
+	"\x06actors\x18\x01 \x03(\v2'.peers_touch.model.actor.v1.OnlineActorR\x06actors\"\xbe\x01\n" +
 	"\vOnlineActor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12-\n" +
@@ -251,9 +235,7 @@ const file_domain_actor_actor_status_proto_rawDesc = "" +
 	"\n" +
 	"avatar_url\x18\x04 \x01(\tR\tavatarUrl\x12\x16\n" +
 	"\x06status\x18\x05 \x01(\x05R\x06status\x12%\n" +
-	"\x0elast_heartbeat\x18\x06 \x01(\tR\rlastHeartbeat\x12\x10\n" +
-	"\x03lat\x18\a \x01(\x01R\x03lat\x12\x10\n" +
-	"\x03lon\x18\b \x01(\x01R\x03lon\"\x12\n" +
+	"\x0elast_heartbeat\x18\x06 \x01(\tR\rlastHeartbeat\"\x12\n" +
 	"\x10HeartbeatRequest\"\x13\n" +
 	"\x11HeartbeatResponseBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 

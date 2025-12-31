@@ -33,7 +33,7 @@ class DefaultAppLifecycleOrchestrator implements AppLifecycleOrchestrator {
     await hydrateContext();
     
     // Check GlobalContext first (in-memory, restored from LocalStorage)
-    var token = globalContext.currentSession?['accessToken']?.toString();
+    var token = globalContext.session?.accessToken;
     
     // Fallback to SecureStorage if not in GlobalContext (unlikely if hydrated, but safe)
     if (token == null || token.isEmpty) {

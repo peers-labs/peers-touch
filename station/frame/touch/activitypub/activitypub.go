@@ -295,41 +295,19 @@ func enrichActivity(c context.Context, rds *gorm.DB, a *ap.Activity, objectID ui
 		return
 	}
 
-	// 1. Get Like Count
-	var likesCount int64
-	rds.Model(&db.ActivityPubLike{}).Where("object_id = ? AND is_active = ?", objectID, true).Count(&likesCount)
-
-	// 2. Get Comment Count (Replies)
-	var repliesCount int64
-	rds.Model(&db.ActivityPubObject{}).Where("in_reply_to = ?", objectID).Count(&repliesCount)
-
-	// 3. Get Announce Count (Shares)
-	var sharesCount int64
-	// Find activities of type Announce pointing to this object
-	rds.Model(&db.ActivityPubActivity{}).Where("type = ? AND object_id = ?", "Announce", objectID).Count(&sharesCount)
-
-	// 4. Check if viewer liked
-	// liked := false // Unused variable
-	if viewerID != 0 {
-		var count int64
-		// Note: ActivityPubLike table uses ActorID (numeric) and ObjectID (numeric)
-		rds.Model(&db.ActivityPubLike{}).Where("object_id = ? AND actor_id = ? AND is_active = ?", objectID, viewerID, true).Count(&count)
-		// liked = count > 0 // Unused variable
+	var obj db.ActivityPubObject
+	if err := rds.Where("id = ?", objectID).First(&obj).Error; err != nil {
+		return
 	}
 
-	// Inject into Activity Object if it's a full object
-	// We use the 'Object' field of the Activity
 	_ = ap.OnObject(a.Object, func(o *ap.Object) error {
-		// Likes
-		// Always initialize collections even if empty, so frontend sees 0 instead of null/undefined
 		col := ap.OrderedCollectionNew(ap.ID(""))
-		col.TotalItems = uint(likesCount)
+		col.TotalItems = uint(obj.LikesCount)
 		o.Likes = col
 
-		// Replies - preload first 10 comments
 		colReplies := ap.OrderedCollectionNew(ap.ID(""))
-		colReplies.TotalItems = uint(repliesCount)
-		if repliesCount > 0 {
+		colReplies.TotalItems = uint(obj.RepliesCount)
+		if obj.RepliesCount > 0 {
 			var replyObjects []db.ActivityPubObject
 			rds.Where("in_reply_to = ?", objectID).
 				Order("id ASC").
@@ -369,9 +347,8 @@ func enrichActivity(c context.Context, rds *gorm.DB, a *ap.Activity, objectID ui
 		}
 		o.Replies = colReplies
 
-		// Shares
 		colShares := ap.OrderedCollectionNew(ap.ID(""))
-		colShares.TotalItems = uint(sharesCount)
+		colShares.TotalItems = uint(obj.SharesCount)
 		o.Shares = colShares
 
 		// AttributedTo (Avatar) expansion

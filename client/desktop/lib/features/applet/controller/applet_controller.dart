@@ -80,8 +80,4 @@ class AppletController extends GetxController {
     }
   }
 
-  @override
-  void onClose() {
-    super.onClose();
-  }
 }

@@ -48,4 +48,16 @@ abstract class IHttpService {
     dynamic data,
     Map<String, dynamic>? queryParameters,
   });
+
+  Future<T> patch<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+  });
+
+  Future<Response<T>> patchResponse<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+  });
 }

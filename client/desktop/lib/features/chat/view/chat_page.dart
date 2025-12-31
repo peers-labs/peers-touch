@@ -116,7 +116,7 @@ class ChatPage extends GetView<ChatController> {
                 }
                 return ListView.separated(
                   itemCount: list.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (ctx, i) {
                     final a = list[i];
                     final name = (a['display_name'] ?? a['username'] ?? '').toString();
