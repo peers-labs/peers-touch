@@ -131,16 +131,17 @@ func handleCreateActivity(c context.Context, dbConn *gorm.DB, username string, a
 		return fmt.Errorf("failed to create object in DB: %w", err)
 	}
 
-	// Update Statuses Count for the actor
+	if inReplyToID != 0 {
+		dbConn.Model(&db.ActivityPubObject{}).Where("id = ?", inReplyToID).
+			Update("replies_count", gorm.Expr("replies_count + 1"))
+	}
+
 	var actor db.Actor
 	if err := dbConn.Where("preferred_username = ?", username).First(&actor).Error; err == nil {
-		// Ensure meta exists or create it? Usually exists for local users.
-		// Using gorm.Expr to be safe against concurrency (simple +1)
 		_ = dbConn.Model(&db.ActorTouchMeta{}).Where("actor_id = ?", actor.ID).
 			Update("statuses_count", gorm.Expr("statuses_count + ?", 1)).Error
 	}
 
-	// 5. Persist Activity
 	return persistActivity(dbConn, username, activity, dbObj.ID, baseURL, inReplyToID, object)
 }
 
@@ -207,7 +208,6 @@ func handleLikeActivity(c context.Context, dbConn *gorm.DB, username string, act
 		return fmt.Errorf("like target is required")
 	}
 
-	// Resolve numeric IDs
 	var actorRec db.Actor
 	var actorIDNum uint64
 	if err := dbConn.Where("preferred_username = ?", username).First(&actorRec).Error; err == nil {
@@ -218,6 +218,11 @@ func handleLikeActivity(c context.Context, dbConn *gorm.DB, username string, act
 	like := &db.ActivityPubLike{ActorID: actorIDNum, ObjectID: objIDNum, ActivityID: 0, IsActive: true}
 	if err := dbConn.Create(like).Error; err != nil {
 		return fmt.Errorf("failed to create like in DB: %w", err)
+	}
+
+	if objIDNum != 0 {
+		dbConn.Model(&db.ActivityPubObject{}).Where("id = ?", objIDNum).
+			Update("likes_count", gorm.Expr("likes_count + 1"))
 	}
 
 	if err := persistActivity(dbConn, username, activity, objIDNum, baseURL, 0, nil); err != nil {
@@ -264,12 +269,23 @@ func handleUndoActivity(c context.Context, dbConn *gorm.DB, username string, act
 		_ = dbConn.Model(&db.ActorTouchMeta{}).Where("actor_id = ?", follow.FollowingID).
 			Update("followers_count", gorm.Expr("followers_count - ?", 1)).Error
 	case ap.LikeType:
-		// Deactivate Like
-		if err := dbConn.Model(&db.ActivityPubLike{}).Where("activity_id = ?", originalActivity.ID).Update("is_active", false).Error; err != nil {
+		var like db.ActivityPubLike
+		if err := dbConn.Where("activity_id = ?", originalActivity.ID).First(&like).Error; err != nil {
+			return fmt.Errorf("like record not found for undo: %w", err)
+		}
+		if err := dbConn.Model(&like).Update("is_active", false).Error; err != nil {
 			return fmt.Errorf("failed to deactivate like: %w", err)
 		}
+		if like.ObjectID != 0 {
+			dbConn.Model(&db.ActivityPubObject{}).Where("id = ?", like.ObjectID).
+				Update("likes_count", gorm.Expr("GREATEST(likes_count - 1, 0)"))
+		}
+	case ap.AnnounceType:
+		if originalActivity.ObjectID != 0 {
+			dbConn.Model(&db.ActivityPubObject{}).Where("id = ?", originalActivity.ObjectID).
+				Update("shares_count", gorm.Expr("GREATEST(shares_count - 1, 0)"))
+		}
 	case ap.BlockType:
-		// Implement Block undo
 	default:
 		log.Warnf(c, "Undo not fully implemented for activity type %s", originalActivity.Type)
 	}
@@ -327,18 +343,18 @@ func handleDeleteActivity(c context.Context, dbConn *gorm.DB, username string, a
 		return fmt.Errorf("delete target is required")
 	}
 
-	// Delete (soft delete or mark deleted)
-	// Currently we don't have DeletedAt in ActivityPubObject?
-	// We can use IsActive or similar if it existed.
-	// Or we can actually delete.
-	// For now, let's just persist the Delete activity.
-
-	// If we want to support Tombstone, we should update the object type to Tombstone.
 	var objID uint64
 	if activity.Object != nil {
 		objID = localObjectIDFromItem(dbConn, activity.Object)
 		if objID != 0 {
-			_ = dbConn.Model(&db.ActivityPubObject{}).Where("id = ?", objID).Update("type", "Tombstone").Error
+			var obj db.ActivityPubObject
+			if err := dbConn.Where("id = ?", objID).First(&obj).Error; err == nil {
+				if obj.InReplyTo != 0 {
+					dbConn.Model(&db.ActivityPubObject{}).Where("id = ?", obj.InReplyTo).
+						Update("replies_count", gorm.Expr("GREATEST(replies_count - 1, 0)"))
+				}
+				_ = dbConn.Model(&obj).Update("type", "Tombstone").Error
+			}
 		}
 	}
 	return persistActivity(dbConn, username, activity, objID, baseURL, 0, nil)
@@ -544,7 +560,6 @@ func handleAnnounceActivity(c context.Context, dbConn *gorm.DB, username string,
 		return fmt.Errorf("announce target is required")
 	}
 
-	// Persist Announce as a regular activity referencing target object
 	if activity.ID == "" {
 		activity.ID = ap.ID(fmt.Sprintf("%s/activities/%d", activity.Actor, time.Now().UnixNano()))
 	}
@@ -557,6 +572,7 @@ func handleAnnounceActivity(c context.Context, dbConn *gorm.DB, username string,
 		var obj db.ActivityPubObject
 		if err := dbConn.Where("activity_pub_id = ?", targetURI).First(&obj).Error; err == nil {
 			objID = obj.ID
+			dbConn.Model(&obj).Update("shares_count", gorm.Expr("shares_count + 1"))
 		}
 	}
 	if err := persistActivity(dbConn, username, activity, objID, baseURL, 0, nil); err != nil {

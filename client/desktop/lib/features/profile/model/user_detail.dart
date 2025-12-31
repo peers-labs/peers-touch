@@ -1,8 +1,13 @@
+import 'package:peers_touch_base/model/domain/actor/actor.pb.dart' as pb;
+
 class UserLink {
   const UserLink({required this.label, required this.url});
 
   factory UserLink.fromJson(Map<String, dynamic> json) =>
       UserLink(label: (json['label'] as String?) ?? '', url: (json['url'] as String?) ?? '');
+  
+  factory UserLink.fromPb(pb.UserLink link) =>
+      UserLink(label: link.label, url: link.url);
   final String label;
   final String url;
 
@@ -18,6 +23,9 @@ class PeersTouchInfo {
   factory PeersTouchInfo.fromJson(Map<String, dynamic> json) => PeersTouchInfo(
         networkId: (json['network_id'] as String?) ?? '',
       );
+  
+  factory PeersTouchInfo.fromPb(pb.PeersTouchInfo info) =>
+      PeersTouchInfo(networkId: info.networkId);
   final String networkId;
 
   Map<String, dynamic> toJson() => {'network_id': networkId};
@@ -87,6 +95,36 @@ class UserDetail { // e.g., 7/30/90
         manuallyApprovesFollowers: (json['manuallyApprovesFollowers'] as bool?) ?? false,
         messagePermission: (json['messagePermission'] as String?) ?? 'everyone',
         autoExpireDays: (json['autoExpireDays'] as num?)?.toInt(),
+      );
+
+  factory UserDetail.fromActorProfile(pb.ActorProfile profile) => UserDetail(
+        id: profile.id,
+        displayName: profile.displayName,
+        handle: profile.username,
+        summary: profile.note.isNotEmpty ? profile.note : null,
+        avatarUrl: profile.avatar.isNotEmpty ? profile.avatar : null,
+        coverUrl: profile.header.isNotEmpty ? profile.header : null,
+        region: profile.region.isNotEmpty ? profile.region : null,
+        timezone: profile.timezone.isNotEmpty ? profile.timezone : null,
+        tags: profile.tags.toList(),
+        links: profile.links.map((e) => UserLink.fromPb(e)).toList(),
+        actorUrl: profile.url.isNotEmpty ? profile.url : null,
+        serverDomain: profile.serverDomain.isNotEmpty ? profile.serverDomain : null,
+        keyFingerprint: profile.keyFingerprint.isNotEmpty ? profile.keyFingerprint : null,
+        verifications: profile.verifications.toList(),
+        peersTouch: profile.hasPeersTouch() ? PeersTouchInfo.fromPb(profile.peersTouch) : null,
+        acct: profile.acct.isNotEmpty ? profile.acct : null,
+        locked: profile.locked,
+        createdAt: profile.createdAt.isNotEmpty ? profile.createdAt : null,
+        followersCount: profile.followersCount.toInt(),
+        followingCount: profile.followingCount.toInt(),
+        statusesCount: profile.statusesCount.toInt(),
+        showCounts: profile.showCounts,
+        moments: profile.moments.toList(),
+        defaultVisibility: profile.defaultVisibility.isNotEmpty ? profile.defaultVisibility : 'public',
+        manuallyApprovesFollowers: profile.manuallyApprovesFollowers,
+        messagePermission: profile.messagePermission.isNotEmpty ? profile.messagePermission : 'everyone',
+        autoExpireDays: profile.autoExpireDays > 0 ? profile.autoExpireDays : null,
       );
   final String id;
   final String displayName;
