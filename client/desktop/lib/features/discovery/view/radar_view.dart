@@ -1,10 +1,10 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/radar_controller.dart';
-import 'package:peers_touch_desktop/features/discovery/view/components/discovery_avatar.dart';
 
 class RadarView extends StatelessWidget {
   const RadarView({super.key});
@@ -15,7 +15,7 @@ class RadarView extends StatelessWidget {
     // In a strict dependency injection setup, this should be done in a Binding.
     // However, since RadarView is a sub-view dynamically shown, putting it here is acceptable for now,
     // or we could add it to DiscoveryBinding.
-    final controller = Get.put(RadarController());
+    Get.put(RadarController());
     final discoveryController = Get.find<DiscoveryController>();
 
     return Container(
@@ -100,15 +100,14 @@ class RadarView extends StatelessWidget {
                     child: Obx(() => ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       itemCount: discoveryController.friends.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (context, index) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final friend = discoveryController.friends[index];
                         return ListTile(
                           contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                          leading: DiscoveryAvatar(
-                            url: friend.avatarUrl,
-                            fallbackName: friend.name,
+                          leading: CircleAvatar(
                             radius: 24,
+                            backgroundImage: NetworkImage(friend.avatarUrl),
                           ),
                           title: Text(
                             friend.name,
@@ -138,7 +137,7 @@ class RadarView extends StatelessWidget {
   }
 
   List<Widget> _computeMarkers(List<FriendItem> friends, Size mapSize) {
-    List<Offset> positions = friends.map((f) {
+    final List<Offset> positions = friends.map((f) {
       if (f.lat != null && f.lon != null) {
         return _latLonToPosition(f.lat!, f.lon!, mapSize);
       }
@@ -193,10 +192,9 @@ class RadarView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          DiscoveryAvatar(
-            url: friend.avatarUrl,
-            fallbackName: friend.name,
+          CircleAvatar(
             radius: 12,
+            backgroundImage: NetworkImage(friend.avatarUrl),
           ),
           const SizedBox(height: 4),
           Container(
@@ -220,7 +218,7 @@ class RadarView extends StatelessWidget {
         width: 28,
         height: 28,
         decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.2),
+          color: Colors.blue.withValues(alpha: 0.2),
           shape: BoxShape.circle,
           border: Border.all(color: Colors.blue, width: 2),
         ),
@@ -229,50 +227,12 @@ class RadarView extends StatelessWidget {
       ),
     );
   }
-
-  Widget _buildPeerDot(double offsetX, double offsetY, FriendItem? friend) {
-    if (friend == null) return const SizedBox.shrink();
-    
-    return Transform.translate(
-      offset: Offset(offsetX, offsetY),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
-            ),
-            child: DiscoveryAvatar(
-              url: friend.avatarUrl,
-              fallbackName: friend.name,
-              radius: 16,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              friend.name,
-              style: const TextStyle(color: Colors.white, fontSize: 10),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class RadarPainter extends CustomPainter {
-  final double rotationValue;
 
   RadarPainter(this.rotationValue);
+  final double rotationValue;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -280,7 +240,7 @@ class RadarPainter extends CustomPainter {
     final radius = math.min(size.width, size.height) / 2;
 
     final paint = Paint()
-      ..color = Colors.blue.withOpacity(0.1)
+      ..color = Colors.blue.withValues(alpha: 0.1)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
@@ -296,8 +256,8 @@ class RadarPainter extends CustomPainter {
         startAngle: 0,
         endAngle: math.pi / 2,
         colors: [
-          Colors.blue.withOpacity(0.0),
-          Colors.blue.withOpacity(0.3),
+          Colors.blue.withValues(alpha: 0.0),
+          Colors.blue.withValues(alpha: 0.3),
         ],
         stops: const [0.0, 1.0],
         transform: GradientRotation(rotationValue * 2 * math.pi),

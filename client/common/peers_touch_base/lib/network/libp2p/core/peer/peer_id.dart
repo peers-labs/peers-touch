@@ -1,19 +1,15 @@
 import 'dart:typed_data';
+
 import 'package:bs58/bs58.dart';
-import 'package:dcid/dcid.dart' as cid_lib;
-import 'package:peers_touch_base/network/libp2p/core/routing/routing.dart';
-import 'package:dart_multihash/dart_multihash.dart' as dart_multihash;
-import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as key_generator;
-import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
-import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart';
 import 'package:collection/collection.dart';
+import 'package:dart_multihash/dart_multihash.dart' as dart_multihash;
+import 'package:dcid/dcid.dart' as cid_lib;
+import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as key_generator;
+import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
 
 /// Implementation of PeerId that follows the libp2p specification
 class PeerId {
-
-  static const int _maxInlineKeyLength = 42;
-
-  Uint8List? _multihash;
 
   PeerId(this._multihash);
 
@@ -32,6 +28,32 @@ class PeerId {
     final sha256Multihash = dart_multihash.Multihash.encode('sha2-256', keyBytes);
     _multihash = sha256Multihash.toBytes();
   }
+
+  /// Creates a PeerId from a private key
+  PeerId.fromPrivateKey(PrivateKey privateKey) {
+    final publicKey = privateKey.publicKey;
+    final keyBytes = publicKey.marshal();
+
+    // If key is small enough, use identity multihash
+    if (keyBytes.length <= _maxInlineKeyLength) {
+      final identityMultihash = dart_multihash.Multihash.encode('identity', keyBytes);
+      _multihash = identityMultihash.toBytes();
+      return;
+    }
+
+    // Otherwise use SHA2-256
+    final sha256Multihash = dart_multihash.Multihash.encode('sha2-256', keyBytes);
+    _multihash = sha256Multihash.toBytes();
+  }
+
+  /// Creates a PeerId from a string representation (either legacy or CIDv1)
+  PeerId.fromString(String str) : _multihash = _parseStringToMultihash(str);
+
+  PeerId.fromJson(Map<String, dynamic> json) : _multihash = _parseJsonToMultihash(json);
+
+  static const int _maxInlineKeyLength = 42;
+
+  Uint8List? _multihash;
 
   /// Decode accepts an encoded peer ID and returns the decoded ID if the input is
   /// valid.
@@ -103,23 +125,6 @@ class PeerId {
     return cid_lib.CID(cid_lib.CID.V1, cid_lib.codecNameToCode['libp2p-key']!, _multihash!);
   }
 
-  /// Creates a PeerId from a private key
-  PeerId.fromPrivateKey(PrivateKey privateKey) {
-    final publicKey = privateKey.publicKey;
-    final keyBytes = publicKey.marshal();
-
-    // If key is small enough, use identity multihash
-    if (keyBytes.length <= _maxInlineKeyLength) {
-      final identityMultihash = dart_multihash.Multihash.encode('identity', keyBytes);
-      _multihash = identityMultihash.toBytes();
-      return;
-    }
-
-    // Otherwise use SHA2-256
-    final sha256Multihash = dart_multihash.Multihash.encode('sha2-256', keyBytes);
-    _multihash = sha256Multihash.toBytes();
-  }
-
   /// Creates a PeerId from a multihash
   static PeerId fromMultihash(Uint8List bytes) {
     // Validate that the bytes are a valid multihash
@@ -136,9 +141,6 @@ class PeerId {
     return fromMultihash(bytes);
   }
 
-  /// Creates a PeerId from a string representation (either legacy or CIDv1)
-  PeerId.fromString(String str) : _multihash = _parseStringToMultihash(str);
-
   /// Creates a PeerId from a JSON representation
   static Uint8List _parseJsonToMultihash(Map<String, dynamic> json) {
     if (json.containsKey('cid')) {
@@ -150,7 +152,7 @@ class PeerId {
           throw FormatException('Invalid PeerId JSON: failed to decode CID string "$cidStr": $e');
         }
       } else {
-        throw FormatException('Invalid PeerId JSON: "cid" field is not a string.');
+        throw const FormatException('Invalid PeerId JSON: "cid" field is not a string.');
       }
     } else if (json.containsKey('bytes')) { // Legacy: raw multihash bytes, base58 encoded
       final bytesStr = json['bytes'];
@@ -163,13 +165,11 @@ class PeerId {
           throw FormatException('Invalid PeerId JSON: failed to decode "bytes" field "$bytesStr": $e');
         }
       } else {
-        throw FormatException('Invalid PeerId JSON: "bytes" field is not a string.');
+        throw const FormatException('Invalid PeerId JSON: "bytes" field is not a string.');
       }
     }
-    throw FormatException('Invalid PeerId JSON format: missing "cid" or "bytes" key.');
+    throw const FormatException('Invalid PeerId JSON format: missing "cid" or "bytes" key.');
   }
-
-  PeerId.fromJson(Map<String, dynamic> json) : _multihash = _parseJsonToMultihash(json);
 
   static Future<PeerId> random() async {
     // Generate a random Ed25519 key and create PeerId from it
@@ -245,7 +245,7 @@ class PeerId {
 
       // Try to unmarshal the digest as a public key
       try {
-        return await Ed25519PublicKey.unmarshal(Uint8List.fromList(decoded.digest));
+        return Ed25519PublicKey.unmarshal(Uint8List.fromList(decoded.digest));
       } catch (e) {
         return null;
       }

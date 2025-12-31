@@ -1,4 +1,5 @@
 /// ActivityPub client for handling ActivityPub protocol
+library;
 
 /// Client for ActivityPub protocol operations
 class ActivityPubClient {

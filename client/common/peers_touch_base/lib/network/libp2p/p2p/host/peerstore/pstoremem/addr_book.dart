@@ -1,18 +1,17 @@
 /// AddrBook implementation for the memory-based peerstore.
+library;
 
 import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/certified_addr_book.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
 import 'package:peers_touch_base/network/libp2p/core/record/envelope.dart';
-import 'package:logging/logging.dart';
 import 'package:synchronized/synchronized.dart';
-
-import '../../../../core/peer/pb/peer_record.pb.dart';
 
 
 /// Logger for the address book.
@@ -20,23 +19,18 @@ final _log = Logger('peerstore');
 
 
 class PeerRecordState {
+
+  PeerRecordState(this._envelope, this._seq);
   final Envelope _envelope;
   final int _seq;
 
   Envelope get envelope => _envelope;
   int get seq => _seq;
 
-  PeerRecordState(this._envelope, this._seq);
-
 }
 
 /// An address with an expiration time.
 class ExpiringAddr {
-  final MultiAddr addr;
-  Duration ttl;
-  DateTime expiry;
-  final PeerId peer;
-  int heapIndex = -1;
 
   ExpiringAddr({
     required this.addr,
@@ -44,6 +38,11 @@ class ExpiringAddr {
     required this.expiry,
     required this.peer,
   });
+  final MultiAddr addr;
+  Duration ttl;
+  DateTime expiry;
+  final PeerId peer;
+  int heapIndex = -1;
 
   bool expiredBy(DateTime t) {
     return !t.isBefore(expiry);
@@ -61,11 +60,11 @@ bool ttlIsConnected(Duration ttl) {
 
 /// A collection of peer addresses.
 class PeerAddrs {
+
+  PeerAddrs();
   final _addrs = HashMap<String, Map<String, ExpiringAddr>>();
   final _expiringHeap = <ExpiringAddr>[];
   final _lock = Lock();
-
-  PeerAddrs();
 
   int get length => _expiringHeap.length;
 
@@ -153,7 +152,7 @@ class PeerAddrs {
     return await _lock.synchronized(() async {
       if (_expiringHeap.isEmpty) {
         // Should not happen if called correctly, but defensive.
-        throw StateError("Cannot pop from an empty heap");
+        throw StateError('Cannot pop from an empty heap');
       }
       final ExpiringAddr result = _expiringHeap[0];
 
@@ -400,10 +399,10 @@ class AddrSub {
 
 /// A manager for address subscriptions.
 class AddrSubManager {
-  final _subs = HashMap<String, List<AddrSub>>();
-  final _lock = Lock();
 
   AddrSubManager();
+  final _subs = HashMap<String, List<AddrSub>>();
+  final _lock = Lock();
 
   Future<void> removeSub(PeerId p, AddrSub s) async {
     await _lock.synchronized( ()async {
@@ -469,17 +468,17 @@ const defaultMaxUnconnectedAddrs  = 1000000;
 
 /// A memory-based implementation of the AddrBook interface.
 class MemoryAddrBook implements AddrBook, CertifiedAddrBook {
+
+  /// Creates a new memory-based address book implementation.
+  MemoryAddrBook({int maxUnconnectedAddrs = 1000000}) : _maxUnconnectedAddrs = maxUnconnectedAddrs;
   final PeerAddrs _addrs = PeerAddrs();
   final _lock = Lock();
   final AddrSubManager _subManager = AddrSubManager();
   final int _maxUnconnectedAddrs;
-  Map<PeerId, PeerRecordState> _signedPeerRecords = {};
+  final Map<PeerId, PeerRecordState> _signedPeerRecords = {};
 
   var maxUnconnectedAddrs  = defaultMaxUnconnectedAddrs;
   var maxSignedPeerRecords = defaultMaxSignedPeerRecords;
-
-  /// Creates a new memory-based address book implementation.
-  MemoryAddrBook({int maxUnconnectedAddrs = 1000000}) : _maxUnconnectedAddrs = maxUnconnectedAddrs;
 
   @override
   Future<void> addAddr(PeerId p, MultiAddr addr, Duration ttl) async {
@@ -645,7 +644,7 @@ class MemoryAddrBook implements AddrBook, CertifiedAddrBook {
       final peerKey = id.toString();
       if (await _addrs.containsKey(peerKey)) {
         final peerKeys = await _addrs.getPeerKeys(peerKey);
-        for (final a in await peerKeys!.values) {
+        for (final a in peerKeys!.values) {
           initial.add(a.addr);
         }
       }
@@ -688,7 +687,7 @@ class MemoryAddrBook implements AddrBook, CertifiedAddrBook {
     return await _lock.synchronized(() async {
       try {
         final r = await recordEnvelope.record();
-        final rec = r as PeerRecord;
+        final rec = r;
         final pId = PeerId.fromBytes(Uint8List.fromList(rec.peerId));
 
         final pubKey = await pId.extractPublicKey();

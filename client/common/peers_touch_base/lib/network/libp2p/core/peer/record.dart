@@ -1,20 +1,16 @@
-import 'dart:async';
-import 'dart:convert';
+import 'dart:core';
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/pb/peer_record.pb.dart' as pb;
 import 'package:fixnum/fixnum.dart';
-import 'package:protobuf/protobuf.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/pb/peer_record.pb.dart' as pb;
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/record/record_registry.dart';
 import 'package:synchronized/synchronized.dart';
-import 'dart:core';
-
-import '../record/record_registry.dart';
-import 'addr_info.dart';
 
 // PeerRecordEnvelopeDomain is the domain string used for peer records contained in a envelope.
-const String PeerRecordEnvelopeDomain = "libp2p-peer-record";
+const String PeerRecordEnvelopeDomain = 'libp2p-peer-record';
 
 // PeerRecordEnvelopePayloadType is the type hint used to identify peer records in an Envelope.
 // Defined in https://github.com/multiformats/multicodec/blob/master/table.csv
@@ -32,6 +28,23 @@ final Uint8List PeerRecordEnvelopePayloadType = Uint8List.fromList([0x03, 0x01])
 /// greater Seq values than older records. The NewPeerRecord function will create
 /// a PeerRecord with a timestamp-based Seq value.
 class PeerRecord implements RecordBase{
+
+  PeerRecord({
+    required this.peerId,
+    required this.addrs,
+    required this.seq,
+  });
+
+  /// Creates a PeerRecord from a protobuf PeerRecord struct.
+  factory PeerRecord.fromProtobuf(pb.PeerRecord msg) {
+    final id = PeerId.fromBytes(Uint8List.fromList(msg.peerId));
+    final addrs = _addrsFromProtobuf(msg.addresses);
+    return PeerRecord(
+      peerId: id,
+      addrs: addrs,
+      seq: msg.seq.toInt(),
+    );
+  }
   /// PeerID is the ID of the peer this record pertains to.
   final PeerId peerId;
 
@@ -43,12 +56,6 @@ class PeerRecord implements RecordBase{
   /// but newer PeerRecords MUST have a greater Seq value than older records
   /// for the same peer.
   final int seq;
-
-  PeerRecord({
-    required this.peerId,
-    required this.addrs,
-    required this.seq,
-  });
 
   /// Creates a new PeerRecord with a timestamp-based sequence number.
   /// The returned record is otherwise empty and should be populated by the caller.
@@ -70,24 +77,15 @@ class PeerRecord implements RecordBase{
     );
   }
 
-  /// Creates a PeerRecord from a protobuf PeerRecord struct.
-  factory PeerRecord.fromProtobuf(pb.PeerRecord msg) {
-    final id = PeerId.fromBytes(Uint8List.fromList(msg.peerId));
-    final addrs = _addrsFromProtobuf(msg.addresses);
-    return PeerRecord(
-      peerId: id,
-      addrs: addrs,
-      seq: msg.seq.toInt(),
-    );
-  }
-
   /// Domain is used when signing and validating PeerRecords contained in Envelopes.
   /// It is constant for all PeerRecord instances.
+  @override
   String domain() {
     return PeerRecordEnvelopeDomain;
   }
 
   /// Codec is a binary identifier for the PeerRecord type. It is constant for all PeerRecord instances.
+  @override
   Uint8List codec() {
     return PeerRecordEnvelopePayloadType;
   }
@@ -130,6 +128,7 @@ class PeerRecord implements RecordBase{
   /// MarshalRecord serializes a PeerRecord to a byte slice.
   /// This method is called automatically when constructing a routing.Envelope
   /// using Seal or PeerRecord.Sign.
+  @override
   Uint8List marshalRecord() {
     try {
       final msg = toProtobuf();

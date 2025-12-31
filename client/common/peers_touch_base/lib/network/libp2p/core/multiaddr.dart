@@ -6,13 +6,13 @@ import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart';
 
 /// Represents a multiaddress
 class MultiAddr {
-  final String _addr;
-  final List<(Protocol, String)> _components;
 
   /// Creates a new Multiaddr from a string
   /// Format: /protocol1/value1/protocol2/value2
   /// Example: /ip4/127.0.0.1/tcp/1234
   MultiAddr(this._addr): _components = _parseAddr(_addr);
+  final String _addr;
+  final List<(Protocol, String)> _components;
 
 
   static List<(Protocol, String)> _parseAddr(String addr) {
@@ -106,7 +106,7 @@ class MultiAddr {
       }
 
       if (offset + valueLength > bytes.length) {
-        throw FormatException('Invalid multiaddr bytes: unexpected end of input');
+        throw const FormatException('Invalid multiaddr bytes: unexpected end of input');
       }
 
       final valueBytes = bytes.sublist(offset, offset + valueLength);
@@ -152,7 +152,7 @@ class MultiAddr {
 
   /// Encapsulates this multiaddr with another protocol/value pair
   MultiAddr encapsulate(String protocolName, String value) {
-    final newAddr = toString() + '/$protocolName/$value';
+    final newAddr = '${toString()}/$protocolName/$value';
     return MultiAddr(newAddr);
   }
 
@@ -218,7 +218,9 @@ class MultiAddr {
       if (addr.startsWith('10.')) return true;
       if (addr.startsWith('172.') &&
           int.parse(addr.split('.')[1]) >= 16 &&
-          int.parse(addr.split('.')[1]) <= 31) return true;
+          int.parse(addr.split('.')[1]) <= 31) {
+        return true;
+      }
       if (addr.startsWith('192.168.')) return true;
     } else {
       // Check private IPv6 ranges

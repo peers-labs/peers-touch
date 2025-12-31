@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 class IconSidebar extends StatelessWidget {
+  const IconSidebar({super.key, required this.icons, required this.index, required this.onChanged});
   final List<IconData> icons;
   final int index;
   final ValueChanged<int> onChanged;
-  const IconSidebar({super.key, required this.icons, required this.index, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {

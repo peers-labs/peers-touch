@@ -1,29 +1,17 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:logging/logging.dart'; // Added for logging
 
-import '../../core/connmgr/conn_manager.dart';
-import '../../core/multiaddr.dart';
-import '../../core/network/conn.dart';
-import '../../core/network/transport_conn.dart';
-import '../../core/network/mux.dart' show Multiplexer;
-import '../../core/network/rcmgr.dart' show ResourceManager;
-import 'listener.dart';
-import 'transport_config.dart';
+import 'package:logging/logging.dart'; // Added for logging
+import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ResourceManager;
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/listener.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport_config.dart';
 // import 'connection_manager.dart'; // ConnManager is imported from core
 
 /// TCP implementation of the Listener interface
 class TCPListener implements Listener {
-  final Logger _logger = Logger('TCPListener'); // Added logger
-  final ServerSocket _server;
-  final MultiAddr _addr;
-  final TransportConfig _config;
-  final ConnManager _connManager;
-  // final Multiplexer _multiplexer; // Removed
-  final ResourceManager _resourceManager; // Kept, as _onConnection might need it for raw TCPConnection
-  final Future<TransportConn> Function(Socket socket, MultiAddr localAddr, MultiAddr remoteAddr) _onConnection;
-  final _connectionController = StreamController<TransportConn>();
-  bool _closed = false;
 
   /// Creates a new TCP listener
   TCPListener(
@@ -42,6 +30,16 @@ class TCPListener implements Listener {
         _onConnection = onConnection {
     _server.listen(_handleConnection);
   }
+  final Logger _logger = Logger('TCPListener'); // Added logger
+  final ServerSocket _server;
+  final MultiAddr _addr;
+  final TransportConfig _config;
+  final ConnManager _connManager;
+  // final Multiplexer _multiplexer; // Removed
+  final ResourceManager _resourceManager; // Kept, as _onConnection might need it for raw TCPConnection
+  final Future<TransportConn> Function(Socket socket, MultiAddr localAddr, MultiAddr remoteAddr) _onConnection;
+  final _connectionController = StreamController<TransportConn>();
+  bool _closed = false;
 
   void _handleConnection(Socket socket) async {
     // Create multiaddrs for local and remote endpoints from the accepted socket

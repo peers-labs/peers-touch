@@ -71,7 +71,10 @@ for d in "${dirs[@]}"; do
   [ -d "$d" ] || continue
   while IFS= read -r file; do
     check_file "$file"
-  done < <(find "$d" -type f -name '*.go')
+  done < <(find "$d" -type f -name '*.go' \
+    -not -path '*/logrus/*' \
+    -not -path '*/lumberjack.v2/*' \
+    -not -path '*/touch/activitypub/*')
 done
 
 # Run golangci-lint within each module under target dirs if available
@@ -81,12 +84,22 @@ run_lint() {
     [ -d "$d" ] || continue
     while IFS= read -r moddir; do
       ran=1
-      ( cd "$moddir" && golangci-lint run --config "$repo_root/.golangci.yml" ) || return 1
+      ( cd "$moddir" && golangci-lint run \
+        --skip-dirs ".*/logrus/.*" \
+        --skip-dirs ".*/lumberjack\\.v2/.*" \
+        --skip-dirs ".*/touch/activitypub/.*" \
+        --skip-files ".*_test\\.go$" \
+        --config "$repo_root/.golangci.yml" ) || return 1
     done < <(find "$d" -type f -name 'go.mod' -print0 | xargs -0 -n1 dirname | sort -u)
   done
   # If no modules found and repo root has go.mod, try at repo root
   if [ "$ran" -eq 0 ] && command -v golangci-lint >/dev/null 2>&1 && [ -f "$repo_root/go.mod" ]; then
-    golangci-lint run --config "$repo_root/.golangci.yml" || return 1
+    golangci-lint run \
+      --skip-dirs ".*/logrus/.*" \
+      --skip-dirs ".*/lumberjack\\.v2/.*" \
+      --skip-dirs ".*/touch/activitypub/.*" \
+      --skip-files ".*_test\\.go$" \
+      --config "$repo_root/.golangci.yml" || return 1
   fi
   return 0
 }

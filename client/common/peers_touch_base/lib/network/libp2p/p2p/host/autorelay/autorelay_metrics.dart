@@ -9,10 +9,6 @@ enum CandidateLoopState {
 // Represents the scheduledWorkTimes struct passed to ScheduledWorkUpdated
 // Fields are based on the Go struct in relay_finder.go and usage in metrics.go
 class ScheduledWorkTimes {
-  final DateTime nextAllowedCallToPeerSource;
-  final DateTime nextRefresh;
-  final DateTime nextBackoff;
-  final DateTime nextOldCandidateCheck;
 
   ScheduledWorkTimes({
     required this.nextAllowedCallToPeerSource,
@@ -28,6 +24,10 @@ class ScheduledWorkTimes {
         nextBackoff: DateTime.fromMillisecondsSinceEpoch(0),
         nextOldCandidateCheck: DateTime.fromMillisecondsSinceEpoch(0),
       );
+  final DateTime nextAllowedCallToPeerSource;
+  final DateTime nextRefresh;
+  final DateTime nextBackoff;
+  final DateTime nextOldCandidateCheck;
 }
 
 abstract class MetricsTracer {
@@ -83,9 +83,9 @@ class NoOpMetricsTracer implements MetricsTracer {
 
 // Wrapper to make the actual tracer optional, similar to Go's wrappedMetricsTracer
 class WrappedMetricsTracer implements MetricsTracer {
-  final MetricsTracer? _delegate;
 
   WrappedMetricsTracer(this._delegate);
+  final MetricsTracer? _delegate;
 
   MetricsTracer get effectiveTracer => _delegate ?? const NoOpMetricsTracer();
 

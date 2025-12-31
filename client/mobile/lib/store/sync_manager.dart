@@ -1,14 +1,15 @@
 import 'dart:async';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_mobile/store/base_store.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
+import 'package:peers_touch_mobile/store/base_store.dart';
 
 /// Global sync manager that coordinates synchronization across all stores
 class SyncManager extends GetxController {
-  static final SyncManager _instance = SyncManager._internal();
   factory SyncManager() => _instance;
   SyncManager._internal();
+  static final SyncManager _instance = SyncManager._internal();
 
   // Registered stores
   final Map<String, BaseStore> _stores = {};

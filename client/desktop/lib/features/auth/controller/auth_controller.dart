@@ -1,16 +1,17 @@
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/core/services/network_initializer.dart';
-import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_base/context/global_context.dart';
-import 'package:peers_touch_base/storage/secure_storage.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
-import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
-
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/secure_storage.dart';
+import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
+import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_desktop/core/services/network_initializer.dart';
+import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
 
 enum ServerStatus {
   unknown,
@@ -55,6 +56,8 @@ class AuthController extends GetxController {
   late final FocusNode baseUrlFocus;
   final emailFocused = false.obs;
   final usernameFocused = false.obs;
+  final isDropdownHovering = false.obs;
+  final highlightedIndex = (-1).obs;
 
   @override
   void onInit() {
@@ -68,17 +71,21 @@ class AuthController extends GetxController {
     displayNameController = TextEditingController();
     baseUrlController = TextEditingController();
 
-    // Initialize focus nodes
-    emailFocus = FocusNode();
+    // Initialize focus nodes with key listeners
+    emailFocus = FocusNode(onKeyEvent: onKeyDown);
     passwordFocus = FocusNode();
     confirmPasswordFocus = FocusNode();
-    usernameFocus = FocusNode();
+    usernameFocus = FocusNode(onKeyEvent: onKeyDown);
     displayNameFocus = FocusNode();
     baseUrlFocus = FocusNode();
 
     // Focus listeners for silky dropdown behavior
-    emailFocus.addListener(() => emailFocused.value = emailFocus.hasFocus);
-    usernameFocus.addListener(() => usernameFocused.value = usernameFocus.hasFocus);
+    emailFocus.addListener(() {
+      emailFocused.value = emailFocus.hasFocus;
+    });
+    usernameFocus.addListener(() {
+      usernameFocused.value = usernameFocus.hasFocus;
+    });
 
     // Bind controllers to Rx variables
     emailController.addListener(() {
@@ -131,9 +138,74 @@ class AuthController extends GetxController {
     baseUrlController.text = baseUrl.value;
 
     // React to input changes to update avatar preview
-    ever(email, (_) => updateLoginPreviewAvatar());
-    ever(username, (_) => updateLoginPreviewAvatar());
+    ever(email, (_) {
+      updateLoginPreviewAvatar();
+      highlightedIndex.value = -1;
+    });
+    ever(username, (_) {
+      updateLoginPreviewAvatar();
+      highlightedIndex.value = -1;
+    });
     ever(authTab, (_) => updateLoginPreviewAvatar());
+  }
+
+  List<String> get currentSuggestions {
+    final isLogin = authTab.value == 0;
+    final text = isLogin ? email.value : username.value;
+    final list = <String>{}
+      ..addAll(recentUsers)
+      ..addAll(presetUsers
+          .map((e) => (e['username'] ?? e['handle'] ?? e['name'] ?? '').toString())
+          .where((e) => e.isNotEmpty));
+    return list
+        .where((e) => text.isEmpty || e.toLowerCase().contains(text.toLowerCase()))
+        .take(6)
+        .toList();
+  }
+
+  KeyEventResult onKeyDown(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    
+    final suggestions = currentSuggestions;
+    if (suggestions.isEmpty) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      if (highlightedIndex.value < suggestions.length - 1) {
+        highlightedIndex.value++;
+      } else {
+        highlightedIndex.value = 0;
+      }
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      if (highlightedIndex.value > 0) {
+        highlightedIndex.value--;
+      } else if (highlightedIndex.value == -1) {
+        highlightedIndex.value = suggestions.length - 1;
+      }
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+      if (highlightedIndex.value != -1) {
+        selectHighlightedItem(suggestions[highlightedIndex.value]);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void selectHighlightedItem(String handle) {
+    if (authTab.value == 0) {
+      emailController.value = TextEditingValue(
+        text: handle,
+        selection: TextSelection.collapsed(offset: handle.length),
+      );
+    } else {
+      usernameController.value = TextEditingValue(
+        text: handle,
+        selection: TextSelection.collapsed(offset: handle.length),
+      );
+    }
+    updateLoginPreviewAvatar();
+    highlightedIndex.value = -1;
   }
 
   Future<void> _restoreUserInfo() async {
@@ -264,7 +336,7 @@ class AuthController extends GetxController {
       final useUrl = (overrideBaseUrl ?? baseUrl.value).trim();
       var ident = email.value.trim();
       if (!ident.contains('@') && ident.isNotEmpty) {
-        ident = ident + '@station.local';
+        ident = '$ident@station.local';
       }
       final uri = Uri.parse(
         useUrl.endsWith('/')
@@ -307,44 +379,42 @@ class AuthController extends GetxController {
               await LocalStorage().set('refresh_token', refresh);
               await _secureStorage.set(StorageKeys.refreshTokenKey, refresh);
             }
-            if (ttype != null && ttype.isNotEmpty)
+            if (ttype != null && ttype.isNotEmpty) {
               await LocalStorage().set('auth_token_type', ttype);
+            }
           } else {
             token = obj['token']?.toString() ?? '';
           }
 
           // Try to extract user info from response
-          if (obj is Map) {
-            final data = obj['data'];
-            Map<String, dynamic>? userMap;
-            if (data is Map) {
-              // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
-              if (data['user'] is Map) {
-                userMap = data['user'];
-              } else if (data['actor'] is Map) {
-                userMap = data['actor'];
-              } else {
-                // Assume data itself might contain user fields if not nested
-                userMap = data as Map<String, dynamic>;
-              }
-            } else if (obj['user'] is Map) {
-              userMap = obj['user'];
-            } else if (obj['actor'] is Map) {
-              userMap = obj['actor'];
+          Map<String, dynamic>? userMap;
+          if (dmap != null) {
+            // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
+            if (dmap['user'] is Map) {
+              userMap = dmap['user'];
+            } else if (dmap['actor'] is Map) {
+              userMap = dmap['actor'];
+            } else {
+              // Assume data itself might contain user fields if not nested
+              userMap = dmap;
             }
-
-            if (userMap != null) {
-              final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
-              if (name != null) username.value = name.toString();
-              
-              final mail = userMap['email'];
-              if (mail != null) email.value = mail.toString();
-              
-              final disp = userMap['display_name'] ?? userMap['displayName'];
-              if (disp != null) displayName.value = disp.toString();
-            }
+          } else if (obj['user'] is Map) {
+            userMap = obj['user'];
+          } else if (obj['actor'] is Map) {
+            userMap = obj['actor'];
           }
-        }
+
+          if (userMap != null) {
+            final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
+            if (name != null) username.value = name.toString();
+            
+            final mail = userMap['email'];
+            if (mail != null) email.value = mail.toString();
+            
+            final disp = userMap['display_name'] ?? userMap['displayName'];
+            if (disp != null) displayName.value = disp.toString();
+          }
+                }
 
         if (token.isNotEmpty) {
           await LocalStorage().set('auth_token', token);
@@ -365,6 +435,9 @@ class AuthController extends GetxController {
                   : (email.value.isNotEmpty
                         ? email.value.split('@').first
                         : '');
+              
+              final avatarUrl = await _fetchAndSaveUserAvatar(handle, baseUrl: (overrideBaseUrl ?? baseUrl.value).trim());
+              
               await gc.setSession({
                 'actorId': handle,
                 'handle': handle,
@@ -372,15 +445,21 @@ class AuthController extends GetxController {
                 'baseUrl': (overrideBaseUrl ?? baseUrl.value).trim(),
                 'accessToken': token,
                 'refreshToken': refresh,
+                'avatarUrl': avatarUrl,
               });
               LoggingService.info('GlobalContext session updated for user: $handle');
-              await _saveRecentUserAvatar(handle, baseUrl: (overrideBaseUrl ?? baseUrl.value).trim());
-              // Try refresh profile page if already registered
-              try {
-                if (Get.isRegistered<ProfileController>()) {
-                  Get.find<ProfileController>().fetchProfile();
+              // Schedule profile refresh after navigation
+              Future.delayed(const Duration(milliseconds: 100), () {
+                try {
+                  if (Get.isRegistered<ProfileController>()) {
+                    final pc = Get.find<ProfileController>();
+                    pc.fetchProfile();
+                    LoggingService.info('ProfileController.fetchProfile() triggered after login');
+                  }
+                } catch (e) {
+                  LoggingService.warning('Failed to trigger profile refresh: $e');
                 }
-              } catch (_) {}
+              });
             }
           } catch (_) {}
           Get.offAllNamed('/shell');
@@ -432,7 +511,7 @@ class AuthController extends GetxController {
     return ident;
   }
 
-  Future<void> _saveRecentUserAvatar(String handle, {required String baseUrl}) async {
+  Future<String> _fetchAndSaveUserAvatar(String handle, {required String baseUrl}) async {
     try {
       final uri = Uri.parse(baseUrl.endsWith('/')
           ? '${baseUrl}activitypub/$handle/profile'
@@ -450,7 +529,6 @@ class AuthController extends GetxController {
           url = (data['avatar'] ?? data['avatar_url'] ?? data['avatarUrl'] ?? '').toString();
         }
         final ls = LocalStorage();
-        // Update recent users and avatars maps
         final ru = (await ls.get<List>('recent_users'))?.whereType<String>().toList() ?? <String>[];
         if (!ru.contains(handle)) ru.add(handle);
         await ls.set('recent_users', ru);
@@ -461,9 +539,11 @@ class AuthController extends GetxController {
           await ls.set('recent_avatars', ram);
           recentAvatars[handle] = url;
           loginPreviewAvatar.value = url;
+          return url;
         }
       }
     } catch (_) {}
+    return '';
   }
 
   Future<void> signup([String? overrideBaseUrl]) async {
@@ -516,7 +596,7 @@ class AuthController extends GetxController {
     final emailText = email.value.trim();
     final emailOk =
         emailText.isNotEmpty &&
-        RegExp(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").hasMatch(emailText);
+        RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(emailText);
     final pwd = password.value.trim();
     final pwdOk = pwd.length >= 8;
     final confirmOk = pwd == confirmPassword.value.trim();

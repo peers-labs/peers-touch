@@ -1,42 +1,13 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
-import 'stun_client.dart';
-import '../nat_type.dart';
-import '../nat_behavior.dart';
-import '../nat_behavior_discovery.dart';
+
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior_discovery.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_type.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/stun/stun_client.dart';
 
 /// A class that manages a pool of STUN clients for improved reliability and NAT detection
 class StunClientPool {
-  /// Default list of STUN servers to use
-  static const List<({String host, int port})> defaultStunServers = [
-    (host: 'stun.l.google.com', port: 19302),
-    (host: 'stun1.l.google.com', port: 19302),
-    (host: 'stun2.l.google.com', port: 19302),
-    (host: 'stun3.l.google.com', port: 19302),
-    (host: 'stun4.l.google.com', port: 19302)
-  ];
-
-  /// Default timeout for STUN requests
-  static const Duration defaultTimeout = Duration(seconds: 5);
-
-  /// Default health check interval
-  static const Duration defaultHealthCheckInterval = Duration(minutes: 5);
-
-  /// List of STUN clients in the pool
-  final List<_StunServerInfo> _servers = [];
-
-  /// Timeout for STUN requests
-  final Duration timeout;
-
-  /// Health check interval
-  final Duration healthCheckInterval;
-
-  /// Random number generator for server selection
-  final Random _random = Random();
-
-  /// Timer for periodic health checks
-  Timer? _healthCheckTimer;
 
   /// Creates a new STUN client pool
   ///
@@ -72,6 +43,35 @@ class StunClientPool {
     // Start periodic health checks
     _startHealthChecks();
   }
+  /// Default list of STUN servers to use
+  static const List<({String host, int port})> defaultStunServers = [
+    (host: 'stun.l.google.com', port: 19302),
+    (host: 'stun1.l.google.com', port: 19302),
+    (host: 'stun2.l.google.com', port: 19302),
+    (host: 'stun3.l.google.com', port: 19302),
+    (host: 'stun4.l.google.com', port: 19302)
+  ];
+
+  /// Default timeout for STUN requests
+  static const Duration defaultTimeout = Duration(seconds: 5);
+
+  /// Default health check interval
+  static const Duration defaultHealthCheckInterval = Duration(minutes: 5);
+
+  /// List of STUN clients in the pool
+  final List<_StunServerInfo> _servers = [];
+
+  /// Timeout for STUN requests
+  final Duration timeout;
+
+  /// Health check interval
+  final Duration healthCheckInterval;
+
+  /// Random number generator for server selection
+  final Random _random = Random();
+
+  /// Timer for periodic health checks
+  Timer? _healthCheckTimer;
 
   /// Starts periodic health checks
   void _startHealthChecks() {
@@ -349,13 +349,6 @@ class StunClientPool {
 
 /// Internal class to track STUN server information
 class _StunServerInfo {
-  final StunClient client;
-  final String host;
-  final int port;
-  int healthScore;
-  Duration? lastResponseTime;
-  DateTime? lastSuccessTime;
-  int consecutiveFailures;
 
   _StunServerInfo({
     required this.client,
@@ -366,4 +359,11 @@ class _StunServerInfo {
     required this.lastSuccessTime,
     required this.consecutiveFailures,
   });
+  final StunClient client;
+  final String host;
+  final int port;
+  int healthScore;
+  Duration? lastResponseTime;
+  DateTime? lastSuccessTime;
+  int consecutiveFailures;
 }

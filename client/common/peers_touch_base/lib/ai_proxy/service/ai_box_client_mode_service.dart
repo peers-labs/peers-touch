@@ -1,12 +1,12 @@
-import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_base/ai_proxy/adapter/ai_proxy_adapter.dart';
 import 'package:peers_touch_base/ai_proxy/client/chat_client.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_service.dart';
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 
 class AiBoxClientModeService implements IAiBoxService {
-  final AiProxyAdapter _adapter;
 
   AiBoxClientModeService(this._adapter);
+  final AiProxyAdapter _adapter;
 
   @override
   Stream<ChatCompletionResponse> chat(ChatCompletionRequest request) {
@@ -50,7 +50,7 @@ class AiBoxClientModeService implements IAiBoxService {
       
       return response;
     } catch (e) {
-      throw e;
+      rethrow;
     }
   }
 
@@ -66,7 +66,7 @@ class AiBoxClientModeService implements IAiBoxService {
       // 返回provider支持的模型列表
       return provider.getSupportedModels();
     } catch (e) {
-      throw e;
+      rethrow;
     }
   }
 

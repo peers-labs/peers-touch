@@ -1,4 +1,5 @@
 /// ProtoBook implementation for the memory-based peerstore.
+library;
 
 import 'dart:collection';
 
@@ -10,27 +11,27 @@ import 'package:synchronized/synchronized.dart';
 
 /// Error thrown when too many protocols are added for a peer.
 class ErrTooManyProtocols implements Exception {
-  final String message;
   const ErrTooManyProtocols([this.message = 'too many protocols']);
+  final String message;
   @override
   String toString() => 'ErrTooManyProtocols: $message';
 }
 
 /// A segment of the protocol book, used for sharding.
 class ProtoSegment {
-  final _protocols = HashMap<String, Set<ProtocolID>>();
 
   ProtoSegment();
+  final _protocols = HashMap<String, Set<ProtocolID>>();
 }
 
 /// A memory-based implementation of the ProtoBook interface.
 class MemoryProtoBook implements ProtoBook {
-  final List<ProtoSegment> _segments = List.generate(256, (_) => ProtoSegment());
-  final int _maxProtos;
-  final _lock = Lock();
 
   /// Creates a new memory-based protocol book implementation.
   MemoryProtoBook({int maxProtos = 128}) : _maxProtos = maxProtos;
+  final List<ProtoSegment> _segments = List.generate(256, (_) => ProtoSegment());
+  final int _maxProtos;
+  final _lock = Lock();
 
   /// Gets the segment for a peer ID.
   ProtoSegment _getSegment(PeerId p) {

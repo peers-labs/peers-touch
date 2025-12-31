@@ -4,13 +4,13 @@ import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
 
-import '../../../core/interfaces.dart';
-import '../../../core/peer/peer_id.dart';
-import 'stomp_constants.dart';
-import 'stomp_exceptions.dart';
-import 'stomp_frame.dart';
-import 'stomp_subscription.dart';
-import 'stomp_transaction.dart';
+import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_constants.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_frame.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_subscription.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_transaction.dart';
 
 final _logger = Logger('stomp.server');
 
@@ -25,6 +25,13 @@ enum StompServerConnectionState {
 
 /// Represents a client connection to the STOMP server
 class StompServerConnection {
+
+  StompServerConnection({
+    required this.peerId,
+    required this.stream,
+    required this.sessionId,
+    required this.clientHeaders,
+  }) : connectedAt = DateTime.now();
   final PeerId peerId;
   final P2PStream stream;
   final String sessionId;
@@ -39,13 +46,6 @@ class StompServerConnection {
   // Frame processing
   final StreamController<StompFrame> _frameController = StreamController<StompFrame>.broadcast();
   final List<int> _readBuffer = [];
-
-  StompServerConnection({
-    required this.peerId,
-    required this.stream,
-    required this.sessionId,
-    required this.clientHeaders,
-  }) : connectedAt = DateTime.now();
 
   /// Current connection state
   StompServerConnectionState get state => _state;
@@ -78,13 +78,13 @@ class StompServerConnection {
 
     final frameBytes = frame.toBytes();
     await stream.write(frameBytes);
-    _logger.finest('Sent frame to ${peerId}: ${frame.command}');
+    _logger.finest('Sent frame to $peerId: ${frame.command}');
   }
 
   /// Starts reading frames from the client
   void startReading() {
     _readFrames().catchError((e) {
-      _logger.warning('Error reading frames from ${peerId}: $e');
+      _logger.warning('Error reading frames from $peerId: $e');
       setState(StompServerConnectionState.error);
     });
   }
@@ -110,15 +110,15 @@ class StompServerConnection {
           try {
             final frame = StompFrame.fromBytes(frameData);
             _frameController.add(frame);
-            _logger.finest('Received frame from ${peerId}: ${frame.command}');
+            _logger.finest('Received frame from $peerId: ${frame.command}');
           } catch (e) {
-            _logger.warning('Error parsing frame from ${peerId}: $e');
+            _logger.warning('Error parsing frame from $peerId: $e');
           }
         }
       } catch (e) {
         if (_state != StompServerConnectionState.disconnecting && 
             _state != StompServerConnectionState.disconnected) {
-          _logger.warning('Error reading from ${peerId}: $e');
+          _logger.warning('Error reading from $peerId: $e');
           break;
         }
       }
@@ -143,7 +143,7 @@ class StompServerConnection {
       try {
         await stream.close();
       } catch (e) {
-        _logger.warning('Error closing stream for ${peerId}: $e');
+        _logger.warning('Error closing stream for $peerId: $e');
       }
     }
 
@@ -159,6 +159,14 @@ class StompServerConnection {
 
 /// STOMP server for handling client connections over libp2p
 class StompServer {
+
+  StompServer({
+    required Host host,
+    String? serverName,
+    Duration timeout = StompConstants.defaultTimeout,
+  }) : _host = host,
+       _serverName = serverName ?? 'dart-libp2p-stomp/1.0',
+       _timeout = timeout;
   final Host _host;
   final String _serverName;
   final Duration _timeout;
@@ -178,14 +186,6 @@ class StompServer {
   final StreamController<StompMessage> _messageController = StreamController<StompMessage>.broadcast();
 
   bool _isRunning = false;
-
-  StompServer({
-    required Host host,
-    String? serverName,
-    Duration timeout = StompConstants.defaultTimeout,
-  }) : _host = host,
-       _serverName = serverName ?? 'dart-libp2p-stomp/1.0',
-       _timeout = timeout;
 
   /// Whether the server is running
   bool get isRunning => _isRunning;

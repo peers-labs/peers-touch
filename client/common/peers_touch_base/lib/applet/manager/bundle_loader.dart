@@ -1,12 +1,13 @@
 
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 class BundleLoader {
-  static final BundleLoader _instance = BundleLoader._internal();
   factory BundleLoader() => _instance;
   BundleLoader._internal();
+  static final BundleLoader _instance = BundleLoader._internal();
 
   Future<String> getAppletBundlePath(String appId, String version) async {
     final appDir = await getApplicationDocumentsDirectory();

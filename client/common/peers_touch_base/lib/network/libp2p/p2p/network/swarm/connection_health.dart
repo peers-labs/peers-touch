@@ -2,8 +2,8 @@ import 'dart:async';
 import 'package:logging/logging.dart';
 
 // Import existing error types
-import '../../../core/exceptions.dart';
-import '../../../core/network/errors.dart';
+import 'package:peers_touch_base/network/libp2p/core/exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/errors.dart';
 
 /// Connection health states for event-driven monitoring
 enum ConnectionHealthState {
@@ -22,6 +22,8 @@ enum ConnectionHealthState {
 
 /// Connection health metrics and tracking
 class ConnectionHealthMetrics {
+  
+  ConnectionHealthMetrics();
   final Logger _logger = Logger('ConnectionHealthMetrics');
   
   /// Current health state
@@ -45,8 +47,6 @@ class ConnectionHealthMetrics {
   /// Stream of health state changes
   final StreamController<ConnectionHealthState> _healthStateController = 
       StreamController<ConnectionHealthState>.broadcast();
-  
-  ConnectionHealthMetrics();
   
   /// Current health state
   ConnectionHealthState get state => _state;
@@ -144,13 +144,13 @@ class ConnectionHealthMetrics {
 
 /// Event-driven connection health monitor
 class ConnectionHealthMonitor {
+  
+  ConnectionHealthMonitor();
   final Logger _logger = Logger('ConnectionHealthMonitor');
   final ConnectionHealthMetrics _metrics = ConnectionHealthMetrics();
   
   /// Stream subscriptions for monitoring
   final List<StreamSubscription> _subscriptions = [];
-  
-  ConnectionHealthMonitor();
   
   /// Get health metrics
   ConnectionHealthMetrics get metrics => _metrics;

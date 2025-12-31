@@ -1,13 +1,20 @@
 import 'dart:async';
-import 'global_context.dart';
-import '../storage/secure_storage_adapter.dart';
-import '../storage/local_storage_adapter.dart';
+
+import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
-import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
 import 'package:peers_touch_base/model/domain/actor/preferences.pb.dart';
-import '../network/connectivity_adapter.dart';
+import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
+import 'package:peers_touch_base/network/connectivity_adapter.dart';
+import 'package:peers_touch_base/storage/local_storage_adapter.dart';
+import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
 
 class DefaultGlobalContext implements GlobalContext {
+
+  DefaultGlobalContext({
+    required this.secureStorage,
+    this.connectivity,
+    this.localStorage,
+  });
   final SecureStorageAdapter secureStorage;
   final ConnectivityAdapter? connectivity;
   final LocalStorageAdapter? localStorage;
@@ -21,12 +28,6 @@ class DefaultGlobalContext implements GlobalContext {
   final _prefsCtrl = StreamController<Map<String, dynamic>>.broadcast();
   final _protocolCtrl = StreamController<String?>.broadcast();
   final _netCtrl = StreamController<List<String>>.broadcast();
-
-  DefaultGlobalContext({
-    required this.secureStorage,
-    this.connectivity,
-    this.localStorage,
-  });
 
   void _bindConnectivity() {
     if (connectivity == null) return;
@@ -77,6 +78,7 @@ class DefaultGlobalContext implements GlobalContext {
     return m;
   }
 
+  @override
   Future<void> setSession(Map<String, dynamic>? session) async {
     _session = session != null ? _normalizeSession(session) : null;
     _sessionCtrl.add(_session);
@@ -307,6 +309,7 @@ class DefaultGlobalContext implements GlobalContext {
     return snap;
   }
 
+  @override
   Future<void> hydrate() async {
     _bindConnectivity();
     if (localStorage == null) return;
@@ -376,6 +379,7 @@ class DefaultGlobalContext implements GlobalContext {
     } catch (_) {}
   }
 
+  @override
   Future<void> setProtocolTag(String? tag) async {
     _protocolTag = tag;
     _protocolCtrl.add(_protocolTag);

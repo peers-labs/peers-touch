@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 class Dropdown extends StatelessWidget {
+  const Dropdown({super.key, this.label, required this.items, required this.value, this.showLabel = true, required this.onChanged});
   final String? label;
   final List<String> items;
   final String? value;
   final bool showLabel;
   final ValueChanged<String?> onChanged;
-  const Dropdown({super.key, this.label, required this.items, required this.value, this.showLabel = true, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {

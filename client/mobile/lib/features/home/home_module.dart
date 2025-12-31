@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
-import 'bindings/home_binding.dart';
-import 'pages/home_page.dart';
+import 'package:peers_touch_mobile/features/home/bindings/home_binding.dart';
+import 'package:peers_touch_mobile/features/home/pages/home_page.dart';
 
 class HomeModule {
   static const String routeName = '/home';

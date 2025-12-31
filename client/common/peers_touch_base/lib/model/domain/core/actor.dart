@@ -1,12 +1,6 @@
 import 'dart:convert';
 
 class Endpoints {
-  final String? uploadMedia;
-  final String? oauthAuthorizationEndpoint;
-  final String? oauthTokenEndpoint;
-  final String? provideClientKey;
-  final String? signClientKey;
-  final String? sharedInbox;
 
   Endpoints({
     this.uploadMedia,
@@ -16,6 +10,12 @@ class Endpoints {
     this.signClientKey,
     this.sharedInbox,
   });
+  final String? uploadMedia;
+  final String? oauthAuthorizationEndpoint;
+  final String? oauthTokenEndpoint;
+  final String? provideClientKey;
+  final String? signClientKey;
+  final String? sharedInbox;
 
   Map<String, dynamic> toJson() => {
         'upload_media': uploadMedia,
@@ -40,11 +40,11 @@ class Endpoints {
 }
 
 class PublicKey {
+
+  PublicKey({this.id, this.owner, this.publicKeyPem});
   final String? id;
   final String? owner;
   final String? publicKeyPem;
-
-  PublicKey({this.id, this.owner, this.publicKeyPem});
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -65,35 +65,6 @@ class PublicKey {
 enum ActorType { unspecified, application, group, organization, person, service }
 
 class Actor {
-  final String? id;
-  final ActorType type;
-  final Map<String, String>? name;
-  final Map<String, String>? summary;
-  final Map<String, String>? content;
-  final String? preferredUsername;
-  final String? url;
-  final String? icon;
-  final String? image;
-  final String? inbox;
-  final String? outbox;
-  final List<String>? to;
-  final List<String>? cc;
-  final List<String>? bto;
-  final List<String>? bcc;
-  final List<String>? audience;
-  final List<String>? following;
-  final List<String>? followers;
-  final List<String>? liked;
-  final List<String>? streams;
-  final List<String>? tags;
-  final List<String>? attachments;
-  final Endpoints? endpoints;
-  final PublicKey? publicKey;
-  final DateTime? publishedAt;
-  final DateTime? updatedAt;
-  final DateTime? startTime;
-  final DateTime? endTime;
-  final int? durationSeconds;
 
   Actor({
     this.id,
@@ -126,6 +97,35 @@ class Actor {
     this.endTime,
     this.durationSeconds,
   });
+  final String? id;
+  final ActorType type;
+  final Map<String, String>? name;
+  final Map<String, String>? summary;
+  final Map<String, String>? content;
+  final String? preferredUsername;
+  final String? url;
+  final String? icon;
+  final String? image;
+  final String? inbox;
+  final String? outbox;
+  final List<String>? to;
+  final List<String>? cc;
+  final List<String>? bto;
+  final List<String>? bcc;
+  final List<String>? audience;
+  final List<String>? following;
+  final List<String>? followers;
+  final List<String>? liked;
+  final List<String>? streams;
+  final List<String>? tags;
+  final List<String>? attachments;
+  final Endpoints? endpoints;
+  final PublicKey? publicKey;
+  final DateTime? publishedAt;
+  final DateTime? updatedAt;
+  final DateTime? startTime;
+  final DateTime? endTime;
+  final int? durationSeconds;
 
   Map<String, dynamic> toJson() => {
         'id': id,

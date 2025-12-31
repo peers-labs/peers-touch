@@ -8,6 +8,15 @@ import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
 /// Resources manages the resources for the relay service.
 class Resources {
+
+  /// Creates a new resource manager.
+  Resources({
+    this.maxReservations = 128,
+    this.maxConnections = 128,
+    this.reservationTtl = 3600,
+    this.connectionDuration = 3600,
+    this.connectionData = 1 << 20, // 1 MiB
+  });
   /// The maximum number of concurrent reservations.
   final int maxReservations;
 
@@ -28,15 +37,6 @@ class Resources {
 
   /// The current number of connections.
   int _connections = 0;
-
-  /// Creates a new resource manager.
-  Resources({
-    this.maxReservations = 128,
-    this.maxConnections = 128,
-    this.reservationTtl = 3600,
-    this.connectionDuration = 3600,
-    this.connectionData = 1 << 20, // 1 MiB
-  });
 
   /// Checks if a peer can make a reservation.
   bool canReserve(PeerId peer) {

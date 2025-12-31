@@ -35,6 +35,7 @@ func WithRDS(rds *RDSInit) option.Option {
 type GetStoreOptions struct {
 	StoreName string
 }
+
 type GetOption func(*GetStoreOptions)
 
 // endregion

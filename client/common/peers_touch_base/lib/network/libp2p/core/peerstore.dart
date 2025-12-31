@@ -1,21 +1,20 @@
 /// Package peerstore provides types and interfaces for local storage of address information,
 /// metadata, and public key material about libp2p peers.
+library;
 
 import 'dart:async';
 
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
-
 import 'package:peers_touch_base/network/libp2p/p2p/discovery/peer_info.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
-import 'package:peers_touch_base/network/libp2p/core/certified_addr_book.dart';
 
 /// Error thrown when an item is not found in the peerstore.
 class ErrNotFound implements Exception {
-  final String message;
   const ErrNotFound([this.message = 'item not found']);
+  final String message;
   @override
   String toString() => 'ErrNotFound: $message';
 }
@@ -49,6 +48,12 @@ class AddressTTL {
 
 /// Configuration for the peer store
 class PeerStoreConfig {
+
+  const PeerStoreConfig({
+    this.maxPeers = 1000,
+    this.peerTTL = const Duration(hours: 24),
+    this.cleanupInterval = const Duration(minutes: 30),
+  });
   /// The maximum number of peers to store
   final int maxPeers;
 
@@ -57,12 +62,6 @@ class PeerStoreConfig {
 
   /// How often to clean up expired peers
   final Duration cleanupInterval;
-
-  const PeerStoreConfig({
-    this.maxPeers = 1000,
-    this.peerTTL = const Duration(hours: 24),
-    this.cleanupInterval = const Duration(minutes: 30),
-  });
 }
 
 /// Peerstore provides a thread-safe store of Peer related information.

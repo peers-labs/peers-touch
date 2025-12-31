@@ -1,10 +1,11 @@
 /// Tracer implementation for the holepunch protocol.
+library;
 
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/holepuncher.dart';
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
-import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/holepuncher.dart';
 
 
 /// Logger for the tracer
@@ -12,11 +13,11 @@ final _log = Logger('p2p-holepunch-tracer');
 
 /// Basic tracer implementation for the holepunch protocol
 class BasicHolePunchTracer implements HolePunchTracer {
-  /// Whether the tracer is enabled
-  bool _enabled = true;
 
   /// Creates a new basic tracer
   BasicHolePunchTracer();
+  /// Whether the tracer is enabled
+  bool _enabled = true;
 
   /// Starts the tracer
   void start() {

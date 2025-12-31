@@ -1,17 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
-import 'nat_behavior.dart';
-import 'stun/stun_client_pool.dart';
-import 'storage_broker.dart';
-import 'network_interface_monitor.dart';
+
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/network_interface_monitor.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/storage_broker.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/stun/stun_client_pool.dart';
 
 /// A record of NAT behavior at a specific point in time
 class NatBehaviorRecord {
-  /// The NAT behavior
-  final NatBehavior behavior;
-
-  /// The timestamp when the behavior was recorded
-  final DateTime timestamp;
 
   /// Creates a new NAT behavior record
   NatBehaviorRecord({
@@ -33,6 +29,11 @@ class NatBehaviorRecord {
       timestamp: DateTime.parse(json['timestamp']),
     );
   }
+  /// The NAT behavior
+  final NatBehavior behavior;
+
+  /// The timestamp when the behavior was recorded
+  final DateTime timestamp;
 
   /// Converts the NAT behavior record to JSON
   Map<String, dynamic> toJson() {
@@ -53,6 +54,16 @@ typedef NatBehaviorChangeCallback = void Function(NatBehavior oldBehavior, NatBe
 
 /// A class that tracks NAT behavior over time
 class NatBehaviorTracker {
+
+  /// Creates a new NAT behavior tracker
+  NatBehaviorTracker({
+    required this.stunClientPool,
+    this.storageBroker,
+    this.networkInterfaceMonitor,
+    this.storageKey = 'nat_behavior',
+    this.checkInterval = const Duration(minutes: 30),
+    this.maxHistorySize = 100,
+  });
   /// The STUN client pool to use for NAT behavior discovery
   final StunClientPool stunClientPool;
 
@@ -85,16 +96,6 @@ class NatBehaviorTracker {
 
 
   List<NatBehaviorChangeCallback> get callbacks => _callbacks;
-
-  /// Creates a new NAT behavior tracker
-  NatBehaviorTracker({
-    required this.stunClientPool,
-    this.storageBroker,
-    this.networkInterfaceMonitor,
-    this.storageKey = 'nat_behavior',
-    this.checkInterval = const Duration(minutes: 30),
-    this.maxHistorySize = 100,
-  });
 
   /// The current NAT behavior
   NatBehavior get currentBehavior => _currentBehavior;

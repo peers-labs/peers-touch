@@ -2,18 +2,17 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/pb/autonatv2.pb.dart';
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv2/autonatv2.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:logging/logging.dart';
-
-import '../../../core/multiaddr.dart';
-import '../../../core/network/context.dart';
-import '../../../core/network/rcmgr.dart';
-import '../../../core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv2/autonatv2.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/pb/autonatv2.pb.dart';
 
 final _log = Logger('autonatv2.client');
 
@@ -25,6 +24,16 @@ class ClientErrors {
 
 /// Client implementation for AutoNAT v2
 class AutoNATv2ClientImpl implements AutoNATv2Client {
+
+  AutoNATv2ClientImpl(this.host, {MultiAddr Function(MultiAddr)? normalizeMultiaddr})
+      : _dialData = Uint8List(4000),
+        normalizeMultiaddr = normalizeMultiaddr ?? ((a) => a) {
+    // Initialize dial data with random bytes
+    final random = Random();
+    for (int i = 0; i < _dialData.length; i++) {
+      _dialData[i] = random.nextInt(256);
+    }
+  }
   final Host host;
   final Uint8List _dialData;
   final MultiAddr Function(MultiAddr) normalizeMultiaddr;
@@ -43,16 +52,6 @@ class AutoNATv2ClientImpl implements AutoNATv2Client {
 
   /// Map of nonce to dial-back queue
   final Map<int, Completer<MultiAddr>> _dialBackQueues = {};
-
-  AutoNATv2ClientImpl(this.host, {MultiAddr Function(MultiAddr)? normalizeMultiaddr})
-      : _dialData = Uint8List(4000),
-        normalizeMultiaddr = normalizeMultiaddr ?? ((a) => a) {
-    // Initialize dial data with random bytes
-    final random = Random();
-    for (int i = 0; i < _dialData.length; i++) {
-      _dialData[i] = random.nextInt(256);
-    }
-  }
 
   @override
   void start() {

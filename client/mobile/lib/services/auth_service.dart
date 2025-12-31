@@ -1,8 +1,9 @@
-import 'package:get/get.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+
 import 'package:dio/dio.dart';
+import 'package:get/get.dart';
 import 'package:peers_touch_mobile/utils/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService extends GetxService {
   static const String _isLoggedInKey = 'is_logged_in';

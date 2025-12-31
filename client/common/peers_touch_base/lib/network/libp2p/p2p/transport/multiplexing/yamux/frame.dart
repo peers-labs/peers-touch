@@ -36,23 +36,6 @@ class YamuxFlags {
 
 /// Represents a Yamux frame
 class YamuxFrame {
-  /// Frame version (must be 0)
-  static const int version = 0;
-
-  /// Frame type
-  final YamuxFrameType type;
-
-  /// Frame flags
-  final int flags;
-
-  /// Stream ID
-  final int streamId;
-
-  /// Frame length
-  final int length;
-
-  /// Frame data
-  final Uint8List data;
 
   const YamuxFrame({
     required this.type,
@@ -65,7 +48,7 @@ class YamuxFrame {
   /// Creates a frame from bytes
   factory YamuxFrame.fromBytes(Uint8List bytes) {
     if (bytes.length < 12) {
-      throw FormatException('Frame too short');
+      throw const FormatException('Frame too short');
     }
 
     final header = ByteData.view(bytes.buffer, bytes.offsetInBytes, 12);
@@ -91,7 +74,7 @@ class YamuxFrame {
     // Get data
     final data = bytes.length > 12 ? bytes.sublist(12) : Uint8List(0);
     if (data.length != length) {
-      throw FormatException('Frame data length mismatch');
+      throw const FormatException('Frame data length mismatch');
     }
 
     return YamuxFrame(
@@ -102,6 +85,23 @@ class YamuxFrame {
       data: data,
     );
   }
+  /// Frame version (must be 0)
+  static const int version = 0;
+
+  /// Frame type
+  final YamuxFrameType type;
+
+  /// Frame flags
+  final int flags;
+
+  /// Stream ID
+  final int streamId;
+
+  /// Frame length
+  final int length;
+
+  /// Frame data
+  final Uint8List data;
 
   /// Converts the frame to bytes
   Uint8List toBytes() {

@@ -1,17 +1,17 @@
 import 'dart:async';
-import 'nat_behavior.dart';
-import 'nat_behavior_tracker.dart';
-import 'nat_traversal_strategy.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior_tracker.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_traversal_strategy.dart';
 
 /// A class that provides NAT status reporting
 class NatStatusReporter {
-  /// The NAT behavior tracker to use for status reporting
-  final NatBehaviorTracker _behaviorTracker;
 
   /// Creates a new NAT status reporter
   NatStatusReporter({
     required NatBehaviorTracker behaviorTracker,
   }) : _behaviorTracker = behaviorTracker;
+  /// The NAT behavior tracker to use for status reporting
+  final NatBehaviorTracker _behaviorTracker;
 
   /// Gets the current NAT behavior
   NatBehavior get currentBehavior => _behaviorTracker.currentBehavior;

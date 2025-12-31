@@ -2,9 +2,9 @@ import 'package:peers_touch_base/applet/models/applet_manifest.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 class StationAppletClient {
-  static final StationAppletClient _instance = StationAppletClient._internal();
   factory StationAppletClient() => _instance;
   StationAppletClient._internal();
+  static final StationAppletClient _instance = StationAppletClient._internal();
 
   String get _basePath => '/api/v1/applets';
 

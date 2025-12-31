@@ -1,11 +1,12 @@
 
-import 'package:test/test.dart';
+import 'dart:convert';
+
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 import 'package:peers_touch_base/ai_proxy/adapter/ai_proxy_adapter.dart';
-import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
-import 'dart:convert';
+import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart';
+import 'package:test/test.dart';
 
 import 'ai_proxy_adapter_test.mocks.dart';
 

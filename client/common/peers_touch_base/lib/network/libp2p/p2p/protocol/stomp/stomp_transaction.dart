@@ -1,19 +1,19 @@
 import 'dart:async';
 
-import 'stomp_constants.dart';
-import 'stomp_exceptions.dart';
-import 'stomp_frame.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_constants.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_frame.dart';
 
 /// Represents a STOMP transaction
 class StompTransaction {
+
+  StompTransaction({required this.id}) : startTime = DateTime.now();
   final String id;
   final DateTime startTime;
   final List<StompFrame> _frames = [];
   
   bool _isCommitted = false;
   bool _isAborted = false;
-
-  StompTransaction({required this.id}) : startTime = DateTime.now();
 
   /// Whether this transaction is active (not committed or aborted)
   bool get isActive => !_isCommitted && !_isAborted;
@@ -224,12 +224,6 @@ enum StompTransactionState {
 
 /// Transaction statistics
 class StompTransactionStats {
-  final int totalTransactions;
-  final int activeTransactions;
-  final int committedTransactions;
-  final int abortedTransactions;
-  final Duration averageTransactionDuration;
-  final Duration longestTransactionDuration;
 
   StompTransactionStats({
     required this.totalTransactions,
@@ -271,6 +265,12 @@ class StompTransactionStats {
       longestTransactionDuration: longestDuration,
     );
   }
+  final int totalTransactions;
+  final int activeTransactions;
+  final int committedTransactions;
+  final int abortedTransactions;
+  final Duration averageTransactionDuration;
+  final Duration longestTransactionDuration;
 
   @override
   String toString() {
@@ -362,9 +362,6 @@ class StompTransactionFrameFactory {
 
 /// Transaction timeout manager
 class StompTransactionTimeoutManager {
-  final StompTransactionManager _transactionManager;
-  final Duration _defaultTimeout;
-  final Map<String, Timer> _timeouts = {};
 
   StompTransactionTimeoutManager(
     this._transactionManager, {
@@ -375,6 +372,9 @@ class StompTransactionTimeoutManager {
     _transactionManager.onCommit.listen(_onTransactionEnd);
     _transactionManager.onAbort.listen(_onTransactionEnd);
   }
+  final StompTransactionManager _transactionManager;
+  final Duration _defaultTimeout;
+  final Map<String, Timer> _timeouts = {};
 
   /// Sets a timeout for a transaction
   void setTimeout(String transactionId, Duration timeout) {

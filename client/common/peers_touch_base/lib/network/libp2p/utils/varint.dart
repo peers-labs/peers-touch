@@ -35,5 +35,5 @@ int decodeVarint(Uint8List data) {
     i++;
   }
 
-  throw FormatException('Invalid varint encoding');
+  throw const FormatException('Invalid varint encoding');
 } 

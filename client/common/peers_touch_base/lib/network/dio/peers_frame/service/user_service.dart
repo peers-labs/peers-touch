@@ -1,9 +1,9 @@
 import 'package:peers_touch_base/network/dio/http_service.dart';
 
 class UserService {
-  final IHttpService _http;
 
   UserService(this._http);
+  final IHttpService _http;
 
   // Example method:
   // Future<User> getInfo(String userId) async {

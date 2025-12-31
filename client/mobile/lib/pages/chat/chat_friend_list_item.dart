@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
 
 class FriendListItem extends StatelessWidget {
-  final FriendModel friend;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
 
   const FriendListItem({
     super.key,
@@ -12,6 +9,9 @@ class FriendListItem extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
   });
+  final FriendModel friend;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {

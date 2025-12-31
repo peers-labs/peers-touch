@@ -1,5 +1,5 @@
-import 'dart:typed_data';
 import 'dart:io';
+import 'dart:typed_data';
 
 /// STUN消息类型
 enum StunMessageType {
@@ -46,11 +46,6 @@ enum StunAttributeType {
 
 /// STUN响应
 class StunResponse {
-  final bool success;
-  final InternetAddress? publicAddress;
-  final int? publicPort;
-  final String? errorMessage;
-  final Map<String, dynamic> attributes;
 
   StunResponse({
     required this.success,
@@ -59,68 +54,21 @@ class StunResponse {
     this.errorMessage,
     this.attributes = const {},
   });
+  final bool success;
+  final InternetAddress? publicAddress;
+  final int? publicPort;
+  final String? errorMessage;
+  final Map<String, dynamic> attributes;
 }
 
 /// STUN消息
 class StunMessage {
-  final StunMessageType type;
-  final Uint8List transactionId;
-  final Map<StunAttributeType, Uint8List> attributes;
 
   StunMessage({
     required this.type,
     required this.transactionId,
     this.attributes = const {},
   });
-
-  /// 序列化为字节数组
-  Uint8List toBytes() {
-    // STUN消息头: 类型(2) + 长度(2) + 魔术Cookie(4) + 事务ID(12) = 20字节
-    final buffer = BytesBuilder();
-    
-    // 消息类型
-    buffer.addByte((type.value >> 8) & 0xFF);
-    buffer.addByte(type.value & 0xFF);
-    
-    // 消息长度（不包括头部20字节）
-    final attributesLength = attributes.values
-        .fold<int>(0, (sum, attr) => sum + 4 + attr.length + (4 - attr.length % 4) % 4);
-    
-    buffer.addByte((attributesLength >> 8) & 0xFF);
-    buffer.addByte(attributesLength & 0xFF);
-    
-    // 魔术Cookie (RFC 5389)
-    final magicCookie = Uint8List.fromList([0x21, 0x12, 0xA4, 0x42]);
-    buffer.add(magicCookie);
-    
-    // 事务ID
-    buffer.add(transactionId);
-    
-    // 属性
-    for (final entry in attributes.entries) {
-      final attrType = entry.key;
-      final attrValue = entry.value;
-      
-      // 属性类型
-      buffer.addByte((attrType.value >> 8) & 0xFF);
-      buffer.addByte(attrType.value & 0xFF);
-      
-      // 属性长度
-      buffer.addByte((attrValue.length >> 8) & 0xFF);
-      buffer.addByte(attrValue.length & 0xFF);
-      
-      // 属性值
-      buffer.add(attrValue);
-      
-      // 填充到4字节边界
-      final padding = (4 - attrValue.length % 4) % 4;
-      if (padding > 0) {
-        buffer.add(Uint8List(padding));
-      }
-    }
-    
-    return buffer.toBytes();
-  }
 
   /// 从字节数组解析
   factory StunMessage.fromBytes(Uint8List bytes) {
@@ -175,6 +123,58 @@ class StunMessage {
       transactionId: transactionId,
       attributes: attributes,
     );
+  }
+  final StunMessageType type;
+  final Uint8List transactionId;
+  final Map<StunAttributeType, Uint8List> attributes;
+
+  /// 序列化为字节数组
+  Uint8List toBytes() {
+    // STUN消息头: 类型(2) + 长度(2) + 魔术Cookie(4) + 事务ID(12) = 20字节
+    final buffer = BytesBuilder();
+    
+    // 消息类型
+    buffer.addByte((type.value >> 8) & 0xFF);
+    buffer.addByte(type.value & 0xFF);
+    
+    // 消息长度（不包括头部20字节）
+    final attributesLength = attributes.values
+        .fold<int>(0, (sum, attr) => sum + 4 + attr.length + (4 - attr.length % 4) % 4);
+    
+    buffer.addByte((attributesLength >> 8) & 0xFF);
+    buffer.addByte(attributesLength & 0xFF);
+    
+    // 魔术Cookie (RFC 5389)
+    final magicCookie = Uint8List.fromList([0x21, 0x12, 0xA4, 0x42]);
+    buffer.add(magicCookie);
+    
+    // 事务ID
+    buffer.add(transactionId);
+    
+    // 属性
+    for (final entry in attributes.entries) {
+      final attrType = entry.key;
+      final attrValue = entry.value;
+      
+      // 属性类型
+      buffer.addByte((attrType.value >> 8) & 0xFF);
+      buffer.addByte(attrType.value & 0xFF);
+      
+      // 属性长度
+      buffer.addByte((attrValue.length >> 8) & 0xFF);
+      buffer.addByte(attrValue.length & 0xFF);
+      
+      // 属性值
+      buffer.add(attrValue);
+      
+      // 填充到4字节边界
+      final padding = (4 - attrValue.length % 4) % 4;
+      if (padding > 0) {
+        buffer.add(Uint8List(padding));
+      }
+    }
+    
+    return buffer.toBytes();
   }
 
   static bool isValidMagicCookie(Uint8List cookie) {

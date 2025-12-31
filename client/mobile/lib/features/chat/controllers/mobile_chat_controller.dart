@@ -1,13 +1,15 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_base/chat/chat.dart';
 import 'package:peers_touch_base/chat/services/chat_core_service.dart';
-import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
-import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
+import 'package:peers_touch_base/network/rtc/rtc_client.dart';
+import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 
 /// 移动端聊天控制器
 /// 针对移动端UI特点进行优化，支持页面导航和触摸交互
 class MobileChatController extends GetxController {
+  
+  MobileChatController(this._chatCoreService);
   final ChatCoreService _chatCoreService;
   
   // RTC Client
@@ -27,8 +29,6 @@ class MobileChatController extends GetxController {
   final RxString selfPeerId = ''.obs;
   final RxString selfRole = 'mobile'.obs;
   final RxList<String> selfAddrs = <String>[].obs;
-  
-  MobileChatController(this._chatCoreService);
 
   @override
   void onInit() {

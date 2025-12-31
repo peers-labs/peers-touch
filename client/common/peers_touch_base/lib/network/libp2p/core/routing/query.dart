@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 
-import '../peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
 /// QueryEventType indicates the query event's type.
 enum QueryEventType {
@@ -36,6 +36,14 @@ const int queryEventBufferSize = 16;
 
 /// QueryEvent is emitted for every notable event that happens during a DHT query.
 class QueryEvent {
+
+  /// Creates a new query event.
+  QueryEvent({
+    required this.id,
+    required this.type,
+    this.responses,
+    this.extra,
+  });
   /// The peer ID associated with this event.
   final PeerId id;
   
@@ -47,14 +55,6 @@ class QueryEvent {
   
   /// Extra information about this event.
   final String? extra;
-
-  /// Creates a new query event.
-  QueryEvent({
-    required this.id,
-    required this.type,
-    this.responses,
-    this.extra,
-  });
   
   /// Creates a JSON representation of this event.
   Map<String, dynamic> toJson() {
@@ -81,11 +81,11 @@ class QueryEvent {
 
 /// A class to manage query event subscriptions.
 class QueryEventManager {
-  /// The stream controller for query events.
-  final StreamController<QueryEvent> _controller;
   
   /// Creates a new query event manager.
   QueryEventManager() : _controller = StreamController<QueryEvent>.broadcast();
+  /// The stream controller for query events.
+  final StreamController<QueryEvent> _controller;
   
   /// Gets the stream of query events.
   Stream<QueryEvent> get events => _controller.stream;

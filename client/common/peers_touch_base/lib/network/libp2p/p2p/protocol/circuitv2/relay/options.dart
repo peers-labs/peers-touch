@@ -6,13 +6,13 @@ import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/relay/res
 
 /// Options for the relay service.
 class RelayOptions {
-  /// The resources for the relay service.
-  Resources _resources;
 
   /// Creates new relay options.
   RelayOptions({
     Resources? resources,
   }) : _resources = resources ?? Resources();
+  /// The resources for the relay service.
+  Resources _resources;
 }
 
 /// Option is a function that configures a RelayOptions.

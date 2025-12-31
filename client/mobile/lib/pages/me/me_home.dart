@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_mobile/components/common/floating_action_ball.dart';
-import 'package:peers_touch_mobile/pages/me/me_user_profile_header.dart';
-import 'package:peers_touch_mobile/pages/me/me_services_section.dart';
-import 'package:peers_touch_mobile/pages/me/me_features_section.dart';
-import 'package:peers_touch_mobile/pages/me/me_settings_section.dart';
 import 'package:peers_touch_mobile/controller/me_controller.dart';
+import 'package:peers_touch_mobile/pages/me/me_features_section.dart';
+import 'package:peers_touch_mobile/pages/me/me_services_section.dart';
+import 'package:peers_touch_mobile/pages/me/me_settings_section.dart';
+import 'package:peers_touch_mobile/pages/me/me_user_profile_header.dart';
 
 class MeHomePage extends StatelessWidget {
   MeHomePage({super.key}) {

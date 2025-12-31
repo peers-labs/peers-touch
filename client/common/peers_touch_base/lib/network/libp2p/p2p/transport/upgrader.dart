@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
-import '../../core/multiaddr.dart';
-import '../../core/network/transport_conn.dart';
-import '../../core/network/conn.dart'; // For returning the final Conn
-import '../../config/config.dart'; // To access security and muxer configurations
+import 'package:peers_touch_base/network/libp2p/config/config.dart'; // To access security and muxer configurations
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart'; // For returning the final Conn
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
 // UpgradeProtocol might still be useful for representing choices,
 // but BasicUpgrader won't manage a list of them directly for its own negotiation.
@@ -12,16 +12,16 @@ import '../../config/config.dart'; // To access security and muxer configuration
 // For now, let's keep it if it's used by other parts, or remove if truly unused later.
 /// Represents a protocol that can be negotiated during connection upgrade
 class UpgradeProtocol {
-  /// The protocol identifier (e.g., '/noise', '/tls/1.0.0', '/yamux/1.0.0')
-  final String id;
-
-  /// The priority of this protocol (higher numbers = higher priority)
-  final int priority;
 
   const UpgradeProtocol({
     required this.id,
     this.priority = 0,
   });
+  /// The protocol identifier (e.g., '/noise', '/tls/1.0.0', '/yamux/1.0.0')
+  final String id;
+
+  /// The priority of this protocol (higher numbers = higher priority)
+  final int priority;
 
   @override
   String toString() => id;

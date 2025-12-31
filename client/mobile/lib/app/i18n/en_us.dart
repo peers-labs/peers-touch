@@ -1,4 +1,4 @@
-import 'locale_keys.dart';
+import 'package:peers_touch_mobile/app/i18n/locale_keys.dart';
 
 final Map<String, String> enUS = <String, String>{
   LocaleKeys.appTitle: 'Peers Touch',

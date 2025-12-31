@@ -142,7 +142,7 @@ class CreateProviderForm extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Obx(() => DropdownButtonFormField<RequestFormatType>(
-            value: controller.requestFormat.value,
+            initialValue: controller.requestFormat.value,
             decoration: UIKit.inputDecoration(context).copyWith(
               hintText: hint,
             ),
@@ -181,7 +181,6 @@ class CreateProviderForm extends StatelessWidget {
 
   Widget _buildSvgPicker(BuildContext context, CreateProviderController controller) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context)!;
     final options = const [
       'openai.svg',
       'openai-text.svg',

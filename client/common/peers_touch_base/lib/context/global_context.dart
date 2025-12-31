@@ -1,5 +1,5 @@
-import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
 import 'package:peers_touch_base/model/domain/actor/preferences.pb.dart';
+import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
 
 /// Global Application Context (single source of truth)
 ///

@@ -1,4 +1,5 @@
 /// Enums and classes for NAT behavior discovery as defined in RFC 5780.
+library;
 
 /// NAT mapping behavior as defined in RFC 5780.
 /// 
@@ -46,6 +47,15 @@ enum NatFilteringBehavior {
 
 /// Comprehensive NAT behavior information
 class NatBehavior {
+  
+  NatBehavior({
+    this.mappingBehavior = NatMappingBehavior.unknown,
+    this.filteringBehavior = NatFilteringBehavior.unknown,
+    this.supportsHairpinning,
+    this.preservesPorts,
+    this.supportsPortMapping,
+    this.mappingLifetime,
+  });
   /// The NAT mapping behavior
   final NatMappingBehavior mappingBehavior;
   
@@ -63,15 +73,6 @@ class NatBehavior {
   
   /// The mapping lifetime in seconds (if known)
   final int? mappingLifetime;
-  
-  NatBehavior({
-    this.mappingBehavior = NatMappingBehavior.unknown,
-    this.filteringBehavior = NatFilteringBehavior.unknown,
-    this.supportsHairpinning,
-    this.preservesPorts,
-    this.supportsPortMapping,
-    this.mappingLifetime,
-  });
   
   /// Returns a string representation of the NAT behavior
   @override

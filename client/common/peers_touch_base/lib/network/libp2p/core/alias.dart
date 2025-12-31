@@ -2,13 +2,17 @@
 ///
 /// This file provides type aliases for the core libp2p types, similar to the Go implementation.
 /// These aliases make it easier to use these types without having to import multiple packages.
+library;
 
 
 /// Multiaddr aliases the Multiaddr type.
 ///
 /// Refer to the docs on that type for more info.
 export 'multiaddr.dart' show MultiAddr;
-
+/// PeerAddrInfo aliases AddrInfo.
+///
+/// Refer to the docs on that type for more info.
+export 'peer/addr_info.dart' show AddrInfo;
 /// PeerID aliases PeerId.
 ///
 /// Refer to the docs on that type for more info.
@@ -17,11 +21,6 @@ export 'multiaddr.dart' show MultiAddr;
 ///
 /// Refer to the docs on that type for more info.
 export 'protocol/protocol.dart' show ProtocolID;
-
-/// PeerAddrInfo aliases AddrInfo.
-///
-/// Refer to the docs on that type for more info.
-export 'peer/addr_info.dart' show AddrInfo;
 
 
 

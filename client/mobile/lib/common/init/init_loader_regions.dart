@@ -5,11 +5,6 @@ import 'package:peers_touch_mobile/common/logger/logger.dart';
 
 /// Region data model for country information
 class RegionData {
-  final String name;
-  final String code;
-  final String? flagUrl;
-  final String? capital;
-  final String? region;
   
   const RegionData({
     required this.name,
@@ -28,6 +23,11 @@ class RegionData {
       region: json['region'],
     );
   }
+  final String name;
+  final String code;
+  final String? flagUrl;
+  final String? capital;
+  final String? region;
 }
 
 /// Interface for loading region data

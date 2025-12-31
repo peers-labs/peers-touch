@@ -6,9 +6,9 @@ import 'package:peers_touch_base/network/dio/http_service.dart';
 /// AI Box Service - RPC风格客户端
 /// 提供简单的RPC风格接口，底层基于dio客户端
 class AiBoxService {
-  final IHttpService _httpService;
   
   AiBoxService({required IHttpService httpService}) : _httpService = httpService;
+  final IHttpService _httpService;
 
   /// 创建Provider
   /// 使用ProviderInfo作为参数，简化调用

@@ -1,8 +1,6 @@
 import 'dart:async';
 
 import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
@@ -10,6 +8,12 @@ import 'package:peers_touch_base/network/libp2p/p2p/transport/connection_state.d
 
 /// Manages the lifecycle of connections
 class ConnectionManager implements ConnManager {
+
+  /// Creates a new connection manager
+  ConnectionManager({
+    this.idleTimeout = const Duration(minutes: 5),
+    this.shutdownTimeout = const Duration(seconds: 30),
+  });
   final _connections = <TransportConn, ConnectionState>{};
   final _stateControllers = <TransportConn, StreamController<ConnectionStateChange>>{};
   final _lastActivity = <TransportConn, DateTime>{};
@@ -20,7 +24,7 @@ class ConnectionManager implements ConnManager {
   final _protections = <PeerId, Set<String>>{};
 
   /// Custom notifiee for connection events
-  final _notifiee = NotifyBundle();
+  static const _notifiee = NotifyBundle();
 
   /// Duration after which an idle connection is considered stale
   final Duration idleTimeout;
@@ -30,13 +34,8 @@ class ConnectionManager implements ConnManager {
 
   int get activeConnections => _connections.values.where((state) => state == ConnectionState.active).length;
 
-  /// Creates a new connection manager
-  ConnectionManager({
-    this.idleTimeout = const Duration(minutes: 5),
-    this.shutdownTimeout = const Duration(seconds: 30),
-  });
-
   /// Registers a new connection with the manager
+  @override
   void registerConnection(TransportConn connection) {
     print('Registering connection: $connection');
     if (_connections.containsKey(connection)) {
@@ -56,6 +55,7 @@ class ConnectionManager implements ConnManager {
   }
 
   /// Updates the state of a connection
+  @override
   void updateState(TransportConn connection, ConnectionState newState, {Object? error}) {
     print('Updating state for connection: $connection to $newState');
     final currentState = _connections[connection];
@@ -92,6 +92,7 @@ class ConnectionManager implements ConnManager {
   }
 
   /// Records activity on a connection
+  @override
   void recordActivity(TransportConn connection) {
     if (!_connections.containsKey(connection)) {
       throw StateError('Connection not registered with manager');
@@ -107,14 +108,17 @@ class ConnectionManager implements ConnManager {
   }
 
   /// Gets the current state of a connection
+  @override
   ConnectionState? getState(TransportConn connection) => _connections[connection];
 
   /// Gets the stream of state changes for a connection
+  @override
   Stream<ConnectionStateChange>? getStateStream(TransportConn connection) {
     return _stateControllers[connection]?.stream;
   }
 
   /// Initiates graceful shutdown of a connection
+  @override
   Future<void> closeConnection(TransportConn connection) async {
     final state = _connections[connection];
     if (state == null) {
@@ -226,6 +230,7 @@ class ConnectionManager implements ConnManager {
   }
 
   /// Disposes of the connection manager and releases all resources
+  @override
   Future<void> dispose() async {
     await closeAll();
     for (final controller in _stateControllers.values) {

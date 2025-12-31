@@ -13,6 +13,22 @@ import 'dart:typed_data';
 /// │                    Payload (Length bytes)                  │
 /// └─────────────────────────────────────────────────────────────┘
 class OBPFrame {
+  
+  const OBPFrame({
+    this.version = VERSION,
+    required this.type,
+    this.flags = OBPFlags.none,
+    required this.streamId,
+    required this.payload,
+  });
+  
+  /// Create frame with empty payload
+  OBPFrame.empty({
+    this.version = VERSION,
+    required this.type,
+    this.flags = OBPFlags.none,
+    required this.streamId,
+  }) : payload = Uint8List(0);
   /// Protocol magic number: "OVND" in ASCII
   static const int MAGIC = 0x4F564E44;
   
@@ -30,22 +46,6 @@ class OBPFrame {
   final OBPFlags flags;
   final int streamId;
   final Uint8List payload;
-  
-  const OBPFrame({
-    this.version = VERSION,
-    required this.type,
-    this.flags = OBPFlags.none,
-    required this.streamId,
-    required this.payload,
-  });
-  
-  /// Create frame with empty payload
-  OBPFrame.empty({
-    this.version = VERSION,
-    required this.type,
-    this.flags = OBPFlags.none,
-    required this.streamId,
-  }) : payload = Uint8List(0);
   
   /// Get payload length
   int get length => payload.length;
@@ -236,7 +236,7 @@ enum OBPMessageType {
   }
   
   @override
-  String toString() => 'OBPMessageType.${name}(0x${value.toRadixString(16)})';
+  String toString() => 'OBPMessageType.$name(0x${value.toRadixString(16)})';
 }
 
 /// OBP Control Flags

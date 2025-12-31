@@ -1,7 +1,6 @@
 import 'dart:io';
-import 'dart:typed_data';
-import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 /// STUN message types as defined in RFC 5389
 class StunMessageType {
@@ -29,12 +28,12 @@ class StunAttribute {
 }
 
 class StunMessage {
+
+  StunMessage(this.type, this.transactionId, this.attributes);
   static const magicCookie = 0x2112A442;
   final int type;
   final List<int> transactionId;
   final Map<int, Uint8List> attributes;
-
-  StunMessage(this.type, this.transactionId, this.attributes);
 
   /// Creates a binding request message
   static StunMessage createBindingRequest() {

@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:peers_touch_base/chat/services/p2p_chat_protocol.dart';
 import 'package:peers_touch_base/network/libp2p/config/config.dart';
 import 'package:peers_touch_base/network/libp2p/config/defaults.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as ed;
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
-import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as ed;
-import 'package:peers_touch_base/chat/services/p2p_chat_protocol.dart';
 
 void main() async {
   final serverUrl = Platform.environment['CHAT_SIGNAL_URL'] ?? 'http://127.0.0.1:8080';

@@ -1,6 +1,5 @@
-import 'dart:async';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart' show Reachability; // For Reachability enum
-import './pb/autonat.pb.dart' as pb; // For pb.Message_ResponseStatus
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/pb/autonat.pb.dart' as pb; // For pb.Message_ResponseStatus
 
 abstract class MetricsTracer {
   void reachabilityStatus(Reachability status);
@@ -12,9 +11,9 @@ abstract class MetricsTracer {
 }
 
 // Reasons for dial refusal, from Go's metrics.go
-const String dialRefusedReasonRateLimited = "rate limited";
-const String dialRefusedReasonDialBlocked = "dial blocked";
-const String dialRefusedReasonNoValidAddress = "no valid address";
+const String dialRefusedReasonRateLimited = 'rate limited';
+const String dialRefusedReasonDialBlocked = 'dial blocked';
+const String dialRefusedReasonNoValidAddress = 'no valid address';
 
 class NoOpMetricsTracer implements MetricsTracer {
   @override

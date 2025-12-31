@@ -5,48 +5,45 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/protocol/identify/id.go
 /// to Dart, using native Dart idioms.
+library;
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io'; // Added for IOException
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/alias.dart';
+import 'package:peers_touch_base/network/libp2p/core/certified_addr_book.dart';
 import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' as crypto;
+import 'package:peers_touch_base/network/libp2p/core/event/addrs.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/identify.dart';
+import 'package:peers_touch_base/network/libp2p/core/event/protocol.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/peerstore.dart';
-import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay.dart'; // For EvtAutoRelayAddrsUpdated
-import 'package:logging/logging.dart';
-import 'package:synchronized/synchronized.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/multistream.dart'; // Added import
-
-import 'package:peers_touch_base/network/libp2p/core/certified_addr_book.dart';
-import 'package:peers_touch_base/network/libp2p/core/event/addrs.dart';
-import 'package:peers_touch_base/network/libp2p/core/event/protocol.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/pb/peer_record.pb.dart' as pr;
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/record.dart';
 import 'package:peers_touch_base/network/libp2p/core/record/envelope.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay.dart'; // For EvtAutoRelayAddrsUpdated
 import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/peerstore.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/id_service.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/metrics.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/nat_emitter.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/observed_addr_manager.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/options.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/pb/identify.pb.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/pb/peer_record.pb.dart' as pr;
-import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' as crypto;
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/user_agent.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/multistream.dart'; // Added import
+import 'package:synchronized/synchronized.dart';
 
 // TTL constants from peerstore.dart
 const RecentlyConnectedAddrTTL = AddressTTL.recentlyConnectedAddrTTL;
@@ -55,8 +52,8 @@ const TempAddrTTL = AddressTTL.tempAddrTTL;
 
 // Exception for stream closed
 class StreamClosedException implements Exception {
-  final String message;
   const StreamClosedException([this.message = 'stream closed']);
+  final String message;
   @override
   String toString() => 'StreamClosedException: $message';
 }
@@ -87,6 +84,14 @@ const connectedPeerMaxAddrs = 500;
 
 /// A snapshot of the identify information for a peer
 class IdentifySnapshot {
+
+  /// Creates a new identify snapshot
+  IdentifySnapshot({
+    required int seq,
+    required this.protocols,
+    required this.addrs,
+    this.record,
+  }) : _seq = seq;
   /// Sequence number for this snapshot
   int _seq;
 
@@ -98,14 +103,6 @@ class IdentifySnapshot {
 
   /// Signed peer record
   final dynamic record;
-
-  /// Creates a new identify snapshot
-  IdentifySnapshot({
-    required int seq,
-    required this.protocols,
-    required this.addrs,
-    this.record,
-  }) : _seq = seq;
 
   /// Returns true if this snapshot is equal to another snapshot
   Future<bool> equals(IdentifySnapshot other) async {
@@ -200,6 +197,24 @@ class Entry {
 
 /// Implementation of the identify service
 class IdentifyService implements IDService {
+
+  /// Creates a new identify service
+  IdentifyService(this.host, {
+    IdentifyOptions? options,
+  }) : 
+    userAgent = options?.userAgent ?? defaultUserAgent,
+    protocolVersion = options?.protocolVersion ?? '0.0.1',
+    metricsTracer = options?.metricsTracer,
+    disableSignedPeerRecord = options?.disableSignedPeerRecord ?? false,
+    disableObservedAddrManager = options?.disableObservedAddrManager ?? false {
+
+    // Set up observed address manager if enabled
+    if (!disableObservedAddrManager) {
+      _setupObservedAddrManager();
+    }
+
+    // Initialize event emitters in start() method
+  }
   /// The host this service is running on
   final Host host;
 
@@ -258,24 +273,6 @@ class IdentifyService implements IDService {
   final _pushOperationsMutex = Lock();
   bool _shutdownInProgress = false;
 
-  /// Creates a new identify service
-  IdentifyService(this.host, {
-    IdentifyOptions? options,
-  }) : 
-    userAgent = options?.userAgent ?? defaultUserAgent,
-    protocolVersion = options?.protocolVersion ?? '0.0.1',
-    metricsTracer = options?.metricsTracer,
-    disableSignedPeerRecord = options?.disableSignedPeerRecord ?? false,
-    disableObservedAddrManager = options?.disableObservedAddrManager ?? false {
-
-    // Set up observed address manager if enabled
-    if (!disableObservedAddrManager) {
-      _setupObservedAddrManager();
-    }
-
-    // Initialize event emitters in start() method
-  }
-
   void _setupObservedAddrManager() {
     // Create observed address manager
     _observedAddrMgr = ObservedAddrManager(
@@ -316,7 +313,7 @@ class IdentifyService implements IDService {
   Future<void> _startEventLoop() async {
     _log.fine('IdentifyService._startEventLoop: Starting event loop.');
     // Subscribe to events
-    _eventBusSubscription = await host.eventBus.subscribe([
+    _eventBusSubscription = host.eventBus.subscribe([
       EvtLocalProtocolsUpdated,
       EvtLocalAddressesUpdated,
       EvtAutoRelayAddrsUpdated,
@@ -606,7 +603,7 @@ class IdentifyService implements IDService {
         return;
       }
       await sendIdentifyResp(stream, true);
-    } catch (e, st) {
+    } catch (e) {
       // Comprehensive error isolation to prevent session-level cascades
       final errorStr = e.toString();
       
@@ -673,7 +670,7 @@ class IdentifyService implements IDService {
       final negotiateStart = DateTime.now();
 
       final protocolMuxer = host.mux as MultistreamMuxer;
-      final selectedProtocol = await protocolMuxer.selectOneOf(stream, [protoIDString as ProtocolID]);
+      final selectedProtocol = await protocolMuxer.selectOneOf(stream, [protoIDString]);
       final negotiateDuration = DateTime.now().difference(negotiateStart);
 
       // DEBUG: Log protocol negotiation result
@@ -772,7 +769,7 @@ class IdentifyService implements IDService {
         mes.signedPeerRecord = signedRecordBytes.toList(); 
         _log.finer('IdentifyService.sendIdentifyResp: Added signed peer record (${mes.signedPeerRecord.length} bytes) to response for $peer.');
       } else {
-        _log.warning("IdentifyService.sendIdentifyResp: No Signed record was found or could be marshalled. This could cause problems.");
+        _log.warning('IdentifyService.sendIdentifyResp: No Signed record was found or could be marshalled. This could cause problems.');
         // mes.signedPeerRecord will remain empty by default
       }
       
@@ -873,11 +870,7 @@ class IdentifyService implements IDService {
 
     try {
       // Now actualRecord is confirmed to be an Envelope
-      final marshalledRecord = await actualRecord.marshal(); // Envelope.marshal() is async
-      if (marshalledRecord == null) { // Check if marshal itself returned null
-          _log.warning('IdentifyService._getSignedRecord: Marshalled record is null.');
-          return null;
-      }
+      final marshalledRecord = await actualRecord.marshal();
       _log.finer('IdentifyService._getSignedRecord: Marshalled signed record successfully (${marshalledRecord.length} bytes).');
       return marshalledRecord;
     } catch (e, st) {
@@ -914,7 +907,7 @@ class IdentifyService implements IDService {
   // Made public for testing
   Future<void> handleIdentifyResponse(P2PStream stream, bool isPush) async {
     final peer = stream.conn.remotePeer;
-    final String side = stream.conn.localPeer == host.id ? "CLIENT" : "SERVER";
+    final String side = stream.conn.localPeer == host.id ? 'CLIENT' : 'SERVER';
     final handleStart = DateTime.now();
 
     
@@ -926,7 +919,7 @@ class IdentifyService implements IDService {
     } catch (e) {
       _log.warning(' [HANDLE-IDENTIFY-RESPONSE-PHASE-1-ERROR] ($side) Error attaching stream to identify service for peer=$peer: $e. Resetting stream.');
       await stream.reset();
-      throw e;
+      rethrow;
     }
     
     try {
@@ -937,7 +930,7 @@ class IdentifyService implements IDService {
     } catch (e) {
       _log.warning(' [HANDLE-IDENTIFY-RESPONSE-PHASE-2-ERROR] ($side) Error reserving memory for identify stream for peer=$peer: $e. Resetting stream.');
       await stream.reset();
-      throw e;
+      rethrow;
     }
     
     try {
@@ -1040,7 +1033,7 @@ class IdentifyService implements IDService {
           break;
         }
         _log.severe(' [READ-ALL-ID-MESSAGES-CHUNK-${i+1}-UNHANDLED] Unhandled error reading message chunk from peer=$peer: $e. Rethrowing.');
-        throw e;
+        rethrow;
       }
     }
     
@@ -1242,21 +1235,21 @@ class IdentifyService implements IDService {
 
   Future<List<MultiAddr>> _consumeSignedPeerRecord(PeerId p, Envelope? signedPeerRecord) async {
     _log.finer('IdentifyService._consumeSignedPeerRecord: Consuming signed record for peer $p.');
-    if (signedPeerRecord == null || signedPeerRecord.publicKey == null) {
+    if (signedPeerRecord == null) {
       _log.warning('IdentifyService._consumeSignedPeerRecord: Missing signed peer record or public key for $p.');
-      throw Exception("missing pubkey or record");
+      throw Exception('missing pubkey or record');
     }
     PeerId id;
     try {
-      id = await PeerId.fromPublicKey(signedPeerRecord.publicKey); // Added null check operator
+      id = PeerId.fromPublicKey(signedPeerRecord.publicKey); // Added null check operator
       _log.finer('IdentifyService._consumeSignedPeerRecord: Derived PeerId $id from record public key for $p.');
     } catch (e) {
       _log.warning('IdentifyService._consumeSignedPeerRecord: Failed to derive peer ID from record public key for $p: $e');
-      throw Exception("failed to derive peer ID: $e");
+      throw Exception('failed to derive peer ID: $e');
     }
     if (id != p) {
       _log.warning('IdentifyService._consumeSignedPeerRecord: Signed peer record envelope for unexpected peer ID. Expected $p, got $id.');
-      throw Exception("received signed peer record envelope for unexpected peer ID. expected $p, got $id");
+      throw Exception('received signed peer record envelope for unexpected peer ID. expected $p, got $id');
     }
     pr.PeerRecord record;
     try {
@@ -1264,12 +1257,12 @@ class IdentifyService implements IDService {
       _log.finer('IdentifyService._consumeSignedPeerRecord: Obtained record from envelope for $p.');
     } catch (e) {
       _log.warning('IdentifyService._consumeSignedPeerRecord: Failed to obtain record from envelope for $p: $e');
-      throw Exception("failed to obtain record: $e");
+      throw Exception('failed to obtain record: $e');
     }
     // final peerRecord = record as PeerRecord?; // Already casted
     if (PeerId.fromBytes(Uint8List.fromList(record.peerId)) != p) { // Use 'record' directly
       _log.warning('IdentifyService._consumeSignedPeerRecord: Record peer ID mismatch. Expected $p, got ${record.peerId}.');
-      throw Exception("received signed peer record for unexpected peer ID. expected $p, got ${record.peerId}");
+      throw Exception('received signed peer record for unexpected peer ID. expected $p, got ${record.peerId}');
     }
     _log.fine('IdentifyService._consumeSignedPeerRecord: Successfully consumed signed peer record for $p. Found ${record.addresses.length} addresses.');
     return record.addresses.map((el) => MultiAddr.fromBytes(Uint8List.fromList(el.multiaddr))).toList();
@@ -1289,7 +1282,7 @@ class IdentifyService implements IDService {
     PublicKey newKey;
     try {
       final pmesg = crypto.PublicKey.fromBuffer(kb);
-      newKey = await publicKeyFromProto(pmesg);
+      newKey = publicKeyFromProto(pmesg);
       _log.finer('IdentifyService._consumeReceivedPubKey: Successfully unmarshalled public key for $rp.');
     } catch (e) {
       _log.warning('IdentifyService._consumeReceivedPubKey: $lp cannot unmarshal key from remote peer $rp: $e');
@@ -1298,7 +1291,7 @@ class IdentifyService implements IDService {
 
     PeerId np;
     try {
-      np = await PeerId.fromPublicKey(newKey); // Await this
+      np = PeerId.fromPublicKey(newKey); // Await this
       _log.finer('IdentifyService._consumeReceivedPubKey: Derived PeerId $np from received public key for $rp.');
     } catch (e) {
       _log.warning('IdentifyService._consumeReceivedPubKey: $lp cannot get peer.ID from key of remote peer $rp: $e');
@@ -1346,7 +1339,7 @@ class IdentifyService implements IDService {
     // Additional check: ensure current key in store also derives to rp
     PeerId? cp;
     try {
-      cp = await PeerId.fromPublicKey(currKey);
+      cp = PeerId.fromPublicKey(currKey);
     } catch (e) {
       _log.severe('IdentifyService._consumeReceivedPubKey: $lp cannot get peer.ID from LOCAL key of remote peer $rp: $e. This indicates peerstore corruption or a major issue.');
       return;
@@ -1532,7 +1525,7 @@ class IdentifyService implements IDService {
       
       final totalDuration = DateTime.now().difference(identifyStart);
 
-    } catch (e, st) {
+    } catch (e) {
       final duration = DateTime.now().difference(identifyStart);
       _log.severe(' [IDENTIFY-CONN-ERROR] peer=$peerId, error=$e, duration=${duration.inMilliseconds}ms, stream_state=${stream?.isClosed ?? 'null'}');
       
@@ -1650,13 +1643,13 @@ class IdentifyService implements IDService {
 }
 
 /// Helper class for limiting concurrency
-class Semaphore {
+class Semaphore { // Specific logger for semaphore
+
+  Semaphore(this._maxConcurrency);
   final int _maxConcurrency;
   int _current = 0;
   final _queue = <Completer<void>>[];
-  final _log = Logger('identify.semaphore'); // Specific logger for semaphore
-
-  Semaphore(this._maxConcurrency);
+  final _log = Logger('identify.semaphore');
 
   Future<void> acquire() async {
     _log.finest('Semaphore.acquire: Attempting to acquire. Current: $_current, Max: $_maxConcurrency, Queue: ${_queue.length}');
@@ -1684,11 +1677,11 @@ class Semaphore {
 }
 
 /// Network notifiee for the identify service
-class _NetNotifiee implements Notifiee {
-  final IdentifyService _ids;
-  final _log = Logger('identify.notifiee'); // Specific logger for notifiee
+class _NetNotifiee implements Notifiee { // Specific logger for notifiee
 
   _NetNotifiee(this._ids);
+  final IdentifyService _ids;
+  final _log = Logger('identify.notifiee');
 
   @override
   Future<void> connected(Network network, Conn conn) async {

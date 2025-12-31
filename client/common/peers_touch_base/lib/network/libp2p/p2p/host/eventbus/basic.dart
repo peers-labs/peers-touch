@@ -2,20 +2,17 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/host/eventbus/basic.go
 /// to Dart, using native Dart idioms like Stream Controllers instead of Go channels.
+library;
 
 import 'dart:async';
 
+import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/eventbus/metrics.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/eventbus/opts.dart';
 import 'package:synchronized/synchronized.dart';
-
-import '../../../core/event/bus.dart';
-import 'opts.dart';
-import 'metrics.dart';
 
 /// BasicBus is a type-based event delivery system
 class BasicBus implements EventBus {
-  final Map<String, _Node> _nodes = {};
-  final _WildcardNode _wildcard = _WildcardNode();
-  MetricsTracer? _metricsTracer;
 
   /// Creates a new BasicBus with the given options
   BasicBus({List<BusOption>? options}) : _metricsTracer = null {
@@ -25,6 +22,9 @@ class BasicBus implements EventBus {
       }
     }
   }
+  final Map<String, _Node> _nodes = {};
+  final _WildcardNode _wildcard = _WildcardNode();
+  MetricsTracer? _metricsTracer;
 
   /// Sets the metrics tracer for this bus
   void setMetricsTracer(MetricsTracer tracer) {
@@ -178,12 +178,6 @@ class BasicBus implements EventBus {
 }
 
 class _Emitter implements Emitter {
-  final _Node node;
-  final String type;
-  final Future<void> Function(String) dropper;
-  final _WildcardNode wildcard;
-  final MetricsTracer? metricsTracer;
-  bool _closed = false;
 
   _Emitter({
     required this.node,
@@ -192,6 +186,12 @@ class _Emitter implements Emitter {
     required this.wildcard,
     this.metricsTracer,
   });
+  final _Node node;
+  final String type;
+  final Future<void> Function(String) dropper;
+  final _WildcardNode wildcard;
+  final MetricsTracer? metricsTracer;
+  bool _closed = false;
 
   @override
   Future<void> emit(Object event) async {
@@ -226,21 +226,13 @@ class _Emitter implements Emitter {
 }
 
 class _NamedSink {
-  final StreamController<Object> controller;
-  final String name;
 
   _NamedSink({required this.controller, required this.name});
+  final StreamController<Object> controller;
+  final String name;
 }
 
 class _WildcardSubscription implements Subscription {
-  final StreamController<Object> _controller;
-  @override
-  Stream<Object> get stream => _controller.stream.asBroadcastStream();
-  final _WildcardNode node;
-  final String name;
-  final MetricsTracer? metricsTracer;
-  bool _closed = false;
-  final Lock _closeLock = Lock();
 
   _WildcardSubscription({
     required StreamController<Object> controller,
@@ -248,6 +240,15 @@ class _WildcardSubscription implements Subscription {
     required this.name,
     this.metricsTracer,
   }) : _controller = controller;
+  final StreamController<Object> _controller;
+  @override
+  Stream<Object> get stream => _controller.stream.asBroadcastStream();
+  final _WildcardNode node;
+  @override
+  final String name;
+  final MetricsTracer? metricsTracer;
+  bool _closed = false;
+  final Lock _closeLock = Lock();
 
   @override
   Future<void> close() async {
@@ -268,6 +269,16 @@ class _WildcardSubscription implements Subscription {
 }
 
 class _Subscription implements Subscription {
+
+  _Subscription({
+    required StreamController<Object> controller,
+    required this.nodes,
+    required List<Future<void>> pendingOps,
+    required this.dropper,
+    required this.name,
+    this.metricsTracer,
+  })  : _controller = controller,
+        _pendingOps = pendingOps;
   final StreamController<Object> _controller;
   @override
   Stream<Object> get stream => _controller.stream.asBroadcastStream();
@@ -280,16 +291,6 @@ class _Subscription implements Subscription {
   bool _closed = false;
   bool _initializationComplete = false;
   final Lock _closeLock = Lock();
-
-  _Subscription({
-    required StreamController<Object> controller,
-    required this.nodes,
-    required List<Future<void>> pendingOps,
-    required this.dropper,
-    required this.name,
-    this.metricsTracer,
-  })  : _controller = controller,
-        _pendingOps = pendingOps;
 
   Future<void> _ensureInitialized() async {
     if (!_initializationComplete) {
@@ -332,6 +333,8 @@ class _Subscription implements Subscription {
 }
 
 class _Node {
+
+  _Node({required this.type, this.metricsTracer});
   final Lock lock = Lock();
   final String type;
   final List<_NamedSink> sinks = [];
@@ -340,8 +343,6 @@ class _Node {
   int nEmitters = 0;
   bool keepLast = false;
   Object? last;
-
-  _Node({required this.type, this.metricsTracer});
 
   Future<void> addSink(_NamedSink sink) async {
     sinks.add(sink);
@@ -372,11 +373,11 @@ class _Node {
 }
 
 class _WildcardNode {
+
+  _WildcardNode({MetricsTracer? metricsTracer}) : _metricsTracer = metricsTracer;
   final Lock lock = Lock();
   final List<_NamedSink> sinks = [];
   MetricsTracer? _metricsTracer;
-
-  _WildcardNode({MetricsTracer? metricsTracer}) : _metricsTracer = metricsTracer;
 
   Future<void> addSink(_NamedSink sink) async {
     await lock.synchronized(() async {

@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_mobile/l10n/app_localizations.dart';
-import 'package:peers_touch_mobile/components/common/floating_action_ball.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
+import 'package:peers_touch_mobile/components/common/floating_action_ball.dart';
+import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 import 'package:peers_touch_mobile/pages/chat/chat_detail_page.dart';
-import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
 import 'package:peers_touch_mobile/pages/chat/chat_friend_list_item.dart';
 import 'package:peers_touch_mobile/pages/chat/chat_search_bar.dart';
+import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
 import 'package:peers_touch_mobile/utils/app_localizations_helper.dart';
 
 class ChatListPage extends StatefulWidget {
+
+  const ChatListPage({super.key});
   static final List<FloatingActionOption> actionOptions = [
     FloatingActionOption(
       icon: Icons.group_add,
@@ -27,8 +29,6 @@ class ChatListPage extends StatefulWidget {
       onPressed: () => appLogger.info('Add Contact pressed'),
     ),
   ];
-
-  const ChatListPage({super.key});
 
   @override
   State<ChatListPage> createState() => _ChatListPageState();

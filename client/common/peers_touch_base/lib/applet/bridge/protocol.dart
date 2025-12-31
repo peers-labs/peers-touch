@@ -1,9 +1,5 @@
 
 class BridgeMessage {
-  final String module;
-  final String action;
-  final Map<String, dynamic> params;
-  final String? callbackId;
 
   BridgeMessage({
     required this.module,
@@ -20,6 +16,10 @@ class BridgeMessage {
       callbackId: map['callbackId'] as String?,
     );
   }
+  final String module;
+  final String action;
+  final Map<String, dynamic> params;
+  final String? callbackId;
 
   Map<String, dynamic> toMap() {
     return {
@@ -32,23 +32,12 @@ class BridgeMessage {
 }
 
 class BridgeResponse {
-  final bool success;
-  final dynamic data;
-  final String? error;
 
   BridgeResponse({
     required this.success,
     this.data,
     this.error,
   });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'success': success,
-      'data': data,
-      'error': error,
-    };
-  }
   
   factory BridgeResponse.success(dynamic data) {
     return BridgeResponse(success: true, data: data);
@@ -56,5 +45,16 @@ class BridgeResponse {
 
   factory BridgeResponse.failure(String error) {
     return BridgeResponse(success: false, error: error);
+  }
+  final bool success;
+  final dynamic data;
+  final String? error;
+
+  Map<String, dynamic> toMap() {
+    return {
+      'success': success,
+      'data': data,
+      'error': error,
+    };
   }
 }

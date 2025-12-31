@@ -1,6 +1,7 @@
 /// Options for routing operations.
 ///
 /// This file is ported from go-libp2p/core/routing/options.go
+library;
 
 /// A function that modifies routing options.
 typedef Option = Function(RoutingOptions options);

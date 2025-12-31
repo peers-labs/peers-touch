@@ -1,11 +1,11 @@
 import 'package:get/get.dart';
-import '../pages/chat/models/friend_model.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
+import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
 
 class FriendsController extends GetxController {
-  static final FriendsController _instance = FriendsController._internal();
   factory FriendsController() => _instance;
   FriendsController._internal();
+  static final FriendsController _instance = FriendsController._internal();
 
   // Mock friends data - in a real app, this would come from a database or API
   final List<FriendModel> _allFriends = [

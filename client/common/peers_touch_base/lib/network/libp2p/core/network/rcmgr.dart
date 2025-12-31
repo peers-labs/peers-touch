@@ -1,19 +1,13 @@
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart'; // Provides concrete PeerId
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart'; // Provides concrete PeerId
+import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
 // conn.dart is not directly used by interfaces here, but might be by implementations
 
 // --- New/Explicit Definitions Start ---
 
 /// ScopeStat is a struct containing resource accounting information.
-class ScopeStat {
-  final int numStreamsInbound;
-  final int numStreamsOutbound;
-  final int numConnsInbound;
-  final int numConnsOutbound;
-  final int numFD;
-  final int memory; // Dart's int handles arbitrary precision, similar to Go's int64
+class ScopeStat { // Dart's int handles arbitrary precision, similar to Go's int64
 
   const ScopeStat({
     this.numStreamsInbound = 0,
@@ -23,6 +17,12 @@ class ScopeStat {
     this.numFD = 0,
     this.memory = 0,
   });
+  final int numStreamsInbound;
+  final int numStreamsOutbound;
+  final int numConnsInbound;
+  final int numConnsOutbound;
+  final int numFD;
+  final int memory;
 }
 
 /// ResourceScope is the interface for all scopes.

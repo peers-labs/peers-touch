@@ -2,15 +2,27 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/core/event/identify.go
 /// to Dart, using native Dart idioms.
-
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+library;
 
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
 
 /// EvtPeerIdentificationCompleted is emitted when the initial identification round for a peer is completed.
 class EvtPeerIdentificationCompleted {
+
+  /// Creates a new EvtPeerIdentificationCompleted event.
+  EvtPeerIdentificationCompleted({
+    required this.peer,
+    required this.conn,
+    required this.listenAddrs,
+    required this.protocols,
+    this.signedPeerRecord,
+    required this.agentVersion,
+    required this.protocolVersion,
+    this.observedAddr,
+  });
   /// Peer is the ID of the peer whose identification succeeded.
   final PeerId peer;
 
@@ -43,24 +55,18 @@ class EvtPeerIdentificationCompleted {
 
   @override
   String toString() {
-    return "EvtPeerIdentificationCompleted";
+    return 'EvtPeerIdentificationCompleted';
   }
-
-  /// Creates a new EvtPeerIdentificationCompleted event.
-  EvtPeerIdentificationCompleted({
-    required this.peer,
-    required this.conn,
-    required this.listenAddrs,
-    required this.protocols,
-    this.signedPeerRecord,
-    required this.agentVersion,
-    required this.protocolVersion,
-    this.observedAddr,
-  });
 }
 
 /// EvtPeerIdentificationFailed is emitted when the initial identification round for a peer failed.
 class EvtPeerIdentificationFailed {
+
+  /// Creates a new EvtPeerIdentificationFailed event.
+  EvtPeerIdentificationFailed({
+    required this.peer,
+    required this.reason,
+  });
   /// Peer is the ID of the peer whose identification failed.
   final PeerId peer;
   
@@ -70,12 +76,6 @@ class EvtPeerIdentificationFailed {
 
   @override
   String toString() {
-    return "EvtPeerIdentificationFailed";
+    return 'EvtPeerIdentificationFailed';
   }
-
-  /// Creates a new EvtPeerIdentificationFailed event.
-  EvtPeerIdentificationFailed({
-    required this.peer,
-    required this.reason,
-  });
 }

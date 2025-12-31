@@ -9,12 +9,13 @@
 ///
 /// This is an implementation of the STOMP 1.2 specification adapted for
 /// libp2p peer-to-peer communication.
+library;
 
-export 'stomp/stomp_service.dart';
 export 'stomp/stomp_client.dart';
-export 'stomp/stomp_server.dart';
-export 'stomp/stomp_frame.dart';
 export 'stomp/stomp_constants.dart';
 export 'stomp/stomp_exceptions.dart';
+export 'stomp/stomp_frame.dart';
+export 'stomp/stomp_server.dart';
+export 'stomp/stomp_service.dart';
 export 'stomp/stomp_subscription.dart';
 export 'stomp/stomp_transaction.dart';

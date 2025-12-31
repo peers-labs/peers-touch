@@ -4,9 +4,8 @@ import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
 
-import '../../../core/interfaces.dart';
-import '../../../core/network/stream.dart';
-import '../../../core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
 final _logger = Logger('ping');
 
@@ -21,21 +20,21 @@ class PingConstants {
 
 /// Result of a ping attempt, either an RTT or an error
 class PingResult {
-  final Duration? rtt;
-  final Object? error;
 
   PingResult({this.rtt, this.error});
+  final Duration? rtt;
+  final Object? error;
 
   bool get hasError => error != null;
 }
 
 /// Service that handles ping protocol functionality
 class PingService {
-  final Host host;
 
   PingService(this.host) {
     host.setStreamHandler(PingConstants.protocolId, _pingHandler);
   }
+  final Host host;
 
   /// Handles incoming ping requests
   Future<void> _pingHandler(P2PStream stream, PeerId peerId) async {

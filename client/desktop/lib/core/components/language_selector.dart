@@ -20,7 +20,7 @@ class LanguageSelector extends StatelessWidget {
     final selectedKey = '${currentLocale.languageCode}_${currentLocale.countryCode}';
     final textStyle = theme.textTheme.bodyMedium?.copyWith(
       fontWeight: FontWeight.w500,
-      color: UIKit.textPrimary(context).withOpacity(0.85),
+      color: UIKit.textPrimary(context).withValues(alpha: 0.85),
     );
     double measureText(String s) {
       final painter = TextPainter(
@@ -106,7 +106,7 @@ class LanguageSelector extends StatelessWidget {
                   Icon(
                     Icons.translate,
                     size: 14,
-                    color: UIKit.textSecondary(context).withOpacity(0.6),
+                    color: UIKit.textSecondary(context).withValues(alpha: 0.6),
                   ),
                   const SizedBox(width: 8),
                   Text(languages[selectedKey] ?? 'English', style: textStyle),

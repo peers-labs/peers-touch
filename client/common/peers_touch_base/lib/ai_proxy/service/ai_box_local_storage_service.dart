@@ -1,15 +1,16 @@
 import 'dart:convert';
-import 'package:peers_touch_base/storage/local_storage.dart';
+
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 
 /// AI Box本地存储服务
 /// 统管管理、消息、topic等业务存储逻辑
 class AiBoxLocalStorageService {
-  final LocalStorage _localStorage;
 
   AiBoxLocalStorageService({
     LocalStorage? localStorage,
   }) : _localStorage = localStorage ?? LocalStorage();
+  final LocalStorage _localStorage;
 
   /// Provider管理相关存储方法
   
@@ -311,8 +312,8 @@ class AiBoxLocalStorageService {
 
 /// 存储异常类
 class StorageException implements Exception {
-  final String message;
   StorageException(this.message);
+  final String message;
 
   @override
   String toString() => 'StorageException: $message';

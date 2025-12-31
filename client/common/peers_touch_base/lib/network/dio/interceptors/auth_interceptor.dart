@@ -1,13 +1,13 @@
 import 'package:dio/dio.dart';
-import '../../token_provider.dart';
-import '../../token_refresher.dart';
+import 'package:peers_touch_base/network/token_provider.dart';
+import 'package:peers_touch_base/network/token_refresher.dart';
 
 class AuthInterceptor extends Interceptor {
+
+  AuthInterceptor({this.tokenProvider, this.tokenRefresher, this.onUnauthenticated});
   final TokenProvider? tokenProvider;
   final TokenRefresher? tokenRefresher;
   final void Function()? onUnauthenticated;
-
-  AuthInterceptor({this.tokenProvider, this.tokenRefresher, this.onUnauthenticated});
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {

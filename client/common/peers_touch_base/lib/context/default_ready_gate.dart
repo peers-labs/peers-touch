@@ -1,4 +1,4 @@
-import 'ready_gate.dart';
+import 'package:peers_touch_base/context/ready_gate.dart';
 
 class DefaultReadyGate implements ReadyGate {
   @override

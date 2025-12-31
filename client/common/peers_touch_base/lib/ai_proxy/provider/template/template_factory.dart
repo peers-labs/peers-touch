@@ -1,9 +1,10 @@
 import 'dart:convert';
+
+import 'package:peers_touch_base/ai_proxy/provider/template/ai_provider_template.dart';
+import 'package:peers_touch_base/ai_proxy/provider/template/ollama_template.dart';
+import 'package:peers_touch_base/ai_proxy/provider/template/openai_style_template.dart';
+import 'package:peers_touch_base/ai_proxy/provider/template/openai_template.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
-import 'ai_provider_template.dart';
-import 'openai_template.dart';
-import 'openai_style_template.dart';
-import 'ollama_template.dart';
 
 class AIProviderTemplateFactory {
   static AIProviderTemplate fromProvider(Provider p) {

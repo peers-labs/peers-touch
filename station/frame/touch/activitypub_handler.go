@@ -183,6 +183,12 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Method:    server.POST,
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
+		{
+			RouterURL: ActivityPubRouterURLObjectReplies,
+			Handler:   GetObjectReplies,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper},
+		},
 	}
 }
 
@@ -652,6 +658,40 @@ func PostSharedInbox(c context.Context, ctx *app.RequestContext) {
 	// Shared inbox usually means delivery to multiple local users.
 	// For now, return Accepted.
 	ctx.JSON(http.StatusAccepted, "Shared Inbox received (not fully implemented)")
+}
+
+func GetObjectReplies(c context.Context, ctx *app.RequestContext) {
+	objectID := ctx.Param("objectId")
+	if objectID == "" {
+		ctx.JSON(http.StatusBadRequest, "Object ID required")
+		return
+	}
+
+	page := string(ctx.Query("page")) == "true"
+	baseURL := baseURLFrom(ctx)
+
+	var afterID uint64
+	if afterStr := string(ctx.Query("after")); afterStr != "" {
+		if v, err := strconv.ParseUint(afterStr, 10, 64); err == nil {
+			afterID = v
+		}
+	}
+
+	limit := 10
+	if limitStr := string(ctx.Query("limit")); limitStr != "" {
+		if v, err := strconv.Atoi(limitStr); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	replies, err := activitypub.FetchObjectReplies(c, objectID, baseURL, page, afterID, limit)
+	if err != nil {
+		log.Warnf(c, "Failed to fetch object replies: %v", err)
+		ctx.JSON(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeActivityPubResponse(ctx, replies)
 }
 
 func CreateActivity(c context.Context, ctx *app.RequestContext) {

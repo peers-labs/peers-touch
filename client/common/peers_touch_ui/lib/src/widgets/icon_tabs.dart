@@ -1,18 +1,31 @@
 import 'package:flutter/material.dart';
 
 class IconTabItem {
-  final IconData icon;
-  final String? tooltip;
-  final bool hasBadge;
 
   const IconTabItem({
     required this.icon,
     this.tooltip,
     this.hasBadge = false,
   });
+  final IconData icon;
+  final String? tooltip;
+  final bool hasBadge;
 }
 
 class IconTabs extends StatelessWidget {
+
+  const IconTabs({
+    super.key,
+    required this.items,
+    required this.selectedIndex,
+    required this.onChanged,
+    this.decoration,
+    this.padding,
+    this.selectedIconColor,
+    this.unselectedIconColor,
+    this.selectedItemDecoration,
+    this.unselectedItemDecoration,
+  });
   final List<IconTabItem> items;
   final int selectedIndex;
   final ValueChanged<int> onChanged;
@@ -28,19 +41,6 @@ class IconTabs extends StatelessWidget {
   // 选项样式（支持选中和未选中的自定义）
   final BoxDecoration? selectedItemDecoration;
   final BoxDecoration? unselectedItemDecoration;
-
-  const IconTabs({
-    super.key,
-    required this.items,
-    required this.selectedIndex,
-    required this.onChanged,
-    this.decoration,
-    this.padding,
-    this.selectedIconColor,
-    this.unselectedIconColor,
-    this.selectedItemDecoration,
-    this.unselectedItemDecoration,
-  });
 
   @override
   Widget build(BuildContext context) {

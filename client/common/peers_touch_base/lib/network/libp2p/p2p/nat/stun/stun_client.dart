@@ -1,10 +1,17 @@
-import 'dart:io';
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
-import 'stun_message.dart';
-import '../nat_type.dart';
+
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_type.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/stun/stun_message.dart';
 
 class StunClient {
+  
+  StunClient({
+    this.serverHost = defaultStunServer,
+    this.stunPort = defaultStunPort,
+    Duration? timeout,
+  }) : timeout = timeout ?? defaultTimeout;
   static const defaultStunServer = 'stun.l.google.com';
   static const defaultStunPort = 19302;
   static const defaultTimeout = Duration(seconds: 5);
@@ -14,12 +21,6 @@ class StunClient {
   final int stunPort;
   final Duration timeout;
   InternetAddress? _resolvedAddress;
-  
-  StunClient({
-    this.serverHost = defaultStunServer,
-    this.stunPort = defaultStunPort,
-    Duration? timeout,
-  }) : this.timeout = timeout ?? defaultTimeout;
   
   Future<InternetAddress> get stunServer async {
     if (_resolvedAddress != null) return _resolvedAddress!;
@@ -206,13 +207,13 @@ class StunClient {
 }
 
 class StunResponse {
-  final InternetAddress? externalAddress;
-  final int? externalPort;
-  final NatType natType;
   
   StunResponse({
     this.externalAddress,
     this.externalPort,
     this.natType = NatType.unknown,
   });
+  final InternetAddress? externalAddress;
+  final int? externalPort;
+  final NatType natType;
 } 

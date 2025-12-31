@@ -1,19 +1,20 @@
 import 'dart:convert';
 import 'dart:math';
+
+import 'package:peers_touch_base/ai_proxy/provider/provider_manager_interface.dart';
+import 'package:peers_touch_base/ai_proxy/service/ai_box_local_storage_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
-import '../service/ai_box_local_storage_service.dart';
-import 'provider_manager_interface.dart';
 
 // 移除冲突的导入
 // import 'provider_manager.dart'; // 引入ProviderType
 
 /// Provider本地管理器 - 所有操作均在本地完成
 class LocalProviderManager implements IProviderManager {
-  final AiBoxLocalStorageService _localStorage;
 
   LocalProviderManager({AiBoxLocalStorageService? localStorage})
     : _localStorage = localStorage ?? AiBoxLocalStorageService();
+  final AiBoxLocalStorageService _localStorage;
 
   @override
   Provider newProvider(ProviderType type, String url, String apiKey) {

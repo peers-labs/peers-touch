@@ -38,6 +38,8 @@ const (
 	ActivityPubRouterURLNodeInfo21 RouterPath = "/nodeinfo/2.1"
 
 	ActivityPubRouterURLEvents RouterPath = "/:actor/events"
+	// ActivityPubRouterURLObjectReplies Replies collection: replies to a specific object
+	ActivityPubRouterURLObjectReplies RouterPath = "/objects/:objectId/replies"
 
 	// RouterURLActorSignUP Actor Management URLs (Client API)
 	// Client sign-up: create a local actor account

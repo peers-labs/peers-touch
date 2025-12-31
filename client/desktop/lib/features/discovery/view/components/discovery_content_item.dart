@@ -1,8 +1,7 @@
-import 'package:peers_touch_base/context/global_context.dart';
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 import 'package:peers_touch_desktop/features/discovery/view/components/discovery_avatar.dart';
@@ -30,7 +29,7 @@ class DiscoveryContentItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 20,
             offset: const Offset(0, 4),
           ),
@@ -202,6 +201,9 @@ class DiscoveryContentItem extends StatelessWidget {
             count: item.commentsCount,
             onTap: () {
               isCommentsExpanded.toggle();
+              if (isCommentsExpanded.value && item.comments.isEmpty && item.commentsCount > 0) {
+                controller?.loadComments(item);
+              }
             },
           ),
           const SizedBox(width: 16),
@@ -251,13 +253,16 @@ class DiscoveryContentItem extends StatelessWidget {
     String myAvatar = 'https://i.pravatar.cc/150?u=me';
     if (Get.isRegistered<GlobalContext>()) {
       final ctx = Get.find<GlobalContext>();
-      // Use currentSession map to access avatarUrl since GlobalContext interface doesn't expose actorIcon directly
       final session = ctx.currentSession;
-      if (session != null && session['avatarUrl'] != null && (session['avatarUrl'] as String).isNotEmpty) {
-        myAvatar = session['avatarUrl'] as String;
-        if (myAvatar.startsWith('/')) {
-           final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
-           myAvatar = '$baseUrl$myAvatar';
+      
+      if (session != null) {
+        final avatarUrl = session['avatarUrl'] as String?;
+        if (avatarUrl != null && avatarUrl.isNotEmpty) {
+          myAvatar = avatarUrl;
+          if (myAvatar.startsWith('/')) {
+            final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+            myAvatar = '$baseUrl$myAvatar';
+          }
         }
       }
     }
@@ -393,6 +398,14 @@ class DiscoveryContentItem extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  comment.content,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[800],
+                  ),
                 ),
               ],
             ),

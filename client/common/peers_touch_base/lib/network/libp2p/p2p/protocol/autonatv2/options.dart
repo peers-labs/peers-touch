@@ -1,16 +1,24 @@
-import 'dart:async';
-
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/server.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv2/autonatv2.dart';
-
-import '../../../core/multiaddr.dart';
-import '../../../core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/server.dart';
 
 /// Function type for determining whether to request dial data
 typedef DataRequestPolicyFunc = bool Function(P2PStream stream, MultiAddr dialAddr);
 
 /// Settings for AutoNAT v2
 class AutoNATv2Settings {
+
+  AutoNATv2Settings({
+    this.allowPrivateAddrs = false,
+    this.serverRPM = 60, // 1 every second
+    this.serverPerPeerRPM = 12, // 1 every 5 seconds
+    this.serverDialDataRPM = 12, // 1 every 5 seconds
+    required this.dataRequestPolicy,
+    DateTime Function()? now,
+    this.amplificationAttackPreventionDialWait = const Duration(seconds: 3),
+    this.metricsTracer,
+  }) : now = now ?? (() => DateTime.now());
   /// Whether to allow private addresses
   final bool allowPrivateAddrs;
   
@@ -34,17 +42,6 @@ class AutoNATv2Settings {
   
   /// Metrics tracer
   final MetricsTracer? metricsTracer;
-
-  AutoNATv2Settings({
-    this.allowPrivateAddrs = false,
-    this.serverRPM = 60, // 1 every second
-    this.serverPerPeerRPM = 12, // 1 every 5 seconds
-    this.serverDialDataRPM = 12, // 1 every 5 seconds
-    required this.dataRequestPolicy,
-    DateTime Function()? now,
-    this.amplificationAttackPreventionDialWait = const Duration(seconds: 3),
-    this.metricsTracer,
-  }) : now = now ?? (() => DateTime.now());
 
   /// Create a copy of this settings object with the given changes
   AutoNATv2Settings copyWith({

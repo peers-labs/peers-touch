@@ -4,11 +4,10 @@
 
 import 'dart:typed_data';
 
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/discovery/peer_info.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/pb/circuit.pb.dart';
-
-import '../../../../core/multiaddr.dart';
-import '../../../discovery/peer_info.dart';
-import '../../../../core/peer/peer_id.dart';
 
 /// Converts a protocol buffer Peer message to a PeerInfo.
 PeerInfo peerToPeerInfoV2(Peer p) {

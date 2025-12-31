@@ -161,7 +161,7 @@ class DiscoveryController extends GetxController {
       }
 
       items.value = fetchedItems;
-    } catch (e, stack) {
+    } catch (e) {
       // Guard: Only update error if this is still the active request
       if (requestId != _activeRequestId) return;
 
@@ -230,6 +230,11 @@ class DiscoveryController extends GetxController {
             final String type = item['type']?.toString() ?? 'Create';
             
             final List<String> images = [];
+            int likesCount = 0;
+            int repliesCount = 0;
+            int sharesCount = 0;
+            String authorAvatar = '';
+            
             if (item['object'] is Map) {
                final obj = item['object'];
                objectId = obj['id']?.toString() ?? '';
@@ -256,17 +261,82 @@ class DiscoveryController extends GetxController {
                    }
                  }
                }
+               
+               if (obj['likes'] is Map) {
+                 likesCount = (obj['likes']['totalItems'] as num?)?.toInt() ?? 0;
+               }
+               if (obj['replies'] is Map) {
+                 repliesCount = (obj['replies']['totalItems'] as num?)?.toInt() ?? 0;
+               }
+               if (obj['shares'] is Map) {
+                 sharesCount = (obj['shares']['totalItems'] as num?)?.toInt() ?? 0;
+               }
+               
+               if (obj['attributedTo'] is Map) {
+                 final attributedTo = obj['attributedTo'];
+                 if (attributedTo['icon'] is Map) {
+                   authorAvatar = attributedTo['icon']['url']?.toString() ?? '';
+                 } else if (attributedTo['icon'] is String) {
+                   authorAvatar = attributedTo['icon'].toString();
+                 }
+               }
             }
+            
+            final List<DiscoveryComment> comments = [];
+            if (item['object'] is Map) {
+              final obj = item['object'];
+              if (obj['replies'] is Map && obj['replies']['orderedItems'] is List) {
+                for (var reply in obj['replies']['orderedItems']) {
+                  if (reply is Map) {
+                    String commentAuthor = 'User';
+                    String commentAvatar = '';
+                    if (reply['attributedTo'] is Map) {
+                      final attr = reply['attributedTo'];
+                      if (attr['preferredUsername'] is Map && attr['preferredUsername']['und'] != null) {
+                        commentAuthor = attr['preferredUsername']['und'].toString();
+                      } else if (attr['name'] is Map && attr['name']['und'] != null) {
+                        commentAuthor = attr['name']['und'].toString();
+                      }
+                      if (attr['icon'] is Map) {
+                        commentAvatar = attr['icon']['url']?.toString() ?? '';
+                      }
+                    }
+                    String commentContent = '';
+                    if (reply['content'] is Map && reply['content']['und'] != null) {
+                      commentContent = reply['content']['und'].toString();
+                    } else if (reply['content'] is String) {
+                      commentContent = reply['content'].toString();
+                    }
+                    DateTime commentTime = DateTime.now();
+                    if (reply['published'] != null) {
+                      commentTime = DateTime.tryParse(reply['published'].toString()) ?? DateTime.now();
+                    }
+                    comments.add(DiscoveryComment(
+                      id: reply['id']?.toString() ?? DateTime.now().toString(),
+                      authorName: commentAuthor,
+                      authorAvatar: commentAvatar,
+                      content: commentContent,
+                      timestamp: commentTime,
+                    ));
+                  }
+                }
+              }
+            }
+            
             newItems.add(DiscoveryItem(
               id: item['id']?.toString() ?? DateTime.now().toString(),
               objectId: objectId.isNotEmpty ? objectId : (item['id']?.toString() ?? ''),
               title: title,
               content: content,
               author: author,
-              authorAvatar: 'https://i.pravatar.cc/150?u=$author',
+              authorAvatar: authorAvatar,
               timestamp: timestamp,
               type: type,
               images: images,
+              likesCount: likesCount,
+              commentsCount: repliesCount,
+              sharesCount: sharesCount,
+              comments: comments,
             ));
           }
         }
@@ -309,11 +379,45 @@ class DiscoveryController extends GetxController {
     return mockItems;
   }
 
-  void add(String title, String content, String author, String type) {
-    // This helper function is inside _generateMockItems scope in previous version but I need to adapt it 
-    // or just inline the creation since I can't easily change the helper inside the method via SearchReplace 
-    // without replacing the whole method.
-    // Wait, I can replace the helper definition inside _generateMockItems.
+  Future<void> loadComments(DiscoveryItem item) async {
+    try {
+      final data = await _repo.fetchObjectReplies(item.objectId);
+      if (data['orderedItems'] is List) {
+        final commentsList = data['orderedItems'] as List;
+        final comments = <DiscoveryComment>[];
+        
+        for (var obj in commentsList) {
+          if (obj is Map) {
+            String authorName = 'Unknown';
+            String authorAvatar = '';
+            
+            if (obj['attributedTo'] is Map) {
+              final attr = obj['attributedTo'] as Map;
+              authorName = attr['name']?.toString() ?? attr['preferredUsername']?.toString() ?? 'Unknown';
+              if (attr['icon'] is Map) {
+                authorAvatar = (attr['icon'] as Map)['url']?.toString() ?? '';
+              }
+            } else if (obj['attributedTo'] is String) {
+              authorName = (obj['attributedTo'] as String).split('/').last;
+            }
+            
+            comments.add(DiscoveryComment(
+              id: obj['id']?.toString() ?? '',
+              authorName: authorName,
+              authorAvatar: authorAvatar.isNotEmpty ? authorAvatar : 'https://i.pravatar.cc/150?u=$authorName',
+              content: obj['content']?.toString() ?? '',
+              timestamp: DateTime.tryParse(obj['published']?.toString() ?? '') ?? DateTime.now(),
+            ));
+          }
+        }
+        
+        item.comments.clear();
+        item.comments.addAll(comments);
+        items.refresh();
+      }
+    } catch (e) {
+      LoggingService.error('Failed to load comments: $e');
+    }
   }
 
   Future<void> replyToItem(DiscoveryItem parent, String content) async {
@@ -335,9 +439,10 @@ class DiscoveryController extends GetxController {
       }
 
       // 2. Construct ActivityInput (Proto)
+      // Use objectId (not activity id) for inReplyTo
       final input = pb.ActivityInput(
         text: content,
-        replyTo: parent.id,
+        replyTo: parent.objectId,
         visibility: 'public',
       );
 
@@ -382,7 +487,7 @@ class DiscoveryController extends GetxController {
 
   Future<void> deleteItem(DiscoveryItem item) async {
     try {
-      String username = _getCurrentUsername();
+      final String username = _getCurrentUsername();
       if (username.isEmpty) return;
 
       // Use objectId for delete
@@ -397,27 +502,50 @@ class DiscoveryController extends GetxController {
 
   Future<void> likeItem(DiscoveryItem item) async {
     try {
-      String username = _getCurrentUsername();
+      final String username = _getCurrentUsername();
       if (username.isEmpty) return;
+      
+      final wasLiked = item.isLiked;
+      
+      item.isLiked = !item.isLiked;
+      if (item.isLiked) {
+        item.likesCount++;
+      } else {
+        item.likesCount = (item.likesCount - 1).clamp(0, 999999);
+      }
+      items.refresh();
       
       await _repo.likeActivity(username, item.objectId);
       
-      // Optimistic update
-      Get.snackbar('Success', 'Liked post');
+      Get.snackbar('Success', item.isLiked ? 'Liked post' : 'Unliked post');
     } catch (e) {
       LoggingService.error('Like failed: $e');
+      item.isLiked = !item.isLiked;
+      if (item.isLiked) {
+        item.likesCount++;
+      } else {
+        item.likesCount = (item.likesCount - 1).clamp(0, 999999);
+      }
+      items.refresh();
+      Get.snackbar('Error', 'Failed to like post');
     }
   }
 
   Future<void> announceItem(DiscoveryItem item) async {
     try {
-      String username = _getCurrentUsername();
+      final String username = _getCurrentUsername();
       if (username.isEmpty) return;
+      
+      item.sharesCount++;
+      items.refresh();
       
       await _repo.announceActivity(username, item.objectId);
       Get.snackbar('Success', 'Post reposted');
     } catch (e) {
       LoggingService.error('Announce failed: $e');
+      item.sharesCount = (item.sharesCount - 1).clamp(0, 999999);
+      items.refresh();
+      Get.snackbar('Error', 'Failed to repost');
     }
   }
 

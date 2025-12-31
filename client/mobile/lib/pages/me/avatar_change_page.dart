@@ -1,10 +1,11 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:jdenticon_dart/jdenticon_dart.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peers_touch_mobile/controller/controller.dart';
 import 'package:peers_touch_mobile/l10n/app_localizations.dart';
-import 'dart:ui';
 
 class AvatarChangePage extends StatefulWidget {
   const AvatarChangePage({super.key});

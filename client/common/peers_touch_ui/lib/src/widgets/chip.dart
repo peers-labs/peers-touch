@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 class PTChip extends StatelessWidget {
+  const PTChip({super.key, required this.text, this.filled = false, this.onTap});
   final String text;
   final bool filled;
   final VoidCallback? onTap;
-  const PTChip({super.key, required this.text, this.filled = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {

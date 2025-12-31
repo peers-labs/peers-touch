@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_mobile/common/region/region_manager.dart';
 import 'package:peers_touch_mobile/common/init/init_loader_regions.dart';
+import 'package:peers_touch_mobile/common/region/region_manager.dart';
 
 /// Region provider widget for easy access to region data
 class RegionProvider extends InheritedWidget {
-  final RegionManager regionManager;
 
   const RegionProvider({
-    Key? key,
+    super.key,
     required this.regionManager,
-    required Widget child,
-  }) : super(key: key, child: child);
+    required super.child,
+  });
+  final RegionManager regionManager;
 
   static RegionProvider? of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<RegionProvider>();
@@ -50,16 +50,16 @@ class RegionService {
 
 /// Future builder for region data
 class RegionFutureBuilder extends StatelessWidget {
-  final Widget Function(List<RegionData>) builder;
-  final Widget? loadingWidget;
-  final Widget? errorWidget;
 
   const RegionFutureBuilder({
-    Key? key,
+    super.key,
     required this.builder,
     this.loadingWidget,
     this.errorWidget,
-  }) : super(key: key);
+  });
+  final Widget Function(List<RegionData>) builder;
+  final Widget? loadingWidget;
+  final Widget? errorWidget;
 
   @override
   Widget build(BuildContext context) {

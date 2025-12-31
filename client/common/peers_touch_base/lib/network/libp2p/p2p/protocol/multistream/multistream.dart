@@ -1,28 +1,25 @@
 /// Package multistream implements a simple stream router for the
 /// multistream-select protocol. The protocol is defined at
 /// https://github.com/multiformats/multistream-select
+library;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/codec.dart';
-import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
-import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
-import 'package:peers_touch_base/network/libp2p/config/multistream_config.dart';
-import 'package:synchronized/synchronized.dart';
 import 'package:logging/logging.dart'; // Added import for Logger
-
-import '../../../core/network/conn.dart'; // Added import for Conn
-import '../../transport/multiplexing/yamux/yamux_exceptions.dart'; // Import Yamux exception handling
+import 'package:peers_touch_base/network/libp2p/config/multistream_config.dart';
+import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/codec.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/yamux/yamux_exceptions.dart'; // Import Yamux exception handling
+import 'package:synchronized/synchronized.dart';
 
 final _log = Logger('multistream'); // Added logger instance
 
 /// ErrTooLarge is an error to signal that an incoming message was too large
 class MessageTooLargeException implements Exception {
-  final String message;
   const MessageTooLargeException([this.message = 'Incoming message was too large']);
+  final String message;
   
   @override
   String toString() => 'MessageTooLargeException: $message';
@@ -31,8 +28,8 @@ class MessageTooLargeException implements Exception {
 /// IncorrectVersionException is an error reported when the muxer protocol negotiation
 /// fails because of a ProtocolID mismatch.
 class IncorrectVersionException implements Exception {
-  final String message;
   const IncorrectVersionException([this.message = 'Client connected with incorrect version']);
+  final String message;
   
   @override
   String toString() => 'IncorrectVersionException: $message';
@@ -44,6 +41,12 @@ const String protocolID = '/multistream/1.0.0';
 
 /// A handler for a specific protocol
 class Handler {
+  
+  Handler({
+    required this.matchFunc,
+    required this.handle,
+    required this.addName,
+  });
   /// Function to determine if this handler matches a given protocol
   final bool Function(ProtocolID) matchFunc;
   
@@ -52,27 +55,21 @@ class Handler {
   
   /// The protocol name this handler was registered with
   final ProtocolID addName;
-  
-  Handler({
-    required this.matchFunc,
-    required this.handle,
-    required this.addName,
-  });
 }
 
 /// MultistreamMuxer is a muxer for multistream. Depending on the stream
 /// protocol tag it will select the right handler and hand the stream off to it.
 class MultistreamMuxer implements ProtocolSwitch {
-  final _handlerLock = Lock();
-  final List<Handler> _handlers = [];
-  
-  /// Configuration for multistream operations
-  final MultistreamConfig config;
   
   /// Creates a new MultistreamMuxer with optional configuration
   MultistreamMuxer({
     MultistreamConfig? config,
   }) : config = config ?? const MultistreamConfig();
+  final _handlerLock = Lock();
+  final List<Handler> _handlers = [];
+  
+  /// Configuration for multistream operations
+  final MultistreamConfig config;
   
   /// Timeout for read operations (from config)
   Duration get readTimeout => config.readTimeout;
@@ -144,15 +141,15 @@ class MultistreamMuxer implements ProtocolSwitch {
       final initiatorProtoID = await _readNextToken(stream);
       _log.fine("[multistreamMuxer - negotiate] Read initiator's protocol ID: $initiatorProtoID");
       if (initiatorProtoID != protocolID) {
-        _log.warning("[multistreamMuxer - negotiate] Initiator sent wrong protocol ID: $initiatorProtoID. Expected: $protocolID");
+        _log.warning('[multistreamMuxer - negotiate] Initiator sent wrong protocol ID: $initiatorProtoID. Expected: $protocolID');
         await stream.reset();
         throw IncorrectVersionException('Initiator sent wrong protocol ID: $initiatorProtoID');
       }
 
       // 2. Send our multistream protocol ID back
-      _log.fine("[multistreamMuxer - negotiate] Sending our protocol ID: $protocolID");
+      _log.fine('[multistreamMuxer - negotiate] Sending our protocol ID: $protocolID');
       await _writeDelimited(stream, utf8.encode(protocolID));
-      _log.fine("[multistreamMuxer - negotiate] Sent our protocol ID.");
+      _log.fine('[multistreamMuxer - negotiate] Sent our protocol ID.');
       
       // Now proceed with protocol selection
       while (true) {
@@ -181,7 +178,7 @@ class MultistreamMuxer implements ProtocolSwitch {
         return (tok, h.handle);
       }
     } catch (e) {
-      _log.severe('[multistreamMuxer - negotiate for ${protocolID}] Error during negotiation: $e');
+      _log.severe('[multistreamMuxer - negotiate for $protocolID] Error during negotiation: $e');
       await stream.reset();
       rethrow;
     }
@@ -279,7 +276,7 @@ class MultistreamMuxer implements ProtocolSwitch {
 
       await stream.reset(); // Ensure stream is reset if no protocol is selected
       return null;
-    } catch (e, st) {
+    } catch (e) {
       final totalDuration = DateTime.now().difference(startTime);
 
       await stream.reset();
@@ -330,7 +327,7 @@ class MultistreamMuxer implements ProtocolSwitch {
         // Check if stream is still viable for retry
         if (stream.isClosed) {
           _log.warning('[multistream] Stream closed during retry, aborting');
-          throw FormatException('Stream closed during retry attempts');
+          throw const FormatException('Stream closed during retry attempts');
         }
         
         // Brief delay before retry to allow stream to recover
@@ -349,7 +346,7 @@ class MultistreamMuxer implements ProtocolSwitch {
   Future<Uint8List> _performSingleReadDelimited(P2PStream<dynamic> stream) async {
     // Validate stream state before starting
     if (stream.isClosed) {
-      throw FormatException('Cannot read from closed stream');
+      throw const FormatException('Cannot read from closed stream');
     }
     
     // Use Future.timeout() instead of Timer for proper exception handling
@@ -371,7 +368,7 @@ class MultistreamMuxer implements ProtocolSwitch {
       // Check stream state before each read
       if (stream.isClosed) {
         _log.warning('[multistream] Stream closed during read operation');
-        throw FormatException('Stream closed during read operation');
+        throw const FormatException('Stream closed during read operation');
       }
       
       final chunk = await stream.read();
@@ -380,9 +377,9 @@ class MultistreamMuxer implements ProtocolSwitch {
       if (chunk.isEmpty) {
         if (stream.isClosed) {
           _log.warning('[multistream] Stream closed during read operation');
-          throw FormatException('Stream closed during read operation');
+          throw const FormatException('Stream closed during read operation');
         }
-        throw FormatException('Unexpected end of stream');
+        throw const FormatException('Unexpected end of stream');
       }
 
       buffer.add(chunk);
@@ -399,7 +396,7 @@ class MultistreamMuxer implements ProtocolSwitch {
             varintBytesRead = consumed;
             if (length > 1024) {
               await YamuxExceptionUtils.safeStreamReset(stream, context: 'message too large');
-              throw MessageTooLargeException();
+              throw const MessageTooLargeException();
             }
           }
         } catch (e) {
@@ -416,7 +413,7 @@ class MultistreamMuxer implements ProtocolSwitch {
           final fullMessage = buffer.toBytes();
           if (fullMessage.length > length + varintBytesRead &&
               fullMessage[length + varintBytesRead - 1] != 10) {
-            throw FormatException('Message did not have trailing newline');
+            throw const FormatException('Message did not have trailing newline');
           }
           // Return the message without the varint and newline
           return Uint8List.fromList(fullMessage.sublist(

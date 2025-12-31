@@ -1,19 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../l10n/app_localizations.dart';
+import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 
-class FriendModel {
-  final String friendId;
-  final String avatarUrl;
-  final String realName;
-  final String remarkName;
-  final String onlineStatus; // 'online' or 'offline'
-  final int lastActiveTime; // timestamp in milliseconds
-  final bool isStarred;
-  final int unreadCount;
-  final bool isMuted;
-  final String? lastMessage;
-  final int? lastMessageTime; // timestamp in milliseconds
+class FriendModel { // timestamp in milliseconds
 
   const FriendModel({
     required this.friendId,
@@ -28,6 +17,17 @@ class FriendModel {
     this.lastMessage,
     this.lastMessageTime,
   });
+  final String friendId;
+  final String avatarUrl;
+  final String realName;
+  final String remarkName;
+  final String onlineStatus; // 'online' or 'offline'
+  final int lastActiveTime; // timestamp in milliseconds
+  final bool isStarred;
+  final int unreadCount;
+  final bool isMuted;
+  final String? lastMessage;
+  final int? lastMessageTime;
 
   FriendModel copyWith({
     String? friendId,

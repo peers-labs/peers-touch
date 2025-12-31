@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'context.dart';
-import 'rcmgr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
 
 /// Error thrown when reading or writing on a reset stream.
 class ResetException implements Exception {
-  final String message;
   
   const ResetException([this.message = 'stream reset']);
+  final String message;
   
   @override
   String toString() => 'ResetException: $message';

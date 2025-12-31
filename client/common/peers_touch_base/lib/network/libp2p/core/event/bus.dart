@@ -2,6 +2,7 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/core/event/bus.go
 /// to Dart, using native Dart idioms like Stream Controllers instead of Go channels.
+library;
 
 import 'dart:async';
 

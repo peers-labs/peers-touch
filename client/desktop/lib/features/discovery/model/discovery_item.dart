@@ -42,10 +42,10 @@ class DiscoveryItem {
   final String type; // 'post', 'group', 'user'
   final List<String> images;
   
-  // Stats
-  final int likesCount;
-  int commentsCount; // Mutable
-  final int sharesCount;
+  // Stats (mutable for real-time updates)
+  int likesCount;
+  int commentsCount;
+  int sharesCount;
   
   // Interaction state (mutable for UI)
   bool isLiked;

@@ -29,10 +29,6 @@ abstract class TunInterface {
 
 /// 打洞请求
 class HolePunchRequest {
-  final StunPeerInfo targetPeer;
-  final InternetAddress? publicAddress;
-  final int? publicPort;
-  final Duration timeout;
 
   HolePunchRequest({
     required this.targetPeer,
@@ -40,15 +36,14 @@ class HolePunchRequest {
     this.publicPort,
     this.timeout = const Duration(seconds: 10),
   });
+  final StunPeerInfo targetPeer;
+  final InternetAddress? publicAddress;
+  final int? publicPort;
+  final Duration timeout;
 }
 
 /// 打洞响应
 class HolePunchResponse {
-  final bool success;
-  final String? errorMessage;
-  final RawDatagramSocket? socket;
-  final InternetAddress? localAddress;
-  final int? localPort;
 
   HolePunchResponse({
     required this.success,
@@ -57,17 +52,15 @@ class HolePunchResponse {
     this.localAddress,
     this.localPort,
   });
+  final bool success;
+  final String? errorMessage;
+  final RawDatagramSocket? socket;
+  final InternetAddress? localAddress;
+  final int? localPort;
 }
 
 /// 对等连接
 class PeerConnection {
-  final StunPeerInfo peer;
-  final RawDatagramSocket socket;
-  final InternetAddress localAddress;
-  final int localPort;
-  final InternetAddress? remoteAddress;
-  final int? remotePort;
-  final StreamController<Uint8List> _packetController;
   
   PeerConnection({
     required this.peer,
@@ -79,6 +72,13 @@ class PeerConnection {
   }) : _packetController = StreamController<Uint8List>.broadcast() {
     _setupSocketListener();
   }
+  final StunPeerInfo peer;
+  final RawDatagramSocket socket;
+  final InternetAddress localAddress;
+  final int localPort;
+  final InternetAddress? remoteAddress;
+  final int? remotePort;
+  final StreamController<Uint8List> _packetController;
   
   void _setupSocketListener() {
     socket.listen((event) {
@@ -112,18 +112,18 @@ class PeerConnection {
 
 /// TUN管理器
 class TunManager {
-  final StunConfig config;
-  final StunClient stunClient;
-  final TunInterface? tunInterface;
-  
-  final Map<String, PeerConnection> _connections = {};
-  final Map<String, Timer> _keepAliveTimers = {};
   
   TunManager({
     required this.config,
     required this.stunClient,
     this.tunInterface,
   });
+  final StunConfig config;
+  final StunClient stunClient;
+  final TunInterface? tunInterface;
+  
+  final Map<String, PeerConnection> _connections = {};
+  final Map<String, Timer> _keepAliveTimers = {};
 
   /// 建立P2P连接
   Future<PeerConnection> establishConnection(StunPeerInfo peer) async {

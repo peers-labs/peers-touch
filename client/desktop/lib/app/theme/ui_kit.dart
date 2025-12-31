@@ -50,14 +50,14 @@ class UIKit {
   static Color userBubbleBg(BuildContext context) {
     final theme = Theme.of(context);
     final lobe = _lobe(context);
-    return (lobe?.brandAccent ?? theme.colorScheme.primary).withOpacity(0.12);
+    return (lobe?.brandAccent ?? theme.colorScheme.primary).withValues(alpha: 0.12);
   }
 
   static Color assistantBubbleBg(BuildContext context) {
     final theme = Theme.of(context);
     final lobe = _lobe(context);
     final base = lobe?.bgLevel3 ?? theme.colorScheme.surfaceContainerHighest;
-    return base.withOpacity(0.12);
+    return base.withValues(alpha: 0.12);
   }
 
   static Color errorColor(BuildContext context) => Theme.of(context).colorScheme.error;
@@ -83,7 +83,7 @@ class UIKit {
   // 阴影抽象：面板阴影
   static List<BoxShadow> panelShadow(BuildContext context) => [
         BoxShadow(
-          color: Theme.of(context).shadowColor.withOpacity(0.3),
+          color: Theme.of(context).shadowColor.withValues(alpha: 0.3),
           blurRadius: 8,
           offset: const Offset(-2, 0),
         ),
@@ -173,7 +173,7 @@ class UIKit {
         horizontal: spaceSm(context),
         vertical: spaceSm(context),
       ),
-      hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
+      hintStyle: TextStyle(color: tokens.textSecondary.withValues(alpha: 0.7)),
     );
   }
 

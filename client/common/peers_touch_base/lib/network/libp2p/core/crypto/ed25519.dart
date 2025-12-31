@@ -5,14 +5,13 @@ import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' a
 
 /// Implementation of Ed25519 public key
 class Ed25519PublicKey implements PublicKey {
-  final crypto.SimplePublicKey _key;
 
   Ed25519PublicKey(this._key);
 
   /// Creates an Ed25519PublicKey from raw bytes
   factory Ed25519PublicKey.fromRawBytes(Uint8List bytes) {
     if (bytes.length != 32) {
-      throw FormatException('Ed25519 public key must be 32 bytes');
+      throw const FormatException('Ed25519 public key must be 32 bytes');
     }
 
     final publicKey = crypto.SimplePublicKey(
@@ -22,13 +21,14 @@ class Ed25519PublicKey implements PublicKey {
 
     return Ed25519PublicKey(publicKey);
   }
+  final crypto.SimplePublicKey _key;
 
   /// Creates an Ed25519PublicKey from its protobuf bytes
   static PublicKey unmarshal(Uint8List bytes) {
     final pbKey = pb.PublicKey.fromBuffer(bytes);
 
     if (pbKey.type != pb.KeyType.Ed25519) {
-      throw FormatException('Not an Ed25519 public key');
+      throw const FormatException('Not an Ed25519 public key');
     }
     return Ed25519PublicKey.fromRawBytes(Uint8List.fromList(pbKey.data));
   }
@@ -77,12 +77,15 @@ class Ed25519PublicKey implements PublicKey {
 
 /// Implementation of Ed25519 private key
 class Ed25519PrivateKey implements PrivateKey {
-  final crypto.SimpleKeyPair _keyPair;
-  late final Ed25519PublicKey _publicKey;
-  Uint8List? _privateKeyBytes;
 
   /// Private constructor that requires a public key
   Ed25519PrivateKey._(this._keyPair, this._publicKey, [this._privateKeyBytes]);
+
+  /// Creates an Ed25519PrivateKey with a public key
+  Ed25519PrivateKey.withPublicKey(this._keyPair, this._publicKey, [this._privateKeyBytes]);
+  final crypto.SimpleKeyPair _keyPair;
+  late final Ed25519PublicKey _publicKey;
+  final Uint8List? _privateKeyBytes;
 
   /// Factory constructor that initializes the public key
   static Future<Ed25519PrivateKey> create(crypto.SimpleKeyPair keyPair, [Uint8List? privateKeyBytes]) async {
@@ -92,13 +95,10 @@ class Ed25519PrivateKey implements PrivateKey {
     return Ed25519PrivateKey._(keyPair, publicKey, privateKeyBytes);
   }
 
-  /// Creates an Ed25519PrivateKey with a public key
-  Ed25519PrivateKey.withPublicKey(this._keyPair, this._publicKey, [this._privateKeyBytes]);
-
   /// Creates an Ed25519PrivateKey from raw bytes
   static Future<Ed25519PrivateKey> fromRawBytes(Uint8List bytes) async {
     if (bytes.length != 32 && bytes.length != 64) {
-      throw FormatException('Ed25519 private key must be 32 or 64 bytes');
+      throw const FormatException('Ed25519 private key must be 32 or 64 bytes');
     }
 
     final algorithm = crypto.Ed25519();
@@ -125,7 +125,7 @@ class Ed25519PrivateKey implements PrivateKey {
 
       return Ed25519PrivateKey.withPublicKey(
         keyPair, 
-        Ed25519PublicKey(publicKeyObj as crypto.SimplePublicKey),
+        Ed25519PublicKey(publicKeyObj),
         bytes
       );
     }
@@ -137,7 +137,7 @@ class Ed25519PrivateKey implements PrivateKey {
     final pbKey = pb.PrivateKey.fromBuffer(bytes);
 
     if (pbKey.type != pb.KeyType.Ed25519) {
-      throw FormatException('Not an Ed25519 private key');
+      throw const FormatException('Not an Ed25519 private key');
     }
 
     final kp = await generateEd25519KeyPairFromSeed(Uint8List.fromList(pbKey.data));
@@ -167,7 +167,7 @@ class Ed25519PrivateKey implements PrivateKey {
   Future<Ed25519PublicKey> _extractPublicKey() async {
     final algorithm = crypto.Ed25519();
     final publicKeyObj = await _keyPair.extractPublicKey();
-    return Ed25519PublicKey(publicKeyObj as crypto.SimplePublicKey);
+    return Ed25519PublicKey(publicKeyObj);
   }
 
   @override
@@ -176,7 +176,7 @@ class Ed25519PrivateKey implements PrivateKey {
   @override
   Uint8List get raw {
     if (_privateKeyBytes != null) {
-      return Uint8List.fromList(_privateKeyBytes!);
+      return Uint8List.fromList(_privateKeyBytes);
     }
 
     // If we don't have the private key bytes, we need to extract them
@@ -207,7 +207,7 @@ class Ed25519PrivateKey implements PrivateKey {
   @override
   Future<Uint8List> sign(Uint8List data) async {
 
-    final wand = await crypto.Ed25519().newSignatureWandFromKeyPair(this._keyPair);
+    final wand = await crypto.Ed25519().newSignatureWandFromKeyPair(_keyPair);
 
     final sig = await wand.sign(data);
 

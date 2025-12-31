@@ -1,15 +1,15 @@
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart'; // For Reachability, if needed, or other network consts
+// For Reachability, if needed, or other network consts
 // Assuming DialPolicy abstract class is in options.dart or a common place
-import './options.dart' show DialPolicy;
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/options.dart' show DialPolicy;
 
 
 class DialPolicyImpl implements DialPolicy {
-  final bool allowSelfDials;
-  final Host host;
 
   DialPolicyImpl({required this.host, this.allowSelfDials = false});
+  final bool allowSelfDials;
+  final Host host;
 
   @override
   bool skipDial(MultiAddr addr) {
@@ -42,6 +42,7 @@ class DialPolicyImpl implements DialPolicy {
     return false;
   }
 
+  @override
   bool skipPeer(List<MultiAddr> addrs) {
     final List<String> localPublicIPs = [];
     for (final lAddr in host.addrs) {

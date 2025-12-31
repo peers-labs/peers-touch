@@ -1,42 +1,27 @@
 import 'dart:async';
 
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart' show Reachability; // Only import Reachability
-import 'package:peers_touch_base/network/libp2p/core/event/reachability.dart' show EvtLocalReachabilityChanged; // Import the correct event
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/upgrader.dart' show Upgrader;
 import 'package:logging/logging.dart';
-
-import './autorelay_config.dart';
-import './relay_finder.dart';
-import './autorelay_metrics.dart';
+import 'package:peers_touch_base/network/libp2p/core/event/reachability.dart' show EvtLocalReachabilityChanged; // Import the correct event
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart' show Reachability; // Only import Reachability
+import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay_config.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay_metrics.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/relay_finder.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/upgrader.dart' show Upgrader;
 
 // Event emitted when AutoRelay determines the new set of advertisable addresses.
 class EvtAutoRelayAddrsUpdated {
-  final List<MultiAddr> advertisableAddrs;
   EvtAutoRelayAddrsUpdated(this.advertisableAddrs);
+  final List<MultiAddr> advertisableAddrs;
 
   @override
   String toString() {
-    return "EvtAutoRelayAddrsUpdated";
+    return 'EvtAutoRelayAddrsUpdated';
   }
 }
 
 class AutoRelay {
-  static final Logger _log = Logger('AutoRelay');
-  
-  final Host host;
-  final AutoRelayConfig config;
-  final RelayFinder relayFinder;
-  final WrappedMetricsTracer metricsTracer;
-
-  Reachability _status = Reachability.unknown;
-  StreamSubscription<dynamic>? _reachabilitySubscription;
-  StreamSubscription<void>? _relayFinderRelayUpdatedSubscription;
-  
-  Completer<void>? _backgroundCompleter;
-  StreamController<void>? _stopController;
-  bool _isRunning = false;
 
   // Original AddrFactory to be wrapped or replaced.
   // This is complex in Dart. Go's direct modification is not typical.
@@ -52,6 +37,20 @@ class AutoRelay {
     // If host is BasicHost, one might try to access and wrap its AddrsFactory,
     // but that breaks abstraction if Host is just an interface.
   }
+  static final Logger _log = Logger('AutoRelay');
+  
+  final Host host;
+  final AutoRelayConfig config;
+  final RelayFinder relayFinder;
+  final WrappedMetricsTracer metricsTracer;
+
+  Reachability _status = Reachability.unknown;
+  StreamSubscription<dynamic>? _reachabilitySubscription;
+  StreamSubscription<void>? _relayFinderRelayUpdatedSubscription;
+  
+  Completer<void>? _backgroundCompleter;
+  StreamController<void>? _stopController;
+  bool _isRunning = false;
 
   Future<void> start() async {
     if (_isRunning) {
@@ -75,7 +74,7 @@ class AutoRelay {
 
   Future<void> _updateAndEmitAdvertisableAddrs() async {
     try {
-      List<MultiAddr> currentHostAddrs = await host.network.interfaceListenAddresses;
+      final List<MultiAddr> currentHostAddrs = await host.network.interfaceListenAddresses;
       List<MultiAddr> newAddrs;
       if (_status == Reachability.private || _status == Reachability.unknown) {
         newAddrs = await relayFinder.getRelayAddrs(currentHostAddrs);
@@ -169,7 +168,7 @@ class AutoRelay {
   // This method can be removed if address advertising is fully event-driven.
   // Or kept for manual/direct queries if needed.
   Future<List<MultiAddr>> getAdvertisableAddrs() async {
-    List<MultiAddr> currentHostAddrs = await host.network.interfaceListenAddresses;
+    final List<MultiAddr> currentHostAddrs = await host.network.interfaceListenAddresses;
     if (_status == Reachability.private || _status == Reachability.unknown) {
       return relayFinder.getRelayAddrs(currentHostAddrs);
     }

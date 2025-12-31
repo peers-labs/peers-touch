@@ -32,7 +32,6 @@ class FrameActionCombo extends StatelessWidget {
         ? tokens.menuBarWidth * tokens.menuItemBoxRatio
         : UIKit.controlHeightMd; // 兜底为全局控件高度
     final Color dividerColor = UIKit.dividerColor(context);
-    final double radiusSm = UIKit.radiusSm(context);
     final double radiusMd = UIKit.radiusMd(context);
 
     return Row(

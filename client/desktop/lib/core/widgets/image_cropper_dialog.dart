@@ -1,20 +1,20 @@
 import 'dart:io';
-import 'dart:typed_data';
+
 import 'package:extended_image/extended_image.dart';
+import 'package:flutter/foundation.dart'; // For compute
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:flutter/foundation.dart'; // For compute
 import 'package:image/image.dart' as img;
 
 class ImageCropperDialog extends StatefulWidget {
-  final File imageFile;
-  final bool isCircular;
 
   const ImageCropperDialog({
     super.key,
     required this.imageFile,
     this.isCircular = true,
   });
+  final File imageFile;
+  final bool isCircular;
 
   @override
   State<ImageCropperDialog> createState() => _ImageCropperDialogState();
@@ -59,7 +59,7 @@ class _ImageCropperDialogState extends State<ImageCropperDialog> {
                   cropAspectRatio: 1.0, // Force square crop for avatar
                   controller: _editorController,
                   editorMaskColorHandler: (context, pointerDown) {
-                    return Colors.black.withOpacity(0.5);
+                    return Colors.black.withValues(alpha: 0.5);
                   },
                 );
               },
@@ -145,10 +145,7 @@ class _ImageCropperDialogState extends State<ImageCropperDialog> {
       final rotateAngle = action?.rotateDegrees.toInt() ?? 0;
 
       // Get raw image data
-      final Uint8List? imgData = state.rawImageData;
-      if (imgData == null) {
-        throw Exception('Failed to get raw image data');
-      }
+      final Uint8List imgData = state.rawImageData;
 
       // Use compute to crop in background isolate
       final params = CropParams(
@@ -171,16 +168,16 @@ class _ImageCropperDialogState extends State<ImageCropperDialog> {
 }
 
 class CropParams {
-  final Uint8List fileData;
-  final Rect cropRect;
-  final int rotateAngle;
-  final bool isCircular;
   CropParams({
     required this.fileData,
     required this.cropRect,
     required this.rotateAngle,
     required this.isCircular,
   });
+  final Uint8List fileData;
+  final Rect cropRect;
+  final int rotateAngle;
+  final bool isCircular;
 }
 
 /// Top-level function for compute

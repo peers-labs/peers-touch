@@ -24,15 +24,6 @@ enum NetworkStatus {
 
 /// Configuration for a backend server
 class ServerConfig {
-  final String id;
-  final String name;
-  final String baseUrl;
-  final String apiKey;
-  final Map<String, String> headers;
-  final Duration timeout;
-  final bool isEnabled;
-  final int priority;
-  final int retryCount;
 
   const ServerConfig({
     required this.id,
@@ -45,6 +36,30 @@ class ServerConfig {
     this.priority = 1,
     this.retryCount = 3,
   });
+
+  /// Create from JSON
+  factory ServerConfig.fromJson(Map<String, dynamic> json) {
+    return ServerConfig(
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      baseUrl: json['baseUrl'] ?? '',
+      apiKey: json['apiKey'] ?? '',
+      headers: Map<String, String>.from(json['headers'] ?? {}),
+      timeout: Duration(milliseconds: json['timeout'] ?? 30000),
+      isEnabled: json['isEnabled'] ?? true,
+      priority: json['priority'] ?? 1,
+      retryCount: json['retryCount'] ?? 3,
+    );
+  }
+  final String id;
+  final String name;
+  final String baseUrl;
+  final String apiKey;
+  final Map<String, String> headers;
+  final Duration timeout;
+  final bool isEnabled;
+  final int priority;
+  final int retryCount;
 
   ServerConfig copyWith({
     String? id,
@@ -84,21 +99,6 @@ class ServerConfig {
       'retryCount': retryCount,
     };
   }
-
-  /// Create from JSON
-  factory ServerConfig.fromJson(Map<String, dynamic> json) {
-    return ServerConfig(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      baseUrl: json['baseUrl'] ?? '',
-      apiKey: json['apiKey'] ?? '',
-      headers: Map<String, String>.from(json['headers'] ?? {}),
-      timeout: Duration(milliseconds: json['timeout'] ?? 30000),
-      isEnabled: json['isEnabled'] ?? true,
-      priority: json['priority'] ?? 1,
-      retryCount: json['retryCount'] ?? 3,
-    );
-  }
 }
 
 /// Base interface for all storable models
@@ -129,11 +129,6 @@ abstract class Storable {
 
 /// Result of a sync operation
 class SyncResult {
-  final bool success;
-  final String? error;
-  final int syncedCount;
-  final int failedCount;
-  final DateTime timestamp;
 
   const SyncResult({
     required this.success,
@@ -142,6 +137,11 @@ class SyncResult {
     required this.failedCount,
     required this.timestamp,
   });
+  final bool success;
+  final String? error;
+  final int syncedCount;
+  final int failedCount;
+  final DateTime timestamp;
 }
 
 /// Base interface for all store implementations

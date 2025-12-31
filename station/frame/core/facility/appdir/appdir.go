@@ -41,16 +41,26 @@ type Options struct {
 
 type Option func(*Options)
 
+// WithVendor sets the vendor name.
 func WithVendor(v string) Option {
 	return func(o *Options) {
 		o.Vendor = v
 	}
 }
-func WithSuite(s string) Option     { return func(o *Options) { o.Suite = s } }
-func WithProfile(p string) Option   { return func(o *Options) { o.Profile = p } }
-func WithPathsFile(p string) Option { return func(o *Options) { o.PathsFile = p } }
-func WithOverrides(d Dirs) Option   { return func(o *Options) { o.Overrides = d } }
 
+// WithSuite sets the suite name.
+func WithSuite(s string) Option { return func(o *Options) { o.Suite = s } }
+
+// WithProfile sets the profile identifier.
+func WithProfile(p string) Option { return func(o *Options) { o.Profile = p } }
+
+// WithPathsFile sets the paths.yml file path.
+func WithPathsFile(p string) Option { return func(o *Options) { o.PathsFile = p } }
+
+// WithOverrides overrides default directories.
+func WithOverrides(d Dirs) Option { return func(o *Options) { o.Overrides = d } }
+
+// Resolve returns a resolved directory of given component and kind.
 func Resolve(component string, kind string, opts ...Option) (string, error) {
 	o := &Options{Vendor: "peers", Suite: "peers-touch", Profile: os.Getenv("PEERS_PROFILE")}
 	for _, fn := range opts {
@@ -104,6 +114,7 @@ func Resolve(component string, kind string, opts ...Option) (string, error) {
 	}
 }
 
+// ResolveAll returns all resolved directories for the given component.
 func ResolveAll(component string, opts ...Option) (map[string]string, error) {
 	m := map[string]string{}
 	kinds := []string{"config", "data", "cache", "logs", "run"}
@@ -117,6 +128,7 @@ func ResolveAll(component string, opts ...Option) (map[string]string, error) {
 	return m, nil
 }
 
+// Ensure creates all directories in the provided map.
 func Ensure(dirs map[string]string) error {
 	for _, d := range dirs {
 		if d == "" {

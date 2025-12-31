@@ -2,17 +2,6 @@ import 'dart:convert';
 
 /// Information about a peer in the network
 class PeerInfo {
-  /// Unique identifier of the peer
-  final String peerId;
-
-  /// List of addresses where the peer can be reached
-  final List<String> addresses;
-
-  /// Additional metadata about the peer
-  final Map<String, dynamic> metadata;
-
-  /// Last time this peer was seen
-  final DateTime lastSeen;
 
   /// Create a new PeerInfo instance
   PeerInfo({
@@ -33,6 +22,17 @@ class PeerInfo {
           : null,
     );
   }
+  /// Unique identifier of the peer
+  final String peerId;
+
+  /// List of addresses where the peer can be reached
+  final List<String> addresses;
+
+  /// Additional metadata about the peer
+  final Map<String, dynamic> metadata;
+
+  /// Last time this peer was seen
+  final DateTime lastSeen;
 
   /// Convert to JSON
   Map<String, dynamic> toJson() {
@@ -79,23 +79,6 @@ enum SessionStatus {
 
 /// Peer session information
 class PeerSession {
-  /// Unique session identifier
-  final String sessionId;
-
-  /// Peer identifier
-  final String peerId;
-
-  /// Remote address of the peer
-  final String remoteAddress;
-
-  /// Current session status
-  final SessionStatus status;
-
-  /// When the session was created
-  final DateTime createdAt;
-
-  /// Last activity timestamp
-  final DateTime lastActive;
 
   /// Create a new PeerSession instance
   PeerSession({
@@ -126,6 +109,23 @@ class PeerSession {
           : null,
     );
   }
+  /// Unique session identifier
+  final String sessionId;
+
+  /// Peer identifier
+  final String peerId;
+
+  /// Remote address of the peer
+  final String remoteAddress;
+
+  /// Current session status
+  final SessionStatus status;
+
+  /// When the session was created
+  final DateTime createdAt;
+
+  /// Last activity timestamp
+  final DateTime lastActive;
 
   /// Convert to JSON
   Map<String, dynamic> toJson() {

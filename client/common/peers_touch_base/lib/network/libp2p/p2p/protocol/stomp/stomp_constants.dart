@@ -1,4 +1,5 @@
 /// Constants for the STOMP protocol implementation.
+library;
 
 /// Protocol IDs for STOMP
 class StompProtocols {

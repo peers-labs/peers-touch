@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_mobile/store/sync_manager.dart';
 import 'package:peers_touch_mobile/store/base_store.dart';
+import 'package:peers_touch_mobile/store/sync_manager.dart';
 
 /// Sync status bar that appears at the top of the app
 class SyncStatusBar extends StatelessWidget {
-  final SyncManager _syncManager = Get.find<SyncManager>();
   
-  SyncStatusBar({Key? key}) : super(key: key);
+  SyncStatusBar({super.key});
+  final SyncManager _syncManager = Get.find<SyncManager>();
   
   @override
   Widget build(BuildContext context) {
@@ -232,16 +232,16 @@ class SyncStatusBar extends StatelessWidget {
 
 /// Sync status indicator for individual items
 class SyncStatusIndicator extends StatelessWidget {
-  final Map<String, SyncStatus> syncStatus;
-  final double size;
-  final bool showLabel;
   
   const SyncStatusIndicator({
-    Key? key,
+    super.key,
     required this.syncStatus,
     this.size = 16,
     this.showLabel = false,
-  }) : super(key: key);
+  });
+  final Map<String, SyncStatus> syncStatus;
+  final double size;
+  final bool showLabel;
   
   @override
   Widget build(BuildContext context) {
@@ -336,9 +336,9 @@ class SyncStatusIndicator extends StatelessWidget {
 
 /// Sync settings dialog
 class SyncSettingsDialog extends StatelessWidget {
-  final SyncManager _syncManager = Get.find<SyncManager>();
   
-  SyncSettingsDialog({Key? key}) : super(key: key);
+  SyncSettingsDialog({super.key});
+  final SyncManager _syncManager = Get.find<SyncManager>();
   
   @override
   Widget build(BuildContext context) {
@@ -395,9 +395,9 @@ class SyncSettingsDialog extends StatelessWidget {
 
 /// Detailed sync status dialog
 class SyncStatusDialog extends StatelessWidget {
-  final SyncManager _syncManager = Get.find<SyncManager>();
   
-  SyncStatusDialog({Key? key}) : super(key: key);
+  SyncStatusDialog({super.key});
+  final SyncManager _syncManager = Get.find<SyncManager>();
   
   @override
   Widget build(BuildContext context) {

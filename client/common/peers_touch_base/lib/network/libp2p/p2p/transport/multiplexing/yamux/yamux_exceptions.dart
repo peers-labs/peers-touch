@@ -2,6 +2,7 @@
 /// 
 /// This module provides comprehensive exception handling for Yamux multiplexer
 /// operations, similar to the UDX exception handling system.
+library;
 
 import 'dart:async';
 import 'dart:io';
@@ -12,11 +13,6 @@ final _log = Logger('YamuxExceptions');
 
 /// Base class for all Yamux-related exceptions
 abstract class YamuxException implements Exception {
-  final String message;
-  final dynamic originalException; // Changed to dynamic to handle both Exception and Error
-  final StackTrace? originalStackTrace;
-  final DateTime timestamp;
-  final Map<String, dynamic> context;
 
   YamuxException._internal(
     this.message, {
@@ -26,6 +22,11 @@ abstract class YamuxException implements Exception {
     DateTime? timestamp,
   })  : timestamp = timestamp ?? DateTime.now(),
         context = context ?? const {};
+  final String message;
+  final dynamic originalException; // Changed to dynamic to handle both Exception and Error
+  final StackTrace? originalStackTrace;
+  final DateTime timestamp;
+  final Map<String, dynamic> context;
 
   @override
   String toString() => 'YamuxException: $message';
@@ -43,22 +44,16 @@ abstract class YamuxException implements Exception {
 
 /// Exception thrown when a Yamux stream is in an invalid state for the requested operation
 class YamuxStreamStateException extends YamuxException {
-  final String currentState;
-  final String requestedOperation;
-  final int streamId;
 
   YamuxStreamStateException(
-    String message, {
+    super.message, {
     required this.currentState,
     required this.requestedOperation,
     required this.streamId,
-    dynamic originalException, // Changed to dynamic
-    StackTrace? originalStackTrace,
+    super.originalException, // Changed to dynamic
+    super.originalStackTrace,
     Map<String, dynamic>? context,
   }) : super._internal(
-          message,
-          originalException: originalException,
-          originalStackTrace: originalStackTrace,
           context: {
             'currentState': currentState,
             'requestedOperation': requestedOperation,
@@ -66,6 +61,9 @@ class YamuxStreamStateException extends YamuxException {
             ...?context,
           },
         );
+  final String currentState;
+  final String requestedOperation;
+  final int streamId;
 
   @override
   String toString() =>
@@ -87,22 +85,16 @@ class YamuxStreamStateException extends YamuxException {
 
 /// Exception thrown when a Yamux stream operation times out
 class YamuxStreamTimeoutException extends YamuxException {
-  final Duration timeout;
-  final String operation;
-  final int streamId;
 
   YamuxStreamTimeoutException(
-    String message, {
+    super.message, {
     required this.timeout,
     required this.operation,
     required this.streamId,
-    Exception? originalException,
-    StackTrace? originalStackTrace,
+    Exception? super.originalException,
+    super.originalStackTrace,
     Map<String, dynamic>? context,
   }) : super._internal(
-          message,
-          originalException: originalException,
-          originalStackTrace: originalStackTrace,
           context: {
             'timeout': timeout.toString(),
             'operation': operation,
@@ -110,6 +102,9 @@ class YamuxStreamTimeoutException extends YamuxException {
             ...?context,
           },
         );
+  final Duration timeout;
+  final String operation;
+  final int streamId;
 
   @override
   String toString() =>
@@ -131,26 +126,23 @@ class YamuxStreamTimeoutException extends YamuxException {
 
 /// Exception thrown when a Yamux stream encounters a protocol error
 class YamuxStreamProtocolException extends YamuxException {
-  final String protocolError;
-  final int streamId;
 
   YamuxStreamProtocolException(
-    String message, {
+    super.message, {
     required this.protocolError,
     required this.streamId,
-    Exception? originalException,
-    StackTrace? originalStackTrace,
+    Exception? super.originalException,
+    super.originalStackTrace,
     Map<String, dynamic>? context,
   }) : super._internal(
-          message,
-          originalException: originalException,
-          originalStackTrace: originalStackTrace,
           context: {
             'protocolError': protocolError,
             'streamId': streamId,
             ...?context,
           },
         );
+  final String protocolError;
+  final int streamId;
 
   @override
   String toString() =>
@@ -171,23 +163,20 @@ class YamuxStreamProtocolException extends YamuxException {
 
 /// Exception thrown when a Yamux session encounters an error
 class YamuxSessionException extends YamuxException {
-  final String sessionError;
 
   YamuxSessionException(
-    String message, {
+    super.message, {
     required this.sessionError,
-    Exception? originalException,
-    StackTrace? originalStackTrace,
+    Exception? super.originalException,
+    super.originalStackTrace,
     Map<String, dynamic>? context,
   }) : super._internal(
-          message,
-          originalException: originalException,
-          originalStackTrace: originalStackTrace,
           context: {
             'sessionError': sessionError,
             ...?context,
           },
         );
+  final String sessionError;
 
   @override
   String toString() => 'YamuxSessionException: $message (Session error: $sessionError)';
@@ -226,7 +215,7 @@ class YamuxExceptionHandler {
     // Handle StateError specifically (most common Yamux stream error)
     // StateError extends Error, not Exception
     if (exception is StateError) {
-      final stateError = exception as StateError;
+      final stateError = exception;
       final message = stateError.message;
       
       // Check for specific state-related errors

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_mobile/controller/controller.dart';
-import 'package:peers_touch_mobile/pages/actor/auth_page.dart';
-import 'package:peers_touch_mobile/features/home/pages/home_page.dart';
 import 'package:peers_touch_mobile/features/home/bindings/home_binding.dart';
+import 'package:peers_touch_mobile/features/home/pages/home_page.dart';
+import 'package:peers_touch_mobile/pages/actor/auth_page.dart';
 
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});

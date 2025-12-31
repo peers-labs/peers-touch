@@ -3,9 +3,6 @@ import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
 import 'package:peers_touch_mobile/pages/chat/models/message_model.dart';
 
 class MessageBubble extends StatelessWidget {
-  final MessageModel message;
-  final FriendModel friend;
-  final VoidCallback onLongPress;
 
   const MessageBubble({
     super.key,
@@ -13,6 +10,9 @@ class MessageBubble extends StatelessWidget {
     required this.friend,
     required this.onLongPress,
   });
+  final MessageModel message;
+  final FriendModel friend;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
