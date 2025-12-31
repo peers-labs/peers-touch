@@ -60,7 +60,7 @@ class TopicPanel extends StatelessWidget {
                 final t = topics[index];
                 final shouldHighlight = flashIndex != null && flashIndex == index;
                 final highlightColor = shouldHighlight
-                    ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
+                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
                     : Colors.transparent;
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 250),

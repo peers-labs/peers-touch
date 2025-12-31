@@ -1,12 +1,14 @@
 import 'dart:convert';
-import 'package:peers_touch_base/storage/local_storage.dart';
 
-import '../models/models.dart';
-import 'storage_service.dart';
+import 'package:peers_touch_base/chat/models/models.dart';
+import 'package:peers_touch_base/chat/services/storage_service.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 
 /// 聊天存储服务实现
 /// 使用本地存储进行数据持久化
 class ChatStorageServiceImpl implements ChatStorageService {
+  
+  ChatStorageServiceImpl(this._localStorage);
   static const String _storagePrefix = 'chat_storage_';
   static const String _friendsKey = '${_storagePrefix}friends';
   static const String _friendRequestsKey = '${_storagePrefix}friend_requests';
@@ -15,8 +17,6 @@ class ChatStorageServiceImpl implements ChatStorageService {
   static const String _unreadCountKey = '${_storagePrefix}unread_count';
   
   final LocalStorage _localStorage;
-  
-  ChatStorageServiceImpl(this._localStorage);
 
   @override
   Future<List<Friend>> getFriends() async {
@@ -32,7 +32,7 @@ class ChatStorageServiceImpl implements ChatStorageService {
           // Map格式
           return Friend.fromJson(data);
         }
-        throw FormatException('Invalid friend data format');
+        throw const FormatException('Invalid friend data format');
       }).toList();
     } catch (e) {
       print('Error loading friends: $e');
@@ -104,7 +104,7 @@ class ChatStorageServiceImpl implements ChatStorageService {
         } else if (data is Map<String, dynamic>) {
           return FriendRequest.fromJson(data);
         }
-        throw FormatException('Invalid friend request data format');
+        throw const FormatException('Invalid friend request data format');
       }).toList();
     } catch (e) {
       print('Error loading friend requests: $e');
@@ -178,7 +178,7 @@ class ChatStorageServiceImpl implements ChatStorageService {
         } else if (data is Map<String, dynamic>) {
           return ChatSession.fromJson(data);
         }
-        throw FormatException('Invalid session data format');
+        throw const FormatException('Invalid session data format');
       }).toList();
     } catch (e) {
       print('Error loading sessions: $e');
@@ -543,7 +543,7 @@ class ChatStorageServiceImpl implements ChatStorageService {
         } else if (data is Map<String, dynamic>) {
           return ChatMessage.fromJson(data);
         }
-        throw FormatException('Invalid message data format');
+        throw const FormatException('Invalid message data format');
       }).toList();
     } catch (e) {
       print('Error loading all messages: $e');
@@ -589,9 +589,9 @@ class ChatStorageServiceImpl implements ChatStorageService {
 }
 
 class StorageException implements Exception {
-  final String message;
   
   StorageException(this.message);
+  final String message;
   
   @override
   String toString() => 'StorageException: $message';

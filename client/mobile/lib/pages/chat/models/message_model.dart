@@ -1,14 +1,4 @@
 class MessageModel {
-  final String messageId;
-  final String chatId;
-  final String senderId;
-  final String receiverId;
-  final String content;
-  final int timestamp; // milliseconds since epoch
-  final String status; // 'sending', 'sent', 'read', 'failed'
-  final bool isMine;
-  final String messageType; // 'text', 'system'
-  final bool isForwarded;
 
   const MessageModel({
     required this.messageId,
@@ -22,6 +12,16 @@ class MessageModel {
     required this.messageType,
     required this.isForwarded,
   });
+  final String messageId;
+  final String chatId;
+  final String senderId;
+  final String receiverId;
+  final String content;
+  final int timestamp; // milliseconds since epoch
+  final String status; // 'sending', 'sent', 'read', 'failed'
+  final bool isMine;
+  final String messageType; // 'text', 'system'
+  final bool isForwarded;
 
   MessageModel copyWith({
     String? messageId,

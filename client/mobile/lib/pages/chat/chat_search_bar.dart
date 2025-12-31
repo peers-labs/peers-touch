@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 
 class ChatSearchBar extends StatelessWidget {
-  final TextEditingController controller;
-  final Function(String) onChanged;
-  final String hintText;
 
   const ChatSearchBar({
     super.key,
@@ -11,6 +8,9 @@ class ChatSearchBar extends StatelessWidget {
     required this.onChanged,
     required this.hintText,
   });
+  final TextEditingController controller;
+  final Function(String) onChanged;
+  final String hintText;
 
   @override
   Widget build(BuildContext context) {

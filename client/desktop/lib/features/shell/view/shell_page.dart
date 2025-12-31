@@ -9,7 +9,7 @@ import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.d
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 import 'package:peers_touch_desktop/features/shell/view/widgets/applet_dock.dart';
-import 'package:peers_touch_desktop/modules/applet_launcher/view/applet_container.dart';
+import 'package:peers_touch_desktop/features/applet/view/applet_container.dart';
 
 class ShellPage extends StatelessWidget {
   const ShellPage({super.key});
@@ -94,7 +94,7 @@ class ShellPage extends StatelessWidget {
                                   decoration: BoxDecoration(
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.1),
+                                        color: Colors.black.withValues(alpha: 0.1),
                                         blurRadius: 10,
                                         offset: const Offset(-2, 0),
                                       ),
@@ -494,7 +494,7 @@ class ShellPage extends StatelessWidget {
                   message: localizations?.collapse ?? 'Collapse',
                   child: Container(
                     decoration: BoxDecoration(
-                      color: tokens.bgLevel2.withOpacity(0.8), // 半透明背景，防止遮挡文字看不清
+                      color: tokens.bgLevel2.withValues(alpha: 0.8),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     width: 24,

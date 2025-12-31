@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io' show NetworkInterface, InternetAddressType; // Added for NetworkInterface
 
-import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/config/config.dart'; // Added import for Config
+import 'package:peers_touch_base/network/libp2p/core/certified_addr_book.dart'; // Added for CertifiedAddrBook
 import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/addrs.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
@@ -9,44 +11,40 @@ import 'package:peers_touch_base/network/libp2p/core/event/protocol.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/reachability.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm.dart'; // Added for Swarm cast
+import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/record.dart' as peer_record; // Added for PeerRecord
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/switch.dart';
 import 'package:peers_touch_base/network/libp2p/core/record/envelope.dart'; // Added for Envelope
-import 'package:peers_touch_base/network/libp2p/core/peer/record.dart' as peer_record; // Added for PeerRecord
-import 'package:peers_touch_base/network/libp2p/core/certified_addr_book.dart'; // Added for CertifiedAddrBook
-import 'package:peers_touch_base/network/libp2p/p2p/host/basic/natmgr.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2.dart';
-import 'package:logging/logging.dart';
-import 'package:synchronized/synchronized.dart';
-
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart' show AddrsFactory; // Import AddrsFactory
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/multistream.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/id_service.dart'; // Added import
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/identify.dart';   // Added import
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/options.dart';  // Added import
-import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'internal/backoff/backoff.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/network/connmgr/null_conn_mgr.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/eventbus/basic.dart';
-import 'package:peers_touch_base/network/libp2p/config/config.dart'; // Added import for Config
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/ping/ping.dart'; // Added for PingService
-import 'package:peers_touch_base/network/libp2p/p2p/host/relaysvc/relay_manager.dart'; // Added for RelayManager
 import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/ambient_autonat_v2.dart'; // AmbientAutoNATv2 orchestrator
+import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay.dart'; // Added for AutoRelay
+import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay_config.dart'; // Added for AutoRelayConfig
+import 'package:peers_touch_base/network/libp2p/p2p/host/basic/internal/backoff/backoff.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/basic/natmgr.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/eventbus/basic.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/relaysvc/relay_manager.dart'; // Added for RelayManager
+import 'package:peers_touch_base/network/libp2p/p2p/network/connmgr/null_conn_mgr.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm.dart'; // Added for Swarm cast
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/autonatv2.dart'; // AutoNATv2Impl
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/client/client.dart'; // Added for CircuitV2Client
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/holepunch_service.dart'; // Added for HolePunchService interface
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/service.dart' as holepunch_impl; // Added for HolePunchServiceImpl and Options
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/util.dart' show isRelayAddress; // Added for isRelayAddress
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/id_service.dart'; // Added import
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/identify.dart';   // Added import
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/options.dart';  // Added import
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/multistream.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/ping/ping.dart'; // Added for PingService
 import 'package:peers_touch_base/network/libp2p/p2p/transport/basic_upgrader.dart'; // Added for BasicUpgrader
-import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay.dart'; // Added for AutoRelay
-import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay_config.dart'; // Added for AutoRelayConfig
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/client/client.dart'; // Added for CircuitV2Client
+import 'package:synchronized/synchronized.dart';
 
 final _log = Logger('basichost');
 
@@ -81,7 +79,77 @@ List<MultiAddr> defaultAddrsFactory(List<MultiAddr> addrs) {
 ///   - uses a protocol muxer to mux per-protocol streams
 ///   - uses an identity service to send + receive node information
 ///   - uses a nat service to establish NAT port mappings
-class BasicHost implements Host {
+class BasicHost implements Host { // Added to store the timer
+
+  /// Creates a new BasicHost with the given Network and Config.
+  /// Use BasicHost.create() instead for proper async initialization.
+  BasicHost._({
+    required Network network,
+    required Config config, // Changed to accept Config
+  }) :
+    _config = config, // Initialize _config
+    _network = network,
+    // TODO: Select muxer from config.muxers if populated and compatible.
+    // For now, BasicHost directly uses MultistreamMuxer.
+    // If config provides a specific MultistreamMuxer instance, it could be used.
+    // This part needs further refinement on how Config.muxers (List<StreamMuxer>)
+    // maps to the single MultistreamMuxer instance.
+    // For simplicity, we'll assume a MultistreamMuxer might be passed via a new config field
+    // or BasicHost continues to default. Let's assume config might have a direct muxer field later.
+    // For now, keeping the direct instantiation or passed muxer logic.
+    // This will be simplified to use config.muxer if available, or default.
+    // Let's assume config.muxer is of type MultistreamMuxer? for now.
+    // For now, BasicHost will manage its own MultistreamMuxer instance.
+    // Config.muxers is for stream multiplexers (e.g., Yamux, Mplex), not the protocol muxer.
+    _mux = MultistreamMuxer(),
+    _negtimeout = config.negotiationTimeout ?? defaultNegotiationTimeout,
+    _addrsFactory = config.addrsFactory ?? defaultAddrsFactory,
+    _cmgr = config.connManager ?? const NullConnMgr(),
+    _eventBus = config.eventBus ?? BasicBus(),
+    // Initialize _upgrader using the network's resourceManager
+    // This assumes _network is already initialized and has its resourceManager.
+    // Network (Swarm) is passed in, so its resourceManager should be accessible.
+    _upgrader = BasicUpgrader(resourceManager: network.resourceManager) {
+
+    // Initialize IDService using options from Config
+    final identifyOpts = IdentifyOptions(
+      userAgent: config.identifyUserAgent, // Use config.identifyUserAgent
+      protocolVersion: config.identifyProtocolVersion, // Use config.identifyProtocolVersion
+      disableSignedPeerRecord: config.disableSignedPeerRecord ?? false,
+      disableObservedAddrManager: config.disableObservedAddrManager ?? false,
+      // metricsTracer: config.identifyMetricsTracer, // If added to Config
+    );
+    _idService = IdentifyService(this, options: identifyOpts);
+    _idService.start();
+
+    // Initialize PingService if enabled in Config
+    if (config.enablePing) {
+      _pingService = PingService(this);
+    }
+
+    _addrChangeChan = StreamController<void>.broadcast();
+
+    // Initialize event emitters
+    _eventBus.emitter(EvtLocalProtocolsUpdated).then((emitter) {
+      _evtLocalProtocolsUpdated = emitter;
+    });
+
+    _eventBus.emitter(EvtLocalAddressesUpdated).then((emitter) {
+      _evtLocalAddrsUpdated = emitter;
+    });
+
+    // Initialize NAT manager if provided by config.natManagerFactory
+    _natmgr = config.natManagerFactory != null ? config.natManagerFactory!(network) : null;
+
+    // Set up stream handler
+    _network.setStreamHandler('/libp2p/host', (dynamic stream, PeerId remotePeer) async {
+      _newStreamHandler(stream as P2PStream);
+    });
+
+    // Set up network notifications for address changes
+    _network.notify(_AddressChangeNotifiee(this));
+    _log.fine('[BasicHost CONSTRUCTOR] for host ${id.toString()} - Initial _network.listenAddresses: ${_network.listenAddresses}');
+  }
   final _closeSync = Completer<void>();
   bool _closed = false;
 
@@ -122,77 +190,7 @@ class BasicHost implements Host {
   final ExpBackoff _updateLocalIPv6Backoff = ExpBackoff();
   List<MultiAddr> _filteredInterfaceAddrs = [];
   List<MultiAddr> _allInterfaceAddrs = [];
-  Timer? _addressMonitorTimer; // Added to store the timer
-
-  /// Creates a new BasicHost with the given Network and Config.
-  /// Use BasicHost.create() instead for proper async initialization.
-  BasicHost._({
-    required Network network,
-    required Config config, // Changed to accept Config
-  }) :
-    _config = config, // Initialize _config
-    _network = network,
-    // TODO: Select muxer from config.muxers if populated and compatible.
-    // For now, BasicHost directly uses MultistreamMuxer.
-    // If config provides a specific MultistreamMuxer instance, it could be used.
-    // This part needs further refinement on how Config.muxers (List<StreamMuxer>)
-    // maps to the single MultistreamMuxer instance.
-    // For simplicity, we'll assume a MultistreamMuxer might be passed via a new config field
-    // or BasicHost continues to default. Let's assume config might have a direct muxer field later.
-    // For now, keeping the direct instantiation or passed muxer logic.
-    // This will be simplified to use config.muxer if available, or default.
-    // Let's assume config.muxer is of type MultistreamMuxer? for now.
-    // For now, BasicHost will manage its own MultistreamMuxer instance.
-    // Config.muxers is for stream multiplexers (e.g., Yamux, Mplex), not the protocol muxer.
-    _mux = MultistreamMuxer(),
-    _negtimeout = config.negotiationTimeout ?? defaultNegotiationTimeout,
-    _addrsFactory = config.addrsFactory ?? defaultAddrsFactory,
-    _cmgr = config.connManager ?? NullConnMgr(),
-    _eventBus = config.eventBus ?? BasicBus(),
-    // Initialize _upgrader using the network's resourceManager
-    // This assumes _network is already initialized and has its resourceManager.
-    // Network (Swarm) is passed in, so its resourceManager should be accessible.
-    _upgrader = BasicUpgrader(resourceManager: network.resourceManager) {
-
-    // Initialize IDService using options from Config
-    final identifyOpts = IdentifyOptions(
-      userAgent: config.identifyUserAgent, // Use config.identifyUserAgent
-      protocolVersion: config.identifyProtocolVersion, // Use config.identifyProtocolVersion
-      disableSignedPeerRecord: config.disableSignedPeerRecord ?? false,
-      disableObservedAddrManager: config.disableObservedAddrManager ?? false,
-      // metricsTracer: config.identifyMetricsTracer, // If added to Config
-    );
-    _idService = IdentifyService(this, options: identifyOpts);
-    _idService.start();
-
-    // Initialize PingService if enabled in Config
-    if (config.enablePing) {
-      _pingService = PingService(this);
-    }
-
-    _addrChangeChan = StreamController<void>.broadcast();
-
-    // Initialize event emitters
-    _eventBus.emitter(EvtLocalProtocolsUpdated).then((emitter) {
-      _evtLocalProtocolsUpdated = emitter;
-    });
-
-    _eventBus.emitter(EvtLocalAddressesUpdated).then((emitter) {
-      _evtLocalAddrsUpdated = emitter;
-    });
-
-    // Initialize NAT manager if provided by config.natManagerFactory
-    _natmgr = config.natManagerFactory != null ? config.natManagerFactory!(network) : null;
-
-    // Set up stream handler
-    _network.setStreamHandler("/libp2p/host", (dynamic stream, PeerId remotePeer) async {
-      _newStreamHandler(stream as P2PStream);
-    });
-
-    // Set up network notifications for address changes
-    _network.notify(_AddressChangeNotifiee(this));
-    _log.fine('[BasicHost CONSTRUCTOR] for host ${id.toString()} - Initial _network.listenAddresses: ${_network.listenAddresses}');
-  }
+  Timer? _addressMonitorTimer;
 
   /// Creates a new BasicHost with proper async initialization.
   /// This ensures interface addresses are available at startup.
@@ -269,13 +267,9 @@ class BasicHost implements Host {
             // Envelope.seal should handle marshalling the recordPayload and signing
             final envelope = await Envelope.seal(recordPayload, privKey);
 
-            if (envelope != null) {
-              await cab.consumePeerRecord(envelope, AddressTTL.permanentAddrTTL);
-              _log.fine('Successfully created and persisted self signed peer record to peerstore.');
-            } else {
-              _log.fine('Failed to create or seal self signed peer record envelope (seal returned null).');
-            }
-          } catch (e, s) {
+            await cab.consumePeerRecord(envelope, AddressTTL.permanentAddrTTL);
+            _log.fine('Successfully created and persisted self signed peer record to peerstore.');
+                    } catch (e, s) {
             _log.severe('Error creating or persisting self signed peer record: $e\n$s');
           }
         }
@@ -412,9 +406,9 @@ class BasicHost implements Host {
           _log.fine('[BasicHost AutoRelay] Peer source callback yielded $yielded candidates');
         },
         // Use shorter boot delay for faster relay establishment (default is 3 minutes)
-        bootDelay: Duration(seconds: 5),
+        bootDelay: const Duration(seconds: 5),
         // Check for candidates more frequently (default is 30 seconds)
-        minInterval: Duration(seconds: 10),
+        minInterval: const Duration(seconds: 10),
       );
       
       // Create AutoRelay instance with the upgrader
@@ -530,7 +524,7 @@ class BasicHost implements Host {
     var lastAddrs = <MultiAddr>[];
 
     // Set up a periodic timer to check for address changes
-    _addressMonitorTimer = Timer.periodic(Duration(seconds: 5), (_) { // Store the timer
+    _addressMonitorTimer = Timer.periodic(const Duration(seconds: 5), (_) { // Store the timer
       if (_closed) return;
 
       // Update local IP addresses if we have listen addresses
@@ -962,7 +956,7 @@ class BasicHost implements Host {
     final filteredAddrs = _addrsFactory(pi.addrs);
 
     
-    await peerStore.addrBook.addAddrs(pi.id, filteredAddrs, Duration(minutes: 5));
+    await peerStore.addrBook.addAddrs(pi.id, filteredAddrs, const Duration(minutes: 5));
     
     final filterTime = DateTime.now().difference(filterStartTime);
 
@@ -1027,12 +1021,12 @@ class BasicHost implements Host {
   @override
   void setStreamHandler(ProtocolID pid, StreamHandler handler) {
     // Convert StreamHandler to HandlerFunc
-    final handlerFunc = (ProtocolID protocol, P2PStream stream) {
+    void handlerFunc(ProtocolID protocol, P2PStream stream) {
       // Extract remotePeer from the stream's connection
       final remotePeer = stream.conn.remotePeer;
       // Call the handler with both stream and remotePeer
       handler(stream, remotePeer);
-    };
+    }
 
     _mux.addHandler(pid, handlerFunc);
 
@@ -1048,12 +1042,12 @@ class BasicHost implements Host {
     // final handlerFunc = (ProtocolID protocol, P2PStream stream) {
     //   handler(stream);
     // };
-    final handlerFunc = (ProtocolID protocol, P2PStream stream) {
+    void handlerFunc(ProtocolID protocol, P2PStream stream) {
       // Extract remotePeer from the stream's connection
       final remotePeer = stream.conn.remotePeer;
       // Call the handler with both stream and remotePeer
       handler(stream, remotePeer);
-    };
+    }
 
     _mux.addHandlerWithFunc(pid, match, handlerFunc);
 
@@ -1296,7 +1290,7 @@ class BasicHost implements Host {
         
         // Connect with timeout
         await connect(addrInfo).timeout(
-          Duration(seconds: 10),
+          const Duration(seconds: 10),
           onTimeout: () {
             throw TimeoutException('Connection timeout after 10 seconds');
           },
@@ -1322,7 +1316,7 @@ class BasicHost implements Host {
       return; // Signed peer records are disabled
     }
 
-    if (!(peerStore.addrBook is CertifiedAddrBook)) {
+    if (peerStore.addrBook is! CertifiedAddrBook) {
       return; // AddrBook doesn't support certified records
     }
 
@@ -1347,13 +1341,9 @@ class BasicHost implements Host {
 
       final envelope = await Envelope.seal(recordPayload, privKey);
 
-      if (envelope != null) {
-        await cab.consumePeerRecord(envelope, AddressTTL.permanentAddrTTL);
-        _log.fine('[BasicHost] Successfully regenerated signed peer record with addresses: $currentAddrs');
-      } else {
-        _log.warning('[BasicHost] Failed to seal signed peer record envelope');
-      }
-    } catch (e, s) {
+      await cab.consumePeerRecord(envelope, AddressTTL.permanentAddrTTL);
+      _log.fine('[BasicHost] Successfully regenerated signed peer record with addresses: $currentAddrs');
+        } catch (e, s) {
       _log.severe('[BasicHost] Error regenerating signed peer record: $e\n$s');
     }
   }
@@ -1361,9 +1351,9 @@ class BasicHost implements Host {
 
 /// Network notifiee for address changes.
 class _AddressChangeNotifiee implements Notifiee {
-  final BasicHost _host;
 
   _AddressChangeNotifiee(this._host);
+  final BasicHost _host;
 
   @override
   void listen(Network network, MultiAddr addr) {
@@ -1377,11 +1367,11 @@ class _AddressChangeNotifiee implements Notifiee {
 
   @override
   Future<void> connected(Network network, Conn conn) async {
-    return await Future.delayed(Duration(milliseconds: 10));
+    return await Future.delayed(const Duration(milliseconds: 10));
   }
 
   @override
   Future<void> disconnected(Network network, Conn conn) async {
-    return await Future.delayed(Duration(milliseconds: 10));
+    return await Future.delayed(const Duration(milliseconds: 10));
   }
 }

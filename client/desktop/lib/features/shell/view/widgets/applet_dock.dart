@@ -6,16 +6,16 @@ import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/features/shell/controller/widgets/applet_dock_controller.dart';
 
 class PinnedAppletsDock extends StatelessWidget {
-  final List<AppletManifest> pinnedApplets;
-  final Function(AppletManifest) onAppletTap;
-  final Function(int oldIndex, int newIndex) onReorder;
 
   const PinnedAppletsDock({
-    Key? key,
+    super.key,
     required this.pinnedApplets,
     required this.onAppletTap,
     required this.onReorder,
-  }) : super(key: key);
+  });
+  final List<AppletManifest> pinnedApplets;
+  final Function(AppletManifest) onAppletTap;
+  final Function(int oldIndex, int newIndex) onReorder;
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +72,7 @@ class PinnedAppletsDock extends StatelessWidget {
                             borderRadius: BorderRadius.circular(12),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
+                                color: Colors.black.withValues(alpha: 0.1),
                                 blurRadius: 8,
                                 offset: const Offset(0, 4),
                               )
@@ -109,7 +109,7 @@ class PinnedAppletsDock extends StatelessWidget {
         child: InkWell(
           onTap: () => onAppletTap(applet),
           borderRadius: BorderRadius.circular(12),
-          hoverColor: tokens.brandAccent.withOpacity(0.1),
+          hoverColor: tokens.brandAccent.withValues(alpha: 0.1),
           child: Center(
             child: Tooltip(
               message: applet.name,
@@ -119,7 +119,7 @@ class PinnedAppletsDock extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: tokens.bgLevel2, 
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: tokens.divider.withOpacity(0.5)),
+                  border: Border.all(color: tokens.divider.withValues(alpha: 0.5)),
                 ),
                 child: Icon(Icons.extension, size: 24, color: tokens.textPrimary),
               ),

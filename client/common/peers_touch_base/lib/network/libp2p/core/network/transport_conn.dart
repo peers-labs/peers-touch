@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
 
 /// TransportConn extends the Conn interface with methods for reading and writing raw data.
 /// This is used by transport implementations that need to send and receive data directly.

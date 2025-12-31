@@ -1,40 +1,57 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:synchronized/synchronized.dart';
-import 'package:uuid/uuid.dart'; // Re-enabling Uuid
-import 'package:convert/convert.dart';
 
+import 'package:convert/convert.dart';
+import 'package:logging/logging.dart'; // Added for logging
 import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/conn.dart' show Conn, ConnState, ConnStats, Stats;
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart' show ConnState, ConnStats, Stats;
 import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ConnScope, ScopeStat, ResourceScopeSpan, ResourceManager, ConnManagementScope, StreamManagementScope;
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ConnScope, ScopeStat, ResourceScopeSpan, ResourceManager, ConnManagementScope;
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart' show P2PStream; // P2PStream might not be directly relevant if this is raw
 import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
-// We typically don't need to import the concrete PeerId implementation directly if only PeerId is used for types.
-// However, if TCPConnection instantiates PeerId directly (e.g. PeerId.random()), it would need it.
-// For now, assuming PeerId is sufficient for type declarations from the interface.
-// If PeerId concrete class is needed for instantiation, it would be:
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart' as concrete_peer; // Alias to avoid conflict if PeerId is also in core/peer_id.dart
-
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 // Local relative imports are usually fine if they don't cross major boundaries,
 // but for consistency, they can also be package imports.
 // For now, leaving these as potentially relative if they are within the same sub-module.
 // If 'connection_manager.dart' is in the same directory or a sub-directory of 'transport', this is okay.
 // If it's in a different top-level part of 'p2p', then package path is better.
 // Let's assume these are local enough for now.
-import 'connection_state.dart' as transport_state; // For ConnManager interaction
-import 'p2p_stream_adapter.dart';
-import 'package:logging/logging.dart'; // Added for logging
+import 'package:peers_touch_base/network/libp2p/p2p/transport/connection_state.dart' as transport_state; // For ConnManager interaction
+import 'package:peers_touch_base/network/libp2p/p2p/transport/p2p_stream_adapter.dart';
+import 'package:synchronized/synchronized.dart';
+import 'package:uuid/uuid.dart'; // Re-enabling Uuid
 
 final _log = Logger('TCPConnection');
 
 /// TCP implementation of the Conn interface, upgraded for multiplexing.
-class TCPConnection implements TransportConn {
+class TCPConnection implements TransportConn { // Direction of the connection establishment
+
+  // Callback for when a new inbound stream is accepted - REMOVED for raw connection
+  // final void Function(P2PStream stream)? onIncomingStream;
+
+
+  /// Creates a new raw TCP connection.
+  TCPConnection(
+    this._socket,
+    this._localAddr,
+    this._remoteAddr,
+    this._localPeerId,
+    this._remotePeerId, // Can be null for incoming raw connections before handshake
+    // this._multiplexer, // Removed
+    this._resourceManager, // Kept for now
+    this._isServer, {
+    // this.onIncomingStream, // Removed
+    ConnManager? legacyConnManager,
+  }) : _id = const Uuid().v4(),
+       _legacyConnManager = legacyConnManager,
+       _direction = _isServer ? Direction.inbound : Direction.outbound {
+    _log.fine('TCPConnection($_id) CREATED. IsServer: $_isServer, Direction: $_direction. Socket Local: ${_socket.address.address}:${_socket.port}, Socket Remote: ${_socket.remoteAddress.address}:${_socket.remotePort}');
+    _legacyConnManager?.registerConnection(this);
+  }
   final Socket _socket; // The underlying (potentially secured) socket
   final MultiAddr _remoteAddr;
   final MultiAddr _localAddr;
@@ -66,32 +83,9 @@ class TCPConnection implements TransportConn {
   final List<P2PStreamAdapter> _streams = [];
 
   final PeerId _localPeerId;
-  PeerId? _remotePeerId; // Made nullable as it might not be known for raw incoming
+  final PeerId? _remotePeerId; // Made nullable as it might not be known for raw incoming
   final bool _isServer; // Was this connection accepted by a listener?
-  final Direction _direction; // Direction of the connection establishment
-
-  // Callback for when a new inbound stream is accepted - REMOVED for raw connection
-  // final void Function(P2PStream stream)? onIncomingStream;
-
-
-  /// Creates a new raw TCP connection.
-  TCPConnection(
-    this._socket,
-    this._localAddr,
-    this._remoteAddr,
-    this._localPeerId,
-    this._remotePeerId, // Can be null for incoming raw connections before handshake
-    // this._multiplexer, // Removed
-    this._resourceManager, // Kept for now
-    this._isServer, {
-    // this.onIncomingStream, // Removed
-    ConnManager? legacyConnManager,
-  }) : _id = Uuid().v4(),
-       _legacyConnManager = legacyConnManager,
-       _direction = _isServer ? Direction.inbound : Direction.outbound {
-    _log.fine('TCPConnection($_id) CREATED. IsServer: $_isServer, Direction: $_direction. Socket Local: ${_socket.address.address}:${_socket.port}, Socket Remote: ${_socket.remoteAddress.address}:${_socket.remotePort}');
-    this._legacyConnManager?.registerConnection(this);
-  }
+  final Direction _direction;
 
   /// Asynchronous factory method to create and initialize a TCPConnection.
   static Future<TCPConnection> create(
@@ -128,7 +122,7 @@ class TCPConnection implements TransportConn {
     try {
       _connManagementScope = await _resourceManager.openConnection(_direction, true /* useFd */, _remoteAddr);
       if (_remotePeerId != null) { // Only set peer if known
-        await _connManagementScope!.setPeer(_remotePeerId!);
+        await _connManagementScope!.setPeer(_remotePeerId);
       }
       
       _legacyConnManager?.updateState(this, transport_state.ConnectionState.active, error: null);
@@ -160,7 +154,7 @@ class TCPConnection implements TransportConn {
           _log.fine('TCPConnection($id) - Socket stream done.');
           _socketIsDone = true;
           if (!initListenCompleter.isCompleted) { // Socket closed during setup phase
-            initListenCompleter.completeError(StateError("Socket stream closed unexpectedly during initialization"));
+            initListenCompleter.completeError(StateError('Socket stream closed unexpectedly during initialization'));
           } else if (_pendingReadCompleter != null && !_pendingReadCompleter!.isCompleted) { // Ongoing closure after successful init
             _pendingReadCompleter!.complete(); // Signal EOF
           }
@@ -216,13 +210,13 @@ class TCPConnection implements TransportConn {
       // For now, throw or return a placeholder if accessed too early.
       throw StateError('Remote PeerId not yet established for this raw connection.');
     }
-    return _remotePeerId!;
+    return _remotePeerId;
   }
 
   @override
   Future<PublicKey?> get remotePublicKey async {
     if (_remotePeerId == null) return null;
-    return _remotePeerId!.extractPublicKey();
+    return _remotePeerId.extractPublicKey();
   }
 
   @override
@@ -236,7 +230,7 @@ class TCPConnection implements TransportConn {
 
   @override
   ConnState get state {
-    return ConnState(
+    return const ConnState(
       streamMultiplexer: '', // No multiplexer at this raw stage
       security: '', // No security at this raw stage
       transport: 'tcp',
@@ -319,7 +313,7 @@ class TCPConnection implements TransportConn {
 
   @override
   Future<Uint8List> read([int? length]) async {
-    final readId = Uuid().v4().substring(0, 8);
+    final readId = const Uuid().v4().substring(0, 8);
     _log.finer('TCPConnection($id) - Read($readId) START. Requested: $length. Buffer: ${_receiveBuffer.length} bytes.');
     _assertNotClosed();
 
@@ -436,6 +430,7 @@ class TCPConnection implements TransportConn {
     _currentWriteTimeout = timeout;
   }
 
+  @override
   Socket get socket => _socket;
 
   @override
@@ -476,7 +471,7 @@ class TCPConnection implements TransportConn {
     // then that's the one that should be called.
     // For now, using _legacyConnManager if available.
     if (!_closed && _legacyConnManager != null) {
-      _legacyConnManager!.recordActivity(this);
+      _legacyConnManager.recordActivity(this);
     }
   }
 
@@ -487,19 +482,19 @@ class TCPConnection implements TransportConn {
 
 /// Implementation of ConnStats
 class _ConnStatsImpl implements ConnStats {
+
+  _ConnStatsImpl({required this.stats, required this.numStreams});
   @override
   final Stats stats;
   @override
   final int numStreams;
-
-  _ConnStatsImpl({required this.stats, required this.numStreams});
 }
 
 /// Implementation of ConnScope for TCPConnection
 class _ConnScopeImpl implements ConnScope {
-  final ConnManagementScope _connManagementScope;
 
   _ConnScopeImpl(this._connManagementScope);
+  final ConnManagementScope _connManagementScope;
 
   @override
   Future<ResourceScopeSpan> beginSpan() async {
@@ -526,9 +521,9 @@ class _ConnScopeImpl implements ConnScope {
 
 /// Implementation of ResourceScopeSpan for TCPConnection
 class _ResourceScopeSpanImpl implements ResourceScopeSpan {
-  final ResourceScopeSpan _underlyingSpan;
 
   _ResourceScopeSpanImpl(this._underlyingSpan);
+  final ResourceScopeSpan _underlyingSpan;
 
   @override
   Future<ResourceScopeSpan> beginSpan() async {

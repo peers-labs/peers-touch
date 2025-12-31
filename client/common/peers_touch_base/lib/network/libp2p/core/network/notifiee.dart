@@ -22,6 +22,14 @@ abstract class Notifiee {
 /// and nop'ing if they are unset. This is the easy way to register for
 /// notifications.
 class NotifyBundle implements Notifiee {
+  
+  /// Creates a new NotifyBundle with the given functions
+  const NotifyBundle({
+    this.listenF,
+    this.listenCloseF,
+    this.connectedF,
+    this.disconnectedF,
+  });
   /// Function called when network starts listening on an addr
   final void Function(Network, MultiAddr)? listenF;
   
@@ -33,14 +41,6 @@ class NotifyBundle implements Notifiee {
   
   /// Function called when a connection closed
   final void Function(Network, Conn)? disconnectedF;
-  
-  /// Creates a new NotifyBundle with the given functions
-  const NotifyBundle({
-    this.listenF,
-    this.listenCloseF,
-    this.connectedF,
-    this.disconnectedF,
-  });
   
   @override
   void listen(Network network, MultiAddr addr) {
@@ -78,13 +78,13 @@ final NoopNotifiee globalNoopNotifiee = NoopNotifiee();
 class NoopNotifiee implements Notifiee {
   @override
   Future<void> connected(Network network, Conn conn) async {
-    return await Future.delayed(Duration(milliseconds: 10));
+    return await Future.delayed(const Duration(milliseconds: 10));
   }
   
   @override
   Future<void> disconnected(Network network, Conn conn) async {
 
-    return await Future.delayed(Duration(milliseconds: 10));
+    return await Future.delayed(const Duration(milliseconds: 10));
   }
   
   @override

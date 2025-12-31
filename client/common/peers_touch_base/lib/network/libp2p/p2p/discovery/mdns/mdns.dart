@@ -3,12 +3,11 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:mdns_dart/mdns_dart.dart';
-
-import '../../../core/discovery.dart';
-import '../../../core/peer/addr_info.dart';
-import '../../../core/host/host.dart';
-import '../../../core/multiaddr.dart';
-import '../../../core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/discovery.dart';
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
 /// Constants for mDNS service
 class MdnsConstants {
@@ -33,6 +32,15 @@ abstract class MdnsNotifee {
 
 /// Implementation of mDNS discovery for libp2p using mdns_dart
 class MdnsDiscovery implements Discovery {
+
+  /// Creates a new MdnsDiscovery service
+  MdnsDiscovery(this._host, {
+    String? serviceName,
+    MdnsNotifee? notifee,
+  }) : 
+    _serviceName = serviceName ?? MdnsConstants.serviceName,
+    _peerName = _generateRandomString(32 + Random().nextInt(32)),
+    _notifee = notifee;
   final Host _host;
   final String _serviceName;
   final String _peerName;
@@ -54,15 +62,6 @@ class MdnsDiscovery implements Discovery {
   set notifee(MdnsNotifee? value) {
     _notifee = value;
   }
-
-  /// Creates a new MdnsDiscovery service
-  MdnsDiscovery(this._host, {
-    String? serviceName,
-    MdnsNotifee? notifee,
-  }) : 
-    _serviceName = serviceName ?? MdnsConstants.serviceName,
-    _peerName = _generateRandomString(32 + Random().nextInt(32)),
-    _notifee = notifee;
 
   /// Starts the mDNS discovery service
   Future<void> start() async {
@@ -343,9 +342,9 @@ class MdnsDiscovery implements Discovery {
 
 /// A notifee that forwards discovered peers to a stream
 class _StreamNotifee implements MdnsNotifee {
-  final StreamController<AddrInfo> _controller;
 
   _StreamNotifee(this._controller);
+  final StreamController<AddrInfo> _controller;
 
   @override
   void handlePeerFound(AddrInfo peer) {
@@ -357,9 +356,9 @@ class _StreamNotifee implements MdnsNotifee {
 
 /// A notifee that forwards discovered peers to multiple notifees
 class _CompositeNotifee implements MdnsNotifee {
-  final List<MdnsNotifee> _notifees;
 
   _CompositeNotifee(this._notifees);
+  final List<MdnsNotifee> _notifees;
 
   @override
   void handlePeerFound(AddrInfo peer) {

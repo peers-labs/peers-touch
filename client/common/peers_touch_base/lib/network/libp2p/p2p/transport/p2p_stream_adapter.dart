@@ -1,16 +1,28 @@
-import 'package:uuid/uuid.dart'; // Moved to top
 import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/mux.dart' show MuxedStream, ResetException; // Added ResetException
-import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show StreamManagementScope, StreamScope;
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show StreamManagementScope;
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart' show P2PStream, StreamStats;
 import 'package:peers_touch_base/network/libp2p/p2p/transport/tcp_connection.dart'; // Assuming TCPConnection will be the parent
+import 'package:uuid/uuid.dart'; // Moved to top
 
 class P2PStreamAdapter implements P2PStream<Uint8List> {
+
+  P2PStreamAdapter(
+    this._underlyingMuxedStream,
+    this._parentConnection,
+    this._streamManagementScope,
+    this._direction, // Added direction
+    this._protocolId,
+  ) : _id = const Uuid().v4() { // Initialize unique ID
+    _incomingDataController = StreamController<Uint8List>(
+      onListen: _startListening,
+      onCancel: _stopListening,
+    );
+  }
   final MuxedStream _underlyingMuxedStream;
   final TCPConnection _parentConnection; // Or a more generic Conn type if needed
   final StreamManagementScope _streamManagementScope;
@@ -22,19 +34,6 @@ class P2PStreamAdapter implements P2PStream<Uint8List> {
   // Stream controller for the 'incoming' getter
   late StreamController<Uint8List> _incomingDataController;
   StreamSubscription? _muxedStreamSubscription;
-
-  P2PStreamAdapter(
-    this._underlyingMuxedStream,
-    this._parentConnection,
-    this._streamManagementScope,
-    this._direction, // Added direction
-    this._protocolId,
-  ) : _id = Uuid().v4() { // Initialize unique ID
-    _incomingDataController = StreamController<Uint8List>(
-      onListen: _startListening,
-      onCancel: _stopListening,
-    );
-  }
 
   void _startListening() {
     // This is a simplified read loop. A more robust implementation
@@ -143,7 +142,7 @@ class P2PStreamAdapter implements P2PStream<Uint8List> {
   @override
   Future<Uint8List> read([int? maxLength]) async {
     if (_isClosed) {
-      throw ResetException('Stream is closed');
+      throw const ResetException('Stream is closed');
     }
     try {
       // MuxedStream.read expects a length. If maxLength is null, decide a default.
@@ -163,7 +162,7 @@ class P2PStreamAdapter implements P2PStream<Uint8List> {
   @override
   Future<void> write(Uint8List data) async {
     if (_isClosed) {
-      throw ResetException('Stream is closed');
+      throw const ResetException('Stream is closed');
     }
     try {
       await _underlyingMuxedStream.write(data);

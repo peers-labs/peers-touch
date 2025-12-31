@@ -1,5 +1,12 @@
 /// Configuration options for transport implementations
 class TransportConfig {
+
+  /// Creates a new transport configuration
+  const TransportConfig({
+    this.dialTimeout = defaultDialTimeout,
+    this.readTimeout = defaultReadTimeout,
+    this.writeTimeout = defaultWriteTimeout,
+  });
   /// Default timeout for connection attempts
   static const defaultDialTimeout = Duration(seconds: 30);
 
@@ -17,13 +24,6 @@ class TransportConfig {
 
   /// Timeout for write operations
   final Duration writeTimeout;
-
-  /// Creates a new transport configuration
-  const TransportConfig({
-    this.dialTimeout = defaultDialTimeout,
-    this.readTimeout = defaultReadTimeout,
-    this.writeTimeout = defaultWriteTimeout,
-  });
 
   /// Creates a new transport configuration with default values
   static const defaultConfig = TransportConfig();

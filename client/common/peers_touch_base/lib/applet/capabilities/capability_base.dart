@@ -1,5 +1,4 @@
 
-import '../bridge/protocol.dart';
 
 abstract class AppletCapability {
   String get moduleName;

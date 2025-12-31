@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
-
-import 'controllers/mobile_chat_controller.dart';
-import 'bindings/mobile_chat_binding.dart';
-import 'pages/mobile_chat_page.dart';
+import 'package:peers_touch_mobile/features/chat/bindings/mobile_chat_binding.dart';
+import 'package:peers_touch_mobile/features/chat/controllers/mobile_chat_controller.dart';
+import 'package:peers_touch_mobile/features/chat/pages/mobile_chat_page.dart';
 
 /// 移动端聊天模块
 /// 负责模块注册和路由配置
@@ -58,13 +57,13 @@ class MobileChatModule {
 
 /// 移动端聊天会话页面
 class _MobileChatSessionPage extends StatefulWidget {
-  final ChatSession session;
-  final Friend friend;
   
   const _MobileChatSessionPage({
     required this.session,
     required this.friend,
   });
+  final ChatSession session;
+  final Friend friend;
 
   @override
   State<_MobileChatSessionPage> createState() => _MobileChatSessionPageState();

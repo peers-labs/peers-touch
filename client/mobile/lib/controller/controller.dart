@@ -1,15 +1,13 @@
 import 'package:get/get.dart';
-
+import 'package:peers_touch_mobile/controller/auth_controller.dart';
 import 'package:peers_touch_mobile/controller/device_id_controller.dart';
-import 'package:peers_touch_mobile/controller/scroll_controller.dart';
 import 'package:peers_touch_mobile/controller/me_controller.dart';
 import 'package:peers_touch_mobile/controller/profile_controller.dart';
-import 'package:peers_touch_mobile/controller/auth_controller.dart';
-import 'package:peers_touch_mobile/store/sync_manager.dart';
+import 'package:peers_touch_mobile/controller/scroll_controller.dart';
 import 'package:peers_touch_mobile/services/auth_service.dart';
+import 'package:peers_touch_mobile/store/sync_manager.dart';
 
 class ControllerManager {
-  static final ControllerManager _instance = ControllerManager._internal();
 
   factory ControllerManager() {
     return _instance;
@@ -30,6 +28,7 @@ class ControllerManager {
     _scrollController = Get.put(AppScrollController());
     _authController = Get.put(AuthController());
   }
+  static final ControllerManager _instance = ControllerManager._internal();
 
   // Add your controllers here
   // Example:

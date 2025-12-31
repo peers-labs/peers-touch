@@ -12,7 +12,7 @@ class SignupPage extends GetView<AuthController> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
     // Darker fill color for inputs to match the reference style slightly, or just standard surface
-    final inputFillColor = theme.colorScheme.surfaceContainerHighest.withOpacity(0.3);
+    final inputFillColor = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3);
 
     return Scaffold(
       appBar: AppBar(
@@ -136,7 +136,7 @@ class SignupPage extends GetView<AuthController> {
               Text(
                 l10n.passwordMinLengthHint,
                 style: TextStyle(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                   fontSize: 13,
                 ),
               ),
@@ -198,7 +198,7 @@ class SignupPage extends GetView<AuthController> {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.1)),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

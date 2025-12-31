@@ -1,23 +1,6 @@
 /// 简化的对等节点信息模型
 /// 用于STUN/TUN穿透功能
 class StunPeerInfo {
-  /// 节点ID
-  final String id;
-  
-  /// 节点地址（IP地址）
-  final String address;
-  
-  /// 节点端口
-  final int port;
-  
-  /// 公钥（可选）
-  final String? publicKey;
-  
-  /// 节点能力列表
-  final List<String> capabilities;
-  
-  /// 额外元数据
-  final Map<String, dynamic> metadata;
   
   const StunPeerInfo({
     required this.id,
@@ -39,6 +22,23 @@ class StunPeerInfo {
       metadata: Map<String, dynamic>.from(json['metadata'] ?? {}),
     );
   }
+  /// 节点ID
+  final String id;
+  
+  /// 节点地址（IP地址）
+  final String address;
+  
+  /// 节点端口
+  final int port;
+  
+  /// 公钥（可选）
+  final String? publicKey;
+  
+  /// 节点能力列表
+  final List<String> capabilities;
+  
+  /// 额外元数据
+  final Map<String, dynamic> metadata;
   
   /// 转换为JSON
   Map<String, dynamic> toJson() {

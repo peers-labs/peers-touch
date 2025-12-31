@@ -4,10 +4,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/libp2p/p2p/transport/udx_transport.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/udx_exceptions.dart';
 import 'package:dart_udx/dart_udx.dart';
-
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
@@ -17,23 +15,12 @@ import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/transport/listener.dart';
-import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/udx_exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/udx_transport.dart';
 
 final Logger _logger = Logger('UDXStreamAdapter');
 
 class UDXP2PStreamAdapter implements MuxedStream, P2PStream<Uint8List> {
-  final UDXStream _udxStream;
-  UDXStream get udxStream => _udxStream; // Expose the underlying stream
-  final UDXSessionConn _parentConn;
-  final Direction _direction;
-  String _protocol = '';
-  bool _isClosed = false;
-  final StreamController<Uint8List> _incomingDataController = StreamController<Uint8List>.broadcast(); // Kept for .stream getter if used elsewhere
-  final List<Uint8List> _readBuffer = [];
-  Completer<Uint8List>? _pendingReadCompleter; // For direct signaling to a waiting read()
-  StreamSubscription? _udxStreamDataSubscription;
-  StreamSubscription? _udxStreamCloseSubscription;
-  final Completer<void> _closedCompleter = Completer<void>();
 
   UDXP2PStreamAdapter({
     required UDXStream udxStream,
@@ -108,6 +95,18 @@ class UDXP2PStreamAdapter implements MuxedStream, P2PStream<Uint8List> {
         }
     );
   }
+  final UDXStream _udxStream;
+  UDXStream get udxStream => _udxStream; // Expose the underlying stream
+  final UDXSessionConn _parentConn;
+  final Direction _direction;
+  String _protocol = '';
+  bool _isClosed = false;
+  final StreamController<Uint8List> _incomingDataController = StreamController<Uint8List>.broadcast(); // Kept for .stream getter if used elsewhere
+  final List<Uint8List> _readBuffer = [];
+  Completer<Uint8List>? _pendingReadCompleter; // For direct signaling to a waiting read()
+  StreamSubscription? _udxStreamDataSubscription;
+  StreamSubscription? _udxStreamCloseSubscription;
+  final Completer<void> _closedCompleter = Completer<void>();
 
   @override
   String id() {
@@ -273,7 +272,7 @@ class UDXP2PStreamAdapter implements MuxedStream, P2PStream<Uint8List> {
   @override
   Future<void> reset() async {
     _logger.fine('[UDXP2PStreamAdapter ${id()}] reset() called, performing full stream close with error.');
-    final exception = SocketException("Stream reset by local peer");
+    const exception = SocketException('Stream reset by local peer');
     await _closeWithError(exception, StackTrace.current);
     throw exception;
   }
@@ -289,11 +288,11 @@ class UDXP2PStreamAdapter implements MuxedStream, P2PStream<Uint8List> {
 
 
   @override
-  Future<void> setDeadline(DateTime? time) async => throw UnimplementedError("Deadlines not implemented.");
+  Future<void> setDeadline(DateTime? time) async => throw UnimplementedError('Deadlines not implemented.');
   @override
-  Future<void> setReadDeadline(DateTime time) async => throw UnimplementedError("Deadlines not implemented.");
+  Future<void> setReadDeadline(DateTime time) async => throw UnimplementedError('Deadlines not implemented.');
   @override
-  Future<void> setWriteDeadline(DateTime time) async => throw UnimplementedError("Deadlines not implemented.");
+  Future<void> setWriteDeadline(DateTime time) async => throw UnimplementedError('Deadlines not implemented.');
 
   @override
   bool get isClosed {
@@ -308,7 +307,7 @@ class UDXP2PStreamAdapter implements MuxedStream, P2PStream<Uint8List> {
   }
 
   @override
-  StreamManagementScope scope() => throw UnimplementedError("Scope not yet implemented for UDXP2PStreamAdapter.");
+  StreamManagementScope scope() => throw UnimplementedError('Scope not yet implemented for UDXP2PStreamAdapter.');
 
   @override
   P2PStream<Uint8List> get incoming {
@@ -332,19 +331,9 @@ typedef UDXSessionConnFactory = UDXSessionConn Function({
 });
 
 class UDXListener implements Listener {
-  final UDXMultiplexer _multiplexer;
-  final MultiAddr _boundAddr;
-  final UDXTransport _transport;
-  final ConnManager _connManager;
-  final UDXSessionConnFactory _sessionConnFactory;
-
-  final StreamController<TransportConn> _incomingSessionController = StreamController<TransportConn>.broadcast();
-  bool _isClosed = false;
-  final Map<String, UDXSessionConn> _activeSessions = {};
 
   UDXListener({
     required UDXMultiplexer listeningSocket,
-    required UDX udxInstance,
     required MultiAddr boundAddr,
     required UDXTransport transport,
     required ConnManager connManager,
@@ -381,6 +370,15 @@ class UDXListener implements Listener {
     );
     _logger.fine('[UDXListener $addr] Constructor: Subscription to connections complete.');
   }
+  final UDXMultiplexer _multiplexer;
+  final MultiAddr _boundAddr;
+  final UDXTransport _transport;
+  final ConnManager _connManager;
+  final UDXSessionConnFactory _sessionConnFactory;
+
+  final StreamController<TransportConn> _incomingSessionController = StreamController<TransportConn>.broadcast();
+  bool _isClosed = false;
+  final Map<String, UDXSessionConn> _activeSessions = {};
 
   void _handleIncomingConnection(UDPSocket socket) {
     _logger.fine('[UDXListener $addr] _handleIncomingConnection EXECUTION STARTED. Socket: ${socket.remoteAddress}:${socket.remotePort}');
@@ -392,7 +390,7 @@ class UDXListener implements Listener {
 
     final remoteHost = socket.remoteAddress.address;
     final remotePort = socket.remotePort;
-    final sessionKey = "$remoteHost:$remotePort";
+    final sessionKey = '$remoteHost:$remotePort';
 
     // Check if we already have a session for this peer
     if (_activeSessions.containsKey(sessionKey)) {
@@ -468,12 +466,12 @@ class UDXListener implements Listener {
         _incomingSessionController.add(sessionConn);
         _logger.fine('[UDXListener $addr] Added new session ${sessionConn.id} to incoming session controller.');
       } else {
-        _logger.fine("[UDXListener $addr] Incoming session controller closed, closing new session to $sessionKey");
+        _logger.fine('[UDXListener $addr] Incoming session controller closed, closing new session to $sessionKey');
         sessionConn.close();
         _activeSessions.remove(sessionKey);
       }
     } catch (e, s) {
-      _logger.fine("[UDXListener $addr] Error creating new UDX session for $sessionKey: $e\n$s");
+      _logger.fine('[UDXListener $addr] Error creating new UDX session for $sessionKey: $e\n$s');
       initialStream.close();
       socket.close();
     }

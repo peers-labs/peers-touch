@@ -1,43 +1,36 @@
 import 'dart:async';
 
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/config/defaults.dart';
 import 'package:peers_touch_base/network/libp2p/config/stream_muxer.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-
+import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart'; // Added
 import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
+import 'package:peers_touch_base/network/libp2p/core/event/bus.dart'; // Added
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/security/security_protocol.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/transport.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/multiplexer.dart';
-import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart'; // Added
-import 'package:peers_touch_base/network/libp2p/core/event/bus.dart'; // Added
-import 'package:peers_touch_base/network/libp2p/p2p/host/basic/natmgr.dart'; // Added
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart' show AddrsFactory; // Added for AddrsFactory
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ResourceManager; // For type hinting
+import 'package:peers_touch_base/network/libp2p/core/peer/pb/peer_record.pb.dart' as pb;
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart' as concrete_peer_id; // For concrete PeerId if needed
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/record.dart'; // Added for RecordRegistry
+import 'package:peers_touch_base/network/libp2p/core/peerstore.dart' show Peerstore; // For type hinting
+import 'package:peers_touch_base/network/libp2p/core/record/record_registry.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/ambient_config.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/basic/basic_host.dart'; // Added for BasicHost
-
+import 'package:peers_touch_base/network/libp2p/p2p/host/basic/natmgr.dart'; // Added
+import 'package:peers_touch_base/network/libp2p/p2p/host/peerstore/pstoremem/peerstore.dart'; // For MemoryPeerstore
+import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/limiter.dart'; // For FixedLimiter
+import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 // Added imports for _createNetwork
 import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/peerstore/pstoremem/peerstore.dart'; // For MemoryPeerstore
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/limiter.dart'; // For FixedLimiter
-import 'package:peers_touch_base/network/libp2p/p2p/transport/basic_upgrader.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart' as concrete_peer_id; // For concrete PeerId if needed
-import 'package:peers_touch_base/network/libp2p/core/peerstore.dart' show Peerstore; // For type hinting
-import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ResourceManager; // For type hinting
-import 'package:peers_touch_base/network/libp2p/core/record/record_registry.dart';
-import 'package:logging/logging.dart';
-
-import '../core/peer/pb/peer_record.pb.dart' as pb;
-import '../core/peer/record.dart'; // Added for RecordRegistry
-
-// AutoNATv2 imports
-import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv2/autonatv2.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/options.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/ambient_config.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/security/security_protocol.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/basic_upgrader.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/multiplexer.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport.dart';
 
 final Logger _logger = Logger('Config');
 
@@ -110,7 +103,6 @@ class Config {
   /// encountered (if any).
   Future<void> apply(List<Option> opts) async {
     for (final opt in opts) {
-      if (opt == null) continue;
       await opt(this);
     }
   }
@@ -158,14 +150,14 @@ class Config {
     final Peerstore peerstore = MemoryPeerstore();
 
     // Add local peer's keys to the keyBook
-    if (this.peerKey == null) {
+    if (peerKey == null) {
       // This should ideally be caught by _validate() earlier, but as a safeguard:
       throw StateError('Config.peerKey is null when trying to populate KeyBook in _createNetwork.');
     }
     // Ensure localPeerId matches the one derived from this.peerKey.public
     // (localPeerId is derived from this.peerKey.privateKey in _createPeerId, so they should match)
-    peerstore.keyBook.addPrivKey(localPeerId, this.peerKey!.privateKey);
-    peerstore.keyBook.addPubKey(localPeerId, this.peerKey!.publicKey);
+    peerstore.keyBook.addPrivKey(localPeerId, peerKey!.privateKey);
+    peerstore.keyBook.addPubKey(localPeerId, peerKey!.publicKey);
     
     final Limiter limiter = FixedLimiter(); // Or use a Limiter from Config if added later
     final ResourceManager resourceManager = ResourceManagerImpl(limiter: limiter);

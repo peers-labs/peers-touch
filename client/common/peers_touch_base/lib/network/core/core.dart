@@ -2,6 +2,6 @@
 
 library core;
 
-export 'peers_touch_client.dart';
 export 'discovery_manager.dart';
+export 'peers_touch_client.dart';
 export 'stun/stun.dart';

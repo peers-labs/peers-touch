@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_mobile/pages/chat/chat_page.dart';
-import 'package:peers_touch_mobile/pages/me/me_home.dart';
 import 'package:peers_touch_mobile/components/common/floating_action_ball.dart';
 import 'package:peers_touch_mobile/controller/controller.dart';
 import 'package:peers_touch_mobile/pages/actor/auth_wrapper.dart';
+import 'package:peers_touch_mobile/pages/chat/chat_page.dart';
+import 'package:peers_touch_mobile/pages/me/me_home.dart';
 
 class HomeController extends GetxController {
   final RxInt currentIndex = 0.obs;

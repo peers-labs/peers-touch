@@ -21,18 +21,6 @@ abstract class Limiter {
 /// Initially, it will return generous default limits.
 /// Configuration will be added later.
 class FixedLimiter implements Limiter {
-  // Placeholder for actual configuration. For now, we use simple defaults.
-  final BaseLimit _defaultSystemLimit;
-  final BaseLimit _defaultTransientLimit;
-  final BaseLimit _defaultAllowlistedSystemLimit;
-  final BaseLimit _defaultAllowlistedTransientLimit;
-  final BaseLimit _defaultServiceLimit;
-  final BaseLimit _defaultServicePeerLimit;
-  final BaseLimit _defaultProtocolLimit;
-  final BaseLimit _defaultProtocolPeerLimit;
-  final BaseLimit _defaultPeerLimit;
-  final BaseLimit _defaultStreamLimit;
-  final BaseLimit _defaultConnLimit;
 
   // TODO: Add proper configuration loading (e.g. from a ConcreteLimitConfig class)
   FixedLimiter()
@@ -49,6 +37,18 @@ class FixedLimiter implements Limiter {
             streams: 1024, streamsInbound: 512, streamsOutbound: 512, memory: 1024 * 1024 * 8 /* 8 MiB */),
         _defaultConnLimit = BaseLimit( // Conns also have more constrained default limits
             conns: 256, connsInbound: 128, connsOutbound: 128, fd: 128, memory: 1024 * 1024 * 4 /* 4 MiB */);
+  // Placeholder for actual configuration. For now, we use simple defaults.
+  final BaseLimit _defaultSystemLimit;
+  final BaseLimit _defaultTransientLimit;
+  final BaseLimit _defaultAllowlistedSystemLimit;
+  final BaseLimit _defaultAllowlistedTransientLimit;
+  final BaseLimit _defaultServiceLimit;
+  final BaseLimit _defaultServicePeerLimit;
+  final BaseLimit _defaultProtocolLimit;
+  final BaseLimit _defaultProtocolPeerLimit;
+  final BaseLimit _defaultPeerLimit;
+  final BaseLimit _defaultStreamLimit;
+  final BaseLimit _defaultConnLimit;
 
   @override
   Limit getSystemLimits() => _defaultSystemLimit;

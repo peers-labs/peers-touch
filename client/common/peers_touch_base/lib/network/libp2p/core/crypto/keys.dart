@@ -1,9 +1,9 @@
 import 'dart:typed_data';
-import 'package:peers_touch_base/network/libp2p/core/crypto/ecdsa.dart';
-import 'package:peers_touch_base/network/libp2p/core/crypto/rsa.dart';
 
-import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' as pb;
+import 'package:peers_touch_base/network/libp2p/core/crypto/ecdsa.dart';
 import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' as pb;
+import 'package:peers_touch_base/network/libp2p/core/crypto/rsa.dart';
 
 /// Represents a cryptographic key
 abstract class Key {
@@ -26,6 +26,7 @@ abstract class PublicKey extends Key {
   /// Checks if this public key is equal to another
   Future<bool> equals(PublicKey other);
 
+  @override
   Uint8List marshal();
 }
 
@@ -43,10 +44,10 @@ abstract class PrivateKey extends Key {
 
 /// Represents a key pair (public + private key)
 class KeyPair {
-  final PublicKey publicKey;
-  final PrivateKey privateKey;
 
   KeyPair(this.publicKey, this.privateKey);
+  final PublicKey publicKey;
+  final PrivateKey privateKey;
 }
 
 Map <pb.KeyType, PublicKey Function(Uint8List)> PubKeyUnmarshallers = {
@@ -62,7 +63,7 @@ PublicKey publicKeyFromProto(pb.PublicKey pmes) {
   final unmarshalFunc = PubKeyUnmarshallers[pmes.type];
 
   if (unmarshalFunc == null){
-    throw Exception("Unsupported public key type : ${pmes.type}");
+    throw Exception('Unsupported public key type : ${pmes.type}');
   }
 
   return unmarshalFunc(pmes.writeToBuffer());

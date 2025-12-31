@@ -1,21 +1,16 @@
-import '../core/network/conn.dart'; // For Conn type
-import '../core/network/transport_conn.dart'; // For TransportConn type
-import '../p2p/transport/multiplexing/yamux/session.dart';
-import '../p2p/transport/multiplexing/multiplexer.dart'; // For MultiplexerConfig and Multiplexer interface
-import 'config.dart'; // For Config, Option, Libp2p
-import '../p2p/host/autonat/ambient_config.dart'; // For AmbientAutoNATv2Config
-
-// Imports for new defaults
-import '../core/crypto/keys.dart'; // For KeyPair, KeyType
-import '../core/crypto/ed25519.dart' as crypto_ed25519; // For generateEd25519KeyPair
-import '../p2p/transport/tcp_transport.dart';
-import '../p2p/security/noise/noise_protocol.dart';
-import '../p2p/host/eventbus/basic.dart'; // For BasicBus
-import '../p2p/transport/connection_manager.dart' as p2p_conn_mgr; // For ConnectionManager
+import 'package:peers_touch_base/network/libp2p/config/config.dart'; // For Config, Option, Libp2p
+import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as crypto_ed25519; // For generateEd25519KeyPair
 // No specific import for defaultAddrsFactory if defined in this file.
 // If imported from basic_host, it would be:
 // import '../p2p/host/basic/basic_host.dart' show defaultAddrsFactory;
-import '../core/multiaddr.dart'; // For MultiAddr in defaultAddrsFactory
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart'; // For MultiAddr in defaultAddrsFactory
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart'; // For TransportConn type
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/ambient_config.dart'; // For AmbientAutoNATv2Config
+import 'package:peers_touch_base/network/libp2p/p2p/host/eventbus/basic.dart'; // For BasicBus
+import 'package:peers_touch_base/network/libp2p/p2p/security/noise/noise_protocol.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/connection_manager.dart' as p2p_conn_mgr; // For ConnectionManager
+import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/multiplexer.dart'; // For MultiplexerConfig and Multiplexer interface
+import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/yamux/session.dart';
 
 /// Default configuration options for libp2p
 
@@ -51,9 +46,7 @@ Option defaultMuxers = Libp2p.muxer(
 /// Apply default options to a Config instance if they haven't been set by the user.
 Future<void> applyDefaults(Config config) async {
   // Default Identity (KeyPair)
-  if (config.peerKey == null) {
-    config.peerKey = await crypto_ed25519.generateEd25519KeyPair();
-  }
+  config.peerKey ??= await crypto_ed25519.generateEd25519KeyPair();
 
   // Default Transports
   // Note: Default transports like TCP might require connManager and resourceManager.
@@ -102,14 +95,10 @@ Future<void> applyDefaults(Config config) async {
   }
 
   // Default Connection Manager
-  if (config.connManager == null) {
-    config.connManager = p2p_conn_mgr.ConnectionManager(); 
-  }
+  config.connManager ??= p2p_conn_mgr.ConnectionManager();
 
   // Default Event Bus
-  if (config.eventBus == null) {
-    config.eventBus = BasicBus();
-  }
+  config.eventBus ??= BasicBus();
 
   // Default Identify Service Settings
   config.identifyUserAgent ??= 'dart-libp2p/0.1.0'; // Example version
@@ -128,9 +117,7 @@ Future<void> applyDefaults(Config config) async {
   // config.enableHolePunching is already true by default.
   
   // Default AmbientAutoNATv2 configuration
-  if (config.ambientAutoNATConfig == null) {
-    config.ambientAutoNATConfig = const AmbientAutoNATv2Config();
-  }
+  config.ambientAutoNATConfig ??= const AmbientAutoNATv2Config();
 
   // Note: PeerStore and ResourceManager are created later in Config.newNode(),
   // but the defaults set here (like PeerKey for PeerStore) will be used by their creation.

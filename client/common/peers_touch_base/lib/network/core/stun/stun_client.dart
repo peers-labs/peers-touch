@@ -9,6 +9,12 @@ import 'package:peers_touch_base/network/core/stun/stun_types.dart';
 
 /// STUN客户端核心实现
 class StunClient {
+  
+  StunClient({
+    required this.config,
+    required this.stunServer,
+    this.stunPort = 3478,
+  });
   final StunConfig config;
   final InternetAddress stunServer;
   final int stunPort;
@@ -16,12 +22,6 @@ class StunClient {
   RawDatagramSocket? _socket;
   final Map<String, Completer<StunResponse>> _pendingRequests = {};
   Timer? _keepAliveTimer;
-  
-  StunClient({
-    required this.config,
-    required this.stunServer,
-    this.stunPort = 3478,
-  });
 
   /// 初始化STUN客户端
   Future<void> initialize() async {

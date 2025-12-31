@@ -1,14 +1,13 @@
 import 'dart:async';
 
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/connection_state.dart';
+import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
-
-import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/connection_state.dart';
 
 /// A no-op implementation of Notifiee that does nothing.
 class NoopNotifiee implements Notifiee {
@@ -24,21 +23,21 @@ class NoopNotifiee implements Notifiee {
   @override
   Future<void> connected(Network network, Conn conn) async {
 
-    return await Future.delayed(Duration(milliseconds: 10));
+    return await Future.delayed(const Duration(milliseconds: 10));
   }
 
   @override
   Future<void> disconnected(Network network, Conn conn) async {
-    return await Future.delayed(Duration(milliseconds: 10));
+    return await Future.delayed(const Duration(milliseconds: 10));
   }
 }
 
 /// NullConnMgr is a ConnManager that provides no functionality.
 class NullConnMgr implements ConnManager {
-  /// The singleton instance of NoopNotifiee
-  static const _noopNotifiee = NoopNotifiee();
 
   const NullConnMgr();
+  /// The singleton instance of NoopNotifiee
+  static const _noopNotifiee = NoopNotifiee();
 
   @override
   void tagPeer(PeerId peerId, String tag, int value) {}
@@ -75,11 +74,13 @@ class NullConnMgr implements ConnManager {
 
   @override
   Future<void> dispose() {
-    return Future.delayed(Duration(milliseconds: 10));
+    return Future.delayed(const Duration(milliseconds: 10));
   }
 
   @override
   ConnectionState? getState(TransportConn conn) {
+    return null;
+  
   }
 
   @override
@@ -96,7 +97,7 @@ class NullConnMgr implements ConnManager {
 
   @override
   Future<void> closeConnection(TransportConn conn) {
-    return Future.delayed(Duration(milliseconds: 10));
+    return Future.delayed(const Duration(milliseconds: 10));
   }
 
   @override

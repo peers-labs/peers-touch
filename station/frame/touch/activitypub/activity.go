@@ -3,10 +3,13 @@ package activitypub
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 )
 
@@ -28,7 +31,16 @@ func Create(ctx context.Context, actor string, baseURL string, in *modelpb.Activ
 		note.Summary.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(cw)})
 	}
 	if rt := strings.TrimSpace(in.GetReplyTo()); rt != "" {
-		note.InReplyTo = ap.IRI(rt)
+		if numID, err := strconv.ParseUint(rt, 10, 64); err == nil && numID > 0 {
+			if rds, err := store.GetRDS(ctx); err == nil {
+				var parentObj db.ActivityPubObject
+				if err := rds.Where("id = ?", numID).First(&parentObj).Error; err == nil {
+					note.InReplyTo = ap.IRI(parentObj.ActivityPubID)
+				}
+			}
+		} else {
+			note.InReplyTo = ap.IRI(rt)
+		}
 	}
 	if len(in.GetAttachments()) > 0 {
 		a := in.GetAttachments()[0]

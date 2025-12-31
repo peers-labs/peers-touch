@@ -1,11 +1,12 @@
-import 'package:get/get.dart';
-import 'package:flutter/material.dart';
 import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:peers_touch_base/network/dio/http_service_impl.dart';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
-import 'package:peers_touch_base/network/dio/http_service_impl.dart';
-import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 
 class ChatController extends GetxController {
   final messages = <String>[].obs;
@@ -133,7 +134,7 @@ class ChatController extends GetxController {
       
       // Listen for messages
       _client!.messages().listen((msg) {
-        messages.add("Peer: $msg");
+        messages.add('Peer: $msg');
       });
       _hb?.cancel();
       _hb = Timer.periodic(const Duration(seconds: 30), (t) async {
@@ -192,7 +193,7 @@ class ChatController extends GetxController {
     if (text.isEmpty || _client == null) return;
     try {
       await _client!.send(text);
-      messages.add("Me: $text");
+      messages.add('Me: $text');
       textController.clear();
     } catch (e) {
       Get.snackbar('Error', 'Send failed: $e');
@@ -207,10 +208,11 @@ class ChatController extends GetxController {
       peerRegistered.value = p != null;
       final info = _client!.getIceInfo();
       final cs = info['iceConnState']?.toString() ?? 'Unknown';
-      final sig = info['signalingState']?.toString() ?? '';
       final ds = _client!.getDataChannelState();
       connectionStatus.value = cs.split('.').last;
-      if (ds != null) dataChannelStatus.value = ds.toString().split('.').last;
+      if (ds != null) {
+        dataChannelStatus.value = ds.toString().split('.').last;
+      }
       final sidA = '${selfPeerId.value}-${targetPeerId.value}';
       final sidB = '${targetPeerId.value}-${selfPeerId.value}';
       final offerA = await _signaling!.getOffer(sidA);

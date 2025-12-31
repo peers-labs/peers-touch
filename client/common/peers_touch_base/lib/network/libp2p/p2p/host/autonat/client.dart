@@ -1,21 +1,18 @@
 import 'dart:async';
-import 'dart:typed_data';
 
-import '../../../core/host/host.dart';
-import '../../../core/network/context.dart'; // Added import for Context
-import '../../../core/network/network.dart';
-import '../../../core/network/stream.dart';
-import '../../../core/peer/peer_id.dart';
-import '../../../core/protocol/autonatv1/autonatv1.dart';
-import './pb/autonat.pb.dart' as pb; // Corrected relative path
-import '../../../core/peer/addr_info.dart';
-import '../../../core/multiaddr.dart';
-import '../../../utils/protobuf_utils.dart'; // Import for delimited messaging
-
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart'; // Added import for Context
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ReservationPriority; // For stream scoping
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv1/autonatv1.dart';
 // Assuming these constants are defined elsewhere or need to be defined.
 // For now, using placeholders.
-import './metrics.dart' show MetricsTracer; // Moved import to top
-import '../../../core/network/rcmgr.dart' show ReservationPriority; // For stream scoping
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/metrics.dart' show MetricsTracer; // Moved import to top
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/pb/autonat.pb.dart' as pb; // Corrected relative path
+import 'package:peers_touch_base/network/libp2p/utils/protobuf_utils.dart'; // Import for delimited messaging
 
 const String serviceName = 'libp2p.autonat'; // From Go: s.Scope().SetService(ServiceName)
 const int _autoNATClientMaxMessageScopeReservation = 8192; // 8KB for client-side stream scope
@@ -26,13 +23,13 @@ const Duration streamTimeout = Duration(seconds: 60); // From Go: streamTimeout
 typedef AddrFunc = List<MultiAddr> Function();
 
 class AutoNATV1ClientImpl implements AutoNATV1Client {
+
+  AutoNATV1ClientImpl(this._host, AddrFunc? addrFunc, this._metricsTracer, this._requestTimeout)
+      : _addrFunc = addrFunc ?? (() => _host.addrs);
   final Host _host;
   final AddrFunc _addrFunc;
   final MetricsTracer? _metricsTracer;
   final Duration _requestTimeout;
-
-  AutoNATV1ClientImpl(this._host, AddrFunc? addrFunc, this._metricsTracer, this._requestTimeout)
-      : _addrFunc = addrFunc ?? (() => _host.addrs);
 
   @override
   Future<void> dialBack(PeerId peer) async {
@@ -105,10 +102,10 @@ class AutoNATV1ClientImpl implements AutoNATV1Client {
 
 /// Error wraps errors signalled by AutoNAT services
 class AutoNATError implements Exception {
-  final pb.Message_ResponseStatus status;
-  final String text;
 
   AutoNATError(this.status, String? statusText) : text = statusText ?? '';
+  final pb.Message_ResponseStatus status;
+  final String text;
 
   @override
   String toString() {

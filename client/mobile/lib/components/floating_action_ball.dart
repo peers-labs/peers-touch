@@ -1,34 +1,34 @@
 import 'package:flutter/material.dart';
 
 class FloatingActionOption {
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
 
   const FloatingActionOption({
     required this.icon,
     required this.label,
     this.onTap,
   });
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
 }
 
 class FloatingActionBall extends StatefulWidget {
-  final List<FloatingActionOption> options;
-  final Color backgroundColor;
-  final Color iconColor;
-  final double size;
-  final double expandedSize;
-  final double spacing;
 
   const FloatingActionBall({
-    Key? key,
+    super.key,
     required this.options,
     this.backgroundColor = Colors.blue,
     this.iconColor = Colors.white,
     this.size = 56.0,
     this.expandedSize = 48.0,
     this.spacing = 10.0,
-  }) : super(key: key);
+  });
+  final List<FloatingActionOption> options;
+  final Color backgroundColor;
+  final Color iconColor;
+  final double size;
+  final double expandedSize;
+  final double spacing;
 
   @override
   State<FloatingActionBall> createState() => _FloatingActionBallState();

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_mobile/components/navigation/bottom_nav_bar.dart';
 import 'package:peers_touch_mobile/components/sync_status_bar.dart';
+import 'package:peers_touch_mobile/features/home/controllers/home_controller.dart';
 import 'package:peers_touch_mobile/utils/floating_layout_manager.dart';
-import '../controllers/home_controller.dart';
 
 class HomePage extends GetView<HomeController> {
   const HomePage({super.key});

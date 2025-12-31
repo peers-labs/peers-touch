@@ -4,13 +4,13 @@ import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
 
-import '../../../core/interfaces.dart';
-import '../../../core/peer/peer_id.dart';
-import 'stomp_constants.dart';
-import 'stomp_exceptions.dart';
-import 'stomp_frame.dart';
-import 'stomp_subscription.dart';
-import 'stomp_transaction.dart';
+import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_constants.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_frame.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_subscription.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_transaction.dart';
 
 final _logger = Logger('stomp.client');
 
@@ -25,6 +25,20 @@ enum StompClientState {
 
 /// STOMP client for connecting to STOMP servers over libp2p
 class StompClient {
+
+  StompClient({
+    required Host host,
+    required PeerId serverPeerId,
+    required String hostName,
+    String? login,
+    String? passcode,
+    Duration timeout = StompConstants.defaultTimeout,
+  }) : _host = host,
+       _serverPeerId = serverPeerId,
+       _hostName = hostName,
+       _login = login,
+       _passcode = passcode,
+       _timeout = timeout;
   final Host _host;
   final PeerId _serverPeerId;
   final String _hostName;
@@ -56,20 +70,6 @@ class StompClient {
   final StreamController<StompClientState> _stateController = StreamController<StompClientState>.broadcast();
   final StreamController<StompFrame> _frameController = StreamController<StompFrame>.broadcast();
   final StreamController<StompServerErrorException> _errorController = StreamController<StompServerErrorException>.broadcast();
-
-  StompClient({
-    required Host host,
-    required PeerId serverPeerId,
-    required String hostName,
-    String? login,
-    String? passcode,
-    Duration timeout = StompConstants.defaultTimeout,
-  }) : _host = host,
-       _serverPeerId = serverPeerId,
-       _hostName = hostName,
-       _login = login,
-       _passcode = passcode,
-       _timeout = timeout;
 
   /// Current connection state
   StompClientState get state => _state;

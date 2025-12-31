@@ -2,6 +2,7 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/host/eventbus/basic_metrics.go
 /// to Dart, using native Dart idioms.
+library;
 
 /// MetricsTracer tracks metrics for the eventbus subsystem
 abstract class MetricsTracer {

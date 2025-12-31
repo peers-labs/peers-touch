@@ -1,11 +1,12 @@
 /// STOMP protocol exceptions and error handling.
+library;
 
 /// Base exception for all STOMP-related errors
 abstract class StompException implements Exception {
-  final String message;
-  final Object? cause;
 
   const StompException(this.message, [this.cause]);
+  final String message;
+  final Object? cause;
 
   @override
   String toString() => 'StompException: $message${cause != null ? ' (caused by: $cause)' : ''}';
@@ -45,9 +46,9 @@ class StompAuthenticationException extends StompException {
 
 /// Exception thrown when a STOMP subscription operation fails
 class StompSubscriptionException extends StompException {
-  final String? subscriptionId;
 
   const StompSubscriptionException(super.message, [this.subscriptionId, super.cause]);
+  final String? subscriptionId;
 
   @override
   String toString() => 'StompSubscriptionException: $message${subscriptionId != null ? ' (subscription: $subscriptionId)' : ''}${cause != null ? ' (caused by: $cause)' : ''}';
@@ -55,9 +56,9 @@ class StompSubscriptionException extends StompException {
 
 /// Exception thrown when a STOMP transaction operation fails
 class StompTransactionException extends StompException {
-  final String? transactionId;
 
   const StompTransactionException(super.message, [this.transactionId, super.cause]);
+  final String? transactionId;
 
   @override
   String toString() => 'StompTransactionException: $message${transactionId != null ? ' (transaction: $transactionId)' : ''}${cause != null ? ' (caused by: $cause)' : ''}';
@@ -65,9 +66,9 @@ class StompTransactionException extends StompException {
 
 /// Exception thrown when STOMP message sending fails
 class StompSendException extends StompException {
-  final String? destination;
 
   const StompSendException(super.message, [this.destination, super.cause]);
+  final String? destination;
 
   @override
   String toString() => 'StompSendException: $message${destination != null ? ' (destination: $destination)' : ''}${cause != null ? ' (caused by: $cause)' : ''}';
@@ -75,9 +76,9 @@ class StompSendException extends StompException {
 
 /// Exception thrown when STOMP message acknowledgment fails
 class StompAckException extends StompException {
-  final String? messageId;
 
   const StompAckException(super.message, [this.messageId, super.cause]);
+  final String? messageId;
 
   @override
   String toString() => 'StompAckException: $message${messageId != null ? ' (message: $messageId)' : ''}${cause != null ? ' (caused by: $cause)' : ''}';
@@ -85,10 +86,10 @@ class StompAckException extends StompException {
 
 /// Exception thrown when STOMP frame size limits are exceeded
 class StompFrameSizeException extends StompFrameException {
-  final int actualSize;
-  final int maxSize;
 
   const StompFrameSizeException(super.message, this.actualSize, this.maxSize, [super.cause]);
+  final int actualSize;
+  final int maxSize;
 
   @override
   String toString() => 'StompFrameSizeException: $message (actual: $actualSize, max: $maxSize)${cause != null ? ' (caused by: $cause)' : ''}';
@@ -96,9 +97,9 @@ class StompFrameSizeException extends StompFrameException {
 
 /// Exception thrown when STOMP timeout occurs
 class StompTimeoutException extends StompException {
-  final Duration timeout;
 
   const StompTimeoutException(super.message, this.timeout, [super.cause]);
+  final Duration timeout;
 
   @override
   String toString() => 'StompTimeoutException: $message (timeout: ${timeout.inMilliseconds}ms)${cause != null ? ' (caused by: $cause)' : ''}';
@@ -114,9 +115,9 @@ class StompHeartBeatException extends StompException {
 
 /// Exception thrown when STOMP destination is invalid
 class StompDestinationException extends StompException {
-  final String? destination;
 
   const StompDestinationException(super.message, [this.destination, super.cause]);
+  final String? destination;
 
   @override
   String toString() => 'StompDestinationException: $message${destination != null ? ' (destination: $destination)' : ''}${cause != null ? ' (caused by: $cause)' : ''}';
@@ -124,10 +125,10 @@ class StompDestinationException extends StompException {
 
 /// Exception thrown when STOMP server sends an ERROR frame
 class StompServerErrorException extends StompException {
-  final String? receiptId;
-  final Map<String, String>? headers;
 
   const StompServerErrorException(super.message, [this.receiptId, this.headers, super.cause]);
+  final String? receiptId;
+  final Map<String, String>? headers;
 
   @override
   String toString() {
@@ -147,10 +148,10 @@ class StompServerErrorException extends StompException {
 
 /// Exception thrown when STOMP state is invalid for the requested operation
 class StompStateException extends StompException {
-  final String currentState;
-  final String expectedState;
 
   const StompStateException(super.message, this.currentState, this.expectedState, [super.cause]);
+  final String currentState;
+  final String expectedState;
 
   @override
   String toString() => 'StompStateException: $message (current: $currentState, expected: $expectedState)${cause != null ? ' (caused by: $cause)' : ''}';

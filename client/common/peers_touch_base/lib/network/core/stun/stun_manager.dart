@@ -1,17 +1,21 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:peers_touch_base/network/core/stun/stun_config.dart';
+import 'package:peers_touch_base/network/core/stun/hole_punching.dart';
 import 'package:peers_touch_base/network/core/stun/stun_client.dart';
+import 'package:peers_touch_base/network/core/stun/stun_config.dart';
 import 'package:peers_touch_base/network/core/stun/stun_peer_info.dart';
 import 'package:peers_touch_base/network/core/stun/stun_types.dart';
 import 'package:peers_touch_base/network/core/stun/tun_manager.dart';
-import 'package:peers_touch_base/network/core/stun/hole_punching.dart';
 
 /// STUN穿透管理器
 /// 
 /// 负责管理STUN客户端、TUN管理器和NAT发现功能
 class StunManager {
+  
+  StunManager({
+    required this.config,
+  });
   final StunConfig config;
   
   late final List<StunClient> _stunClients;
@@ -20,10 +24,6 @@ class StunManager {
   late final HolePunchingCoordinator _holePunchingCoordinator;
   
   bool _initialized = false;
-  
-  StunManager({
-    required this.config,
-  });
 
   /// 初始化STUN管理器
   Future<void> initialize() async {
@@ -133,7 +133,7 @@ class StunManager {
       print('Standard P2P connection failed: $e');
       
       // 如果标准打洞失败，尝试协调打洞
-      final localPeer = StunPeerInfo(
+      const localPeer = StunPeerInfo(
         id: 'local',
         address: '', // 将在打洞过程中确定
         port: 0,

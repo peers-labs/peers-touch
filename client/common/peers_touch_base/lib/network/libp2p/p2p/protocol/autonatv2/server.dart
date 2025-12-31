@@ -2,20 +2,18 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/pb/autonatv2.pb.dart';
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv2/autonatv2.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:logging/logging.dart';
-
-import '../../../core/peer/addr_info.dart';
-import '../../../core/multiaddr.dart';
-import '../../../core/network/context.dart';
-import '../../../core/network/rcmgr.dart';
-import '../../../core/network/stream.dart';
-import 'options.dart';
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv2/autonatv2.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/options.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/pb/autonatv2.pb.dart';
 
 final _log = Logger('autonatv2.server');
 
@@ -28,6 +26,19 @@ class ServerErrors {
 
 /// Server implementation for AutoNAT v2
 class AutoNATv2ServerImpl implements AutoNATv2Server {
+
+  AutoNATv2ServerImpl(this.host, this.dialerHost, AutoNATv2Settings settings)
+      : dataRequestPolicy = settings.dataRequestPolicy,
+        amplificationAttackPreventionDialWait = settings.amplificationAttackPreventionDialWait,
+        allowPrivateAddrs = settings.allowPrivateAddrs,
+        now = settings.now,
+        metricsTracer = settings.metricsTracer,
+        limiter = RateLimiter(
+          rpm: settings.serverRPM,
+          perPeerRPM: settings.serverPerPeerRPM,
+          dialDataRPM: settings.serverDialDataRPM,
+          now: settings.now,
+        );
   final Host host;
   final Host dialerHost;
   final RateLimiter limiter;
@@ -60,19 +71,6 @@ class AutoNATv2ServerImpl implements AutoNATv2Server {
 
   /// Maximum handshake size in bytes
   static const maxHandshakeSizeBytes = 100000;
-
-  AutoNATv2ServerImpl(this.host, this.dialerHost, AutoNATv2Settings settings)
-      : dataRequestPolicy = settings.dataRequestPolicy,
-        amplificationAttackPreventionDialWait = settings.amplificationAttackPreventionDialWait,
-        allowPrivateAddrs = settings.allowPrivateAddrs,
-        now = settings.now,
-        metricsTracer = settings.metricsTracer,
-        limiter = RateLimiter(
-          rpm: settings.serverRPM,
-          perPeerRPM: settings.serverPerPeerRPM,
-          dialDataRPM: settings.serverDialDataRPM,
-          now: settings.now,
-        );
 
   @override
   void start() {
@@ -190,17 +188,6 @@ class AutoNATv2ServerImpl implements AutoNATv2Server {
       _log.fine('Failed to read request from $peerId: $e');
       return EventDialRequestCompleted(
         error: Exception('Read failed: $e'),
-        responseStatus: DialResponse_ResponseStatus.E_INTERNAL_ERROR,
-        dialStatus: DialStatus.UNUSED,
-        dialDataRequired: false,
-      );
-    }
-
-    if (message.dialRequest == null) {
-      stream.reset();
-      _log.fine('Invalid message type from $peerId: expected DialRequest');
-      return EventDialRequestCompleted(
-        error: ServerErrors.badRequest,
         responseStatus: DialResponse_ResponseStatus.E_INTERNAL_ERROR,
         dialStatus: DialStatus.UNUSED,
         dialDataRequired: false,
@@ -379,7 +366,7 @@ class AutoNATv2ServerImpl implements AutoNATv2Server {
   /// Dial back to the peer to verify reachability
   Future<DialStatus> _dialBack(PeerId peerId, MultiAddr addr, int nonce) async {
     // Add the address to the peerstore
-    dialerHost.peerStore.addrBook.addAddr(peerId, addr, Duration(minutes: 1));
+    dialerHost.peerStore.addrBook.addAddr(peerId, addr, const Duration(minutes: 1));
 
     try {
       // Connect to the peer
@@ -426,6 +413,13 @@ class AutoNATv2ServerImpl implements AutoNATv2Server {
 
 /// Rate limiter for the server
 class RateLimiter {
+
+  RateLimiter({
+    required this.rpm,
+    required this.perPeerRPM,
+    required this.dialDataRPM,
+    required this.now,
+  });
   final int rpm;
   final int perPeerRPM;
   final int dialDataRPM;
@@ -436,13 +430,6 @@ class RateLimiter {
   final List<DateTime> _dialDataReqs = [];
   final Set<PeerId> _ongoingReqs = {};
   bool _closed = false;
-
-  RateLimiter({
-    required this.rpm,
-    required this.perPeerRPM,
-    required this.dialDataRPM,
-    required this.now,
-  });
 
   /// Accept a new request
   bool accept(PeerId peerId) {
@@ -491,7 +478,7 @@ class RateLimiter {
 
   /// Clean up stale requests
   void _cleanup(DateTime currentTime) {
-    final minute = Duration(minutes: 1);
+    const minute = Duration(minutes: 1);
 
     // Clean up global requests
     int idx = 0;
@@ -550,10 +537,10 @@ class RateLimiter {
 
 /// Entry for the rate limiter
 class _Entry {
-  final PeerId peerId;
-  final DateTime time;
 
   _Entry(this.peerId, this.time);
+  final PeerId peerId;
+  final DateTime time;
 }
 
 /// Amplification attack prevention policy

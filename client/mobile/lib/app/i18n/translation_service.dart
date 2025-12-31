@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
-import 'en_us.dart';
-import 'zh_cn.dart';
+import 'package:peers_touch_mobile/app/i18n/en_us.dart';
+import 'package:peers_touch_mobile/app/i18n/zh_cn.dart';
 
 class TranslationService extends Translations {
   @override

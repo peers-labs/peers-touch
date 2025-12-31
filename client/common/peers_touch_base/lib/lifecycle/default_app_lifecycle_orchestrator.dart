@@ -1,14 +1,14 @@
-import '../storage/secure_storage_adapter.dart';
-import '../lifecycle/app_lifecycle_orchestrator.dart';
-import 'default_ready_gate.dart';
+import 'package:peers_touch_base/lifecycle/app_lifecycle_orchestrator.dart';
+import 'package:peers_touch_base/lifecycle/default_ready_gate.dart';
+import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
 
 class DefaultAppLifecycleOrchestrator implements AppLifecycleOrchestrator {
-  final SecureStorageAdapter secureStorage;
-  final DefaultReadyGate readyGate;
   DefaultAppLifecycleOrchestrator({
     required this.secureStorage,
     DefaultReadyGate? readyGate,
   }) : readyGate = readyGate ?? DefaultReadyGate();
+  final SecureStorageAdapter secureStorage;
+  final DefaultReadyGate readyGate;
 
   @override
   Future<void> bootstrapCore() async {}

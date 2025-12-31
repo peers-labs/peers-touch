@@ -1,6 +1,7 @@
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 /// Defines the base storage locations available to the application.
 enum StorageLocation {
@@ -51,11 +52,11 @@ enum StorageNamespace {
 /// This class abstracts the underlying `path_provider` details and provides
 /// a unified interface for accessing scoped directories (namespaces).
 class FileStorageManager {
-  static final FileStorageManager _instance = FileStorageManager._internal();
   
   factory FileStorageManager() => _instance;
   
   FileStorageManager._internal();
+  static final FileStorageManager _instance = FileStorageManager._internal();
 
   /// Gets the raw base directory for a given [location].
   Future<Directory> getBaseDirectory(StorageLocation location) async {

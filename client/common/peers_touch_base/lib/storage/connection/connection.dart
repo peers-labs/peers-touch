@@ -14,9 +14,9 @@ import 'package:path/path.dart' as p;
 ///
 /// - [dbName]: The filename for the database, e.g., 'app_core.db'.
 class DriftConnectionManager {
-  static final DriftConnectionManager _instance = DriftConnectionManager._internal();
   factory DriftConnectionManager() => _instance;
   DriftConnectionManager._internal();
+  static final DriftConnectionManager _instance = DriftConnectionManager._internal();
 
   final Map<String, LazyDatabase> _connections = {};
 

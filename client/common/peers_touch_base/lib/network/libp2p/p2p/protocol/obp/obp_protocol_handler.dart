@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart' as core_p2p_stream;
 
-import 'obp_frame.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/obp/obp_frame.dart';
 
 /// OverNode Binary Protocol (OBP) Handler
 /// 
@@ -313,7 +313,7 @@ class OBPProtocolHandler {
       if (payloadLength > 0) {
         payloadData = await _readExactBytes(stream, payloadLength, timeout: timeout, context: context);
         if (payloadData == null) {
-          throw FormatException('EOF while reading frame payload');
+          throw const FormatException('EOF while reading frame payload');
         }
       }
       
@@ -409,7 +409,7 @@ class OBPProtocolHandler {
     // Keep reading until we have enough bytes
     while (streamBuffer.length < expectedBytes) {
       if (DateTime.now().isAfter(deadline)) {
-        _logger.severe('[$context] READ_VERIFY: Read timeout after ${readAttempts} attempts, got ${streamBuffer.length}/$expectedBytes bytes');
+        _logger.severe('[$context] READ_VERIFY: Read timeout after $readAttempts attempts, got ${streamBuffer.length}/$expectedBytes bytes');
         throw TimeoutException('Read timeout', timeout);
       }
       

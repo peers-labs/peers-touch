@@ -1,6 +1,7 @@
 /// Package multistream implements lazy client functionality for the
 /// multistream-select protocol. The protocol is defined at
 /// https://github.com/multiformats/multistream-select
+library;
 
 import 'dart:async';
 import 'dart:convert';
@@ -8,8 +9,8 @@ import 'dart:typed_data';
 
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/multistream.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/client.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/multistream.dart';
 
 
 /// LazyConn is a ReadWriteCloser adapter that lazily negotiates a protocol
@@ -53,6 +54,11 @@ LazyConn newMultistream(P2PStream<dynamic> stream, ProtocolID proto) {
 /// It *does not* block writes waiting for the other end to respond. Instead, it
 /// simply assumes the negotiation went successfully and starts writing data.
 class _LazyClientConn implements LazyConn {
+
+  _LazyClientConn({
+    required this.protos,
+    required this.stream,
+  });
   // Used to ensure we only trigger the write half of the handshake once.
   final _writeHandshakeLock = Completer<void>();
   Exception? _writeError;
@@ -68,11 +74,6 @@ class _LazyClientConn implements LazyConn {
 
   // The inner connection.
   final P2PStream<dynamic> stream;
-
-  _LazyClientConn({
-    required this.protos,
-    required this.stream,
-  });
 
   /// Read reads data from the stream.
   ///

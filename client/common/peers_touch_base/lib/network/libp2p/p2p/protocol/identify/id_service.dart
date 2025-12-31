@@ -5,9 +5,9 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/protocol/identify/id.go
 /// to Dart, using native Dart idioms.
+library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';

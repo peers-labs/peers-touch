@@ -368,6 +368,7 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 		ObjectID:      objectID,
 		TargetID:      0,
 		InReplyTo:     0,
+		Reply:         false,
 		Published:     activity.Published,
 		IsLocal:       true,
 		Visibility:    "public",
@@ -414,6 +415,7 @@ func persistActivity(dbConn *gorm.DB, username string, activity *ap.Activity, ob
 	// Set numeric InReplyTo if provided
 	if inReplyToID != 0 {
 		dbAct.InReplyTo = inReplyToID
+		dbAct.Reply = true
 	}
 
 	// Save compressed JSON content

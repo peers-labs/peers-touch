@@ -1,10 +1,10 @@
 
-import 'package:test/test.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 import 'package:peers_touch_base/ai_proxy/client/openai/openai_chat_client.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service.dart';
+import 'package:test/test.dart';
 
 import 'openai_chat_client_test.mocks.dart';
 

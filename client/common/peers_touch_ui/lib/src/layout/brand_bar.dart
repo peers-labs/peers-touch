@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 class BrandBar extends StatelessWidget {
+  const BrandBar({super.key, this.leading, required this.title, this.actions = const []});
   final Widget? leading;
   final List<Widget> actions;
   final String title;
-  const BrandBar({super.key, this.leading, required this.title, this.actions = const []});
 
   @override
   Widget build(BuildContext context) {

@@ -1,19 +1,21 @@
 import 'dart:async';
 
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_subscription.dart';
 import 'package:logging/logging.dart';
-
-import '../../../core/interfaces.dart';
-import '../../../core/peer/peer_id.dart';
-import 'stomp_client.dart';
-import 'stomp_constants.dart';
-import 'stomp_exceptions.dart';
-import 'stomp_server.dart';
+import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_client.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_constants.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_server.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_subscription.dart';
 
 final _logger = Logger('stomp.service');
 
 /// STOMP service that provides both client and server functionality for libp2p
 class StompService {
+
+  StompService(this._host, {StompServiceOptions? options})
+      : _options = options ?? const StompServiceOptions();
   final Host _host;
   final StompServiceOptions _options;
   
@@ -21,9 +23,6 @@ class StompService {
   final Map<PeerId, StompClient> _clients = {};
   
   bool _isStarted = false;
-
-  StompService(this._host, {StompServiceOptions? options})
-      : _options = options ?? StompServiceOptions();
 
   /// Whether the service is started
   bool get isStarted => _isStarted;
@@ -243,23 +242,6 @@ class StompService {
 
 /// Configuration options for the STOMP service
 class StompServiceOptions {
-  /// Whether to enable the STOMP server
-  final bool enableServer;
-
-  /// Server name to advertise
-  final String? serverName;
-
-  /// Default timeout for operations
-  final Duration timeout;
-
-  /// Whether to enable automatic reconnection for clients
-  final bool enableAutoReconnect;
-
-  /// Interval for automatic reconnection attempts
-  final Duration reconnectInterval;
-
-  /// Maximum number of reconnection attempts
-  final int maxReconnectAttempts;
 
   const StompServiceOptions({
     this.enableServer = true,
@@ -287,10 +269,36 @@ class StompServiceOptions {
     this.reconnectInterval = const Duration(seconds: 5),
     this.maxReconnectAttempts = 3,
   }) : enableServer = true;
+  /// Whether to enable the STOMP server
+  final bool enableServer;
+
+  /// Server name to advertise
+  final String? serverName;
+
+  /// Default timeout for operations
+  final Duration timeout;
+
+  /// Whether to enable automatic reconnection for clients
+  final bool enableAutoReconnect;
+
+  /// Interval for automatic reconnection attempts
+  final Duration reconnectInterval;
+
+  /// Maximum number of reconnection attempts
+  final int maxReconnectAttempts;
 }
 
 /// Statistics about the STOMP service
 class StompServiceStats {
+
+  const StompServiceStats({
+    required this.isStarted,
+    required this.serverEnabled,
+    required this.serverRunning,
+    required this.connectedClients,
+    required this.totalClients,
+    required this.serverConnections,
+  });
   /// Whether the service is started
   final bool isStarted;
 
@@ -308,15 +316,6 @@ class StompServiceStats {
 
   /// Number of connections to the server
   final int serverConnections;
-
-  const StompServiceStats({
-    required this.isStarted,
-    required this.serverEnabled,
-    required this.serverRunning,
-    required this.connectedClients,
-    required this.totalClients,
-    required this.serverConnections,
-  });
 
   @override
   String toString() {
@@ -408,7 +407,7 @@ class StompUtils {
     if (!destination.startsWith('/')) return false;
     
     // Check for invalid characters
-    const invalidChars = ['\n', '\r', '\0'];
+    const invalidChars = ['\n', '\r', '0'];
     for (final char in invalidChars) {
       if (destination.contains(char)) return false;
     }

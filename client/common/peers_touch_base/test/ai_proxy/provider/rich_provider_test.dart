@@ -1,5 +1,4 @@
 
-import 'dart:convert';
 
 import 'package:peers_touch_base/ai_proxy/client/chat_client.dart';
 import 'package:peers_touch_base/ai_proxy/model/rich_model.dart';
@@ -69,7 +68,7 @@ void main() {
 
     group('JSON Parsing', () {
       test('_parseModelsFromJson should parse valid JSON', () {
-        final json =
+        const json =
             '{"models": [{"id": "model-1", "name": "Model 1", "capabilities": ["chat"]}]}';
         final models = parseModelsFromJson(json, 'provider-1');
         expect(models, isA<List<RichModel>>());

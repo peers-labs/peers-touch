@@ -1,13 +1,17 @@
 /// Metrics for the holepunch protocol.
+library;
 
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/holepuncher.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/holepuncher.dart';
 
 
 /// Metrics tracer for the holepunch protocol
 class MetricsTracer implements HolePunchTracer {
+
+  /// Creates a new metrics tracer
+  MetricsTracer();
   /// Number of successful direct dials
   int _directDialSuccessCount = 0;
 
@@ -25,9 +29,6 @@ class MetricsTracer implements HolePunchTracer {
 
   /// Number of failed hole punches
   int _holePunchFailCount = 0;
-
-  /// Creates a new metrics tracer
-  MetricsTracer();
 
   /// Gets the number of successful direct dials
   int get directDialSuccessCount => _directDialSuccessCount;

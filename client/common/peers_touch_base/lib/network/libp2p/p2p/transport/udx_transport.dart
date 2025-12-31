@@ -1,32 +1,28 @@
 import 'dart:async';
+import 'dart:io' show SocketException, InternetAddress, InternetAddressType, Socket, RawDatagramSocket; // For specific error types and network classes
 import 'dart:math'; // Added import for Random
 import 'dart:typed_data';
-import 'dart:io' show SocketException, InternetAddress, InternetAddressType, Socket, RawDatagramSocket; // For specific error types and network classes
 
-import 'package:peers_touch_base/network/libp2p/p2p/transport/udx_stream_adapter.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/udx_exceptions.dart';
 import 'package:dart_udx/dart_udx.dart';
 import 'package:logging/logging.dart';
-
 import 'package:meta/meta.dart';
-
-import '../../core/connmgr/conn_manager.dart'; // For ConnManager class
-import '../../p2p/transport/connection_state.dart'; // Correct import for ConnectionState enum
-
-import '../../core/multiaddr.dart';
-import '../../core/network/conn.dart' show Conn, ConnStats, ConnState, Stats; // Added Stats
-import '../../core/network/transport_conn.dart';
-import '../../core/network/stream.dart' show P2PStream, StreamStats;
-import '../../core/network/rcmgr.dart' show ConnScope, StreamScope;
-import '../../core/network/context.dart' show Context;
-import '../../core/network/mux.dart' show MuxedConn, MuxedStream;
-import '../../core/peer/peer_id.dart' show PeerId;
-import '../../core/crypto/keys.dart';
-import '../../core/network/common.dart' show Direction;
-
-import 'listener.dart';
-import 'transport.dart';
-import 'transport_config.dart';
+import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart'; // For ConnManager class
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/common.dart' show Direction;
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart' show Conn, ConnStats, ConnState, Stats; // Added Stats
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart' show Context;
+import 'package:peers_touch_base/network/libp2p/core/network/mux.dart' show MuxedConn, MuxedStream;
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ConnScope, StreamScope;
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart' show P2PStream, StreamStats;
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart' show PeerId;
+import 'package:peers_touch_base/network/libp2p/p2p/transport/connection_state.dart'; // Correct import for ConnectionState enum
+import 'package:peers_touch_base/network/libp2p/p2p/transport/listener.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport_config.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/udx_exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/udx_stream_adapter.dart';
 
 
 final Logger _logger = Logger('UDXTransport');
@@ -34,18 +30,6 @@ final Logger _logger = Logger('UDXTransport');
 /// UDX implementation of the Transport interface using dart_udx
 /// This implementation treats UDX as a multiplexing transport.
 class UDXTransport implements Transport {
-  static const _supportedProtocols = ['/ip4/udp/udx', '/ip6/udp/udx'];
-
-  @override
-  final TransportConfig config;
-  final ConnManager _connManager;
-  final UDX _udxInstance;
-  final List<Listener> _activeListeners = [];
-  final Set<UDXSessionConn> _activeDialerConns = {};
-  // static int _nextDialStreamIdPairBase = 1; // Removed static counter
-
-  @visibleForTesting
-  ConnManager get connectionManager => _connManager;
 
   UDXTransport({
     TransportConfig? config,
@@ -59,6 +43,18 @@ class UDXTransport implements Transport {
     // as the UDX class from dart_udx package does not have these methods.
     // The UDX instance is ready after construction.
   }
+  static const _supportedProtocols = ['/ip4/udp/udx', '/ip6/udp/udx'];
+
+  @override
+  final TransportConfig config;
+  final ConnManager _connManager;
+  final UDX _udxInstance;
+  final List<Listener> _activeListeners = [];
+  final Set<UDXSessionConn> _activeDialerConns = {};
+  // static int _nextDialStreamIdPairBase = 1; // Removed static counter
+
+  @visibleForTesting
+  ConnManager get connectionManager => _connManager;
 
   @override
   Future<TransportConn> dial(MultiAddr addr, {Duration? timeout}) async {
@@ -104,7 +100,7 @@ class UDXTransport implements Transport {
         ),
         'RawDatagramSocket.bind($host)',
       );
-      _logger.fine('[UDXTransport._performDial] RawDatagramSocket bound to: ${rawSocket!.address.address}:${rawSocket!.port}');
+      _logger.fine('[UDXTransport._performDial] RawDatagramSocket bound to: ${rawSocket!.address.address}:${rawSocket.port}');
 
       // Create multiplexer with exception handling
       multiplexer = await UDXExceptionHandler.handleUDXOperation(
@@ -169,7 +165,7 @@ class UDXTransport implements Transport {
       _logger.fine('[UDXTransport._performDial] Creating UDXSessionConn for $addr. Local: $localMa, Remote: $remoteMa');
       final sessionConn = UDXSessionConn(
         udpSocket: udpSocket!,
-        initialStream: initialStream!,
+        initialStream: initialStream,
         localMultiaddr: localMa,
         remoteMultiaddr: remoteMa,
         transport: this,
@@ -294,37 +290,6 @@ class UDXTransport implements Transport {
 }
 
 class UDXSessionConn implements MuxedConn, TransportConn {
-  final UDPSocket _udpSocket;
-  final UDXStream _initialStream; 
-  final MultiAddr _localMultiaddr;
-  final MultiAddr _remoteMultiaddr;
-  final UDXTransport _transport;
-  final ConnManager _connManager;
-  final bool _isDialer;
-  final void Function(UDXSessionConn conn)? _onClosedCallback;
-  final DateTime _openedAt; // Added to store connection opening time
-
-  PeerId? _localPeer;
-  PeerId? _remotePeer;
-  PublicKey? _remotePublicKey;
-  String _securityProtocol = '';
-
-  bool _isClosing = false; 
-  bool _isClosed = false;
-  final Completer<void> _closedCompleter = Completer<void>();
-  final StreamController<MuxedStream> _incomingStreamsController = StreamController<MuxedStream>.broadcast();
-  
-  final Map<int, UDXP2PStreamAdapter> _activeStreams = {};
-  StreamSubscription? _socketMessageSubscription;
-  StreamSubscription? _initialStreamCloseSubscription;
-  
-  late int _nextOwnStreamId; 
-  late int _nextExpectedRemoteStreamId; 
-
-  @override
-  final String id;
-
-  late final UDXP2PStreamAdapter initialP2PStream;
 
   UDXSessionConn({
     required UDPSocket udpSocket,
@@ -361,7 +326,7 @@ class UDXSessionConn implements MuxedConn, TransportConn {
       _initialStream.on('error').listen((event) {
         final error = event.data;
         final timeSinceOpen = DateTime.now().difference(_openedAt);
-        _logger.severe('[UDXSessionConn $id] INITIAL_STREAM_ERROR: ${error}, time_since_open: ${timeSinceOpen.inMilliseconds}ms');
+        _logger.severe('[UDXSessionConn $id] INITIAL_STREAM_ERROR: $error, time_since_open: ${timeSinceOpen.inMilliseconds}ms');
 
         // Classify and handle the UDX error appropriately
         final classifiedException = UDXExceptionHandler.classifyUDXException(
@@ -442,6 +407,37 @@ class UDXSessionConn implements MuxedConn, TransportConn {
       );
     }
   }
+  final UDPSocket _udpSocket;
+  final UDXStream _initialStream; 
+  final MultiAddr _localMultiaddr;
+  final MultiAddr _remoteMultiaddr;
+  final UDXTransport _transport;
+  final ConnManager _connManager;
+  final bool _isDialer;
+  final void Function(UDXSessionConn conn)? _onClosedCallback;
+  final DateTime _openedAt; // Added to store connection opening time
+
+  final PeerId? _localPeer;
+  PeerId? _remotePeer;
+  PublicKey? _remotePublicKey;
+  String _securityProtocol = '';
+
+  bool _isClosing = false; 
+  bool _isClosed = false;
+  final Completer<void> _closedCompleter = Completer<void>();
+  final StreamController<MuxedStream> _incomingStreamsController = StreamController<MuxedStream>.broadcast();
+  
+  final Map<int, UDXP2PStreamAdapter> _activeStreams = {};
+  StreamSubscription? _socketMessageSubscription;
+  StreamSubscription? _initialStreamCloseSubscription;
+  
+  late int _nextOwnStreamId; 
+  late int _nextExpectedRemoteStreamId; 
+
+  @override
+  final String id;
+
+  late final UDXP2PStreamAdapter initialP2PStream;
 
   void handleRemoteOpenedStream(UDXPacket packet, Uint8List rawData, InternetAddress remoteAddress, int remotePort) {
     _logger.fine('[UDXSessionConn $id] handleRemoteOpenedStream called by UDXListener. Packet for destId: ${packet.destinationStreamId}, srcId: ${packet.sourceStreamId}');
@@ -564,7 +560,7 @@ class UDXSessionConn implements MuxedConn, TransportConn {
     _logger.fine('[UDXSessionConn $id] openStream called.');
     if (_isClosed) {
       _logger.fine('[UDXSessionConn $id] Session closed, cannot open stream.');
-      throw SocketException('UDX session is closed');
+      throw const SocketException('UDX session is closed');
     }
     final localStreamId = _nextOwnStreamId;
     _nextOwnStreamId += 2;
@@ -607,7 +603,7 @@ class UDXSessionConn implements MuxedConn, TransportConn {
     _logger.fine('[UDXSessionConn $id] acceptStream called.');
     if (_isClosed && _incomingStreamsController.isClosed) {
        _logger.fine('[UDXSessionConn $id] Session closed, cannot accept new streams.');
-       throw SocketException('UDX session is closed, cannot accept new streams.');
+       throw const SocketException('UDX session is closed, cannot accept new streams.');
     }
     final stream = await _incomingStreamsController.stream.first;
     _logger.fine('[UDXSessionConn $id] Accepted stream: ${(stream as UDXP2PStreamAdapter).id()}');
@@ -615,7 +611,7 @@ class UDXSessionConn implements MuxedConn, TransportConn {
   }
   
   @override
-  Future<List<P2PStream>> get streams async => throw UnimplementedError("Use acceptStream() in a loop for MuxedConn.");
+  Future<List<P2PStream>> get streams async => throw UnimplementedError('Use acceptStream() in a loop for MuxedConn.');
 
   @override
   MultiAddr get localMultiaddr => _localMultiaddr;
@@ -624,10 +620,10 @@ class UDXSessionConn implements MuxedConn, TransportConn {
   MultiAddr get remoteMultiaddr => _remoteMultiaddr;
 
   @override
-  PeerId get localPeer => _localPeer ?? (throw StateError("Local PeerId not set."));
+  PeerId get localPeer => _localPeer ?? (throw StateError('Local PeerId not set.'));
 
   @override
-  PeerId get remotePeer => _remotePeer ?? (throw StateError("Remote PeerId not set; established during security handshake."));
+  PeerId get remotePeer => _remotePeer ?? (throw StateError('Remote PeerId not set; established during security handshake.'));
   
   void setRemotePeerDetails(PeerId peerId, PublicKey pubKey, String securityProto) {
     _remotePeer = peerId;
@@ -661,20 +657,20 @@ class UDXSessionConn implements MuxedConn, TransportConn {
   }
 
   @override
-  ConnScope get scope => throw UnimplementedError("Scope not yet implemented for UDXSessionConn.");
+  ConnScope get scope => throw UnimplementedError('Scope not yet implemented for UDXSessionConn.');
 
   @override
   Future<P2PStream> newStream(Context context, [int? streamId]) async =>
-    throw UnimplementedError("Use openStream(context) for UDXSessionConn, streamId is managed by UDX.");
+    throw UnimplementedError('Use openStream(context) for UDXSessionConn, streamId is managed by UDX.');
   
   @override
-  void setReadTimeout(Duration timeout) => throw UnimplementedError("Set timeouts on individual P2PStreams if supported.");
+  void setReadTimeout(Duration timeout) => throw UnimplementedError('Set timeouts on individual P2PStreams if supported.');
 
   @override
-  void setWriteTimeout(Duration timeout) => throw UnimplementedError("Set timeouts on individual P2PStreams if supported.");
+  void setWriteTimeout(Duration timeout) => throw UnimplementedError('Set timeouts on individual P2PStreams if supported.');
   
   @override
-  Socket get socket => throw UnimplementedError("UDX connections operate over UDPSocket, not a direct dart:io.Socket.");
+  Socket get socket => throw UnimplementedError('UDX connections operate over UDPSocket, not a direct dart:io.Socket.');
 
   @override
   Future<void> close() async {
@@ -703,7 +699,7 @@ class UDXSessionConn implements MuxedConn, TransportConn {
     }
     
     _logger.fine('[UDXSessionConn $id] CLEANUP_ORDER: 3. Closing all active streams (${_activeStreams.length} streams)');
-    List<Future<void>> closeFutures = [];
+    final List<Future<void>> closeFutures = [];
     _activeStreams.values.toList().forEach((adapter) { 
       _logger.fine('[UDXSessionConn $id] Closing stream adapter ${adapter.id()}');
       closeFutures.add(adapter.close()); 
@@ -786,6 +782,7 @@ class UDXSessionConn implements MuxedConn, TransportConn {
   @override
   Transport get transport => _transport;
 
+  @override
   void notifyActivity() {
     if (!_isClosed && !_isClosing) {
       _connManager.recordActivity(this);
@@ -796,7 +793,7 @@ class UDXSessionConn implements MuxedConn, TransportConn {
 // Internal implementation of ConnStats for UDXSessionConn
 class _UDXConnStatsImpl extends ConnStats {
   _UDXConnStatsImpl({
-    required Stats stats,
-    required int numStreams,
-  }) : super(stats: stats, numStreams: numStreams);
+    required super.stats,
+    required super.numStreams,
+  });
 }

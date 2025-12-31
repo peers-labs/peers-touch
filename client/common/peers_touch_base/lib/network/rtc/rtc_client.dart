@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'rtc_signaling.dart';
+import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 
 typedef PeerConnectionFactory = Future<RTCPeerConnection> Function(Map<String, dynamic> configuration, [Map<String, dynamic> constraints]);
 
 class RTCClient {
+
+  RTCClient(this.signaling, {required this.role, required this.peerId, PeerConnectionFactory? pcFactory})
+      : _pcFactory = pcFactory ?? createPeerConnection;
   final RTCSignalingService signaling;
   final String role; // 'mobile' or 'desktop'
   final String peerId; // self peer id for identification
@@ -20,9 +23,6 @@ class RTCClient {
   RTCIceGatheringState? _iceGatheringState;
   String? _localDescType;
   String? _remoteDescType;
-
-  RTCClient(this.signaling, {required this.role, required this.peerId, PeerConnectionFactory? pcFactory})
-      : _pcFactory = pcFactory ?? createPeerConnection;
 
   Future<void> init() async {
     // Just placeholder if needed, or maybe setup generic listeners
@@ -220,15 +220,23 @@ class RTCClient {
   }
 
   Map<String, dynamic> getIceInfo() {
-    int lh=0, ls=0, lr=0;
+    int lh=0;
+    int ls=0;
+    int lr=0;
     for (final c in _localCandidates) {
       final t = c['type'];
-      if (t == 'host') lh++; else if (t == 'srflx') ls++; else if (t == 'relay') lr++;
+      if (t == 'host') {
+        lh++;
+      } else if (t == 'srflx') ls++; else if (t == 'relay') lr++;
     }
-    int rh=0, rs=0, rr=0;
+    int rh=0;
+    int rs=0;
+    int rr=0;
     for (final c in _remoteCandidates) {
       final t = c['type'];
-      if (t == 'host') rh++; else if (t == 'srflx') rs++; else if (t == 'relay') rr++;
+      if (t == 'host') {
+        rh++;
+      } else if (t == 'srflx') rs++; else if (t == 'relay') rr++;
     }
     return {
       'iceServers': _iceServerUrls,

@@ -1,31 +1,17 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
+import 'package:peers_touch_base/chat/services/chat_core_service.dart';
+import 'package:peers_touch_base/chat/services/encryption_service.dart';
+import 'package:peers_touch_base/chat/services/p2p_chat_protocol.dart';
+import 'package:peers_touch_base/chat/services/storage_service.dart';
+import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_service.dart';
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
-
-import 'chat_core_service.dart';
-import 'encryption_service.dart';
-import 'storage_service.dart';
-import 'p2p_chat_protocol.dart';
 
 /// 聊天核心服务实现
 /// 处理好友管理、会话管理、消息同步等核心业务逻辑
 class ChatCoreServiceImpl implements ChatCoreService {
-  final Host _host;
-  final StompService _stompService;
-  final EncryptionService _encryptionService;
-  final ChatStorageService _storageService;
-  final P2PChatProtocol _p2pProtocol;
-
-  bool _isInitialized = false;
-  final _messageControllers = <String, StreamController<ChatMessage>>{};
-  final _friendRequestController = StreamController<FriendRequest>.broadcast();
-  final _friendStatusController = StreamController<Friend>.broadcast();
 
   ChatCoreServiceImpl({
     required Host host,
@@ -38,13 +24,23 @@ class ChatCoreServiceImpl implements ChatCoreService {
        _encryptionService = encryptionService,
        _storageService = storageService,
        _p2pProtocol = p2pProtocol;
+  final Host _host;
+  final StompService _stompService;
+  final EncryptionService _encryptionService;
+  final ChatStorageService _storageService;
+  final P2PChatProtocol _p2pProtocol;
+
+  bool _isInitialized = false;
+  final _messageControllers = <String, StreamController<ChatMessage>>{};
+  final _friendRequestController = StreamController<FriendRequest>.broadcast();
+  final _friendStatusController = StreamController<Friend>.broadcast();
 
   @override
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     // 注册P2P协议处理器
-    await _p2pProtocol.registerMessageHandler(_handleP2PMessage);
+    _p2pProtocol.registerMessageHandler(_handleP2PMessage);
 
     // 启动消息同步
     await _startMessageSync();

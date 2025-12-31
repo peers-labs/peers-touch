@@ -68,7 +68,7 @@ class MeGeneralSettingsPage extends StatelessWidget {
     
     // Get current locale
     final currentLocale = Localizations.localeOf(context);
-    String currentLanguage = _getLanguageDisplayName(currentLocale);
+    final String currentLanguage = _getLanguageDisplayName(currentLocale);
 
     return Container(
       decoration: BoxDecoration(

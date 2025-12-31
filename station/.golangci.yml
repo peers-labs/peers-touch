@@ -99,6 +99,9 @@ issues:
     - frame/example/router-config
     - frame/core/plugin/store/rds/postgres
     - frame/core/plugin/store/rds/sqlite
+    - ".*logrus.*"
+    - ".*lumberjack\\.v2.*"
+    - ".*frame/touch/activitypub.*"
     - frame/core/plugin/native/internal/mdns
   exclude-files:
     - idls.go
@@ -111,5 +114,6 @@ issues:
     - path: ".*_test\\.go$"
       linters:
         - errcheck
+        - revive
   include:
     # - BEXC0001 # uncomment this line makes `bgolint` check package and exported (const|function|*) should have comment.

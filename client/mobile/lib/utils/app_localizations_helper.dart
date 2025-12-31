@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 
 /// Helper class to access app localizations easily throughout the app
 class AppLocalizationsHelper {

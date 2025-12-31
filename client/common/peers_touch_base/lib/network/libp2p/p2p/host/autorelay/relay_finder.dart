@@ -1,47 +1,55 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:logging/logging.dart';
+import 'package:meta/meta.dart'; // For @visibleForTesting
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart' show Connectedness, EvtPeerConnectednessChanged, ConnectionManager;
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart' show Conn; // Direct import for Conn
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart' show Connectedness, EvtPeerConnectednessChanged, ConnectionManager;
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/upgrader.dart' show Upgrader; // Import Upgrader
-
+import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay_config.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay_metrics.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart'; // For Protocols class
 // Circuit V2 client imports
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/client/client.dart' show CircuitV2Client; // Changed Client to CircuitV2Client
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/client/reservation.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/proto.dart' show CircuitV2Protocol;
-
-import 'package:meta/meta.dart'; // For @visibleForTesting
-import 'package:logging/logging.dart';
-
-import 'package:synchronized/synchronized.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart'; // For Protocols class
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/util.dart' show isRelayAddress; // For isRelayAddress
-
-import './autorelay_config.dart';
-import './autorelay_metrics.dart';
-import './autorelay_address_utils.dart' as address_utils;
+import 'package:peers_touch_base/network/libp2p/p2p/transport/upgrader.dart' show Upgrader; // Import Upgrader
+import 'package:synchronized/synchronized.dart';
 
 const rsvpRefreshInterval = Duration(minutes: 1);
 const rsvpExpirationSlack = Duration(minutes: 2); 
 const autorelayTag = 'autorelay';
 
 class Candidate {
-  final DateTime added;
-  final bool supportsRelayV2;
-  final AddrInfo addrInfo;
 
   Candidate({
     required this.added,
     required this.supportsRelayV2,
     required this.addrInfo,
   });
+  final DateTime added;
+  final bool supportsRelayV2;
+  final AddrInfo addrInfo;
 }
 
 class RelayFinder {
+
+  RelayFinder(this.host, this.upgrader, this.config)
+      : _peerSource = config.effectivePeerSource,
+        metricsTracer = WrappedMetricsTracer(config.metricsTracer),
+        _bootTime = config.clock.now(),
+        _scheduledWorkTimes = ScheduledWorkTimes.initial() {
+     _scheduledWorkTimes = ScheduledWorkTimes(
+        nextAllowedCallToPeerSource: config.clock.now().subtract(const Duration(seconds: 1)),
+        nextRefresh: config.clock.now().add(rsvpRefreshInterval),
+        nextBackoff: config.clock.now().add(config.backoff),
+        nextOldCandidateCheck: config.clock.now().add(config.maxCandidateAge),
+    );
+  }
   static final Logger _log = Logger('RelayFinder');
   
   final Host host;
@@ -77,19 +85,6 @@ class RelayFinder {
   ScheduledWorkTimes _scheduledWorkTimes;
 
   bool _isRunning = false;
-
-  RelayFinder(this.host, this.upgrader, this.config)
-      : _peerSource = config.effectivePeerSource,
-        metricsTracer = WrappedMetricsTracer(config.metricsTracer),
-        _bootTime = config.clock.now(),
-        _scheduledWorkTimes = ScheduledWorkTimes.initial() {
-     _scheduledWorkTimes = ScheduledWorkTimes(
-        nextAllowedCallToPeerSource: config.clock.now().subtract(const Duration(seconds: 1)),
-        nextRefresh: config.clock.now().add(rsvpRefreshInterval),
-        nextBackoff: config.clock.now().add(config.backoff),
-        nextOldCandidateCheck: config.clock.now().add(config.maxCandidateAge),
-    );
-  }
 
   Future<void> start() async {
     if (_isRunning) {
@@ -257,12 +252,12 @@ class RelayFinder {
   void _findNodes(Stream<void> stopSignal, Stream<void> peerSourceRateLimiter) async {
     Stream<AddrInfo>? currentPeerStream;
     StreamSubscription<AddrInfo>? currentPeerSubscription;
-    List<Future<void>> pendingNodeHandlers = [];
+    final List<Future<void>> pendingNodeHandlers = [];
 
     await for (var _ in peerSourceRateLimiter.takeUntil(stopSignal)) {
       if (currentPeerStream != null) continue;
 
-      int numCandidates = await _candidateMx.synchronized(() => _candidates.length);
+      final int numCandidates = await _candidateMx.synchronized(() => _candidates.length);
       if (numCandidates < config.minCandidates) {
         _log.fine('RelayFinder: Need more candidates ($numCandidates < ${config.minCandidates}), calling peer source for up to ${config.maxCandidates} peers');
         metricsTracer.candidateLoopState(CandidateLoopState.peerSourceRateLimited);
@@ -271,12 +266,12 @@ class RelayFinder {
         currentPeerSubscription = currentPeerStream?.listen(
           (addrInfo) async {
             _log.fine('RelayFinder: Received candidate from peer source: ${addrInfo.id.toBase58()}');
-            bool isOnBackoff = await _candidateMx.synchronized(() => _backoff.containsKey(addrInfo.id));
+            final bool isOnBackoff = await _candidateMx.synchronized(() => _backoff.containsKey(addrInfo.id));
             if (isOnBackoff) {
               _log.fine('RelayFinder: Candidate ${addrInfo.id.toBase58()} is on backoff, skipping');
               return;
             }
-            int currentNumCandidates = await _candidateMx.synchronized(() => _candidates.length);
+            final int currentNumCandidates = await _candidateMx.synchronized(() => _candidates.length);
             if (currentNumCandidates >= config.maxCandidates) {
               _log.fine('RelayFinder: Already have enough candidates ($currentNumCandidates >= ${config.maxCandidates}), skipping');
               return;
@@ -326,7 +321,7 @@ class RelayFinder {
   }
   
   Future<bool> _handleNewNode(AddrInfo addrInfo) async {
-    bool isRelayInUse = await _relayMx.synchronized(() => _isUsingRelay(addrInfo.id));
+    final bool isRelayInUse = await _relayMx.synchronized(() => _isUsingRelay(addrInfo.id));
     if (isRelayInUse) return false;
 
     try {
@@ -388,7 +383,7 @@ class RelayFinder {
     int numActiveRelays = await _relayMx.synchronized(() => _relays.length);
     if (numActiveRelays >= config.desiredRelays) return;
 
-    bool canConnect = await _candidateMx.synchronized(() {
+    final bool canConnect = await _candidateMx.synchronized(() {
       if (_relays.isEmpty && _candidates.length < config.minCandidates && config.clock.since(_bootTime) < config.bootDelay) {
         return false;
       }
@@ -397,11 +392,11 @@ class RelayFinder {
 
     if (!canConnect) return;
 
-    List<Candidate> selectedCandidates = await _candidateMx.synchronized(() => _selectCandidates());
+    final List<Candidate> selectedCandidates = await _candidateMx.synchronized(() => _selectCandidates());
 
     for (var cand in selectedCandidates) {
-      PeerId id = cand.addrInfo.id;
-      bool usingThisRelay = await _relayMx.synchronized(() => _isUsingRelay(id));
+      final PeerId id = cand.addrInfo.id;
+      final bool usingThisRelay = await _relayMx.synchronized(() => _isUsingRelay(id));
       if (usingThisRelay) {
         await _candidateMx.synchronized(() => _removeCandidate(id));
         _notifyMaybeNeedNewCandidates();
@@ -444,7 +439,7 @@ class RelayFinder {
 
     Reservation rsvp;
     try {
-      final circuitClient = CircuitV2Client(host: host, upgrader: this.upgrader, connManager: host.connManager); // Changed Client to CircuitV2Client
+      final circuitClient = CircuitV2Client(host: host, upgrader: upgrader, connManager: host.connManager); // Changed Client to CircuitV2Client
       rsvp = await circuitClient.reserve(candidate.addrInfo.id).timeout(const Duration(seconds:10));
     } catch (e) {
       await _candidateMx.synchronized(() => _removeCandidate(id));
@@ -456,7 +451,7 @@ class RelayFinder {
   }
 
   Future<void> _refreshReservations(DateTime now) async {
-    List<PeerId> toRefresh = [];
+    final List<PeerId> toRefresh = [];
     await _relayMx.synchronized(() {
       _relays.forEach((peerId, rsvp) {
         if (now.add(rsvpExpirationSlack).isAfter(rsvp.expire)) {
@@ -470,9 +465,9 @@ class RelayFinder {
     }
 
     bool anyChange = false;
-    final client = CircuitV2Client(host: host, upgrader: this.upgrader, connManager: host.connManager); // Changed Client to CircuitV2Client
+    final client = CircuitV2Client(host: host, upgrader: upgrader, connManager: host.connManager); // Changed Client to CircuitV2Client
     
-    List<Future<void>> refreshFutures = toRefresh.map((peerId) async {
+    final List<Future<void>> refreshFutures = toRefresh.map((peerId) async {
       try {
         final newRsvp = await client.reserve(peerId).timeout(const Duration(seconds:10));
         await _relayMx.synchronized(() {
@@ -503,7 +498,7 @@ class RelayFinder {
   DateTime _clearBackoff(DateTime now) {
     DateTime nextTime = now.add(config.backoff);
     _candidateMx.synchronized(() {
-      List<PeerId> toRemove = [];
+      final List<PeerId> toRemove = [];
       _backoff.forEach((id, backoffStartTime) {
         final expiry = backoffStartTime.add(config.backoff);
         if (expiry.isAfter(now)) {
@@ -523,7 +518,7 @@ class RelayFinder {
     DateTime nextTime = now.add(config.maxCandidateAge);
     bool deleted = false;
     _candidateMx.synchronized(() {
-      List<PeerId> toRemove = [];
+      final List<PeerId> toRemove = [];
       _candidates.forEach((id, cand) {
         final expiry = cand.added.add(config.maxCandidateAge);
         if (expiry.isAfter(now)) {
@@ -612,7 +607,7 @@ class RelayFinder {
 
   List<Candidate> _selectCandidates() {
     final now = config.clock.now();
-    List<Candidate> validCandidates = _candidates.values
+    final List<Candidate> validCandidates = _candidates.values
         .where((cand) => cand.added.add(config.maxCandidateAge).isAfter(now))
         .toList();
     validCandidates.shuffle(Random(now.microsecondsSinceEpoch));
@@ -627,7 +622,7 @@ class RelayFinder {
         return List<MultiAddr>.from(_cachedAddrs);
       }
 
-      List<MultiAddr> raddrs = [];
+      final List<MultiAddr> raddrs = [];
       for (var addr in currentHostAddrs) {
         if (addr.isPrivate() || addr.isLoopback()) {
           raddrs.add(addr);
@@ -654,7 +649,7 @@ class RelayFinder {
                 }
                 
                 // Build circuit address: relayAddr/p2p/relayPeerID/p2p-circuit/p2p/ownPeerID
-                var circuitAddr = relayAddr
+                final circuitAddr = relayAddr
                     .encapsulate(Protocols.p2p.name, peerId.toString())
                     .encapsulate(Protocols.circuit.name, '')
                     .encapsulate(Protocols.p2p.name, host.id.toString());
@@ -704,10 +699,10 @@ class RelayFinder {
 }
 
 class _ProtocolNotSupportedException implements Exception {
-  final String message;
   _ProtocolNotSupportedException(this.message);
+  final String message;
   @override
-  String toString() => "ProtocolNotSupportedException: $message";
+  String toString() => 'ProtocolNotSupportedException: $message';
 }
 
 // Helper extension for Stream to mimic takeUntil from rxdart/async
@@ -726,7 +721,7 @@ extension StreamTakeUntil<T> on Stream<T> {
         );
         signalSubscription = signal.listen(
           (_) => controller?.close(),
-          onError: controller?.addError,
+          onError: controller.addError,
         );
       },
       onPause: () => subscription?.pause(),

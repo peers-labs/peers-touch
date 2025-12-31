@@ -1,24 +1,24 @@
 import 'package:flutter/material.dart';
 
 class FloatingActionOption {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
 
   const FloatingActionOption({
     required this.icon,
     required this.tooltip,
     required this.onPressed,
   });
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
 }
 
 class FloatingActionBall extends StatefulWidget {
-  final List<FloatingActionOption> options;
 
   const FloatingActionBall({
     super.key,
     required this.options,
   });
+  final List<FloatingActionOption> options;
 
   @override
   State<FloatingActionBall> createState() => FloatingActionBallState();

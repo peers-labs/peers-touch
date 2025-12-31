@@ -3,9 +3,9 @@ import 'package:peers_touch_mobile/common/logger/logger.dart';
 
 /// Central manager for region data access and operations
 class RegionManager {
-  static final RegionManager _instance = RegionManager._internal();
   factory RegionManager() => _instance;
   RegionManager._internal();
+  static final RegionManager _instance = RegionManager._internal();
 
   final RegionsLoader _regionsLoader = DefaultRegionsLoader();
   bool _initialized = false;
@@ -81,8 +81,8 @@ class RegionManager {
 
 /// Custom exceptions
 class RegionException implements Exception {
-  final String message;
   RegionException(this.message);
+  final String message;
   
   @override
   String toString() => 'RegionException: $message';
@@ -93,5 +93,5 @@ class RegionNotFoundException extends RegionException {
 }
 
 class RegionNotInitializedException extends RegionException {
-  RegionNotInitializedException(String message) : super(message);
+  RegionNotInitializedException(super.message);
 }

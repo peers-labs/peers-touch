@@ -4,14 +4,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide FormData, MultipartFile;
 import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/repositories/actor_repository.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_desktop/core/models/actor_base.dart';
-import 'package:peers_touch_desktop/core/services/oss_service.dart';
-import 'package:peers_touch_desktop/core/services/file_cache_service.dart';
 import 'package:peers_touch_desktop/core/models/upload_result.dart';
+import 'package:peers_touch_desktop/core/services/file_cache_service.dart';
+import 'package:peers_touch_desktop/core/services/oss_service.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
 
@@ -35,6 +35,7 @@ class ProfileController extends GetxController {
       final gc = Get.find<GlobalContext>();
       gc.onSessionChange.listen((session) {
         _syncWithSession();
+        _loadCachedProfile();
         fetchProfile();
       });
     }
@@ -45,7 +46,10 @@ class ProfileController extends GetxController {
       ever(auth.username, (_) => _onAuthChanged());
     }
 
-    // 4. Initial fetch
+    // 4. Load cached profile first for instant display
+    _loadCachedProfile();
+
+    // 5. Then fetch fresh data from server
     fetchProfile();
   }
 
@@ -126,6 +130,48 @@ class ProfileController extends GetxController {
     detail.value = null;
   }
 
+  Future<void> _loadCachedProfile() async {
+    try {
+      final auth = Get.find<AuthController>();
+      String username = auth.username.value;
+      
+      if (username.isEmpty && auth.email.value.isNotEmpty) {
+        username = auth.email.value.split('@').first;
+      }
+
+      if (username.isEmpty && Get.isRegistered<GlobalContext>()) {
+        final gc = Get.find<GlobalContext>();
+        username = gc.actorHandle ?? '';
+      }
+      
+      if (username.isEmpty) return;
+
+      final cacheKey = 'profile_cache_$username';
+      final cachedData = await LocalStorage().get<Map<String, dynamic>>(cacheKey);
+      
+      if (cachedData != null) {
+        final cachedDetail = UserDetail.fromJson(cachedData);
+        detail.value = cachedDetail;
+        LoggingService.info('Loaded cached profile for $username');
+      }
+    } catch (e) {
+      LoggingService.warning('Failed to load cached profile: $e');
+    }
+  }
+
+  Future<void> _saveCachedProfile(UserDetail userDetail) async {
+    try {
+      final username = userDetail.handle;
+      if (username.isEmpty) return;
+
+      final cacheKey = 'profile_cache_$username';
+      await LocalStorage().set(cacheKey, userDetail.toJson());
+      LoggingService.info('Saved profile cache for $username');
+    } catch (e) {
+      LoggingService.warning('Failed to save profile cache: $e');
+    }
+  }
+
   Future<void> fetchProfile() async {
     try {
       final auth = Get.find<AuthController>();
@@ -167,12 +213,12 @@ class ProfileController extends GetxController {
         final repo = Get.find<ActorRepository>();
         try {
           data = await repo.fetchProfile(username: username);
-          print('DEBUG: Profile data from repo for $username: $data');
+          LoggingService.info('Profile data from repo for $username: $data');
         } catch (e) {
           // If repo throws error (it might not, depending on impl, but let's be safe)
           final errStr = e.toString();
           if (errStr.contains('401') || errStr.contains('403') || errStr.contains('404')) {
-             print('Auth error or user not found during profile fetch: $e. Logging out.');
+             LoggingService.warning('Auth error or user not found during profile fetch: $e. Logging out.');
              logout();
              return;
           }
@@ -185,7 +231,7 @@ class ProfileController extends GetxController {
           );
           if (response.statusCode == 200 && response.data is Map) {
             data = (response.data as Map).cast<String, dynamic>();
-            print('DEBUG: Profile data from http for $username: $data');
+            LoggingService.info('Profile data from http for $username: $data');
           }
         } catch (e) {
            // Handle specific errors
@@ -201,11 +247,25 @@ class ProfileController extends GetxController {
         }
       }
       if (data != null) {
-        detail.value = UserDetail.fromJson(data);
+        final newDetail = UserDetail.fromJson(data);
+        detail.value = newDetail;
+        await _saveCachedProfile(newDetail);
+        
+        if (Get.isRegistered<GlobalContext>() && newDetail.avatarUrl != null && newDetail.avatarUrl!.isNotEmpty) {
+          final gc = Get.find<GlobalContext>();
+          final currentSession = gc.currentSession;
+          if (currentSession != null) {
+            final updatedSession = Map<String, dynamic>.from(currentSession);
+            updatedSession['avatarUrl'] = newDetail.avatarUrl;
+            await gc.setSession(updatedSession);
+            LoggingService.info('Updated session avatarUrl: ${newDetail.avatarUrl}');
+          }
+        }
+        
+        LoggingService.info('Profile loaded successfully for ${newDetail.handle}');
       }
     } catch (e) {
-      // Log error
-      print('Failed to fetch profile: $e');
+      LoggingService.error('Failed to fetch profile: $e');
     }
   }
 
@@ -336,7 +396,7 @@ class ProfileController extends GetxController {
         return await uploadFile(file, category: category);
       }
     } catch (e) {
-      print('Pick file failed: $e');
+      LoggingService.error('Pick file failed: $e');
     }
     return null;
   }

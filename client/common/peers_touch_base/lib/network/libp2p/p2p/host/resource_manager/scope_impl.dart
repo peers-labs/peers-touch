@@ -1,9 +1,8 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/errors.dart' as network_errors;
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/limit.dart';
 // It's good practice to alias if class names might collide or for clarity.
 // import 'package:peers_touch_base/network/libp2p/log/logger.dart' as log;
@@ -13,7 +12,9 @@ void _logWarn(String message) {
   print('WARN: $message');
 }
 
-class _Resources {
+class _Resources { // In bytes
+
+  _Resources(this.limit);
   final Limit limit;
 
   int connsInbound = 0;
@@ -21,9 +22,7 @@ class _Resources {
   int streamsInbound = 0;
   int streamsOutbound = 0;
   int fds = 0; // File descriptors, conceptual in Dart
-  int memory = 0; // In bytes
-
-  _Resources(this.limit);
+  int memory = 0;
 
   // Checks memory reservation.
   // Note: Go's priority system for memory is complex (using uint8 for priority).
@@ -50,7 +49,7 @@ class _Resources {
 
     if (memory + rsvp > currentLimit) {
       // This constructor takes no arguments. The message is fixed.
-      return network_errors.ResourceLimitExceededException();
+      return const network_errors.ResourceLimitExceededException();
     }
     return null;
   }
@@ -82,16 +81,16 @@ class _Resources {
 
     if (dir == Direction.inbound) {
       if (streamsInbound + 1 > currentLimit) {
-        return network_errors.ResourceLimitExceededException();
+        return const network_errors.ResourceLimitExceededException();
       }
     } else {
       if (streamsOutbound + 1 > currentLimit) {
-        return network_errors.ResourceLimitExceededException();
+        return const network_errors.ResourceLimitExceededException();
       }
     }
 
     if (streamsInbound + streamsOutbound + 1 > totalLimit) {
-      return network_errors.ResourceLimitExceededException();
+      return const network_errors.ResourceLimitExceededException();
     }
 
     if (dir == Direction.inbound) {
@@ -128,20 +127,20 @@ class _Resources {
 
     if (dir == Direction.inbound) {
       if (connsInbound + 1 > currentConnLimit) {
-        return network_errors.ResourceLimitExceededException();
+        return const network_errors.ResourceLimitExceededException();
       }
     } else {
       if (connsOutbound + 1 > currentConnLimit) {
-        return network_errors.ResourceLimitExceededException();
+        return const network_errors.ResourceLimitExceededException();
       }
     }
 
     if (connsInbound + connsOutbound + 1 > totalConnLimit) {
-      return network_errors.ResourceLimitExceededException();
+      return const network_errors.ResourceLimitExceededException();
     }
 
     if (usefd && (fds + 1 > fdLimit)) {
-      return network_errors.ResourceLimitExceededException();
+      return const network_errors.ResourceLimitExceededException();
     }
 
     if (dir == Direction.inbound) {
@@ -191,22 +190,13 @@ class _Resources {
 }
 
 class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
-  bool _isDone = false;
-  int _refCnt = 0;
-  int _spanIdCounter = 0; // For generating unique span IDs within this scope
-
-  final _Resources _resources;
-  ResourceScopeImpl? _owner; // For span scopes
-  List<ResourceScopeImpl> edges = []; // Made public for subclass access
-
-  final String name;
   // TODO: Add trace and metrics objects later
 
   ResourceScopeImpl(Limit limit, this.name,
       {ResourceScopeImpl? owner, List<ResourceScopeImpl>? edges}) // Changed back to edges
       : _resources = _Resources(limit),
         _owner = owner,
-        this.edges = edges ?? [] {
+        edges = edges ?? [] {
     // if (limit is BaseLimit) {
     //   print('DEBUG: ResourceScopeImpl created: $name with BaseLimit: streams=${limit.streamTotalLimit}, In=${limit.getStreamLimit(Direction.inbound)}, Out=${limit.getStreamLimit(Direction.outbound)}');
     // } else {
@@ -223,10 +213,19 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
   }
 
   // Factory for creating a span
-  ResourceScopeImpl._asSpan(Limit limit, this.name, this._owner, int spanId)
+  ResourceScopeImpl._asSpan(Limit limit, this.name, this._owner)
       : _resources = _Resources(limit) {
     // log.debug('Span scope created: $name, Owner: ${_owner?.name}');
   }
+  bool _isDone = false;
+  int _refCnt = 0;
+  int _spanIdCounter = 0; // For generating unique span IDs within this scope
+
+  final _Resources _resources;
+  final ResourceScopeImpl? _owner; // For span scopes
+  List<ResourceScopeImpl> edges = []; // Made public for subclass access
+
+  final String name;
 
   String _wrapErrorMsg(String msg) => '$name: $msg';
 
@@ -251,10 +250,10 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
   Future<void> reserveMemory(int size, int priority) async {
     if (_isDone) {
       // print('DEBUG: $name.reserveMemory called on done scope.');
-      throw _wrapError(network_errors.ResourceScopeClosedException());
+      throw _wrapError(const network_errors.ResourceScopeClosedException());
     }
     // print('DEBUG: $name.reserveMemory attempting to reserve $size bytes. Current memory: ${_resources.memory}');
-    var err = _resources.reserveMemory(size, priority);
+    final err = _resources.reserveMemory(size, priority);
     if (err != null) {
       // print('DEBUG: $name.reserveMemory local reservation failed: $err');
       // TODO: metrics.BlockMemory(size);
@@ -284,10 +283,10 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
 
   Future<void> _reserveMemoryForAncestors(int size, int priority) async {
     if (_owner != null) {
-      return _owner!.reserveMemory(size, priority);
+      return _owner.reserveMemory(size, priority);
     }
 
-    List<ResourceScopeImpl> reservedEdges = [];
+    final List<ResourceScopeImpl> reservedEdges = [];
     try {
       for (var edge in edges) { // Use public field
         // This is a simplified call. Go's ReserveMemoryForChild is not async
@@ -317,7 +316,7 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
 
   void _releaseMemoryForAncestors(int size) {
     if (_owner != null) {
-      _owner!.releaseMemory(size);
+      _owner.releaseMemory(size);
       return;
     }
     for (var edge in edges) { // Use public field
@@ -328,7 +327,7 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
   // Internal methods for child scopes to reserve/release directly on this scope
   // These would be synchronous if called internally.
   Exception? _reserveMemoryForChild(int size, int priority) {
-    if (_isDone) return network_errors.ResourceScopeClosedException();
+    if (_isDone) return const network_errors.ResourceScopeClosedException();
     // _resources.reserveMemory already returns Exception?
     return _resources.reserveMemory(size, priority);
   }
@@ -345,13 +344,13 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
   @override
   Future<ResourceScopeSpan> beginSpan() async {
     if (_isDone) {
-      throw _wrapError(network_errors.ResourceScopeClosedException());
+      throw _wrapError(const network_errors.ResourceScopeClosedException());
     }
     _refCnt++; // Owner's ref count increases because a span is now active
     _spanIdCounter++;
     final spanName = '$name.span-$_spanIdCounter';
     // Span inherits its limit from the owner.
-    return ResourceScopeImpl._asSpan(_resources.limit, spanName, this, _spanIdCounter);
+    return ResourceScopeImpl._asSpan(_resources.limit, spanName, this);
   }
 
   @override
@@ -364,8 +363,8 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
     final currentStat = stat;
     if (_owner != null) {
       // This is a span scope
-      _owner!._releaseResourcesForChild(currentStat);
-      _owner!.decRef(); // Decrement owner's ref count as span is done
+      _owner._releaseResourcesForChild(currentStat);
+      _owner.decRef(); // Decrement owner's ref count as span is done
     } else {
       // This is a DAG scope
       for (var edge in edges) { // Use public field
@@ -450,7 +449,7 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
 
   void addStream(Direction dir) {
     if (_isDone) {
-      throw _wrapError(network_errors.ResourceScopeClosedException());
+      throw _wrapError(const network_errors.ResourceScopeClosedException());
     }
     
     final err = _resources.addStream(dir, name); // Pass owner id (name)
@@ -475,11 +474,11 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
 
   void _addStreamForAncestors(Direction dir) {
     if (_owner != null) {
-      _owner!.addStream(dir); // Call public void method on owner
+      _owner.addStream(dir); // Call public void method on owner
       return;
     }
     
-    List<ResourceScopeImpl> successfulEdges = [];
+    final List<ResourceScopeImpl> successfulEdges = [];
     try {
       for (var edge in edges) { // Use public field
         edge.addStream(dir); // Call public void method on edge
@@ -498,7 +497,7 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
     // This method is for a parent to update its own resources when directly told so by a child.
     // It does NOT trigger further propagation up from this parent.
     // That's the responsibility of the child calling the parent's public addStream method.
-    if (_isDone) return network_errors.ResourceScopeClosedException();
+    if (_isDone) return const network_errors.ResourceScopeClosedException();
     return _resources.addStream(dir, name); 
   }
 
@@ -512,7 +511,7 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
     // print('DEBUG: $name._removeStreamForAncestors called. Owner: ${_owner?.name}, Edges: ${edges.map((e) => e.name).join(', ')}');
     if (_owner != null) {
       // print('DEBUG: $name._removeStreamForAncestors propagating to owner ${_owner!.name} by calling public removeStream');
-      _owner!.removeStream(dir); // Call public method
+      _owner.removeStream(dir); // Call public method
       return;
     }
     for (var edge in edges) { 
@@ -536,7 +535,7 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
   // Connections
   void addConn(Direction dir, bool usefd) {
     if (_isDone) {
-      throw _wrapError(network_errors.ResourceScopeClosedException());
+      throw _wrapError(const network_errors.ResourceScopeClosedException());
     }
 
     final err = _resources.addConn(dir, usefd);
@@ -561,10 +560,10 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
 
   void _addConnForAncestors(Direction dir, bool usefd) {
     if (_owner != null) {
-      _owner!.addConn(dir, usefd); // Call public void method
+      _owner.addConn(dir, usefd); // Call public void method
       return;
     }
-    List<ResourceScopeImpl> successfulEdges = [];
+    final List<ResourceScopeImpl> successfulEdges = [];
     try {
       for (var edge in edges) {
         edge.addConn(dir, usefd); // Call public void method
@@ -579,7 +578,7 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
   }
 
   Exception? _addConnForChild(Direction dir, bool usefd) {
-    if (_isDone) return network_errors.ResourceScopeClosedException();
+    if (_isDone) return const network_errors.ResourceScopeClosedException();
     return _resources.addConn(dir, usefd);
   }
 
@@ -591,7 +590,7 @@ class ResourceScopeImpl implements ResourceScope, ResourceScopeSpan {
 
   void _removeConnForAncestors(Direction dir, bool usefd) {
     if (_owner != null) {
-      _owner!.removeConn(dir, usefd); // Call public method
+      _owner.removeConn(dir, usefd); // Call public method
       return;
     }
     for (var edge in edges) {

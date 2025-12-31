@@ -45,11 +45,11 @@ Duration noJitter(Duration duration, Duration min, Duration max, Random rng) {
 
 /// A base class for randomized backoff strategies
 class RandomizedBackoff {
+
+  RandomizedBackoff(this.min, this.max, this.rng);
   final Duration min;
   final Duration max;
   final Random rng;
-
-  RandomizedBackoff(this.min, this.max, this.rng);
 
   Duration boundedDelay(Duration duration) {
     return boundedDuration(duration, min, max);
@@ -69,11 +69,11 @@ Duration boundedDuration(Duration d, Duration min, Duration max) {
 
 /// A base class for backoff strategies that track attempt numbers
 class AttemptBackoff extends RandomizedBackoff {
-  int attempt = 0;
-  final Jitter jitter;
 
   AttemptBackoff(Duration min, Duration max, this.jitter, Random rng)
       : super(min, max, rng);
+  int attempt = 0;
+  final Jitter jitter;
 
   @override
   void reset() {
@@ -88,9 +88,9 @@ BackoffFactory newFixedBackoff(Duration delay) {
 
 /// A backoff strategy with a constant delay
 class FixedBackoff implements BackoffStrategy {
-  final Duration delay_;
 
   FixedBackoff(this.delay_);
+  final Duration delay_;
 
   @override
   Duration delay() {
@@ -121,11 +121,11 @@ BackoffFactory newPolynomialBackoff(
 
 /// A backoff strategy based on a polynomial function of the attempt number
 class PolynomialBackoff implements BackoffStrategy {
+
+  PolynomialBackoff(this.attemptBackoff, this.timeUnits, this.poly);
   final AttemptBackoff attemptBackoff;
   final Duration timeUnits;
   final List<double> poly;
-
-  PolynomialBackoff(this.attemptBackoff, this.timeUnits, this.poly);
 
   @override
   Duration delay() {
@@ -181,12 +181,12 @@ BackoffFactory newExponentialBackoff(
 
 /// A backoff strategy based on an exponential function of the attempt number
 class ExponentialBackoff implements BackoffStrategy {
+
+  ExponentialBackoff(this.attemptBackoff, this.timeUnits, this.base, this.offset);
   final AttemptBackoff attemptBackoff;
   final Duration timeUnits;
   final double base;
   final Duration offset;
-
-  ExponentialBackoff(this.attemptBackoff, this.timeUnits, this.base, this.offset);
 
   @override
   Duration delay() {
@@ -224,11 +224,11 @@ BackoffFactory newExponentialDecorrelatedJitter(
 
 /// A backoff strategy that uses decorrelated jitter with exponential backoff
 class ExponentialDecorrelatedJitter implements BackoffStrategy {
+
+  ExponentialDecorrelatedJitter(this.randomizedBackoff, this.base);
   final RandomizedBackoff randomizedBackoff;
   final double base;
   Duration lastDelay = Duration.zero;
-
-  ExponentialDecorrelatedJitter(this.randomizedBackoff, this.base);
 
   @override
   Duration delay() {

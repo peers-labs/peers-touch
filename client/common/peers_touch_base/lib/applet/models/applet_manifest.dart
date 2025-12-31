@@ -1,14 +1,5 @@
 
-class AppletManifest {
-  final String appId;
-  final String version;
-  final String name;
-  final String? description;
-  final String? icon;
-  String entryPoint;
-  final String? minSdkVersion;
-  final List<String> permissions;
-  final String? bundleHash; // SHA-256 hash of the bundle file
+class AppletManifest { // SHA-256 hash of the bundle file
 
   AppletManifest({
     required this.appId,
@@ -35,6 +26,15 @@ class AppletManifest {
       bundleHash: json['bundle_hash'] as String?,
     );
   }
+  final String appId;
+  final String version;
+  final String name;
+  final String? description;
+  final String? icon;
+  String entryPoint;
+  final String? minSdkVersion;
+  final List<String> permissions;
+  final String? bundleHash;
 
   Map<String, dynamic> toJson() {
     return {

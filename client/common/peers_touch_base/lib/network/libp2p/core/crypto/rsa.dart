@@ -1,12 +1,13 @@
 import 'dart:typed_data';
-import 'package:pointycastle/pointycastle.dart' as pc;
+
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart' as p2pkeys;
+import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' as pb;
+import 'package:peers_touch_base/network/libp2p/p2p/crypto/key_generator.dart';
 import 'package:pointycastle/api.dart';
 import 'package:pointycastle/asymmetric/api.dart';
-import 'package:pointycastle/signers/rsa_signer.dart';
 import 'package:pointycastle/digests/sha256.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/crypto/key_generator.dart';
-import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' as pb;
-import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart' as p2pkeys;
+import 'package:pointycastle/pointycastle.dart' as pc;
+import 'package:pointycastle/signers/rsa_signer.dart';
 
 /// Minimum RSA key size in bits
 const int minRsaKeyBits = 2048;
@@ -16,23 +17,22 @@ const int maxRsaKeyBits = 8192;
 
 /// Exception thrown when an RSA key is too small
 class RsaKeyTooSmallException implements Exception {
-  final String message;
   RsaKeyTooSmallException() : message = 'RSA keys must be >= $minRsaKeyBits bits to be useful';
+  final String message;
   @override
   String toString() => message;
 }
 
 /// Exception thrown when an RSA key is too big
 class RsaKeyTooBigException implements Exception {
-  final String message;
   RsaKeyTooBigException() : message = 'RSA keys must be <= $maxRsaKeyBits bits';
+  final String message;
   @override
   String toString() => message;
 }
 
 /// Implementation of RSA public key
 class RsaPublicKey implements p2pkeys.PublicKey {
-  final RSAPublicKey _key;
 
   RsaPublicKey(this._key) {
     // Validate key size
@@ -60,11 +60,12 @@ class RsaPublicKey implements p2pkeys.PublicKey {
     final pbKey = pb.PublicKey.fromBuffer(bytes);
 
     if (pbKey.type != pb.KeyType.RSA) {
-      throw FormatException('Not an RSA public key');
+      throw const FormatException('Not an RSA public key');
     }
     return RsaPublicKey.fromRawBytes(Uint8List.fromList(pbKey.data));
 
   }
+  final RSAPublicKey _key;
 
 
   @override
@@ -110,8 +111,6 @@ class RsaPublicKey implements p2pkeys.PublicKey {
 
 /// Implementation of RSA private key
 class RsaPrivateKey implements p2pkeys.PrivateKey {
-  final RSAPrivateKey _key;
-  late final RsaPublicKey _publicKey;
 
   RsaPrivateKey(this._key, this._publicKey) {
     // Validate key size
@@ -122,10 +121,12 @@ class RsaPrivateKey implements p2pkeys.PrivateKey {
       throw RsaKeyTooBigException();
     }
   }
+  final RSAPrivateKey _key;
+  late final RsaPublicKey _publicKey;
 
   static Future<p2pkeys.PrivateKey> fromRawBytes(Uint8List bytes) async {
     if (bytes.isEmpty) {
-      throw FormatException('Empty byte array provided');
+      throw const FormatException('Empty byte array provided');
     }
 
     try {
@@ -136,10 +137,6 @@ class RsaPrivateKey implements p2pkeys.PrivateKey {
 
       final parser = pc.ASN1Parser(bytes);
       final asn1Object = parser.nextObject();
-
-      if (asn1Object == null) {
-        throw FormatException('Failed to parse ASN.1 object from bytes');
-      }
 
       if (asn1Object is! pc.ASN1Sequence) {
         throw FormatException('Expected ASN.1 SEQUENCE but got: ${asn1Object.runtimeType}');
@@ -167,7 +164,7 @@ class RsaPrivateKey implements p2pkeys.PrivateKey {
 
       // Validate and extract each element with proper type checking
       if (asn1Sequence.elements![0] is! pc.ASN1Integer) {
-        throw FormatException('Expected version to be ASN1Integer');
+        throw const FormatException('Expected version to be ASN1Integer');
       }
       final version = (asn1Sequence.elements![0] as pc.ASN1Integer).integer;
       if (version != BigInt.from(0)) {
@@ -195,7 +192,7 @@ class RsaPrivateKey implements p2pkeys.PrivateKey {
       // Validate that no required values are null
       if (modulus == null || publicExponent == null || privateExponent == null ||
           p == null || q == null || dP == null || dQ == null || qInv == null) {
-        throw FormatException('One or more required RSA parameters are null');
+        throw const FormatException('One or more required RSA parameters are null');
       }
 
       final privateKey = pc.RSAPrivateKey(
@@ -270,7 +267,7 @@ class RsaPrivateKey implements p2pkeys.PrivateKey {
     final pbKey = pb.PrivateKey.fromBuffer(bytes);
 
     if (pbKey.type != pb.KeyType.RSA) {
-      throw FormatException('Not an RSA private key');
+      throw const FormatException('Not an RSA private key');
     }
     
     return fromRawBytes(Uint8List.fromList(pbKey.data));
@@ -359,7 +356,7 @@ p2pkeys.PublicKey unmarshalRsaPublicKey(Uint8List bytes) {
   final pbKey = pb.PublicKey.fromBuffer(bytes);
 
   if (pbKey.type != pb.KeyType.RSA) {
-    throw FormatException('Not an RSA public key');
+    throw const FormatException('Not an RSA public key');
   }
   return RsaPublicKey.fromRawBytes(Uint8List.fromList(pbKey.data));
 }

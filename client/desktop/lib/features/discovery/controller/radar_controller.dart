@@ -1,18 +1,17 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 
 class RadarItem {
-  final FriendItem friend;
-  final double offsetX;
-  final double offsetY;
 
   RadarItem({
     required this.friend,
     required this.offsetX,
     required this.offsetY,
   });
+  final FriendItem friend;
+  final double offsetX;
+  final double offsetY;
 }
 
 class RadarController extends GetxController with GetSingleTickerProviderStateMixin {

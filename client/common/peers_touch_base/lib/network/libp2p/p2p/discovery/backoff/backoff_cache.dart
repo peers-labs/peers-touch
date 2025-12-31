@@ -1,21 +1,12 @@
 import 'dart:async';
-import 'dart:collection';
 
-import '../../../core/peer/addr_info.dart';
-import '../../../core/discovery.dart';
-import '../../../core/peer/peer_id.dart';
-import 'backoff.dart';
+import 'package:peers_touch_base/network/libp2p/core/discovery.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/discovery/backoff/backoff.dart';
 
 /// BackoffDiscovery is an implementation of discovery that caches peer data and attenuates repeated queries
 class BackoffDiscovery implements Discovery {
-  final Discovery _disc;
-  final BackoffFactory _stratFactory;
-  final Map<String, BackoffCache> _peerCache = {};
-  
-  final int _parallelBufSz;
-  final int _returnedBufSz;
-  
-  final Clock _clock;
   
   /// Creates a new BackoffDiscovery
   BackoffDiscovery(
@@ -27,6 +18,14 @@ class BackoffDiscovery implements Discovery {
   })  : _parallelBufSz = parallelBufferSize,
         _returnedBufSz = returnedBufferSize,
         _clock = clock ?? RealClock();
+  final Discovery _disc;
+  final BackoffFactory _stratFactory;
+  final Map<String, BackoffCache> _peerCache = {};
+  
+  final int _parallelBufSz;
+  final int _returnedBufSz;
+  
+  final Clock _clock;
   
   @override
   Future<Duration> advertise(String ns, [List<DiscoveryOption> options = const []]) {
@@ -71,7 +70,7 @@ class BackoffDiscovery implements Discovery {
       final controller = StreamController<AddrInfo>(sync: true);
       
       for (final ai in c.prevPeers.values) {
-        if (controller.isClosed || (opts.limit != null && controller.hasListener && controller.sink is StreamSink<AddrInfo> && (controller.sink as dynamic).count >= opts.limit!)) {
+        if (controller.isClosed || (opts.limit != null && controller.hasListener && (controller.sink as dynamic).count >= opts.limit!)) {
           break;
         }
         controller.add(ai);
@@ -116,6 +115,8 @@ class RealClock implements Clock {
 
 /// Cache for peer information with backoff
 class BackoffCache {
+  
+  BackoffCache(this.strat, this.clock);
   final BackoffStrategy strat;
   final Clock clock;
   
@@ -124,8 +125,6 @@ class BackoffCache {
   Map<PeerId, AddrInfo> peers = {};
   Map<StreamController<AddrInfo>, int?> sendingChs = {};
   bool ongoing = false;
-  
-  BackoffCache(this.strat, this.clock);
 }
 
 /// Dispatches peers from a discovery query to all registered channels

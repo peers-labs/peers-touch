@@ -4,10 +4,10 @@ library exceptions;
 
 /// Base exception for all Peers-touch client errors
 abstract class PeersTouchException implements Exception {
-  final String message;
-  final Object? cause;
 
   const PeersTouchException(this.message, [this.cause]);
+  final String message;
+  final Object? cause;
 
   @override
   String toString() {

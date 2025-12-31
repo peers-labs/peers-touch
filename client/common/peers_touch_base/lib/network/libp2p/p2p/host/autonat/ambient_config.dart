@@ -2,6 +2,13 @@ import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 
 /// Configuration for AmbientAutoNATv2 orchestrator
 class AmbientAutoNATv2Config {
+  
+  const AmbientAutoNATv2Config({
+    this.bootDelay = const Duration(seconds: 15),
+    this.retryInterval = const Duration(minutes: 1),
+    this.refreshInterval = const Duration(minutes: 15),
+    this.addressFunc,
+  });
   /// Delay before starting initial probe after boot
   final Duration bootDelay;
   
@@ -14,12 +21,5 @@ class AmbientAutoNATv2Config {
   /// Optional function to provide addresses for probing
   /// If null, uses host.addrs
   final List<MultiAddr> Function()? addressFunc;
-  
-  const AmbientAutoNATv2Config({
-    this.bootDelay = const Duration(seconds: 15),
-    this.retryInterval = const Duration(minutes: 1),
-    this.refreshInterval = const Duration(minutes: 15),
-    this.addressFunc,
-  });
 }
 

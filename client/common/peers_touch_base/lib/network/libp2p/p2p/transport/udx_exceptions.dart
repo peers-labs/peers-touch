@@ -4,22 +4,22 @@ import 'dart:math';
 
 import 'package:logging/logging.dart';
 
-import '../../core/exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/core/exceptions.dart';
 
 final Logger _logger = Logger('UDXExceptions');
 
 /// UDX-specific transport exception
 class UDXTransportException extends ConnectionFailedException {
-  final String context;
-  final dynamic originalError;
-  final bool isTransient;
   
   UDXTransportException(
-    String message, 
+    super.message, 
     this.context, 
     this.originalError, {
     this.isTransient = false,
-  }) : super(message);
+  });
+  final String context;
+  final dynamic originalError;
+  final bool isTransient;
   
   @override
   String toString() => 'UDXTransportException: $message (context: $context, transient: $isTransient)';
@@ -28,16 +28,15 @@ class UDXTransportException extends ConnectionFailedException {
 /// UDX connection-specific exception
 class UDXConnectionException extends UDXTransportException {
   UDXConnectionException(
-    String message, 
-    String context, 
-    dynamic originalError, {
-    bool isTransient = false,
-  }) : super(message, context, originalError, isTransient: isTransient);
+    super.message, 
+    super.context, 
+    super.originalError, {
+    super.isTransient,
+  });
 }
 
 /// UDX stream-specific exception
 class UDXStreamException extends UDXTransportException {
-  final String streamId;
   
   UDXStreamException(
     String message, 
@@ -46,6 +45,7 @@ class UDXStreamException extends UDXTransportException {
     dynamic originalError, {
     bool isTransient = false,
   }) : super(message, context, originalError, isTransient: isTransient);
+  final String streamId;
 }
 
 /// UDX packet loss exception
@@ -63,7 +63,6 @@ class UDXPacketLossException extends UDXConnectionException {
 
 /// UDX timeout exception
 class UDXTimeoutException extends UDXConnectionException {
-  final Duration timeout;
   
   UDXTimeoutException(
     String context, 
@@ -75,15 +74,11 @@ class UDXTimeoutException extends UDXConnectionException {
     originalError,
     isTransient: true, // Timeouts might be transient
   );
+  final Duration timeout;
 }
 
 /// Retry configuration for UDX operations
 class UDXRetryConfig {
-  final int maxRetries;
-  final Duration initialDelay;
-  final double backoffMultiplier;
-  final Duration maxDelay;
-  final bool enableJitter;
   
   const UDXRetryConfig({
     this.maxRetries = 3,
@@ -92,6 +87,11 @@ class UDXRetryConfig {
     this.maxDelay = const Duration(seconds: 5),
     this.enableJitter = true,
   });
+  final int maxRetries;
+  final Duration initialDelay;
+  final double backoffMultiplier;
+  final Duration maxDelay;
+  final bool enableJitter;
   
   /// Default retry config for bootstrap servers (more aggressive)
   static const UDXRetryConfig bootstrapServer = UDXRetryConfig(

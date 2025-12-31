@@ -1,11 +1,11 @@
 import 'dart:typed_data';
-import 'package:peers_touch_base/network/libp2p/core/record/record_registry.dart';
 
-import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' as pb;
 import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' as pb;
 import 'package:peers_touch_base/network/libp2p/core/peer/pb/peer_record.pb.dart' as pb;
 import 'package:peers_touch_base/network/libp2p/core/peer/record.dart';
 import 'package:peers_touch_base/network/libp2p/core/record/pb/envelope.pb.dart' as pb;
+import 'package:peers_touch_base/network/libp2p/core/record/record_registry.dart';
 import 'package:peers_touch_base/network/libp2p/utils/varint.dart';
 
 /// Envelope contains an arbitrary [Uint8List] payload, signed by a libp2p peer.
@@ -15,6 +15,14 @@ import 'package:peers_touch_base/network/libp2p/utils/varint.dart';
 /// domain string used to produce the envelope in order to verify the signature
 /// and access the payload.
 class Envelope {
+
+  Envelope({
+    required this.publicKey,
+    required this.payloadType,
+    required Uint8List rawPayload,
+    required Uint8List signature,
+  })  : _signature = signature,
+        rawPayload = Uint8List.fromList(rawPayload);
   /// The public key that can be used to verify the signature and derive the peer id of the signer.
   final PublicKey publicKey;
 
@@ -32,18 +40,10 @@ class Envelope {
   Exception? _unmarshalError;
   bool _unmarshalled = false;
 
-  Envelope({
-    required this.publicKey,
-    required this.payloadType,
-    required Uint8List rawPayload,
-    required Uint8List signature,
-  })  : _signature = signature,
-        rawPayload = Uint8List.fromList(rawPayload);
-
   /// Creates a new envelope by marshaling the given [RecordBase], placing the marshaled bytes
   /// inside an [Envelope], and signing with the given private key.
   static Future<Envelope> seal(RecordBase rec, PrivateKey privateKey) async {
-    final payload = await rec.marshalRecord();
+    final payload = rec.marshalRecord();
     final domain = rec.domain();
     final payloadType = rec.codec();
 
@@ -122,7 +122,7 @@ class Envelope {
   Future<pb.PeerRecord> record() async {
     if (!_unmarshalled) {
       try {
-        _cached = await RecordRegistry.unmarshal(payloadType, rawPayload);
+        _cached = RecordRegistry.unmarshal(payloadType, rawPayload);
       } catch (e) {
         _unmarshalError = e as Exception;
       }

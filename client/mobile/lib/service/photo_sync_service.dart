@@ -2,10 +2,10 @@ import 'dart:async';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
 
 class PhotoSyncService {
-  // Singleton pattern (optional - use if you need single instance)
-  static final PhotoSyncService _instance = PhotoSyncService._internal();
   factory PhotoSyncService() => _instance;
   PhotoSyncService._internal();
+  // Singleton pattern (optional - use if you need single instance)
+  static final PhotoSyncService _instance = PhotoSyncService._internal();
 
   // Actual sync method
   Future<void> syncPhotos(List<int> photoIndices) async {

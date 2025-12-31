@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 class LineChart extends StatelessWidget {
+  const LineChart({super.key, required this.points, required this.color});
   final List<double> points;
   final Color color;
-  const LineChart({super.key, required this.points, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -15,9 +15,9 @@ class LineChart extends StatelessWidget {
 }
 
 class _LinePainter extends CustomPainter {
+  _LinePainter(this.points, this.color);
   final List<double> points;
   final Color color;
-  _LinePainter(this.points, this.color);
   @override
   void paint(Canvas canvas, Size size) {
     if (points.isEmpty) return;

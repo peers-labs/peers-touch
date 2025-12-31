@@ -6,11 +6,11 @@ import 'package:peers_touch_base/storage/file_storage_manager.dart';
 /// Logging service - provides structured logging capabilities
 /// Belongs to underlying kernel services, no UI, core functionality
 class LoggingService {
-  static final LoggingService _instance = LoggingService._internal();
   
   factory LoggingService() => _instance;
   
   LoggingService._internal();
+  static final LoggingService _instance = LoggingService._internal();
   
   static final Logger _logger = Logger('PeersTouch');
   static bool _isInitialized = false;

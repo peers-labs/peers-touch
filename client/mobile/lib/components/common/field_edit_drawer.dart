@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_mobile/utils/snackbar_utils.dart';
 import 'package:peers_touch_mobile/l10n/app_localizations.dart';
+import 'package:peers_touch_mobile/utils/snackbar_utils.dart';
 
 class FieldEditController extends GetxController {
   late TextEditingController textController;
@@ -46,15 +46,6 @@ class FieldEditController extends GetxController {
 }
 
 class FieldEditDrawer extends StatelessWidget {
-  final String title;
-  final String initialValue;
-  final String fieldLabel;
-  final IconData fieldIcon;
-  final String? Function(String?) validator;
-  final Future<void> Function(String value) onUpdate;
-  final TextInputType? keyboardType;
-  final int? maxLines;
-  final int? maxLength;
 
   const FieldEditDrawer({
     super.key,
@@ -68,6 +59,15 @@ class FieldEditDrawer extends StatelessWidget {
     this.maxLines = 1,
     this.maxLength,
   });
+  final String title;
+  final String initialValue;
+  final String fieldLabel;
+  final IconData fieldIcon;
+  final String? Function(String?) validator;
+  final Future<void> Function(String value) onUpdate;
+  final TextInputType? keyboardType;
+  final int? maxLines;
+  final int? maxLength;
 
 @override
   Widget build(BuildContext context) {

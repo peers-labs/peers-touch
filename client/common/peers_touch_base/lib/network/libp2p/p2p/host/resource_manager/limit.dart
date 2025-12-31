@@ -24,15 +24,7 @@ abstract class Limit {
 }
 
 /// BaseLimit provides a concrete implementation of the [Limit] interface.
-class BaseLimit implements Limit {
-  final int streams;
-  final int streamsInbound;
-  final int streamsOutbound;
-  final int conns;
-  final int connsInbound;
-  final int connsOutbound;
-  final int fd;
-  final int memory; // Memory in bytes
+class BaseLimit implements Limit { // Memory in bytes
 
   BaseLimit({
     this.streams = 0,
@@ -44,6 +36,14 @@ class BaseLimit implements Limit {
     this.fd = 0,
     this.memory = 0,
   });
+  final int streams;
+  final int streamsInbound;
+  final int streamsOutbound;
+  final int conns;
+  final int connsInbound;
+  final int connsOutbound;
+  final int fd;
+  final int memory;
 
   @override
   int get memoryLimit => memory;
@@ -89,7 +89,7 @@ class BaseLimit implements Limit {
   // Using a large number, but not int.maxFinite to avoid issues if it's used in arithmetic directly.
   // Go uses math.MaxInt64, Dart's int can be arbitrarily large, but for practical limits,
   // a sufficiently large number is fine.
-  static final int _unlimitedValue = 2 * 1024 * 1024 * 1024; // Approx 2 billion, like Go's MaxInt32
+  static const int _unlimitedValue = 2 * 1024 * 1024 * 1024; // Approx 2 billion, like Go's MaxInt32
 
   static BaseLimit unlimited() {
     return BaseLimit(

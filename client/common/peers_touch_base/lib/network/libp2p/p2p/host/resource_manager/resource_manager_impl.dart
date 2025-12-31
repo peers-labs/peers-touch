@@ -1,50 +1,24 @@
 import 'dart:async';
 
-import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
+import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart'; // Corrected import
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart'; // Provides concrete PeerId
 import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart'; // Corrected import
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/limiter.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scope_impl.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/connection_scope_impl.dart'; // Added import
+import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/peer_scope_impl.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/protocol_scope_impl.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/service_scope_impl.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/stream_scope_impl.dart'; // Added import
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/system_scope_impl.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/transient_scope_impl.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/service_scope_impl.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/protocol_scope_impl.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/peer_scope_impl.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/connection_scope_impl.dart'; // Added import
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/stream_scope_impl.dart'; // Added import
-import 'package:peers_touch_base/network/libp2p/core/network/errors.dart' as network_errors;
-import 'package:logging/logging.dart';
 
 // A simple logger placeholder
 
 
 class ResourceManagerImpl implements ResourceManager {
-
-  final Logger _logger = Logger('ResourceManagerImpl');
-
-  final Limiter _limiter;
-  Limiter get limiter => _limiter; // Public getter
-
-  late final SystemScopeImpl _systemScope;
-  SystemScopeImpl get systemScope => _systemScope; // Public getter
-
-  late final TransientScopeImpl _transientScope;
-  // TODO: Add allowlisted scopes later
-  // late final SystemScopeImpl _allowlistedSystemScope;
-  // late final ResourceScopeImpl _allowlistedTransientScope;
-
-  final Map<String, ServiceScopeImpl> _serviceScopes = {}; // Use ServiceScopeImpl
-  final Map<ProtocolID, ProtocolScopeImpl> _protocolScopes = {}; // Use ProtocolScopeImpl
-  final Map<PeerId, PeerScopeImpl> _peerScopes = {}; // Use PeerScopeImpl
-
-  // For managing "sticky" scopes that shouldn't be GC'd
-  final Set<ProtocolID> _stickyProtocols = {};
-  final Set<PeerId> _stickyPeers = {};
-  // Services are typically sticky by nature of being long-lived
-
-  Timer? _gcTimer;
 
   // TODO: Add connLimiter, trace, metrics later
 
@@ -72,6 +46,30 @@ class ResourceManagerImpl implements ResourceManager {
     _startGarbageCollector();
     _logger.fine('ResourceManager initialized.');
   }
+
+  final Logger _logger = Logger('ResourceManagerImpl');
+
+  final Limiter _limiter;
+  Limiter get limiter => _limiter; // Public getter
+
+  late final SystemScopeImpl _systemScope;
+  SystemScopeImpl get systemScope => _systemScope; // Public getter
+
+  late final TransientScopeImpl _transientScope;
+  // TODO: Add allowlisted scopes later
+  // late final SystemScopeImpl _allowlistedSystemScope;
+  // late final ResourceScopeImpl _allowlistedTransientScope;
+
+  final Map<String, ServiceScopeImpl> _serviceScopes = {}; // Use ServiceScopeImpl
+  final Map<ProtocolID, ProtocolScopeImpl> _protocolScopes = {}; // Use ProtocolScopeImpl
+  final Map<PeerId, PeerScopeImpl> _peerScopes = {}; // Use PeerScopeImpl
+
+  // For managing "sticky" scopes that shouldn't be GC'd
+  final Set<ProtocolID> _stickyProtocols = {};
+  final Set<PeerId> _stickyPeers = {};
+  // Services are typically sticky by nature of being long-lived
+
+  Timer? _gcTimer;
 
   void _startGarbageCollector() {
     _gcTimer = Timer.periodic(const Duration(minutes: 1), (timer) {

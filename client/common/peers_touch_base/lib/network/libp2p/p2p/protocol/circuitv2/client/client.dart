@@ -1,26 +1,26 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/context.dart'; // Direct import for Context
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart' as p2p_peer; // Imports concrete PeerId from core/peer/
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart'; // For Protocols.p2p, Protocols.circuit
-import 'package:peers_touch_base/network/libp2p/p2p/transport/upgrader.dart'; // Corrected path for Upgrader
-import 'package:peers_touch_base/network/libp2p/p2p/transport/transport.dart'; // For Transport interface
-import 'package:peers_touch_base/network/libp2p/p2p/transport/transport_config.dart'; // For TransportConfig
-import 'package:peers_touch_base/network/libp2p/p2p/transport/listener.dart'; // For Listener interface
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/client/conn.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/pb/circuit.pb.dart' as circuit_pb;
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/proto.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/util/io.dart' as circuit_io;
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/client/conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/listener.dart'; // For Listener interface
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport.dart'; // For Transport interface
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport_config.dart'; // For TransportConfig
+import 'package:peers_touch_base/network/libp2p/p2p/transport/upgrader.dart'; // Corrected path for Upgrader
 import 'package:peers_touch_base/network/libp2p/utils/varint.dart'; // For encodeVarint
-import 'package:logging/logging.dart';
 
 final _log = Logger('CircuitV2Client');
 
@@ -66,6 +66,14 @@ Stream<List<int>> _adaptP2PStreamToDartStream(P2PStream p2pStream) {
 /// It allows peers to establish connections through relay servers when direct
 /// connections are not possible (e.g., due to NATs or firewalls).
 class CircuitV2Client implements Transport {
+
+
+  CircuitV2Client({
+    required this.host,
+    required this.upgrader,
+    required this.connManager,
+    TransportConfig? config,
+  }) : config = config ?? TransportConfig.defaultConfig;
   final Host host;
   final Upgrader upgrader;
   final ConnManager connManager;
@@ -85,14 +93,6 @@ class CircuitV2Client implements Transport {
   // For now, let's assume a single conceptual listener for incoming relayed connections.
   final List<MultiAddr> _listenAddrs = [];
   bool _isListening = false;
-
-
-  CircuitV2Client({
-    required this.host,
-    required this.upgrader,
-    required this.connManager,
-    TransportConfig? config,
-  }) : config = config ?? TransportConfig.defaultConfig;
 
   Future<void> start() async {
     // Register a handler for the STOP protocol. This is how we receive incoming connections.
@@ -523,6 +523,7 @@ class CircuitV2Client implements Transport {
     return canListen(addr) ? this : null;
   }
 
+  @override
   bool canListen(MultiAddr addr) {
     // A client can "listen" on an address that signifies it's reachable via relays.
     // This could be a generic /p2p-circuit address or one specifying the local peer.
@@ -561,12 +562,6 @@ class CircuitV2Client implements Transport {
 /// CircuitListener implements the Listener interface for circuit relay transport.
 /// It listens for incoming relayed connections from the CircuitV2Client.
 class CircuitListener implements Listener {
-  final CircuitV2Client _client;
-  final MultiAddr _listenAddr;
-  final Stream<TransportConn> _connStream;
-  StreamSubscription<TransportConn>? _subscription;
-  final StreamController<TransportConn> _acceptedConnController = StreamController();
-  bool _isClosed = false;
 
   CircuitListener(this._client, this._listenAddr, this._connStream) {
     // Filter the client's global incoming connections for this specific listener.
@@ -592,6 +587,12 @@ class CircuitListener implements Listener {
       },
     );
   }
+  final CircuitV2Client _client;
+  final MultiAddr _listenAddr;
+  final Stream<TransportConn> _connStream;
+  StreamSubscription<TransportConn>? _subscription;
+  final StreamController<TransportConn> _acceptedConnController = StreamController();
+  bool _isClosed = false;
 
   @override
   MultiAddr get addr => _listenAddr;

@@ -1,6 +1,7 @@
 /// Package multistream implements client functionality for the
 /// multistream-select protocol. The protocol is defined at
 /// https://github.com/multiformats/multistream-select
+library;
 
 import 'dart:async';
 import 'dart:convert';
@@ -13,10 +14,10 @@ import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/multist
 /// ErrNotSupported is the error returned when the muxer doesn't support
 /// the protocols tried for the handshake.
 class ProtocolNotSupportedException implements Exception {
-  /// List of protocols that were not supported by the muxer
-  final List<ProtocolID> protocols;
 
   const ProtocolNotSupportedException(this.protocols);
+  /// List of protocols that were not supported by the muxer
+  final List<ProtocolID> protocols;
 
   @override
   String toString() => 'Protocols not supported: $protocols';
@@ -25,10 +26,10 @@ class ProtocolNotSupportedException implements Exception {
 /// ErrUnrecognizedResponse is the error returned when the muxer responds with
 /// an unexpected message.
 class UnrecognizedResponseException implements Exception {
-  final String actual;
-  final String expected;
 
   const UnrecognizedResponseException({required this.actual, required this.expected});
+  final String actual;
+  final String expected;
 
   @override
   String toString() => 'Unrecognized response. Expected: $expected (or na). Got: $actual';
@@ -54,7 +55,7 @@ Future<void> selectProtoOrFail(ProtocolID proto, P2PStream<dynamic> stream) asyn
     // Read the multistream header response
     final headerResponse = await readNextToken(stream);
     if (headerResponse != protocolID) {
-      throw FormatException('Received mismatch in protocol id');
+      throw const FormatException('Received mismatch in protocol id');
     }
 
     // Read the protocol response
@@ -149,7 +150,7 @@ Future<Uint8List> readDelimited(P2PStream<dynamic> stream) async {
   // Read the first byte to determine if we need to read more for the varint
   final firstByte = await stream.read(1);
   if (firstByte.isEmpty) {
-    throw FormatException('Unexpected end of stream');
+    throw const FormatException('Unexpected end of stream');
   }
 
   // Determine how many more bytes we need to read for the varint
@@ -163,7 +164,7 @@ Future<Uint8List> readDelimited(P2PStream<dynamic> stream) async {
       bytesToRead++;
     }
     if (bytesToRead >= 9) {
-      throw FormatException('Varint too long');
+      throw const FormatException('Varint too long');
     }
   }
 
@@ -182,18 +183,18 @@ Future<Uint8List> readDelimited(P2PStream<dynamic> stream) async {
   // Decode the varint to get the message length
   final (length, _) = decodeVarint(varintBytes);
   if (length > 1024) {
-    throw MessageTooLargeException();
+    throw const MessageTooLargeException();
   }
 
   // Read the message
   final message = await stream.read(length);
   if (message.length != length) {
-    throw FormatException('Unexpected end of stream');
+    throw const FormatException('Unexpected end of stream');
   }
 
   // Check for trailing newline
   if (message.isEmpty || message[length - 1] != 10) { // '\n'
-    throw FormatException('Message did not have trailing newline');
+    throw const FormatException('Message did not have trailing newline');
   }
 
   // Return the message without the trailing newline
@@ -239,9 +240,9 @@ Uint8List encodeVarint(int value) {
     }
     shift += 7;
     if (shift > 63) {
-      throw FormatException('Varint too long');
+      throw const FormatException('Varint too long');
     }
   }
 
-  throw FormatException('Unexpected end of varint');
+  throw const FormatException('Unexpected end of varint');
 }

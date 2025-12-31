@@ -2,11 +2,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class DonutChart extends StatelessWidget {
+  const DonutChart({super.key, required this.value, required this.max, required this.color, required this.center});
   final double value;
   final double max;
   final Color color;
   final Widget center;
-  const DonutChart({super.key, required this.value, required this.max, required this.color, required this.center});
 
   @override
   Widget build(BuildContext context) {
@@ -18,9 +18,9 @@ class DonutChart extends StatelessWidget {
 }
 
 class _DonutPainter extends CustomPainter {
+  _DonutPainter(this.ratio, this.color);
   final double ratio;
   final Color color;
-  _DonutPainter(this.ratio, this.color);
 
   @override
   void paint(Canvas canvas, Size size) {

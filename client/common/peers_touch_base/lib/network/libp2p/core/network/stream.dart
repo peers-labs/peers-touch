@@ -71,6 +71,13 @@ abstract class P2PStream<T> {
 
 /// Stores metadata pertaining to a given Stream
 class StreamStats {
+
+  StreamStats({
+    required this.direction,
+    required this.opened,
+    this.limited = false,
+    this.extra = const {},
+  });
   /// Direction specifies whether this is an inbound or an outbound connection
   final Direction direction; // Will now come from common.dart
 
@@ -82,11 +89,4 @@ class StreamStats {
 
   /// Additional metadata about this connection
   final Map<dynamic, dynamic> extra;
-
-  StreamStats({
-    required this.direction,
-    required this.opened,
-    this.limited = false,
-    this.extra = const {},
-  });
 }

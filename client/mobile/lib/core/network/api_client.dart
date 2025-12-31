@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 
 class ApiClient {
-  late final Dio _dio;
 
   ApiClient() {
     _dio = Dio(
@@ -12,6 +11,7 @@ class ApiClient {
     );
     // TODO: add interceptors, baseUrl, headers
   }
+  late final Dio _dio;
 
   Dio get dio => _dio;
 }

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'protocol.dart';
-import 'validator.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/validator.dart';
 
 /// Handles encoding and decoding of multiaddr values
 class MultiAddrCodec {
@@ -81,7 +81,7 @@ class MultiAddrCodec {
       bytesRead++;
       if (byte & 0x80 == 0) break;
       shift += 7;
-      if (shift > 63) throw FormatException('Varint too long');
+      if (shift > 63) throw const FormatException('Varint too long');
     }
 
     return (value, bytesRead);
@@ -90,12 +90,12 @@ class MultiAddrCodec {
   // Protocol-specific encoders
   static Uint8List _encodeIP4(String value) {
     final parts = value.split('.');
-    if (parts.length != 4) throw FormatException('Invalid IPv4 address');
+    if (parts.length != 4) throw const FormatException('Invalid IPv4 address');
 
     final bytes = Uint8List(4);
     for (var i = 0; i < 4; i++) {
       final part = int.parse(parts[i]);
-      if (part < 0 || part > 255) throw FormatException('Invalid IPv4 address');
+      if (part < 0 || part > 255) throw const FormatException('Invalid IPv4 address');
       bytes[i] = part;
     }
     return bytes;
@@ -120,7 +120,7 @@ class MultiAddrCodec {
     final parts = value.split(':');
 
     if (parts.length != 8) {
-      throw FormatException('Invalid IPv6 address: must have exactly 8 segments');
+      throw const FormatException('Invalid IPv6 address: must have exactly 8 segments');
     }
 
     for (var i = 0; i < 8; i++) {
@@ -144,7 +144,7 @@ class MultiAddrCodec {
 
     final parts = value.split('::');
     if (parts.length != 2) {
-      throw FormatException('Invalid IPv6 address: malformed :: compression');
+      throw const FormatException('Invalid IPv6 address: malformed :: compression');
     }
 
     final leftPart = parts[0];
@@ -188,7 +188,7 @@ class MultiAddrCodec {
 
   static Uint8List _encodePort(String value) {
     final port = int.parse(value);
-    if (port < 0 || port > 65535) throw FormatException('Invalid port number');
+    if (port < 0 || port > 65535) throw const FormatException('Invalid port number');
     return Uint8List(2)..buffer.asByteData().setUint16(0, port, Endian.big);
   }
 
@@ -205,13 +205,13 @@ class MultiAddrCodec {
 
   // Protocol-specific decoders
   static String _decodeIP4(Uint8List bytes) {
-    if (bytes.length != 4) throw FormatException('Invalid IPv4 address bytes');
+    if (bytes.length != 4) throw const FormatException('Invalid IPv4 address bytes');
     return bytes.map((b) => b.toString()).join('.');
   }
 
   static String _decodeIP6(Uint8List bytes) {
     if (bytes.length != 16) {
-      throw FormatException('Invalid IPv6 address bytes');
+      throw const FormatException('Invalid IPv6 address bytes');
     }
 
     // Convert bytes to 16-bit groups
@@ -259,7 +259,7 @@ class MultiAddrCodec {
   }
 
   static String _decodePort(Uint8List bytes) {
-    if (bytes.length != 2) throw FormatException('Invalid port bytes');
+    if (bytes.length != 2) throw const FormatException('Invalid port bytes');
     return bytes.buffer.asByteData().getUint16(0, Endian.big).toString();
   }
 

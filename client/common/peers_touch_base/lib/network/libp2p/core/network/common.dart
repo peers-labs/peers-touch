@@ -1,4 +1,5 @@
 /// Common types used by both conn.dart and rcmgr.dart to avoid circular dependencies
+library;
 
 // ScopeStat, ResourceScope, and ResourceScopeSpan are now defined in rcmgr.dart
 // to consolidate resource management types.

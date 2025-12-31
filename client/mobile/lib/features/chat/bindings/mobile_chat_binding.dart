@@ -4,7 +4,7 @@ import 'package:peers_touch_base/chat/chat.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pbenum.dart';
 
-import '../controllers/mobile_chat_controller.dart';
+import 'package:peers_touch_mobile/features/chat/controllers/mobile_chat_controller.dart';
 
 /// 移动端聊天模块绑定
 /// 负责依赖注入和控制器初始化

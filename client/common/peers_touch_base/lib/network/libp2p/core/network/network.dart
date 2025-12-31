@@ -1,14 +1,13 @@
 import 'dart:async';
 
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
-
-import 'notifiee.dart';
 
 /// MessageSizeMax is a soft (recommended) maximum for network messages.
 /// One can write more, as the interface is a stream. But it is useful
@@ -155,32 +154,32 @@ abstract class Dialer {
 
 
 class EvtPeerConnectednessChanged {
-  /// Peer is the remote peer whose connectedness has changed.
-  final PeerId peer;
-
-  /// Connectedness is the new connectedness state.
-  final Connectedness connectedness;
 
   /// Creates a new EvtPeerConnectednessChanged event.
   EvtPeerConnectednessChanged({
     required this.peer,
     required this.connectedness,
   });
+  /// Peer is the remote peer whose connectedness has changed.
+  final PeerId peer;
+
+  /// Connectedness is the new connectedness state.
+  final Connectedness connectedness;
 }
 
 /// AddrDelay provides an address along with the delay after which the address
 /// should be dialed
 class AddrDelay {
-  /// The address to dial
-  final MultiAddr addr;
-
-  /// The delay after which to dial
-  final Duration delay;
 
   const AddrDelay({
     required this.addr,
     required this.delay,
   });
+  /// The address to dial
+  final MultiAddr addr;
+
+  /// The delay after which to dial
+  final Duration delay;
 }
 
 /// DialRanker provides a schedule of dialing the provided addresses

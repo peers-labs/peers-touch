@@ -3,9 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class FullscreenImageViewer extends StatefulWidget {
-  final ImageProvider imageProvider;
-  final String? heroTag;
-  final VoidCallback? onEdit;
 
   const FullscreenImageViewer({
     super.key,
@@ -13,6 +10,9 @@ class FullscreenImageViewer extends StatefulWidget {
     this.heroTag,
     this.onEdit,
   });
+  final ImageProvider imageProvider;
+  final String? heroTag;
+  final VoidCallback? onEdit;
 
   @override
   State<FullscreenImageViewer> createState() => _FullscreenImageViewerState();
@@ -158,7 +158,7 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
                 right: 20,
                 child: FloatingActionButton(
                   mini: true,
-                  heroTag: "fullscreen_edit_button",
+                  heroTag: 'fullscreen_edit_button',
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black,
                   onPressed: () {

@@ -1,10 +1,21 @@
-import 'dart:async';
-
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import '../../core/multiaddr.dart';
 
 /// Metadata about a peer
 class PeerInfo {
+
+  PeerInfo({
+    required this.peerId,
+    Set<MultiAddr>? addrs,
+    Set<String>? protocols,
+    Map<String, dynamic>? metadata,
+    DateTime? firstSeen,
+    DateTime? lastSeen,
+  })  : addrs = addrs ?? {},
+        protocols = protocols ?? {},
+        metadata = metadata ?? {},
+        firstSeen = firstSeen ?? DateTime.now(),
+        lastSeen = lastSeen ?? DateTime.now();
   /// The peer's ID
   final PeerId peerId;
 
@@ -22,19 +33,6 @@ class PeerInfo {
 
   /// Additional metadata about this peer
   final Map<String, dynamic> metadata;
-
-  PeerInfo({
-    required this.peerId,
-    Set<MultiAddr>? addrs,
-    Set<String>? protocols,
-    Map<String, dynamic>? metadata,
-    DateTime? firstSeen,
-    DateTime? lastSeen,
-  })  : addrs = addrs ?? {},
-        protocols = protocols ?? {},
-        metadata = metadata ?? {},
-        firstSeen = firstSeen ?? DateTime.now(),
-        lastSeen = lastSeen ?? DateTime.now();
 
   /// Updates the last seen timestamp
   void updateLastSeen() {

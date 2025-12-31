@@ -1,16 +1,17 @@
 
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:crypto/crypto.dart';
+import 'package:peers_touch_base/applet/models/applet_manifest.dart';
 import 'package:peers_touch_base/applet/network/station_applet_client.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/storage/file_storage_manager.dart';
-import '../models/applet_manifest.dart';
 
 class AppletManager {
-  static final AppletManager _instance = AppletManager._internal();
   factory AppletManager() => _instance;
   AppletManager._internal();
+  static final AppletManager _instance = AppletManager._internal();
 
   // In-memory cache of installed applets
   final Map<String, AppletManifest> _installedApplets = {};
@@ -84,7 +85,7 @@ class AppletManager {
   }
 
   Future<void> _simulateInstallFromMock(AppletManifest manifest, Directory targetDir) async {
-      LoggingService.info("Simulating install for ${manifest.appId} to ${targetDir.path}");
+      LoggingService.info('Simulating install for ${manifest.appId} to ${targetDir.path}');
       final color = manifest.entryPoint.replaceFirst('mock_zip://', '');
       
       // Create index.html using FileStorageManager to ensure consistency
@@ -143,12 +144,12 @@ class AppletManager {
   /// Returns true if valid or if [expectedHash] is null (for development).
   Future<bool> verifyBundle(File bundleFile, String? expectedHash) async {
     if (expectedHash == null) {
-      LoggingService.warning("Verify bundle skipped: No expected hash provided.");
+      LoggingService.warning('Verify bundle skipped: No expected hash provided.');
       return true;
     }
 
     if (!await bundleFile.exists()) {
-      LoggingService.error("Verify bundle failed: File not found at ${bundleFile.path}");
+      LoggingService.error('Verify bundle failed: File not found at ${bundleFile.path}');
       return false;
     }
 
@@ -159,11 +160,11 @@ class AppletManager {
       
       final isValid = actualHash == expectedHash;
       if (!isValid) {
-        LoggingService.error("Verify bundle failed: Hash mismatch. Expected $expectedHash, got $actualHash");
+        LoggingService.error('Verify bundle failed: Hash mismatch. Expected $expectedHash, got $actualHash');
       }
       return isValid;
     } catch (e) {
-      LoggingService.error("Verify bundle failed: Exception during hashing", e);
+      LoggingService.error('Verify bundle failed: Exception during hashing', e);
       return false;
     }
   }

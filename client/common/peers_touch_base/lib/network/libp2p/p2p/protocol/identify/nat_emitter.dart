@@ -5,23 +5,26 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/protocol/identify/nat_emitter.go
 /// to Dart, using native Dart idioms.
+library;
 
 import 'dart:async';
 
-import 'package:peers_touch_base/network/libp2p/p2p/host/eventbus/eventbus.dart';
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/nattype.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/reachability.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-import 'package:logging/logging.dart';
-
-import 'observed_addr_manager.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/eventbus/eventbus.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/observed_addr_manager.dart';
 
 final _log = Logger('identify.nat_emitter');
 
 /// NATEmitter emits events when the NAT type changes.
 class NATEmitter {
+
+  /// Creates a new NAT emitter.
+  NATEmitter._(this._observedAddrMgr, this._eventInterval);
   final ObservedAddrManager _observedAddrMgr;
   final Duration _eventInterval;
 
@@ -40,12 +43,9 @@ class NATEmitter {
   bool _enoughTimeSinceLastUpdate = true;
   Timer? _timer;
 
-  /// Creates a new NAT emitter.
-  NATEmitter._(Host host, this._observedAddrMgr, this._eventInterval);
-
   /// Factory constructor that creates and initializes a NAT emitter.
   static Future<NATEmitter> create(Host host, ObservedAddrManager observedAddrMgr, Duration eventInterval) async {
-    final emitter = NATEmitter._(host, observedAddrMgr, eventInterval);
+    final emitter = NATEmitter._(observedAddrMgr, eventInterval);
     await emitter._initialize(host);
     return emitter;
   }
@@ -53,7 +53,7 @@ class NATEmitter {
   /// Initialize the NAT emitter.
   Future<void> _initialize(Host host) async {
     // Subscribe to reachability events
-    Subscription subscription = await host.eventBus.subscribe(EvtLocalReachabilityChanged);
+    final Subscription subscription = host.eventBus.subscribe(EvtLocalReachabilityChanged);
     _reachabilitySub = subscription.stream.listen((event) {
       _reachability = event.reachability;
     });

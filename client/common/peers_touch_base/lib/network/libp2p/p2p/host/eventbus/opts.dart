@@ -2,23 +2,23 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/host/eventbus/opts.go
 /// to Dart, using native Dart idioms.
+library;
 
-import 'dart:async';
 import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/eventbus/basic.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/eventbus/metrics.dart';
 import 'package:stack_trace/stack_trace.dart';
-import 'basic.dart';
-import 'metrics.dart';
 
 /// Settings for a subscription
 class SubSettings {
+
+  /// Creates a new SubSettings with default values
+  SubSettings() : name = _generateSubscriberName();
   /// Buffer size for the subscription's stream
   int bufferSize = 16;
 
   /// Name of the subscription
   String name;
-
-  /// Creates a new SubSettings with default values
-  SubSettings() : name = _generateSubscriberName();
 
   /// Generates a name for a subscriber based on the call stack
   static String _generateSubscriberName() {

@@ -1,14 +1,25 @@
+import 'dart:async';
+
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_gater.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'dart:async';
-import 'package:logging/logging.dart';
 
 /// BasicConnGater is a simple implementation of the ConnGater interface that
 /// allows all connections by default but can be configured to block specific
 /// peers or addresses.
 class BasicConnGater implements ConnGater {
+
+  /// Creates a new BasicConnGater with the specified limits
+  BasicConnGater({
+    int maxConnections = 1000,
+    int maxConnectionsPerPeer = 10,
+    Duration connectionTimeout = const Duration(minutes: 5),
+  }) : 
+    _maxConnections = maxConnections,
+    _maxConnectionsPerPeer = maxConnectionsPerPeer,
+    _connectionTimeout = connectionTimeout;
   final Logger _logger = Logger('BasicConnGater');
 
   /// Set of blocked peer IDs
@@ -43,16 +54,6 @@ class BasicConnGater implements ConnGater {
 
   /// Connection timeout duration
   final Duration _connectionTimeout;
-
-  /// Creates a new BasicConnGater with the specified limits
-  BasicConnGater({
-    int maxConnections = 1000,
-    int maxConnectionsPerPeer = 10,
-    Duration connectionTimeout = const Duration(minutes: 5),
-  }) : 
-    _maxConnections = maxConnections,
-    _maxConnectionsPerPeer = maxConnectionsPerPeer,
-    _connectionTimeout = connectionTimeout;
 
   /// BlockPeer blocks a peer by its ID
   void blockPeer(PeerId peerId) {
@@ -330,7 +331,7 @@ class BasicConnGater implements ConnGater {
       _logger.fine('Blocked upgraded connection: ${conn.remotePeer}');
       return (
         false,
-        DisconnectReason(
+        const DisconnectReason(
           code: 1,
           message: 'Peer is blocked',
         ),
@@ -340,7 +341,7 @@ class BasicConnGater implements ConnGater {
       _logger.fine('Blocked upgraded connection: ${conn.id}');
       return (
         false,
-        DisconnectReason(
+        const DisconnectReason(
           code: 2,
           message: 'Connection is blocked',
         ),
@@ -363,15 +364,15 @@ class BasicConnGater implements ConnGater {
 
 /// Connection metrics
 class ConnectionMetrics {
-  final PeerId peerId;
-  final DateTime startTime;
-  int bytesIn = 0;
-  int bytesOut = 0;
 
   ConnectionMetrics({
     required this.peerId,
     required this.startTime,
   });
+  final PeerId peerId;
+  final DateTime startTime;
+  int bytesIn = 0;
+  int bytesOut = 0;
 
   /// Gets the connection duration
   Duration get duration => DateTime.now().difference(startTime);

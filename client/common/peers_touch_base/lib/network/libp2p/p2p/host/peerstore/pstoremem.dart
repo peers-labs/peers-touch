@@ -1,4 +1,5 @@
 /// Export the memory-based peerstore implementation.
+library;
 
 export 'pstoremem/addr_book.dart';
 export 'pstoremem/key_book.dart';

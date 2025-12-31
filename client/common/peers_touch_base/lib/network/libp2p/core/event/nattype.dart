@@ -2,6 +2,7 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/core/event/nattype.go
 /// to Dart, using native Dart idioms.
+library;
 
 /// NATTransportProtocol represents the transport protocol for which the NAT device type has been determined.
 enum NATTransportProtocol {
@@ -34,6 +35,12 @@ enum NATDeviceType {
 /// Consumers of this event should ALSO consume the `EvtLocalReachabilityChanged` event and interpret
 /// this event ONLY if the Reachability on the `EvtLocalReachabilityChanged` is Private.
 class EvtNATDeviceTypeChanged {
+
+  /// Creates a new EvtNATDeviceTypeChanged event.
+  EvtNATDeviceTypeChanged({
+    required this.transportProtocol,
+    required this.natDeviceType,
+  });
   /// TransportProtocol is the Transport Protocol for which the NAT Device Type has been determined.
   final NATTransportProtocol transportProtocol;
   
@@ -45,12 +52,6 @@ class EvtNATDeviceTypeChanged {
 
   @override
   String toString() {
-    return "EvtNATDeviceTypeChanged";
+    return 'EvtNATDeviceTypeChanged';
   }
-
-  /// Creates a new EvtNATDeviceTypeChanged event.
-  EvtNATDeviceTypeChanged({
-    required this.transportProtocol,
-    required this.natDeviceType,
-  });
 }

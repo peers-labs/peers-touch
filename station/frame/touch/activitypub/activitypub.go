@@ -189,7 +189,7 @@ func FetchInbox(c context.Context, user string, baseURL string, page bool) (inte
 			if act.Type != string(ap.CreateType) && act.Type != string(ap.AnnounceType) {
 				continue
 			}
-			if act.Type == string(ap.CreateType) && act.InReplyTo != 0 {
+			if act.Type == string(ap.CreateType) && act.Reply {
 				continue
 			}
 
@@ -252,9 +252,10 @@ func FetchOutbox(c context.Context, user string, baseURL string, page bool, view
 				continue
 			}
 
-			// 2. Skip replies (Create activities where InReplyTo is set)
+			// 2. Skip replies (Create activities where Reply is true)
 			//    Replies should be shown under the parent post, not as main feed items.
-			if act.Type == string(ap.CreateType) && act.InReplyTo != 0 {
+			//    Using explicit Reply field following Mastodon's approach.
+			if act.Type == string(ap.CreateType) && act.Reply {
 				continue
 			}
 
@@ -325,9 +326,47 @@ func enrichActivity(c context.Context, rds *gorm.DB, a *ap.Activity, objectID ui
 		col.TotalItems = uint(likesCount)
 		o.Likes = col
 
-		// Replies
+		// Replies - preload first 10 comments
 		colReplies := ap.OrderedCollectionNew(ap.ID(""))
 		colReplies.TotalItems = uint(repliesCount)
+		if repliesCount > 0 {
+			var replyObjects []db.ActivityPubObject
+			rds.Where("in_reply_to = ?", objectID).
+				Order("id ASC").
+				Limit(10).
+				Find(&replyObjects)
+			if len(replyObjects) > 0 {
+				colReplies.OrderedItems = make(ap.ItemCollection, len(replyObjects))
+				for i, r := range replyObjects {
+					var replyObj ap.Object
+					if r.Metadata != "" {
+						if err := json.Unmarshal([]byte(r.Metadata), &replyObj); err == nil {
+							var replyActor db.Actor
+							if err := rds.Where("activity_pub_id = ?", r.AttributedTo).First(&replyActor).Error; err == nil {
+								person := ap.PersonNew(ap.ID(r.AttributedTo))
+								if replyActor.Name != "" {
+									person.Name = ap.NaturalLanguageValuesNew()
+									person.Name.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(replyActor.Name)})
+								}
+								person.PreferredUsername = ap.NaturalLanguageValuesNew()
+								person.PreferredUsername.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(replyActor.PreferredUsername)})
+								if replyActor.Icon != "" {
+									ic := ap.ObjectNew(ap.ImageType)
+									ic.URL = ap.IRI(replyActor.Icon)
+									person.Icon = ic
+								}
+								replyObj.AttributedTo = person
+							}
+							colReplies.OrderedItems[i] = &replyObj
+						} else {
+							colReplies.OrderedItems[i] = ap.IRI(r.ActivityPubID)
+						}
+					} else {
+						colReplies.OrderedItems[i] = ap.IRI(r.ActivityPubID)
+					}
+				}
+			}
+		}
 		o.Replies = colReplies
 
 		// Shares
@@ -554,7 +593,7 @@ func FetchSharedInbox(c context.Context, baseURL string, page bool) (interface{}
 			if act.Type != string(ap.CreateType) && act.Type != string(ap.AnnounceType) {
 				continue
 			}
-			if act.Type == string(ap.CreateType) && act.InReplyTo != 0 {
+			if act.Type == string(ap.CreateType) && act.Reply {
 				continue
 			}
 
@@ -574,6 +613,99 @@ func FetchSharedInbox(c context.Context, baseURL string, page bool) (interface{}
 		}
 		col.OrderedItems = append(col.OrderedItems, ap.IRI(it.ItemID))
 	}
+	return col, nil
+}
+
+// FetchObjectReplies returns the replies collection for a given object.
+// Supports keyset pagination with afterID parameter.
+func FetchObjectReplies(c context.Context, objectID string, baseURL string, page bool, afterID uint64, limit int) (interface{}, error) {
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		return nil, err
+	}
+
+	var obj db.ActivityPubObject
+	if err := rds.Where("activity_pub_id = ?", objectID).First(&obj).Error; err != nil {
+		return nil, fmt.Errorf("object not found: %w", err)
+	}
+
+	repliesID := fmt.Sprintf("%s?replies=true", objectID)
+
+	var total int64
+	if err := rds.Model(&db.ActivityPubObject{}).
+		Where("in_reply_to = ?", obj.ID).
+		Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("count replies: %w", err)
+	}
+
+	if !page {
+		col := ap.OrderedCollectionNew(ap.ID(repliesID))
+		col.TotalItems = uint(total)
+		col.First = ap.IRI(fmt.Sprintf("%s&page=true", repliesID))
+		return col, nil
+	}
+
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+
+	query := rds.Where("in_reply_to = ?", obj.ID)
+	if afterID > 0 {
+		query = query.Where("id > ?", afterID)
+	}
+
+	var replies []db.ActivityPubObject
+	if err := query.Order("id ASC").
+		Limit(limit).
+		Find(&replies).Error; err != nil {
+		return nil, fmt.Errorf("list replies: %w", err)
+	}
+
+	pageID := fmt.Sprintf("%s&page=true", repliesID)
+	if afterID > 0 {
+		pageID = fmt.Sprintf("%s&after=%d", pageID, afterID)
+	}
+	col := ap.OrderedCollectionPageNew(ap.OrderedCollectionNew(ap.ID(repliesID)))
+	col.ID = ap.ID(pageID)
+	col.PartOf = ap.IRI(repliesID)
+	col.TotalItems = uint(total)
+	col.OrderedItems = make(ap.ItemCollection, len(replies))
+
+	var lastID uint64
+	for i, r := range replies {
+		var replyObj ap.Object
+		if r.Metadata != "" {
+			if err := json.Unmarshal([]byte(r.Metadata), &replyObj); err == nil {
+				var replyActor db.Actor
+				if err := rds.Where("activity_pub_id = ?", r.AttributedTo).First(&replyActor).Error; err == nil {
+					person := ap.PersonNew(ap.ID(r.AttributedTo))
+					if replyActor.Name != "" {
+						person.Name = ap.NaturalLanguageValuesNew()
+						person.Name.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(replyActor.Name)})
+					}
+					person.PreferredUsername = ap.NaturalLanguageValuesNew()
+					person.PreferredUsername.Add(ap.LangRefValue{Ref: ap.NilLangRef, Value: ap.Content(replyActor.PreferredUsername)})
+					if replyActor.Icon != "" {
+						ic := ap.ObjectNew(ap.ImageType)
+						ic.URL = ap.IRI(replyActor.Icon)
+						person.Icon = ic
+					}
+					replyObj.AttributedTo = person
+				}
+				col.OrderedItems[i] = &replyObj
+			} else {
+				col.OrderedItems[i] = ap.IRI(r.ActivityPubID)
+			}
+		} else {
+			col.OrderedItems[i] = ap.IRI(r.ActivityPubID)
+		}
+		lastID = r.ID
+	}
+
+	if len(replies) == limit && lastID > 0 {
+		col.Next = ap.IRI(fmt.Sprintf("%s&page=true&after=%d&limit=%d", repliesID, lastID, limit))
+	}
+
 	return col, nil
 }
 

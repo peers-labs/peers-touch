@@ -1,8 +1,12 @@
 import 'dart:async';
-import 'peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 
 /// Options for discovery operations
 class DiscoveryOptions {
+  
+  /// Creates a new DiscoveryOptions
+  DiscoveryOptions({this.ttl, this.limit, Map<dynamic, dynamic>? other})
+      : other = other ?? {};
   /// Time-to-live for advertisements
   final Duration? ttl;
   
@@ -11,10 +15,6 @@ class DiscoveryOptions {
   
   /// Other implementation-specific options
   final Map<dynamic, dynamic> other;
-  
-  /// Creates a new DiscoveryOptions
-  DiscoveryOptions({this.ttl, this.limit, Map<dynamic, dynamic>? other})
-      : other = other ?? {};
   
   /// Applies the given options to this DiscoveryOptions
   DiscoveryOptions apply(List<DiscoveryOption> options) {

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 class PrimaryButton extends StatelessWidget {
+  const PrimaryButton({super.key, required this.text, required this.onPressed, this.loading = false, this.fullWidth = false, this.padding = const EdgeInsets.symmetric(vertical: 12)});
   final String text;
   final VoidCallback onPressed;
   final bool loading;
   final bool fullWidth;
   final EdgeInsetsGeometry padding;
-  const PrimaryButton({super.key, required this.text, required this.onPressed, this.loading = false, this.fullWidth = false, this.padding = const EdgeInsets.symmetric(vertical: 12)});
 
   @override
   Widget build(BuildContext context) {
@@ -26,11 +26,11 @@ class PrimaryButton extends StatelessWidget {
 }
 
 class SecondaryButton extends StatelessWidget {
+  const SecondaryButton({super.key, required this.text, required this.onPressed, this.fullWidth = false, this.padding = const EdgeInsets.symmetric(vertical: 12)});
   final String text;
   final VoidCallback onPressed;
   final bool fullWidth;
   final EdgeInsetsGeometry padding;
-  const SecondaryButton({super.key, required this.text, required this.onPressed, this.fullWidth = false, this.padding = const EdgeInsets.symmetric(vertical: 12)});
 
   @override
   Widget build(BuildContext context) {

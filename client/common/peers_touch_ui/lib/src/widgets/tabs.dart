@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'chip.dart';
+import 'package:peers_touch_ui/src/widgets/chip.dart';
 
 class Tabs extends StatelessWidget {
+  const Tabs({super.key, required this.labels, required this.index, required this.onChanged});
   final List<String> labels;
   final int index;
   final ValueChanged<int> onChanged;
-  const Tabs({super.key, required this.labels, required this.index, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {

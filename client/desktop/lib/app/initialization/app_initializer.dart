@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/app/routes/app_routes.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 import 'package:peers_touch_desktop/core/utils/window_options_manager.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
 
 /// Application initializer
 /// Responsible for managing all asynchronous initialization operations, belongs to application-level core configuration

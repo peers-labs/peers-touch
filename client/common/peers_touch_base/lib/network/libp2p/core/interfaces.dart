@@ -1,3 +1,4 @@
+export 'alias.dart';
 export 'exceptions.dart';
 export 'host/host.dart';
 export 'multiaddr.dart';
@@ -12,4 +13,3 @@ export 'network/rcmgr.dart'; // Should now correctly export ConnScope, StreamSco
 export 'network/stream.dart';
 export 'protocol/protocol.dart';
 export 'protocol/switch.dart';
-export 'alias.dart';

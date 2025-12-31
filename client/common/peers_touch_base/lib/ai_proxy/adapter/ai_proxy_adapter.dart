@@ -1,12 +1,11 @@
+import 'package:peers_touch_base/ai_proxy/provider/rich_provider.dart';
 import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart';
 
-import '../provider/rich_provider.dart';
-
 class AiProxyAdapter {
-  final AiBoxService _aiBoxService;
-  List<RichProvider> _providers = [];
 
   AiProxyAdapter(this._aiBoxService);
+  final AiBoxService _aiBoxService;
+  List<RichProvider> _providers = [];
 
   Future<void> initialize() async {
     final rawProviders = await _aiBoxService.listProviders();

@@ -2,9 +2,6 @@ import 'dart:async';
 
 /// Context class for network operations
 class Context {
-  final Map<Object, Object?> _values = {};
-  final Duration? _timeout;
-  final Completer<void> _completer = Completer<void>();
 
   /// Creates a new Context
   Context({Duration? timeout}) : _timeout = timeout {
@@ -25,6 +22,9 @@ class Context {
       });
     }
   }
+  final Map<Object, Object?> _values = {};
+  final Duration? _timeout;
+  final Completer<void> _completer = Completer<void>();
 
   /// Default timeout for a single call to `DialPeer`
   static const Duration dialPeerTimeout = Duration(seconds: 60);

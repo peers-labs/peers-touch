@@ -1,35 +1,21 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
-import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/transport/connection_state.dart' as transport_state;
 
-import '../../../../core/network/rcmgr.dart';
-
 /// CircuitConnection implements TransportConn for circuit relay connections
 class CircuitConnection implements TransportConn {
-  final P2PStream<Uint8List> _stream;
-  final PeerId _localPeerId;
-  final PeerId _remotePeerId;
-  final MultiAddr _remoteAddr;
-  final ConnManager _manager;
-  final String _id;
-  bool _closed = false;
-  transport_state.ConnectionState _transportState = transport_state.ConnectionState.connecting;
-  final List<P2PStream> _streams = [];
-  Timer? _readTimeout;
-  Timer? _writeTimeout;
-  Duration? _currentReadTimeout;
-  Duration? _currentWriteTimeout;
 
   CircuitConnection({
     required P2PStream<Uint8List> stream,
@@ -54,6 +40,19 @@ class CircuitConnection implements TransportConn {
       _manager.recordActivity(this);
     }).catchError(_handleError);
   }
+  final P2PStream<Uint8List> _stream;
+  final PeerId _localPeerId;
+  final PeerId _remotePeerId;
+  final MultiAddr _remoteAddr;
+  final ConnManager _manager;
+  final String _id;
+  bool _closed = false;
+  final transport_state.ConnectionState _transportState = transport_state.ConnectionState.connecting;
+  final List<P2PStream> _streams = [];
+  Timer? _readTimeout;
+  Timer? _writeTimeout;
+  Duration? _currentReadTimeout;
+  Duration? _currentWriteTimeout;
 
   void _handleError(dynamic error) {
     if (!_closed) {
@@ -94,7 +93,7 @@ class CircuitConnection implements TransportConn {
   bool get isClosed => _closed;
 
   @override
-  ConnState get state => ConnState(
+  ConnState get state => const ConnState(
     streamMultiplexer: 'yamux/1.0.0',
     security: 'noise',
     transport: 'p2p-circuit',
@@ -166,9 +165,6 @@ class CircuitConnection implements TransportConn {
 
     try {
       final data = await _stream.read();
-      if (data == null) {
-        throw Exception('unexpected EOF');
-      }
 
       if (length != null && data.length < length) {
         throw Exception('not enough data');
@@ -235,10 +231,12 @@ class CircuitConnection implements TransportConn {
 }
 
 class _ConnStatsImpl implements ConnStats {
-  final Stats stats;
-  final int numStreams;
 
   _ConnStatsImpl({required this.stats, required this.numStreams});
+  @override
+  final Stats stats;
+  @override
+  final int numStreams;
 }
 
 class _ConnScopeImpl implements ConnScope { // ConnScope from rcmgr.dart

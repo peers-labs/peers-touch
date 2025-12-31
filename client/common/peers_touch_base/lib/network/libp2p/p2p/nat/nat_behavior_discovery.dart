@@ -1,19 +1,20 @@
-import 'dart:io';
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
-import 'stun/stun_message.dart';
-import 'stun/stun_client.dart';
-import 'nat_behavior.dart';
+
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/stun/stun_client.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/stun/stun_message.dart';
 
 /// A class for discovering NAT behavior according to RFC 5780
 class NatBehaviorDiscovery {
-  /// The STUN client to use for discovery
-  final StunClient stunClient;
 
   /// Creates a new NAT behavior discovery instance
   NatBehaviorDiscovery({
     required this.stunClient,
   });
+  /// The STUN client to use for discovery
+  final StunClient stunClient;
 
   /// Discovers the NAT mapping behavior
   /// 
@@ -124,7 +125,7 @@ class NatBehaviorDiscovery {
   Future<NatFilteringBehavior> discoverFilteringBehavior() async {
     try {
       // Test 1: Get mapped address from primary address
-      RawDatagramSocket socket1 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      final RawDatagramSocket socket1 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       try {
         final response1 = await _sendRequest(socket1, StunMessage.createBindingRequest());
         if (response1 == null) {
@@ -140,7 +141,7 @@ class NatBehaviorDiscovery {
 
         // Test 2: Request response from alternate IP (change IP)
         // Create a new socket for the second request
-        RawDatagramSocket socket2 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, socket1.port);
+        final RawDatagramSocket socket2 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, socket1.port);
         try {
           final request2 = StunMessage.createBindingRequestWithChangeRequest(
             changeIP: true,
@@ -157,7 +158,7 @@ class NatBehaviorDiscovery {
 
           // Test 3: Send to alternate IP directly and request response from primary IP
           // Create a new socket for the third request
-          RawDatagramSocket socket3 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, socket1.port);
+          final RawDatagramSocket socket3 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, socket1.port);
           try {
             final server = await stunClient.stunServer;
             final alternateServer = otherAddress.address;
@@ -174,7 +175,7 @@ class NatBehaviorDiscovery {
             // Test 4: Now that we've sent to the alternate IP, request a response
             // from the alternate IP but different port
             // Create a new socket for the fourth request
-            RawDatagramSocket socket4 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, socket1.port);
+            final RawDatagramSocket socket4 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, socket1.port);
             try {
               final request4 = StunMessage.createBindingRequestWithChangeRequest(
                 changeIP: false,
@@ -281,7 +282,7 @@ class NatBehaviorDiscovery {
     print('Starting discoverFilteringBehaviorBasic');
     try {
       // Test 1: Get mapped address from primary address
-      RawDatagramSocket socket1 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      final RawDatagramSocket socket1 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       print('Socket 1 bound to port: ${socket1.port}');
       try {
         final response1 = await _sendRequest(socket1, StunMessage.createBindingRequest());
@@ -291,7 +292,7 @@ class NatBehaviorDiscovery {
         }
 
         // Test 2: Request response from a different STUN server
-        RawDatagramSocket socket2 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, socket1.port);
+        final RawDatagramSocket socket2 = await RawDatagramSocket.bind(InternetAddress.anyIPv4, socket1.port);
         print('Socket 2 bound to port: ${socket2.port}');
         try {
           final request2 = StunMessage.createBindingRequest();

@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import '../../../core/network/stream.dart';
-import '../../../core/network/mux.dart' as core_mux;
-import '../../../core/network/transport_conn.dart';
-import '../../../core/network/rcmgr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/mux.dart' as core_mux;
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
 
 /// Represents a stream multiplexer that can create and manage multiple logical streams
 /// over a single connection.
@@ -59,6 +59,16 @@ abstract class Multiplexer {
 
 /// Configuration for stream multiplexing
 class MultiplexerConfig {
+
+  const MultiplexerConfig({
+    this.maxStreams = 1000,
+    this.initialStreamWindowSize = 256 * 1024, // 256KB
+    this.maxStreamWindowSize = 16 * 1024 * 1024, // 16MB
+    this.streamReadTimeout = const Duration(seconds: 30),
+    this.streamWriteTimeout = const Duration(seconds: 30),
+    this.keepAliveInterval = const Duration(seconds: 10),
+    this.connectionReadTimeout = const Duration(seconds: 35), // 3.5x keepalive
+  });
   /// Maximum number of concurrent streams (default: 1000)
   final int maxStreams;
 
@@ -81,14 +91,4 @@ class MultiplexerConfig {
   /// This should be at least 3x the keepAliveInterval to allow for keepalive pings
   /// before timing out an idle connection.
   final Duration connectionReadTimeout;
-
-  const MultiplexerConfig({
-    this.maxStreams = 1000,
-    this.initialStreamWindowSize = 256 * 1024, // 256KB
-    this.maxStreamWindowSize = 16 * 1024 * 1024, // 16MB
-    this.streamReadTimeout = const Duration(seconds: 30),
-    this.streamWriteTimeout = const Duration(seconds: 30),
-    this.keepAliveInterval = const Duration(seconds: 10),
-    this.connectionReadTimeout = const Duration(seconds: 35), // 3.5x keepalive
-  });
 }

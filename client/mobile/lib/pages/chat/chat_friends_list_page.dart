@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
+import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 import 'package:peers_touch_mobile/pages/chat/chat_detail_page.dart';
-import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
 import 'package:peers_touch_mobile/pages/chat/chat_search_bar.dart';
+import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
 
 class FriendsListPage extends StatefulWidget {
   const FriendsListPage({super.key});

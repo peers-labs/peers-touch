@@ -2,8 +2,6 @@ import 'dart:async';
 
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
-import 'conn_manager.dart';
-
 /// A decaying tag is one whose value automatically decays over time.
 ///
 /// The actual application of the decay behaviour is encapsulated in a
@@ -25,6 +23,15 @@ import 'conn_manager.dart';
 
 /// Represents a value for a decaying tag.
 class DecayingValue {
+
+  DecayingValue({
+    required this.tag,
+    required this.peer,
+    DateTime? added,
+    DateTime? lastVisit,
+    this.value = 0,
+  })  : added = added ?? DateTime.now(),
+        lastVisit = lastVisit ?? DateTime.now();
   /// Tag points to the tag this value belongs to.
   final DecayingTag tag;
 
@@ -40,15 +47,6 @@ class DecayingValue {
 
   /// Value is the current value of the tag.
   final int value;
-
-  DecayingValue({
-    required this.tag,
-    required this.peer,
-    DateTime? added,
-    DateTime? lastVisit,
-    this.value = 0,
-  })  : added = added ?? DateTime.now(),
-        lastVisit = lastVisit ?? DateTime.now();
 }
 
 /// DecayFn applies a decay to the peer's score. The implementation must call

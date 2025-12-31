@@ -1,21 +1,20 @@
-import 'dart:typed_data';
-import 'peer_id.dart';
-import '../multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
 
 /// Represents a peer with its addresses
 class AddrInfo {
-  /// The peer ID
-  final PeerId id;
-
-  /// The list of addresses for this peer
-  final List<MultiAddr> addrs;
 
   /// Creates a new AddrInfo with the given peer ID and addresses
   AddrInfo(this.id, this.addrs);
 
   /// Creates a new AddrInfo with the given peer ID and no addresses
   AddrInfo.withId(this.id) : addrs = [];
+  /// The peer ID
+  final PeerId id;
+
+  /// The list of addresses for this peer
+  final List<MultiAddr> addrs;
 
   static AddrInfo fromMultiaddr(MultiAddr addr){
 
@@ -24,7 +23,7 @@ class AddrInfo {
     final parts = addrStr.split('/');
 
     // Find the p2p component and extract the peer ID
-    int p2pIndex = parts.indexOf('p2p');
+    final int p2pIndex = parts.indexOf('p2p');
     if (p2pIndex == -1 || p2pIndex + 1 >= parts.length) {
       throw Exception('Failed to extract peer ID from address: $addrStr');
     }

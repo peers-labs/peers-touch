@@ -1,28 +1,24 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
-import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
+
 import 'package:logging/logging.dart'; // Added for logging
-
-import 'package:peers_touch_base/network/libp2p/core/network/conn.dart'; // Conn is directly available
-
-import '../../../../core/network/stream.dart'; // For P2PStream, StreamStats
-import '../../../../core/network/common.dart' show Direction; // For Direction
-import '../../../../core/network/rcmgr.dart' show StreamScope; // For StreamScope
-import '../../../../core/network/mux.dart' as core_mux; // For MuxedStream
-import 'frame.dart'; // Defines YamuxFrame, YamuxFrameType, YamuxFlags
-import 'yamux_exceptions.dart'; // Import Yamux exception handling
+import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/common.dart' show Direction; // For Direction
+import 'package:peers_touch_base/network/libp2p/core/network/mux.dart' as core_mux; // For MuxedStream
+import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/yamux/frame.dart'; // Defines YamuxFrame, YamuxFrameType, YamuxFlags
+import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/yamux/yamux_exceptions.dart'; // Import Yamux exception handling
 
 // Added logger instance
 final _log = Logger('YamuxStream');
 
 /// Represents a queued write operation for backpressure handling
 class _QueuedWrite {
+  
+  _QueuedWrite(this.data, this.completer, this.queuedAt);
   final Uint8List data;
   final Completer<void> completer;
   final DateTime queuedAt;
-  
-  _QueuedWrite(this.data, this.completer, this.queuedAt);
 }
 
 /// Stream states in Yamux
@@ -41,6 +37,25 @@ enum YamuxStreamState {
 
 /// A Yamux stream that implements the P2PStream and MuxedStream interfaces
 class YamuxStream implements P2PStream<Uint8List>, core_mux.MuxedStream {
+
+  YamuxStream({
+    required int id,
+    required String protocol,
+    required Map<String, dynamic>? metadata,
+    required int initialWindowSize, // This is the initial window for both sides
+    required Future<void> Function(YamuxFrame frame) sendFrame,
+    required Conn parentConn, // Added parameter
+    String? logPrefix,
+  })  : streamId = id,
+        streamProtocol = protocol,
+        metadata = metadata ?? {},
+        _localReceiveWindow = initialWindowSize,
+        _remoteReceiveWindow = initialWindowSize, // Initially, we can send this much
+        _sendFrame = sendFrame,
+        _parentConn = parentConn, // Initialize field
+        _logPrefix = logPrefix ?? 'StreamID=$id' {
+    _log.fine('$_logPrefix Constructor. Initial local window: $_localReceiveWindow, Initial remote window (our send): $_remoteReceiveWindow');
+  }
   /// The stream ID
   final int streamId;
 
@@ -148,25 +163,6 @@ class YamuxStream implements P2PStream<Uint8List>, core_mux.MuxedStream {
     if (effectiveDeadline == null) return null;
     final remaining = effectiveDeadline.difference(DateTime.now());
     return remaining.isNegative ? Duration.zero : remaining;
-  }
-
-  YamuxStream({
-    required int id,
-    required String protocol,
-    required Map<String, dynamic>? metadata,
-    required int initialWindowSize, // This is the initial window for both sides
-    required Future<void> Function(YamuxFrame frame) sendFrame,
-    required Conn parentConn, // Added parameter
-    String? logPrefix,
-  })  : streamId = id,
-        streamProtocol = protocol,
-        metadata = metadata ?? {},
-        _localReceiveWindow = initialWindowSize,
-        _remoteReceiveWindow = initialWindowSize, // Initially, we can send this much
-        _sendFrame = sendFrame,
-        _parentConn = parentConn, // Initialize field
-        _logPrefix = logPrefix ?? "StreamID=$id" {
-    _log.fine('$_logPrefix Constructor. Initial local window: $_localReceiveWindow, Initial remote window (our send): $_remoteReceiveWindow');
   }
 
   /// Opens the stream (called by session when creating a new stream locally or accepting one)
@@ -371,15 +367,15 @@ class YamuxStream implements P2PStream<Uint8List>, core_mux.MuxedStream {
     
     if (avgLatency > _verySlowWriteThreshold) {
       // Very slow transport - significant delay
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(const Duration(milliseconds: 50));
       _log.finer('$_logPrefix Applied 50ms pacing for very slow transport (avg: ${avgLatency.inMilliseconds}ms)');
     } else if (avgLatency > _slowWriteThreshold) {
       // Slow transport - moderate delay
-      await Future.delayed(Duration(milliseconds: 10));
+      await Future.delayed(const Duration(milliseconds: 10));
       _log.finer('$_logPrefix Applied 10ms pacing for slow transport (avg: ${avgLatency.inMilliseconds}ms)');
     } else {
       // Fast transport - minimal delay to yield control
-      await Future.delayed(Duration(milliseconds: 1));
+      await Future.delayed(const Duration(milliseconds: 1));
     }
   }
 

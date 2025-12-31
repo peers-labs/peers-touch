@@ -1,5 +1,3 @@
-import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/limit.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scope_impl.dart';
 
 /// TransientScopeImpl is the concrete implementation for the transient scope.
@@ -7,8 +5,7 @@ import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scope_
 /// but ensures it implements the `ResourceScope` interface.
 class TransientScopeImpl extends ResourceScopeImpl {
   /// The transient scope is typically a child of the system scope.
-  TransientScopeImpl(Limit limit, String name, {List<ResourceScopeImpl>? edges})
-      : super(limit, name, edges: edges);
+  TransientScopeImpl(super.limit, super.name, {super.edges});
 
   // No additional methods needed as ResourceScopeImpl already fulfills ResourceScope.
 }

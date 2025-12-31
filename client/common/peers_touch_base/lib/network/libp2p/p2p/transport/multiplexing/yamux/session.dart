@@ -1,19 +1,19 @@
 import 'dart:async';
 import 'dart:typed_data';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:logging/logging.dart'; // Added for logging
 
-import '../../../../core/network/conn.dart';
-import '../../../../core/network/stream.dart';
-import '../../../../core/network/transport_conn.dart';
-import '../../../../core/crypto/keys.dart'; // For PublicKey
-import '../../../../core/multiaddr.dart'; // For Multiaddr
-import '../multiplexer.dart'; // This now brings in core_mux.MuxedConn and PeerScope via its own imports
-import '../../../../core/network/mux.dart' as core_mux; // Explicit import for MuxedConn, MuxedStream
-import '../../../../core/network/rcmgr.dart'; // Explicit import for PeerScope
-import '../../../../core/network/context.dart'; // Explicit import for Context
-import 'frame.dart';
-import 'stream.dart';
+import 'package:logging/logging.dart'; // Added for logging
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart'; // For PublicKey
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart'; // For Multiaddr
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart'; // Explicit import for Context
+import 'package:peers_touch_base/network/libp2p/core/network/mux.dart' as core_mux; // Explicit import for MuxedConn, MuxedStream
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart'; // Explicit import for PeerScope
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/multiplexer.dart'; // This now brings in core_mux.MuxedConn and PeerScope via its own imports
+import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/yamux/frame.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/yamux/stream.dart';
 
 // Added logger instance
 final _log = Logger('YamuxSession');
@@ -37,7 +37,14 @@ class YamuxConstants {
 }
 
 /// Yamux session that implements the Multiplexer and MuxedConn interfaces
-class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added Conn
+class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn {
+
+  YamuxSession(this._connection, this._config, this._isClient, [this._peerScope])
+      : _instanceId = _instanceCounter++, 
+        _nextStreamId = _isClient ? 1 : 2 {
+    _log.fine('$_logPrefix Constructor. IsClient: $_isClient');
+    _init();
+  } // Added Conn
   static int _instanceCounter = 0; // Added instance counter
   final int _instanceId; // Added instance ID field
 
@@ -66,13 +73,6 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
   String get _logPrefix => "[$_instanceId][${_isClient ? "Client" : "Server"}]";
   int _lastPingId = 0;
   final _pendingStreams = <int, Completer<void>>{};
-
-  YamuxSession(this._connection, this._config, this._isClient, [this._peerScope])
-      : _instanceId = _instanceCounter++, 
-        _nextStreamId = _isClient ? 1 : 2 {
-    _log.fine('$_logPrefix Constructor. IsClient: $_isClient');
-    _init();
-  }
 
   void _init() {
     _readFrames().catchError((error, stackTrace) { 
@@ -108,63 +108,63 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
   }
 
   Future<void> _readFrames() async {
-    final headerSize = 12;
+    const headerSize = 12;
     var buffer = Uint8List(0); 
     int frameCount = 0;
     int framesInCurrentBatch = 0;
     final startTime = DateTime.now();
     
     // Session-level performance tracking for adaptive behavior
-    final List<Duration> _recentFrameProcessingTimes = [];
+    final List<Duration> recentFrameProcessingTimes = [];
 
     // High-volume mode detection to reduce logging overhead
-    bool _isHighVolumeMode = false;
-    int _recentFrameCount = 0;
-    DateTime _lastFrameCountReset = DateTime.now();
+    bool isHighVolumeMode = false;
+    int recentFrameCount = 0;
+    DateTime lastFrameCountReset = DateTime.now();
 
-    void _updateVolumeMode() {
+    void updateVolumeMode() {
       final now = DateTime.now();
-      if (now.difference(_lastFrameCountReset) > Duration(seconds: 1)) {
-        _isHighVolumeMode = _recentFrameCount > 50; // 50+ frames/sec = high volume
-        _recentFrameCount = 0;
-        _lastFrameCountReset = now;
+      if (now.difference(lastFrameCountReset) > const Duration(seconds: 1)) {
+        isHighVolumeMode = recentFrameCount > 50; // 50+ frames/sec = high volume
+        recentFrameCount = 0;
+        lastFrameCountReset = now;
         
-        if (_isHighVolumeMode) {
+        if (isHighVolumeMode) {
           _log.fine('$_logPrefix Entering high-volume mode (50+ frames/sec) - reducing logging overhead');
         }
       }
     }
 
-    void _logFrameProcessing(String message) {
-      if (!_isHighVolumeMode) {
+    void logFrameProcessing(String message) {
+      if (!isHighVolumeMode) {
         _log.fine(message);
       }
     }
 
-    void _recordFrameProcessingTime(Duration duration) {
-      _recentFrameProcessingTimes.add(duration);
-      if (_recentFrameProcessingTimes.length > _maxMetricsHistory) {
-        _recentFrameProcessingTimes.removeAt(0);
+    void recordFrameProcessingTime(Duration duration) {
+      recentFrameProcessingTimes.add(duration);
+      if (recentFrameProcessingTimes.length > _maxMetricsHistory) {
+        recentFrameProcessingTimes.removeAt(0);
       }
     }
 
-    bool _isSessionUnderStress() {
-      if (_recentFrameProcessingTimes.length < 10) return false;
+    bool isSessionUnderStress() {
+      if (recentFrameProcessingTimes.length < 10) return false;
       
-      final avgTime = _recentFrameProcessingTimes.reduce((a, b) => a + b) ~/ 
-                     _recentFrameProcessingTimes.length;
+      final avgTime = recentFrameProcessingTimes.reduce((a, b) => a + b) ~/ 
+                     recentFrameProcessingTimes.length;
       return avgTime > _stressThreshold;
     }
 
-    Future<void> _applyAdaptiveDelay() async {
-      if (_isSessionUnderStress()) {
+    Future<void> applyAdaptiveDelay() async {
+      if (isSessionUnderStress()) {
         // Apply longer delay when session is under stress
-        await Future.delayed(Duration(milliseconds: 10));
-        _logFrameProcessing('$_logPrefix Applied stress-relief delay (10ms) due to slow frame processing');
+        await Future.delayed(const Duration(milliseconds: 10));
+        logFrameProcessing('$_logPrefix Applied stress-relief delay (10ms) due to slow frame processing');
       } else {
         // Standard batch processing delay
         await Future.delayed(_batchProcessingDelay);
-        _logFrameProcessing('$_logPrefix Applied standard batch processing delay (${_batchProcessingDelay.inMilliseconds}ms)');
+        logFrameProcessing('$_logPrefix Applied standard batch processing delay (${_batchProcessingDelay.inMilliseconds}ms)');
       }
     }
 
@@ -173,25 +173,25 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
         final loopStartTime = DateTime.now();
         frameCount++;
         framesInCurrentBatch++;
-        _recentFrameCount++;
+        recentFrameCount++;
         
         // Update volume mode detection
-        _updateVolumeMode();
+        updateVolumeMode();
         
-        _logFrameProcessing('$_logPrefix 🔧 [YAMUX-FRAME-READER-LOOP-$frameCount] Starting frame read iteration. Buffer size: ${buffer.length}, Session closed: $_closed, Connection closed: ${_connection.isClosed}');
+        logFrameProcessing('$_logPrefix 🔧 [YAMUX-FRAME-READER-LOOP-$frameCount] Starting frame read iteration. Buffer size: ${buffer.length}, Session closed: $_closed, Connection closed: ${_connection.isClosed}');
         
         // Adaptive yielding based on batch processing and session stress
         if (framesInCurrentBatch >= _maxFramesPerBatch) {
-          await _applyAdaptiveDelay();
+          await applyAdaptiveDelay();
           framesInCurrentBatch = 0;
-          _logFrameProcessing('$_logPrefix 🔧 [YAMUX-FRAME-READER-BATCH-YIELD] Applied adaptive delay after $frameCount frames (batch size: $_maxFramesPerBatch)');
+          logFrameProcessing('$_logPrefix 🔧 [YAMUX-FRAME-READER-BATCH-YIELD] Applied adaptive delay after $frameCount frames (batch size: $_maxFramesPerBatch)');
         } else {
           // Minimal yield for event loop cooperation during normal processing
           await Future.delayed(Duration.zero);
         }
         
         // Ensure we have enough bytes for at least a header
-        _logFrameProcessing('$_logPrefix 🔧 [YAMUX-FRAME-READER-HEADER-$frameCount] Need $headerSize bytes for header, have ${buffer.length} bytes');
+        logFrameProcessing('$_logPrefix 🔧 [YAMUX-FRAME-READER-HEADER-$frameCount] Need $headerSize bytes for header, have ${buffer.length} bytes');
         while (buffer.length < headerSize) {
           if (_closed || _connection.isClosed) { // Check before read
              _log.warning('$_logPrefix 🔧 [YAMUX-FRAME-READER-EXIT-$frameCount] Loop condition met (_closed=$_closed, _conn.isClosed=${_connection.isClosed}) before reading for header. Exiting.');
@@ -254,7 +254,7 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
           _log.fine('$_logPrefix 🔧 [YAMUX-FRAME-READER-BODY-PROGRESS-$frameCount] Body buffer now has ${buffer.length}/$expectedTotalFrameLength bytes');
         }
 
-        _log.fine('$_logPrefix 🔧 [YAMUX-FRAME-READER-PARSE-$frameCount] Full frame received, parsing frame from ${expectedTotalFrameLength} bytes');
+        _log.fine('$_logPrefix 🔧 [YAMUX-FRAME-READER-PARSE-$frameCount] Full frame received, parsing frame from $expectedTotalFrameLength bytes');
         
         final frameBytesForParser = buffer.sublist(0, expectedTotalFrameLength);
         final parseStartTime = DateTime.now();
@@ -265,12 +265,12 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
         _log.fine('$_logPrefix 🔧 [YAMUX-FRAME-READER-RAW-$frameCount] Raw frame bytes (${frameBytesForParser.length}): ${frameBytesForParser.take(64)}...');
         
         if (frame.length != bodyLength) {
-            _log.severe("$_logPrefix 🔧 [YAMUX-FRAME-READER-ERROR-$frameCount] Frame body length mismatch! Header said $bodyLength, frame parser said ${frame.length}. Frame: ${frame.type}, StreamID: ${frame.streamId}, Flags: ${frame.flags}");
+            _log.severe('$_logPrefix 🔧 [YAMUX-FRAME-READER-ERROR-$frameCount] Frame body length mismatch! Header said $bodyLength, frame parser said ${frame.length}. Frame: ${frame.type}, StreamID: ${frame.streamId}, Flags: ${frame.flags}');
             await _goAway(YamuxCloseReason.protocolError);
             return; 
         }
         if (frame.data.length != bodyLength) { // Should be redundant if YamuxFrame.fromBytes is correct
-            _log.severe("$_logPrefix 🔧 [YAMUX-FRAME-READER-ERROR-$frameCount] Frame data actual length mismatch! Header said bodyLength $bodyLength, frame.data.length is ${frame.data.length}. Frame: ${frame.type}, StreamID: ${frame.streamId}, Flags: ${frame.flags}");
+            _log.severe('$_logPrefix 🔧 [YAMUX-FRAME-READER-ERROR-$frameCount] Frame data actual length mismatch! Header said bodyLength $bodyLength, frame.data.length is ${frame.data.length}. Frame: ${frame.type}, StreamID: ${frame.streamId}, Flags: ${frame.flags}');
              await _goAway(YamuxCloseReason.protocolError);
             return;
         }
@@ -283,7 +283,7 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
           final handleDuration = DateTime.now().difference(handleStartTime);
           
           // Record frame processing time for adaptive behavior
-          _recordFrameProcessingTime(handleDuration);
+          recordFrameProcessingTime(handleDuration);
 
         } catch (e, st) {
           final handleDuration = DateTime.now().difference(handleStartTime);
@@ -293,7 +293,7 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
         
         buffer = buffer.sublist(expectedTotalFrameLength);
         final loopDuration = DateTime.now().difference(loopStartTime);
-        _logFrameProcessing('$_logPrefix 🔧 [YAMUX-FRAME-READER-LOOP-COMPLETE-$frameCount] Frame $frameCount processed in ${loopDuration.inMilliseconds}ms, buffer remaining: ${buffer.length} bytes');
+        logFrameProcessing('$_logPrefix 🔧 [YAMUX-FRAME-READER-LOOP-COMPLETE-$frameCount] Frame $frameCount processed in ${loopDuration.inMilliseconds}ms, buffer remaining: ${buffer.length} bytes');
       }
     } catch (e, st) {
       final bool connIsClosed = _connection.isClosed; // Capture current state
@@ -498,7 +498,7 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
       initialWindowSize: initialWindow, 
       sendFrame: _sendFrame,
       parentConn: this, // Added parentConn
-      logPrefix: "$_logPrefix StreamID=${frame.streamId}",
+      logPrefix: '$_logPrefix StreamID=${frame.streamId}',
     );
 
     _streams[frame.streamId] = stream;
@@ -728,7 +728,7 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
       initialWindowSize: _config.initialStreamWindowSize, 
       sendFrame: _sendFrame,
       parentConn: this, // Added parentConn
-      logPrefix: "$_logPrefix StreamID=$streamId",
+      logPrefix: '$_logPrefix StreamID=$streamId',
     );
 
     _streams[streamId] = stream;
@@ -899,14 +899,14 @@ class YamuxSession implements Multiplexer, core_mux.MuxedConn, Conn { // Added C
     bool isServer,                 
     PeerScope scope
   ) async {
-    if (secureConnection != this._connection) {
+    if (secureConnection != _connection) {
       _log.warning('YamuxSession.newConnOnTransport: secureConnection mismatch. Expected ${_connection.id}, got ${secureConnection.id}');
     }
-    if (isServer == this._isClient) { // isServer from perspective of Multiplexer interface
+    if (isServer == _isClient) { // isServer from perspective of Multiplexer interface
       _log.warning('YamuxSession.newConnOnTransport: isServer flag mismatch. Expected isServer=${!_isClient}, got $isServer');
     }
 
-    this._peerScope = scope; 
+    _peerScope = scope; 
     await _initCompleter.future;
     return this;
   }

@@ -3,8 +3,8 @@ import 'package:get/get.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/core/components/language_selector.dart';
-import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/core/utils/image_utils.dart';
+import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 class LoginPage extends GetView<AuthController> {
@@ -217,23 +217,28 @@ class LoginPage extends GetView<AuthController> {
                 Obx(() {
                   final isLogin = controller.authTab.value == 0;
                   final focused = isLogin ? controller.emailFocused.value : controller.usernameFocused.value;
-                  final text = isLogin ? controller.email.value : controller.username.value;
-                  final list = <String>{}
-                    ..addAll(controller.recentUsers)
-                    ..addAll(controller.presetUsers.map((e) => (e['username'] ?? e['handle'] ?? e['name'] ?? '').toString()).where((e) => e.isNotEmpty));
-                  final items = list.where((e) => text.isEmpty || e.toLowerCase().contains(text.toLowerCase())).take(6).toList();
-                  if (!focused || items.isEmpty) return const SizedBox.shrink();
-                  return Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: UIKit.panelShadow(context),
-                      border: Border.all(color: UIKit.dividerColor(context), width: UIKit.dividerThickness),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: items.map((handle) {
+                  final hovering = controller.isDropdownHovering.value;
+                  final items = controller.currentSuggestions;
+                  
+                  // Keep visible if input is focused OR mouse is hovering over the dropdown
+                  if ((!focused && !hovering) || items.isEmpty) return const SizedBox.shrink();
+                  
+                  return MouseRegion(
+                    onEnter: (_) => controller.isDropdownHovering.value = true,
+                    onExit: (_) => controller.isDropdownHovering.value = false,
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: UIKit.panelShadow(context),
+                        border: Border.all(color: UIKit.dividerColor(context), width: UIKit.dividerThickness),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: items.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final handle = entry.value;
                         final src = controller.recentAvatars[handle] ?? (() {
                           final found = controller.presetUsers.firstWhereOrNull((u) {
                             final name = (u['username'] ?? u['handle'] ?? u['name'] ?? '').toString();
@@ -242,43 +247,37 @@ class LoginPage extends GetView<AuthController> {
                           return found == null ? null : (found['avatar'] ?? found['avatar_url'] ?? found['avatarUrl'])?.toString();
                         })();
                         final p = imageProviderFor(src);
-                        return InkWell(
-                          onTap: () {
-                            if (isLogin) {
-                              controller.emailController.value = TextEditingValue(
-                                text: handle,
-                                selection: TextSelection.collapsed(offset: handle.length),
-                              );
-                            } else {
-                              controller.usernameController.value = TextEditingValue(
-                                text: handle,
-                                selection: TextSelection.collapsed(offset: handle.length),
-                              );
-                            }
-                            controller.updateLoginPreviewAvatar();
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            child: Row(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: Container(
-                                    width: 28,
-                                    height: 28,
-                                    color: theme.colorScheme.surfaceContainerHighest,
-                                    child: p != null ? Image(image: p, fit: BoxFit.cover) : Icon(Icons.person, size: 18, color: UIKit.textSecondary(context)),
+                        return Obx(() {
+                          final isHighlighted = controller.highlightedIndex.value == index;
+                          return InkWell(
+                            onTap: () => controller.selectHighlightedItem(handle),
+                            onHover: (v) { if (v) controller.highlightedIndex.value = index; },
+                            child: Container(
+                              color: isHighlighted 
+                                  ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3) 
+                                  : null,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              child: Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Container(
+                                      width: 28,
+                                      height: 28,
+                                      color: theme.colorScheme.surfaceContainerHighest,
+                                      child: p != null ? Image(image: p, fit: BoxFit.cover) : Icon(Icons.person, size: 18, color: UIKit.textSecondary(context)),
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(child: Text(handle, style: theme.textTheme.bodyMedium)),
-                              ],
+                                  const SizedBox(width: 10),
+                                  Expanded(child: Text(handle, style: theme.textTheme.bodyMedium)),
+                                ],
+                              ),
                             ),
-                          ),
-                        );
+                          );
+                        });
                       }).toList(),
                     ),
-                  );
+                  ));
                 }),
                 Obx(() => controller.authTab.value == 1
                     ? Padding(

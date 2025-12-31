@@ -1,8 +1,8 @@
 import 'package:peers_touch_base/ai_proxy/adapter/ai_proxy_adapter.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_client_mode_service.dart';
+import 'package:peers_touch_base/ai_proxy/service/ai_box_facade_service.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_server_mode_service.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_service.dart';
-import 'package:peers_touch_base/ai_proxy/service/ai_box_facade_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_impl.dart';
 import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart' as frame;
 

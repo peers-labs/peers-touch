@@ -4,6 +4,7 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/protocol/identify/user_agent.go
 /// to Dart, using native Dart idioms.
+library;
 
 import 'dart:io' show Platform;
 

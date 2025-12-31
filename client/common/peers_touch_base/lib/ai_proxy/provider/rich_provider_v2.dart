@@ -1,18 +1,13 @@
 import 'dart:convert';
 
+import 'package:peers_touch_base/ai_proxy/provider/template/ai_provider_template.dart';
+import 'package:peers_touch_base/ai_proxy/provider/template/template_factory.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as pb;
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
-
-import 'template/ai_provider_template.dart';
-import 'template/template_factory.dart';
 
 /// Typed wrapper around `pb.Provider` to avoid hard-coded map access.
 /// Includes a concrete template instance and exposes typed settings/config.
 class RichProviderV2 {
-  final pb.Provider raw;
-  final AIProviderTemplate template;
-  final ProviderSettingsV2 settings;
-  final ProviderConfigV2 config;
 
   RichProviderV2._(this.raw, this.template, this.settings, this.config);
 
@@ -22,6 +17,10 @@ class RichProviderV2 {
     final config = ProviderConfigV2.fromProvider(provider, tpl);
     return RichProviderV2._(provider, tpl, settings, config);
   }
+  final pb.Provider raw;
+  final AIProviderTemplate template;
+  final ProviderSettingsV2 settings;
+  final ProviderConfigV2 config;
 
   String get id => raw.id;
   String get name => raw.name;
@@ -64,13 +63,6 @@ class RichProviderV2 {
 }
 
 class ProviderSettingsV2 {
-  final String requestFormat;
-  final String proxyUrl;
-  final String defaultProxyUrl;
-  final String apiKey;
-  final String checkModel;
-  final List<String> models;
-  final List<String> enabledModels;
 
   const ProviderSettingsV2({
     required this.requestFormat,
@@ -99,8 +91,8 @@ class ProviderSettingsV2 {
       proxyDefault = _sanitizeUrl((defaults['defaultProxyUrl'] ?? proxy).toString());
     }
 
-    String key = (s['apiKey'] ?? s['api_key'] ?? c['api_key'] ?? '').toString();
-    String check = (s['checkModel'] ?? defaults['checkModel'] ?? '').toString();
+    final String key = (s['apiKey'] ?? s['api_key'] ?? c['api_key'] ?? '').toString();
+    final String check = (s['checkModel'] ?? defaults['checkModel'] ?? '').toString();
 
     final models = List<String>.from((s['models'] ?? const <String>[]) as List);
     final enabled = List<String>.from((s['enabledModels'] ?? const <String>[]) as List);
@@ -115,6 +107,13 @@ class ProviderSettingsV2 {
       enabledModels: enabled,
     );
   }
+  final String requestFormat;
+  final String proxyUrl;
+  final String defaultProxyUrl;
+  final String apiKey;
+  final String checkModel;
+  final List<String> models;
+  final List<String> enabledModels;
 
   ProviderSettingsV2 copyWith({
     String? requestFormat,
@@ -148,11 +147,6 @@ class ProviderSettingsV2 {
 }
 
 class ProviderConfigV2 {
-  final double temperature;
-  final int maxTokens;
-  final double topP;
-  final double frequencyPenalty;
-  final double presencePenalty;
 
   const ProviderConfigV2({
     required this.temperature,
@@ -173,6 +167,11 @@ class ProviderConfigV2 {
       presencePenalty: _asDouble(c['presencePenalty'] ?? defaults['presencePenalty'] ?? 0.0),
     );
   }
+  final double temperature;
+  final int maxTokens;
+  final double topP;
+  final double frequencyPenalty;
+  final double presencePenalty;
 
   ProviderConfigV2 copyWith({
     double? temperature,

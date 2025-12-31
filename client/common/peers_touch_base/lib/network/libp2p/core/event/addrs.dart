@@ -2,8 +2,9 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/core/event/addrs.go
 /// to Dart, using native Dart idioms.
+library;
 
-import '../multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 
 /// AddrAction represents an action taken on one of a Host's listen addresses.
 /// It is used to add context to address change events in EvtLocalAddressesUpdated.
@@ -26,18 +27,18 @@ enum AddrAction {
 /// UpdatedAddress is used in the EvtLocalAddressesUpdated event to convey
 /// address change information.
 class UpdatedAddress {
-  /// Address contains the address that was updated.
-  final MultiAddr address;
-
-  /// Action indicates what action was taken on the address during the
-  /// event. May be Unknown if the event producer cannot produce diffs.
-  final AddrAction action;
 
   /// Creates a new UpdatedAddress.
   UpdatedAddress({
     required this.address,
     required this.action,
   });
+  /// Address contains the address that was updated.
+  final MultiAddr address;
+
+  /// Action indicates what action was taken on the address during the
+  /// event. May be Unknown if the event producer cannot produce diffs.
+  final AddrAction action;
 }
 
 /// EvtLocalAddressesUpdated should be emitted when the set of listen addresses for
@@ -65,6 +66,14 @@ class UpdatedAddress {
 /// This record can be shared with other peers to inform them of what we believe are our diallable addresses
 /// a secure and authenticated way.
 class EvtLocalAddressesUpdated {
+
+  /// Creates a new EvtLocalAddressesUpdated event.
+  EvtLocalAddressesUpdated({
+    required this.diffs,
+    required this.current,
+    this.removed = const [],
+    this.signedPeerRecord,
+  });
   /// Diffs indicates whether this event contains a diff of the Host's previous
   /// address set.
   final bool diffs;
@@ -89,14 +98,6 @@ class EvtLocalAddressesUpdated {
 
   @override
   String toString() {
-    return "EvtLocalAddressesUpdated";
+    return 'EvtLocalAddressesUpdated';
   }
-
-  /// Creates a new EvtLocalAddressesUpdated event.
-  EvtLocalAddressesUpdated({
-    required this.diffs,
-    required this.current,
-    this.removed = const [],
-    this.signedPeerRecord,
-  });
 }

@@ -1,4 +1,5 @@
 /// Utility functions for the holepunch protocol.
+library;
 
 import 'dart:typed_data';
 

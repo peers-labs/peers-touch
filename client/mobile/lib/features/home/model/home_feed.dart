@@ -1,8 +1,4 @@
 class HomeFeed {
-  final String id;
-  final String title;
-  final String content;
-  final DateTime createdAt;
 
   HomeFeed({
     required this.id,
@@ -18,6 +14,10 @@ class HomeFeed {
         createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
             DateTime.now(),
       );
+  final String id;
+  final String title;
+  final String content;
+  final DateTime createdAt;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'id': id,

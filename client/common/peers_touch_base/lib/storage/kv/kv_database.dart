@@ -18,13 +18,13 @@ class KeyValueItems extends Table {
 
 @DriftDatabase(tables: [KeyValueItems])
 class KvDatabase extends _$KvDatabase {
-  static final KvDatabase _instance = KvDatabase._internal();
 
   factory KvDatabase() {
     return _instance;
   }
 
   KvDatabase._internal() : super(openConnection('kv_storage.db'));
+  static final KvDatabase _instance = KvDatabase._internal();
 
   @override
   int get schemaVersion => 1;

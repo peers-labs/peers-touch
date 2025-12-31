@@ -1,32 +1,27 @@
-import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
-import 'package:pointycastle/ecc/curves/secp256k1.dart';
-import 'package:pointycastle/key_generators/ec_key_generator.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as ed;
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart' as p2pkeys;
+import 'package:peers_touch_base/network/libp2p/core/crypto/rsa.dart' as rsa;
 import 'package:pointycastle/key_generators/rsa_key_generator.dart';
 import 'package:pointycastle/pointycastle.dart' as pc;
-import 'package:pointycastle/random/fortuna_random.dart';
-import 'package:peers_touch_base/network/libp2p/core/crypto/rsa.dart' as rsa;
-import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as ed;
-
-import '../../core/crypto/keys.dart' as p2pkeys;
 
 
 class RsaKeyPair {
-  final rsa.RsaPublicKey publicKey;
-  final rsa.RsaPrivateKey privateKey;
 
   RsaKeyPair(this.publicKey, this.privateKey);
+  final rsa.RsaPublicKey publicKey;
+  final rsa.RsaPrivateKey privateKey;
 }
 
 /// Generates an RSA key pair using the pointycastle package
 // Future<pc.AsymmetricKeyPair<pc.PublicKey, pc.PrivateKey >> generateRSAKeyPair({int bits = 2048}) async {
 Future<p2pkeys.KeyPair> generateRSAKeyPair({int bits = 2048}) async {
-  var generator = RSAKeyGenerator();
+  final generator = RSAKeyGenerator();
 
-  var params = pc.RSAKeyGeneratorParameters(BigInt.from(65537), bits, 64);
+  final params = pc.RSAKeyGeneratorParameters(BigInt.from(65537), bits, 64);
   generator.init(pc.ParametersWithRandom( params, fortunaRandom()));
 
   final rsaKeyPair = generator.generateKeyPair();
@@ -73,7 +68,7 @@ Future<p2pkeys.KeyPair> generateEd25519KeyPair() async {
   final cryptoPrivatekey = await keyPair.extractPrivateKeyBytes();
 
 
-  final edPubkey = await ed.Ed25519PublicKey.fromRawBytes(Uint8List.fromList(cryptoPubkey.bytes));
+  final edPubkey = ed.Ed25519PublicKey.fromRawBytes(Uint8List.fromList(cryptoPubkey.bytes));
   final edPrivkey = await ed.Ed25519PrivateKey.fromRawBytes(Uint8List.fromList(cryptoPrivatekey));
 
   // return Ed25519KeyPair(edPubkey, edPrivkey);

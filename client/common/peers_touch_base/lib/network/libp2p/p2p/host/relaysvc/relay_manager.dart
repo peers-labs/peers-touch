@@ -3,20 +3,23 @@
 // license that can be found in the LICENSE file.
 
 import 'dart:async';
-import 'package:synchronized/synchronized.dart';
-import 'package:logging/logging.dart';
 
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/reachability.dart';
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart'; // For Reachability enum
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/relay/relay.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/relay/resources.dart';
+import 'package:synchronized/synchronized.dart';
 
 /// RelayManager monitors the host's reachability and manages a Circuit Relay v2 service.
 /// If the host becomes publicly reachable, it starts the relay service.
 /// If the host is not publicly reachable, it stops the service.
 class RelayManager {
+
+  /// Private constructor for RelayManager.
+  RelayManager._(this._host, this._relayResourcesConfig);
   final Host _host;
   final Resources _relayResourcesConfig; // Configuration for the Relay service
 
@@ -28,9 +31,6 @@ class RelayManager {
   Completer<void>? _backgroundCompleter;
 
   static final _log = Logger('RelayManager');
-
-  /// Private constructor for RelayManager.
-  RelayManager._(this._host, this._relayResourcesConfig);
 
   /// Creates and initializes a new RelayManager.
   ///

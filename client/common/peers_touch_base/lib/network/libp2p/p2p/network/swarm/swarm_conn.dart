@@ -1,27 +1,43 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ConnScope, ScopeStat, ResourceScopeSpan, ConnManagementScope;
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
-import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/connection_health.dart'; // For event-driven health monitoring
+import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm_stream.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/basic_upgrader.dart'; // For UpgradedConnectionImpl
 import 'package:synchronized/synchronized.dart';
-
-import '../../../core/network/common.dart';
-import '../../../core/network/mux.dart' as core_mux; // ADDED for MuxedConn
-import '../../../core/network/rcmgr.dart' show ConnScope, ScopeStat, ResourceScopeSpan, ResourceScope, ConnManagementScope;
-import '../../transport/basic_upgrader.dart'; // For UpgradedConnectionImpl
-import '../../transport/multiplexing/yamux/session.dart'; // For YamuxSession
-import 'connection_health.dart'; // For event-driven health monitoring
-import 'swarm.dart';
-import 'swarm_stream.dart';
 
 /// SwarmConn is a connection to a remote peer in the Swarm network.
 class SwarmConn implements Conn {
+
+  /// Creates a new SwarmConn
+  SwarmConn({
+    required this.id,
+    required this.conn,
+    required PeerId localPeer,
+    required PeerId remotePeer,
+    required this.direction,
+    required this.swarm,
+    required ConnManagementScope managementScope,
+  }) : 
+    _localPeerId = localPeer,
+    _remotePeerId = remotePeer,
+    _managementScope = managementScope,
+    _openedTime = DateTime.now() { // Initialize openedTime when SwarmConn is created
+    
+    // Initialize health monitoring
+    _healthMonitor = ConnectionHealthMonitor();
+    _setupHealthMonitoring();
+  }
   final Logger _logger = Logger('SwarmConn');
 
   /// The connection ID
@@ -65,26 +81,6 @@ class SwarmConn implements Conn {
 
   /// Event-driven health monitor for this connection
   late final ConnectionHealthMonitor _healthMonitor;
-
-  /// Creates a new SwarmConn
-  SwarmConn({
-    required this.id,
-    required this.conn,
-    required PeerId localPeer,
-    required PeerId remotePeer,
-    required this.direction,
-    required this.swarm,
-    required ConnManagementScope managementScope,
-  }) : 
-    _localPeerId = localPeer,
-    _remotePeerId = remotePeer,
-    _managementScope = managementScope,
-    _openedTime = DateTime.now() { // Initialize openedTime when SwarmConn is created
-    
-    // Initialize health monitoring
-    _healthMonitor = ConnectionHealthMonitor();
-    _setupHealthMonitoring();
-  }
 
   /// Sets up event-driven health monitoring for this connection
   void _setupHealthMonitoring() {
@@ -183,6 +179,7 @@ class SwarmConn implements Conn {
 
 
   /// Creates a new stream
+  @override
   Future<P2PStream> newStream(Context context) async {
     _logger.fine('SwarmConn.newStream ($id): Entered to peer $remotePeer. Context HashCode: ${context.hashCode}');
     if (_isClosed) {
@@ -228,7 +225,7 @@ class SwarmConn implements Conn {
         });
         
         // Rethrow with a more descriptive error message
-        throw Exception('Connection to ${remotePeer} has a closed session and has been marked for cleanup. Please retry the operation.');
+        throw Exception('Connection to $remotePeer has a closed session and has been marked for cleanup. Please retry the operation.');
       }
       
       rethrow;
@@ -336,24 +333,24 @@ class SwarmConn implements Conn {
 
 /// Implementation of ConnStats
 class _ConnStatsImpl implements ConnStats {
-  @override
-  final Stats stats;
-
-  @override
-  final int numStreams;
 
   _ConnStatsImpl({
     required this.stats,
     required this.numStreams,
   });
+  @override
+  final Stats stats;
+
+  @override
+  final int numStreams;
 }
 
 /// Implementation of ConnScope, wrapping a ConnManagementScope
 class _ConnScopeImpl implements ConnScope {
-  final ConnManagementScope _managementScope;
 
   _ConnScopeImpl({required ConnManagementScope managementScope})
       : _managementScope = managementScope;
+  final ConnManagementScope _managementScope;
 
   @override
   Future<ResourceScopeSpan> beginSpan() async {
@@ -379,9 +376,9 @@ class _ConnScopeImpl implements ConnScope {
 
 /// Implementation of ResourceScopeSpan (generic wrapper)
 class _ResourceScopeSpanImpl implements ResourceScopeSpan {
-  final ResourceScopeSpan _underlyingSpan;
 
   _ResourceScopeSpanImpl({required ResourceScopeSpan span}) : _underlyingSpan = span;
+  final ResourceScopeSpan _underlyingSpan;
 
   @override
   Future<ResourceScopeSpan> beginSpan() async {

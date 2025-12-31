@@ -4,11 +4,21 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/protocol/identify/opts.go
 /// to Dart, using native Dart idioms.
+library;
 
-import 'metrics.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/metrics.dart';
 
 /// Options for configuring the identify service.
 class IdentifyOptions {
+  
+  /// Creates a new set of identify options.
+  const IdentifyOptions({
+    this.protocolVersion,
+    this.userAgent,
+    this.disableSignedPeerRecord = false,
+    this.metricsTracer,
+    this.disableObservedAddrManager = false,
+  });
   /// The protocol version string that will be used to identify the family of protocols used by the peer.
   final String? protocolVersion;
   
@@ -25,15 +35,6 @@ class IdentifyOptions {
   /// Whether to disable the observed address manager.
   /// This also effectively disables the NAT emitter and EvtNATDeviceTypeChanged.
   final bool disableObservedAddrManager;
-  
-  /// Creates a new set of identify options.
-  const IdentifyOptions({
-    this.protocolVersion,
-    this.userAgent,
-    this.disableSignedPeerRecord = false,
-    this.metricsTracer,
-    this.disableObservedAddrManager = false,
-  });
   
   /// Creates a copy of these options with the given changes.
   IdentifyOptions copyWith({

@@ -1,0 +1,71 @@
+# Shared Dart/Flutter analysis options for all client projects
+# All Flutter projects under client/ should include this file:
+#   include: ../analysis_options.yaml (or appropriate relative path)
+
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - '**/*.g.dart'
+    - '**/*.freezed.dart'
+    - '**/*.pb.dart'
+    - '**/*.pbenum.dart'
+    - '**/*.pbjson.dart'
+    - '**/*.pbserver.dart'
+    - '**/generated/**'
+    - '**/old/**'
+    - '**/example/**'
+  errors:
+    invalid_annotation_target: ignore
+
+linter:
+  rules:
+    # === Error Prevention ===
+    avoid_print: true
+    always_use_package_imports: true
+    avoid_empty_else: true
+    cancel_subscriptions: true
+    close_sinks: true
+    hash_and_equals: true
+    no_duplicate_case_values: true
+    unrelated_type_equality_checks: true
+    valid_regexps: true
+    throw_in_finally: true
+
+    # === Code Style ===
+    always_declare_return_types: true
+    annotate_overrides: true
+    avoid_init_to_null: true
+    avoid_multiple_declarations_per_line: true
+    avoid_shadowing_type_parameters: true
+    avoid_unused_constructor_parameters: true
+    camel_case_types: true
+    camel_case_extensions: true
+    curly_braces_in_flow_control_structures: true
+    directives_ordering: true
+    empty_catches: true
+    empty_constructor_bodies: true
+    file_names: true
+    library_names: true
+    library_prefixes: true
+    no_leading_underscores_for_local_identifiers: true
+    null_closures: true
+    prefer_final_fields: true
+    prefer_final_locals: true
+    prefer_is_empty: true
+    prefer_is_not_empty: true
+    prefer_single_quotes: true
+    recursive_getters: true
+    slash_for_doc_comments: true
+    sort_constructors_first: true
+    sort_unnamed_constructors_first: true
+    type_init_formals: true
+    unnecessary_const: true
+    unnecessary_new: true
+    unnecessary_this: true
+    use_function_type_syntax_for_parameters: true
+    use_rethrow_when_possible: true
+    use_super_parameters: true
+
+    # === Pub Rules ===
+    package_names: true

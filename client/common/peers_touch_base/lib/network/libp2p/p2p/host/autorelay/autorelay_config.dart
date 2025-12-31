@@ -1,8 +1,7 @@
 import 'dart:async';
 
 import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart'; // For AddrInfo
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart'; // For Host interface
-import './autorelay_metrics.dart'; // For MetricsTracer
+import 'package:peers_touch_base/network/libp2p/p2p/host/autorelay/autorelay_metrics.dart'; // For MetricsTracer
 
 
 // Equivalent to Go's PeerSource func(ctx context.Context, num int) <-chan peer.AddrInfo
@@ -23,13 +22,13 @@ abstract class Clock {
 }
 
 class RealInstantTimer implements InstantTimer {
-  final StreamController<DateTime> _controller = StreamController<DateTime>.broadcast();
-  Timer? _timer;
-  DateTime _triggerTime;
 
   RealInstantTimer(this._triggerTime) {
     _scheduleTimer();
   }
+  final StreamController<DateTime> _controller = StreamController<DateTime>.broadcast();
+  Timer? _timer;
+  DateTime _triggerTime;
 
   void _scheduleTimer() {
     _timer?.cancel();
@@ -80,18 +79,6 @@ class RealClock implements Clock {
 }
 
 class AutoRelayConfig {
-  final Clock clock;
-  final PeerSource? peerSourceCallback;
-  final List<AddrInfo>? staticRelays;
-  final Duration minInterval;
-  final int minCandidates;
-  final int maxCandidates;
-  final Duration bootDelay;
-  final Duration backoff;
-  final int desiredRelays;
-  final Duration maxCandidateAge;
-  final bool setMinCandidatesFlag; // Corresponds to setMinCandidates in Go
-  final MetricsTracer? metricsTracer;
 
   AutoRelayConfig({
     Clock? clock,
@@ -167,6 +154,18 @@ class AutoRelayConfig {
       metricsTracer: metricsTracer,
     );
   }
+  final Clock clock;
+  final PeerSource? peerSourceCallback;
+  final List<AddrInfo>? staticRelays;
+  final Duration minInterval;
+  final int minCandidates;
+  final int maxCandidates;
+  final Duration bootDelay;
+  final Duration backoff;
+  final int desiredRelays;
+  final Duration maxCandidateAge;
+  final bool setMinCandidatesFlag; // Corresponds to setMinCandidates in Go
+  final MetricsTracer? metricsTracer;
 
   // Effective PeerSource considering static relays
   PeerSource get effectivePeerSource {

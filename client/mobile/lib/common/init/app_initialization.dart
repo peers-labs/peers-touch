@@ -1,14 +1,14 @@
 import 'package:peers_touch_mobile/common/init/init_loader_merge.dart';
 import 'package:peers_touch_mobile/common/init/init_loader_regions.dart';
-import 'package:peers_touch_mobile/common/region/region_manager.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
+import 'package:peers_touch_mobile/common/region/region_manager.dart';
 
 /// Comprehensive app initialization manager
 /// Handles initialization of all loaders and services
 class AppInitialization {
-  static final AppInitialization _instance = AppInitialization._internal();
   factory AppInitialization() => _instance;
   AppInitialization._internal();
+  static final AppInitialization _instance = AppInitialization._internal();
 
   final List<InitLoader> _loaders = [];
   bool _initialized = false;

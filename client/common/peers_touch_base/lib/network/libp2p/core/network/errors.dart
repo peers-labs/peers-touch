@@ -1,8 +1,8 @@
 /// Exception thrown when a temporary error occurs
 class TemporaryException implements Exception {
-  final String message;
   
   const TemporaryException([this.message = '']);
+  final String message;
   
   bool get isTemporary => true;
   bool get isTimeout => false;

@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'ai_provider_template.dart';
+import 'package:peers_touch_base/ai_proxy/provider/template/ai_provider_template.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 
 class OpenAITemplate extends AIProviderTemplate {
