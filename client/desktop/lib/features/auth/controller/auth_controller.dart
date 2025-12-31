@@ -6,12 +6,12 @@ import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/core/services/network_initializer.dart';
-import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
 
 enum ServerStatus {
   unknown,
@@ -436,30 +436,17 @@ class AuthController extends GetxController {
                         ? email.value.split('@').first
                         : '');
               
-              final avatarUrl = await _fetchAndSaveUserAvatar(handle, baseUrl: (overrideBaseUrl ?? baseUrl.value).trim());
+              await _fetchAndSaveUserAvatar(handle, baseUrl: (overrideBaseUrl ?? baseUrl.value).trim());
               
-              await gc.setSession({
-                'actorId': handle,
-                'handle': handle,
-                'protocol': protocol.value,
-                'baseUrl': (overrideBaseUrl ?? baseUrl.value).trim(),
-                'accessToken': token,
-                'refreshToken': refresh,
-                'avatarUrl': avatarUrl,
-              });
+              await gc.setSession(ActorSessionSnapshot(
+                actorId: handle,
+                handle: handle,
+                protocol: protocol.value,
+                baseUrl: (overrideBaseUrl ?? baseUrl.value).trim(),
+                accessToken: token,
+                refreshToken: refresh,
+              ));
               LoggingService.info('GlobalContext session updated for user: $handle');
-              // Schedule profile refresh after navigation
-              Future.delayed(const Duration(milliseconds: 100), () {
-                try {
-                  if (Get.isRegistered<ProfileController>()) {
-                    final pc = Get.find<ProfileController>();
-                    pc.fetchProfile();
-                    LoggingService.info('ProfileController.fetchProfile() triggered after login');
-                  }
-                } catch (e) {
-                  LoggingService.warning('Failed to trigger profile refresh: $e');
-                }
-              });
             }
           } catch (_) {}
           Get.offAllNamed('/shell');
