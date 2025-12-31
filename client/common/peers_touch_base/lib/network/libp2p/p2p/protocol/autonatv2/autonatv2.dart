@@ -1,32 +1,23 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
+import 'package:peers_touch_base/network/libp2p/core/event/identify.dart';
+import 'package:peers_touch_base/network/libp2p/core/event/protocol.dart';
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv2/autonatv2.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart' show Protocols;
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/client.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/options.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/server.dart';
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv2/autonatv2.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart' show Protocols;
-import 'package:logging/logging.dart';
-
-import '../../../core/event/bus.dart';
-import '../../../core/event/identify.dart';
-import '../../../core/event/protocol.dart';
 
 final _log = Logger('autonatv2');
 
 /// Implementation of the AutoNAT v2 service
 class AutoNATv2Impl implements AutoNATv2 {
-  final Host host;
-  final bool allowPrivateAddrs;
-
-  final AutoNATv2Server server;
-  final AutoNATv2Client client;
-
-  final _PeersMap _peers = _PeersMap();
-  final Subscription? _subscription;
 
   /// Create a new AutoNAT v2 service
   ///
@@ -38,6 +29,14 @@ class AutoNATv2Impl implements AutoNATv2 {
         server = AutoNATv2ServerImpl(host, dialerHost, _applyOptions(options)),
         client = AutoNATv2ClientImpl(host),
         _subscription = _subscribeToEvents(host);
+  final Host host;
+  final bool allowPrivateAddrs;
+
+  final AutoNATv2Server server;
+  final AutoNATv2Client client;
+
+  final _PeersMap _peers = _PeersMap();
+  final Subscription? _subscription;
 
   /// Apply options to the default settings
   static AutoNATv2Settings _applyOptions(List<AutoNATv2Option>? options) {

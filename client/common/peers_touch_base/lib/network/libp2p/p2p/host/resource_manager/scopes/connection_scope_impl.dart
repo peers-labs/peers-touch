@@ -1,26 +1,19 @@
 import 'dart:async';
 
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/errors.dart' as network_errors; // Added import
 import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart'; // For concrete PeerId
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/limit.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scope_impl.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/peer_scope_impl.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/transient_scope_impl.dart'; // Added import
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/system_scope_impl.dart';   // Added import
-import 'package:peers_touch_base/network/libp2p/core/network/errors.dart' as network_errors; // Added import
 
 // Debug logging removed to reduce console noise
 
-class ConnectionScopeImpl extends ResourceScopeImpl implements ConnManagementScope {
-  final Direction direction;
-  final bool useFd;
-  final MultiAddr remoteEndpoint;
-  final ResourceManagerImpl _rcmgr; // Added ResourceManagerImpl reference
-
-  PeerScopeImpl? _peerScopeImpl; // Concrete type for internal use
+class ConnectionScopeImpl extends ResourceScopeImpl implements ConnManagementScope { // Concrete type for internal use
 
   // TODO: Add isAllowlisted field and logic if allowlisting is implemented.
 
@@ -33,6 +26,12 @@ class ConnectionScopeImpl extends ResourceScopeImpl implements ConnManagementSco
     this.remoteEndpoint, {
     List<ResourceScopeImpl>? edges, // Typically transient and system scopes
   }) : super(limit, name, edges: edges);
+  final Direction direction;
+  final bool useFd;
+  final MultiAddr remoteEndpoint;
+  final ResourceManagerImpl _rcmgr; // Added ResourceManagerImpl reference
+
+  PeerScopeImpl? _peerScopeImpl;
 
   @override
   PeerScope? get peerScope => _peerScopeImpl;
@@ -89,7 +88,7 @@ class ConnectionScopeImpl extends ResourceScopeImpl implements ConnManagementSco
         _peerScopeImpl = newPeerScope;
         // The connection scope is now parented by the specific peer scope and the global system scope.
         // The peer scope itself is parented by the system scope.
-        this.edges = [newPeerScope, systemScope]; 
+        edges = [newPeerScope, systemScope]; 
 
         // Decrement ref count of transient scope as this connection is no longer its direct child for these resources.
         // This is tricky: the transient scope itself is a long-lived scope.

@@ -20,12 +20,13 @@ type ActivityPubActivity struct {
 	ObjectID      uint64    `gorm:"index"`
 	TargetID      uint64    `gorm:"index"`
 	InReplyTo     uint64    `gorm:"index"`
-	Text          string    `gorm:"type:text"`      // Content text (for Note)
-	Sensitive     bool      `gorm:"default:false"`  // Sensitive content flag
-	SpoilerText   string    `gorm:"type:text"`      // Content warning text
-	Visibility    string    `gorm:"size:50;index"`  // Visibility (public, unlisted, private, direct)
-	Language      string    `gorm:"size:10"`        // Language code
-	Published     time.Time `gorm:"not null;index"` // When the activity was published
+	Reply         bool      `gorm:"default:false;not null;index"` // Whether this is a reply to another post
+	Text          string    `gorm:"type:text"`                    // Content text (for Note)
+	Sensitive     bool      `gorm:"default:false"`                // Sensitive content flag
+	SpoilerText   string    `gorm:"type:text"`                    // Content warning text
+	Visibility    string    `gorm:"size:50;index"`                // Visibility (public, unlisted, private, direct)
+	Language      string    `gorm:"size:10"`                      // Language code
+	Published     time.Time `gorm:"not null;index"`               // When the activity was published
 	Content       []byte    `gorm:"type:bytea"`
 	IsLocal       bool      `gorm:"default:false;not null;index"` // Whether this is a local activity
 	IsPublic      bool      `gorm:"default:true;not null;index"`  // Whether the activity is public

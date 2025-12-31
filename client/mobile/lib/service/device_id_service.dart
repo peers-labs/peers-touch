@@ -1,19 +1,20 @@
 import 'dart:io';
+
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:peers_touch_mobile/common/logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import 'package:peers_touch_mobile/common/logger/logger.dart';
 
 /// Service for managing device-specific identifiers (DID)
 /// Generates a unique identifier per device installation that persists across app sessions
 class DeviceIdService {
+  
+  DeviceIdService._();
   static const String _deviceIdKey = 'device_id';
   static const String _installationIdKey = 'installation_id';
   
   static DeviceIdService? _instance;
   static DeviceIdService get instance => _instance ??= DeviceIdService._();
-  
-  DeviceIdService._();
   
   String? _cachedDeviceId;
   String? _cachedInstallationId;
@@ -29,7 +30,7 @@ class DeviceIdService {
       final prefs = await SharedPreferences.getInstance();
       
       // Check if we already have a stored device ID
-      String? storedDeviceId = prefs.getString(_deviceIdKey);
+      final String? storedDeviceId = prefs.getString(_deviceIdKey);
       
       if (storedDeviceId != null && storedDeviceId.isNotEmpty) {
         _cachedDeviceId = storedDeviceId;
@@ -67,7 +68,7 @@ class DeviceIdService {
       final prefs = await SharedPreferences.getInstance();
       
       // Check if we already have a stored installation ID
-      String? storedInstallationId = prefs.getString(_installationIdKey);
+      final String? storedInstallationId = prefs.getString(_installationIdKey);
       
       if (storedInstallationId != null && storedInstallationId.isNotEmpty) {
         _cachedInstallationId = storedInstallationId;

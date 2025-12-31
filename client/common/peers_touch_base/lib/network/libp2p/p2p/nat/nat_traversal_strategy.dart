@@ -1,4 +1,4 @@
-import 'nat_behavior.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior.dart';
 
 /// Enum representing different NAT traversal strategies
 enum TraversalStrategy {

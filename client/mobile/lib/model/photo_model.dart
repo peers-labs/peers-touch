@@ -2,13 +2,13 @@ import 'dart:io';
 
 /// Simple photo model for basic photo operations
 class PhotoModel {
-  final int id;
-  final String path;
 
   PhotoModel({
     required this.id,
     required this.path,
   });
+  final int id;
+  final String path;
 
   /// Check if the photo file exists
   bool fileExistsSync() {

@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
+
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart'; // Import P2PStream
+import 'package:peers_touch_base/network/libp2p/utils/varint.dart';
 import 'package:protobuf/protobuf.dart' show GeneratedMessage;
-import '../core/network/stream.dart'; // Import P2PStream
-import './varint.dart';
 
 // Helper to read exact number of bytes from a P2PStream, managing a carry-over buffer.
 Future<Uint8List> _readNBytesFromP2PStream(

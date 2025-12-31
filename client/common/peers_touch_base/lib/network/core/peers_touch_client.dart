@@ -6,6 +6,21 @@ import 'package:peers_touch_base/network/models/peer_info.dart';
 
 /// Main client class for Peers-touch network
 class PeersTouchClient {
+
+  /// Create a new PeersTouchClient instance
+  PeersTouchClient({
+    required this.config,
+    PeerDiscovery? discovery,
+    ConnectionManager? connection,
+    ActivityPubClient? activityPub,
+  })  : discovery = discovery ?? PeerDiscovery(config: config),
+        connection = connection ?? ConnectionManager(config: config),
+        activityPub = activityPub ?? ActivityPubClient(config: config) {
+    peerManager = PeerManager(
+      config: config,
+      connection: this.connection,
+    );
+  }
   /// Configuration for this client instance
   final PeersTouchConfig config;
 
@@ -24,25 +39,10 @@ class PeersTouchClient {
   /// Whether the client is currently connected
   bool _isConnected = false;
 
-  /// Create a new PeersTouchClient instance
-  PeersTouchClient({
-    required this.config,
-    PeerDiscovery? discovery,
-    ConnectionManager? connection,
-    ActivityPubClient? activityPub,
-  })  : discovery = discovery ?? PeerDiscovery(config: config),
-        connection = connection ?? ConnectionManager(config: config),
-        activityPub = activityPub ?? ActivityPubClient(config: config) {
-    peerManager = PeerManager(
-      config: config,
-      connection: this.connection,
-    );
-  }
-
   /// Connect to the Peers-touch network
   Future<void> connect() async {
     if (_isConnected) {
-      throw ConnectionException('Client is already connected');
+      throw const ConnectionException('Client is already connected');
     }
 
     try {
@@ -84,7 +84,7 @@ class PeersTouchClient {
   /// Discover peers in the network
   Future<List<PeerInfo>> discoverPeers() async {
     if (!_isConnected) {
-      throw ConnectionException('Client is not connected');
+      throw const ConnectionException('Client is not connected');
     }
 
     return await discovery.discover();
@@ -106,9 +106,9 @@ class PeersTouchClient {
 
 /// Peer discovery manager (placeholder implementation)
 class PeerDiscovery {
-  final PeersTouchConfig config;
 
   PeerDiscovery({required this.config});
+  final PeersTouchConfig config;
 
   Future<void> start() async {
     // TODO: Implement peer discovery
@@ -130,10 +130,10 @@ class PeerDiscovery {
 
 /// Connection manager (placeholder implementation)
 class ConnectionManager {
-  final PeersTouchConfig config;
-  final List<PeerSession> _sessions = [];
 
   ConnectionManager({required this.config});
+  final PeersTouchConfig config;
+  final List<PeerSession> _sessions = [];
 
   Future<void> initialize() async {
     // TODO: Implement connection initialization
@@ -153,20 +153,20 @@ class ConnectionManager {
 
 /// ActivityPub client (placeholder implementation)
 class ActivityPubClient {
-  final PeersTouchConfig config;
 
   ActivityPubClient({required this.config});
+  final PeersTouchConfig config;
 }
 
 /// Peer manager (placeholder implementation)
 class PeerManager {
-  final PeersTouchConfig config;
-  final ConnectionManager connection;
 
   PeerManager({
     required this.config,
     required this.connection,
   });
+  final PeersTouchConfig config;
+  final ConnectionManager connection;
 
   Future<PeerSession> connectToPeer(String peerAddress) async {
     // TODO: Implement peer connection
@@ -194,13 +194,13 @@ enum PeerEventType {
 
 /// Peer event
 class PeerEvent {
-  final PeerEventType type;
-  final PeerSession session;
-  final dynamic data;
 
   PeerEvent({
     required this.type,
     required this.session,
     this.data,
   });
+  final PeerEventType type;
+  final PeerSession session;
+  final dynamic data;
 }

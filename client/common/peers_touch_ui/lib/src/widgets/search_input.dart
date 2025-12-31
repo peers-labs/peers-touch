@@ -1,12 +1,6 @@
 import 'package:flutter/material.dart';
 
 class SearchInput extends StatelessWidget {
-  final String? hintText;
-  final ValueChanged<String>? onChanged;
-  final TextEditingController? controller;
-  final VoidCallback? onSubmitted;
-  final Color? fillColor;
-  final BorderRadius? borderRadius;
 
   const SearchInput({
     super.key,
@@ -17,6 +11,12 @@ class SearchInput extends StatelessWidget {
     this.fillColor,
     this.borderRadius,
   });
+  final String? hintText;
+  final ValueChanged<String>? onChanged;
+  final TextEditingController? controller;
+  final VoidCallback? onSubmitted;
+  final Color? fillColor;
+  final BorderRadius? borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +27,7 @@ class SearchInput extends StatelessWidget {
         color: fillColor ?? theme.colorScheme.surface,
         borderRadius: borderRadius ?? BorderRadius.circular(8),
         border: Border.all(
-          color: theme.colorScheme.outline.withOpacity(0.2),
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
           width: 1,
         ),
       ),
@@ -47,7 +47,7 @@ class SearchInput extends StatelessWidget {
           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0), // Center vertically
           isDense: true,
           hintStyle: TextStyle(
-            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
             fontSize: 14,
           ),
         ),

@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/core/stun/stun_config.dart';
 import 'package:peers_touch_base/network/core/stun/stun_client.dart';
-import 'package:peers_touch_base/network/core/stun/stun_types.dart';
+import 'package:peers_touch_base/network/core/stun/stun_config.dart';
 import 'package:peers_touch_base/network/core/stun/stun_peer_info.dart';
+import 'package:peers_touch_base/network/core/stun/stun_types.dart';
 import 'package:peers_touch_base/network/core/stun/tun_manager.dart';
 
 /// NAT类型枚举
@@ -19,26 +19,26 @@ enum NatType {
 
 /// NAT发现结果
 class NatDiscoveryResult {
-  final NatType natType;
-  final bool supportsHairpin;
-  final String? description;
   
   const NatDiscoveryResult({
     required this.natType,
     this.supportsHairpin = false,
     this.description,
   });
+  final NatType natType;
+  final bool supportsHairpin;
+  final String? description;
 }
 
 /// NAT发现器
 class NatDiscovery {
-  final StunConfig config;
-  final List<StunClient> stunClients;
   
   NatDiscovery({
     required this.config,
     List<StunClient>? stunClients,
   }) : stunClients = stunClients ?? [];
+  final StunConfig config;
+  final List<StunClient> stunClients;
 
   /// 发现NAT类型
   Future<NatDiscoveryResult> discoverNatType() async {
@@ -151,15 +151,15 @@ class NatDiscovery {
 
 /// 打洞协调器
 class HolePunchingCoordinator {
-  final StunConfig config;
-  final TunManager tunManager;
-  final NatDiscovery natDiscovery;
   
   HolePunchingCoordinator({
     required this.config,
     required this.tunManager,
     required this.natDiscovery,
   });
+  final StunConfig config;
+  final TunManager tunManager;
+  final NatDiscovery natDiscovery;
 
   /// 协调打洞过程
   Future<bool> coordinateHolePunching(

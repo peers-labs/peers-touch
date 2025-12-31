@@ -1,5 +1,4 @@
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
-import 'provider_manager.dart' hide ProviderType;
 
 /// Provider管理器接口，定义了Provider的增删改查等操作
 /// 这是ai_proxy模块的内部接口，不应被外部直接引用

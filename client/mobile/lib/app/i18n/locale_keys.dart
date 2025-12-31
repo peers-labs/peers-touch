@@ -1,4 +1,6 @@
 class LocaleKeys {
+
+  const LocaleKeys._();
   static const String appTitle = 'app_title';
   static const String login = 'login';
   static const String logout = 'logout';
@@ -8,6 +10,4 @@ class LocaleKeys {
   static const String discover = 'discover';
   static const String ai = 'ai';
   static const String me = 'me';
-
-  const LocaleKeys._();
 }

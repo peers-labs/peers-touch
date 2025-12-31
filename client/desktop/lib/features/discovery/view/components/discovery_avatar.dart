@@ -6,9 +6,6 @@ import 'package:flutter/material.dart';
 /// 2. Loading -> Shows Skeleton/Shimmer
 /// 3. Error/Empty -> Shows Placeholder Icon or Initials
 class DiscoveryAvatar extends StatelessWidget {
-  final String? url;
-  final String fallbackName;
-  final double radius;
 
   const DiscoveryAvatar({
     super.key,
@@ -16,6 +13,9 @@ class DiscoveryAvatar extends StatelessWidget {
     this.fallbackName = 'User',
     this.radius = 20,
   });
+  final String? url;
+  final String fallbackName;
+  final double radius;
 
   @override
   Widget build(BuildContext context) {

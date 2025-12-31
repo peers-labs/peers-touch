@@ -1,8 +1,9 @@
 import 'dart:async';
 
+import 'package:logging/logging.dart'; // Added
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/errors.dart' as network_errors;
 import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart' as concrete_peer_id; // For concrete PeerId type
 import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/limit.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
@@ -11,29 +12,10 @@ import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/protocol_scope_impl.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/service_scope_impl.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/transient_scope_impl.dart'; // Added
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/scopes/system_scope_impl.dart';   // Added
-import 'package:peers_touch_base/network/libp2p/core/network/errors.dart' as network_errors;
-import 'package:logging/logging.dart'; // Added
 
 
 
-class StreamScopeImpl extends ResourceScopeImpl implements StreamManagementScope {
-  final Direction direction;
-  
-  final Logger _logger = Logger('StreamScopeImpl'); // Added logger
-  
-  // References to associated scopes. These are set via setProtocol/setService.
-  ProtocolScopeImpl? _protocolScopeImpl;
-  ServiceScopeImpl? _serviceScopeImpl;
-  PeerScopeImpl _peerScopeImpl; // Should be set at creation or early on.
-
-  // In Go, streamScope also holds references to peerProtoScope and peerSvcScope,
-  // which are sub-scopes under protocol/service for that specific peer.
-  // This adds another layer of granularity.
-  ResourceScopeImpl? _peerProtoScope;
-  ResourceScopeImpl? _peerSvcScope;
-
-  final ResourceManagerImpl _rcmgr; // Added ResourceManagerImpl reference
+class StreamScopeImpl extends ResourceScopeImpl implements StreamManagementScope { // Added ResourceManagerImpl reference
 
   StreamScopeImpl(
     this._rcmgr, // Added rcmgr parameter
@@ -43,6 +25,22 @@ class StreamScopeImpl extends ResourceScopeImpl implements StreamManagementScope
     this._peerScopeImpl, // PeerScope is fundamental to a stream
     {List<ResourceScopeImpl>? edges} // Initial edges: peer, transient, system
   ) : super(limit, name, edges: edges);
+  final Direction direction;
+  
+  final Logger _logger = Logger('StreamScopeImpl'); // Added logger
+  
+  // References to associated scopes. These are set via setProtocol/setService.
+  ProtocolScopeImpl? _protocolScopeImpl;
+  ServiceScopeImpl? _serviceScopeImpl;
+  final PeerScopeImpl _peerScopeImpl; // Should be set at creation or early on.
+
+  // In Go, streamScope also holds references to peerProtoScope and peerSvcScope,
+  // which are sub-scopes under protocol/service for that specific peer.
+  // This adds another layer of granularity.
+  ResourceScopeImpl? _peerProtoScope;
+  ResourceScopeImpl? _peerSvcScope;
+
+  final ResourceManagerImpl _rcmgr;
 
   @override
   ProtocolScope? get protocolScope => _protocolScopeImpl;
@@ -68,7 +66,7 @@ class StreamScopeImpl extends ResourceScopeImpl implements StreamManagementScope
     
     // Explicitly cast to the concrete PeerId type
     final newPeerProtoScope = newProtocolScope.getPeerSubScope(
-      _peerScopeImpl.peer as concrete_peer_id.PeerId, 
+      _peerScopeImpl.peer, 
       limiter, 
       systemScope
     );
@@ -116,8 +114,8 @@ class StreamScopeImpl extends ResourceScopeImpl implements StreamManagementScope
         // Resource accounting will flow up from peerProtoScope to protocolScope and systemScope.
         
         // Manage ref counts for edge changes
-        List<ResourceScopeImpl> oldEdges = List.from(this.edges);
-        List<ResourceScopeImpl> newEdges = [_peerScopeImpl, newPeerProtoScope];
+        final List<ResourceScopeImpl> oldEdges = List.from(edges);
+        final List<ResourceScopeImpl> newEdges = [_peerScopeImpl, newPeerProtoScope];
 
         for (var oldEdge in oldEdges) {
           if (!newEdges.contains(oldEdge)) {
@@ -129,7 +127,7 @@ class StreamScopeImpl extends ResourceScopeImpl implements StreamManagementScope
             newEdge.incRef();
           }
         }
-        this.edges = newEdges;
+        edges = newEdges;
         
         _logger.fine('$name: Successfully set protocol to $protocol. Resources transferred, edges updated.');
       }
@@ -146,7 +144,7 @@ class StreamScopeImpl extends ResourceScopeImpl implements StreamManagementScope
       // If it's another type of error that wasn't caught by the specific `else { throw err; }`
       // it will be caught here. If reservationError is still null, it means it's not a limit error.
       if (reservationError == null && e is! network_errors.ResourceLimitExceededException) {
-          throw e; // Rethrow if not a limit error and not already handled
+          rethrow; // Rethrow if not a limit error and not already handled
       }
     }
 
@@ -217,8 +215,8 @@ class StreamScopeImpl extends ResourceScopeImpl implements StreamManagementScope
         _peerSvcScope = newPeerSvcScope;
         // Update edges: Stream is now primarily parented by its peer, its peer-protocol scope, and its peer-service scope.
         // Propagation to global protocol, global service, and system scopes will occur from these.
-        List<ResourceScopeImpl> oldEdges = List.from(this.edges);
-        List<ResourceScopeImpl> newEdges = [
+        final List<ResourceScopeImpl> oldEdges = List.from(edges);
+        final List<ResourceScopeImpl> newEdges = [
           _peerScopeImpl,
           _peerProtoScope!, // Known to be non-null from check above
           newPeerSvcScope
@@ -234,7 +232,7 @@ class StreamScopeImpl extends ResourceScopeImpl implements StreamManagementScope
             newEdge.incRef();
           }
         }
-        this.edges = newEdges;
+        edges = newEdges;
         
         _logger.fine('$name: Successfully set service to $serviceName. Edges updated.');
       }

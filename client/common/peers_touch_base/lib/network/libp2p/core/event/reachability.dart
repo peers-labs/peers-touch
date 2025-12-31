@@ -1,4 +1,4 @@
-import '../network/network.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
 
 /// Reachability-related events for libp2p.
 ///
@@ -22,16 +22,16 @@ import '../network/network.dart';
 ///
 /// This event is usually emitted by the AutoNAT subsystem.
 class EvtLocalReachabilityChanged {
-  /// The new reachability state.
-  final Reachability reachability;
-
-  @override
-  String toString() {
-    return "EvtLocalReachabilityChanged";
-  }
 
   /// Creates a new EvtLocalReachabilityChanged event.
   EvtLocalReachabilityChanged({
     required this.reachability,
   });
+  /// The new reachability state.
+  final Reachability reachability;
+
+  @override
+  String toString() {
+    return 'EvtLocalReachabilityChanged';
+  }
 }

@@ -1,4 +1,4 @@
-import '../models/models.dart';
+import 'package:peers_touch_base/chat/models/models.dart';
 
 /// 聊天存储服务接口
 /// 提供好友、会话、消息等数据的持久化存储

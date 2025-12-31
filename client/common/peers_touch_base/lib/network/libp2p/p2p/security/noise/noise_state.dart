@@ -1,12 +1,12 @@
 import 'package:meta/meta.dart';
-import 'handshake_state.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/security/noise/handshake_state.dart';
 
 /// Manages state transitions for the Noise XX handshake pattern
 class NoiseStateMachine {
-  final bool _isInitiator;
-  XXHandshakeState _state;
 
   NoiseStateMachine(this._isInitiator) : _state = XXHandshakeState.initial;
+  final bool _isInitiator;
+  XXHandshakeState _state;
 
   /// Gets the current state
   XXHandshakeState get state => _state;

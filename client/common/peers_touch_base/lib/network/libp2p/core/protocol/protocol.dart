@@ -1,9 +1,10 @@
 /// Package protocol provides core interfaces for protocol routing and negotiation in libp2p.
 ///
 /// This file contains the protocol ID type and interfaces for protocol routing and negotiation.
+library;
 
 import 'dart:async';
-import '../network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 
 /// ProtocolID is a string identifier for a protocol.
 ///
@@ -14,7 +15,7 @@ typedef ProtocolID = String;
 /// These are reserved protocol IDs.
 class ReservedProtocolIDs {
   /// Testing protocol ID
-  static const ProtocolID testingID = "/p2p/_testing";
+  static const ProtocolID testingID = '/p2p/_testing';
 }
 
 /// Utility functions for protocol IDs

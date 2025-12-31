@@ -1,17 +1,32 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/common.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show StreamScope, ScopeStat, ResourceScopeSpan, StreamManagementScope;
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm_conn.dart';
 import 'package:synchronized/synchronized.dart';
-
-import '../../../core/network/conn.dart';
-import '../../../core/network/rcmgr.dart' show StreamScope, ScopeStat, ResourceScopeSpan, ResourceScope, StreamManagementScope;
-import 'swarm_conn.dart';
 
 /// SwarmStream is a stream over a SwarmConn.
 class SwarmStream implements P2PStream<Uint8List> {
+
+  /// Creates a new SwarmStream
+  SwarmStream({
+    required String id,
+    required SwarmConn conn,
+    required Direction direction,
+    required DateTime opened,
+    required P2PStream<Uint8List> underlyingMuxedStream,
+    required StreamManagementScope managementScope,
+  }) : 
+    _id = id,
+    _conn = conn,
+    _direction = direction,
+    _opened = opened,
+    _underlyingMuxedStream = underlyingMuxedStream,
+    _managementScope = managementScope;
   final Logger _logger = Logger('SwarmStream');
 
   /// The stream ID (Swarm's logical ID for this wrapper)
@@ -43,22 +58,6 @@ class SwarmStream implements P2PStream<Uint8List> {
 
   /// Lock for closed state
   final Lock _closedLock = Lock();
-
-  /// Creates a new SwarmStream
-  SwarmStream({
-    required String id,
-    required SwarmConn conn,
-    required Direction direction,
-    required DateTime opened,
-    required P2PStream<Uint8List> underlyingMuxedStream,
-    required StreamManagementScope managementScope,
-  }) : 
-    _id = id,
-    _conn = conn,
-    _direction = direction,
-    _opened = opened,
-    _underlyingMuxedStream = underlyingMuxedStream,
-    _managementScope = managementScope;
 
   @override
   String id() => _id;
@@ -224,10 +223,10 @@ class SwarmStream implements P2PStream<Uint8List> {
 
 /// Implementation of StreamScope, wrapping a StreamManagementScope
 class _StreamScopeImpl implements StreamScope {
-  final StreamManagementScope _managementScope;
 
   _StreamScopeImpl({required StreamManagementScope managementScope})
       : _managementScope = managementScope;
+  final StreamManagementScope _managementScope;
 
   @override
   Future<ResourceScopeSpan> beginSpan() async {
@@ -258,9 +257,9 @@ class _StreamScopeImpl implements StreamScope {
 
 /// Implementation of ResourceScopeSpan, wrapping an underlying ResourceScopeSpan
 class _ResourceScopeSpanImpl implements ResourceScopeSpan {
-  final ResourceScopeSpan _underlyingSpan;
 
   _ResourceScopeSpanImpl({required ResourceScopeSpan span}) : _underlyingSpan = span;
+  final ResourceScopeSpan _underlyingSpan;
 
   @override
   Future<ResourceScopeSpan> beginSpan() async {

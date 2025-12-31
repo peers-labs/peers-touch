@@ -1,10 +1,7 @@
-import 'package:test/test.dart';
 import 'package:mockito/mockito.dart';
-import 'package:peers_touch_base/ai_proxy/adapter/ai_proxy_adapter.dart';
-import 'package:peers_touch_base/ai_proxy/client/chat_client.dart';
-import 'package:peers_touch_base/ai_proxy/provider/rich_provider.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_client_mode_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
+import 'package:test/test.dart';
 
 import 'mock_ai_proxy_adapter.mocks.dart';
 

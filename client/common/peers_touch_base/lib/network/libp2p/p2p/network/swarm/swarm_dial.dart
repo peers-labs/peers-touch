@@ -1,21 +1,28 @@
 import 'dart:async';
 
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 // Corrected import for Protocol constants:
 import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart' as multiaddr_protocol;
-import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-import 'package:logging/logging.dart';
-
-import '../../../core/interfaces.dart';
-import '../../../core/network/conn.dart';
 
 /// DialFunc is a function that dials a peer at a specific address
 typedef DialFunc = Future<Conn> Function(Context context, MultiAddr addr, PeerId peerId);
 
 /// AddrDialer is a helper for dialing multiple addresses in parallel
 class AddrDialer {
+
+  /// Creates a new AddrDialer
+  AddrDialer({
+    required PeerId peerId,
+    required List<MultiAddr> addrs,
+    required DialFunc dialFunc,
+    required Context context,
+  }) : 
+    _peerId = peerId,
+    _addrs = addrs,
+    _dialFunc = dialFunc,
+    _context = context;
   final Logger _logger = Logger('AddrDialer');
 
   /// The peer ID to dial
@@ -29,18 +36,6 @@ class AddrDialer {
 
   /// The context for the dial operation
   final Context _context;
-
-  /// Creates a new AddrDialer
-  AddrDialer({
-    required PeerId peerId,
-    required List<MultiAddr> addrs,
-    required DialFunc dialFunc,
-    required Context context,
-  }) : 
-    _peerId = peerId,
-    _addrs = addrs,
-    _dialFunc = dialFunc,
-    _context = context;
 
   /// Dials the addresses in parallel and returns the first successful connection
   Future<Conn> dial() async {
@@ -136,14 +131,6 @@ class DelayDialRanker {
 
 /// DialBackoff implements exponential backoff for failed dials
 class DialBackoff {
-  /// The base delay for backoff
-  final Duration _baseDelay;
-
-  /// The maximum delay for backoff
-  final Duration _maxDelay;
-
-  /// The current delay
-  Duration _currentDelay;
 
   /// Creates a new DialBackoff
   DialBackoff({
@@ -153,6 +140,14 @@ class DialBackoff {
     _baseDelay = baseDelay,
     _maxDelay = maxDelay,
     _currentDelay = baseDelay;
+  /// The base delay for backoff
+  final Duration _baseDelay;
+
+  /// The maximum delay for backoff
+  final Duration _maxDelay;
+
+  /// The current delay
+  Duration _currentDelay;
 
   /// Gets the next delay and increases the backoff
   Duration nextDelay() {

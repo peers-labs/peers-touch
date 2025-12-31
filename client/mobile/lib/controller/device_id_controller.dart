@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
-import 'package:peers_touch_mobile/service/device_id_service.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
+import 'package:peers_touch_mobile/service/device_id_service.dart';
 
 /// Controller for managing device identification
 class DeviceIdController extends GetxController {

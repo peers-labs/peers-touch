@@ -11,7 +11,7 @@ class StunUsageExample {
     
     try {
       // 创建STUN配置
-      final config = StunConfig(
+      const config = StunConfig(
         stunServers: ['stun.l.google.com', 'stun1.l.google.com'],
         stunPort: 3478,
         holePunchTimeout: 5000,
@@ -52,13 +52,13 @@ class StunUsageExample {
     print('\n=== P2P Connection Example ===');
     
     try {
-      final config = StunConfig();
+      const config = StunConfig();
       final stunManager = StunManager(config: config);
       
       await stunManager.initialize();
       
       // 创建对等节点信息（示例数据）
-      final peer = StunPeerInfo(
+      const peer = StunPeerInfo(
         id: 'peer-123',
         address: '192.168.1.100', // 目标节点地址
         port: 8080,
@@ -81,7 +81,7 @@ class StunUsageExample {
       print('Sent test data to peer');
       
       // 等待一段时间
-      await Future.delayed(Duration(seconds: 5));
+      await Future.delayed(const Duration(seconds: 5));
       
       // 关闭连接
       await connection.close();
@@ -97,7 +97,7 @@ class StunUsageExample {
     print('\n=== NAT Discovery Example ===');
     
     try {
-      final config = StunConfig();
+      const config = StunConfig();
       final stunManager = StunManager(config: config);
       
       await stunManager.initialize();
@@ -128,7 +128,7 @@ class StunUsageExample {
     
     try {
       // 高级配置
-      final config = StunConfig(
+      const config = StunConfig(
         stunServers: [
           'stun.l.google.com',
           'stun1.l.google.com', 
@@ -172,7 +172,7 @@ class StunUsageExample {
     
     try {
       // 使用无效的STUN服务器配置
-      final config = StunConfig(
+      const config = StunConfig(
         stunServers: ['invalid.stun.server'],
         holePunchTimeout: 1000, // 很短的超时
       );
@@ -187,7 +187,7 @@ class StunUsageExample {
       
       // 尝试连接不存在的对等节点
       try {
-        final invalidPeer = StunPeerInfo(
+        const invalidPeer = StunPeerInfo(
           id: 'invalid-peer',
           address: '256.256.256.256', // 无效IP
           port: 99999, // 无效端口

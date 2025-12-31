@@ -1,23 +1,24 @@
 import 'dart:async';
 import 'dart:typed_data';
+
 import 'package:dcid/dcid.dart' as cid_lib;
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/routing/options.dart';
 
 
 /// Error thrown when a routing operation fails to find the requested record
 class NotFoundError implements Exception {
-  final String message;
   const NotFoundError([this.message = 'routing: not found']);
+  final String message;
   @override
   String toString() => message;
 }
 
 /// Error thrown when a routing operation is not supported
 class NotSupportedError implements Exception {
-  final String message;
   const NotSupportedError([this.message = 'routing: operation or key not supported']);
+  final String message;
   @override
   String toString() => message;
 }
@@ -105,7 +106,7 @@ Future<dynamic> getPublicKey(ValueStore store, PeerId id) async {
 
   // If the store is a PubKeyFetcher, use the optimized method
   if (store is PubKeyFetcher) {
-    PubKeyFetcher pkFetcher = store as PubKeyFetcher;
+    final PubKeyFetcher pkFetcher = store as PubKeyFetcher;
     return await pkFetcher.getPublicKey(id);
   }
 

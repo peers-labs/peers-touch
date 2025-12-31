@@ -2,20 +2,6 @@ import 'dart:convert';
 
 /// Main configuration class for Peers-touch client
 class PeersTouchConfig {
-  /// Unique identifier for this node
-  final String nodeId;
-
-  /// URL of the registry service for peer discovery
-  final String registryUrl;
-
-  /// Connection configuration
-  final ConnectionConfig connection;
-
-  /// Security configuration
-  final SecurityConfig security;
-
-  /// Enable debug logging
-  final bool debug;
 
   /// Create a new configuration
   PeersTouchConfig({
@@ -44,6 +30,20 @@ class PeersTouchConfig {
       debug: json['debug'] as bool? ?? false,
     );
   }
+  /// Unique identifier for this node
+  final String nodeId;
+
+  /// URL of the registry service for peer discovery
+  final String registryUrl;
+
+  /// Connection configuration
+  final ConnectionConfig connection;
+
+  /// Security configuration
+  final SecurityConfig security;
+
+  /// Enable debug logging
+  final bool debug;
 
   /// Convert to JSON
   Map<String, dynamic> toJson() {
@@ -78,20 +78,6 @@ class PeersTouchConfig {
 
 /// Connection configuration
 class ConnectionConfig {
-  /// Connection timeout in seconds
-  final int timeout;
-
-  /// Maximum retry attempts for failed connections
-  final int maxRetries;
-
-  /// Retry delay in milliseconds
-  final int retryDelay;
-
-  /// Heartbeat interval in seconds
-  final int heartbeatInterval;
-
-  /// Maximum number of concurrent connections
-  final int maxConnections;
 
   const ConnectionConfig({
     this.timeout = 30,
@@ -111,6 +97,20 @@ class ConnectionConfig {
       maxConnections: json['maxConnections'] as int? ?? 10,
     );
   }
+  /// Connection timeout in seconds
+  final int timeout;
+
+  /// Maximum retry attempts for failed connections
+  final int maxRetries;
+
+  /// Retry delay in milliseconds
+  final int retryDelay;
+
+  /// Heartbeat interval in seconds
+  final int heartbeatInterval;
+
+  /// Maximum number of concurrent connections
+  final int maxConnections;
 
   /// Convert to JSON
   Map<String, dynamic> toJson() {
@@ -131,20 +131,6 @@ class ConnectionConfig {
 
 /// Security configuration
 class SecurityConfig {
-  /// Enable TLS/SSL encryption
-  final bool enableTls;
-
-  /// Certificate authority bundle path
-  final String? caBundlePath;
-
-  /// Client certificate path
-  final String? clientCertPath;
-
-  /// Client private key path
-  final String? clientKeyPath;
-
-  /// Enable end-to-end encryption for messages
-  final bool enableE2ee;
 
   const SecurityConfig({
     this.enableTls = true,
@@ -164,6 +150,20 @@ class SecurityConfig {
       enableE2ee: json['enableE2ee'] as bool? ?? true,
     );
   }
+  /// Enable TLS/SSL encryption
+  final bool enableTls;
+
+  /// Certificate authority bundle path
+  final String? caBundlePath;
+
+  /// Client certificate path
+  final String? clientCertPath;
+
+  /// Client private key path
+  final String? clientKeyPath;
+
+  /// Enable end-to-end encryption for messages
+  final bool enableE2ee;
 
   /// Convert to JSON
   Map<String, dynamic> toJson() {

@@ -4,10 +4,8 @@ import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
 
-import '../../../core/interfaces.dart';
-import '../../../core/network/stream.dart';
-import '../../../core/peer/peer_id.dart';
-import '../../../core/protocol/protocol.dart';
+import 'package:peers_touch_base/network/libp2p/core/interfaces.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
 final _logger = Logger('http_protocol');
 
@@ -74,12 +72,6 @@ enum HttpStatus {
 
 /// HTTP-like request
 class HttpRequest {
-  final HttpMethod method;
-  final String path;
-  final String version;
-  final Map<String, String> headers;
-  final Uint8List? body;
-  final PeerId remotePeer;
 
   HttpRequest({
     required this.method,
@@ -89,6 +81,12 @@ class HttpRequest {
     this.body,
     required this.remotePeer,
   }) : headers = headers ?? {};
+  final HttpMethod method;
+  final String path;
+  final String version;
+  final Map<String, String> headers;
+  final Uint8List? body;
+  final PeerId remotePeer;
 
   /// Get content length from headers or body
   int get contentLength {
@@ -164,14 +162,14 @@ class HttpRequest {
     final headerEndIndex = dataString.indexOf(HttpProtocolConstants.headerSeparator);
     
     if (headerEndIndex == -1) {
-      throw FormatException('Invalid HTTP request: no header separator found');
+      throw const FormatException('Invalid HTTP request: no header separator found');
     }
     
     final headerSection = dataString.substring(0, headerEndIndex);
     final lines = headerSection.split(HttpProtocolConstants.crlf);
     
     if (lines.isEmpty) {
-      throw FormatException('Invalid HTTP request: no request line');
+      throw const FormatException('Invalid HTTP request: no request line');
     }
     
     // Parse request line
@@ -225,10 +223,6 @@ class HttpRequest {
 
 /// HTTP-like response
 class HttpResponse {
-  final HttpStatus status;
-  final String version;
-  final Map<String, String> headers;
-  final Uint8List? body;
 
   HttpResponse({
     required this.status,
@@ -280,6 +274,10 @@ class HttpResponse {
       body: body,
     );
   }
+  final HttpStatus status;
+  final String version;
+  final Map<String, String> headers;
+  final Uint8List? body;
 
   /// Get content length from headers or body
   int get contentLength {
@@ -355,14 +353,14 @@ class HttpResponse {
     final headerEndIndex = dataString.indexOf(HttpProtocolConstants.headerSeparator);
     
     if (headerEndIndex == -1) {
-      throw FormatException('Invalid HTTP response: no header separator found');
+      throw const FormatException('Invalid HTTP response: no header separator found');
     }
     
     final headerSection = dataString.substring(0, headerEndIndex);
     final lines = headerSection.split(HttpProtocolConstants.crlf);
     
     if (lines.isEmpty) {
-      throw FormatException('Invalid HTTP response: no status line');
+      throw const FormatException('Invalid HTTP response: no status line');
     }
     
     // Parse status line
@@ -421,16 +419,16 @@ typedef HttpRequestHandler = Future<HttpResponse> Function(HttpRequest request);
 
 /// Route definition for HTTP-like protocol
 class HttpRoute {
-  final HttpMethod method;
-  final String path;
-  final HttpRequestHandler handler;
-  final RegExp? pathPattern;
 
   HttpRoute({
     required this.method,
     required this.path,
     required this.handler,
   }) : pathPattern = _createPathPattern(path);
+  final HttpMethod method;
+  final String path;
+  final HttpRequestHandler handler;
+  final RegExp? pathPattern;
 
   /// Create regex pattern from path (supports simple path parameters like /users/:id)
   static RegExp? _createPathPattern(String path) {
@@ -479,17 +477,17 @@ class HttpRoute {
 
 /// HTTP-like protocol service
 class HttpProtocolService {
+
+  HttpProtocolService(this.host) {
+    host.setStreamHandler(HttpProtocolConstants.protocolId, _handleRequest);
+    _logger.info('HTTP protocol service initialized');
+  }
   final Host host;
   final List<HttpRoute> _routes = [];
   final Map<String, String> _defaultHeaders = {
     'server': 'libp2p-http/1.0.0',
     'connection': 'close',
   };
-
-  HttpProtocolService(this.host) {
-    host.setStreamHandler(HttpProtocolConstants.protocolId, _handleRequest);
-    _logger.info('HTTP protocol service initialized');
-  }
 
   /// Add a route handler
   void addRoute(HttpMethod method, String path, HttpRequestHandler handler) {
@@ -702,7 +700,7 @@ class HttpProtocolService {
       // Prevent excessive memory usage
       if (buffer.length > HttpProtocolConstants.maxHeaderSize && !headersComplete) {
         _logger.severe('📖 [HTTP-READ-HEADERS] Headers too large: ${buffer.length} bytes > ${HttpProtocolConstants.maxHeaderSize}');
-        throw FormatException('HTTP headers too large');
+        throw const FormatException('HTTP headers too large');
       }
     }
 
@@ -719,7 +717,7 @@ class HttpProtocolService {
       
       if (contentLength > HttpProtocolConstants.maxBodySize) {
         _logger.severe('📖 [HTTP-READ-BODY] Body too large: $contentLength bytes > ${HttpProtocolConstants.maxBodySize}');
-        throw FormatException('HTTP body too large');
+        throw const FormatException('HTTP body too large');
       }
 
       // Read remaining body data

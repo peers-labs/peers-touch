@@ -3,14 +3,15 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/host/pstoremanager/pstoremanager.go
 /// to Dart, using native Dart idioms.
+library;
 
 import 'dart:async';
 
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
-import 'package:logging/logging.dart';
 
 final _log = Logger('pstoremanager');
 
@@ -40,6 +41,17 @@ Option withCleanupInterval(Duration interval) {
 /// PeerstoreManager manages the peerstore by removing peers that have disconnected
 /// and haven't reconnected within a grace period.
 class PeerstoreManager {
+
+  /// Creates a new PeerstoreManager.
+  PeerstoreManager(this._pstore, this._eventBus, this._network, {List<Option>? opts})
+      : _gracePeriod = const Duration(minutes: 1) {
+    if (opts != null) {
+      for (var opt in opts) {
+        opt(this);
+      }
+    }
+    _cleanupInterval ??= _gracePeriod ~/ 2;
+  }
   final Peerstore _pstore;
   final EventBus _eventBus;
   final Network _network;
@@ -53,17 +65,6 @@ class PeerstoreManager {
   final _lock = Completer<void>();
   bool _closed = false;
 
-  /// Creates a new PeerstoreManager.
-  PeerstoreManager(this._pstore, this._eventBus, this._network, {List<Option>? opts})
-      : _gracePeriod = Duration(minutes: 1) {
-    if (opts != null) {
-      for (var opt in opts) {
-        opt(this);
-      }
-    }
-    _cleanupInterval ??= _gracePeriod ~/ 2;
-  }
-
   /// Starts the PeerstoreManager.
   Future<void> start() async {
     if (_closed) {
@@ -71,16 +72,16 @@ class PeerstoreManager {
     }
 
     try {
-      final sub = await _eventBus.subscribe(EvtPeerConnectednessChanged);
+      final sub = _eventBus.subscribe(EvtPeerConnectednessChanged);
       _subscription = sub.stream.listen(_handleConnectChangeEvent);
-      _timer = Timer.periodic(_cleanupInterval ?? Duration(minutes: 5), _cleanup);
+      _timer = Timer.periodic(_cleanupInterval ?? const Duration(minutes: 5), _cleanup);
     } catch (e) {
       _log.warning('Subscription failed. Peerstore manager not activated. Error: $e');
     }
   }
 
   void _handleConnectChangeEvent(dynamic event) {
-    if (!(event is EvtPeerConnectednessChanged)){
+    if (event is! EvtPeerConnectednessChanged){
       return;
     }
 
@@ -116,7 +117,7 @@ class PeerstoreManager {
         // is processed after this time has fired.
         // Note: In Go, there's a Connectedness method on the network interface,
         // but in Dart we need to check the connections list.
-        bool isConnected = _network.conns.any((conn) => conn.remotePeer == peerId);
+        final bool isConnected = _network.conns.any((conn) => conn.remotePeer == peerId);
         if (!isConnected) {
           _pstore.removePeer(peerId);
           toRemove.add(peerId);

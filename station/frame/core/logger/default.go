@@ -46,10 +46,12 @@ func (l *defaultLogger) Init(ctx context.Context, opts ...Option) error {
 	return nil
 }
 
+// String returns the logger name.
 func (l *defaultLogger) String() string {
 	return "default"
 }
 
+// Fields returns a new logger that logs with merged default fields.
 func (l *defaultLogger) Fields(fields map[string]interface{}) Logger {
 	l.Lock()
 	nfields := make(map[string]interface{}, len(l.opts.Fields))
@@ -130,6 +132,7 @@ func (l *defaultLogger) getEffectiveLevel(skip int) Level {
 	return l.opts.Level
 }
 
+// Log writes an unformatted log entry.
 func (l *defaultLogger) Log(level Level, v ...interface{}) {
 	// TODO decide does we need to write message if log level not used?
 	if !l.getEffectiveLevel(l.opts.CallerSkipCount).Enabled(level) {
@@ -173,6 +176,7 @@ func (l *defaultLogger) Log(level Level, v ...interface{}) {
 	fmt.Printf("%s %s %v\n", t, metadata, rec.Message)
 }
 
+// Logf writes a formatted log entry.
 func (l *defaultLogger) Logf(level Level, format string, v ...interface{}) {
 	//	 TODO decide does we need to write message if log level not used?
 	if !l.getEffectiveLevel(l.opts.CallerSkipCount).Enabled(level) {
@@ -215,6 +219,7 @@ func (l *defaultLogger) Logf(level Level, format string, v ...interface{}) {
 	fmt.Printf("%s %s %v\n", t, metadata, rec.Message)
 }
 
+// Options returns a safe copy of logger options.
 func (l *defaultLogger) Options() Options {
 	// not guard against options Context values
 	l.RLock()

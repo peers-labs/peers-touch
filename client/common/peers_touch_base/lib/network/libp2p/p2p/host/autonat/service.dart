@@ -1,24 +1,20 @@
 import 'dart:async';
-import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart'; // Import for Conn
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ReservationPriority; // Import ReservationPriority for stream scoping
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart' as core_peer; // Import for concrete PeerId
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv1/autonatv1.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
-import './pb/autonat.pb.dart' as pb;
-import './client.dart' show MetricsTracer; // Import MetricsTracer
-import './options.dart'; // Import AutoNATConfig and DialPolicy
-import '../../../p2p/multiaddr/protocol.dart' as mp_protocol; // Import for mp_protocol.Protocol
-import '../../../utils/protobuf_utils.dart'; // Import for delimited messaging
-import '../../../core/network/rcmgr.dart' show ReservationPriority; // Import ReservationPriority for stream scoping
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/options.dart'; // Import AutoNATConfig and DialPolicy
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/pb/autonat.pb.dart' as pb;
+import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart' as mp_protocol; // Import for mp_protocol.Protocol
+import 'package:peers_touch_base/network/libp2p/utils/protobuf_utils.dart'; // Import for delimited messaging
 
 // Placeholders from client.dart, might need to be centralized
 const String serviceName = 'libp2p.autonat';
@@ -26,7 +22,9 @@ const String serviceName = 'libp2p.autonat';
 const Duration streamTimeout = Duration(seconds: 60);
 
 
-class AutoNATService {
+class AutoNATService { // Simple mutex placeholder
+
+  AutoNATService(this._config);
   final AutoNATConfig _config;
   bool _isEnabled = false;
   StreamSubscription? _backgroundSubscription;
@@ -35,13 +33,11 @@ class AutoNATService {
   // Rate limiter state
   final Map<String, int> _requestsByPeer = {}; // PeerId.toString() -> count
   int _globalRequests = 0;
-  final _mutex = Mutex(); // Simple mutex placeholder
-
-  AutoNATService(this._config);
+  final _mutex = Mutex();
 
   // Changed signature to match StreamHandler typedef
   Future<void> handleStream(P2PStream stream, PeerId remotePeerIdParam) async { 
-    final serviceMaxMsgSize = 4096; // As in Go for service side
+    const serviceMaxMsgSize = 4096; // As in Go for service side
 
     await stream.scope().setService(serviceName);
     await stream.scope().reserveMemory(serviceMaxMsgSize, ReservationPriority.always);
@@ -122,18 +118,18 @@ class AutoNATService {
     for (final maddrBytes in mpi.addrs) {
       if (addrsToDial.length >= _config.maxPeerAddresses) break;
       try {
-        MultiAddr originalAddr = MultiAddr.fromBytes(Uint8List.fromList(maddrBytes));
+        final MultiAddr originalAddr = MultiAddr.fromBytes(Uint8List.fromList(maddrBytes));
         MultiAddr addrToProcess = originalAddr;
         
         bool ipReplaced = false;
-        List<(mp_protocol.Protocol, String)> newComponents = []; // Use mp_protocol.Protocol
+        final List<(mp_protocol.Protocol, String)> newComponents = []; // Use mp_protocol.Protocol
         bool firstComponent = true;
 
         for (final comp in originalAddr.components) {
           if (firstComponent && (comp.$1.name == 'ip4' || comp.$1.name == 'ip6')) { // Use .$1 and .$2
             if (comp.$2 != hostIpComponentValue) {
               // Replace with observed IP
-              newComponents.add((hostIpComponent.protocols.first, hostIpComponentValue!)); // Added ! for hostIpComponentValue
+              newComponents.add((hostIpComponent.protocols.first, hostIpComponentValue)); // Added ! for hostIpComponentValue
               ipReplaced = true;
             } else {
               newComponents.add(comp);

@@ -1,7 +1,6 @@
+import 'package:peers_touch_base/ai_proxy/client/openai/openai_chat_client.dart';
 import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_impl.dart';
-
-import 'openai_chat_client.dart';
 
 /// OpenAI客户端工厂类
 /// 提供便捷的方法创建OpenAiChatClient实例

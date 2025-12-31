@@ -1,15 +1,16 @@
-import 'package:flutter/material.dart';
 import 'dart:ui';
 
+import 'package:flutter/material.dart';
+
 class RefreshableList extends StatelessWidget {
-  final Future<void> Function() onRefresh;
-  final Widget child;
 
   const RefreshableList({
-    Key? key,
+    super.key,
     required this.onRefresh,
     required this.child,
-  }) : super(key: key);
+  });
+  final Future<void> Function() onRefresh;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {

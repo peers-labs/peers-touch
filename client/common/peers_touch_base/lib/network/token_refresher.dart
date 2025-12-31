@@ -4,12 +4,12 @@ abstract class TokenPair {
 }
 
 class SimpleTokenPair implements TokenPair {
+
+  const SimpleTokenPair({required this.accessToken, required this.refreshToken});
   @override
   final String accessToken;
   @override
   final String refreshToken;
-
-  const SimpleTokenPair({required this.accessToken, required this.refreshToken});
 }
 
 abstract class TokenRefresher {

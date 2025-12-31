@@ -2,18 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class TextBox extends StatefulWidget {
-  final String label;
-  final String value;
-  final int? maxLines;
-  final int? minLines;
-  final bool showCopyButton;
-  final TextInputType? keyboardType;
-  final String? description;
-  final String? placeholder;
-  final bool showLabel;
-  final ValueChanged<String> onChanged;
-  final TextEditingController? controller;
-  final FocusNode? focusNode;
 
   const TextBox({
     super.key,
@@ -30,6 +18,18 @@ class TextBox extends StatefulWidget {
     this.controller,
     this.focusNode,
   });
+  final String label;
+  final String value;
+  final int? maxLines;
+  final int? minLines;
+  final bool showCopyButton;
+  final TextInputType? keyboardType;
+  final String? description;
+  final String? placeholder;
+  final bool showLabel;
+  final ValueChanged<String> onChanged;
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
 
   @override
   State<TextBox> createState() => _TextBoxState();
@@ -102,7 +102,7 @@ class _TextBoxState extends State<TextBox> {
           ),
         if (widget.description != null) ...[
           const SizedBox(height: 4),
-          Text(widget.description!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.6))),
+          Text(widget.description!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
         ],
         if (widget.showLabel || widget.description != null)
           const SizedBox(height: 8),
@@ -123,11 +123,11 @@ class _TextBoxState extends State<TextBox> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: theme.colorScheme.outline.withOpacity(0.3)),
+              borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: theme.colorScheme.outline.withOpacity(0.3)),
+              borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),

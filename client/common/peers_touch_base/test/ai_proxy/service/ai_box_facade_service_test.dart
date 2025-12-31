@@ -1,9 +1,10 @@
 import 'dart:convert';
-import 'package:test/test.dart';
-import 'package:mockito/mockito.dart';
+
 import 'package:dio/dio.dart';
+import 'package:mockito/mockito.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_facade_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
+import 'package:test/test.dart';
 
 import 'mock_provider_manager.mocks.dart';
 
@@ -56,7 +57,9 @@ void main() {
       });
 
       test('deleteProvider calls providerManager.deleteProvider', () async {
-        when(mockProviderManager.deleteProvider('1')).thenAnswer((_) async {});
+        when(mockProviderManager.deleteProvider('1')).thenAnswer((_) async {
+          return null;
+        });
         await service.deleteProvider('1');
         verify(mockProviderManager.deleteProvider('1')).called(1);
       });
@@ -83,9 +86,9 @@ void main() {
         when(mockProviderManager.getProvider('ollama-test')).thenAnswer((_) async => provider);
 
         final responsePayload = {
-          "models": [
-            {"name": "llama3.2-vision:latest"},
-            {"name": "qwen:latest"}
+          'models': [
+            {'name': 'llama3.2-vision:latest'},
+            {'name': 'qwen:latest'}
           ]
         };
         final responseBody = ResponseBody.fromString(jsonEncode(responsePayload), 200, headers: {Headers.contentTypeHeader: [Headers.jsonContentType]});
@@ -105,7 +108,7 @@ void main() {
         final provider = Provider(id: 'ollama-test', sourceType: 'ollama', configJson: '{"base_url": "http://localhost:11434"}');
         when(mockProviderManager.getProvider('ollama-test')).thenAnswer((_) async => provider);
 
-        final responseBody = ResponseBody.fromString("", 200);
+        final responseBody = ResponseBody.fromString('', 200);
         when(mockHttpClientAdapter.fetch(any, any, any)).thenAnswer((_) async => responseBody);
 
         final serviceWithMockedDio = AiBoxFacadeService.internal(mockProviderManager, dioForTest: dio);

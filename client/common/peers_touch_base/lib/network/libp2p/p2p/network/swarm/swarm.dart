@@ -1,37 +1,60 @@
 import 'dart:async';
-import 'dart:collection';
+import 'dart:io' show NetworkInterface, InternetAddressType; // For NetworkInterface.list
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/listener.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/transport.dart';
+import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/config/config.dart'; // Added for Config
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart'; // Added import for Host
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/common.dart' show Direction;
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart'; // Added import
 import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/mux.dart' as core_mux; // Changed to package import
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart'; // Added import for Host
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart'; // Added import
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
-import 'package:logging/logging.dart';
-import 'package:synchronized/synchronized.dart';
-import 'dart:io' show NetworkInterface, InternetAddressType; // For NetworkInterface.list
 import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart' show Protocols;
-import 'package:peers_touch_base/network/libp2p/core/network/mux.dart' as core_mux; // Changed to package import
-
-import '../../../core/network/common.dart' show Direction;
-import '../../../config/config.dart'; // Added for Config
-import '../../transport/basic_upgrader.dart'; // Added for BasicUpgrader
-import 'connection_health.dart'; // For event-driven health monitoring
-import 'swarm_conn.dart';
-import 'swarm_stream.dart';
-import 'swarm_dial.dart'; // For AddrDialer and DelayDialRanker
+import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/connection_health.dart'; // For event-driven health monitoring
+import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm_conn.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm_dial.dart'; // For AddrDialer and DelayDialRanker
+import 'package:peers_touch_base/network/libp2p/p2p/network/swarm/swarm_stream.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/basic_upgrader.dart'; // Added for BasicUpgrader
+import 'package:peers_touch_base/network/libp2p/p2p/transport/listener.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport.dart';
+import 'package:synchronized/synchronized.dart';
 
 /// Swarm is a Network implementation that manages connections to peers and
 /// handles streams over those connections.
 class Swarm implements Network {
+
+
+  /// Creates a new Swarm
+  Swarm({
+    required Host? host, // Added Host parameter, made nullable
+    required PeerId localPeer,
+    required Peerstore peerstore,
+    required ResourceManager resourceManager,
+    required BasicUpgrader upgrader, // Added upgrader
+    required Config config, // Added config
+    List<Transport>? transports,
+  }) : 
+    _host = host, // Initialize Host
+    _localPeer = localPeer,
+    _peerstore = peerstore,
+    _resourceManager = resourceManager,
+    _upgrader = upgrader, // Initialize upgrader
+    _config = config { // Initialize config
+    if (transports != null) {
+      _transports.addAll(transports);
+    }
+    
+    // Start connection health monitoring
+    _startConnectionHealthMonitoring();
+  }
   final Logger _logger = Logger('Swarm');
 
   /// The host this swarm is part of
@@ -92,31 +115,6 @@ class Swarm implements Network {
 
   /// Event-driven connection health tracking
   final Map<String, ConnectionHealthState> _connectionHealthStates = {};
-
-
-  /// Creates a new Swarm
-  Swarm({
-    required Host? host, // Added Host parameter, made nullable
-    required PeerId localPeer,
-    required Peerstore peerstore,
-    required ResourceManager resourceManager,
-    required BasicUpgrader upgrader, // Added upgrader
-    required Config config, // Added config
-    List<Transport>? transports,
-  }) : 
-    _host = host, // Initialize Host
-    _localPeer = localPeer,
-    _peerstore = peerstore,
-    _resourceManager = resourceManager,
-    _upgrader = upgrader, // Initialize upgrader
-    _config = config { // Initialize config
-    if (transports != null) {
-      _transports.addAll(transports);
-    }
-    
-    // Start connection health monitoring
-    _startConnectionHealthMonitoring();
-  }
 
   /// Adds a transport to the swarm
   void addTransport(Transport transport) {
@@ -609,7 +607,7 @@ class Swarm implements Network {
 
     // Prevent self-dialing
     if (peerId == _localPeer) {
-      _logger.fine('Preventing self-dial attempt to ${peerId}');
+      _logger.fine('Preventing self-dial attempt to $peerId');
       throw Exception('Cannot dial self: $peerId');
     }
 
@@ -921,10 +919,11 @@ class Swarm implements Network {
 
   /// Sets the host for this swarm.
   /// This is used to resolve a circular dependency during initialization.
-  setHost(Host host) {
+  void setHost(Host host) {
     _host = host;
   }
 
+  @override
   void removeListenAddress(MultiAddr addr) {
     _listenAddrs.remove(addr);
 
@@ -1062,7 +1061,7 @@ class Swarm implements Network {
 
     // Clean up stale connections
     if (staleConnections.isNotEmpty) {
-      _logger.info('Swarm._cleanupStaleConnections: Cleaning up ${staleConnections.length} stale connections (${healthyConnections}/${totalConnections} healthy)');
+      _logger.info('Swarm._cleanupStaleConnections: Cleaning up ${staleConnections.length} stale connections ($healthyConnections/$totalConnections healthy)');
       
       for (final staleConn in staleConnections) {
         try {

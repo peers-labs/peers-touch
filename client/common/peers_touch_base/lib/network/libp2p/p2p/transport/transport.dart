@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import '../../core/multiaddr.dart';
-import '../../core/network/conn.dart';
-import 'listener.dart';
-import 'transport_config.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/listener.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport_config.dart';
 
 /// Represents a libp2p transport protocol (e.g., TCP, QUIC)
 abstract class Transport {

@@ -1,11 +1,11 @@
-import '../storage/secure_storage_adapter.dart';
-import '../storage/local_storage_adapter.dart';
-import 'token_provider.dart';
+import 'package:peers_touch_base/network/token_provider.dart';
+import 'package:peers_touch_base/storage/local_storage_adapter.dart';
+import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
 
 class DefaultTokenProvider implements TokenProvider {
+  DefaultTokenProvider({required this.secureStorage, this.localStorage});
   final SecureStorageAdapter secureStorage;
   final LocalStorageAdapter? localStorage;
-  DefaultTokenProvider({required this.secureStorage, this.localStorage});
   @override
   Future<void> clear() async {
     try { await secureStorage.remove('token_key'); } catch (_) {}

@@ -1,11 +1,7 @@
 import 'dart:io' show InternetAddress, InternetAddressType;
 
 /// Represents a multiaddr protocol
-class Protocol {
-  final String name;
-  final int code;
-  final int size; // -1 for variable size
-  final String? path; // true if protocol has a path component
+class Protocol { // true if protocol has a path component
   // final String? _value = null;
 
   const Protocol({
@@ -14,6 +10,10 @@ class Protocol {
     required this.size,
     this.path,
   });
+  final String name;
+  final int code;
+  final int size; // -1 for variable size
+  final String? path;
 
   /// Returns true if this protocol has a variable size value
   bool get isVariableSize => size == -1;

@@ -1,11 +1,10 @@
 import 'dart:convert';
 
+import 'package:peers_touch_base/ai_proxy/client/chat_client.dart';
 import 'package:peers_touch_base/ai_proxy/client/openai/openai_chat_client.dart';
+import 'package:peers_touch_base/ai_proxy/model/rich_model.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart' as pb;
 import 'package:peers_touch_base/model/exception/provider_exceptions.dart';
-
-import '../client/chat_client.dart';
-import '../model/rich_model.dart';
 
 typedef ChatClientCreator = ChatClient Function(
     {required RichModel model, required String apiKey});
@@ -53,15 +52,15 @@ String parseApiKey(String settingsJson) {
 }
 
 class RichProvider {
-  final pb.Provider _rawProvider;
-  final List<RichModel> models;
-  final String _apiKey;
 
   RichProvider(this._rawProvider)
       : models = parseModelsFromJson(_rawProvider.configJson, _rawProvider.id),
         _apiKey = parseApiKey(_rawProvider.settingsJson) {
     _validateConfiguration();
   }
+  final pb.Provider _rawProvider;
+  final List<RichModel> models;
+  final String _apiKey;
 
   /// 验证Provider配置
   void _validateConfiguration() {

@@ -1,11 +1,19 @@
 import 'package:dio/dio.dart';
+import 'package:peers_touch_base/network/dio/http_service.dart';
+import 'package:peers_touch_base/network/dio/http_service_impl.dart';
 import 'package:peers_touch_base/network/token_provider.dart';
 import 'package:peers_touch_base/network/token_refresher.dart';
-import 'http_service.dart';
-import 'http_service_impl.dart';
 
 /// HTTP服务定位器 - 实现单例模式和BaseURL动态更新
 class HttpServiceLocator {
+
+  /// 工厂构造函数 - 返回单例
+  factory HttpServiceLocator() {
+    return _instance;
+  }
+
+  /// 私有构造函数
+  HttpServiceLocator._internal();
   static final HttpServiceLocator _instance = HttpServiceLocator._internal();
   late IHttpService _httpService;
   late String _baseUrl;
@@ -15,14 +23,6 @@ class HttpServiceLocator {
   TokenProvider? _tokenProvider;
   TokenRefresher? _tokenRefresher;
   void Function()? _onUnauthenticated;
-
-  /// 工厂构造函数 - 返回单例
-  factory HttpServiceLocator() {
-    return _instance;
-  }
-
-  /// 私有构造函数
-  HttpServiceLocator._internal();
 
   /// 初始化HTTP服务
   void initialize({

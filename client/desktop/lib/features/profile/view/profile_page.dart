@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
 import 'package:peers_touch_desktop/features/profile/view/edit_profile_dialog.dart';
@@ -14,8 +13,6 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.find<ProfileController>();
-    final theme = Theme.of(context);
-    final wx = theme.extension<WeChatTokens>();
 
     final body = Obx(() {
       final d = controller.detail.value;

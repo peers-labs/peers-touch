@@ -1,24 +1,29 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
-import '../../core/connmgr/conn_manager.dart';
-import '../../core/multiaddr.dart';
-import '../../core/network/conn.dart';
-import '../../core/network/transport_conn.dart';
-import 'listener.dart';
-import 'transport.dart';
-import 'transport_config.dart';
-import 'connection_manager.dart'; // Re-added import for ConnectionManager
-import '../../core/network/mux.dart'; // Multiplexer no longer directly used by TCPTransport constructor
-import '../../core/network/rcmgr.dart' show ResourceManager;
-import '../../core/peer/peer_id.dart'; // For concrete PeerId class
-import 'tcp_connection.dart';
-import 'tcp_listener.dart';
 import 'package:meta/meta.dart';
+import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ResourceManager;
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart'; // For concrete PeerId class
+import 'package:peers_touch_base/network/libp2p/p2p/transport/connection_manager.dart'; // Re-added import for ConnectionManager
+import 'package:peers_touch_base/network/libp2p/p2p/transport/listener.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/tcp_connection.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/tcp_listener.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/transport/transport_config.dart';
 
 /// TCP implementation of the Transport interface
 class TCPTransport implements Transport {
+
+  TCPTransport({
+    // required this.multiplexer, // Removed
+    required this.resourceManager,
+    TransportConfig? config,
+    ConnManager? connManager,
+  }) : config = config ?? TransportConfig.defaultConfig,
+       _connManager = connManager ?? ConnectionManager();
   static const _supportedProtocols = ['/ip4/tcp', '/ip6/tcp'];
 
   @override
@@ -30,14 +35,6 @@ class TCPTransport implements Transport {
 
   @visibleForTesting
   ConnManager get connectionManager => _connManager;
-
-  TCPTransport({
-    // required this.multiplexer, // Removed
-    required this.resourceManager,
-    TransportConfig? config,
-    ConnManager? connManager,
-  }) : config = config ?? TransportConfig.defaultConfig,
-       _connManager = connManager ?? ConnectionManager();
 
   @override
   Future<TransportConn> dial(MultiAddr addr, {Duration? timeout}) async {
@@ -93,8 +90,8 @@ class TCPTransport implements Transport {
       // Stream-level deadlines are preferred with multiplexing.
 
       return connection;
-    } on TimeoutException catch (e) {
-      throw e;
+    } on TimeoutException {
+      rethrow;
     } catch (e) {
       throw Exception('Failed to connect: $e');
     }
@@ -164,6 +161,7 @@ class TCPTransport implements Transport {
   }
 
   /// Closes all connections and cleans up resources
+  @override
   Future<void> dispose() async {
     // (_connManager as ConnectionManager).dispose(); // If it has a dispose method
     // Or iterate through active connections and close them if not managed by ConnManager directly.

@@ -1,5 +1,5 @@
 
-import 'capability_base.dart';
+import 'package:peers_touch_base/applet/capabilities/capability_base.dart';
 
 class NetworkCapability extends AppletCapability {
   @override
@@ -11,7 +11,7 @@ class NetworkCapability extends AppletCapability {
       case 'request':
         return _handleRequest(params, appId);
       default:
-        throw Exception("Unknown action: $action");
+        throw Exception('Unknown action: $action');
     }
   }
 
@@ -20,7 +20,7 @@ class NetworkCapability extends AppletCapability {
     final method = params['method'] ?? 'GET';
     // TODO: Use global Dio client to make request
     // Ensure we add Authorization header and other common headers
-    print("Applet $appId requesting $method $url");
-    return {"status": 200, "data": "Mock Response"};
+    print('Applet $appId requesting $method $url');
+    return {'status': 200, 'data': 'Mock Response'};
   }
 }

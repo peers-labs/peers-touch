@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'init_loader_regions.dart';
+import 'package:peers_touch_mobile/common/init/init_loader_regions.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
 
 /// Initialization status enum
@@ -27,29 +27,29 @@ abstract class InitLoader {
 
 /// Configuration for initialization
 class InitConfig {
-  final bool debugMode;
-  final Duration timeout;
-  final List<String> preloadImagePaths;
   
   const InitConfig({
     this.debugMode = false,
     this.timeout = const Duration(seconds: 30),
     this.preloadImagePaths = const [],
   });
+  final bool debugMode;
+  final Duration timeout;
+  final List<String> preloadImagePaths;
 }
 
 /// Default implementation of InitLoader
 class DefaultInitLoader extends InitLoader with RegionsLoaderMixin {
-  final InitConfig _config;
-  final RegionsLoader _regionsLoader;
-  final StreamController<double> _progressController = StreamController<double>.broadcast();
-  InitStatus _status = InitStatus.notStarted;
   
   DefaultInitLoader({
     InitConfig? config,
     RegionsLoader? regionsLoader,
   }) : _config = config ?? const InitConfig(),
        _regionsLoader = regionsLoader ?? DefaultRegionsLoader();
+  final InitConfig _config;
+  final RegionsLoader _regionsLoader;
+  final StreamController<double> _progressController = StreamController<double>.broadcast();
+  InitStatus _status = InitStatus.notStarted;
   
   @override
   RegionsLoader get regionsLoader => _regionsLoader;
@@ -119,16 +119,16 @@ class DefaultInitLoader extends InitLoader with RegionsLoaderMixin {
 
 /// Merge loader that combines multiple loaders
 class MergeInitLoader extends InitLoader {
-  final List<InitLoader> _loaders;
-  final InitConfig _config;
-  final StreamController<double> _progressController = StreamController<double>.broadcast();
-  InitStatus _status = InitStatus.notStarted;
   
   MergeInitLoader({
     required List<InitLoader> loaders,
     InitConfig? config,
   }) : _loaders = loaders,
        _config = config ?? const InitConfig();
+  final List<InitLoader> _loaders;
+  final InitConfig _config;
+  final StreamController<double> _progressController = StreamController<double>.broadcast();
+  InitStatus _status = InitStatus.notStarted;
   
   @override
   Future<void> initialize() async {

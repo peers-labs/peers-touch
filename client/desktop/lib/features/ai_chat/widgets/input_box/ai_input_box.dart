@@ -201,50 +201,6 @@ class AIInputBox extends StatelessWidget {
     );
   }
 
-  // 圆形内嵌发送按钮（靠右）
-  Widget _sendButtonInline(BuildContext context, AiInputController ctrl) {
-    final tc = externalTextController ?? ctrl.textController;
-    return Obx(() {
-      // 附件变化触发重建
-      final hasAttachments = ctrl.attachments.isNotEmpty;
-      // 文本变化使用 ValueListenableBuilder 跟随 TextEditingController
-      return ValueListenableBuilder<TextEditingValue>(
-        valueListenable: tc,
-        builder: (context, value, _) {
-          final hasText = value.text.trim().isNotEmpty;
-          final disabled = isSending || (!hasText && !hasAttachments);
-          return SizedBox(
-            width: 40,
-            height: 40,
-            child: FilledButton(
-              style: ButtonStyle(
-                shape: WidgetStateProperty.all(const CircleBorder()),
-                padding: WidgetStateProperty.all(EdgeInsets.zero),
-              ),
-              onPressed: disabled
-                  ? null
-                  : () {
-                      final draft = AiComposerDraft(
-                        text: tc.text.trim(),
-                        attachments: ctrl.attachments.toList(),
-                        sendMode: ctrl.sendMode.value,
-                      );
-                      onSendDraft(draft);
-                    },
-              child: isSending
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.arrow_upward_rounded),
-            ),
-          );
-        },
-      );
-    });
-  }
-
   Widget _toolbar(BuildContext context, AiInputController ctrl) {
     final color = Theme.of(context).colorScheme.onSurfaceVariant;
     final l = AppLocalizations.of(context)!;
@@ -286,21 +242,6 @@ class AIInputBox extends StatelessWidget {
         ],
       );
     });
-  }
-
-  // 右侧与发送按钮并排的发送设置菜单
-  Widget _sendSettingsButton(BuildContext context, AiInputController ctrl) {
-    final color = Theme.of(context).colorScheme.onSurfaceVariant;
-    final l = AppLocalizations.of(context)!;
-    return PopupMenuButton<String>(
-      tooltip: l.sendSettings,
-      itemBuilder: (context) => [
-        PopupMenuItem(value: 'enter', child: Text(l.pressEnterToSend)),
-        PopupMenuItem(value: 'ctrlEnter', child: Text(l.pressCtrlEnterToSend)),
-      ],
-      onSelected: ctrl.setSendMode,
-      icon: Icon(Icons.keyboard_alt_outlined, color: color),
-    );
   }
 
   // 连体按钮：左侧发送设置 + 右侧发送
@@ -397,80 +338,6 @@ class AIInputBox extends StatelessWidget {
       sendMode: ctrl.sendMode.value,
     );
     onSendDraft(draft);
-  }
-
-  // 下拉面板显示 Provider/Model 选择（锚定在按钮处）
-  Future<void> _showProviderModelMenuAt(BuildContext context, Offset globalPos) async {
-    final ThemeData theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final grouped = groupedModelsByProvider ?? {};
-    final List<_ProviderEntry> entries = grouped.entries.map((e) {
-      // 从 ProviderController 获取真实 provider，补充 logo 与模型显示名映射
-      ProviderController? pc;
-      if (Get.isRegistered<ProviderController>()) {
-        pc = Get.find<ProviderController>();
-      }
-      String sourceType = e.key.toLowerCase();
-      String? logoUrl;
-      Map<String, String> idToDisplayName = {};
-      if (pc != null) {
-        final p = pc.providers.firstWhereOrNull((pp) => pp.name == e.key);
-        if (p != null) {
-          sourceType = p.sourceType;
-          logoUrl = p.logo.isNotEmpty ? p.logo : null;
-          try {
-            final settings = p.settingsJson.isNotEmpty
-                ? (jsonDecode(p.settingsJson) as Map<String, dynamic>)
-                : <String, dynamic>{};
-            final infos = List<dynamic>.from(settings['modelInfos'] ?? <dynamic>[]);
-            idToDisplayName = {
-              for (final info in infos.whereType<Map>())
-                (info['id']?.toString() ?? ''): (info['displayName']?.toString() ?? '')
-            }..removeWhere((k, v) => k.isEmpty);
-          } catch (_) {}
-        }
-      }
-      return _ProviderEntry(
-        id: e.key,
-        name: e.key,
-        sourceType: sourceType,
-        logoUrl: logoUrl,
-        models: e.value,
-        idToDisplayName: idToDisplayName,
-      );
-    }).toList();
-
-    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final RelativeRect position = RelativeRect.fromLTRB(
-      globalPos.dx,
-      globalPos.dy,
-      overlay.size.width - globalPos.dx,
-      overlay.size.height - globalPos.dy,
-    );
-
-    await showMenu<void>(
-      context: context,
-      // 将菜单整体上移 4 像素，避免覆盖图标
-      position: RelativeRect.fromLTRB(
-        position.left,
-        position.top - 4,
-        position.right,
-        position.bottom,
-      ),
-      items: [
-        PopupMenuItem<void>(
-          enabled: false,
-          padding: EdgeInsets.zero,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 460),
-            child: Material(
-              color: theme.colorScheme.surface,
-              child: _buildProviderMenuScrollableTree(context, entries, textTheme, theme),
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   // 构建菜单内容（无折叠，树状展示，可滚动）
@@ -594,7 +461,7 @@ class AIInputBox extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     margin: const EdgeInsets.only(left: 16, right: 16, bottom: 2),
                     decoration: BoxDecoration(
-                      color: currentModel == m ? theme.colorScheme.primaryContainer.withOpacity(0.2) : null,
+                      color: currentModel == m ? theme.colorScheme.primaryContainer.withValues(alpha: 0.2) : null,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Row(

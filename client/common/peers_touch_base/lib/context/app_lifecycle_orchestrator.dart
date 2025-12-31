@@ -1,10 +1,4 @@
 class AppStartupSnapshot {
-  final bool storageReady;
-  final bool servicesReady;
-  final bool contextHydrated;
-  final bool protocolDetected;
-  final List<String> errors;
-  final String initialRoute;
   AppStartupSnapshot({
     required this.storageReady,
     required this.servicesReady,
@@ -13,6 +7,12 @@ class AppStartupSnapshot {
     required this.errors,
     required this.initialRoute,
   });
+  final bool storageReady;
+  final bool servicesReady;
+  final bool contextHydrated;
+  final bool protocolDetected;
+  final List<String> errors;
+  final String initialRoute;
 }
 
 abstract class AppLifecycleOrchestrator {

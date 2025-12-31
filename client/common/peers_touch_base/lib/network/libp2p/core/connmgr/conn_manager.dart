@@ -4,7 +4,6 @@ import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/transport/connection_state.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/transport/tcp_connection.dart';
 
 
 /// Package connmgr provides connection tracking and management interfaces for libp2p.
@@ -16,6 +15,15 @@ import 'package:peers_touch_base/network/libp2p/p2p/transport/tcp_connection.dar
 
 /// Stores metadata associated with a peer.
 class TagInfo {
+
+  TagInfo({
+    DateTime? firstSeen,
+    this.value = 0,
+    Map<String, int>? tags,
+    Map<String, DateTime>? conns,
+  })  : firstSeen = firstSeen ?? DateTime.now(),
+        tags = tags ?? {},
+        conns = conns ?? {};
   /// When the peer was first seen
   final DateTime firstSeen;
 
@@ -27,15 +35,6 @@ class TagInfo {
 
   /// Maps connection ids (such as remote multiaddr) to their creation time
   final Map<String, DateTime> conns;
-
-  TagInfo({
-    DateTime? firstSeen,
-    this.value = 0,
-    Map<String, int>? tags,
-    Map<String, DateTime>? conns,
-  })  : firstSeen = firstSeen ?? DateTime.now(),
-        tags = tags ?? {},
-        conns = conns ?? {};
 }
 
 /// Provides access to a component's total connection limit.

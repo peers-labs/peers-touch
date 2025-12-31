@@ -393,7 +393,7 @@ class SettingPage extends StatelessWidget {
                           controller: controller.getTextController(sectionId, item.id, item.value?.toString()),
                           decoration: InputDecoration(
                             hintText: _itemPlaceholder(l, item),
-                            hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
+                            hintStyle: TextStyle(color: tokens.textSecondary.withValues(alpha: 0.7)),
                             filled: true,
                             fillColor: UIKit.inputFillLight(context),
                             border: outlineBorder,
@@ -415,7 +415,7 @@ class SettingPage extends StatelessWidget {
                         controller: controller.getTextController(sectionId, item.id, item.value?.toString()),
                         decoration: InputDecoration(
                           hintText: _itemPlaceholder(l, item),
-                          hintStyle: TextStyle(color: tokens.textSecondary.withOpacity(0.7)),
+                          hintStyle: TextStyle(color: tokens.textSecondary.withValues(alpha: 0.7)),
                           filled: true,
                           fillColor: UIKit.inputFillLight(context),
                           border: UIKit.inputOutlineBorder(context),

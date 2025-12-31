@@ -1,17 +1,17 @@
 import 'dart:typed_data';
 
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
 /// P2P聊天协议处理器
 /// 处理聊天相关的P2P消息传输
 class P2PChatProtocol {
+  
+  P2PChatProtocol(this._host);
   static const String protocolId = '/peers-touch/chat/1.0.0';
   
   final Host _host;
   Function(PeerId, Map<String, dynamic>)? _messageHandler;
-  
-  P2PChatProtocol(this._host);
 
   /// 注册消息处理器
   void registerMessageHandler(Function(PeerId, Map<String, dynamic>) handler) {
@@ -147,9 +147,9 @@ class P2PChatProtocol {
 }
 
 class P2PChatException implements Exception {
-  final String message;
   
   P2PChatException(this.message);
+  final String message;
   
   @override
   String toString() => 'P2PChatException: $message';

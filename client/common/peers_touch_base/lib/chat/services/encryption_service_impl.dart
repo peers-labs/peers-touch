@@ -1,13 +1,15 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:cryptography/cryptography.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
 
-import 'encryption_service.dart';
+import 'package:cryptography/cryptography.dart';
+import 'package:peers_touch_base/chat/services/encryption_service.dart';
+import 'package:peers_touch_base/storage/local_storage.dart';
 
 /// 端到端加密服务实现
 /// 使用X25519密钥交换 + AES-GCM加密
 class EncryptionServiceImpl implements EncryptionService {
+  
+  EncryptionServiceImpl(this._localStorage);
   static const String _keyPrefix = 'chat_encryption_';
   static const String _keyPairKey = '${_keyPrefix}key_pair';
   static const String _sharedKeysKey = '${_keyPrefix}shared_keys';
@@ -18,8 +20,6 @@ class EncryptionServiceImpl implements EncryptionService {
   
   SimpleKeyPair? _keyPair;
   Map<String, SecretKey> _sharedKeys = {};
-  
-  EncryptionServiceImpl(this._localStorage);
 
   @override
   Future<KeyPair> generateKeyPair() async {
@@ -315,9 +315,9 @@ class EncryptionServiceImpl implements EncryptionService {
 }
 
 class EncryptionException implements Exception {
-  final String message;
   
   EncryptionException(this.message);
+  final String message;
   
   @override
   String toString() => 'EncryptionException: $message';

@@ -1,11 +1,11 @@
 
-import 'package:test/test.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 import 'package:peers_touch_base/ai_proxy/provider/provider_manager.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_local_storage_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart';
+import 'package:test/test.dart';
 
 import 'provider_manager_test.mocks.dart';
 

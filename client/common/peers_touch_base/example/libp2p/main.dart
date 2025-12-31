@@ -6,12 +6,11 @@ import 'package:peers_touch_base/network/libp2p/config/defaults.dart';
 import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as crypto_ed25519;
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/security/noise/noise_protocol.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/transport/tcp_transport.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
-
-import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 
 void main() async {
   // 1. Create a Config object
@@ -33,42 +32,42 @@ void main() async {
   // 4. Create the libp2p host
   final Host host = await config.newNode();
 
-  print("My peer ID is: \${host.id().toString()}");
+  print('My peer ID is: \${host.id().toString()}');
   print("Listen addresses: \${host.listenAddrs().map((a) => a.toString()).join(', ')}");
 
   // The bootstrap node from the go-libp2p example
-  var bootstrapNodeAddr = MultiAddr(
+  final bootstrapNodeAddr = MultiAddr(
       '/ip4/100.86.237.167/tcp/4001/p2p/12D3KooWKSakFW4x4PUbnwXdmmfGwznrjez1v1nVNWmxFXf8WzKF');
 
       //       '/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBQWCWr1Z7kWHbCDqgUY8rvMybxA9bYXou4a1SpDLymN5'
 
   try {
     // 5. Connect to the bootstrap node
-    print("Connecting to bootstrap node...");
+    print('Connecting to bootstrap node...');
     final addrInfo = AddrInfo.fromMultiaddr(bootstrapNodeAddr);
     await host.connect(addrInfo);
-    print("Connected to \${addrInfo.id.toString()}");
+    print('Connected to \${addrInfo.id.toString()}');
 
     // 6. Create a stream to the bootstrap node with a custom protocol
     final stream = await host.newStream(addrInfo.id, ['/my-protocol/1.0.0'], Context());
 
     // 7. Send a message
-    var message = 'Hello from dart-libp2p!';
+    const message = 'Hello from dart-libp2p!';
     print("Sending message: '\$message'");
     await stream.write(Uint8List.fromList(utf8.encode(message)));
 
     // 8. Read the response
-    print("Waiting for response...");
+    print('Waiting for response...');
     final data = await stream.read();
-    var response = utf8.decode(data);
+    final response = utf8.decode(data);
     print("Received response: '\$response'");
   } catch (e, s) {
-    print("An error occurred: \$e");
+    print('An error occurred: \$e');
     print(s);
   } finally {
     // 9. Close the node
-    print("Closing node...");
+    print('Closing node...');
     await host.close();
-    print("Node closed.");
+    print('Node closed.');
   }
 }

@@ -1,12 +1,13 @@
 /// Provider领域异常定义
 /// 用于处理Provider相关的业务异常
+library;
 
 /// Provider基础异常类
 abstract class ProviderException implements Exception {
-  final String message;
-  final String? providerId;
   
   ProviderException(this.message, {this.providerId});
+  final String message;
+  final String? providerId;
   
   @override
   String toString() {
@@ -19,28 +20,24 @@ abstract class ProviderException implements Exception {
 
 /// 配置异常 - 当Provider配置无效时抛出
 class InvalidProviderConfigException extends ProviderException {
-  InvalidProviderConfigException(String message, {String? providerId}) 
-    : super(message, providerId: providerId);
+  InvalidProviderConfigException(super.message, {super.providerId});
 }
 
 /// API密钥异常 - 当API密钥无效或缺失时抛出
 class InvalidApiKeyException extends ProviderException {
-  InvalidApiKeyException(String message, {String? providerId}) 
-    : super(message, providerId: providerId);
+  InvalidApiKeyException(super.message, {super.providerId});
 }
 
 /// 模型异常 - 当模型配置无效时抛出
 class InvalidModelsException extends ProviderException {
-  InvalidModelsException(String message, {String? providerId}) 
-    : super(message, providerId: providerId);
+  InvalidModelsException(super.message, {super.providerId});
 }
 
 /// 客户端创建异常 - 当无法创建客户端实例时抛出
 class ClientCreationException extends ProviderException {
-  final dynamic originalError;
   
-  ClientCreationException(String message, {String? providerId, this.originalError}) 
-    : super(message, providerId: providerId);
+  ClientCreationException(super.message, {super.providerId, this.originalError});
+  final dynamic originalError;
     
   @override
   String toString() {
@@ -54,6 +51,5 @@ class ClientCreationException extends ProviderException {
 
 /// 不支持的操作异常 - 当尝试执行不支持的操作时抛出
 class UnsupportedOperationException extends ProviderException {
-  UnsupportedOperationException(String message, {String? providerId}) 
-    : super(message, providerId: providerId);
+  UnsupportedOperationException(super.message, {super.providerId});
 }

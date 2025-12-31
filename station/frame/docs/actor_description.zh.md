@@ -141,7 +141,7 @@
 
 #### 表结构（建议）
 
-- 表名：`touch_actor_mastodon_meta`
+- 表名：`touch_actor_meta`
 - 关联：`actor_id` 外键指向 `touch_actor.id`，一对一
 - 字段：
   - `actor_id (uint64, pk/unique)`：关联本地 Actor

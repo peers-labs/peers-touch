@@ -1,20 +1,21 @@
 /// Package host provides the core Host interface for libp2p.
 ///
 /// Host represents a single libp2p node in a peer-to-peer network.
+library;
 
 import 'dart:async';
 
-import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/switch.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch.dart'; // Added for HolePunchService
 
 

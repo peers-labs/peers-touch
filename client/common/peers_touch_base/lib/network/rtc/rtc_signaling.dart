@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 class RTCSignalingService {
-  final String baseUrl;
   RTCSignalingService(this.baseUrl);
+  final String baseUrl;
 
   Future<void> registerPeer(String id, String role, List<String> addrs) async {
     final body = json.encode({'id': id, 'role': role, 'addrs': addrs});

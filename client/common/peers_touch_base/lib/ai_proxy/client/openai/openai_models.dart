@@ -4,15 +4,15 @@ import 'package:peers_touch_base/foundation.dart' if (dart.library.ui) 'package:
 
 @immutable
 class OpenAiChatRequest {
-  final String model;
-  final List<OpenAiMessage> messages;
-  final bool stream;
 
   const OpenAiChatRequest({
     required this.model,
     required this.messages,
     this.stream = true,
   });
+  final String model;
+  final List<OpenAiMessage> messages;
+  final bool stream;
 
   Map<String, dynamic> toJson() => {
         'model': model,
@@ -23,10 +23,10 @@ class OpenAiChatRequest {
 
 @immutable
 class OpenAiMessage {
-  final String role;
-  final String content;
 
   const OpenAiMessage({required this.role, required this.content});
+  final String role;
+  final String content;
 
   Map<String, dynamic> toJson() => {
         'role': role,
@@ -38,7 +38,6 @@ class OpenAiMessage {
 
 @immutable
 class OpenAiStreamChunk {
-  final List<OpenAiStreamChoice> choices;
 
   const OpenAiStreamChunk({
     required this.choices,
@@ -51,12 +50,11 @@ class OpenAiStreamChunk {
           .toList(),
     );
   }
+  final List<OpenAiStreamChoice> choices;
 }
 
 @immutable
 class OpenAiStreamChoice {
-  final OpenAiStreamDelta delta;
-  final String? finishReason;
 
   const OpenAiStreamChoice({
     required this.delta,
@@ -69,11 +67,12 @@ class OpenAiStreamChoice {
       finishReason: json['finish_reason'],
     );
   }
+  final OpenAiStreamDelta delta;
+  final String? finishReason;
 }
 
 @immutable
 class OpenAiStreamDelta {
-  final String? content;
 
   const OpenAiStreamDelta({this.content});
 
@@ -82,4 +81,5 @@ class OpenAiStreamDelta {
       content: json['content'],
     );
   }
+  final String? content;
 }

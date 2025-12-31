@@ -1,7 +1,7 @@
 class Logger {
-  final String tag;
 
   Logger(this.tag);
+  final String tag;
 
   void d(String message) {
     // ignore: avoid_print

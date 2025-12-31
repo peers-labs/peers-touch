@@ -1,16 +1,15 @@
 import 'dart:async';
 
-import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/addrs.dart';
+import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/identify.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/reachability.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv2/autonatv2.dart';
-import 'package:logging/logging.dart';
-
-import 'ambient_config.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/ambient_config.dart';
 
 final _log = Logger('ambient_autonat_v2');
 
@@ -24,7 +23,9 @@ const int maxConfidence = 3;
 /// - Automatically probes peers that support AutoNAT v2
 /// - Tracks confidence in reachability status
 /// - Emits EvtLocalReachabilityChanged events
-class AmbientAutoNATv2 {
+class AmbientAutoNATv2 { // Track probe generations for cancellation
+  
+  AmbientAutoNATv2._(this._host, this._autoNATv2, this._config);
   final Host _host;
   final AutoNATv2 _autoNATv2;
   final AmbientAutoNATv2Config _config;
@@ -40,9 +41,7 @@ class AmbientAutoNATv2 {
   Future<void>? _scheduledProbe;
   StreamSubscription? _eventSubscription;
   bool _closed = false;
-  int _probeGeneration = 0; // Track probe generations for cancellation
-  
-  AmbientAutoNATv2._(this._host, this._autoNATv2, this._config);
+  int _probeGeneration = 0;
   
   /// Create and start a new AmbientAutoNATv2 orchestrator
   static Future<AmbientAutoNATv2> create(

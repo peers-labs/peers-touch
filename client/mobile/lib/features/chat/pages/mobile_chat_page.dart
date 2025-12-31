@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/chat/chat.dart';
-import 'package:peers_touch_base/model/domain/core/core.pb.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pbenum.dart';
+import 'package:peers_touch_base/model/domain/core/core.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
-
-import '../controllers/mobile_chat_controller.dart';
+import 'package:peers_touch_mobile/features/chat/controllers/mobile_chat_controller.dart';
 
 /// 移动端聊天主页面
 /// 采用列表导航模式，好友列表和聊天分离
@@ -73,8 +72,8 @@ class MobileChatPage extends GetView<MobileChatController> {
       }),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddFriendDialog(),
-        child: const Icon(Icons.person_add),
         tooltip: '添加好友',
+        child: const Icon(Icons.person_add),
       ),
     );
   }

@@ -5,7 +5,14 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:fixnum/fixnum.dart';
+import 'package:meta/meta.dart';
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/discovery/peer_info.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/pb/circuit.pb.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/proto.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/relay/resources.dart';
@@ -13,26 +20,18 @@ import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/util/io.d
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/util/pbconv.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/voucher.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/client.dart'; // For encodeVarint
-import 'package:fixnum/fixnum.dart';
-import 'package:meta/meta.dart';
-
-import '../../../../core/host/host.dart';
-import '../../../../core/network/stream.dart';
-import '../../../../core/network/context.dart';
-import '../../../../core/multiaddr.dart';
-import '../../../discovery/peer_info.dart';
 
 /// Relay implements the relay service for the p2p-circuit/v2 protocol.
 class Relay {
+
+  /// Creates a new relay service.
+  Relay(this._host, this._resources);
   final Host _host;
   final Resources _resources;
   final Map<String, DateTime> _reservations = {};
   final Map<String, int> _connections = {};
   Timer? _gcTimer;
   bool _closed = false;
-
-  /// Creates a new relay service.
-  Relay(this._host, this._resources);
 
   /// Starts the relay service.
   void start() {
@@ -143,7 +142,7 @@ class Relay {
   print('[Relay] Reservation response sent and flushed');
   
   // Add a small delay to ensure the data is transmitted
-  await Future.delayed(Duration(milliseconds: 50));
+  await Future.delayed(const Duration(milliseconds: 50));
 }
 
   /// Handles a connection request.
@@ -196,14 +195,14 @@ class Relay {
       
       // Set handshake deadline for the STOP protocol handshake messages
       // This gives enough time for the STOP handshake to complete
-      await dstStream.setDeadline(DateTime.now().add(Duration(minutes: 1)));
+      await dstStream.setDeadline(DateTime.now().add(const Duration(minutes: 1)));
       print('[Relay] Set 1-minute handshake deadline on STOP stream');
 
       // Create a stop message with SOURCE peer info
       print('[Relay] Creating STOP message...');
       final stopMsg = StopMessage()
         ..type = StopMessage_Type.CONNECT
-        ..peer = peerInfoToPeerV2(PeerInfo(peerId: srcPeerId, addrs: <MultiAddr>[].toSet()));
+        ..peer = peerInfoToPeerV2(PeerInfo(peerId: srcPeerId, addrs: <MultiAddr>{}));
       print('[Relay] STOP message created, type: ${stopMsg.type}');
 
       // Write the message with length prefix (required for DelimitedReader on the receiving end)
@@ -249,7 +248,7 @@ class Relay {
       print('[Relay]   - STOP stream (to ${dstInfo.peerId.toBase58()}): id=${dstStream.id()}');
 
       // Add the connection to the active connections
-      final connKey = '${srcPeerId}-${dstInfo.peerId}';
+      final connKey = '$srcPeerId-${dstInfo.peerId}';
       final currentCount = _connections[connKey] ?? 0;
       _connections[connKey] = currentCount + 1;
       print('[Relay] Active relay connections for ${srcPeerId.toBase58()} -> ${dstInfo.peerId.toBase58()}: ${currentCount + 1}');
@@ -284,7 +283,7 @@ class Relay {
     PeerId srcPeer,
     PeerId dstPeer,
   ) {
-    final connKey = '${srcPeer}-${dstPeer}';
+    final connKey = '$srcPeer-$dstPeer';
     var cleanupDone = false;
 
     // Idempotent cleanup function
@@ -418,7 +417,7 @@ class Relay {
 
   /// Starts the garbage collection timer.
   void _startGarbageCollection() {
-    _gcTimer = Timer.periodic(Duration(minutes: 1), (_) {
+    _gcTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       _gc();
     });
   }
@@ -499,10 +498,10 @@ Stream<Uint8List> _p2pStreamToDartStream(P2PStream p2pStream) {
 
 /// Helper class to adapt P2PStream to a Sink<List<int>> for writeDelimitedMessage
 class StreamSinkFromP2PStream implements Sink<List<int>> {
-  final P2PStream _stream;
-  final Completer<void>? _writeCompleter;
   
   StreamSinkFromP2PStream(this._stream, [this._writeCompleter]);
+  final P2PStream _stream;
+  final Completer<void>? _writeCompleter;
 
   @override
   void add(List<int> data) {

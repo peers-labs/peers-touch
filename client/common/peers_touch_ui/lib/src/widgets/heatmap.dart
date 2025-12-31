@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 class Heatmap extends StatelessWidget {
+  const Heatmap({super.key, required this.rows, required this.cols, required this.values, this.palette = const [Color(0xFFE8E8F6), Color(0xFFCECFF2), Color(0xFFB3B5ED), Color(0xFF999BE8)]});
   final int rows;
   final int cols;
   final List<List<int>> values;
   final List<Color> palette;
-  const Heatmap({super.key, required this.rows, required this.cols, required this.values, this.palette = const [Color(0xFFE8E8F6), Color(0xFFCECFF2), Color(0xFFB3B5ED), Color(0xFF999BE8)]});
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
@@ -16,11 +16,11 @@ class Heatmap extends StatelessWidget {
 }
 
 class _HeatmapPainter extends CustomPainter {
+  _HeatmapPainter(this.rows, this.cols, this.values, this.palette);
   final int rows;
   final int cols;
   final List<List<int>> values;
   final List<Color> palette;
-  _HeatmapPainter(this.rows, this.cols, this.values, this.palette);
   @override
   void paint(Canvas canvas, Size size) {
     final gap = 4.0;

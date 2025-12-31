@@ -1,9 +1,10 @@
 
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:peers_touch_base/applet/capabilities/capability_base.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/storage/file_storage_manager.dart';
-import 'capability_base.dart';
 
 class StorageCapability extends AppletCapability {
   @override
@@ -21,7 +22,7 @@ class StorageCapability extends AppletCapability {
       case 'clear':
         return _handleClear(appId);
       default:
-        throw Exception("Unknown action: $action");
+        throw Exception('Unknown action: $action');
     }
   }
 
@@ -71,7 +72,7 @@ class StorageCapability extends AppletCapability {
     data[key.toString()] = value;
     await _writeStorage(appId, data);
     
-    LoggingService.info("Applet $appId set storage: $key = $value");
+    LoggingService.info('Applet $appId set storage: $key = $value');
   }
 
   Future<dynamic> _handleGet(Map<String, dynamic> params, String appId) async {
@@ -90,7 +91,7 @@ class StorageCapability extends AppletCapability {
     if (data.containsKey(key.toString())) {
       data.remove(key.toString());
       await _writeStorage(appId, data);
-      LoggingService.info("Applet $appId removed storage key: $key");
+      LoggingService.info('Applet $appId removed storage key: $key');
     }
   }
 
@@ -99,7 +100,7 @@ class StorageCapability extends AppletCapability {
       final file = await _getStorageFile(appId);
       if (await file.exists()) {
         await file.delete();
-        LoggingService.info("Applet $appId cleared all storage");
+        LoggingService.info('Applet $appId cleared all storage');
       }
     } catch (e) {
       LoggingService.error('StorageCap: Failed to clear storage for $appId', e);

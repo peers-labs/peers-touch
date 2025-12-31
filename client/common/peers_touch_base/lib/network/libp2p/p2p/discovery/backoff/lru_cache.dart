@@ -2,8 +2,6 @@ import 'dart:collection';
 
 /// A simple LRU (Least Recently Used) cache implementation
 class LRUCache<K, V> {
-  final int _capacity;
-  final LinkedHashMap<K, V> _cache = LinkedHashMap<K, V>();
   
   /// Creates a new LRU cache with the given capacity
   LRUCache(this._capacity) {
@@ -11,6 +9,8 @@ class LRUCache<K, V> {
       throw ArgumentError('Capacity must be positive');
     }
   }
+  final int _capacity;
+  final LinkedHashMap<K, V> _cache = LinkedHashMap<K, V>();
   
   /// Gets a value from the cache
   /// Returns null if the key is not in the cache

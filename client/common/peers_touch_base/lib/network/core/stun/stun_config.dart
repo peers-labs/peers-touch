@@ -1,5 +1,21 @@
 /// STUN/TUN穿透配置
 class StunConfig {
+  
+  const StunConfig({
+    this.stunServers = const [
+      'stun.l.google.com',
+      'stun1.l.google.com',
+      'stun2.l.google.com',
+      'stun3.l.google.com',
+      'stun4.l.google.com',
+    ],
+    this.stunPort = 3478,
+    this.tunInterfaceName,
+    this.holePunchTimeout = 5000,
+    this.keepAliveInterval = 30000,
+    this.maxRetryAttempts = 3,
+    this.enableTunMode = false,
+  });
   /// STUN服务器地址列表
   final List<String> stunServers;
   
@@ -20,20 +36,4 @@ class StunConfig {
   
   /// 是否启用TUN模式
   final bool enableTunMode;
-  
-  const StunConfig({
-    this.stunServers = const [
-      'stun.l.google.com',
-      'stun1.l.google.com',
-      'stun2.l.google.com',
-      'stun3.l.google.com',
-      'stun4.l.google.com',
-    ],
-    this.stunPort = 3478,
-    this.tunInterfaceName,
-    this.holePunchTimeout = 5000,
-    this.keepAliveInterval = 30000,
-    this.maxRetryAttempts = 3,
-    this.enableTunMode = false,
-  });
 }

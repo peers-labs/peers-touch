@@ -1,4 +1,5 @@
 /// Metrics implementation for the memory-based peerstore.
+library;
 
 import 'dart:collection';
 
@@ -12,11 +13,11 @@ const latencyEWMASmoothing = 0.1;
 
 /// A memory-based implementation of the Metrics interface.
 class MemoryMetrics implements Metrics {
-  final _latencyMap = HashMap<String, Duration>();
-  final _lock = Lock();
 
   /// Creates a new memory-based metrics implementation.
   MemoryMetrics();
+  final _latencyMap = HashMap<String, Duration>();
+  final _lock = Lock();
 
   @override
   Future<Duration> latencyEWMA(PeerId id) async {
