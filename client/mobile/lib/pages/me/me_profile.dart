@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:jdenticon_dart/jdenticon_dart.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:peers_touch_mobile/controller/controller.dart';
 import 'package:peers_touch_mobile/controller/profile_controller.dart';
 import 'package:peers_touch_mobile/l10n/app_localizations.dart';
@@ -164,7 +164,7 @@ class MeProfilePage extends StatelessWidget {
                                label == AppLocalizations.of(context)!.shortBio;
     
     // Create the trailing widget with proper tap handling
-    Widget trailingWidget = Row(
+    final Widget trailingWidget = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         // Value on the right

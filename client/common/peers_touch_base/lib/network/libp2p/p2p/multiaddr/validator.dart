@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-import 'protocol.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart';
 
 /// Validator for multiaddr protocol values
 class MultiAddrValidator {
@@ -45,13 +44,13 @@ class MultiAddrValidator {
   static void _validateIP4(String value) {
     final parts = value.split('.');
     if (parts.length != 4) {
-      throw FormatException('Invalid IPv4 address: wrong number of parts');
+      throw const FormatException('Invalid IPv4 address: wrong number of parts');
     }
 
     for (final part in parts) {
       final num = int.tryParse(part);
       if (num == null || num < 0 || num > 255) {
-        throw FormatException('Invalid IPv4 address: invalid octet value');
+        throw const FormatException('Invalid IPv4 address: invalid octet value');
       }
     }
   }
@@ -64,7 +63,7 @@ class MultiAddrValidator {
     final compressionCount = '::'.allMatches(cleanValue).length;
 
     if (compressionCount > 1) {
-      throw FormatException('Invalid IPv6 address: multiple :: compression markers');
+      throw const FormatException('Invalid IPv6 address: multiple :: compression markers');
     }
 
     final hasCompression = compressionCount == 1;
@@ -81,7 +80,7 @@ class MultiAddrValidator {
     final parts = value.split(':');
 
     if (parts.length != 8) {
-      throw FormatException('Invalid IPv6 address: must have exactly 8 segments without compression');
+      throw const FormatException('Invalid IPv6 address: must have exactly 8 segments without compression');
     }
 
     _validateSegments(parts);
@@ -101,7 +100,7 @@ class MultiAddrValidator {
 
       final rightSegments = rightPart.split(':');
       if (rightSegments.length >= 8) {
-        throw FormatException('Invalid IPv6 address: too many segments after ::');
+        throw const FormatException('Invalid IPv6 address: too many segments after ::');
       }
       _validateSegments(rightSegments);
 
@@ -110,7 +109,7 @@ class MultiAddrValidator {
       final leftPart = value.substring(0, value.length - 2);
       final leftSegments = leftPart.split(':');
       if (leftSegments.length >= 8) {
-        throw FormatException('Invalid IPv6 address: too many segments before ::');
+        throw const FormatException('Invalid IPv6 address: too many segments before ::');
       }
       _validateSegments(leftSegments);
 
@@ -118,7 +117,7 @@ class MultiAddrValidator {
       // e.g., "2001:db8::1" or "fdc5:3e28:8691::2"
       final parts = value.split('::');
       if (parts.length != 2) {
-        throw FormatException('Invalid IPv6 address: malformed :: compression');
+        throw const FormatException('Invalid IPv6 address: malformed :: compression');
       }
 
       final leftSegments = parts[0].isEmpty ? <String>[] : parts[0].split(':');
@@ -126,7 +125,7 @@ class MultiAddrValidator {
 
       final totalSegments = leftSegments.length + rightSegments.length;
       if (totalSegments >= 8) {
-        throw FormatException('Invalid IPv6 address: too many segments with compression');
+        throw const FormatException('Invalid IPv6 address: too many segments with compression');
       }
 
       _validateSegments([...leftSegments, ...rightSegments]);
@@ -137,21 +136,21 @@ class MultiAddrValidator {
   static void _validateSegments(List<String> segments) {
     for (final segment in segments) {
       if (segment.isEmpty) {
-        throw FormatException('Invalid IPv6 address: empty segment');
+        throw const FormatException('Invalid IPv6 address: empty segment');
       }
 
       if (segment.length > 4) {
-        throw FormatException('Invalid IPv6 address: segment too long');
+        throw const FormatException('Invalid IPv6 address: segment too long');
       }
 
       // Check for valid hexadecimal characters
       if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(segment)) {
-        throw FormatException('Invalid IPv6 address: invalid characters in segment');
+        throw const FormatException('Invalid IPv6 address: invalid characters in segment');
       }
 
       final num = int.tryParse(segment, radix: 16);
       if (num == null || num < 0 || num > 0xFFFF) {
-        throw FormatException('Invalid IPv6 address: invalid segment value');
+        throw const FormatException('Invalid IPv6 address: invalid segment value');
       }
     }
   }
@@ -197,25 +196,25 @@ class MultiAddrValidator {
   static void _validatePort(String value) {
     final port = int.tryParse(value);
     if (port == null || port < 0 || port > 65535) {
-      throw FormatException('Invalid port number: must be between 0 and 65535');
+      throw const FormatException('Invalid port number: must be between 0 and 65535');
     }
   }
 
   /// Validates DNS name
   static void _validateDNS(String value) {
     if (value.isEmpty || value.length > 253) {
-      throw FormatException('Invalid DNS name: length must be between 1 and 253 characters');
+      throw const FormatException('Invalid DNS name: length must be between 1 and 253 characters');
     }
 
     final labels = value.split('.');
     if (labels.any((label) => label.isEmpty || label.length > 63)) {
-      throw FormatException('Invalid DNS name: label length must be between 1 and 63 characters');
+      throw const FormatException('Invalid DNS name: label length must be between 1 and 63 characters');
     }
 
     // RFC 1035 compliance check
     final validLabel = RegExp(r'^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$');
     if (labels.any((label) => !validLabel.hasMatch(label))) {
-      throw FormatException('Invalid DNS name: invalid character in label');
+      throw const FormatException('Invalid DNS name: invalid character in label');
     }
   }
 
@@ -223,30 +222,30 @@ class MultiAddrValidator {
   static void _validateP2P(String value) {
     // Basic validation for now - should be enhanced with proper base58 check
     if (value.isEmpty) {
-      throw FormatException('Invalid P2P ID: empty value');
+      throw const FormatException('Invalid P2P ID: empty value');
     }
 
     // Check for valid base58 characters
     final validBase58 = RegExp(r'^[1-9A-HJ-NP-Za-km-z]+$');
     if (!validBase58.hasMatch(value)) {
-      throw FormatException('Invalid P2P ID: invalid base58 character');
+      throw const FormatException('Invalid P2P ID: invalid base58 character');
     }
   }
 
   /// Validates Unix path
   static void _validateUnixPath(String value) {
     if (value.isEmpty) {
-      throw FormatException('Invalid Unix path: empty path');
+      throw const FormatException('Invalid Unix path: empty path');
     }
 
     // Check for null bytes which are not allowed in paths
     if (value.contains('\x00')) {
-      throw FormatException('Invalid Unix path: contains null byte');
+      throw const FormatException('Invalid Unix path: contains null byte');
     }
 
     // Basic path validation
     if (!value.startsWith('/')) {
-      throw FormatException('Invalid Unix path: must be absolute path');
+      throw const FormatException('Invalid Unix path: must be absolute path');
     }
   }
 }

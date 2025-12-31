@@ -2,17 +2,15 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:fixnum/fixnum.dart' as $fixnum;
+import 'package:peers_touch_base/ai_proxy/client/chat_client.dart';
+import 'package:peers_touch_base/ai_proxy/client/openai/openai_models.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_impl.dart';
 
-import '../chat_client.dart';
-import 'openai_models.dart';
-
 /// OpenAI聊天客户端实现
 /// 支持OpenAI API调用，将ChatCompletionRequest转换为OpenAI格式并处理流式响应
 class OpenAiChatClient implements ChatClient {
-  final IHttpService _httpService;
 
   /// 创建OpenAI聊天客户端
   /// 
@@ -20,10 +18,10 @@ class OpenAiChatClient implements ChatClient {
   /// [baseUrl]: OpenAI API基础URL，默认为官方API地址
   /// [httpService]: HTTP服务实例，可选
   OpenAiChatClient({
-    required String apiKey,
     String baseUrl = 'https://api.openai.com/v1',
     IHttpService? httpService,
   }) : _httpService = httpService ?? HttpServiceImpl(baseUrl: baseUrl);
+  final IHttpService _httpService;
 
   /// 发送聊天消息并返回流式响应
   /// 

@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
+import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 
 class MessageInput extends StatefulWidget {
-  final TextEditingController controller;
-  final Function(String) onSend;
 
   const MessageInput({
     super.key,
     required this.controller,
     required this.onSend,
   });
+  final TextEditingController controller;
+  final Function(String) onSend;
 
   @override
   State<MessageInput> createState() => _MessageInputState();

@@ -40,18 +40,21 @@ type Options struct {
 	Codecs      map[string]codec.NewCodec
 }
 
+// WithInit runs initialization for client options.
 func WithInit() option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		// do nothing
 	})
 }
 
+// Registry injects a registry.
 func Registry(r registry.Registry) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.Registry = r
 	})
 }
 
+// Transport injects a transport.
 func Transport(t transport.Transport) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.Transport = t
@@ -78,7 +81,7 @@ type CallOptions struct {
 	RequestID string
 }
 
-// DefaultCallOptions returns sensible defaults
+// DefaultCallOptions returns sensible defaults.
 func DefaultCallOptions() CallOptions {
 	return CallOptions{
 		Timeout:     DefaultCallTimeout,
@@ -89,14 +92,14 @@ func DefaultCallOptions() CallOptions {
 	}
 }
 
-// WithCallTimeout sets the timeout for the call
+// WithCallTimeout sets the timeout for the call.
 func WithCallTimeout(d time.Duration) CallOption {
 	return func(o *CallOptions) {
 		o.Timeout = d
 	}
 }
 
-// WithCallMetadata adds metadata to the call
+// WithCallMetadata adds metadata to the call.
 func WithCallMetadata(md map[string]string) CallOption {
 	return func(o *CallOptions) {
 		if o.Metadata == nil {
@@ -108,21 +111,21 @@ func WithCallMetadata(md map[string]string) CallOption {
 	}
 }
 
-// WithCallContentType sets the content type for the call
+// WithCallContentType sets the content type for the call.
 func WithCallContentType(ct string) CallOption {
 	return func(o *CallOptions) {
 		o.ContentType = ct
 	}
 }
 
-// WithCallRequestID sets the request ID for tracing
+// WithCallRequestID sets the request ID for tracing.
 func WithCallRequestID(id string) CallOption {
 	return func(o *CallOptions) {
 		o.RequestID = id
 	}
 }
 
-// WithCallStream enables streaming mode for the call
+// WithCallStream enables streaming mode for the call.
 func WithCallStream() CallOption {
 	return func(o *CallOptions) {
 		o.Stream = true
@@ -161,6 +164,7 @@ type RequestOptions struct {
 // RequestOption used by NewRequest.
 type RequestOption func(*RequestOptions)
 
+// GetOptions retrieves typed client options from the global context.
 func GetOptions() *Options {
 	return option.GetOptions().Ctx().Value(registryOptionsKey{}).(*Options)
 }

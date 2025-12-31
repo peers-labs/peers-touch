@@ -1,8 +1,7 @@
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/autonatv2/pb/autonatv2.pb.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-
-import '../../multiaddr.dart';
 
 /// Protocol names for AutoNAT v2
 class AutoNATv2Protocols {
@@ -13,17 +12,19 @@ class AutoNATv2Protocols {
 
 /// Request to verify reachability of a single address
 class Request {
+
+  Request({required this.addr, this.sendDialData = false});
   /// The multiaddr to verify
   final MultiAddr addr;
 
   /// Whether to send dial data if the server requests it for Addr
   final bool sendDialData;
-
-  Request({required this.addr, this.sendDialData = false});
 }
 
 /// Result of the CheckReachability call
 class Result {
+
+  Result({required this.addr, required this.reachability, required this.status});
   /// The dialed address
   final MultiAddr addr;
 
@@ -32,8 +33,6 @@ class Result {
 
   /// Status is the outcome of the dialback
   final int status;
-
-  Result({required this.addr, required this.reachability, required this.status});
 }
 
 /// Interface for the AutoNAT v2 service
@@ -71,11 +70,6 @@ abstract class AutoNATv2Server {
 
 /// Event for dial request completion
 class EventDialRequestCompleted {
-  final Exception? error;
-  final DialResponse_ResponseStatus responseStatus;
-  final DialStatus dialStatus;
-  final bool dialDataRequired;
-  final MultiAddr? dialedAddr;
 
   EventDialRequestCompleted({
     this.error,
@@ -84,6 +78,11 @@ class EventDialRequestCompleted {
     required this.dialDataRequired,
     this.dialedAddr,
   });
+  final Exception? error;
+  final DialResponse_ResponseStatus responseStatus;
+  final DialStatus dialStatus;
+  final bool dialDataRequired;
+  final MultiAddr? dialedAddr;
 }
 
 /// Interface for metrics tracing

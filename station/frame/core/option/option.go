@@ -50,6 +50,7 @@ func (o *Options) Apply(opts ...Option) {
 	}
 }
 
+// Ctx returns the root context stored in options.
 func (o *Options) Ctx() context.Context {
 	if o.ctx == nil {
 		panic("option ctx is nil")
@@ -58,6 +59,7 @@ func (o *Options) Ctx() context.Context {
 	return o.ctx
 }
 
+// AppendCtx appends a key/value into the options context.
 func (o *Options) AppendCtx(key interface{}, value interface{}) {
 	appendCtxLock.Lock()
 	defer appendCtxLock.Unlock()
@@ -104,10 +106,12 @@ type Wrapper[T any] struct {
 	NewFunc func(*Options) *T
 }
 
+// NewWrapper constructs a typed wrapper for deriving module options.
 func NewWrapper[T any](key interface{}, NewFunc func(*Options) *T) *Wrapper[T] {
 	return &Wrapper[T]{key: key, NewFunc: NewFunc}
 }
 
+// Wrap wraps a module-specific option to run once and inject typed options.
 func (w *Wrapper[T]) Wrap(f func(*T)) Option {
 	executed := false
 	localExecutedLock := sync.Mutex{}
@@ -138,6 +142,7 @@ func (w *Wrapper[T]) Wrap(f func(*T)) Option {
 	}
 }
 
+// GetOptions returns Options, applying provided options and ensuring WithRootCtx is set.
 func GetOptions(opts ...Option) *Options {
 	var ret *Options
 	if rootOpts != nil {

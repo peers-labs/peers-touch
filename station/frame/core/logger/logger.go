@@ -28,26 +28,22 @@ type Logger interface {
 	String() string
 }
 
-func Init(ctx context.Context, opts ...Option) error {
-	return DefaultLogger.Init(ctx, opts...)
-}
+// Init initializes the DefaultLogger with provided options.
+func Init(ctx context.Context, opts ...Option) error { return DefaultLogger.Init(ctx, opts...) }
 
-func Fields(fields map[string]interface{}) Logger {
-	return DefaultLogger.Fields(fields)
-}
+// Fields returns a new Logger that logs with the given default fields.
+func Fields(fields map[string]interface{}) Logger { return DefaultLogger.Fields(fields) }
 
-func Log(level Level, v ...interface{}) {
-	DefaultLogger.Log(level, v...)
-}
+// Log writes a log entry using DefaultLogger.
+func Log(level Level, v ...interface{}) { DefaultLogger.Log(level, v...) }
 
-func Logf(level Level, format string, v ...interface{}) {
-	DefaultLogger.Logf(level, format, v...)
-}
+// Logf writes a formatted log entry using DefaultLogger.
+func Logf(level Level, format string, v ...interface{}) { DefaultLogger.Logf(level, format, v...) }
 
-func String() string {
-	return DefaultLogger.String()
-}
+// String returns the DefaultLogger name.
+func String() string { return DefaultLogger.String() }
 
+// LoggerOrDefault returns l if non-nil, otherwise DefaultLogger.
 func LoggerOrDefault(l Logger) Logger {
 	if l == nil {
 		return DefaultLogger

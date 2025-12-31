@@ -2,27 +2,26 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart' as crypto; // Renamed to avoid conflict
-import 'package:meta/meta.dart';
-
-import '../../../core/crypto/keys.dart' as keys;
-import '../../../core/crypto/ed25519.dart' as ed25519_keys; // Added for Ed25519PublicKey
-import '../../../core/crypto/pb/crypto.pbenum.dart' as crypto_pb; // Renamed
-import '../../../core/network/transport_conn.dart';
-import '../../../core/peer/peer_id.dart';
-import '../secured_connection.dart';
-import '../security_protocol.dart';
-import 'xx_pattern.dart';
-import '../../../pb/noise/payload.pb.dart' as noise_pb; // Added
 import 'package:logging/logging.dart'; // Added for logging
+import 'package:meta/meta.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart' as ed25519_keys; // Added for Ed25519PublicKey
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart' as keys;
+import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pbenum.dart' as crypto_pb; // Renamed
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/security/noise/xx_pattern.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/security/secured_connection.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/security/security_protocol.dart';
+import 'package:peers_touch_base/network/libp2p/pb/noise/payload.pb.dart' as noise_pb; // Added
 
 final _log = Logger('NoiseProtocol');
 
 /// Exceptions specific to the Noise Protocol implementation
 class NoiseProtocolException implements Exception {
-  final String message;
-  final Object? cause;
 
   NoiseProtocolException(this.message, [this.cause]);
+  final String message;
+  final Object? cause;
 
   @override
   String toString() => 'NoiseProtocolException: $message${cause != null ? ' ($cause)' : ''}';
@@ -30,13 +29,13 @@ class NoiseProtocolException implements Exception {
 
 /// Implementation of the Noise Protocol (XX pattern) for libp2p
 class NoiseSecurity implements SecurityProtocol {
+
+  NoiseSecurity._(this._identityKey);
   static const String protocolIdForState = '/noise'; // Made public for SecuredConnection
   static const _protocolString = protocolIdForState;
 
   final keys.KeyPair _identityKey;
   bool _isDisposed = false;
-
-  NoiseSecurity._(this._identityKey);
 
   /// Creates a new NoiseXXProtocol instance
   static Future<NoiseSecurity> create(keys.KeyPair identityKey) async {
@@ -51,7 +50,7 @@ class NoiseSecurity implements SecurityProtocol {
   // Helper to read a length-prefixed message from a SecuredConnection
   Future<Uint8List> _readEncryptedPayload(SecuredConnection conn) async {
     final lengthBytes = await conn.read(2); // Assuming SecuredConnection.read handles underlying raw reads
-    if (lengthBytes.length < 2) throw NoiseProtocolException("Failed to read payload length");
+    if (lengthBytes.length < 2) throw NoiseProtocolException('Failed to read payload length');
     final length = (lengthBytes[0] << 8) | lengthBytes[1];
     return conn.read(length); // SecuredConnection.read will decrypt
   }
@@ -84,10 +83,10 @@ class NoiseSecurity implements SecurityProtocol {
     // SecuredConnection.read handles decryption and its own framing.
     // We expect it to return the decrypted (length-prefix + actual_payload).
     final decryptedOuterFrame = await conn.read(); // Read one full message decrypted by SecuredConnection
-    if (decryptedOuterFrame.length < 2) throw NoiseProtocolException("Payload too short after decryption");
+    if (decryptedOuterFrame.length < 2) throw NoiseProtocolException('Payload too short after decryption');
     final actualPayloadLength = (decryptedOuterFrame[0] << 8) | decryptedOuterFrame[1];
     if (decryptedOuterFrame.length != 2 + actualPayloadLength) {
-      throw NoiseProtocolException("Decrypted payload length mismatch: expected ${2 + actualPayloadLength}, got ${decryptedOuterFrame.length}");
+      throw NoiseProtocolException('Decrypted payload length mismatch: expected ${2 + actualPayloadLength}, got ${decryptedOuterFrame.length}');
     }
     return decryptedOuterFrame.sublist(2);
   }
@@ -123,10 +122,8 @@ class NoiseSecurity implements SecurityProtocol {
 
       // 1. Prepare and send initiator's payload
       final initiatorPayload = noise_pb.NoiseHandshakePayload();
-      initiatorPayload.identityKey = await _identityKey.publicKey.marshal();
-      // Initiator signs responder's static X25519 key
-      if (pattern.remoteStaticKey == null) throw NoiseProtocolException("Responder's remote static key is null during outbound secure");
-      final signature = await _identityKey.privateKey.sign(pattern.remoteStaticKey!); 
+      initiatorPayload.identityKey = _identityKey.publicKey.marshal();
+      final signature = await _identityKey.privateKey.sign(pattern.remoteStaticKey); 
       initiatorPayload.identitySig = signature;
       
       await _writeEncryptedPayload(tempSecuredConn, initiatorPayload.writeToBuffer());
@@ -135,11 +132,11 @@ class NoiseSecurity implements SecurityProtocol {
       final responderEncryptedPayloadBytes = await _readLibp2pHandshakePayload(tempSecuredConn);
       final responderPayload = noise_pb.NoiseHandshakePayload.fromBuffer(responderEncryptedPayloadBytes);
 
-      if (!responderPayload.hasIdentityKey()) throw NoiseProtocolException("Responder payload missing identity key");
+      if (!responderPayload.hasIdentityKey()) throw NoiseProtocolException('Responder payload missing identity key');
       // Assuming Ed25519 key as per Noise spec for libp2p identity
       final remoteLibp2pPublicKey = ed25519_keys.Ed25519PublicKey.unmarshal(Uint8List.fromList(responderPayload.identityKey)); 
       
-      if (!responderPayload.hasIdentitySig()) throw NoiseProtocolException("Responder payload missing signature");
+      if (!responderPayload.hasIdentitySig()) throw NoiseProtocolException('Responder payload missing signature');
       // Responder's signature is over initiator's static X25519 key
       final initiatorStaticNoiseKey = await pattern.getStaticPublicKey(); 
       
@@ -147,7 +144,7 @@ class NoiseSecurity implements SecurityProtocol {
           initiatorStaticNoiseKey, Uint8List.fromList(responderPayload.identitySig));
       if (!sigVerified) throw NoiseProtocolException("Failed to verify responder's signature");
 
-      final remotePeerId = await PeerId.fromPublicKey(remoteLibp2pPublicKey);
+      final remotePeerId = PeerId.fromPublicKey(remoteLibp2pPublicKey);
 
       // ADDED LOGGING
       _log.finer('NoiseSecurity.secureOutbound: Libp2p handshake payload processed. Finalizing SecuredConnection with pattern keys:');
@@ -198,11 +195,11 @@ class NoiseSecurity implements SecurityProtocol {
       final initiatorEncryptedPayloadBytes = await _readLibp2pHandshakePayload(tempSecuredConn);
       final initiatorPayload = noise_pb.NoiseHandshakePayload.fromBuffer(initiatorEncryptedPayloadBytes);
 
-      if (!initiatorPayload.hasIdentityKey()) throw NoiseProtocolException("Initiator payload missing identity key");
+      if (!initiatorPayload.hasIdentityKey()) throw NoiseProtocolException('Initiator payload missing identity key');
       // Assuming Ed25519 key
       final remoteLibp2pPublicKey = ed25519_keys.Ed25519PublicKey.unmarshal(Uint8List.fromList(initiatorPayload.identityKey));
 
-      if (!initiatorPayload.hasIdentitySig()) throw NoiseProtocolException("Initiator payload missing signature");
+      if (!initiatorPayload.hasIdentitySig()) throw NoiseProtocolException('Initiator payload missing signature');
       // Initiator's signature is over responder's static X25519 key
       final responderStaticNoiseKey = await pattern.getStaticPublicKey();
       
@@ -212,15 +209,13 @@ class NoiseSecurity implements SecurityProtocol {
       
       // 2. Prepare and send responder's payload
       final responderPayload = noise_pb.NoiseHandshakePayload();
-      responderPayload.identityKey = await _identityKey.publicKey.marshal();
-      // Responder signs initiator's X25519 static key (which is pattern.remoteStaticKey from responder's PoV)
-      if (pattern.remoteStaticKey == null) throw NoiseProtocolException("Initiator's remote static key is null during inbound secure");
-      final signature = await _identityKey.privateKey.sign(pattern.remoteStaticKey!);
+      responderPayload.identityKey = _identityKey.publicKey.marshal();
+      final signature = await _identityKey.privateKey.sign(pattern.remoteStaticKey);
       responderPayload.identitySig = signature;
 
       await _writeEncryptedPayload(tempSecuredConn, responderPayload.writeToBuffer());
 
-      final remotePeerId = await PeerId.fromPublicKey(remoteLibp2pPublicKey);
+      final remotePeerId = PeerId.fromPublicKey(remoteLibp2pPublicKey);
 
       // ADDED LOGGING
       _log.finer('NoiseSecurity.secureInbound: Libp2p handshake payload processed. Finalizing SecuredConnection with pattern keys:');

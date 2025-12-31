@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// DemoController 提供 UI 所需的最小状态，遵循 PROMPTs：

@@ -6,8 +6,8 @@ import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/util.dart
 
 /// Cleans up a relay's address set to remove private addresses and curtail addrsplosion.
 List<MultiAddr> cleanupAddressSet(List<MultiAddr> addrs) {
-  List<MultiAddr> publicAddrs = [];
-  List<MultiAddr> privateAddrs = [];
+  final List<MultiAddr> publicAddrs = [];
+  final List<MultiAddr> privateAddrs = [];
 
   for (var a in addrs) {
     if (isRelayAddress(a)) {
@@ -42,9 +42,9 @@ bool isDNSAddr(MultiAddr a) {
 }
 
 class _AddrKeyAndPort {
+  _AddrKeyAndPort(this.key, this.port);
   final String key;
   final int port;
-  _AddrKeyAndPort(this.key, this.port);
 }
 
 _AddrKeyAndPort getAddrKeyAndPort(MultiAddr a) {
@@ -67,7 +67,7 @@ _AddrKeyAndPort getAddrKeyAndPort(MultiAddr a) {
       key += '/${protocol.name}'; // Add protocol name, not its value (which is the port)
     } else {
       // Mimic Go: if value is empty, use protocol name. Otherwise, use value.
-      String valStr = value.isNotEmpty ? value : protocol.name;
+      final String valStr = value.isNotEmpty ? value : protocol.name;
       key += '/$valStr';
     }
   }
@@ -75,10 +75,10 @@ _AddrKeyAndPort getAddrKeyAndPort(MultiAddr a) {
 }
 
 bool hasAddrsplosion(List<MultiAddr> addrs) {
-  Map<String, int> aset = {};
+  final Map<String, int> aset = {};
 
   for (var a in addrs) {
-    var kap = getAddrKeyAndPort(a);
+    final kap = getAddrKeyAndPort(a);
     if (aset.containsKey(kap.key) && aset[kap.key] != kap.port) {
       return true;
     }
@@ -88,26 +88,26 @@ bool hasAddrsplosion(List<MultiAddr> addrs) {
 }
 
 class _PortAndAddr {
+  _PortAndAddr(this.addr, this.port);
   final MultiAddr addr;
   final int port;
-  _PortAndAddr(this.addr, this.port);
 }
 
 List<MultiAddr> sanitizeAddrsplodedSet(
     List<MultiAddr> publicAddrs, List<MultiAddr> privateAddrs) {
-  Set<int> privports = {};
-  Map<String, List<_PortAndAddr>> pubaddrGroups = {};
+  final Set<int> privports = {};
+  final Map<String, List<_PortAndAddr>> pubaddrGroups = {};
 
   for (var a in privateAddrs) {
     privports.add(getAddrKeyAndPort(a).port);
   }
 
   for (var a in publicAddrs) {
-    var kap = getAddrKeyAndPort(a);
+    final kap = getAddrKeyAndPort(a);
     pubaddrGroups.putIfAbsent(kap.key, () => []).add(_PortAndAddr(a, kap.port));
   }
 
-  List<MultiAddr> result = [];
+  final List<MultiAddr> result = [];
   pubaddrGroups.forEach((key, pas) {
     if (pas.length == 1) {
       result.add(pas[0].addr);
@@ -115,7 +115,7 @@ List<MultiAddr> sanitizeAddrsplodedSet(
     }
 
     bool haveAddr = false;
-    List<MultiAddr> selectedForThisKey = [];
+    final List<MultiAddr> selectedForThisKey = [];
     for (var pa in pas) {
       if (privports.contains(pa.port)) {
         selectedForThisKey.add(pa.addr);

@@ -1,8 +1,7 @@
-import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 // Mock Signaling Service
 class MockSignalingService implements RTCSignalingService {
@@ -74,12 +73,13 @@ class MockSignalingService implements RTCSignalingService {
 }
 
 class MockRTCDataChannel extends Fake implements RTCDataChannel {
-  Function(RTCDataChannelMessage message)? _onMessage;
-  MockRTCDataChannel? linkedChannel;
-  final String label;
-  Function(RTCDataChannelState state)? _onState;
 
   MockRTCDataChannel(this.label);
+  Function(RTCDataChannelMessage message)? _onMessage;
+  MockRTCDataChannel? linkedChannel;
+  @override
+  final String label;
+  Function(RTCDataChannelState state)? _onState;
 
   @override
   set onMessage(Function(RTCDataChannelMessage message)? callback) {
@@ -100,14 +100,14 @@ class MockRTCDataChannel extends Fake implements RTCDataChannel {
 }
 
 class MockRTCPeerConnection extends Fake implements RTCPeerConnection {
+
+  MockRTCPeerConnection({this.dataChannelToCreate, this.dataChannelToReceive});
   final MockRTCDataChannel? dataChannelToCreate; // For A
   final MockRTCDataChannel? dataChannelToReceive; // For B
   
   Function(RTCDataChannel channel)? _onDataChannel;
   Function(RTCIceCandidate candidate)? _onIceCandidate;
   Function(RTCPeerConnectionState state)? _onConnectionState;
-
-  MockRTCPeerConnection({this.dataChannelToCreate, this.dataChannelToReceive});
 
   @override
   set onDataChannel(Function(RTCDataChannel channel)? callback) {

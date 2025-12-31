@@ -95,7 +95,7 @@ class MeSettingsPage extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    Widget trailingWidget = Row(
+    final Widget trailingWidget = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         // Value on the right

@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-
-import 'package:peers_touch_mobile/components/common/floating_action_ball.dart';
-import 'package:peers_touch_mobile/pages/chat/chat_list_page.dart';
-import 'package:peers_touch_mobile/pages/chat/chat_friends_list_page.dart';
-import 'package:peers_touch_mobile/utils/app_localizations_helper.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
+import 'package:peers_touch_mobile/components/common/floating_action_ball.dart';
 import 'package:peers_touch_mobile/l10n/app_localizations.dart';
+import 'package:peers_touch_mobile/pages/chat/chat_friends_list_page.dart';
+import 'package:peers_touch_mobile/pages/chat/chat_list_page.dart';
+import 'package:peers_touch_mobile/utils/app_localizations_helper.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});

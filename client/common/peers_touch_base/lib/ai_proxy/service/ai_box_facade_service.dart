@@ -1,17 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:dio/dio.dart';
-import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
-import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_base/ai_proxy/provider/provider_manager_interface.dart';
 import 'package:peers_touch_base/ai_proxy/provider/provider_manager_local.dart';
-import 'ai_box_mode.dart'; // 使用我们自己的枚举定义
+import 'package:peers_touch_base/ai_proxy/service/ai_box_mode.dart'; // 使用我们自己的枚举定义
+import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
+import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 
 /// AI Box门面服务 - 为上层应用提供统一的AI服务接口
 /// 封装了provider管理、模型管理、聊天功能等所有AI相关操作
 class AiBoxFacadeService {
-  final IProviderManager _providerManager;
-  final Dio? _dioForTest;
 
   /// 构造函数，通过[mode]参数决定服务模式
   ///
@@ -23,6 +22,8 @@ class AiBoxFacadeService {
   /// Internal constructor for testing purposes.
   AiBoxFacadeService.internal(this._providerManager, {Dio? dioForTest})
       : _dioForTest = dioForTest;
+  final IProviderManager _providerManager;
+  final Dio? _dioForTest;
 
   /// 根据模式创建对应的Provider管理器
   static IProviderManager _createManagerForMode(AiBoxMode mode) {
@@ -112,8 +113,8 @@ class AiBoxFacadeService {
           Dio(
             BaseOptions(
               baseUrl: baseUrl,
-              connectTimeout: Duration(seconds: 15),
-              receiveTimeout: Duration(seconds: 15),
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 15),
             ),
           );
 
@@ -188,8 +189,8 @@ class AiBoxFacadeService {
           Dio(
             BaseOptions(
               baseUrl: baseUrl,
-              connectTimeout: Duration(seconds: 10),
-              receiveTimeout: Duration(seconds: 10),
+              connectTimeout: const Duration(seconds: 10),
+              receiveTimeout: const Duration(seconds: 10),
             ),
           );
 

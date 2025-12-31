@@ -52,9 +52,9 @@ void main() async {
     // 6. 检查并打印结果
     if (models.isNotEmpty) {
       print('\n✅ 测试成功！获取到的模型列表:');
-      models.forEach((model) {
+      for (var model in models) {
         print('  - $model');
-      });
+      }
     } else {
       print('\n⚠️ 测试通过，但未获取到任何模型。请检查你的 Ollama 服务中是否已加载模型。');
     }

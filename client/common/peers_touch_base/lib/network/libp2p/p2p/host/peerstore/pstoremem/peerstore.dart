@@ -1,26 +1,21 @@
 /// Peerstore implementation for the memory-based peerstore.
+library;
 
 import 'dart:async';
 
-import 'package:peers_touch_base/network/libp2p/p2p/discovery/peer_info.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
-
-import 'addr_book.dart';
-import 'key_book.dart';
-import 'metadata.dart';
-import 'metrics.dart';
-import 'proto_book.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/discovery/peer_info.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/peerstore/pstoremem/addr_book.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/peerstore/pstoremem/key_book.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/peerstore/pstoremem/metadata.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/peerstore/pstoremem/metrics.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/peerstore/pstoremem/proto_book.dart';
 
 /// A memory-based implementation of the Peerstore interface.
 class MemoryPeerstore implements Peerstore {
-  final MemoryMetrics _metrics;
-  final MemoryKeyBook _keyBook;
-  final MemoryAddrBook _addrBook;
-  final MemoryProtoBook _protoBook;
-  final MemoryPeerMetadata _peerMetadata;
 
   /// Creates a new memory-based peerstore implementation.
   MemoryPeerstore({
@@ -35,6 +30,11 @@ class MemoryPeerstore implements Peerstore {
     _addrBook = addrBook ?? newAddrBook(),
     _protoBook = protoBook ?? newProtoBook(),
     _peerMetadata = peerMetadata ?? newPeerMetadata();
+  final MemoryMetrics _metrics;
+  final MemoryKeyBook _keyBook;
+  final MemoryAddrBook _addrBook;
+  final MemoryProtoBook _protoBook;
+  final MemoryPeerMetadata _peerMetadata;
 
   @override
   AddrBook get addrBook => _addrBook;

@@ -1,28 +1,23 @@
 import 'dart:async';
-import 'dart:math';
 import 'dart:collection'; // For HashSet
+import 'dart:math';
 
-import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
 import 'package:peers_touch_base/network/libp2p/core/event/addrs.dart'; // For EvtLocalAddressesUpdated
 import 'package:peers_touch_base/network/libp2p/core/event/identify.dart'; // For EvtPeerIdentificationCompleted
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart' show Reachability, Network; // Conn is in its own file
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/common.dart' show Direction; // Import Direction from common.dart
 import 'package:peers_touch_base/network/libp2p/core/network/conn.dart'; // Import Conn explicitly
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart' show Reachability, Network; // Conn is in its own file
 // Direction is now in common.dart
 import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import '../../../core/network/common.dart' show Direction; // Import Direction from common.dart
 import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/autonatv1/autonatv1.dart'; // For AutoNATProto and AutoNATV1Client
-import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
-
-
-import './options.dart';
-import './client.dart';
-import './service.dart';
-import './dial_policy.dart';
-import './metrics.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/client.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/dial_policy.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/options.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/host/autonat/service.dart';
 
 // Logging function for this file
 void _log(String message) {
@@ -42,7 +37,22 @@ abstract class Closable {
 }
 
 
-class AmbientAutoNAT implements AutoNAT, Notifiee {
+class AmbientAutoNAT implements AutoNAT, Notifiee { // For fallback address checking
+
+  // Event emitter for reachability changes
+  // Assuming Host has an eventBus that can emit EvtLocalReachabilityChanged
+  // This part needs to align with how dart-libp2p handles event emission.
+  // For now, placeholder:
+  // late final EventBusEmitter<EvtLocalReachabilityChanged> _emitReachabilityChanged;
+
+
+  AmbientAutoNAT._(this._host, this._config, this._service) {
+    _client = AutoNATV1ClientImpl(_host, _config.addressFunc, _config.metricsTracer, _config.requestTimeout);
+    // _emitReachabilityChanged = _host.eventBus.emitter<EvtLocalReachabilityChanged>(EvtLocalReachabilityChanged()); // Placeholder
+    _updateOurAddrs(); // Initial population
+    _background(); // Start background processing
+    _host.network.notify(this); // Register for network events
+  }
   final Host _host;
   final AutoNATConfig _config;
   
@@ -68,34 +78,14 @@ class AmbientAutoNAT implements AutoNAT, Notifiee {
 
   StreamSubscription? _eventBusSubscription;
   Timer? _probeTimer;
-  Timer? _addrChangeTicker; // For fallback address checking
-
-  // Event emitter for reachability changes
-  // Assuming Host has an eventBus that can emit EvtLocalReachabilityChanged
-  // This part needs to align with how dart-libp2p handles event emission.
-  // For now, placeholder:
-  // late final EventBusEmitter<EvtLocalReachabilityChanged> _emitReachabilityChanged;
-
-
-  AmbientAutoNAT._(this._host, this._config, this._service) {
-    _client = AutoNATV1ClientImpl(_host, _config.addressFunc, _config.metricsTracer, _config.requestTimeout);
-    // _emitReachabilityChanged = _host.eventBus.emitter<EvtLocalReachabilityChanged>(EvtLocalReachabilityChanged()); // Placeholder
-    _updateOurAddrs(); // Initial population
-    _background(); // Start background processing
-    _host.network.notify(this); // Register for network events
-  }
+  Timer? _addrChangeTicker;
 
   static Future<AmbientAutoNAT> create(Host h, List<AutoNATOption> options) async {
     final dialPolicy = DialPolicyImpl(host: h); // Default dial policy
     final conf = AutoNATConfig(host: h, dialPolicy: dialPolicy);
     applyOptions(conf, options); // Apply user-provided options
 
-    if (conf.addressFunc == null) {
-      // In Go: if aa, ok := h.(interface{ AllAddrs() []ma.Multiaddr }); ok { conf.addressFunc = aa.AllAddrs } else { conf.addressFunc = h.Addrs }
-      // Assuming Host has `allAddrs` or similar, or fallback to `addrs`
-      // For now, directly use h.addrs as AddrFunc
-      conf.addressFunc = () => h.addrs;
-    }
+    conf.addressFunc ??= () => h.addrs;
     
     AutoNATService? serviceInstance;
     if ((!conf.forceReachability || conf.reachability == Reachability.public) && conf.dialer != null) {
@@ -211,9 +201,9 @@ class AmbientAutoNAT implements AutoNAT, Notifiee {
     _log('Background task stopping.');
     _probeTimer?.cancel();
     _addrChangeTicker?.cancel();
-    await inboundConnSub?.cancel();
-    await dialResponsesSub?.cancel();
-    await observationsSub?.cancel();
+    await inboundConnSub.cancel();
+    await dialResponsesSub.cancel();
+    await observationsSub.cancel();
     // await _emitReachabilityChanged.close(); // Placeholder
     await _eventBusSubscription?.cancel(); 
   }
@@ -530,12 +520,12 @@ class AmbientAutoNAT implements AutoNAT, Notifiee {
 
 
 // StaticAutoNAT implementation
-class StaticAutoNAT implements AutoNAT {
-  final Host _host;
-  final Reachability _reachability;
-  final AutoNATService? _service; // Can have an associated service
+class StaticAutoNAT implements AutoNAT { // Can have an associated service
 
   StaticAutoNAT(this._host, this._reachability, this._service);
+  final Host _host;
+  final Reachability _reachability;
+  final AutoNATService? _service;
 
   static Future<StaticAutoNAT> create(Host h, Reachability reachability, List<AutoNATOption> options) async {
     // Similar to AmbientAutoNAT.create, setup config and optional service

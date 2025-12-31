@@ -1,20 +1,20 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'stomp_constants.dart';
-import 'stomp_exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_constants.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_exceptions.dart';
 
 /// Represents a STOMP frame with command, headers, and body
 class StompFrame {
-  final String command;
-  final Map<String, String> headers;
-  final Uint8List? body;
 
   StompFrame({
     required this.command,
     Map<String, String>? headers,
     this.body,
   }) : headers = headers ?? <String, String>{};
+  final String command;
+  final Map<String, String> headers;
+  final Uint8List? body;
 
   /// Creates a STOMP frame from raw bytes
   static StompFrame fromBytes(Uint8List data) {

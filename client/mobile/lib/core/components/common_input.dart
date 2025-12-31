@@ -2,11 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:peers_touch_mobile/app/theme/app_styles.dart';
 
 class CommonInput extends StatelessWidget {
-  final TextEditingController? controller;
-  final String? hintText;
-  final bool obscureText;
-  final TextInputType keyboardType;
-  final ValueChanged<String>? onChanged;
 
   const CommonInput({
     super.key,
@@ -16,6 +11,11 @@ class CommonInput extends StatelessWidget {
     this.keyboardType = TextInputType.text,
     this.onChanged,
   });
+  final TextEditingController? controller;
+  final String? hintText;
+  final bool obscureText;
+  final TextInputType keyboardType;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {

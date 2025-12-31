@@ -1,5 +1,6 @@
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:peers_touch_base/storage/file_storage_manager.dart';
 import 'package:peers_touch_desktop/core/services/network_initializer.dart';
@@ -30,7 +31,7 @@ class FileCacheService {
     final base = NetworkInitializer.currentBaseUrl;
     final full = Uri.parse(base.trim().endsWith('/')
         ? '${base.trim()}${urlPath.startsWith('/') ? urlPath.substring(1) : urlPath}'
-        : '${base.trim()}${urlPath}');
+        : '${base.trim()}$urlPath');
 
     final client = HttpClient();
     final req = await client.getUrl(full);

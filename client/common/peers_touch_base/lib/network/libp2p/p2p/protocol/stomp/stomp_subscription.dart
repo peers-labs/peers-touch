@@ -1,19 +1,11 @@
 import 'dart:async';
 
-import 'stomp_constants.dart';
-import 'stomp_exceptions.dart';
-import 'stomp_frame.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_constants.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_exceptions.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp/stomp_frame.dart';
 
 /// Represents a STOMP subscription
 class StompSubscription {
-  final String id;
-  final String destination;
-  final String ackMode;
-  final Map<String, String> headers;
-  final StreamController<StompMessage> _messageController;
-  final StreamController<void> _unsubscribeController;
-
-  bool _isActive = true;
 
   StompSubscription({
     required this.id,
@@ -23,6 +15,14 @@ class StompSubscription {
   }) : headers = headers ?? <String, String>{},
        _messageController = StreamController<StompMessage>.broadcast(),
        _unsubscribeController = StreamController<void>.broadcast();
+  final String id;
+  final String destination;
+  final String ackMode;
+  final Map<String, String> headers;
+  final StreamController<StompMessage> _messageController;
+  final StreamController<void> _unsubscribeController;
+
+  bool _isActive = true;
 
   /// Stream of messages for this subscription
   Stream<StompMessage> get messages => _messageController.stream;
@@ -68,12 +68,6 @@ class StompSubscription {
 
 /// Represents a STOMP message received from a subscription
 class StompMessage {
-  final String messageId;
-  final String destination;
-  final String subscriptionId;
-  final Map<String, String> headers;
-  final String? body;
-  final String? ackId;
 
   StompMessage({
     required this.messageId,
@@ -113,6 +107,12 @@ class StompMessage {
       ackId: frame.getHeader(StompHeaders.ack),
     );
   }
+  final String messageId;
+  final String destination;
+  final String subscriptionId;
+  final Map<String, String> headers;
+  final String? body;
+  final String? ackId;
 
   /// Gets a header value
   String? getHeader(String name) {
@@ -277,11 +277,6 @@ enum StompAckMode {
 
 /// Pending acknowledgment for a message
 class PendingAck {
-  final String messageId;
-  final String subscriptionId;
-  final String? ackId;
-  final DateTime timestamp;
-  final StompAckMode ackMode;
 
   PendingAck({
     required this.messageId,
@@ -289,6 +284,11 @@ class PendingAck {
     required this.ackId,
     required this.ackMode,
   }) : timestamp = DateTime.now();
+  final String messageId;
+  final String subscriptionId;
+  final String? ackId;
+  final DateTime timestamp;
+  final StompAckMode ackMode;
 
   @override
   String toString() {

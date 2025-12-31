@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 class ErrorBanner extends StatelessWidget {
-  final String message;
   const ErrorBanner({super.key, required this.message});
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -10,7 +10,7 @@ class ErrorBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.error.withOpacity(0.1),
+        color: theme.colorScheme.error.withValues(alpha: 0.1),
         border: Border.all(color: theme.colorScheme.error),
         borderRadius: BorderRadius.circular(8),
       ),

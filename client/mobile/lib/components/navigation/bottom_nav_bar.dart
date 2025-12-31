@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:peers_touch_mobile/utils/app_localizations_helper.dart';
 
 class BottomNavBar extends StatelessWidget {
-  final int currentIndex;
-  final Function(int) onTap;
-  final VoidCallback? onOutsideTap;
 
   const BottomNavBar({
     super.key,
@@ -12,6 +9,9 @@ class BottomNavBar extends StatelessWidget {
     required this.onTap,
     this.onOutsideTap,
   });
+  final int currentIndex;
+  final Function(int) onTap;
+  final VoidCallback? onOutsideTap;
 
   @override
   Widget build(BuildContext context) {

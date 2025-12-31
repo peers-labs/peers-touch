@@ -6,12 +6,13 @@
 ///
 /// This is a port of the Go implementation from go-libp2p/p2p/protocol/holepunch
 /// to Dart, using native Dart idioms.
+library;
 
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/holepunch_service.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/service.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/id_service.dart';
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 
 /// Creates a new holepunch service.
 ///
@@ -27,10 +28,6 @@ Future<HolePunchService> newHolePunchService(
   List<MultiAddr> Function() listenAddrs, {
   HolePunchOptions? options,
 }) async {
-  if (ids == null) {
-    throw ArgumentError('identify service can\'t be null');
-  }
-
   final service = HolePunchServiceImpl(host, ids, listenAddrs, options: options);
   await service.start();
   return service;

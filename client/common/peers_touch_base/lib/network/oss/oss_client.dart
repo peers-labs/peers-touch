@@ -1,8 +1,9 @@
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'model/oss_file.dart';
+import 'package:peers_touch_base/network/oss/model/oss_file.dart';
 
 class OssClient {
   final _httpService = HttpServiceLocator().httpService;
@@ -30,7 +31,7 @@ class OssClient {
       
       final data = response.data;
       if (data == null) {
-        throw Exception("Upload failed: empty response");
+        throw Exception('Upload failed: empty response');
       }
       
       // Handle case where data might be String (though postResponse generic should handle it if interceptors don't mess it up)
@@ -42,10 +43,10 @@ class OssClient {
          try {
            jsonMap = jsonDecode(data);
          } catch (_) {
-           throw Exception("Upload failed: unexpected response type String: $data");
+           throw Exception('Upload failed: unexpected response type String: $data');
          }
       } else {
-        throw Exception("Upload failed: unexpected response type ${data.runtimeType}");
+        throw Exception('Upload failed: unexpected response type ${data.runtimeType}');
       }
 
       return OssFile.fromJson(jsonMap);

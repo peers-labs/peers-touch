@@ -9,6 +9,12 @@ typedef NetworkInterfaceProvider = Future<List<NetworkInterface>> Function();
 
 /// A class that monitors network interfaces for changes
 class NetworkInterfaceMonitor {
+
+  /// Creates a new network interface monitor
+  NetworkInterfaceMonitor({
+    this.checkInterval = const Duration(seconds: 30),
+    NetworkInterfaceProvider? interfaceProvider,
+  }) : _interfaceProvider = interfaceProvider ?? NetworkInterface.list;
   /// The interval between checks for network interface changes
   final Duration checkInterval;
 
@@ -23,12 +29,6 @@ class NetworkInterfaceMonitor {
 
   /// Callbacks for network interface changes
   final List<NetworkInterfaceChangeCallback> _callbacks = [];
-
-  /// Creates a new network interface monitor
-  NetworkInterfaceMonitor({
-    this.checkInterval = const Duration(seconds: 30),
-    NetworkInterfaceProvider? interfaceProvider,
-  }) : _interfaceProvider = interfaceProvider ?? NetworkInterface.list;
 
   /// Initializes the network interface monitor
   Future<void> initialize() async {

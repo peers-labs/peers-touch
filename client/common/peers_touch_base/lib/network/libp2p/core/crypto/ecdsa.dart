@@ -1,28 +1,27 @@
 import 'dart:typed_data';
-import 'package:pointycastle/pointycastle.dart' as pc;
+
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart' as p2pkeys;
+import 'package:peers_touch_base/network/libp2p/core/crypto/pb/crypto.pb.dart' as pb;
 import 'package:pointycastle/api.dart';
+import 'package:pointycastle/digests/sha256.dart';
 import 'package:pointycastle/ecc/api.dart';
 import 'package:pointycastle/ecc/curves/secp256r1.dart';
+import 'package:pointycastle/pointycastle.dart' as pc;
 import 'package:pointycastle/signers/ecdsa_signer.dart';
-import 'package:pointycastle/digests/sha256.dart';
-import '../../p2p/crypto/key_generator.dart';
-import '../../core/crypto/pb/crypto.pb.dart' as pb;
-import 'keys.dart' as p2pkeys;
 
 /// The default ECDSA curve used (P-256)
 final ECDomainParameters ECDSACurve = ECCurve_secp256r1();
 
 /// Exception thrown when an ECDSA key is invalid
 class ECDSAKeyException implements Exception {
-  final String message;
   ECDSAKeyException(this.message);
+  final String message;
   @override
   String toString() => message;
 }
 
 /// Implementation of ECDSA public key
 class EcdsaPublicKey implements p2pkeys.PublicKey {
-  final ECPublicKey _key;
 
   EcdsaPublicKey(this._key);
 
@@ -39,22 +38,20 @@ class EcdsaPublicKey implements p2pkeys.PublicKey {
       // Create the public key
       final curve = ECCurve_secp256r1();
       final point = curve.curve.createPoint(x, y);
-      if (point == null) {
-        throw ECDSAKeyException('Failed to create EC point from coordinates');
-      }
       
       return EcdsaPublicKey(ECPublicKey(point, ECDSACurve));
     } catch (e) {
       throw ECDSAKeyException('Failed to parse ECDSA public key: ${e.toString()}');
     }
   }
+  final ECPublicKey _key;
 
   /// Creates an EcdsaPublicKey from its protobuf bytes
   static p2pkeys.PublicKey unmarshal(Uint8List bytes) {
     final pbKey = pb.PublicKey.fromBuffer(bytes);
 
     if (pbKey.type != pb.KeyType.ECDSA) {
-      throw FormatException('Not an ECDSA public key');
+      throw const FormatException('Not an ECDSA public key');
     }
     return EcdsaPublicKey.fromRawBytes(Uint8List.fromList(pbKey.data));
   }
@@ -134,10 +131,10 @@ class EcdsaPublicKey implements p2pkeys.PublicKey {
 
 /// Implementation of ECDSA private key
 class EcdsaPrivateKey implements p2pkeys.PrivateKey {
-  final ECPrivateKey _key;
-  late final EcdsaPublicKey _publicKey;
 
   EcdsaPrivateKey(this._key, this._publicKey);
+  final ECPrivateKey _key;
+  late final EcdsaPublicKey _publicKey;
 
   /// Creates an EcdsaPrivateKey from raw bytes (DER encoded)
   static Future<p2pkeys.PrivateKey> fromRawBytes(Uint8List bytes) async {
@@ -155,9 +152,6 @@ class EcdsaPrivateKey implements p2pkeys.PrivateKey {
       // Create the public key
       final curve = ECCurve_secp256r1();
       final point = curve.curve.createPoint(x, y);
-      if (point == null) {
-        throw ECDSAKeyException('Failed to create EC point from coordinates');
-      }
       
       final privateKey = ECPrivateKey(d, ECDSACurve);
       final publicKey = ECPublicKey(point, ECDSACurve);
@@ -173,7 +167,7 @@ class EcdsaPrivateKey implements p2pkeys.PrivateKey {
     final pbKey = pb.PrivateKey.fromBuffer(bytes);
 
     if (pbKey.type != pb.KeyType.ECDSA) {
-      throw FormatException('Not an ECDSA private key');
+      throw const FormatException('Not an ECDSA private key');
     }
     
     return fromRawBytes(Uint8List.fromList(pbKey.data));

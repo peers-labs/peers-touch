@@ -153,33 +153,6 @@ class ProviderDetailPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildValueField(BuildContext context, String value, {IconData? suffixIcon, VoidCallback? onSuffixIconTap}) {
-    final tokens = Theme.of(context).extension<LobeTokens>()!;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: tokens.bgLevel2,
-        borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              value,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (suffixIcon != null)
-            InkWell(
-              onTap: onSuffixIconTap,
-              child: Icon(suffixIcon, color: tokens.textSecondary, size: 18),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEditableField(BuildContext context, {required String initialValue, bool obscureText = false, IconData? suffixIcon, VoidCallback? onSuffixIconTap, required ValueChanged<String> onSubmitted}) {
     final tokens = Theme.of(context).extension<LobeTokens>()!;
     final controller = TextEditingController(text: initialValue);
@@ -207,33 +180,6 @@ class ProviderDetailPanel extends StatelessWidget {
             ),
         ],
       ),
-    );
-  }
-
-  Widget _buildConnectivityCheck(BuildContext context, String checkModel) {
-    final tokens = Theme.of(context).extension<LobeTokens>()!;
-    final l = AppLocalizations.of(context)!;
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: tokens.bgLevel2,
-              borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
-            ),
-            child: Text(checkModel, overflow: TextOverflow.ellipsis),
-          ),
-        ),
-        const SizedBox(width: 8),
-        ElevatedButton(
-          onPressed: () => Get.find<ProviderController>().testProviderConnection(provider.id),
-          style: UIKit.primaryButtonStyle(context).copyWith(
-            padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
-          ),
-          child: Text(l.check),
-        ),
-      ],
     );
   }
 

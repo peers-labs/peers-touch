@@ -9,9 +9,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/dart_libp2p.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/stomp.dart';
-import 'package:logging/logging.dart';
 
 Future<void> main() async {
   // Set up logging

@@ -1,15 +1,13 @@
 import 'dart:async';
-import 'dart:io';
-
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/stream.dart'; // P2PStream is used
-import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ConnScope, ScopeStat, ResourceScopeSpan; // Import new types
 
 import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/common.dart'; // Provides Direction
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ConnScope; // Import new types
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart'; // P2PStream is used
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
 
 /// Conn is a connection to a remote peer. It multiplexes streams.
 /// Usually there is no need to use a Conn directly, but it may
@@ -63,6 +61,13 @@ abstract class Conn {
 
 /// ConnectionState holds information about the connection.
 class ConnState {
+
+  const ConnState({
+    required this.streamMultiplexer,
+    required this.security,
+    required this.transport,
+    required this.usedEarlyMuxerNegotiation,
+  });
   /// The stream multiplexer used on this connection (if any). For example: /yamux/1.0.0
   final ProtocolID streamMultiplexer;
 
@@ -74,18 +79,18 @@ class ConnState {
 
   /// Indicates whether StreamMultiplexer was selected using inlined muxer negotiation
   final bool usedEarlyMuxerNegotiation;
-
-  const ConnState({
-    required this.streamMultiplexer,
-    required this.security,
-    required this.transport,
-    required this.usedEarlyMuxerNegotiation,
-  });
 }
 
 
 /// Stats stores metadata pertaining to a given Stream / Conn.
 class Stats {
+
+  const Stats({
+    required this.direction,
+    required this.opened,
+    this.limited = false,
+    this.extra = const {},
+  });
   /// Direction specifies whether this is an inbound or an outbound connection.
   final Direction direction; // From common.dart
 
@@ -97,25 +102,18 @@ class Stats {
 
   /// Extra stores additional metadata about this connection.
   final Map<dynamic, dynamic> extra;
-
-  const Stats({
-    required this.direction,
-    required this.opened,
-    this.limited = false,
-    this.extra = const {},
-  });
 }
 
 /// ConnStats stores metadata pertaining to a given Conn.
 abstract class ConnStats {
-  /// Base stats
-  final Stats stats;
-
-  /// Number of streams on the connection
-  final int numStreams;
 
   const ConnStats({
     required this.stats,
     required this.numStreams,
   });
+  /// Base stats
+  final Stats stats;
+
+  /// Number of streams on the connection
+  final int numStreams;
 }

@@ -17,7 +17,7 @@ abstract class AIProviderTemplate {
   Provider applyDefaults(Provider p) {
     final settings = _jsonMerge(_jsonDecode(p.settingsJson), defaultSettings());
     final config = _jsonMerge(_jsonDecode(p.configJson), defaultConfig());
-    return (p.deepCopy() as Provider)
+    return p.deepCopy()
       ..settingsJson = _jsonEncode(settings)
       ..configJson = _jsonEncode(config);
   }
@@ -49,17 +49,17 @@ abstract class AIProviderTemplate {
 }
 
 class FieldSpec {
+  const FieldSpec({required this.key, required this.label, this.placeholder, this.editable = true, this.obscure = false});
   final String key;
   final String label;
   final String? placeholder;
   final bool editable;
   final bool obscure;
-  const FieldSpec({required this.key, required this.label, this.placeholder, this.editable = true, this.obscure = false});
 }
 
 class ModelFetchSpec {
+  const ModelFetchSpec({required this.endpoint, this.method = 'GET', this.pathSelectors = const []});
   final String endpoint;
   final String method;
   final List<String> pathSelectors;
-  const ModelFetchSpec({required this.endpoint, this.method = 'GET', this.pathSelectors = const []});
 }

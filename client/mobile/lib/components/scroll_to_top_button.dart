@@ -3,12 +3,12 @@ import 'package:get/get.dart';
 import 'package:peers_touch_mobile/controller/controller.dart';
 
 class ScrollToTopButton extends StatelessWidget {
-  final String pageKey;
   
   const ScrollToTopButton({
     super.key,
     required this.pageKey,
   });
+  final String pageKey;
 
   @override
   Widget build(BuildContext context) {

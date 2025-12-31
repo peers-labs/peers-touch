@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 import 'package:peers_touch_mobile/common/logger/logger.dart';
-import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
-import 'package:peers_touch_mobile/pages/chat/models/message_model.dart';
+import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 import 'package:peers_touch_mobile/pages/chat/chat_message_bubble.dart';
 import 'package:peers_touch_mobile/pages/chat/chat_message_input.dart';
+import 'package:peers_touch_mobile/pages/chat/models/friend_model.dart';
+import 'package:peers_touch_mobile/pages/chat/models/message_model.dart';
 
 class ChatDetailPage extends StatefulWidget {
-  final FriendModel friend;
 
   const ChatDetailPage({super.key, required this.friend});
+  final FriendModel friend;
 
   @override
   State<ChatDetailPage> createState() => _ChatDetailPageState();

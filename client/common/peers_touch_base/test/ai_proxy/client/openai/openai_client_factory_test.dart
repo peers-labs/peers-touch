@@ -1,7 +1,6 @@
 
 import 'package:peers_touch_base/ai_proxy/client/openai/openai_chat_client.dart';
 import 'package:peers_touch_base/ai_proxy/client/openai/openai_client_factory.dart';
-import 'package:peers_touch_base/network/dio/http_service_impl.dart';
 import 'package:test/test.dart';
 
 void main() {

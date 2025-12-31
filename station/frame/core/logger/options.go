@@ -79,6 +79,7 @@ func WithOutput(out io.Writer) Option {
 	}
 }
 
+// WithName sets the logger name.
 func WithName(n string) Option {
 	return func(options *Options) {
 		options.Name = n
@@ -92,12 +93,14 @@ func WithCallerSkipCount(c int) Option {
 	}
 }
 
+// WithPersistence configures log file persistence.
 func WithPersistence(o *PersistenceOptions) Option {
 	return func(options *Options) {
 		options.Persistence = o
 	}
 }
 
+// SetOption stores a key/value in Options.Context.
 func SetOption(k, v interface{}) Option {
 	return func(o *Options) {
 		if o.Context == nil {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
-import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 import 'package:peers_touch_desktop/features/discovery/view/components/discovery_content_item.dart';
 import 'package:peers_touch_desktop/features/discovery/view/composer_page.dart';
 import 'package:peers_touch_desktop/features/discovery/view/radar_view.dart';
@@ -158,7 +157,6 @@ class DiscoveryPage extends GetView<DiscoveryController> {
   }
 
   Widget _buildContentList(BuildContext context, ShellController shell) {
-    final theme = Theme.of(context);
     return Stack(
       children: [
         Positioned.fill(
@@ -228,11 +226,11 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                         onChanged: controller.setTab,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF0F6FF).withOpacity(alpha),
+                          color: const Color(0xFFF0F6FF).withValues(alpha: alpha),
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
+                              color: Colors.black.withValues(alpha: 0.08),
                               blurRadius: 20,
                               offset: const Offset(0, 8),
                             ),
@@ -276,7 +274,7 @@ class DiscoveryPage extends GetView<DiscoveryController> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 20,
             offset: const Offset(0, 4),
           ),
@@ -392,7 +390,7 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.errorContainer.withOpacity(0.5),
+                    color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -427,246 +425,6 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                 ),
               ],
             ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DiscoveryDetailView extends StatelessWidget {
-  const _DiscoveryDetailView({required this.item});
-  final DiscoveryItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Theme.of(context).colorScheme.surface,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 800),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Top Bar
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Row(
-                  children: [
-                    const Icon(Icons.notifications_none),
-                    const Spacer(),
-                    const CircleAvatar(
-                      radius: 16,
-                      backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=user'),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Adam Lalana',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const Icon(Icons.arrow_drop_down),
-                  ],
-                ),
-              ),
-              
-              Expanded(
-                child: Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    primary: true,
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Video/Image Placeholder
-                        Container(
-                          height: 200,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            image: const DecorationImage(
-                              image: NetworkImage('https://picsum.photos/400/300'),
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                    child: Stack(
-                      children: [
-                        Positioned(
-                          top: 12,
-                          left: 12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Row(
-                              children: [
-                                Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                                SizedBox(width: 4),
-                                Icon(Icons.visibility, color: Colors.white, size: 10),
-                                SizedBox(width: 2),
-                                Text('3456', style: TextStyle(color: Colors.white, fontSize: 10)),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const Center(
-                          child: Icon(Icons.play_circle_fill, color: Colors.white, size: 48),
-                        ),
-                      ],
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Chat Area
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.blue[900],
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Text(
-                              'Live Chat',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                            ),
-                            Spacer(),
-                            Icon(Icons.close, color: Colors.white, size: 16),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          '1.5 k Peoples',
-                          style: TextStyle(color: Colors.white70, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Pinned Message
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.push_pin, color: Colors.blue, size: 16),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Pinned', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                              Text(
-                                'How to make Youtube subscriber grow faster.',
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Comments
-                  _buildComment(
-                    'Suny Suka',
-                    'Wow Keep it up dude 🔥🔥',
-                    '09:00',
-                    'https://i.pravatar.cc/150?u=9',
-                  ),
-                  const SizedBox(height: 16),
-                  _buildComment(
-                    'Arman Bahir',
-                    'Amazing',
-                    '09:01',
-                    'https://i.pravatar.cc/150?u=10',
-                  ),
-                  const SizedBox(height: 16),
-                  _buildComment(
-                    'John Doe',
-                    'Can you look my comment here 😇',
-                    '09:10',
-                    'https://i.pravatar.cc/150?u=11',
-                  ),
-                ],
-              ),
-            ),
-          ),
-          ),
-
-          // Input Area (Fixed at bottom)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.cyanAccent,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.emoji_emotions_outlined, color: Colors.black54),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Add your comment',
-                        border: InputBorder.none,
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.send),
-                    onPressed: () {},
-                    color: Colors.black87,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildComment(String name, String text, String time, String avatar) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        CircleAvatar(
-          radius: 14,
-          backgroundImage: NetworkImage(avatar),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  Text(time, style: const TextStyle(color: Colors.grey, fontSize: 10)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(text, style: TextStyle(color: Colors.grey[700], fontSize: 12)),
-            ],
           ),
         ),
       ],

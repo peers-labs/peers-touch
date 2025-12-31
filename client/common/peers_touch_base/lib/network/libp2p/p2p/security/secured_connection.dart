@@ -1,20 +1,19 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:collection';
 
-import 'package:cryptography/cryptography.dart' hide PublicKey;
-import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-import '../../core/multiaddr.dart';
-import '../../core/network/conn.dart';
-import '../../core/network/transport_conn.dart';
-import '../../core/crypto/keys.dart';
-import '../../core/network/context.dart';
-import '../../core/network/stream.dart';
-import '../../core/network/rcmgr.dart' show ConnScope; // Import ConnScope
+import 'package:convert/convert.dart';
 import 'package:cryptography/cryptography.dart' as crypto;
 import 'package:logging/logging.dart'; // Added for logging
-import 'package:convert/convert.dart';
+import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart' show ConnScope; // Import ConnScope
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/transport_conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
 final _log = Logger('SecuredConnection');
 
@@ -91,16 +90,7 @@ class _DecryptedDataBuffer {
 }
 
 /// A connection secured by a security protocol
-class SecuredConnection implements TransportConn {
-  final TransportConn _connection;
-  final crypto.SecretKey _encryptionKey;
-  final crypto.SecretKey _decryptionKey;
-  final PeerId? establishedRemotePeer;
-  final PublicKey? establishedRemotePublicKey;
-  final String securityProtocolId; // Added to resolve circular dependency
-  int _sendNonce = 0;
-  int _recvNonce = 0;
-  final _DecryptedDataBuffer _decryptedBuffer = _DecryptedDataBuffer(); // Optimized buffer
+class SecuredConnection implements TransportConn { // Optimized buffer
 
   SecuredConnection(
       this._connection,
@@ -118,6 +108,15 @@ class SecuredConnection implements TransportConn {
     _decryptionKey.extractBytes().then((bytes) => _log.finer('  - _decryptionKey.bytes: $bytes'));
 
   }
+  final TransportConn _connection;
+  final crypto.SecretKey _encryptionKey;
+  final crypto.SecretKey _decryptionKey;
+  final PeerId? establishedRemotePeer;
+  final PublicKey? establishedRemotePublicKey;
+  final String securityProtocolId; // Added to resolve circular dependency
+  int _sendNonce = 0;
+  int _recvNonce = 0;
+  final _DecryptedDataBuffer _decryptedBuffer = _DecryptedDataBuffer();
 
   Uint8List _getNonce(int counter) {
     final nonce = Uint8List(12);  // ChaCha20-Poly1305 uses 12-byte nonces
@@ -197,7 +196,7 @@ class SecuredConnection implements TransportConn {
 
   /// Reads exactly the expected number of bytes, handling partial reads from the underlying transport
   Future<Uint8List> _readFullMessage(int expectedLength, {Duration? timeout}) async {
-    timeout ??= Duration(seconds: 30); // Default timeout for message reads
+    timeout ??= const Duration(seconds: 30); // Default timeout for message reads
     final startTime = DateTime.now();
     
     if (expectedLength == 0) {
@@ -212,7 +211,7 @@ class SecuredConnection implements TransportConn {
       
       // Check timeout
       if (DateTime.now().difference(startTime) > timeout) {
-        _log.warning('SecuredConnection: Timeout reading message after ${readAttempts} attempts. Expected: $expectedLength, Got: ${buffer.length}');
+        _log.warning('SecuredConnection: Timeout reading message after $readAttempts attempts. Expected: $expectedLength, Got: ${buffer.length}');
         throw TimeoutException('Timeout reading message', timeout);
       }
       
@@ -348,7 +347,7 @@ class SecuredConnection implements TransportConn {
     // Write MAC
       ..setAll(2 + secretBox.cipherText.length, secretBox.mac.bytes);
 
-    _log.finer('SecuredConnection: Writing ${data.length} bytes as ${dataLength} bytes encrypted+MAC');
+    _log.finer('SecuredConnection: Writing ${data.length} bytes as $dataLength bytes encrypted+MAC');
     _log.finer('SecuredConnection:   Raw Ciphertext to send: ${hex.encode(secretBox.cipherText)}');
     _log.finer('SecuredConnection:   Raw MAC to send: ${hex.encode(secretBox.mac.bytes)}');
     _log.finer('SecuredConnection: First 4 bytes of encrypted: ${secretBox.cipherText.take(4).toList()}');

@@ -1,9 +1,4 @@
 class OssFile {
-  final String key;
-  final String url;
-  final int size;
-  final String mime;
-  final String backend;
 
   OssFile({
     required this.key,
@@ -22,6 +17,11 @@ class OssFile {
       backend: json['backend']?.toString() ?? '',
     );
   }
+  final String key;
+  final String url;
+  final int size;
+  final String mime;
+  final String backend;
 
   Map<String, dynamic> toJson() => {
     'key': key,

@@ -9,7 +9,6 @@ import 'package:peers_touch_base/network/token_provider.dart';
 import 'package:peers_touch_base/network/token_refresher.dart';
 
 class HttpServiceImpl implements IHttpService {
-  late final Dio _dio;
 
   HttpServiceImpl({
     required String baseUrl,
@@ -44,6 +43,7 @@ class HttpServiceImpl implements IHttpService {
       ErrorInterceptor(),
     ]);
   }
+  late final Dio _dio;
 
   /// 更新基础URL
   void setBaseUrl(String newBaseUrl) {

@@ -1,9 +1,4 @@
 class RichModel {
-  final String id;
-  final String providerId; // Reverse reference for easy lookup
-  final String name;
-  final String description;
-  final Set<String> _capabilities;
 
   RichModel({
     required this.id,
@@ -12,6 +7,11 @@ class RichModel {
     required this.description,
     required Set<String> capabilities,
   }) : _capabilities = capabilities;
+  final String id;
+  final String providerId; // Reverse reference for easy lookup
+  final String name;
+  final String description;
+  final Set<String> _capabilities;
 
   // "Rich" methods that provide business logic
   bool get supportsTextInput => _capabilities.contains('textInput');

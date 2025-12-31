@@ -1,23 +1,21 @@
 import 'dart:async';
 
+import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
+import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
+// User added this, assuming it brings PeerId class for PeerId.fromString
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/core/peerstore.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart';
 import 'package:peers_touch_base/network/libp2p/core/protocol/switch.dart';
 import 'package:peers_touch_base/network/libp2p/core/routing/routing.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/stream.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/common.dart'; // For Connectedness
-import 'package:peers_touch_base/network/libp2p/core/connmgr/conn_manager.dart';
-import 'package:peers_touch_base/network/libp2p/core/event/bus.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart' as multiaddr_protocol;
-import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch.dart'; // Added for HolePunchService
-
-// User added this, assuming it brings PeerId class for PeerId.fromString
-import '../../../core/peer/peer_id.dart'; 
+import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch.dart'; // Added for HolePunchService 
 
 // TODO: Consider if a logger is needed, similar to Go's `log = logging.Logger("routedhost")`
 // import 'package:logging/logging.dart';
@@ -27,10 +25,10 @@ import '../../../core/peer/peer_id.dart';
 /// This allows the Host to find the addresses for peers when
 /// it does not have them.
 class RoutedHost implements Host {
-  final Host _host; // The host we're wrapping
-  final PeerRouting _routing;
 
   RoutedHost(this._host, this._routing);
+  final Host _host; // The host we're wrapping
+  final PeerRouting _routing;
 
   @override
   PeerId get id => _host.id;
@@ -112,8 +110,8 @@ class RoutedHost implements Host {
     final effectiveCtx = context ?? Context(); // Ensure context is not null
 
     // Use specific getters from Context
-    bool forceDirect = effectiveCtx.getForceDirectDial().$1;
-    bool canUseLimitedConn = effectiveCtx.getAllowLimitedConn().$1;
+    final bool forceDirect = effectiveCtx.getForceDirectDial().$1;
+    final bool canUseLimitedConn = effectiveCtx.getAllowLimitedConn().$1;
 
     if (!forceDirect) {
       final connectedness = network.connectedness(pi.id);
@@ -235,7 +233,7 @@ class RoutedHost implements Host {
     final effectiveCtx = context; // context is now non-nullable due to interface
     
     // Use specific getter from Context
-    bool noDial = effectiveCtx.getNoDial().$1;
+    final bool noDial = effectiveCtx.getNoDial().$1;
 
     if (!noDial) {
       // Ensure we have a connection, with peer addresses resolved by the routing system.

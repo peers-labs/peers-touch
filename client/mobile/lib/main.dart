@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-
+import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
+import 'package:peers_touch_mobile/common/logger/logger.dart';
+import 'package:peers_touch_mobile/controller/controller.dart';
+import 'package:peers_touch_mobile/features/home/home_module.dart';
+import 'package:peers_touch_mobile/l10n/app_localizations.dart';
 import 'package:peers_touch_mobile/pages/actor/auth_page.dart';
 import 'package:peers_touch_mobile/pages/actor/auth_wrapper.dart';
-import 'package:peers_touch_mobile/common/logger/logger.dart';
-
-import 'package:get/get.dart';
-
-import 'l10n/app_localizations.dart';
-import 'package:peers_touch_mobile/controller/controller.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:peers_touch_mobile/features/home/home_module.dart';
 
 void main() async {
   // Ensure Flutter is initialized

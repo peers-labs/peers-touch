@@ -1,19 +1,13 @@
 import 'dart:async';
 
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
-
-import '../../../core/peer/addr_info.dart';
-import '../../../core/host/host.dart';
-import '../../../core/network/context.dart';
-import 'backoff.dart';
-import 'lru_cache.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/discovery/backoff/backoff.dart';
 
 /// A utility to connect to peers, but only if we have not recently tried connecting to them already
 class BackoffConnector {
-  final LRUCache<PeerId, ConnCacheData> _cache;
-  final Host _host;
-  final Duration _connTryDur;
-  final BackoffFactory _backoff;
 
   /// Creates a utility to connect to peers, but only if we have not recently tried connecting to them already
   /// cacheSize is the size of the LRU cache
@@ -28,6 +22,10 @@ class BackoffConnector {
         _cache = LRUCache<PeerId, ConnCacheData>(cacheSize),
         _connTryDur = connectionTryDuration,
         _backoff = backoff;
+  final LRUCache<PeerId, ConnCacheData> _cache;
+  final Host _host;
+  final Duration _connTryDur;
+  final BackoffFactory _backoff;
 
   /// Connect attempts to connect to the peers passed in by peerStream. Will not connect to peers if they are within the backoff period.
   /// As Connect will attempt to dial peers as soon as it learns about them, the caller should try to keep the number,
@@ -73,7 +71,7 @@ class BackoffConnector {
     try {
       // Add the peer's addresses to the peerstore
       for (final addr in pi.addrs) {
-        _host.network.peerstore.addrBook.addAddr(pi.id, addr, Duration(hours: 1));
+        _host.network.peerstore.addrBook.addAddr(pi.id, addr, const Duration(hours: 1));
       }
 
       // Create a context without timeout (timeout handled by Future.timeout below)
@@ -98,8 +96,8 @@ class BackoffConnector {
 
 /// Data stored in the connection cache
 class ConnCacheData {
-  DateTime nextTry = DateTime.fromMicrosecondsSinceEpoch(0);
-  final BackoffStrategy strat;
 
   ConnCacheData(this.strat);
+  DateTime nextTry = DateTime.fromMicrosecondsSinceEpoch(0);
+  final BackoffStrategy strat;
 }

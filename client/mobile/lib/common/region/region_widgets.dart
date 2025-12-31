@@ -4,20 +4,20 @@ import 'package:peers_touch_mobile/common/region/region_manager.dart';
 
 /// Region selection dropdown widget
 class RegionDropdown extends StatefulWidget {
-  final ValueChanged<RegionData?>? onChanged;
-  final RegionData? value;
-  final String? hintText;
-  final bool showFlags;
-  final bool searchable;
 
   const RegionDropdown({
-    Key? key,
+    super.key,
     this.onChanged,
     this.value,
     this.hintText = 'Select a country',
     this.showFlags = true,
     this.searchable = false,
-  }) : super(key: key);
+  });
+  final ValueChanged<RegionData?>? onChanged;
+  final RegionData? value;
+  final String? hintText;
+  final bool showFlags;
+  final bool searchable;
 
   @override
   State<RegionDropdown> createState() => _RegionDropdownState();
@@ -85,16 +85,16 @@ class _RegionDropdownState extends State<RegionDropdown> {
 
 /// Region search widget
 class RegionSearchField extends StatefulWidget {
-  final ValueChanged<RegionData?>? onSelected;
-  final String? hintText;
-  final bool showFlags;
 
   const RegionSearchField({
-    Key? key,
+    super.key,
     this.onSelected,
     this.hintText = 'Search countries...',
     this.showFlags = true,
-  }) : super(key: key);
+  });
+  final ValueChanged<RegionData?>? onSelected;
+  final String? hintText;
+  final bool showFlags;
 
   @override
   State<RegionSearchField> createState() => _RegionSearchFieldState();
@@ -201,16 +201,16 @@ class _RegionSearchFieldState extends State<RegionSearchField> {
 
 /// Region list widget with selection
 class RegionList extends StatelessWidget {
-  final ValueChanged<RegionData>? onRegionSelected;
-  final bool showFlags;
-  final String? searchQuery;
 
   const RegionList({
-    Key? key,
+    super.key,
     this.onRegionSelected,
     this.showFlags = true,
     this.searchQuery,
-  }) : super(key: key);
+  });
+  final ValueChanged<RegionData>? onRegionSelected;
+  final bool showFlags;
+  final String? searchQuery;
 
   @override
   Widget build(BuildContext context) {

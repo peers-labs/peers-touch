@@ -2,21 +2,21 @@
 /// 
 /// This is a port of the Go implementation from go-libp2p/p2p/host/basic/natmgr.go
 /// to Dart, using native Dart idioms.
+library;
 
 import 'dart:async';
 import 'dart:io';
 
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
 import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
-import 'package:logging/logging.dart';
-import 'package:synchronized/synchronized.dart';
-
-import '../../../core/network/conn.dart';
-import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior_tracker.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_behavior_tracker.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/nat/nat_traversal_strategy.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/nat/stun/stun_client_pool.dart';
+import 'package:synchronized/synchronized.dart';
 
 final _log = Logger('natmgr');
 
@@ -59,10 +59,10 @@ NATManager newNATManager(Network net, {
 
 /// Entry represents a protocol and port combination.
 class _Entry {
-  final String protocol;
-  final int port;
 
   _Entry(this.protocol, this.port);
+  final String protocol;
+  final int port;
 
   static _Entry? fromMultiaddr(MultiAddr addr) {
     final parts = addr.toString().split('/');
@@ -98,14 +98,6 @@ class _Entry {
 
 /// NATManager implementation.
 class _NATManager implements NATManager {
-  final Network _net;
-  final Lock _lock = Lock();
-  final StunClientPool _stunClientPool;
-  late final NatBehaviorTracker _behaviorTracker;
-  final Map<_Entry, MultiAddr> _externalMappings = {};
-  final Map<_Entry, MultiAddr> _internalMappings = {};
-  bool _closed = false;
-  StreamSubscription? _trackerSub;
 
   _NATManager(
     this._net, {
@@ -118,6 +110,14 @@ class _NATManager implements NATManager {
        ) {
     _start();
   }
+  final Network _net;
+  final Lock _lock = Lock();
+  final StunClientPool _stunClientPool;
+  late final NatBehaviorTracker _behaviorTracker;
+  final Map<_Entry, MultiAddr> _externalMappings = {};
+  final Map<_Entry, MultiAddr> _internalMappings = {};
+  bool _closed = false;
+  StreamSubscription? _trackerSub;
 
   void _start() async {
     await _behaviorTracker.initialize();
@@ -238,9 +238,9 @@ class _NATManager implements NATManager {
 
 /// Network notifiee for the NAT manager.
 class _NATManagerNetNotifiee implements Notifiee {
-  final _NATManager _mgr;
 
   _NATManagerNetNotifiee(this._mgr);
+  final _NATManager _mgr;
 
   @override
   void listen(Network network, MultiAddr addr) {
@@ -254,11 +254,11 @@ class _NATManagerNetNotifiee implements Notifiee {
 
   @override
   Future<void> connected(Network network, Conn conn) async {
-    return await Future.delayed(Duration(milliseconds: 10));
+    return await Future.delayed(const Duration(milliseconds: 10));
   }
 
   @override
   Future<void> disconnected(Network network, Conn conn) async {
-    return await Future.delayed(Duration(milliseconds: 10));
+    return await Future.delayed(const Duration(milliseconds: 10));
   }
 }

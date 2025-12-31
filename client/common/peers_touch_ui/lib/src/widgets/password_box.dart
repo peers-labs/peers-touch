@@ -1,14 +1,6 @@
 import 'package:flutter/material.dart';
 
 class PasswordBox extends StatefulWidget {
-  final String label;
-  final String value;
-  final String? description;
-  final String? placeholder;
-  final bool showLabel;
-  final ValueChanged<String> onChanged;
-  final TextEditingController? controller;
-  final FocusNode? focusNode;
 
   const PasswordBox({
     super.key,
@@ -21,6 +13,14 @@ class PasswordBox extends StatefulWidget {
     this.controller,
     this.focusNode,
   });
+  final String label;
+  final String value;
+  final String? description;
+  final String? placeholder;
+  final bool showLabel;
+  final ValueChanged<String> onChanged;
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
 
   @override
   State<PasswordBox> createState() => _PasswordBoxState();
@@ -88,7 +88,7 @@ class _PasswordBoxState extends State<PasswordBox> {
           ),
         if (widget.description != null) ...[
           const SizedBox(height: 4),
-          Text(widget.description!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.6))),
+          Text(widget.description!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
         ],
         const SizedBox(height: 8),
         TextField(
@@ -107,11 +107,11 @@ class _PasswordBoxState extends State<PasswordBox> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: theme.colorScheme.outline.withOpacity(0.3)),
+              borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: theme.colorScheme.outline.withOpacity(0.3)),
+              borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),

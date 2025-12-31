@@ -99,9 +99,6 @@ class ProviderController extends GetxController {
       currentProvider.value = current;
       if (current != null) {
         selectedProviderId.value = current.id;
-        final settings = current.settingsJson.isNotEmpty
-            ? (jsonDecode(current.settingsJson) as Map<String, dynamic>)
-            : {};
         isClientRequestMode.value =
             (await Get.find<LocalStorage>().get<bool>('client_request_mode_global') ??
             false);

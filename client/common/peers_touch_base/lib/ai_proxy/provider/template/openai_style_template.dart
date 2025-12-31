@@ -1,8 +1,8 @@
-import 'openai_template.dart';
+import 'package:peers_touch_base/ai_proxy/provider/template/openai_template.dart';
 
 class OpenAIStyleTemplate extends OpenAITemplate {
-  final String vendor;
   OpenAIStyleTemplate({required this.vendor});
+  final String vendor;
 
   @override
   String get id => 'openai_style:$vendor';

@@ -1,27 +1,26 @@
 /// The holepuncher implementation for the holepunch protocol.
+library;
 
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
+import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
+import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/common.dart' show Direction; // Import Direction
+import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/context.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/notifiee.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/rcmgr.dart';
+import 'package:peers_touch_base/network/libp2p/core/network/stream.dart'; // For P2PStream
+import 'package:peers_touch_base/network/libp2p/core/peer/addr_info.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/discovery/peer_info.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/pb/holepunch.pb.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/holepunch/util.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/identify/id_service.dart';
-import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
-import 'package:peers_touch_base/network/libp2p/core/multiaddr.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/conn.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/network.dart';
-import 'package:peers_touch_base/network/libp2p/core/network/stream.dart'; // For P2PStream
-import 'package:peers_touch_base/network/libp2p/core/network/common.dart' show Direction; // Import Direction
-import 'package:logging/logging.dart';
 import 'package:synchronized/synchronized.dart';
-
-import '../../../core/network/context.dart';
-import '../../../core/network/notifiee.dart';
-import '../../../core/network/rcmgr.dart';
-import '../../../core/peer/addr_info.dart';
-import '../../../core/protocol/protocol.dart';
-import '../../discovery/peer_info.dart';
 
 /// Logger for the holepuncher
 final _log = Logger('p2p-holepunch');
@@ -29,11 +28,11 @@ final _log = Logger('p2p-holepunch');
 
 /// Result of initiating a hole punch
 class HolePunchResult {
+
+  HolePunchResult(this.addrs, this.obsAddrs, this.rtt);
   final List<MultiAddr> addrs;
   final List<MultiAddr> obsAddrs;
   final int rtt;
-
-  HolePunchResult(this.addrs, this.obsAddrs, this.rtt);
 }
 
 /// Error thrown when another hole punching attempt is currently running
@@ -63,6 +62,16 @@ abstract class AddrFilter {
 /// It then first tries to establish a direct connection, and if that fails, it
 /// initiates a hole punch.
 class HolePuncher {
+
+  /// Creates a new holepuncher
+  HolePuncher(this._host, this._ids, this._listenAddrs, {
+    HolePunchTracer? tracer,
+    AddrFilter? filter,
+  }) : 
+    _tracer = tracer,
+    _filter = filter {
+    _host.network.notify(_NetNotifiee(this));
+  }
   /// The context for the holepuncher
   final _ctx = Completer<void>();
 
@@ -88,16 +97,6 @@ class HolePuncher {
 
   /// Address filter
   final AddrFilter? _filter;
-
-  /// Creates a new holepuncher
-  HolePuncher(this._host, this._ids, this._listenAddrs, {
-    HolePunchTracer? tracer,
-    AddrFilter? filter,
-  }) : 
-    _tracer = tracer,
-    _filter = filter {
-    _host.network.notify(_NetNotifiee(this));
-  }
 
   /// Begins a direct connect attempt
   Future<void> _beginDirectConnect(PeerId peerId) async {
@@ -325,9 +324,9 @@ class HolePuncher {
 
 /// Network notifiee for the holepuncher
 class _NetNotifiee implements Notifiee {
-  final HolePuncher _hp;
 
   _NetNotifiee(this._hp);
+  final HolePuncher _hp;
 
   @override
   Future<void> connected(Network network, Conn conn) async {
@@ -348,7 +347,7 @@ class _NetNotifiee implements Notifiee {
 
   @override
   Future<void> disconnected(Network network, Conn conn) async {
-    return Future.delayed(Duration(milliseconds: 10));
+    return Future.delayed(const Duration(milliseconds: 10));
   }
 
   @override

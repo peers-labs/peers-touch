@@ -1,20 +1,20 @@
 import 'dart:convert';
 import 'dart:math';
+
+import 'package:peers_touch_base/ai_proxy/provider/provider_manager_interface.dart';
+// 使用新的本地存储服务
+import 'package:peers_touch_base/ai_proxy/service/ai_box_local_storage_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.dart';
 
-// 使用新的本地存储服务
-import '../service/ai_box_local_storage_service.dart';
-import 'provider_manager_interface.dart';
-
 
 /// Provider同步异常
 class ProviderSyncException implements Exception {
-  final String message;
-  final Object? cause;
   
   ProviderSyncException(this.message, [this.cause]);
+  final String message;
+  final Object? cause;
   
   @override
   String toString() => 'ProviderSyncException: $message${cause != null ? ' (cause: $cause)' : ''}';
@@ -22,6 +22,12 @@ class ProviderSyncException implements Exception {
 
 /// Provider管理器 - 支持双写策略和数据同步
 class ProviderManager implements IProviderManager {
+
+  ProviderManager({
+    required AiBoxService aiBoxService,
+    required AiBoxLocalStorageService localStorage,
+  }) : _aiBoxService = aiBoxService, 
+       _localStorage = localStorage;
   final AiBoxService _aiBoxService;
   final AiBoxLocalStorageService _localStorage;
   
@@ -31,14 +37,9 @@ class ProviderManager implements IProviderManager {
   String? _currentProviderId;
   final Map<String, String> _sessionCurrentProviderIds = {};
 
-  ProviderManager({
-    required AiBoxService aiBoxService,
-    required AiBoxLocalStorageService localStorage,
-  }) : _aiBoxService = aiBoxService, 
-       _localStorage = localStorage;
-
   /// 创建新的Provider（仅本地，不保存到后台）
   /// 支持类型: openai, ollama, deepseek, custom
+  @override
   Provider newProvider(ProviderType type, String url, String apiKey) {
     final id = _generateProviderId();
     final now = DateTime.now();
@@ -73,6 +74,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 创建Provider并保存到远程和本地
+  @override
   Future<Provider> createProvider(Provider provider) async {
     try {
       // 1. 先保存到远程
@@ -106,6 +108,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 根据ID获取Provider
+  @override
   Future<Provider?> getProvider(String id) async {
     // 1. 先检查本地缓存
     if (_providers.containsKey(id)) {
@@ -137,6 +140,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 获取所有Provider
+  @override
   Future<List<Provider>> listProviders() async {
     try {
       // 1. 优先从远程获取最新数据
@@ -174,6 +178,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 更新Provider
+  @override
   Future<Provider> updateProvider(Provider provider) async {
     try {
       // 1. 先更新到远程
@@ -196,6 +201,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 删除Provider
+  @override
   Future<void> deleteProvider(String id) async {
     try {
       // 1. 先删除远程
@@ -227,6 +233,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 设置默认Provider
+  @override
   Future<void> setDefaultProvider(String id) async {
     if (!_providers.containsKey(id) && id.isNotEmpty) {
       final provider = await getProvider(id);
@@ -240,6 +247,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 获取默认Provider
+  @override
   Future<Provider?> getDefaultProvider() async {
     // 如果缓存中没有默认Provider ID，尝试从本地存储获取
     _defaultProviderId ??= await _localStorage.getDefaultProviderId();
@@ -266,6 +274,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 设置当前Provider
+  @override
   Future<void> setCurrentProvider(String id) async {
     if (!_providers.containsKey(id) && id.isNotEmpty) {
       final provider = await getProvider(id);
@@ -278,6 +287,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 设置会话级当前Provider
+  @override
   Future<void> setCurrentProviderForSession(String sessionId, String id) async {
     if (!_providers.containsKey(id) && id.isNotEmpty) {
       final provider = await getProvider(id);
@@ -290,6 +300,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 获取当前Provider
+  @override
   Future<Provider?> getCurrentProvider() async {
     // 如果缓存中没有当前Provider ID，尝试从本地存储获取
     _currentProviderId ??= await _localStorage.getDefaultProviderId();
@@ -315,6 +326,7 @@ class ProviderManager implements IProviderManager {
   }
 
   /// 获取会话级当前Provider
+  @override
   Future<Provider?> getCurrentProviderForSession(String sessionId) async {
     // 优先使用缓存
     var id = _sessionCurrentProviderIds[sessionId];

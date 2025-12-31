@@ -3,14 +3,21 @@
 // license that can be found in the LICENSE file.
 
 import 'dart:typed_data';
+
 import 'package:fixnum/fixnum.dart';
+import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/pb/voucher.pb.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/circuitv2/proto.dart';
 
-import '../../../core/peer/peer_id.dart';
-
 /// A reservation voucher for circuit relay.
 class ReservationVoucherData {
+
+  /// Creates a new reservation voucher.
+  ReservationVoucherData({
+    required this.relay,
+    required this.peer,
+    required this.expiration,
+  });
   /// The ID of the peer providing relay service.
   final PeerId relay;
 
@@ -19,13 +26,6 @@ class ReservationVoucherData {
 
   /// The expiration time of the reservation (Unix timestamp).
   final DateTime expiration;
-
-  /// Creates a new reservation voucher.
-  ReservationVoucherData({
-    required this.relay,
-    required this.peer,
-    required this.expiration,
-  });
 
   String domain() => CircuitV2Protocol.recordDomain;
 

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 class CheckBox extends StatelessWidget {
+  const CheckBox({super.key, required this.label, required this.value, required this.onChanged});
   final String label;
   final bool value;
   final ValueChanged<bool?> onChanged;
-  const CheckBox({super.key, required this.label, required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {

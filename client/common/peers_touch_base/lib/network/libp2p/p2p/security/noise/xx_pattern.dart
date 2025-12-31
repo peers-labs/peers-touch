@@ -1,21 +1,13 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:meta/meta.dart';
-
-import 'handshake_state.dart';
+import 'package:peers_touch_base/network/libp2p/p2p/security/noise/handshake_state.dart';
 
 /// Represents the immutable state of a Noise handshake
 class HandshakeState {
-  final Uint8List chainKey;
-  final Uint8List handshakeHash;
-  final XXHandshakeState state;
-  final SecretKey? sendKey;
-  final SecretKey? recvKey;
-  final Uint8List? remoteEphemeralKey;
-  final Uint8List? remoteStaticKey;
 
   const HandshakeState({
     required this.chainKey,
@@ -26,6 +18,13 @@ class HandshakeState {
     this.remoteEphemeralKey,
     this.remoteStaticKey,
   });
+  final Uint8List chainKey;
+  final Uint8List handshakeHash;
+  final XXHandshakeState state;
+  final SecretKey? sendKey;
+  final SecretKey? recvKey;
+  final Uint8List? remoteEphemeralKey;
+  final Uint8List? remoteStaticKey;
 
   HandshakeState copyWith({
     Uint8List? chainKey,
@@ -62,6 +61,13 @@ enum NoiseMessageType {
 ///   <- e, ee, s, es        // Response: Responder sends ephemeral key, performs ee+es
 ///   -> s, se               // Final: Initiator sends static key, performs se
 class NoiseXXPattern {
+  
+  NoiseXXPattern._(
+    this._isInitiator,
+    this._staticKeys,
+    this._ephemeralKeys,
+    this._state,
+  );
   static const PROTOCOL_NAME = 'Noise_XX_25519_ChaChaPoly_SHA256';
   static const KEY_LEN = 32;
   static const MAC_LEN = 16;
@@ -73,13 +79,6 @@ class NoiseXXPattern {
   
   // Current handshake state
   HandshakeState _state;
-  
-  NoiseXXPattern._(
-    this._isInitiator,
-    this._staticKeys,
-    this._ephemeralKeys,
-    this._state,
-  );
 
   /// Creates a new NoiseXXPattern instance
   static Future<NoiseXXPattern> create(bool isInitiator, SimpleKeyPair staticKeys) async {
@@ -222,7 +221,7 @@ class NoiseXXPattern {
       throw StateError('Responder cannot receive second message');
     }
     
-    final minLen = KEY_LEN + KEY_LEN + MAC_LEN;
+    const minLen = KEY_LEN + KEY_LEN + MAC_LEN;
     _validateMessageLength(message, minLen, NoiseMessageType.secondMessage);
     
     var state = _state;
@@ -284,7 +283,7 @@ class NoiseXXPattern {
 
   /// Process the final message (s, se)
   Future<HandshakeState> _processFinalMessage(Uint8List message) async {
-    final minLen = KEY_LEN + MAC_LEN;
+    const minLen = KEY_LEN + MAC_LEN;
     _validateMessageLength(message, minLen, NoiseMessageType.finalMessage);
     
     var state = _state;
@@ -314,7 +313,7 @@ class NoiseXXPattern {
       throw StateError('Remote ephemeral key is null during se operation - this should never happen');
     }
     final remoteEphemeral = state.remoteEphemeralKey as List<int>;
-    var newChainKey = await _dh(
+    final newChainKey = await _dh(
       _isInitiator ? _staticKeys : _ephemeralKeys,
       _isInitiator ? remoteEphemeral : remoteStatic,
       state.chainKey,
@@ -351,7 +350,7 @@ class NoiseXXPattern {
   Future<(Uint8List message, HandshakeState state)> _writeInitialMessage() async {
     // Get our ephemeral public key
     final ephemeralPub = await _ephemeralKeys.extractPublicKey();
-    final ephemeralBytes = await ephemeralPub.bytes;
+    final ephemeralBytes = ephemeralPub.bytes;
     
     // Mix hash
     final newHash = await _mixHash(_state.handshakeHash, ephemeralBytes);
@@ -378,7 +377,7 @@ class NoiseXXPattern {
     
     // e
     final ephemeralPub = await _ephemeralKeys.extractPublicKey();
-    final ephemeralBytes = await ephemeralPub.bytes;
+    final ephemeralBytes = ephemeralPub.bytes;
     messageBytes.addAll(ephemeralBytes);
     
     // Mix hash
@@ -395,7 +394,7 @@ class NoiseXXPattern {
     
     // s
     final staticPub = await _staticKeys.extractPublicKey();
-    final staticBytes = await staticPub.bytes;
+    final staticBytes = staticPub.bytes;
     if (state.sendKey == null) {
       throw StateError('Send key is null during static key encryption - this should never happen');
     }
@@ -434,7 +433,7 @@ class NoiseXXPattern {
     
     // s - encrypt and send static key
     final staticPub = await _staticKeys.extractPublicKey();
-    final staticBytes = await staticPub.bytes;
+    final staticBytes = staticPub.bytes;
     if (state.sendKey == null) {
       throw StateError('Send key is null during static key encryption - this should never happen');
     }
@@ -455,7 +454,7 @@ class NoiseXXPattern {
       throw StateError('Remote ephemeral key is null during se operation - this should never happen');
     }
     final remoteEphemeral = state.remoteEphemeralKey as List<int>;
-    var newChainKey = await _dh(
+    final newChainKey = await _dh(
       _isInitiator ? _staticKeys : _ephemeralKeys,
       _isInitiator ? remoteEphemeral : state.remoteStaticKey!,
       state.chainKey,
@@ -635,7 +634,7 @@ class NoiseXXPattern {
 
   Future<Uint8List> getStaticPublicKey() async {
     final pubKey = await _staticKeys.extractPublicKey();
-    return Uint8List.fromList(await pubKey.bytes);
+    return Uint8List.fromList(pubKey.bytes);
   }
   
   Uint8List get remoteStaticKey {
