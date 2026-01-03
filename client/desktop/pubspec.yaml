@@ -57,9 +57,7 @@ dependencies:
   extended_image: ^10.0.1
   path_provider: ^2.1.5
   image: ^4.3.0
-  webview_flutter: ^4.13.0
-  webview_flutter_wkwebview: ^3.23.5
-  path: any
+  flutter_inappwebview: ^6.1.5
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -110,7 +108,6 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/ai-chat/
-    - assets/maps/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
