@@ -86,6 +86,21 @@ class DiscoveryRepository {
     return data;
   }
 
+  Future<Map<String, dynamic>> fetchActorList() async {
+    final data = await _httpService.get<Map<String, dynamic>>(
+      '/activitypub/list',
+    );
+    return data;
+  }
+
+  Future<Map<String, dynamic>> searchActors(String query) async {
+    final data = await _httpService.get<Map<String, dynamic>>(
+      '/activitypub/search',
+      queryParameters: {'q': query},
+    );
+    return data;
+  }
+
   Map<String, dynamic> _convertToActivityPub(String username, pb.ActivityInput input) {
     final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
     final actorId = '$baseUrl/activitypub/$username/actor';

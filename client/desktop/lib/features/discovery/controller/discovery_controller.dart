@@ -51,6 +51,7 @@ class DiscoveryController extends GetxController {
 
   // Track the latest request to prevent race conditions
   int _activeRequestId = 0;
+  List<FriendItem> _allFriends = [];
   final tabs = ['Home', 'Me', 'Radar', 'Follow', 'Announce', 'Comment'];
   final tabIcons = <IconData>[
     Icons.home_filled,
@@ -119,17 +120,74 @@ class DiscoveryController extends GetxController {
     ];
   }
 
-  void loadFriends() {
-    // Mock data
-    friends.value = [
-      FriendItem(id: '1', name: 'Eleanor Pena', avatarUrl: 'https://i.pravatar.cc/150?u=1', timeOrStatus: '11 min', isOnline: false),
-      FriendItem(id: '2', name: 'Leslie Alexander', avatarUrl: 'https://i.pravatar.cc/150?u=2', timeOrStatus: 'Online', isOnline: true),
-      FriendItem(id: '3', name: 'Brooklyn Simmons', avatarUrl: 'https://i.pravatar.cc/150?u=3', timeOrStatus: 'Online', isOnline: true),
-      FriendItem(id: '4', name: 'Arlene McCoy', avatarUrl: 'https://i.pravatar.cc/150?u=4', timeOrStatus: '11 min', isOnline: false),
-      FriendItem(id: '5', name: 'Jerome Bell', avatarUrl: 'https://i.pravatar.cc/150?u=5', timeOrStatus: '9 min', isOnline: false),
-      FriendItem(id: '6', name: 'Darlene Robertson', avatarUrl: 'https://i.pravatar.cc/150?u=6', timeOrStatus: 'Online', isOnline: true),
-      FriendItem(id: '7', name: 'Kathryn Murphy', avatarUrl: 'https://i.pravatar.cc/150?u=7', timeOrStatus: 'Online', isOnline: true),
-    ];
+  Future<void> loadFriends() async {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      final data = await _repo.fetchActorList();
+      final List<FriendItem> newFriends = [];
+      
+      if (data['data'] is Map && data['data']['items'] is List) {
+        final items = data['data']['items'] as List;
+        for (var item in items) {
+          if (item is Map) {
+            newFriends.add(FriendItem(
+              id: item['username']?.toString() ?? '',
+              name: item['display_name']?.toString() ?? item['username']?.toString() ?? '',
+              avatarUrl: '',
+              timeOrStatus: '',
+              isOnline: false,
+            ));
+          }
+        }
+      }
+      
+      _allFriends = newFriends;
+      friends.value = newFriends;
+    } catch (e) {
+      LoggingService.error('Failed to load friends: $e');
+      error.value = 'Failed to load users';
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> searchFriends(String query) async {
+    searchQuery.value = query;
+    
+    if (query.isEmpty) {
+      friends.value = _allFriends;
+      return;
+    }
+    
+    isLoading.value = true;
+    error.value = null;
+    try {
+      final data = await _repo.searchActors(query);
+      final List<FriendItem> results = [];
+      
+      if (data['data'] is Map && data['data']['items'] is List) {
+        final items = data['data']['items'] as List;
+        for (var item in items) {
+          if (item is Map) {
+            results.add(FriendItem(
+              id: item['username']?.toString() ?? '',
+              name: item['display_name']?.toString() ?? item['username']?.toString() ?? '',
+              avatarUrl: '',
+              timeOrStatus: '',
+              isOnline: false,
+            ));
+          }
+        }
+      }
+      
+      friends.value = results;
+    } catch (e) {
+      LoggingService.error('Failed to search friends: $e');
+      error.value = 'Search failed';
+    } finally {
+      isLoading.value = false;
+    }
   }
 
   Future<void> refreshItems() async {

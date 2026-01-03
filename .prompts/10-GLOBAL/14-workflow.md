@@ -130,9 +130,93 @@ GetPage(
 
 ---
 
-## 🧪 Testing Workflow
+## 🧪 Quality Assurance Workflow
 
-### Run Tests
+### Before Committing Code
+
+**ALWAYS run these checks before committing:**
+
+#### 1. **Lint Check** (Code Style)
+
+**Client (Dart/Flutter)**:
+
+```bash
+cd client/desktop
+flutter analyze
+```
+
+**Configuration files** (automatically detected):
+- Desktop: `client/desktop/analysis_options.yaml`
+- Mobile: `client/mobile/analysis_options.yaml`
+- Base: `client/common/peers_touch_base/analysis_options.yaml`
+- UI: `client/common/peers_touch_ui/analysis_options.yaml`
+- Root: `client/analysis_options.yaml`
+
+**How it works**:
+- Flutter automatically finds and uses `analysis_options.yaml` in the current directory or parent directories
+- No need to specify the config file path manually
+- If file doesn't exist, Flutter uses default rules
+
+**Station (Go)**:
+
+```bash
+cd station
+
+# Format check (built-in)
+gofmt -l .  # List files that need formatting
+
+# Lint check (if golangci-lint is installed)
+golangci-lint run
+```
+
+**Configuration files** (automatically detected):
+- Station: `station/.golangci.yml`
+- Root: `.golangci.yml` (at repository root)
+
+**How it works**:
+- `gofmt`: Built-in Go formatter, no config needed
+- `golangci-lint`: Automatically finds `.golangci.yml` in current or parent directories
+- If golangci-lint not installed: `go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest`
+
+**Expected result**: No errors or warnings
+
+#### 2. **Build Check** (Compilation)
+
+```bash
+# Client (Desktop)
+cd client/desktop
+
+# macOS
+flutter build macos --debug
+
+# Windows
+flutter build windows --debug
+
+# Linux
+flutter build linux --debug
+
+# Client (Mobile)
+cd client/mobile
+
+# Android
+flutter build apk --debug
+
+# iOS (macOS only)
+flutter build ios --debug
+
+# Station (Go)
+cd station/app
+
+# Unix-like (macOS/Linux)
+go build -o /tmp/station-test .
+
+# Windows
+go build -o %TEMP%\station-test.exe .
+```
+
+**Expected result**: Build succeeds without errors
+
+#### 3. **Test Check** (Unit/Integration Tests)
 
 ```bash
 # Client tests
@@ -142,6 +226,112 @@ flutter test
 # Station tests
 cd station
 go test ./...
+```
+
+**Expected result**: All tests pass
+
+---
+
+### Quality Checklist
+
+Before marking a task as "done", verify:
+
+- [ ] **Lint passes**: `flutter analyze` or `gofmt` shows no errors
+- [ ] **Build succeeds**: Application compiles without errors
+- [ ] **Tests pass**: All unit tests pass
+- [ ] **No debug code**: No `print()`, `console.log`, or debug statements
+- [ ] **Documentation updated**: API docs, comments, and prompts are current
+- [ ] **Code reviewed**: Self-review against coding standards
+
+---
+
+### Automated Quality Gates (Recommended)
+
+Set up pre-commit hooks to automatically run checks:
+
+**Unix-like (macOS/Linux)** - `.git/hooks/pre-commit`:
+
+```bash
+#!/bin/bash
+
+echo "Running quality checks..."
+
+# Lint - Client
+cd client/desktop && flutter analyze
+if [ $? -ne 0 ]; then
+    echo "❌ Flutter analyze failed"
+    exit 1
+fi
+
+# Lint - Station
+cd ../../station && gofmt -l . | grep -q .
+if [ $? -eq 0 ]; then
+    echo "❌ Go format check failed. Run: gofmt -w ."
+    exit 1
+fi
+
+# Build - Client (choose your platform)
+cd ../client/desktop && flutter build macos --debug  # or windows/linux
+if [ $? -ne 0 ]; then
+    echo "❌ Client build failed"
+    exit 1
+fi
+
+# Build - Station
+cd ../../station/app && go build -o /tmp/station-test .
+if [ $? -ne 0 ]; then
+    echo "❌ Station build failed"
+    exit 1
+fi
+
+echo "✅ All checks passed"
+```
+
+**Windows** - `.git/hooks/pre-commit` (Git Bash):
+
+```bash
+#!/bin/bash
+
+echo "Running quality checks..."
+
+# Lint - Client
+cd client/desktop && flutter analyze
+if [ $? -ne 0 ]; then
+    echo "❌ Flutter analyze failed"
+    exit 1
+fi
+
+# Lint - Station
+cd ../../station && gofmt -l . | findstr /R "."
+if [ $? -eq 0 ]; then
+    echo "❌ Go format check failed. Run: gofmt -w ."
+    exit 1
+fi
+
+# Build - Client
+cd ../client/desktop && flutter build windows --debug
+if [ $? -ne 0 ]; then
+    echo "❌ Client build failed"
+    exit 1
+fi
+
+# Build - Station
+cd ../../station/app && go build -o %TEMP%/station-test.exe .
+if [ $? -ne 0 ]; then
+    echo "❌ Station build failed"
+    exit 1
+fi
+
+echo "✅ All checks passed"
+```
+
+**Note**: Make the hook executable:
+```bash
+# Unix-like
+chmod +x .git/hooks/pre-commit
+
+# Windows (Git Bash)
+chmod +x .git/hooks/pre-commit
 ```
 
 ### Write Tests
