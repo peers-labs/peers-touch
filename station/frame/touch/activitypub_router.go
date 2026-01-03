@@ -52,6 +52,8 @@ const (
 	RouterURLPublicProfile RouterPath = "/:actor/profile"
 	// RouterURLActorList Actor list: enumerate local actors (for admin/testing)
 	RouterURLActorList RouterPath = "/list"
+	// RouterURLActorSearch Actor search: search local actors by query (fuzzy match)
+	RouterURLActorSearch RouterPath = "/search"
 
 	ActivityRouterURLCreate RouterPath = "/:actor/activity"
 )
