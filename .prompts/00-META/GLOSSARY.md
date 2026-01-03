@@ -36,7 +36,7 @@ Protocol Buffers - the single source of truth for all data models across Mobile,
 
 **Location**: `model/domain/*.proto`
 
-**Key Rule**: All models MUST be generated from Proto files. Manual model creation is forbidden.
+**Key Rule**: All cross-platform models (shared between Mobile and Desktop) MUST be generated from Proto files. Manual model creation is forbidden.
 
 ### Three-Tier Architecture
 The project structure: **Client** (Mobile/Desktop) ↔ **Model** (Proto) ↔ **Station** (Backend)
