@@ -76,3 +76,51 @@ func ListActors(ctx context.Context) ([]PresetActor, error) {
 	}
 	return out, nil
 }
+
+// SearchActors searches local actors by query (fuzzy match on username and display name)
+func SearchActors(ctx context.Context, query string) ([]PresetActor, error) {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []db.Actor
+	searchPattern := "%" + query + "%"
+	if err := rds.Where("preferred_username LIKE ? OR name LIKE ?", searchPattern, searchPattern).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	base := "https://station.local"
+	out := make([]PresetActor, 0, len(rows))
+	for _, a := range rows {
+		uname := a.PTID
+		if uname == "" {
+			uname = a.PreferredUsername
+		}
+
+		id := a.Url
+		if id == "" {
+			id = fmt.Sprintf("%s/actor/%s", base, uname)
+		}
+		inbox := a.Inbox
+		if inbox == "" {
+			inbox = fmt.Sprintf("%s/actor/%s/inbox", base, uname)
+		}
+		outbox := a.Outbox
+		if outbox == "" {
+			outbox = fmt.Sprintf("%s/actor/%s/outbox", base, uname)
+		}
+
+		endpoints := map[string]string{"sharedInbox": fmt.Sprintf("%s/inbox", base)}
+
+		out = append(out, PresetActor{
+			ID:          id,
+			Username:    a.PreferredUsername,
+			DisplayName: a.Name,
+			Email:       a.Email,
+			Inbox:       inbox,
+			Outbox:      outbox,
+			Endpoints:   endpoints,
+		})
+	}
+	return out, nil
+}

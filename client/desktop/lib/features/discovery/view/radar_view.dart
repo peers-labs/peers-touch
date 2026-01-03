@@ -1,273 +1,191 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
-import 'package:peers_touch_desktop/features/discovery/controller/radar_controller.dart';
 
 class RadarView extends StatelessWidget {
   const RadarView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Ensure RadarController is initialized
-    // In a strict dependency injection setup, this should be done in a Binding.
-    // However, since RadarView is a sub-view dynamically shown, putting it here is acceptable for now,
-    // or we could add it to DiscoveryBinding.
-    Get.put(RadarController());
-    final discoveryController = Get.find<DiscoveryController>();
+    final controller = Get.find<DiscoveryController>();
 
     return Container(
       color: const Color(0xFFF5F7FB),
       child: Column(
         children: [
+          _buildSearchHeader(controller),
           Expanded(
-            flex: 5,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final mapSize = Size(constraints.maxWidth, constraints.maxHeight);
-                return InteractiveViewer(
-                  minScale: 0.6,
-                  maxScale: 5.0,
-                  child: Stack(
-                    children: [
-                      // World map background (simple neutral map)
-                      Positioned.fill(
-                        child: SvgPicture.asset(
-                          'assets/maps/world_map.svg',
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      // Actor markers with simple clustering
-                      Obx(() {
-                        final friends = discoveryController.friends;
-                        final markers = _computeMarkers(friends, mapSize);
-                        return Stack(children: markers);
-                      }),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-          Expanded(
-            flex: 4,
-            child: Container(
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(32),
-                  topRight: Radius.circular(32),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 20,
-                    offset: Offset(0, -5),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.wifi_tethering, color: Colors.blue),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'Nearby Friends',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Spacer(),
-                        Obx(() => Text(
-                          '${discoveryController.friends.length} Found',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        )),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Obx(() => ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      itemCount: discoveryController.friends.length,
-                      separatorBuilder: (context, index) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final friend = discoveryController.friends[index];
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                          leading: CircleAvatar(
-                            radius: 24,
-                            backgroundImage: NetworkImage(friend.avatarUrl),
-                          ),
-                          title: Text(
-                            friend.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Text(
-                            friend.isOnline ? 'Online' : 'Last seen ${friend.timeOrStatus}',
-                            style: TextStyle(
-                              color: friend.isOnline ? Colors.green : Colors.grey,
-                            ),
-                          ),
-                          trailing: FilledButton.tonal(
-                            onPressed: () {},
-                            child: const Text('Connect'),
-                          ),
-                        );
-                      },
-                    )),
-                  ),
-                ],
-              ),
-            ),
+            child: _buildUserList(controller),
           ),
         ],
       ),
     );
   }
 
-  List<Widget> _computeMarkers(List<FriendItem> friends, Size mapSize) {
-    final List<Offset> positions = friends.map((f) {
-      if (f.lat != null && f.lon != null) {
-        return _latLonToPosition(f.lat!, f.lon!, mapSize);
-      }
-      return _hashToPosition(f.id, mapSize);
-    }).toList();
-    // Density management: merge markers closer than threshold
-    const double threshold = 24.0;
-    final used = List<bool>.filled(positions.length, false);
-    final widgets = <Widget>[];
-    for (int i = 0; i < positions.length; i++) {
-      if (used[i]) continue;
-      final cluster = <int>[i];
-      for (int j = i + 1; j < positions.length; j++) {
-        if (used[j]) continue;
-        if ((positions[i] - positions[j]).distance < threshold) {
-          cluster.add(j);
-          used[j] = true;
-        }
-      }
-      final center = positions[i];
-      if (cluster.length == 1) {
-        widgets.add(_marker(center, friends[i]));
-      } else {
-        widgets.add(_clusterMarker(center, cluster.length));
-      }
-    }
-    return widgets;
-  }
-
-  Offset _hashToPosition(String id, Size size) {
-    final h = id.hashCode;
-    final x = (h & 0xFFFF) / 0xFFFF;
-    final y = ((h >> 16) & 0xFFFF) / 0xFFFF;
-    return Offset(x * size.width, y * size.height);
-  }
-
-  // Simple Web Mercator projection
-  Offset _latLonToPosition(double lat, double lon, Size size) {
-    final x = (lon + 180.0) / 360.0 * size.width;
-    final radLat = lat * math.pi / 180.0;
-    final y = (0.5 - (math.log((1 + math.sin(radLat)) / (1 - math.sin(radLat))) / (4 * math.pi))) * size.height;
-    // Clamp to bounds
-    final cx = x.clamp(0.0, size.width);
-    final cy = y.clamp(0.0, size.height);
-    return Offset(cx, cy);
-  }
-
-  Widget _marker(Offset pos, FriendItem friend) {
-    return Positioned(
-      left: pos.dx - 12,
-      top: pos.dy - 12,
+  Widget _buildSearchHeader(DiscoveryController controller) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundImage: NetworkImage(friend.avatarUrl),
+          Row(
+            children: [
+              const Icon(Icons.search, color: Colors.blue, size: 28),
+              const SizedBox(width: 12),
+              const Text(
+                'Find Friends',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Obx(() => Text(
+                '${controller.friends.length} users',
+                style: const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              )),
+            ],
           ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(8),
+          const SizedBox(height: 16),
+          TextField(
+            onChanged: controller.searchFriends,
+            decoration: InputDecoration(
+              hintText: 'Search by username or display name...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: Obx(() => controller.searchQuery.value.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () => controller.searchFriends(''),
+                    )
+                  : const SizedBox.shrink()),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.blue, width: 2),
+              ),
+              filled: true,
+              fillColor: Colors.grey.shade50,
             ),
-            child: Text(friend.name, style: const TextStyle(color: Colors.white, fontSize: 10)),
           ),
         ],
       ),
     );
   }
 
-  Widget _clusterMarker(Offset pos, int count) {
-    return Positioned(
-      left: pos.dx - 14,
-      top: pos.dy - 14,
-      child: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: Colors.blue.withValues(alpha: 0.2),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.blue, width: 2),
-        ),
-        alignment: Alignment.center,
-        child: Text('$count', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-      ),
-    );
-  }
-}
+  Widget _buildUserList(DiscoveryController controller) {
+    return Obx(() {
+      if (controller.isLoading.value) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      }
 
-class RadarPainter extends CustomPainter {
+      if (controller.error.value != null) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(
+                controller.error.value!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: controller.loadFriends,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+      }
 
-  RadarPainter(this.rotationValue);
-  final double rotationValue;
+      if (controller.friends.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.people_outline, size: 64, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              Text(
+                controller.searchQuery.value.isEmpty
+                    ? 'No users found on this station'
+                    : 'No results for "${controller.searchQuery.value}"',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = math.min(size.width, size.height) / 2;
-
-    final paint = Paint()
-      ..color = Colors.blue.withValues(alpha: 0.1)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    // Draw concentric circles
-    canvas.drawCircle(center, radius * 0.3, paint);
-    canvas.drawCircle(center, radius * 0.6, paint);
-    canvas.drawCircle(center, radius * 0.9, paint);
-
-    // Draw scanning line (sector)
-    final scanPaint = Paint()
-      ..shader = SweepGradient(
-        center: Alignment.center,
-        startAngle: 0,
-        endAngle: math.pi / 2,
-        colors: [
-          Colors.blue.withValues(alpha: 0.0),
-          Colors.blue.withValues(alpha: 0.3),
-        ],
-        stops: const [0.0, 1.0],
-        transform: GradientRotation(rotationValue * 2 * math.pi),
-      ).createShader(Rect.fromCircle(center: center, radius: radius));
-
-    canvas.drawCircle(center, radius * 0.9, scanPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant RadarPainter oldDelegate) {
-    return oldDelegate.rotationValue != rotationValue;
+      return ListView.separated(
+        padding: const EdgeInsets.all(24),
+        itemCount: controller.friends.length,
+        separatorBuilder: (context, index) => const Divider(height: 1),
+        itemBuilder: (context, index) {
+          final friend = controller.friends[index];
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            leading: CircleAvatar(
+              radius: 28,
+              backgroundColor: Colors.blue.shade100,
+              child: Text(
+                friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+            ),
+            title: Text(
+              friend.name,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+            subtitle: Text(
+              '@${friend.id}',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+              ),
+            ),
+            trailing: FilledButton.tonal(
+              onPressed: () {},
+              child: const Text('Follow'),
+            ),
+          );
+        },
+      );
+    });
   }
 }

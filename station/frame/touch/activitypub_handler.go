@@ -83,6 +83,12 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Method:    server.GET,
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
+		{
+			RouterURL: RouterURLActorSearch,
+			Handler:   SearchActors,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
 		// Online Status Endpoints
 		/*	{
 				RouterURL:   RouterURLActorsOnline,
@@ -353,6 +359,36 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 		items = append(items, &modelpb.Actor{Id: a.ID, Username: a.Username, DisplayName: a.DisplayName, Email: a.Email, Inbox: a.Inbox, Outbox: a.Outbox, Endpoints: a.Endpoints})
 	}
 	SuccessResponse(ctx, "Actor list", &modelpb.ActorList{Items: items, Total: int64(len(items))})
+}
+
+// SearchActors searches local actors by query (fuzzy match on username and display name)
+func SearchActors(c context.Context, ctx *app.RequestContext) {
+	query := string(ctx.Query("q"))
+	if query == "" {
+		FailedResponse(ctx, errors.New("query parameter 'q' is required"))
+		return
+	}
+
+	actors, err := activitypub.SearchActors(c, query)
+	if err != nil {
+		log.Warnf(c, "Search actors failed: %v", err)
+		FailedResponse(ctx, err)
+		return
+	}
+
+	items := make([]*modelpb.Actor, 0, len(actors))
+	for _, a := range actors {
+		items = append(items, &modelpb.Actor{
+			Id:          a.ID,
+			Username:    a.Username,
+			DisplayName: a.DisplayName,
+			Email:       a.Email,
+			Inbox:       a.Inbox,
+			Outbox:      a.Outbox,
+			Endpoints:   a.Endpoints,
+		})
+	}
+	SuccessResponse(ctx, "Search results", &modelpb.ActorList{Items: items, Total: int64(len(items))})
 }
 
 func toString(v interface{}) string {

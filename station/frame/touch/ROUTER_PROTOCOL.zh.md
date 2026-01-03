@@ -86,8 +86,16 @@
 
 ## Actor 端点（应用层）
 
-- `GET /actor/profile`：读取当前登录用户的扩展资料（适配 Peers Touch 视图）。
-- `POST /actor/profile`：更新当前登录用户的资料。支持字段：`profile_photo`、`gender`、`region`、`email`、`whats_up`。
+| 接口 | 功能描述 | 是否标准activitypub | 是否兼容mastodon | 兼容性声明 | 差异性缘由 |
+| --- | --- | --- | --- | --- | --- |
+| POST /activitypub/sign-up | Actor 注册 | 否 | 否 | 应用层注册接口；不影响联邦 | Peers Touch 账户注册（生成 Actor） |
+| POST /activitypub/login | Actor 登录 | 否 | 否 | 应用层登录接口；返回 JWT Token | Peers Touch 账户登录（验证凭据） |
+| GET /activitypub/profile | 读取当前用户资料 | 否 | 否 | 应用层资料查询；需 JWT 认证 | Peers Touch 扩展资料（适配视图） |
+| POST /activitypub/profile | 更新当前用户资料 | 否 | 否 | 应用层资料更新；需 JWT 认证 | 支持字段：`profile_photo`、`gender`、`region`、`email`、`whats_up` |
+| GET /activitypub/:actor/profile | 查看公开用户资料 | 否 | 否 | 公开资料查询；无需认证 | Peers Touch 公开资料视图 |
+| GET /activitypub/list | 列举本地 Actor | 否 | 否 | 应用层用户列表；不影响联邦 | Peers Touch 用户目录（管理/测试） |
+| GET /activitypub/search | 搜索本地 Actor | 否 | 否 | 应用层模糊搜索；不影响联邦 | Peers Touch 用户搜索（按 username/display_name） |
+| POST /activitypub/:actor/activity | 创建活动（便利端点） | 否 | 否 | 生成活动并通过标准 outbox 投递 | Peers Touch 活动创建糖接口 |
 
 说明：上述接口由服务层适配器提供多视图映射，底层统一数据模型，面向 Peers Touch、ActivityPub 与 Mastodon 兼容查询。
 
