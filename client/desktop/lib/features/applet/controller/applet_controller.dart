@@ -1,67 +1,55 @@
 import 'dart:convert';
 
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
 import 'package:logging/logging.dart';
 import 'package:peers_touch_base/applet/bridge/bridge_manager.dart';
 import 'package:peers_touch_base/applet/models/applet_manifest.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 class AppletController extends GetxController {
   AppletController({required this.manifest});
   final AppletManifest manifest;
   final _logger = Logger('AppletController');
 
-  final Rx<WebViewController?> webViewController = Rx<WebViewController?>(null);
+  final Rx<InAppWebViewController?> webViewController = Rx<InAppWebViewController?>(null);
   final RxBool isLoading = true.obs;
   final RxString error = ''.obs;
 
-  void initializeWebView(String initialUrl) {
-    if (webViewController.value != null) return;
-
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (int progress) {},
-          onPageStarted: (String url) {
-            isLoading.value = true;
-          },
-          onPageFinished: (String url) {
-            isLoading.value = false;
-            if (url.contains('applet_shell.html')) {
-              _injectBundle(initialUrl);
-            }
-          },
-          onWebResourceError: (WebResourceError e) {
-            _logger.severe('WebView resource error: ${e.description}');
-          },
-        ),
-      )
-      ..addJavaScriptChannel(
-        'PeersBridge',
-        onMessageReceived: (JavaScriptMessage message) {
-          handleBridgeMessage(message.message);
-        },
-      );
-
-    if (initialUrl.startsWith('http') || initialUrl.startsWith('template://')) {
-      controller.loadFlutterAsset('assets/applet/applet_shell.html');
-    } else if (initialUrl.startsWith('file://')) {
-      controller.loadFile(initialUrl.replaceFirst('file://', ''));
-    } else if (initialUrl.startsWith('assets://')) {
-      final assetKey = initialUrl.replaceFirst('assets:///', '');
-      controller.loadFlutterAsset(assetKey);
-    } else {
-      error.value = 'Unsupported URL scheme: $initialUrl';
-    }
-
+  void onWebViewCreated(InAppWebViewController controller) {
     webViewController.value = controller;
+    
+    controller.addJavaScriptHandler(
+      handlerName: 'PeersBridge',
+      callback: (args) {
+        if (args.isNotEmpty) {
+          handleBridgeMessage(args[0].toString());
+        }
+      },
+    );
   }
 
-  void _injectBundle(String bundleUrl) {
+  void onLoadStart(InAppWebViewController controller, WebUri? url) {
+    isLoading.value = true;
+  }
+
+  void onLoadStop(InAppWebViewController controller, WebUri? url) async {
+    isLoading.value = false;
+    if (url?.toString().contains('applet_shell.html') ?? false) {
+      await _injectBundle(manifest.entryPoint);
+    }
+  }
+
+  void onLoadError(InAppWebViewController controller, WebUri? url, int code, String message) {
+    _logger.severe('WebView load error: $message');
+    error.value = message;
+  }
+
+  Future<void> _injectBundle(String bundleUrl) async {
     if (webViewController.value != null) {
       _logger.info('Injecting bundle: $bundleUrl');
-      webViewController.value!.runJavaScript('window.loadAppletBundle("$bundleUrl")');
+      await webViewController.value!.evaluateJavascript(
+        source: 'window.loadAppletBundle("$bundleUrl")',
+      );
     }
   }
 
@@ -73,11 +61,10 @@ class AppletController extends GetxController {
       if (callbackId != null && webViewController.value != null) {
         final responseJson = jsonEncode(response.toMap());
         final jsCode = 'window.PeersBridge.onCallback("$callbackId", $responseJson)';
-        webViewController.value!.runJavaScript(jsCode);
+        await webViewController.value!.evaluateJavascript(source: jsCode);
       }
     } catch (e, stack) {
       _logger.severe('Bridge message handling failed', e, stack);
     }
   }
-
 }

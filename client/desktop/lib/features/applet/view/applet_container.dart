@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/applet/models/applet_manifest.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/features/applet/controller/applet_controller.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 class AppletContainer extends StatelessWidget {
   const AppletContainer({
@@ -24,21 +24,33 @@ class AppletContainer extends StatelessWidget {
       tag: manifest.appId,
     );
 
-    controller.initializeWebView(bundleUrl);
-
     return Scaffold(
       backgroundColor: tokens.bgLevel1,
       body: Stack(
         children: [
-          Obx(() {
-            if (controller.webViewController.value != null) {
-              return WebViewWidget(
-                key: Key(manifest.appId),
-                controller: controller.webViewController.value!,
+          InAppWebView(
+            key: Key(manifest.appId),
+            initialSettings: InAppWebViewSettings(
+              javaScriptEnabled: true,
+              allowFileAccessFromFileURLs: true,
+              allowUniversalAccessFromFileURLs: true,
+              useOnLoadResource: true,
+            ),
+            initialUrlRequest: URLRequest(
+              url: WebUri(_getInitialUrl(bundleUrl)),
+            ),
+            onWebViewCreated: controller.onWebViewCreated,
+            onLoadStart: controller.onLoadStart,
+            onLoadStop: controller.onLoadStop,
+            onReceivedError: (webViewController, request, error) {
+              controller.onLoadError(
+                webViewController,
+                request.url,
+                error.type.toNativeValue() ?? -1,
+                error.description,
               );
-            }
-            return const SizedBox.shrink();
-          }),
+            },
+          ),
           Obx(() {
             if (controller.isLoading.value) {
               return Center(
@@ -53,7 +65,7 @@ class AppletContainer extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.error_outline, color: Colors.red, size: 48),
+                    const Icon(Icons.error_outline, color: Colors.red, size: 48),
                     const SizedBox(height: 16),
                     Text(
                       'Applet Error',
@@ -75,5 +87,18 @@ class AppletContainer extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _getInitialUrl(String url) {
+    if (url.startsWith('http') || url.startsWith('https')) {
+      return url;
+    } else if (url.startsWith('file://')) {
+      return url;
+    } else if (url.startsWith('assets://')) {
+      return 'file:///android_asset/${url.replaceFirst('assets://', '')}';
+    } else if (url.startsWith('template://')) {
+      return 'assets/applet/applet_shell.html';
+    }
+    return 'assets/applet/applet_shell.html';
   }
 }
