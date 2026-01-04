@@ -50,14 +50,19 @@ class RadarView extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Obx(() => Text(
-                '${controller.friends.length} users',
-                style: const TextStyle(
-                  color: Colors.grey,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              )),
+              Obx(() {
+                final displayList = controller.searchQuery.value.isEmpty 
+                    ? controller.localStationActors 
+                    : controller.searchResults;
+                return Text(
+                  '${displayList.length} actors',
+                  style: const TextStyle(
+                    color: Colors.grey,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                );
+              }),
             ],
           ),
           const SizedBox(height: 16),
@@ -115,7 +120,7 @@ class RadarView extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: controller.loadFriends,
+                onPressed: controller.loadAllUsers,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
               ),
@@ -124,7 +129,11 @@ class RadarView extends StatelessWidget {
         );
       }
 
-      if (controller.friends.isEmpty) {
+      final displayList = controller.searchQuery.value.isEmpty 
+          ? controller.localStationActors 
+          : controller.searchResults;
+
+      if (displayList.isEmpty) {
         return Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -133,7 +142,7 @@ class RadarView extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 controller.searchQuery.value.isEmpty
-                    ? 'No users found on this station'
+                    ? 'No actors found on this station'
                     : 'No results for "${controller.searchQuery.value}"',
                 style: TextStyle(
                   fontSize: 16,
@@ -147,10 +156,10 @@ class RadarView extends StatelessWidget {
 
       return ListView.separated(
         padding: const EdgeInsets.all(24),
-        itemCount: controller.friends.length,
+        itemCount: displayList.length,
         separatorBuilder: (context, index) => const Divider(height: 1),
         itemBuilder: (context, index) {
-          final friend = controller.friends[index];
+          final friend = displayList[index];
           return ListTile(
             contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             leading: CircleAvatar(
@@ -180,7 +189,7 @@ class RadarView extends StatelessWidget {
               ),
             ),
             trailing: FilledButton.tonal(
-              onPressed: () {},
+              onPressed: () => controller.followUser(friend),
               child: const Text('Follow'),
             ),
           );

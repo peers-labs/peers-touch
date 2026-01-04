@@ -78,7 +78,7 @@ class AuthController extends GetxController {
     displayNameFocus = FocusNode();
     baseUrlFocus = FocusNode();
 
-    // Bind controllers to Rx variables
+    // Bind controllers to Rx variables (Controller -> Rx)
     emailController.addListener(() {
       if (email.value != emailController.text) {
         email.value = emailController.text;
@@ -108,6 +108,38 @@ class AuthController extends GetxController {
       final t = baseUrlController.text;
       if (baseUrl.value != t) {
         updateBaseUrl(t);
+      }
+    });
+
+    // Bind Rx variables to controllers (Rx -> Controller)
+    ever(email, (value) {
+      if (emailController.text != value) {
+        emailController.text = value;
+      }
+    });
+    ever(password, (value) {
+      if (passwordController.text != value) {
+        passwordController.text = value;
+      }
+    });
+    ever(confirmPassword, (value) {
+      if (confirmPasswordController.text != value) {
+        confirmPasswordController.text = value;
+      }
+    });
+    ever(username, (value) {
+      if (usernameController.text != value) {
+        usernameController.text = value;
+      }
+    });
+    ever(displayName, (value) {
+      if (displayNameController.text != value) {
+        displayNameController.text = value;
+      }
+    });
+    ever(baseUrl, (value) {
+      if (baseUrlController.text != value) {
+        baseUrlController.text = value;
       }
     });
 
@@ -327,6 +359,12 @@ class AuthController extends GetxController {
             }
 
             if (userMap != null) {
+              final actorId = userMap['id'];
+              if (actorId != null) {
+                await LocalStorage().set('actor_id', actorId.toString());
+                LoggingService.info('Actor ID stored: $actorId');
+              }
+              
               final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
               if (name != null) username.value = name.toString();
               

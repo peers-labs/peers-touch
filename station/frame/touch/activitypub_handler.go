@@ -17,6 +17,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -577,6 +578,33 @@ func PostUserOutbox(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
+	subject := hertzadapter.GetSubject(ctx)
+	if subject == nil {
+		log.Warnf(c, "Authentication required")
+		ctx.JSON(http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		log.Errorf(c, "Failed to get database connection: %v", err)
+		ctx.JSON(http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	var actor db.Actor
+	if err := rds.Where("id = ?", subject.ID).First(&actor).Error; err != nil {
+		log.Errorf(c, "Actor not found for subject ID: %s", subject.ID)
+		ctx.JSON(http.StatusUnauthorized, "Invalid actor")
+		return
+	}
+
+	if actor.PreferredUsername != user {
+		log.Warnf(c, "Actor mismatch: authenticated as %s but trying to post as %s", actor.PreferredUsername, user)
+		ctx.JSON(http.StatusForbidden, "Cannot post to another user's outbox")
+		return
+	}
+
 	// 1. Parse Request Body
 	body, err := ctx.Body()
 	if err != nil {
@@ -598,20 +626,18 @@ func PostUserOutbox(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	// 3. Get Database Connection (Removed as service handles it)
-
-	// 4. Determine Base URL
+	// 3. Determine Base URL
 	baseURL := baseURLFrom(ctx)
 
-	// 5. Dispatch based on Type
-	err = activitypub.ProcessActivity(c, user, &activity, baseURL)
+	// 4. Dispatch based on Type - use actor.PreferredUsername for backward compatibility
+	err = activitypub.ProcessActivity(c, actor.PreferredUsername, &activity, baseURL)
 	if err != nil {
 		log.Errorf(c, "Failed to process activity: %v", err)
 		ctx.JSON(http.StatusInternalServerError, fmt.Sprintf("Failed to process activity: %v", err))
 		return
 	}
 
-	log.Infof(c, "Outbox activity created successfully for user: %s, type: %s", user, activity.Type)
+	log.Infof(c, "Outbox activity created successfully for user: %s (ID: %s), type: %s", actor.PreferredUsername, actor.ID, activity.Type)
 	writeActivityPubResponse(ctx, activity)
 }
 

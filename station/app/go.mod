@@ -12,6 +12,7 @@ replace (
 
 require (
 	github.com/cloudwego/hertz v0.9.5
+	github.com/google/uuid v1.6.0
 	github.com/libp2p/go-libp2p v0.45.0
 	github.com/peers-labs/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/native v0.0.0-20251202181316-4ea307e60e21
@@ -50,7 +51,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
