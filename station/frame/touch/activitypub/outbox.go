@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -162,14 +163,40 @@ func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, a
 
 	// Resolve numeric IDs
 	var follower db.Actor
-	var followerID uint64
-	if err := dbConn.Where("preferred_username = ?", username).First(&follower).Error; err == nil {
-		followerID = follower.ID
+	if err := dbConn.Where("preferred_username = ?", username).First(&follower).Error; err != nil {
+		return fmt.Errorf("follower not found: %w", err)
 	}
-	var followingID uint64
+	followerID := follower.ID
+
 	var remoteActor db.Actor
-	if err := dbConn.Where("url = ?", resolvedURI).First(&remoteActor).Error; err == nil {
-		followingID = remoteActor.ID
+	if err := dbConn.Where("url = ?", resolvedURI).First(&remoteActor).Error; err != nil {
+		targetUsername := extractUsernameFromActorURI(resolvedURI)
+		if targetUsername != "" {
+			if err := dbConn.Where("preferred_username = ?", targetUsername).First(&remoteActor).Error; err != nil {
+				return fmt.Errorf("target actor not found: %w", err)
+			}
+		} else {
+			return fmt.Errorf("target actor not found")
+		}
+	}
+	followingID := remoteActor.ID
+
+	// Validation checks
+	if followerID == 0 {
+		return fmt.Errorf("invalid follower ID")
+	}
+	if followingID == 0 {
+		return fmt.Errorf("invalid following ID")
+	}
+	if followerID == followingID {
+		return fmt.Errorf("cannot follow yourself")
+	}
+
+	// Check if already following
+	var existingFollow db.ActivityPubFollow
+	err = dbConn.Where("follower_id = ? AND following_id = ? AND is_active = ?", followerID, followingID, true).First(&existingFollow).Error
+	if err == nil {
+		return fmt.Errorf("already following this user")
 	}
 
 	// Create follow (activity id to be set after persist)
@@ -601,4 +628,30 @@ func localObjectIDFromItem(dbConn *gorm.DB, item ap.Item) uint64 {
 		}
 	}
 	return 0
+}
+
+func extractUsernameFromActorURI(uri string) string {
+	if uri == "" {
+		return ""
+	}
+
+	patterns := []string{
+		"/activitypub/",
+		"/users/",
+		"/actor/",
+	}
+
+	for _, pattern := range patterns {
+		if idx := strings.Index(uri, pattern); idx != -1 {
+			start := idx + len(pattern)
+			remaining := uri[start:]
+
+			if endIdx := strings.Index(remaining, "/"); endIdx != -1 {
+				return remaining[:endIdx]
+			}
+			return remaining
+		}
+	}
+
+	return ""
 }

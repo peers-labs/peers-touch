@@ -1,9 +1,12 @@
 import 'package:get/get.dart';
+import 'package:peers_touch_desktop/app/middlewares/auth_middleware.dart';
 import 'package:peers_touch_desktop/app/routes/app_routes.dart';
 import 'package:peers_touch_desktop/features/auth/view/login_page.dart';
 import 'package:peers_touch_desktop/features/auth/view/signup_page.dart';
 import 'package:peers_touch_desktop/features/home/binding/home_binding.dart';
 import 'package:peers_touch_desktop/features/home/view/home_page.dart';
+import 'package:peers_touch_desktop/features/launch/binding/launch_binding.dart';
+import 'package:peers_touch_desktop/features/launch/view/launch_page.dart';
 import 'package:peers_touch_desktop/features/profile/binding/profile_binding.dart';
 import 'package:peers_touch_desktop/features/profile/view/profile_page.dart';
 import 'package:peers_touch_desktop/features/shell/binding/shell_binding.dart';
@@ -26,17 +29,25 @@ class AppPages {
       name: AppRoutes.shell,
       page: () => const ShellPage(),
       binding: ShellBinding(),
+      middlewares: [AuthMiddleware()],
     ),
     GetPage(
       name: AppRoutes.home,
       page: () => const HomePage(),
       binding: HomeBinding(),
+      middlewares: [AuthMiddleware()],
     ),
     GetPage(
       name: AppRoutes.profile,
       page: () => const ProfilePage(),
       binding: ProfileBinding(),
+      middlewares: [AuthMiddleware()],
     ),
-    
+    GetPage(
+      name: AppRoutes.launch,
+      page: () => const LaunchPage(),
+      binding: LaunchBinding(),
+      middlewares: [AuthMiddleware()],
+    ),
   ];
 }
