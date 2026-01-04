@@ -13,13 +13,13 @@ class FeedService extends GetxService {
       return response.map((json) => FeedItem.fromJson(json)).toList();
     } catch (e) {
       LoggingService.error('Failed to fetch station feed: $e');
-      return _getMockStationFeed();
+      rethrow;
     }
   }
 
   Future<List<FeedItem>> getOnlineFriends() async {
     try {
-      return _getMockFriends();
+      return [];
     } catch (e) {
       LoggingService.error('Failed to fetch online friends: $e');
       return [];
@@ -37,65 +37,10 @@ class FeedService extends GetxService {
 
   Future<List<FeedItem>> getRecentActivities() async {
     try {
-      return _getMockRecentActivities();
+      return [];
     } catch (e) {
       LoggingService.error('Failed to fetch recent activities: $e');
       return [];
     }
-  }
-
-  List<FeedItem> _getMockStationFeed() {
-    return [
-      FeedItem(
-        id: '1',
-        type: FeedItemType.recommendation,
-        title: 'Welcome to Peers-Touch',
-        subtitle: 'Get started with your decentralized social network',
-        timestamp: DateTime.now(),
-        source: ContentSource.stationFeed,
-      ),
-      FeedItem(
-        id: '2',
-        type: FeedItemType.pluginContent,
-        title: 'AI Programming Assistant Released',
-        subtitle: 'New features for developers',
-        timestamp: DateTime.now().subtract(const Duration(hours: 2)),
-        source: ContentSource.stationFeed,
-      ),
-    ];
-  }
-
-  List<FeedItem> _getMockFriends() {
-    return [
-      FeedItem(
-        id: 'friend_1',
-        type: FeedItemType.recentActivity,
-        title: 'Alice',
-        subtitle: '@alice@peers.com',
-        timestamp: DateTime.now(),
-        source: ContentSource.friends,
-      ),
-      FeedItem(
-        id: 'friend_2',
-        type: FeedItemType.recentActivity,
-        title: 'Bob',
-        subtitle: '@bob@peers.org',
-        timestamp: DateTime.now(),
-        source: ContentSource.friends,
-      ),
-    ];
-  }
-
-  List<FeedItem> _getMockRecentActivities() {
-    return [
-      FeedItem(
-        id: 'activity_1',
-        type: FeedItemType.recentActivity,
-        title: 'Opened AI Chat',
-        subtitle: '5 minutes ago',
-        timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
-        source: ContentSource.recentActivities,
-      ),
-    ];
   }
 }

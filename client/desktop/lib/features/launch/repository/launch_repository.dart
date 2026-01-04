@@ -8,7 +8,7 @@ class LaunchRepository {
   Future<List<Map<String, dynamic>>> fetchPersonalizedFeed() async {
     try {
       final response = await _httpService.get<Map<String, dynamic>>(
-        '/api/launcher/feed',
+        '/launcher/feed',
       );
 
       if (response['items'] != null) {
@@ -24,7 +24,7 @@ class LaunchRepository {
   Future<List<Map<String, dynamic>>> searchStationContent(String query) async {
     try {
       final response = await _httpService.get<Map<String, dynamic>>(
-        '/api/launcher/search',
+        '/launcher/search',
         queryParameters: {
           'q': query,
           'limit': 10,

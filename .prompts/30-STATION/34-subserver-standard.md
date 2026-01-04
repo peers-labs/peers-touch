@@ -143,7 +143,12 @@ func (s *<module>SubServer) Address() server.SubserverAddress {
 ### 4. handler.go - HTTP 处理器
 - 实现 `Handlers()` 方法返回路由
 - 使用 `server.NewHandler` 创建处理器
-- 路由前缀：`/sub-<module>/...` 或 `/api/<module>/...`
+- **路由规范**: `/<module>/...` (使用模块名作为路径前缀,与主服务器路由区分)
+  - ✅ 正确: `/launcher/feed`, `/ai-box/provider/new`
+  - ❌ 错误: `/api/launcher/feed` (会与 Mastodon API `/api/v1/...` 混淆)
+  - ❌ 错误: `/activitypub/launcher/...` (会与 ActivityPub 主路由冲突)
+  - **主服务器路由**: `/activitypub/...`, `/api/v1/...`, `/management/...`, `/peer/...`, `/conv/...`, `/.well-known/...`
+  - **SubServer 路由**: 使用独立的模块名前缀,避免与主路由冲突
 - 使用标准 `http.HandlerFunc` 签名
 
 ```go
@@ -159,7 +164,7 @@ func (u <module>URL) SubPath() string { return u.path }
 func (s *<module>SubServer) Handlers() []server.Handler {
     return []server.Handler{
         server.NewHandler(
-            <module>URL{name: "<module>-endpoint", path: "/api/<module>/endpoint"},
+            <module>URL{name: "<module>-endpoint", path: "/<module>/endpoint"},
             http.HandlerFunc(s.handleEndpoint),
             server.WithMethod(server.GET),
         ),
@@ -187,7 +192,7 @@ func (s *<module>SubServer) handleEndpoint(w http.ResponseWriter, r *http.Reques
 - 结构体：`<module>SubServer`（小写开头）
 - 插件：`<module>Plugin`
 - 配置：`<module>Options`
-- 路由：`/api/<module>/...` 或 `/sub-<module>/...`
+- 路由：`/<module>/...` (直接使用模块名)
 - 注册名：`<module>`（小写，用连字符）
 
 ## 生命周期
@@ -206,34 +211,21 @@ func (s *<module>SubServer) handleEndpoint(w http.ResponseWriter, r *http.Reques
 
 ## 日志规范
 
-- **必须使用** `github.com/peers-labs/peers-touch/station/frame/core/logger`
-- **禁止使用** `util/log` 或其他日志包
-- 所有日志函数第一个参数必须是 `context.Context`
-- 使用方法：
-  - `logger.Info(ctx, "message")`
-  - `logger.Infof(ctx, "format %s", arg)`
-  - `logger.Warn(ctx, "message")`
-  - `logger.Warnf(ctx, "format %s", arg)`
-  - `logger.Error(ctx, "message")`
-  - `logger.Errorf(ctx, "format %s", arg)`
+**必须遵守** [库使用规范 - 日志库](./35-lib-usage.md#日志库-logger)
+
+关键要点：
+- 使用 `frame/core/logger`
+- 第一个参数必须是 `context.Context`
 - 关键路径记录参数与结果
 - 错误需详细记录上下文
 
-### 示例
-
+示例：
 ```go
 import "github.com/peers-labs/peers-touch/station/frame/core/logger"
 
 func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
     logger.Info(ctx, "begin to initiate subserver")
-    logger.Infof(ctx, "config: %+v", s.opts)
-    
-    if err := s.doSomething(); err != nil {
-        logger.Errorf(ctx, "failed to do something: %v", err)
-        return err
-    }
-    
-    logger.Info(ctx, "subserver initialized successfully")
+    // 详细规范请参考 35-lib-usage.md
     return nil
 }
 ```
