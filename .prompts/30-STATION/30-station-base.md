@@ -88,10 +88,27 @@ Response
 
 ## 📚 Related Documents
 
+### 必读文档（开发前必须阅读）
+
+1. **[库使用规范 (35-lib-usage.md)](./35-lib-usage.md)** ⭐️ 
+   - Logger、Config、Store 等核心库的使用规范
+   - **所有 Station 开发必须遵守**
+
+2. **[Go 编码规范 (31-go-standards.md)](./31-go-standards.md)**
+   - Go 代码格式化规范
+   - 命名、注释、错误处理等
+
+3. **[SubServer 开发标准 (34-subserver-standard.md)](./34-subserver-standard.md)**
+   - 开发新的 SubServer 必读
+   - 插件注册、生命周期管理等
+
+### 参考文档
+
 - **Architecture**: [../10-GLOBAL/11-architecture.md](../10-GLOBAL/11-architecture.md)
-- **Go Standards**: [31-go-standards.md](./31-go-standards.md)
 - **Domain Models**: [../10-GLOBAL/12-domain-model.md](../10-GLOBAL/12-domain-model.md)
 - **API Documentation**: [32-api-documentation.md](./32-api-documentation.md)
+- **App Layer**: [32-app-layer.md](./32-app-layer.md)
+- **Frame Layer**: [33-frame-layer.md](./33-frame-layer.md)
 
 ---
 

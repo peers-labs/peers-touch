@@ -72,12 +72,12 @@ func (s *launcherSubServer) Type() server.SubserverType {
 func (s *launcherSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
-			launcherURL{name: "launcher-feed", path: "/api/launcher/feed"},
+			launcherURL{name: "launcher-feed", path: "/launcher/feed"},
 			http.HandlerFunc(s.handleGetFeedHTTP),
 			server.WithMethod(server.GET),
 		),
 		server.NewHandler(
-			launcherURL{name: "launcher-search", path: "/api/launcher/search"},
+			launcherURL{name: "launcher-search", path: "/launcher/search"},
 			http.HandlerFunc(s.handleSearchHTTP),
 			server.WithMethod(server.GET),
 		),
