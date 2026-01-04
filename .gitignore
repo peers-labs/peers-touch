@@ -38,4 +38,4 @@ logs/
 # Dart tool
 **/.dart_tool
 
-dart_libp2p
+dart_libp2pstation/bin/
