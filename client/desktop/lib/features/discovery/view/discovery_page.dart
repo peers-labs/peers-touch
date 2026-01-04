@@ -8,6 +8,8 @@ import 'package:peers_touch_desktop/features/shell/controller/shell_controller.d
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
 
+export 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart' show DiscoveryTab;
+
 class DiscoveryPage extends GetView<DiscoveryController> {
   const DiscoveryPage({super.key});
 
@@ -78,7 +80,7 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                   // 3. Friends Section
                   _buildSectionHeader('FRIENDS'),
                   Obx(() => Column(
-                    children: controller.friends.map((friend) => _buildFriendItem(friend)).toList(),
+                    children: controller.followingActors.map((friend) => _buildFriendItem(friend)).toList(),
                   )),
                 ],
               ),
@@ -163,7 +165,7 @@ class DiscoveryPage extends GetView<DiscoveryController> {
           child: Container(
             color: const Color(0xFFF5F7FB),
             child: Obx(() {
-              if (controller.tabs[controller.currentTab.value] == 'Radar') {
+              if (controller.currentTabEnum == DiscoveryTab.radar) {
                 return const RadarView();
               }
               return RefreshableList(
@@ -343,6 +345,9 @@ class DiscoveryPage extends GetView<DiscoveryController> {
   }
 
   Widget _buildEmptyState(BuildContext context) {
+    final isHomeTab = controller.currentTabEnum == DiscoveryTab.home;
+    final hasNoFollowing = controller.followingActors.isEmpty;
+    
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
@@ -351,10 +356,16 @@ class DiscoveryPage extends GetView<DiscoveryController> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[300]),
+              Icon(
+                isHomeTab && hasNoFollowing ? Icons.people_outline : Icons.inbox_outlined, 
+                size: 64, 
+                color: Colors.grey[300],
+              ),
               const SizedBox(height: 16),
               Text(
-                'No items found',
+                isHomeTab && hasNoFollowing 
+                    ? 'No activities yet' 
+                    : 'No items found',
                 style: TextStyle(
                   color: Colors.grey[500],
                   fontSize: 16,
@@ -363,12 +374,27 @@ class DiscoveryPage extends GetView<DiscoveryController> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Try switching to another tab or refresh later.',
+                isHomeTab && hasNoFollowing
+                    ? 'Find friends nearby to see their activities'
+                    : 'Try switching to another tab or refresh later.',
                 style: TextStyle(
                   color: Colors.grey[400],
                   fontSize: 14,
                 ),
               ),
+              if (isHomeTab && hasNoFollowing) ...[
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: () {
+                    controller.setTab(2);
+                  },
+                  icon: const Icon(Icons.radar),
+                  label: const Text('Find Friends'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

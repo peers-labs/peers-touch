@@ -11,6 +11,49 @@ import 'package:peers_touch_desktop/features/discovery/repository/discovery_repo
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 
+enum DiscoveryTab {
+  home,
+  me,
+  radar,
+  follow,
+  announce,
+  comment;
+
+  String get name {
+    switch (this) {
+      case DiscoveryTab.home:
+        return 'home';
+      case DiscoveryTab.me:
+        return 'me';
+      case DiscoveryTab.radar:
+        return 'radar';
+      case DiscoveryTab.follow:
+        return 'follow';
+      case DiscoveryTab.announce:
+        return 'announce';
+      case DiscoveryTab.comment:
+        return 'comment';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case DiscoveryTab.home:
+        return Icons.home_filled;
+      case DiscoveryTab.me:
+        return Icons.person;
+      case DiscoveryTab.radar:
+        return Icons.radar;
+      case DiscoveryTab.follow:
+        return Icons.person_add;
+      case DiscoveryTab.announce:
+        return Icons.campaign;
+      case DiscoveryTab.comment:
+        return Icons.chat_bubble;
+    }
+  }
+}
+
 class GroupItem {
   
   GroupItem({required this.id, required this.name, required this.iconUrl});
@@ -42,25 +85,21 @@ class FriendItem {
 class DiscoveryController extends GetxController {
   final items = <DiscoveryItem>[].obs;
   final groups = <GroupItem>[].obs;
-  final friends = <FriendItem>[].obs;
+  final followingActors = <FriendItem>[].obs;
+  final localStationActors = <FriendItem>[].obs;
+  final searchResults = <FriendItem>[].obs;
   final selectedItem = Rx<DiscoveryItem?>(null);
   final isLoading = false.obs;
   final error = Rx<String?>(null);
   final searchQuery = ''.obs;
   final currentTab = 0.obs;
 
-  // Track the latest request to prevent race conditions
   int _activeRequestId = 0;
-  List<FriendItem> _allFriends = [];
-  final tabs = ['Home', 'Me', 'Radar', 'Follow', 'Announce', 'Comment'];
-  final tabIcons = <IconData>[
-    Icons.home_filled,
-    Icons.person,
-    Icons.radar,
-    Icons.person_add,
-    Icons.campaign,
-    Icons.chat_bubble,
-  ];
+  final tabs = DiscoveryTab.values;
+  
+  DiscoveryTab get currentTabEnum => tabs[currentTab.value];
+  
+  List<IconData> get tabIcons => tabs.map((tab) => tab.icon).toList();
 
   final scrollController = ScrollController();
   final isScrolling = false.obs;
@@ -81,10 +120,13 @@ class DiscoveryController extends GetxController {
     loadGroups();
     loadFriends();
     
-    // React to tab changes
-    ever(currentTab, (_) {
+    ever(currentTab, (index) {
       scrollToTop();
-      loadItems();
+      if (tabs[index] == DiscoveryTab.radar) {
+        loadAllUsers();
+      } else {
+        loadItems();
+      }
     });
 
     scrollController.addListener(() {
@@ -111,30 +153,48 @@ class DiscoveryController extends GetxController {
     currentTab.value = index;
   }
 
-  void loadGroups() {
-    // Mock data
-    groups.value = [
-      GroupItem(id: '1', name: 'Figma Community', iconUrl: 'https://cdn-icons-png.flaticon.com/512/5968/5968705.png'),
-      GroupItem(id: '2', name: 'Sketch Community', iconUrl: 'https://cdn-icons-png.flaticon.com/512/5968/5968746.png'),
-      GroupItem(id: '3', name: 'Flutter Devs', iconUrl: 'https://cdn-icons-png.flaticon.com/512/5968/5968443.png'),
-    ];
+  Future<void> loadGroups() async {
+    groups.value = [];
   }
 
   Future<void> loadFriends() async {
-    isLoading.value = true;
-    error.value = null;
     try {
-      final data = await _repo.fetchActorList();
-      final List<FriendItem> newFriends = [];
+      final username = _getCurrentUsername();
+      if (username.isEmpty) {
+        followingActors.value = [];
+        return;
+      }
       
-      if (data['data'] is Map && data['data']['items'] is List) {
-        final items = data['data']['items'] as List;
+      final data = await _repo.fetchFollowing(username);
+      final List<FriendItem> results = [];
+      
+      if (data['orderedItems'] is List) {
+        final items = data['orderedItems'] as List;
         for (var item in items) {
-          if (item is Map) {
-            newFriends.add(FriendItem(
-              id: item['username']?.toString() ?? '',
-              name: item['display_name']?.toString() ?? item['username']?.toString() ?? '',
+          if (item is String) {
+            final name = item.split('/').last;
+            results.add(FriendItem(
+              id: name,
+              name: name,
               avatarUrl: '',
+              timeOrStatus: '',
+              isOnline: false,
+            ));
+          } else if (item is Map) {
+            final id = item['id']?.toString() ?? '';
+            final name = item['preferredUsername']?.toString() ?? 
+                        item['name']?.toString() ?? 
+                        id.split('/').last;
+            String avatarUrl = '';
+            if (item['icon'] is Map) {
+              avatarUrl = item['icon']['url']?.toString() ?? '';
+            } else if (item['icon'] is String) {
+              avatarUrl = item['icon'].toString();
+            }
+            results.add(FriendItem(
+              id: id,
+              name: name,
+              avatarUrl: avatarUrl,
               timeOrStatus: '',
               isOnline: false,
             ));
@@ -142,11 +202,49 @@ class DiscoveryController extends GetxController {
         }
       }
       
-      _allFriends = newFriends;
-      friends.value = newFriends;
+      followingActors.value = results;
     } catch (e) {
-      LoggingService.error('Failed to load friends: $e');
-      error.value = 'Failed to load users';
+      LoggingService.error('Failed to load following actors: $e');
+      followingActors.value = [];
+    }
+  }
+
+  Future<void> loadAllUsers() async {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      final data = await _repo.fetchActorList();
+      final List<FriendItem> results = [];
+      final currentUsername = _getCurrentUsername();
+      
+      if (data['data'] is Map && data['data']['items'] is List) {
+        final items = data['data']['items'] as List;
+        for (var item in items) {
+          if (item is Map) {
+            final username = item['username']?.toString() ?? '';
+            if (username.isNotEmpty && username != currentUsername) {
+              String avatarUrl = '';
+              if (item['icon'] is Map) {
+                avatarUrl = item['icon']['url']?.toString() ?? '';
+              } else if (item['icon'] is String) {
+                avatarUrl = item['icon'].toString();
+              }
+              results.add(FriendItem(
+                id: username,
+                name: item['display_name']?.toString() ?? username,
+                avatarUrl: avatarUrl,
+                timeOrStatus: '',
+                isOnline: false,
+              ));
+            }
+          }
+        }
+      }
+      
+      localStationActors.value = results;
+    } catch (e) {
+      LoggingService.error('Failed to load local station actors: $e');
+      error.value = 'Failed to load actors';
     } finally {
       isLoading.value = false;
     }
@@ -156,13 +254,14 @@ class DiscoveryController extends GetxController {
     searchQuery.value = query;
     
     if (query.isEmpty) {
-      friends.value = _allFriends;
+      searchResults.clear();
       return;
     }
     
     isLoading.value = true;
     error.value = null;
     try {
+      final currentUsername = _getCurrentUsername();
       final data = await _repo.searchActors(query);
       final List<FriendItem> results = [];
       
@@ -170,18 +269,21 @@ class DiscoveryController extends GetxController {
         final items = data['data']['items'] as List;
         for (var item in items) {
           if (item is Map) {
-            results.add(FriendItem(
-              id: item['username']?.toString() ?? '',
-              name: item['display_name']?.toString() ?? item['username']?.toString() ?? '',
-              avatarUrl: '',
-              timeOrStatus: '',
-              isOnline: false,
-            ));
+            final username = item['username']?.toString() ?? '';
+            if (username.isNotEmpty && username != currentUsername) {
+              results.add(FriendItem(
+                id: username,
+                name: item['display_name']?.toString() ?? username,
+                avatarUrl: '',
+                timeOrStatus: '',
+                isOnline: false,
+              ));
+            }
           }
         }
       }
       
-      friends.value = results;
+      searchResults.value = results;
     } catch (e) {
       LoggingService.error('Failed to search friends: $e');
       error.value = 'Search failed';
@@ -207,10 +309,10 @@ class DiscoveryController extends GetxController {
     isLoading.value = true;
     items.clear();
 
-    LoggingService.info('DiscoveryController: Loading items for tab ${tabs[currentTab.value]} (Request ID: $requestId)');
+    LoggingService.info('DiscoveryController: Loading items for tab ${currentTabEnum.name} (Request ID: $requestId)');
 
     try {
-      final List<DiscoveryItem> fetchedItems = await _fetchDataByTab(tabs[currentTab.value]);
+      final List<DiscoveryItem> fetchedItems = await _fetchDataByTab(currentTabEnum);
 
       // Guard: Only update if this is still the active request
       if (requestId != _activeRequestId) {
@@ -246,20 +348,150 @@ class DiscoveryController extends GetxController {
     }
   }
 
-  /// 策略模式：根据 Tab 名称分发数据加载任务，避免在主流程中写死逻辑
-  Future<List<DiscoveryItem>> _fetchDataByTab(String tabName) async {
-    switch (tabName) {
-      case 'Me':
+  Future<List<DiscoveryItem>> _fetchDataByTab(DiscoveryTab tab) async {
+    switch (tab) {
+      case DiscoveryTab.me:
         return await _fetchOutboxItems();
-      case 'Home':
-      case 'Radar':
-      case 'Follow':
-      case 'Announce':
-      case 'Comment':
-        return _generateMockItems(tabName);
-      default:
+      case DiscoveryTab.home:
+        return await _fetchHomeItems();
+      case DiscoveryTab.radar:
+      case DiscoveryTab.follow:
+      case DiscoveryTab.announce:
+      case DiscoveryTab.comment:
         return [];
     }
+  }
+
+  Future<List<DiscoveryItem>> _fetchHomeItems() async {
+    final List<DiscoveryItem> allItems = [];
+    
+    try {
+      final username = _getCurrentUsername();
+      if (username.isEmpty) return [];
+      
+      final inboxData = await _repo.fetchInbox(username);
+      final inboxItems = await _parseActivities(inboxData, isInbox: true);
+      allItems.addAll(inboxItems);
+      
+      final outboxItems = await _fetchOutboxItems();
+      allItems.addAll(outboxItems);
+      
+      allItems.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      
+      return allItems;
+    } catch (e) {
+      LoggingService.error('Failed to fetch home items: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<DiscoveryItem>> _parseActivities(Map<String, dynamic> data, {bool isInbox = false}) async {
+    final List<DiscoveryItem> newItems = [];
+    
+    if (data['orderedItems'] is! List) return newItems;
+    
+    final itemsList = data['orderedItems'] as List;
+    for (var item in itemsList) {
+      if (item is! Map) continue;
+      
+      final String activityType = item['type']?.toString() ?? '';
+      if (activityType == 'Like' || activityType == 'Announce') continue;
+      
+      String title = 'New Post';
+      String content = '';
+      String objectId = '';
+      String author = '';
+      DateTime timestamp = DateTime.now();
+      final String type = activityType;
+      
+      final List<String> images = [];
+      int likesCount = 0;
+      int repliesCount = 0;
+      int sharesCount = 0;
+      String authorAvatar = '';
+      
+      if (item['object'] is Map) {
+        final obj = item['object'];
+        objectId = obj['id']?.toString() ?? '';
+        
+        if (obj['inReplyTo'] != null && obj['inReplyTo'].toString().isNotEmpty) continue;
+        
+        content = obj['content']?.toString() ?? '';
+        if (obj['summary'] != null && obj['summary'].toString().isNotEmpty) {
+          title = obj['summary'].toString();
+        } else if (content.isNotEmpty) {
+          final plainText = content.replaceAll(RegExp(r'<[^>]*>'), '');
+          title = plainText.split('\n').first;
+          if (title.length > 50) title = '${title.substring(0, 50)}...';
+        }
+        
+        if (obj['published'] != null) {
+          timestamp = DateTime.tryParse(obj['published'].toString()) ?? DateTime.now();
+        }
+        
+        if (obj['attachment'] is List) {
+          for (var att in obj['attachment']) {
+            if (att is Map) {
+              final url = att['url']?.toString();
+              if (url != null && url.isNotEmpty) images.add(url);
+            }
+          }
+        }
+        
+        if (obj['likes'] is Map) {
+          likesCount = (obj['likes']['totalItems'] as num?)?.toInt() ?? 0;
+        }
+        if (obj['replies'] is Map) {
+          repliesCount = (obj['replies']['totalItems'] as num?)?.toInt() ?? 0;
+        }
+        if (obj['shares'] is Map) {
+          sharesCount = (obj['shares']['totalItems'] as num?)?.toInt() ?? 0;
+        }
+        
+        if (obj['attributedTo'] is Map) {
+          final attributedTo = obj['attributedTo'];
+          author = attributedTo['preferredUsername']?.toString() ?? 
+                  attributedTo['name']?.toString() ?? 
+                  (attributedTo['id']?.toString() ?? '').split('/').last;
+          if (attributedTo['icon'] is Map) {
+            authorAvatar = attributedTo['icon']['url']?.toString() ?? '';
+          } else if (attributedTo['icon'] is String) {
+            authorAvatar = attributedTo['icon'].toString();
+          }
+        } else if (obj['attributedTo'] is String) {
+          author = obj['attributedTo'].toString().split('/').last;
+        }
+      } else if (item['object'] is String) {
+        continue;
+      }
+      
+      if (author.isEmpty) {
+        if (item['actor'] is Map) {
+          author = item['actor']['preferredUsername']?.toString() ?? 
+                  item['actor']['name']?.toString() ?? 
+                  (item['actor']['id']?.toString() ?? '').split('/').last;
+        } else if (item['actor'] is String) {
+          author = item['actor'].toString().split('/').last;
+        }
+      }
+      
+      newItems.add(DiscoveryItem(
+        id: item['id']?.toString() ?? DateTime.now().toString(),
+        objectId: objectId.isNotEmpty ? objectId : (item['id']?.toString() ?? ''),
+        title: title,
+        content: content,
+        author: author,
+        authorAvatar: authorAvatar,
+        timestamp: timestamp,
+        type: type,
+        images: images,
+        likesCount: likesCount,
+        commentsCount: repliesCount,
+        sharesCount: sharesCount,
+      ));
+    }
+    
+    return newItems;
   }
 
   Future<List<DiscoveryItem>> _fetchOutboxItems() async {
@@ -403,38 +635,6 @@ class DiscoveryController extends GetxController {
       rethrow; // Let loadItems handle it
     }
     return newItems;
-  }
-
-  List<DiscoveryItem> _generateMockItems(String tabName) {
-    final List<DiscoveryItem> mockItems = [];
-    void add(String title, String content, String author, String type) {
-      mockItems.add(DiscoveryItem(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${mockItems.length}',
-        objectId: 'mock_obj_${mockItems.length}', // Added missing objectId
-        title: title,
-        content: content,
-        author: author,
-        authorAvatar: 'https://i.pravatar.cc/150?u=$author',
-        timestamp: DateTime.now().subtract(Duration(minutes: mockItems.length * 15)),
-        type: type,
-      ));
-    }
-
-    if (tabName == 'Home') {
-      add('How To Manage Your Time & Get More Done', 'It may not be possible to squeeze more time in the day...', 'Valentino Del More', 'Create');
-      add('The Future of Flutter', 'Flutter is evolving rapidly. Here are the new features coming in 2025.', 'Tech Insider', 'Create');
-    } else if (tabName == 'Radar') {
-      add('Found: Alice', 'Alice is nearby.', 'Alice', 'Radar');
-    } else if (tabName == 'Follow') {
-      add('Followed you', 'Started following you.', 'Charlie', 'Follow');
-    } else if (tabName == 'Announce') {
-      add('Boosted: "New Release"', 'Eve boosted a post about the new release.', 'Eve', 'Announce');
-    } else if (tabName == 'Comment') {
-      add('Commented on "My Trip"', 'Great photos! Looks like an amazing place.', 'Frank', 'Comment');
-    }
-
-    if (tabName == 'Home') mockItems.shuffle();
-    return mockItems;
   }
 
   Future<void> loadComments(DiscoveryItem item) async {
@@ -628,5 +828,54 @@ class DiscoveryController extends GetxController {
     if (!scrollController.hasClients) return;
     scrollController.animateTo(0,
         duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+  }
+
+  Future<void> followUser(FriendItem friend) async {
+    try {
+      final currentUsername = _getCurrentUsername();
+      if (currentUsername.isEmpty) {
+        Get.snackbar('Error', 'Please login first');
+        return;
+      }
+
+      // Check if already following
+      if (followingActors.any((f) => f.id == friend.id)) {
+        Get.snackbar('Info', 'Already following ${friend.name}');
+        return;
+      }
+
+      // Check if trying to follow yourself
+      if (friend.id == currentUsername) {
+        Get.snackbar('Error', 'Cannot follow yourself');
+        return;
+      }
+
+      // Optimistic update: immediately update UI
+      followingActors.add(friend);
+      localStationActors.removeWhere((actor) => actor.id == friend.id);
+      
+      // Send request to server
+      await _repo.followUser(currentUsername, friend.id);
+      
+      Get.snackbar('Success', 'Followed ${friend.name}');
+    } catch (e) {
+      LoggingService.error('Follow failed: $e');
+      
+      // Rollback optimistic update on error
+      followingActors.removeWhere((f) => f.id == friend.id);
+      localStationActors.add(friend);
+      
+      // Show specific error message
+      String errorMsg = 'Failed to follow user';
+      if (e.toString().contains('already following')) {
+        errorMsg = 'Already following this user';
+      } else if (e.toString().contains('cannot follow yourself')) {
+        errorMsg = 'Cannot follow yourself';
+      } else if (e.toString().contains('not found')) {
+        errorMsg = 'User not found';
+      }
+      
+      Get.snackbar('Error', errorMsg);
+    }
   }
 }

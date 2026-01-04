@@ -28,10 +28,8 @@ class RadarController extends GetxController with GetSingleTickerProviderStateMi
       duration: const Duration(seconds: 4),
     )..repeat();
 
-    // Listen to friends changes to update radar items
-    ever(_discoveryController.friends, _updateRadarItems);
-    // Initial update
-    _updateRadarItems(_discoveryController.friends);
+    ever(_discoveryController.followingActors, _updateRadarItems);
+    _updateRadarItems(_discoveryController.followingActors);
   }
 
   @override

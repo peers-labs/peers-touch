@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/app/routes/app_routes.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
@@ -45,18 +46,7 @@ class AppInitializer {
       NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
       LoggingService.info('Network service initialized with base URL: http://localhost:18080');
 
-      // Check auth token to determine initial route
-      try {
-        final token = await LocalStorage().get<String>('auth_token');
-        if (token != null && token.isNotEmpty) {
-          _initialRoute = AppRoutes.shell;
-          LoggingService.info('User is logged in, setting initial route to Shell');
-        } else {
-          LoggingService.info('No auth token found, setting initial route to Login');
-        }
-      } catch (e) {
-        LoggingService.warning('Failed to check auth token: $e');
-      }
+      await _checkAuthStatus();
 
       _isInitialized = true;
       LoggingService.info('Application initialization completed successfully');
@@ -98,7 +88,56 @@ class AppInitializer {
   }
   
   /// Static reset method (mainly for testing)
-  static void resetAppInitializer() {
+  static void resetApp() {
     _instance.reset();
+  }
+
+  Future<void> _checkAuthStatus() async {
+    try {
+      final token = await LocalStorage().get<String>('auth_token');
+      
+      if (token == null || token.isEmpty) {
+        _initialRoute = AppRoutes.login;
+        LoggingService.info('No auth token found, setting initial route to Login');
+        return;
+      }
+
+      final isValid = await _verifyTokenWithBackend(token);
+      if (isValid) {
+        _initialRoute = AppRoutes.shell;
+        LoggingService.info('Token valid, setting initial route to Shell');
+      } else {
+        await _clearAuthData();
+        _initialRoute = AppRoutes.login;
+        LoggingService.warning('Token invalid or backend unreachable, cleared auth data');
+      }
+    } catch (e) {
+      _initialRoute = AppRoutes.login;
+      LoggingService.error('Failed to check auth status: $e');
+    }
+  }
+
+  Future<bool> _verifyTokenWithBackend(String token) async {
+    try {
+      final client = HttpServiceLocator().httpService;
+      final response = await client.get<dynamic>('/api/v1/session/verify')
+        .timeout(const Duration(seconds: 3));
+      
+      return response.statusCode == 200;
+    } catch (e) {
+      LoggingService.warning('Token verification failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> _clearAuthData() async {
+    try {
+      await LocalStorage().remove('auth_token');
+      await LocalStorage().remove('refresh_token');
+      await LocalStorage().remove('username');
+      await LocalStorage().remove('email');
+    } catch (e) {
+      LoggingService.error('Failed to clear auth data: $e');
+    }
   }
 }

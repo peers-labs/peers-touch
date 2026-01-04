@@ -93,12 +93,46 @@ class DiscoveryRepository {
     return data;
   }
 
+  Future<Map<String, dynamic>> fetchInbox(String username, {bool page = true}) async {
+    final data = await _httpService.get<Map<String, dynamic>>(
+      '/activitypub/$username/inbox',
+      queryParameters: {'page': page},
+    );
+    return data;
+  }
+
+  Future<Map<String, dynamic>> fetchFollowing(String username, {bool page = true}) async {
+    final data = await _httpService.get<Map<String, dynamic>>(
+      '/activitypub/$username/following',
+      queryParameters: {'page': page},
+    );
+    return data;
+  }
+
   Future<Map<String, dynamic>> searchActors(String query) async {
     final data = await _httpService.get<Map<String, dynamic>>(
       '/activitypub/search',
       queryParameters: {'q': query},
     );
     return data;
+  }
+
+  Future<void> followUser(String currentUsername, String targetUsername) async {
+    final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+    final actorId = '$baseUrl/activitypub/$currentUsername/actor';
+    final targetActorId = '$baseUrl/activitypub/$targetUsername/actor';
+
+    final activity = {
+      '@context': 'https://www.w3.org/ns/activitystreams',
+      'type': 'Follow',
+      'actor': actorId,
+      'object': targetActorId,
+    };
+
+    await _httpService.post<Map<String, dynamic>>(
+      '/activitypub/$currentUsername/outbox',
+      data: activity,
+    );
   }
 
   Map<String, dynamic> _convertToActivityPub(String username, pb.ActivityInput input) {

@@ -69,9 +69,9 @@ class InitialBinding extends Bindings {
       tokenProvider: Get.find<TokenProvider>(),
       // tokenRefresher: null, // Can be injected when real refresh interface is connected
       onUnauthenticated: () {
-        if (Get.isRegistered<AuthController>()) {
-          Get.find<AuthController>().logout();
-        }
+        // Don't automatically logout on 401
+        // Let individual screens handle authentication errors
+        // This prevents unexpected logouts during normal operations
       },
     );
 
