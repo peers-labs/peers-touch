@@ -518,7 +518,7 @@ class AIInputBox extends StatelessWidget {
       return const CircleAvatar(child: Icon(Icons.apartment, size: 18));
     }
     return ClipOval(
-      child: Image.network(url, width: 28, height: 28, errorBuilder: (_, _, _) {
+      child: Image.network(url, width: 28, height: 28, errorBuilder: (ctx, _, __) {
         return const CircleAvatar(child: Icon(Icons.apartment, size: 18));
       }),
     );

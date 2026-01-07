@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_base/model/domain/actor/session.pb.dart' as modelpb;
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
@@ -28,6 +29,9 @@ class AuthController extends GetxController {
   final loading = false.obs;
   final error = RxnString();
   final presetUsers = <Map<String, dynamic>>[].obs;
+  final recentUsers = <String>[].obs;
+  final recentAvatars = <String, String>{}.obs;
+  final loginPreviewAvatar = RxnString();
   final baseUrl = NetworkInitializer.currentBaseUrl.obs;
   final lastStatus = RxnInt();
   final lastBody = RxnString();
@@ -35,14 +39,6 @@ class AuthController extends GetxController {
   final protocol = 'peers-touch'.obs;
   final serverStatus = ServerStatus.unknown.obs;
   final SecureStorage _secureStorage = SecureStorageImpl();
-  
-  final loginPreviewAvatar = RxnString();
-  final emailFocused = false.obs;
-  final usernameFocused = false.obs;
-  final isDropdownHovering = false.obs;
-  final currentSuggestions = <String>[].obs;
-  final recentAvatars = <String, String>{}.obs;
-  final highlightedIndex = (-1).obs;
 
   late final TextEditingController emailController;
   late final TextEditingController passwordController;
@@ -57,6 +53,10 @@ class AuthController extends GetxController {
   late final FocusNode usernameFocus;
   late final FocusNode displayNameFocus;
   late final FocusNode baseUrlFocus;
+  final emailFocused = false.obs;
+  final usernameFocused = false.obs;
+  final isDropdownHovering = false.obs;
+  final highlightedIndex = (-1).obs;
 
   @override
   void onInit() {
@@ -70,15 +70,23 @@ class AuthController extends GetxController {
     displayNameController = TextEditingController();
     baseUrlController = TextEditingController();
 
-    // Initialize focus nodes
-    emailFocus = FocusNode();
+    // Initialize focus nodes with key listeners
+    emailFocus = FocusNode(onKeyEvent: onKeyDown);
     passwordFocus = FocusNode();
     confirmPasswordFocus = FocusNode();
-    usernameFocus = FocusNode();
+    usernameFocus = FocusNode(onKeyEvent: onKeyDown);
     displayNameFocus = FocusNode();
     baseUrlFocus = FocusNode();
 
-    // Bind controllers to Rx variables (Controller -> Rx)
+    // Focus listeners for silky dropdown behavior
+    emailFocus.addListener(() {
+      emailFocused.value = emailFocus.hasFocus;
+    });
+    usernameFocus.addListener(() {
+      usernameFocused.value = usernameFocus.hasFocus;
+    });
+
+    // Bind controllers to Rx variables
     emailController.addListener(() {
       if (email.value != emailController.text) {
         email.value = emailController.text;
@@ -111,38 +119,6 @@ class AuthController extends GetxController {
       }
     });
 
-    // Bind Rx variables to controllers (Rx -> Controller)
-    ever(email, (value) {
-      if (emailController.text != value) {
-        emailController.text = value;
-      }
-    });
-    ever(password, (value) {
-      if (passwordController.text != value) {
-        passwordController.text = value;
-      }
-    });
-    ever(confirmPassword, (value) {
-      if (confirmPasswordController.text != value) {
-        confirmPasswordController.text = value;
-      }
-    });
-    ever(username, (value) {
-      if (usernameController.text != value) {
-        usernameController.text = value;
-      }
-    });
-    ever(displayName, (value) {
-      if (displayNameController.text != value) {
-        displayNameController.text = value;
-      }
-    });
-    ever(baseUrl, (value) {
-      if (baseUrlController.text != value) {
-        baseUrlController.text = value;
-      }
-    });
-
     debounce(baseUrl, (String url) async {
       final trimmed = url.trim();
       if (trimmed.isNotEmpty) {
@@ -150,6 +126,7 @@ class AuthController extends GetxController {
         NetworkInitializer.initialize(baseUrl: trimmed);
         detectProtocol(trimmed);
         loadPresetUsers(trimmed);
+        updateLoginPreviewAvatar();
       }
     }, time: const Duration(milliseconds: 800));
 
@@ -158,6 +135,76 @@ class AuthController extends GetxController {
     
     // Sync baseUrl
     baseUrlController.text = baseUrl.value;
+
+    // React to input changes to update avatar preview
+    ever(email, (_) {
+      updateLoginPreviewAvatar();
+      highlightedIndex.value = -1;
+    });
+    ever(username, (_) {
+      updateLoginPreviewAvatar();
+      highlightedIndex.value = -1;
+    });
+    ever(authTab, (_) => updateLoginPreviewAvatar());
+  }
+
+  List<String> get currentSuggestions {
+    final isLogin = authTab.value == 0;
+    final text = isLogin ? email.value : username.value;
+    final list = <String>{}
+      ..addAll(recentUsers)
+      ..addAll(presetUsers
+          .map((e) => (e['username'] ?? e['handle'] ?? e['name'] ?? '').toString())
+          .where((e) => e.isNotEmpty));
+    return list
+        .where((e) => text.isEmpty || e.toLowerCase().contains(text.toLowerCase()))
+        .take(6)
+        .toList();
+  }
+
+  KeyEventResult onKeyDown(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    
+    final suggestions = currentSuggestions;
+    if (suggestions.isEmpty) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      if (highlightedIndex.value < suggestions.length - 1) {
+        highlightedIndex.value++;
+      } else {
+        highlightedIndex.value = 0;
+      }
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      if (highlightedIndex.value > 0) {
+        highlightedIndex.value--;
+      } else if (highlightedIndex.value == -1) {
+        highlightedIndex.value = suggestions.length - 1;
+      }
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+      if (highlightedIndex.value != -1) {
+        selectHighlightedItem(suggestions[highlightedIndex.value]);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void selectHighlightedItem(String handle) {
+    if (authTab.value == 0) {
+      emailController.value = TextEditingValue(
+        text: handle,
+        selection: TextSelection.collapsed(offset: handle.length),
+      );
+    } else {
+      usernameController.value = TextEditingValue(
+        text: handle,
+        selection: TextSelection.collapsed(offset: handle.length),
+      );
+    }
+    updateLoginPreviewAvatar();
+    highlightedIndex.value = -1;
   }
 
   Future<void> _restoreUserInfo() async {
@@ -172,6 +219,15 @@ class AuthController extends GetxController {
       email.value = e;
       emailController.text = e;
     }
+    final recent = await ls.get<List>('recent_users');
+    if (recent != null) {
+      recentUsers.assignAll(recent.whereType<String>());
+    }
+    final avatars = await ls.get<Map>('recent_avatars');
+    if (avatars != null) {
+      recentAvatars.assignAll(avatars.map((k, v) => MapEntry(k.toString(), v.toString())));
+    }
+    updateLoginPreviewAvatar();
   }
 
   @override
@@ -233,6 +289,7 @@ class AuthController extends GetxController {
               .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
               .toList(),
         );
+        updateLoginPreviewAvatar();
         lastStatus.value = resp.statusCode;
         lastBody.value = text;
         LoggingService.info(
@@ -245,17 +302,6 @@ class AuthController extends GetxController {
   void switchTab(int i) {
     authTab.value = i;
     error.value = null;
-  }
-
-  void selectHighlightedItem(String item) {
-    if (authTab.value == 0) {
-      email.value = item;
-      emailController.text = item;
-    } else {
-      username.value = item;
-      usernameController.text = item;
-    }
-    currentSuggestions.clear();
   }
 
   Future<void> logout() async {
@@ -289,7 +335,7 @@ class AuthController extends GetxController {
       final useUrl = (overrideBaseUrl ?? baseUrl.value).trim();
       var ident = email.value.trim();
       if (!ident.contains('@') && ident.isNotEmpty) {
-        ident = ident + '@station.local';
+        ident = '$ident@station.local';
       }
       final uri = Uri.parse(
         useUrl.endsWith('/')
@@ -332,50 +378,42 @@ class AuthController extends GetxController {
               await LocalStorage().set('refresh_token', refresh);
               await _secureStorage.set(StorageKeys.refreshTokenKey, refresh);
             }
-            if (ttype != null && ttype.isNotEmpty)
+            if (ttype != null && ttype.isNotEmpty) {
               await LocalStorage().set('auth_token_type', ttype);
+            }
           } else {
             token = obj['token']?.toString() ?? '';
           }
 
           // Try to extract user info from response
-          if (obj is Map) {
-            final data = obj['data'];
-            Map<String, dynamic>? userMap;
-            if (data is Map) {
-              // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
-              if (data['user'] is Map) {
-                userMap = data['user'];
-              } else if (data['actor'] is Map) {
-                userMap = data['actor'];
-              } else {
-                // Assume data itself might contain user fields if not nested
-                userMap = data as Map<String, dynamic>;
-              }
-            } else if (obj['user'] is Map) {
-              userMap = obj['user'];
-            } else if (obj['actor'] is Map) {
-              userMap = obj['actor'];
+          Map<String, dynamic>? userMap;
+          if (dmap != null) {
+            // Standard structure: data: { user: {...}, token: ... } or data: { ...user fields... }
+            if (dmap['user'] is Map) {
+              userMap = dmap['user'];
+            } else if (dmap['actor'] is Map) {
+              userMap = dmap['actor'];
+            } else {
+              // Assume data itself might contain user fields if not nested
+              userMap = dmap;
             }
-
-            if (userMap != null) {
-              final actorId = userMap['id'];
-              if (actorId != null) {
-                await LocalStorage().set('actor_id', actorId.toString());
-                LoggingService.info('Actor ID stored: $actorId');
-              }
-              
-              final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
-              if (name != null) username.value = name.toString();
-              
-              final mail = userMap['email'];
-              if (mail != null) email.value = mail.toString();
-              
-              final disp = userMap['display_name'] ?? userMap['displayName'];
-              if (disp != null) displayName.value = disp.toString();
-            }
+          } else if (obj['user'] is Map) {
+            userMap = obj['user'];
+          } else if (obj['actor'] is Map) {
+            userMap = obj['actor'];
           }
-        }
+
+          if (userMap != null) {
+            final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
+            if (name != null) username.value = name.toString();
+            
+            final mail = userMap['email'];
+            if (mail != null) email.value = mail.toString();
+            
+            final disp = userMap['display_name'] ?? userMap['displayName'];
+            if (disp != null) displayName.value = disp.toString();
+          }
+                }
 
         if (token.isNotEmpty) {
           await LocalStorage().set('auth_token', token);
@@ -396,15 +434,18 @@ class AuthController extends GetxController {
                   : (email.value.isNotEmpty
                         ? email.value.split('@').first
                         : '');
-              final session = modelpb.ActorSessionSnapshot(
-                actorId: handle,
-                handle: handle,
-                protocol: protocol.value,
-                baseUrl: (overrideBaseUrl ?? baseUrl.value).trim(),
-                accessToken: token,
-                refreshToken: refresh ?? '',
-              );
-              await gc.setSession(session);
+              
+              final avatarUrl = await _fetchAndSaveUserAvatar(handle, baseUrl: (overrideBaseUrl ?? baseUrl.value).trim());
+              
+              await gc.setSession({
+                'actorId': handle,
+                'handle': handle,
+                'protocol': protocol.value,
+                'baseUrl': (overrideBaseUrl ?? baseUrl.value).trim(),
+                'accessToken': token,
+                'refreshToken': refresh,
+                'avatarUrl': avatarUrl,
+              });
               LoggingService.info('GlobalContext session updated for user: $handle');
             }
           } catch (_) {}
@@ -419,6 +460,77 @@ class AuthController extends GetxController {
       error.value = e.toString();
     }
     loading.value = false;
+  }
+
+  void updateLoginPreviewAvatar() async {
+    final handle = _currentHandle();
+    if (handle.isEmpty) {
+      loginPreviewAvatar.value = null;
+      return;
+    }
+    // Prefer recent avatars stored locally
+    final local = recentAvatars[handle];
+    if (local != null && local.isNotEmpty) {
+      loginPreviewAvatar.value = local;
+      return;
+    }
+    // Fallback to preset users list
+    final found = presetUsers.firstWhereOrNull((u) {
+      final name = (u['username'] ?? u['handle'] ?? u['name'] ?? '').toString();
+      return name == handle;
+    });
+    if (found != null) {
+      final url = (found['avatar'] ?? found['avatar_url'] ?? found['avatarUrl'] ?? '').toString();
+      loginPreviewAvatar.value = url.isNotEmpty ? url : null;
+      return;
+    }
+    loginPreviewAvatar.value = null;
+  }
+
+  String _currentHandle() {
+    if (authTab.value == 1) {
+      final h = username.value.trim();
+      return h;
+    }
+    final ident = email.value.trim();
+    if (ident.isEmpty) return '';
+    if (ident.contains('@')) return ident.split('@').first;
+    return ident;
+  }
+
+  Future<String> _fetchAndSaveUserAvatar(String handle, {required String baseUrl}) async {
+    try {
+      final uri = Uri.parse(baseUrl.endsWith('/')
+          ? '${baseUrl}activitypub/$handle/profile'
+          : '$baseUrl/activitypub/$handle/profile');
+      final resp = await (await HttpClient().getUrl(uri)).close();
+      if (resp.statusCode == 200) {
+        final text = await resp.transform(const Utf8Decoder()).join();
+        final obj = json.decode(text);
+        Map<String, dynamic>? data;
+        if (obj is Map) {
+          data = (obj['data'] is Map) ? (obj['data'] as Map).cast<String, dynamic>() : obj.cast<String, dynamic>();
+        }
+        String url = '';
+        if (data != null) {
+          url = (data['avatar'] ?? data['avatar_url'] ?? data['avatarUrl'] ?? '').toString();
+        }
+        final ls = LocalStorage();
+        final ru = (await ls.get<List>('recent_users'))?.whereType<String>().toList() ?? <String>[];
+        if (!ru.contains(handle)) ru.add(handle);
+        await ls.set('recent_users', ru);
+        recentUsers.assignAll(ru);
+        if (url.isNotEmpty) {
+          final ram = (await ls.get<Map>('recent_avatars')) ?? <String, dynamic>{};
+          ram[handle] = url;
+          await ls.set('recent_avatars', ram);
+          recentAvatars[handle] = url;
+          loginPreviewAvatar.value = url;
+          return url;
+        }
+      }
+    } catch (_) {}
+    return '';
   }
 
   Future<void> signup([String? overrideBaseUrl]) async {
@@ -471,7 +583,7 @@ class AuthController extends GetxController {
     final emailText = email.value.trim();
     final emailOk =
         emailText.isNotEmpty &&
-        RegExp(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").hasMatch(emailText);
+        RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(emailText);
     final pwd = password.value.trim();
     final pwdOk = pwd.length >= 8;
     final confirmOk = pwd == confirmPassword.value.trim();

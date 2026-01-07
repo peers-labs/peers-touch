@@ -15,6 +15,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	hz "github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/google/uuid"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -63,8 +64,8 @@ func (s *Server) Init(opts ...option.Option) error {
 	// Configure Hertz to use our custom logger via adapter
 	// This ensures all internal Hertz logs follow our logging format and rules
 	hlog.SetLogger(NewHertzLogger())
-	// Set hertz log level to Error to avoid noisy debug logs
-	hlog.SetLevel(hlog.LevelError)
+	// Note: We don't call hlog.SetLevel here because it would re-initialize
+	// our DefaultLogger and override the log level from config
 
 	s.hertz = hz.New(hz.WithHostPorts(s.Options().Address))
 	return nil
@@ -73,15 +74,13 @@ func (s *Server) Init(opts ...option.Option) error {
 // Handle registers a handler on the Hertz engine.
 func (s *Server) Handle(h server.Handler) error {
 	if hdl, ok := h.Handler().(func(context.Context, *app.RequestContext)); ok {
-		mws := h.HertzMiddlewares()
-		composed := composeHertz(mws, hdl)
 		switch h.Method() {
 		case server.POST:
-			s.hertz.POST(h.Path(), composed)
+			s.hertz.POST(h.Path(), hdl)
 		case server.GET:
-			s.hertz.GET(h.Path(), composed)
+			s.hertz.GET(h.Path(), hdl)
 		default:
-			s.hertz.Any(h.Path(), composed)
+			s.hertz.Any(h.Path(), hdl)
 		}
 		return nil
 	}
@@ -110,6 +109,9 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	// recovery middleware
 	s.hertz.Use(recovery.Recovery())
 
+	// request logger middleware
+	s.hertz.Use(RequestLoggerMiddleware())
+
 	s.hertz.OnShutdown = append(s.hertz.OnShutdown, func(hertzCtx context.Context) {
 		log.Infof(hertzCtx, "shutdown hertz")
 		cancel()
@@ -118,13 +120,50 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	for _, handler := range s.Options().Handlers {
 		switch h := handler.Handler().(type) {
 		case func(context.Context, *app.RequestContext):
-			err = s.Handle(handler)
+			// Apply wrappers by creating a wrapped Hertz handler
+			hertzHandler := func(c context.Context, ctx *app.RequestContext) {
+				// If no wrappers, call handler directly
+				if len(handler.Wrappers()) == 0 {
+					h(c, ctx)
+					return
+				}
+
+				// Create http.Request from Hertz context
+				rURL, _ := url.Parse(string(ctx.Request.URI().RequestURI()))
+				req := &http.Request{
+					Method: string(ctx.Method()),
+					URL:    rURL,
+					Header: make(http.Header),
+					Body:   io.NopCloser(bytes.NewReader(ctx.Request.Body())),
+				}
+				req = req.WithContext(c)
+
+				ctx.Request.Header.VisitAll(func(key, value []byte) {
+					req.Header.Set(string(key), string(value))
+				})
+
+				// Create final handler that calls original Hertz handler
+				finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Call original handler with modified context
+					h(r.Context(), ctx)
+				})
+
+				// Apply wrappers
+				wrappedHandler := applyWrappers(c, finalHandler, handler.Wrappers())
+
+				// Call wrapped handler
+				rw := &responseWriter{ctx: ctx}
+				wrappedHandler.ServeHTTP(rw, req)
+			}
+
+			err = s.Handle(server.NewHandler(hertzRouterURL{name: handler.Name(), url: handler.Path()},
+				hertzHandler, server.WithMethod(handler.Method())))
 			if err != nil {
 				return err
 			}
 		case http.Handler:
 			// Apply wrappers to http.Handler
-			hw := applyWrappers(h, handler.Wrappers())
+			hw := applyWrappers(ctx, h, handler.Wrappers())
 			// Convert http.Handler to Hertz handler
 			hertzHandler := func(c context.Context, ctx *app.RequestContext) {
 				// Parse URL
@@ -236,26 +275,35 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 	w.ctx.SetStatusCode(statusCode)
 }
 
-// composeHertz composes middlewares and handler for Hertz.
-func composeHertz(middlewares []func(context.Context, *app.RequestContext), h func(context.Context, *app.RequestContext)) func(context.Context, *app.RequestContext) {
-	return func(c context.Context, ctx *app.RequestContext) {
-		for _, mw := range middlewares {
-			mw(c, ctx)
-		}
-		if _, exists := ctx.Get("user_id"); exists {
-			h(c, ctx)
-			return
-		}
-		if len(middlewares) == 0 {
-			h(c, ctx)
-		}
-	}
-}
-
-func applyWrappers(h http.Handler, wrappers []server.Wrapper) http.Handler {
+func applyWrappers(ctx context.Context, h http.Handler, wrappers []server.Wrapper) http.Handler {
 	wrapped := h
 	for i := len(wrappers) - 1; i >= 0; i-- {
-		wrapped = wrappers[i](wrapped)
+		wrapped = wrappers[i](ctx, wrapped)
 	}
 	return wrapped
+}
+
+func RequestLoggerMiddleware() app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		requestID := string(c.Request.Header.Peek("X-Request-ID"))
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+
+		ctx = log.WithRequestID(ctx, requestID)
+		c.Response.Header.Set("X-Request-ID", requestID)
+
+		start := time.Now()
+		method := string(c.Method())
+		path := string(c.Path())
+
+		log.Infof(ctx, "[HTTP] → %s %s", method, path)
+
+		c.Next(ctx)
+
+		latency := time.Since(start)
+		statusCode := c.Response.StatusCode()
+
+		log.Infof(ctx, "[HTTP] ← %s %s %d %s", method, path, statusCode, latency)
+	}
 }

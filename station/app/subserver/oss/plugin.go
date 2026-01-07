@@ -33,6 +33,7 @@ var ossOptions struct {
 type ossPlugin struct{}
 
 func (p *ossPlugin) Name() string { return "oss" }
+
 func (p *ossPlugin) Options() []option.Option {
 	return []option.Option{
 		WithPath(ossOptions.Peers.Node.Server.Subserver.Oss.Path),
@@ -41,7 +42,9 @@ func (p *ossPlugin) Options() []option.Option {
 		WithSignSecret(ossOptions.Peers.Node.Server.Subserver.Oss.SignSecret),
 	}
 }
+
 func (p *ossPlugin) Enabled() bool { return ossOptions.Peers.Node.Server.Subserver.Oss.Enabled }
+
 func (p *ossPlugin) New(opts ...option.Option) server.Subserver {
 	opts = append(opts, p.Options()...)
 	return NewOSSSubServer(opts...)

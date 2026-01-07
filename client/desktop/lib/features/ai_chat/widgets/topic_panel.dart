@@ -52,7 +52,7 @@ class TopicPanel extends StatelessWidget {
           Expanded(
             child: ListView.separated(
               itemCount: topics.length,
-              separatorBuilder: (_, _) => Divider(
+              separatorBuilder: (_, __) => Divider(
                 height: 1,
                 color: UIKit.dividerColor(context),
               ),

@@ -110,6 +110,31 @@ func logCallerfilePath(loggingFilePath string) string {
 	return loggingFilePath[idx+1:]
 }
 
+// extractPackagePathFromFunction extracts the full package path from function name.
+// This is more efficient than using runtime.FuncForPC.
+func extractPackagePathFromFunction(fullName string) string {
+	if fullName == "" {
+		return ""
+	}
+	// strip method/function suffix after last dot
+	if idx := strings.LastIndex(fullName, "."); idx != -1 {
+		return fullName[:idx]
+	}
+	return fullName
+}
+
+// tailPackage returns the last segment of a package path.
+func tailPackage(pkgPath string) string {
+	if pkgPath == "" {
+		return ""
+	}
+	// take last segment after slash
+	if idx := strings.LastIndex(pkgPath, "/"); idx != -1 {
+		return pkgPath[idx+1:]
+	}
+	return pkgPath
+}
+
 func (l *defaultLogger) getEffectiveLevel(skip int) Level {
 	// Fast path: if no package levels are defined, return global level
 	if len(l.opts.PackageLevels) == 0 {
@@ -133,7 +158,7 @@ func (l *defaultLogger) getEffectiveLevel(skip int) Level {
 }
 
 // Log writes an unformatted log entry.
-func (l *defaultLogger) Log(level Level, v ...interface{}) {
+func (l *defaultLogger) Log(ctx context.Context, level Level, v ...interface{}) {
 	// TODO decide does we need to write message if log level not used?
 	if !l.getEffectiveLevel(l.opts.CallerSkipCount).Enabled(level) {
 		return
@@ -147,6 +172,17 @@ func (l *defaultLogger) Log(level Level, v ...interface{}) {
 
 	if _, file, line, ok := runtime.Caller(l.opts.CallerSkipCount); ok {
 		fields["file"] = fmt.Sprintf("%s:%d", logCallerfilePath(file), line)
+
+		// Use runtime.Callers + CallersFrames for better performance
+		// instead of runtime.FuncForPC which is slower
+		pcs := make([]uintptr, 1)
+		if n := runtime.Callers(l.opts.CallerSkipCount+1, pcs); n > 0 {
+			frames := runtime.CallersFrames(pcs[:n])
+			frame, _ := frames.Next()
+			pkgPath := extractPackagePathFromFunction(frame.Function)
+			fields["pkg_path"] = pkgPath
+			fields["pkg"] = tailPackage(pkgPath)
+		}
 	}
 
 	// todo migrate the tow records in debug and logger packages
@@ -177,7 +213,7 @@ func (l *defaultLogger) Log(level Level, v ...interface{}) {
 }
 
 // Logf writes a formatted log entry.
-func (l *defaultLogger) Logf(level Level, format string, v ...interface{}) {
+func (l *defaultLogger) Logf(ctx context.Context, level Level, format string, v ...interface{}) {
 	//	 TODO decide does we need to write message if log level not used?
 	if !l.getEffectiveLevel(l.opts.CallerSkipCount).Enabled(level) {
 		return
@@ -191,6 +227,17 @@ func (l *defaultLogger) Logf(level Level, format string, v ...interface{}) {
 
 	if _, file, line, ok := runtime.Caller(l.opts.CallerSkipCount); ok {
 		fields["file"] = fmt.Sprintf("%s:%d", logCallerfilePath(file), line)
+
+		// Use runtime.Callers + CallersFrames for better performance
+		// instead of runtime.FuncForPC which is slower
+		pcs := make([]uintptr, 1)
+		if n := runtime.Callers(l.opts.CallerSkipCount+1, pcs); n > 0 {
+			frames := runtime.CallersFrames(pcs[:n])
+			frame, _ := frames.Next()
+			pkgPath := extractPackagePathFromFunction(frame.Function)
+			fields["pkg_path"] = pkgPath
+			fields["pkg"] = tailPackage(pkgPath)
+		}
 	}
 
 	rec := log.Record{
@@ -244,7 +291,7 @@ func NewLogger(ctx context.Context, opts ...Option) Logger {
 
 	l := &defaultLogger{opts: options}
 	if err := l.Init(ctx, opts...); err != nil {
-		l.Log(FatalLevel, err)
+		l.Log(ctx, FatalLevel, err)
 	}
 
 	return l
