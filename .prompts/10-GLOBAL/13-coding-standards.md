@@ -105,10 +105,20 @@ color.withOpacity(0.5)
 ```dart
 // ✅ CORRECT: Use LoggingService
 LoggingService.debug('User logged in');
+LoggingService.info('Session created for user: $username');
+LoggingService.warning('Token refresh failed, retrying...');
+LoggingService.error('Failed to connect to server', error, stackTrace);
 
-// ❌ WRONG: Using print()
+// ❌ WRONG: Using print() or println()
 print('User logged in');
+println('Debug info');
 ```
+
+**Logging Levels:**
+- `debug()`: Development debugging info
+- `info()`: Important events (login, logout, etc.)
+- `warning()`: Recoverable issues
+- `error()`: Errors with exception details
 
 ---
 

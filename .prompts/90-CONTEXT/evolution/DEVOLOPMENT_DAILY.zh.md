@@ -204,35 +204,3 @@
 **下一步**:
 *   验证 `InReplyTo` 关联在复杂评论场景下的表现。
 *   继续完善个人页与 Feed 流的交互细节。
-
-## 20260105
-
-**Launcher 功能完整实现 (Station & Desktop):**
-
-1. **后端 API 实现 (Station)**:
-   - **Launcher SubServer**: 在 `station/app/subserver/launcher` 创建了完整的 Launcher 子服务器模块。
-   - **Feed API**: 实现了 `/launcher/feed` 接口，返回 9 项 Mock 数据（包括 Note、Image、Video 等多种类型），支持分页和类型过滤。
-   - **Search API**: 实现了 `/launcher/search` 接口，返回 11 项 Mock 数据（包括 App、Contact、File 等多种类型），支持关键词搜索和类型过滤。
-   - **数据库配置**: 在 `store.local.yml` 中为 launcher 添加了数据库配置（使用 peers_touch 数据库）。
-   - **路由注册**: 在 `main.go` 中注册了 Launcher SubServer，确保服务正确启动。
-
-2. **前端集成 (Desktop)**:
-   - **API 路径修正**: 修正了 `LauncherProvider` 中的 API 路径（从 `/api/launcher/*` 改为 `/launcher/*`）。
-   - **Mock 移除**: 移除了前端的 Mock 数据代码，直接使用后端真实 API。
-   - **编译验证**: 确保前后端代码都能正常编译通过。
-
-3. **配置与启动调试**:
-   - **配置问题排查**: 深入分析了 Station 启动时 "no default rds" 的配置加载问题，发现是因为使用 `go build` 后运行二进制文件时，配置文件路径不正确。
-   - **启动方式修正**: 确认了正确的启动方式是在 `station/app` 目录下使用 `go run main.go`，这样配置文件会被正确加载。
-   - **日志配置**: 将 `log.yml` 中的文件日志功能禁用（`enable: false`），避免权限问题。
-   - **服务验证**: 成功启动 Station 服务，确认数据库连接、SubServer 初始化都正常工作。
-
-**技术细节**:
-- 配置加载机制：Station 使用 `peers.yml` 的 `includes` 字段加载多个配置文件（`store.yml`, `store.local.yml` 等），需要在正确的工作目录下运行。
-- 数据库配置：每个 SubServer 都需要在 `store.local.yml` 中配置对应的数据库条目（name 对应 SubServer 名称）。
-- API 路径规范：SubServer 的路由路径应该是 `/<subserver-name>/*`，不需要 `/api` 前缀。
-
-**下一步**:
-- 测试 Launcher Feed 和 Search 功能的前后端联调。
-- 将 Mock 数据替换为真实的数据库查询逻辑。
-- 完善 Launcher 的其他功能（如收藏、分享等）。

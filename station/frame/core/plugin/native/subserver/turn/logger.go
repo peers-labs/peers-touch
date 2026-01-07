@@ -2,6 +2,8 @@
 package turn
 
 import (
+	"context"
+
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/pion/logging"
 )
@@ -22,55 +24,55 @@ func (l *Logger) NewLogger(_ string) logging.LeveledLogger {
 // Trace Level Logging
 // Trace logs a trace message.
 func (l *Logger) Trace(msg string) {
-	l.logger.Logf(logger.TraceLevel, "[TURN] Trace: %s", msg)
+	l.logger.Logf(context.Background(), logger.TraceLevel, "[TURN] Trace: %s", msg)
 }
 
 // Tracef logs a formatted trace message.
 func (l *Logger) Tracef(format string, args ...interface{}) {
-	l.logger.Logf(logger.TraceLevel, "[TURN] Trace: "+format, args...)
+	l.logger.Logf(context.Background(), logger.TraceLevel, "[TURN] Trace: "+format, args...)
 }
 
 // Debug Level Logging
 // Debug logs a debug message.
 func (l *Logger) Debug(msg string) {
-	l.logger.Logf(logger.DebugLevel, "[TURN] "+msg)
+	l.logger.Logf(context.Background(), logger.DebugLevel, "[TURN] "+msg)
 }
 
 // Debugf logs a formatted debug message.
 func (l *Logger) Debugf(format string, args ...interface{}) {
-	l.logger.Logf(logger.DebugLevel, "[TURN] "+format, args...)
+	l.logger.Logf(context.Background(), logger.DebugLevel, "[TURN] "+format, args...)
 }
 
 // Info Level Logging
 // Info logs an info message.
 func (l *Logger) Info(msg string) {
-	l.logger.Logf(logger.InfoLevel, "[TURN] "+msg)
+	l.logger.Logf(context.Background(), logger.InfoLevel, "[TURN] "+msg)
 }
 
 // Infof logs a formatted info message.
 func (l *Logger) Infof(msg string, args ...interface{}) {
-	l.logger.Logf(logger.InfoLevel, "[TURN] "+msg, args...)
+	l.logger.Logf(context.Background(), logger.InfoLevel, "[TURN] "+msg, args...)
 }
 
 // Warn Level Logging
 // Warn logs a warning message.
 func (l *Logger) Warn(msg string) {
-	l.logger.Logf(logger.WarnLevel, "[TURN] Warn: %s", msg)
+	l.logger.Logf(context.Background(), logger.WarnLevel, "[TURN] Warn: %s", msg)
 }
 
 // Warnf logs a formatted warning message.
 func (l *Logger) Warnf(format string, args ...interface{}) {
-	l.logger.Logf(logger.WarnLevel, "[TURN] "+format, args...)
+	l.logger.Logf(context.Background(), logger.WarnLevel, "[TURN] "+format, args...)
 }
 
 // Error Level Logging, logs an error message.
 func (l *Logger) Error(msg string) {
-	l.logger.Logf(logger.ErrorLevel, "[TURN] "+msg)
+	l.logger.Logf(context.Background(), logger.ErrorLevel, "[TURN] "+msg)
 }
 
 // Errorf logs a formatted error message.
 func (l *Logger) Errorf(msg string, args ...interface{}) {
-	l.logger.Logf(logger.ErrorLevel, "[TURN] "+msg, args...)
+	l.logger.Logf(context.Background(), logger.ErrorLevel, "[TURN] "+msg, args...)
 }
 
 // LoggerFactory is a factory for creating Turn loggers.

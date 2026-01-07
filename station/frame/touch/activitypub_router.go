@@ -75,7 +75,6 @@ func (apr *ActivityPubRouters) Handlers() []server.Handler {
 			info.Handler,
 			server.WithMethod(info.Method),
 			server.WithWrappers(info.Wrappers...),
-			server.WithHertzMiddlewares(info.Middlewares...),
 		)
 	}
 

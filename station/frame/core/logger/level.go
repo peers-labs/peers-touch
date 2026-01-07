@@ -73,63 +73,63 @@ func GetLevel(levelStr string) (Level, error) {
 
 // Info logs at info level using DefaultLogger.
 func Info(ctx context.Context, args ...interface{}) {
-	DefaultLogger.Log(InfoLevel, args...)
+	DefaultLogger.Log(ctx, InfoLevel, args...)
 }
 
 // Infof logs formatted message at info level.
 func Infof(ctx context.Context, template string, args ...interface{}) {
-	DefaultLogger.Logf(InfoLevel, template, args...)
+	DefaultLogger.Logf(ctx, InfoLevel, template, args...)
 }
 
 // Trace logs at trace level.
 func Trace(ctx context.Context, args ...interface{}) {
-	DefaultLogger.Log(TraceLevel, args...)
+	DefaultLogger.Log(ctx, TraceLevel, args...)
 }
 
 // Tracef logs formatted message at trace level.
 func Tracef(ctx context.Context, template string, args ...interface{}) {
-	DefaultLogger.Logf(TraceLevel, template, args...)
+	DefaultLogger.Logf(ctx, TraceLevel, template, args...)
 }
 
 // Debug logs at debug level.
 func Debug(ctx context.Context, args ...interface{}) {
-	DefaultLogger.Log(DebugLevel, args...)
+	DefaultLogger.Log(ctx, DebugLevel, args...)
 }
 
 // Debugf logs formatted message at debug level.
 func Debugf(ctx context.Context, template string, args ...interface{}) {
-	DefaultLogger.Logf(DebugLevel, template, args...)
+	DefaultLogger.Logf(ctx, DebugLevel, template, args...)
 }
 
 // Warn logs at warn level.
 func Warn(ctx context.Context, args ...interface{}) {
-	DefaultLogger.Log(WarnLevel, args...)
+	DefaultLogger.Log(ctx, WarnLevel, args...)
 }
 
 // Warnf logs formatted message at warn level.
 func Warnf(ctx context.Context, template string, args ...interface{}) {
-	DefaultLogger.Logf(WarnLevel, template, args...)
+	DefaultLogger.Logf(ctx, WarnLevel, template, args...)
 }
 
 // Error logs at error level.
 func Error(ctx context.Context, args ...interface{}) {
-	DefaultLogger.Log(ErrorLevel, args...)
+	DefaultLogger.Log(ctx, ErrorLevel, args...)
 }
 
 // Errorf logs formatted message at error level.
 func Errorf(ctx context.Context, template string, args ...interface{}) {
-	DefaultLogger.Logf(ErrorLevel, template, args...)
+	DefaultLogger.Logf(ctx, ErrorLevel, template, args...)
 }
 
 // Fatal logs at fatal level and exits.
 func Fatal(ctx context.Context, args ...interface{}) {
-	DefaultLogger.Log(FatalLevel, args...)
+	DefaultLogger.Log(ctx, FatalLevel, args...)
 	os.Exit(1)
 }
 
 // Fatalf logs formatted message at fatal level and exits.
 func Fatalf(ctx context.Context, template string, args ...interface{}) {
-	DefaultLogger.Logf(FatalLevel, template, args...)
+	DefaultLogger.Logf(ctx, FatalLevel, template, args...)
 	os.Exit(1)
 }
 

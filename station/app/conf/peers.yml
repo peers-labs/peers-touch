@@ -10,7 +10,7 @@ peers:
       message: true
       mastodon: true
   run-mode: 2
-  includes: store.yml, store.local.yml, sub_aibox.yml, sub_bootstrap.yml, log.yml, actor.yml, server.host.local.yml
+  includes: store.yml, store.local.yml, sub_aibox.yml, sub_bootstrap.yml, log.yml, actor.yml, server.host.local.yml, sub_oss.yml
   config:
     hierarchy-merge: true
   node:

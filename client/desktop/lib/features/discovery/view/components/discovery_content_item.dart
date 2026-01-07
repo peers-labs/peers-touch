@@ -253,12 +253,16 @@ class DiscoveryContentItem extends StatelessWidget {
     String myAvatar = 'https://i.pravatar.cc/150?u=me';
     if (Get.isRegistered<GlobalContext>()) {
       final ctx = Get.find<GlobalContext>();
-      final avatarUrl = ctx.profile?.avatar;
-      if (avatarUrl != null && avatarUrl.isNotEmpty) {
-        myAvatar = avatarUrl;
-        if (myAvatar.startsWith('/')) {
-          final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
-          myAvatar = '$baseUrl$myAvatar';
+      final session = ctx.currentSession;
+      
+      if (session != null) {
+        final avatarUrl = session['avatarUrl'] as String?;
+        if (avatarUrl != null && avatarUrl.isNotEmpty) {
+          myAvatar = avatarUrl;
+          if (myAvatar.startsWith('/')) {
+            final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+            myAvatar = '$baseUrl$myAvatar';
+          }
         }
       }
     }
@@ -455,7 +459,7 @@ class DiscoveryContentItem extends StatelessWidget {
           child: Image.network(
             images.first,
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
           ),
         ),
       );
@@ -499,7 +503,7 @@ class DiscoveryContentItem extends StatelessWidget {
       child: Image.network(
         url,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(color: Colors.grey[200]),
+        errorBuilder: (_, __, ___) => Container(color: Colors.grey[200]),
       ),
     );
   }

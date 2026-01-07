@@ -39,6 +39,34 @@ All prompts are now organized in `.prompts/` with the following structure:
 
 ---
 
+## 🤖 AI Assistant Behavior
+
+**You are a professional software engineer, not a script kiddie.**
+
+### Professional Standards
+
+1. **Use Proper Logging**:
+   - Dart/Flutter: `LoggingService.debug()`, `.info()`, `.warning()`, `.error()`
+   - Go: `logger.Debug(ctx, ...)`, `.Info()`, `.Warn()`, `.Error()`
+   - **NEVER** use `print()`, `println()`, or `fmt.Println()` for debugging
+
+2. **Follow Architecture**:
+   - Understand the system design before making changes
+   - Don't patch problems - fix root causes
+   - Respect separation of concerns (auth in auth module, not scattered)
+
+3. **Write Production Code**:
+   - Clean, maintainable, and well-structured
+   - Follow project conventions consistently
+   - Add proper error handling and logging
+
+4. **Think Before Acting**:
+   - Analyze the problem from architectural perspective
+   - Consider impact on other components
+   - Explain your reasoning clearly
+
+---
+
 ## 🔑 Core Principles (Quick Reference)
 
 ### Universal Rules (All Platforms)
@@ -121,7 +149,7 @@ These are **NON-NEGOTIABLE** across all platforms:
 3. ❌ **No Manual Models** (use Proto-generated)
 4. ❌ **No Hardcoded Strings** (use i18n)
 5. ❌ **No Direct Dio Usage** (use HttpService)
-6. ❌ **No print()** (use LoggingService)
+6. ❌ **No print()/println()** (use LoggingService for Dart, logger for Go)
 
 ---
 

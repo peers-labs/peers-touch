@@ -1,9 +1,6 @@
 package server
 
 import (
-	"context"
-
-	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
@@ -151,18 +148,10 @@ func WithWrappers(wrappers ...Wrapper) HandlerOption {
 	}
 }
 
-// WithHertzMiddlewares sets Hertz middlewares.
-func WithHertzMiddlewares(middlewares ...func(context.Context, *app.RequestContext)) HandlerOption {
-	return func(opts *HandlerOptions) {
-		opts.HertzMiddlewares = middlewares
-	}
-}
-
 // HandlerOptions holds per-handler configuration.
 type HandlerOptions struct {
-	Method           Method
-	Wrappers         []Wrapper
-	HertzMiddlewares []func(context.Context, *app.RequestContext)
+	Method   Method
+	Wrappers []Wrapper
 }
 
 // endregion

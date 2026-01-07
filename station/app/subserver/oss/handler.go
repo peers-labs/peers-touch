@@ -1,6 +1,7 @@
 package oss
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,7 @@ func (s *ossSubServer) Handlers() []server.Handler {
 	// Apply middleware if needed (e.g. auth)
 	uploadHandler := http.Handler(http.HandlerFunc(s.handleUpload))
 	if s.authProvider != nil {
-		uploadHandler = authhttp.RequireJWT(s.authProvider)(uploadHandler)
+		uploadHandler = authhttp.RequireJWT(s.authProvider)(context.Background(), uploadHandler)
 	}
 
 	return []server.Handler{

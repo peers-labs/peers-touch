@@ -49,7 +49,7 @@ class ActivityController extends GetxController {
 
     // If still empty, try GlobalContext
     if (name.isEmpty) {
-       final handle = _gctx.actorHandle ?? _gctx.session?.handle;
+       final handle = _gctx.actorHandle ?? _gctx.currentSession?['username']?.toString();
        name = handle ?? '';
     }
     

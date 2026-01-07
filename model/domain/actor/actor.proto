@@ -12,6 +12,7 @@ message Actor {
   string inbox = 5;
   string outbox = 6;
   map<string, string> endpoints = 7;
+  bool is_following = 8 [json_name = "is_following"];
 }
 
 message UserLink {

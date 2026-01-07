@@ -142,9 +142,29 @@ type Client struct { ... }
 - TODO 规范：`// TODO(name): reason`
 - 建议为公共包提供 `doc.go` 概述
 
+## 日志规范
+
+- 使用项目的 `logger` 包，不使用 `println()` 或 `fmt.Println()`
+- 日志级别：
+  - `logger.Debug(ctx, ...)` - 开发调试信息
+  - `logger.Info(ctx, ...)` - 重要事件（启动、关闭、关键操作）
+  - `logger.Warn(ctx, ...)` - 可恢复的异常
+  - `logger.Error(ctx, ...)` - 错误信息
+
+```go
+// ✅ CORRECT: 使用 logger 包
+logger.Infof(ctx, "User %s logged in", userID)
+logger.Warnf(ctx, "Token validation failed: %v", err)
+logger.Debugf(ctx, "Processing request: %+v", req)
+
+// ❌ WRONG: 使用 println 或 fmt.Println
+println("User logged in")
+fmt.Println("Debug info")
+```
+
 ## 错误处理与返回
 
-- 采用“早返回”模式：
+- 采用"早返回"模式：
 
 ```go
 v, err := parse()

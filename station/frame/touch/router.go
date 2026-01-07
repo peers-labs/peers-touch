@@ -30,7 +30,7 @@ func (apr RouterPath) SubPath() string {
 
 // CommonAccessControlWrapper creates a wrapper that checks router accessibility based on router family name
 func CommonAccessControlWrapper(routerFamilyName string) server.Wrapper {
-	return func(next http.Handler) http.Handler {
+	return func(ctx context.Context, next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			routerConfig := GetRouterConfig()
 

@@ -57,21 +57,19 @@ class InitialBinding extends Bindings {
     );
     Get.put<Libp2pNetworkService>(Libp2pNetworkService(), permanent: true);
 
-    Get.put<TokenProvider>(
-      DefaultTokenProvider(
-        secureStorage: Get.find<SecureStorageAdapter>(),
-        localStorage: Get.find<LocalStorageAdapter>(),
-      ),
-      permanent: true,
+    final tokenProvider = DefaultTokenProvider(
+      secureStorage: Get.find<SecureStorageAdapter>(),
+      localStorage: Get.find<LocalStorageAdapter>(),
     );
+    Get.put<TokenProvider>(tokenProvider, permanent: true);
 
+    // Setup auth providers for HttpServiceLocator
+    // This ensures AuthInterceptor can read tokens from TokenProvider
     NetworkInitializer.setupAuth(
-      tokenProvider: Get.find<TokenProvider>(),
-      // tokenRefresher: null, // Can be injected when real refresh interface is connected
+      tokenProvider: tokenProvider,
       onUnauthenticated: () {
         // Don't automatically logout on 401
         // Let individual screens handle authentication errors
-        // This prevents unexpected logouts during normal operations
       },
     );
 

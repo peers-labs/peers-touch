@@ -51,7 +51,7 @@ class ProfileModule {
                        ? Image(
                            image: avatarProvider,
                            fit: BoxFit.cover,
-                           errorBuilder: (_, _, _) => Icon(
+                           errorBuilder: (_, __, ___) => Icon(
                              Icons.person,
                              color: tokens?.textPrimary ?? theme.colorScheme.onSurface,
                              size: 28,

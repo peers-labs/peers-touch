@@ -9,7 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
-func (s *launcherSubServer) handleGetFeedHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *launcherSubServer) handleGetFeed(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	userID := r.URL.Query().Get("user_id")
@@ -40,7 +40,7 @@ func (s *launcherSubServer) handleGetFeedHTTP(w http.ResponseWriter, r *http.Req
 	json.NewEncoder(w).Encode(feed)
 }
 
-func (s *launcherSubServer) handleSearchHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *launcherSubServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	query := r.URL.Query().Get("q")

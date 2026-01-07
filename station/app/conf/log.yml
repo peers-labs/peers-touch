@@ -1,10 +1,10 @@
 peers:
   logger:
     name: slogrus
-    level: info
+    level: debug
     caller-skip-count: 0
     persistence:
-       enable: true
+       enable: false
        dir: /var/logs/peers-touch
        back-dir: /var/logs/peers-touch/backup
        max-file-size: 50

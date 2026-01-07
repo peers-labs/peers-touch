@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 测试数据库
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: peers-touch-test-db
+    environment:
+      POSTGRES_DB: peers_touch_test
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./test_data/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres-test-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d peers_touch_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # Redis 测试缓存
+  redis-test:
+    image: redis:7-alpine
+    container_name: peers-touch-test-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - test-network
+
+  # Station 测试服务
+  station-test:
+    build:
+      context: ../station
+      dockerfile: Dockerfile.test
+    container_name: peers-touch-test-station
+    environment:
+      # 数据库配置
+      DB_HOST: postgres-test
+      DB_PORT: 5432
+      DB_NAME: peers_touch_test
+      DB_USER: test_user
+      DB_PASSWORD: test_password
+      
+      # Redis 配置
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      
+      # 服务配置
+      SERVER_PORT: 18080
+      ENV: test
+      LOG_LEVEL: debug
+    ports:
+      - "18080:18080"
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - test-network
+    volumes:
+      - ./test_data:/test_data:ro
+
+volumes:
+  postgres-test-data:
+
+networks:
+  test-network:
+    driver: bridge
