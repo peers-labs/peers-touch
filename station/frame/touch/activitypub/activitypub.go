@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -602,8 +603,14 @@ func FetchObjectReplies(c context.Context, objectID string, baseURL string, page
 	}
 
 	var obj db.ActivityPubObject
-	if err := rds.Where("activity_pub_id = ?", objectID).First(&obj).Error; err != nil {
-		return nil, fmt.Errorf("object not found: %w", err)
+	if numericID, err := strconv.ParseUint(objectID, 10, 64); err == nil {
+		if err := rds.Where("id = ?", numericID).First(&obj).Error; err != nil {
+			return nil, fmt.Errorf("object not found by ID: %w", err)
+		}
+	} else {
+		if err := rds.Where("activity_pub_id = ?", objectID).First(&obj).Error; err != nil {
+			return nil, fmt.Errorf("object not found by ActivityPub ID: %w", err)
+		}
 	}
 
 	repliesID := fmt.Sprintf("%s?replies=true", objectID)

@@ -156,6 +156,13 @@ class AuthController extends GetxController {
       ..addAll(presetUsers
           .map((e) => (e['username'] ?? e['handle'] ?? e['name'] ?? '').toString())
           .where((e) => e.isNotEmpty));
+    
+    if (isLogin) {
+      list.addAll(presetUsers
+          .map((e) => e['email']?.toString() ?? '')
+          .where((e) => e.isNotEmpty));
+    }
+    
     return list
         .where((e) => text.isEmpty || e.toLowerCase().contains(text.toLowerCase()))
         .take(6)
@@ -193,9 +200,28 @@ class AuthController extends GetxController {
 
   void selectHighlightedItem(String handle) {
     if (authTab.value == 0) {
+      // Login mode: try to find the email for this handle
+      String emailToFill = handle;
+      
+      // Check if handle is already an email
+      if (!handle.contains('@')) {
+        // Look for the user in presetUsers to get their email
+        final found = presetUsers.firstWhereOrNull((u) {
+          final username = (u['username'] ?? u['handle'] ?? u['name'] ?? '').toString();
+          return username == handle;
+        });
+        
+        if (found != null) {
+          final userEmail = found['email']?.toString();
+          if (userEmail != null && userEmail.isNotEmpty) {
+            emailToFill = userEmail;
+          }
+        }
+      }
+      
       emailController.value = TextEditingValue(
-        text: handle,
-        selection: TextSelection.collapsed(offset: handle.length),
+        text: emailToFill,
+        selection: TextSelection.collapsed(offset: emailToFill.length),
       );
     } else {
       usernameController.value = TextEditingValue(
