@@ -2,7 +2,6 @@ package touch
 
 import (
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
-	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
@@ -29,16 +28,17 @@ var _ server.Routers = (*MastodonRouters)(nil)
 func (mr *MastodonRouters) Handlers() []server.Handler {
 	commonWrapper := CommonAccessControlWrapper(model.RouteNameMastodon)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	_ = provider
 	return []server.Handler{
 		server.NewHandler(MastodonURLApps, MastodonApps, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLVerifyCredentials, MastodonVerifyCredentials, server.WithMethod(server.GET), server.WithWrappers(commonWrapper), server.WithHertzMiddlewares(hertzadapter.RequireJWT(provider))),
-		server.NewHandler(MastodonURLStatuses, MastodonCreateStatus, server.WithMethod(server.POST), server.WithWrappers(commonWrapper), server.WithHertzMiddlewares(hertzadapter.RequireJWT(provider))),
+		server.NewHandler(MastodonURLVerifyCredentials, MastodonVerifyCredentials, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
+		server.NewHandler(MastodonURLStatuses, MastodonCreateStatus, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
 		server.NewHandler(MastodonURLStatus, MastodonGetStatus, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLFavourite, MastodonFavourite, server.WithMethod(server.POST), server.WithWrappers(commonWrapper), server.WithHertzMiddlewares(hertzadapter.RequireJWT(provider))),
-		server.NewHandler(MastodonURLUnfavourite, MastodonUnfavourite, server.WithMethod(server.POST), server.WithWrappers(commonWrapper), server.WithHertzMiddlewares(hertzadapter.RequireJWT(provider))),
-		server.NewHandler(MastodonURLReblog, MastodonReblog, server.WithMethod(server.POST), server.WithWrappers(commonWrapper), server.WithHertzMiddlewares(hertzadapter.RequireJWT(provider))),
-		server.NewHandler(MastodonURLUnreblog, MastodonUnreblog, server.WithMethod(server.POST), server.WithWrappers(commonWrapper), server.WithHertzMiddlewares(hertzadapter.RequireJWT(provider))),
-		server.NewHandler(MastodonURLTimelinesHome, MastodonTimelinesHome, server.WithMethod(server.GET), server.WithWrappers(commonWrapper), server.WithHertzMiddlewares(hertzadapter.RequireJWT(provider))),
+		server.NewHandler(MastodonURLFavourite, MastodonFavourite, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
+		server.NewHandler(MastodonURLUnfavourite, MastodonUnfavourite, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
+		server.NewHandler(MastodonURLReblog, MastodonReblog, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
+		server.NewHandler(MastodonURLUnreblog, MastodonUnreblog, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
+		server.NewHandler(MastodonURLTimelinesHome, MastodonTimelinesHome, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
 		server.NewHandler(MastodonURLTimelinesPublic, MastodonTimelinesPublic, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
 		server.NewHandler(MastodonURLInstance, MastodonInstance, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
 		server.NewHandler(MastodonURLDirectory, MastodonDirectory, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),

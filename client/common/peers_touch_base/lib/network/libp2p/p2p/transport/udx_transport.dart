@@ -226,7 +226,6 @@ class UDXTransport implements Transport {
       _logger.fine('[UDXTransport.listen] Creating UDXListener for $boundMa');
       final listener = UDXListener(
         listeningSocket: multiplexer,
-        udxInstance: _udxInstance,
         boundAddr: boundMa,
         transport: this,
         connManager: _connManager,

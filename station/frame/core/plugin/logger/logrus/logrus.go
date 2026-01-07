@@ -188,6 +188,12 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 	log.SetFormatter(l.opts.Formatter)
 	log.SetReportCaller(l.opts.ReportCaller)
 	log.ExitFunc = l.opts.ExitFunc
+
+	// IMPORTANT: Add data-enrichment hooks BEFORE level-split hooks
+	// This ensures request_id/trace_id are added before entry serialization
+	log.AddHook(&PackageFieldHook{})
+	log.AddHook(&RequestIDHook{})
+
 	if l.opts.SplitLevel {
 		// Preserve console output; send per-level copies to files via hooks
 		sLog.Infof(ctx, "split log into different level files")
@@ -209,9 +215,6 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 		l.Logger = log
 	}
 
-	// Add pkg field hook for observability (works with or without filtering)
-	log.AddHook(&PackageFieldHook{})
-
 	// replace the DefaultLogger
 	logger.DefaultLogger = l
 
@@ -227,12 +230,24 @@ func (l *logrusLogger) Fields(fields map[string]interface{}) logger.Logger {
 	return &logrusLogger{l.Logger.WithFields(fields), l.opts}
 }
 
-func (l *logrusLogger) Log(level logger.Level, args ...interface{}) {
-	l.Logger.Log(fromStackLevel(level), args...)
+func (l *logrusLogger) Log(ctx context.Context, level logger.Level, args ...interface{}) {
+	if entry, ok := l.Logger.(*logrus.Entry); ok {
+		entry.WithContext(ctx).Log(fromStackLevel(level), args...)
+	} else if log, ok := l.Logger.(*logrus.Logger); ok {
+		log.WithContext(ctx).Log(fromStackLevel(level), args...)
+	} else {
+		l.Logger.Log(fromStackLevel(level), args...)
+	}
 }
 
-func (l *logrusLogger) Logf(level logger.Level, format string, args ...interface{}) {
-	l.Logger.Logf(fromStackLevel(level), format, args...)
+func (l *logrusLogger) Logf(ctx context.Context, level logger.Level, format string, args ...interface{}) {
+	if entry, ok := l.Logger.(*logrus.Entry); ok {
+		entry.WithContext(ctx).Logf(fromStackLevel(level), format, args...)
+	} else if log, ok := l.Logger.(*logrus.Logger); ok {
+		log.WithContext(ctx).Logf(fromStackLevel(level), format, args...)
+	} else {
+		l.Logger.Logf(fromStackLevel(level), format, args...)
+	}
 }
 
 func (l *logrusLogger) Options() logger.Options {

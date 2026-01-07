@@ -34,6 +34,18 @@ func (l *logrusLogPlugin) Name() string {
 
 func (l *logrusLogPlugin) Options() []logger.Option {
 	var opts []logger.Option
+
+	loggerCfg := options.Peers.Logger
+	if len(loggerCfg.Level) > 0 {
+		if level, err := logger.GetLevel(loggerCfg.Level); err == nil {
+			opts = append(opts, logger.WithLevel(level))
+		}
+	}
+
+	if loggerCfg.CallerSkipCount > 0 {
+		opts = append(opts, logger.WithCallerSkipCount(loggerCfg.CallerSkipCount))
+	}
+
 	lc := options.Peers.Logger.Logrus
 	opts = append(opts, SplitLevel(lc.SplitLevel))
 	opts = append(opts, ReportCaller(lc.ReportCaller))

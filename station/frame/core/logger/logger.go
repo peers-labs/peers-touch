@@ -21,9 +21,9 @@ type Logger interface {
 	// Fields set fields to always be logged
 	Fields(fields map[string]interface{}) Logger
 	// Log writes a log entry
-	Log(level Level, v ...interface{})
+	Log(ctx context.Context, level Level, v ...interface{})
 	// Logf writes a formatted log entry
-	Logf(level Level, format string, v ...interface{})
+	Logf(ctx context.Context, level Level, format string, v ...interface{})
 	// String returns the name of logger
 	String() string
 }
@@ -35,10 +35,12 @@ func Init(ctx context.Context, opts ...Option) error { return DefaultLogger.Init
 func Fields(fields map[string]interface{}) Logger { return DefaultLogger.Fields(fields) }
 
 // Log writes a log entry using DefaultLogger.
-func Log(level Level, v ...interface{}) { DefaultLogger.Log(level, v...) }
+func Log(ctx context.Context, level Level, v ...interface{}) { DefaultLogger.Log(ctx, level, v...) }
 
 // Logf writes a formatted log entry using DefaultLogger.
-func Logf(level Level, format string, v ...interface{}) { DefaultLogger.Logf(level, format, v...) }
+func Logf(ctx context.Context, level Level, format string, v ...interface{}) {
+	DefaultLogger.Logf(ctx, level, format, v...)
+}
 
 // String returns the DefaultLogger name.
 func String() string { return DefaultLogger.String() }

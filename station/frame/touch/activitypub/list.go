@@ -29,13 +29,18 @@ func LoadPresetActors(ctx context.Context) ([]PresetActor, error) {
 }
 
 // ListActors returns actors from database (if any)
-func ListActors(ctx context.Context) ([]PresetActor, error) {
+// excludeActorID: optional actor ID to exclude from results (e.g., current user)
+func ListActors(ctx context.Context, excludeActorID uint64) ([]PresetActor, error) {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var rows []db.Actor
-	if err := rds.Find(&rows).Error; err != nil {
+	query := rds
+	if excludeActorID > 0 {
+		query = query.Where("id != ?", excludeActorID)
+	}
+	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	base := "https://station.local"
@@ -78,14 +83,19 @@ func ListActors(ctx context.Context) ([]PresetActor, error) {
 }
 
 // SearchActors searches local actors by query (fuzzy match on username and display name)
-func SearchActors(ctx context.Context, query string) ([]PresetActor, error) {
+// excludeActorID: optional actor ID to exclude from results (e.g., current user)
+func SearchActors(ctx context.Context, query string, excludeActorID uint64) ([]PresetActor, error) {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var rows []db.Actor
 	searchPattern := "%" + query + "%"
-	if err := rds.Where("preferred_username LIKE ? OR name LIKE ?", searchPattern, searchPattern).Find(&rows).Error; err != nil {
+	dbQuery := rds.Where("preferred_username LIKE ? OR name LIKE ?", searchPattern, searchPattern)
+	if excludeActorID > 0 {
+		dbQuery = dbQuery.Where("id != ?", excludeActorID)
+	}
+	if err := dbQuery.Find(&rows).Error; err != nil {
 		return nil, err
 	}
 

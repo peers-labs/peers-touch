@@ -3,6 +3,7 @@ package activitypub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,23 @@ import (
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 	"gorm.io/gorm"
 )
+
+type ValidationError struct {
+	Message string
+}
+
+func (e *ValidationError) Error() string {
+	return e.Message
+}
+
+func NewValidationError(message string) error {
+	return &ValidationError{Message: message}
+}
+
+func IsValidationError(err error) bool {
+	var validationErr *ValidationError
+	return errors.As(err, &validationErr)
+}
 
 // ProcessActivity persists and delivers an outgoing ActivityPub activity.
 func ProcessActivity(c context.Context, username string, activity *ap.Activity, baseURL string) error {
@@ -183,13 +201,13 @@ func handleFollowActivity(c context.Context, dbConn *gorm.DB, username string, a
 
 	// Validation checks
 	if followerID == 0 {
-		return fmt.Errorf("invalid follower ID")
+		return NewValidationError("invalid follower ID")
 	}
 	if followingID == 0 {
-		return fmt.Errorf("invalid following ID")
+		return NewValidationError("invalid following ID")
 	}
 	if followerID == followingID {
-		return fmt.Errorf("cannot follow yourself")
+		return NewValidationError("cannot follow yourself")
 	}
 
 	// Check if already following

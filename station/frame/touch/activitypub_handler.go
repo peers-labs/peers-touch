@@ -13,7 +13,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
-	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -31,11 +31,10 @@ import (
 
 // ActivityPubHandlerInfo represents a single handler's information
 type ActivityPubHandlerInfo struct {
-	RouterURL   RouterPath
-	Handler     func(context.Context, *app.RequestContext)
-	Method      server.Method
-	Wrappers    []server.Wrapper
-	Middlewares []func(context.Context, *app.RequestContext)
+	RouterURL RouterPath
+	Handler   func(context.Context, *app.RequestContext)
+	Method    server.Method
+	Wrappers  []server.Wrapper
 }
 
 // GetActivityPubHandlers returns all ActivityPub handler configurations
@@ -43,6 +42,7 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 	commonWrapper := CommonAccessControlWrapper(model.RouteNameActivityPub)
 	actorWrapper := CommonAccessControlWrapper(model.RouteNameActor)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	jwtWrapper := httpadapter.RequireJWT(provider)
 
 	return []ActivityPubHandlerInfo{
 		// Actor Management Endpoints (Client API)
@@ -59,11 +59,10 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
 		{
-			RouterURL:   RouterURLActorProfile,
-			Handler:     GetActorProfile,
-			Method:      server.GET,
-			Wrappers:    []server.Wrapper{actorWrapper},
-			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+			RouterURL: RouterURLActorProfile,
+			Handler:   GetActorProfile,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
 		},
 		{
 			RouterURL: RouterURLPublicProfile,
@@ -72,38 +71,35 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper}, // Public access
 		},
 		{
-			RouterURL:   RouterURLActorProfile,
-			Handler:     UpdateActorProfile,
-			Method:      server.POST,
-			Wrappers:    []server.Wrapper{actorWrapper},
-			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+			RouterURL: RouterURLActorProfile,
+			Handler:   UpdateActorProfile,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
 		},
 		{
 			RouterURL: RouterURLActorList,
 			Handler:   ListActors,
 			Method:    server.GET,
-			Wrappers:  []server.Wrapper{actorWrapper},
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
 		},
 		{
 			RouterURL: RouterURLActorSearch,
 			Handler:   SearchActors,
 			Method:    server.GET,
-			Wrappers:  []server.Wrapper{actorWrapper},
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
 		},
-		// Online Status Endpoints
+		// Online Status Endpoints (commented out)
 		/*	{
-				RouterURL:   RouterURLActorsOnline,
-				Handler:     GetOnlineActorsHandler,
-				Method:      server.GET,
-				Wrappers:    []server.Wrapper{actorWrapper},
-				Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+				RouterURL: RouterURLActorsOnline,
+				Handler:   GetOnlineActorsHandler,
+				Method:    server.GET,
+				Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
 			},
 			{
-				RouterURL:   RouterURLHeartbeat,
-				Handler:     HeartbeatHandler,
-				Method:      server.POST,
-				Wrappers:    []server.Wrapper{actorWrapper},
-				Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+				RouterURL: RouterURLHeartbeat,
+				Handler:   HeartbeatHandler,
+				Method:    server.POST,
+				Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
 			},*/
 		// User-specific ActivityPub endpoints
 		{
@@ -119,11 +115,10 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 		{
-			RouterURL:   ActivityPubRouterURLInbox,
-			Handler:     PostUserInbox,
-			Method:      server.POST,
-			Wrappers:    []server.Wrapper{commonWrapper},
-			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+			RouterURL: ActivityPubRouterURLInbox,
+			Handler:   PostUserInbox,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
 		},
 		{
 			RouterURL: ActivityPubRouterURLOutbox,
@@ -132,11 +127,10 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 		{
-			RouterURL:   ActivityPubRouterURLOutbox,
-			Handler:     PostUserOutbox,
-			Method:      server.POST,
-			Wrappers:    []server.Wrapper{commonWrapper},
-			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+			RouterURL: ActivityPubRouterURLOutbox,
+			Handler:   PostUserOutbox,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
 		},
 		{
 			RouterURL: ActivityPubRouterURLFollowers,
@@ -172,11 +166,10 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 		},
 		// Shared Inbox endpoints
 		{
-			RouterURL:   ActivityRouterURLCreate,
-			Handler:     CreateActivity,
-			Method:      server.POST,
-			Wrappers:    []server.Wrapper{commonWrapper},
-			Middlewares: []func(context.Context, *app.RequestContext){hertzadapter.RequireJWT(provider)},
+			RouterURL: ActivityRouterURLCreate,
+			Handler:   CreateActivity,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
 		},
 		{
 			RouterURL: ActivityPubRouterURLSharedInbox,
@@ -348,12 +341,23 @@ func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
 
 // ListActors returns actors from preset configuration
 func ListActors(c context.Context, ctx *app.RequestContext) {
-	actors, err := activitypub.ListActors(c)
+	// Get current user ID from context (if authenticated)
+	var excludeActorID uint64
+	if subject, ok := c.Value(httpadapter.SubjectContextKey).(*coreauth.Subject); ok && subject != nil {
+		// subject.ID is the actor ID as string
+		if actorID, err := strconv.ParseUint(subject.ID, 10, 64); err == nil {
+			excludeActorID = actorID
+			log.Infof(c, "[ListActors] Excluding current user with actor ID: %d", excludeActorID)
+		}
+	}
+
+	actors, err := activitypub.ListActors(c, excludeActorID)
 	if err != nil {
 		log.Warnf(c, "List actors failed: %v", err)
 		FailedResponse(ctx, err)
 		return
 	}
+
 	// Map to proto ActorList
 	items := make([]*modelpb.Actor, 0, len(actors))
 	for _, a := range actors {
@@ -370,13 +374,24 @@ func SearchActors(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	actors, err := activitypub.SearchActors(c, query)
+	// Get current user ID from context (if authenticated)
+	var excludeActorID uint64
+	if subject, ok := c.Value(httpadapter.SubjectContextKey).(*coreauth.Subject); ok && subject != nil {
+		// subject.ID is the actor ID as string
+		if actorID, err := strconv.ParseUint(subject.ID, 10, 64); err == nil {
+			excludeActorID = actorID
+			log.Infof(c, "[SearchActors] Excluding current user with actor ID: %d", excludeActorID)
+		}
+	}
+
+	actors, err := activitypub.SearchActors(c, query, excludeActorID)
 	if err != nil {
 		log.Warnf(c, "Search actors failed: %v", err)
 		FailedResponse(ctx, err)
 		return
 	}
 
+	// Map to proto ActorList
 	items := make([]*modelpb.Actor, 0, len(actors))
 	for _, a := range actors {
 		items = append(items, &modelpb.Actor{
@@ -578,8 +593,8 @@ func PostUserOutbox(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	subject := hertzadapter.GetSubject(ctx)
-	if subject == nil {
+	subject, ok := c.Value(httpadapter.SubjectContextKey).(*coreauth.Subject)
+	if !ok || subject == nil {
 		log.Warnf(c, "Authentication required")
 		ctx.JSON(http.StatusUnauthorized, "Authentication required")
 		return
@@ -632,8 +647,13 @@ func PostUserOutbox(c context.Context, ctx *app.RequestContext) {
 	// 4. Dispatch based on Type - use actor.PreferredUsername for backward compatibility
 	err = activitypub.ProcessActivity(c, actor.PreferredUsername, &activity, baseURL)
 	if err != nil {
-		log.Errorf(c, "Failed to process activity: %v", err)
-		ctx.JSON(http.StatusInternalServerError, fmt.Sprintf("Failed to process activity: %v", err))
+		if activitypub.IsValidationError(err) {
+			log.Warnf(c, "Validation error: %v", err)
+			ctx.JSON(http.StatusBadRequest, fmt.Sprintf("Validation error: %v", err))
+		} else {
+			log.Errorf(c, "Failed to process activity: %v", err)
+			ctx.JSON(http.StatusInternalServerError, fmt.Sprintf("Failed to process activity: %v", err))
+		}
 		return
 	}
 

@@ -396,7 +396,7 @@ class ProviderDetailPanel extends StatelessWidget {
     final url = provider.logo;
     if (url.isNotEmpty) {
        return ClipOval(
-        child: Image.network(url, width: size, height: size, errorBuilder: (_, _, _) {
+        child: Image.network(url, width: size, height: size, errorBuilder: (ctx, _, __) {
           return Icon(Icons.apps, size: size, color: Theme.of(context).extension<LobeTokens>()!.brandAccent);
         }),
       );

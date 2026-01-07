@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide FormData, MultipartFile;
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
-import 'package:peers_touch_base/model/domain/actor/actor.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/models/actor_base.dart';
@@ -28,7 +27,7 @@ class ProfileController extends GetxController {
     if (Get.isRegistered<GlobalContext>()) {
       final gc = Get.find<GlobalContext>();
       
-      _syncFromGlobalContext(gc.profile);
+      _syncFromGlobalContext(gc.userProfile);
       
       gc.onProfileChange.listen((profile) {
         _syncFromGlobalContext(profile);
@@ -36,20 +35,21 @@ class ProfileController extends GetxController {
     }
   }
 
-  void _syncFromGlobalContext(ActorProfile? profile) {
+  void _syncFromGlobalContext(Map<String, dynamic>? profile) {
     if (profile == null) {
       _resetState();
       return;
     }
     
     try {
-      detail.value = UserDetail.fromActorProfile(profile);
+      detail.value = UserDetail.fromJson(profile);
       user.value = ActorBase(
-        id: profile.id,
-        name: profile.displayName.isNotEmpty 
-              ? profile.displayName 
-              : profile.username,
-        avatar: profile.avatar.isNotEmpty ? profile.avatar : null,
+        id: profile['id']?.toString() ?? '0',
+        name: profile['display_name']?.toString() ?? 
+              profile['displayName']?.toString() ?? 
+              profile['username']?.toString() ?? '',
+        avatar: profile['avatar']?.toString() ?? 
+                profile['avatarUrl']?.toString(),
       );
       LoggingService.info('ProfileController synced from GlobalContext');
     } catch (e) {

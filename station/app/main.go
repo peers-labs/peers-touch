@@ -4,17 +4,16 @@ import (
 	"context"
 
 	peers "github.com/peers-labs/peers-touch/station/frame"
-	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
-	"github.com/peers-labs/peers-touch/station/app/subserver/oss"
 	touchactivitypub "github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 
 	// default plugins
+	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
@@ -29,7 +28,7 @@ func main() {
 	p := peers.NewPeer()
 
 	// Initialize Auth Provider (Core)
-	jwtProvider := auth.NewJWTProvider(auth.Get().Secret, auth.Get().AccessTTL)
+	// jwtProvider := auth.NewJWTProvider(auth.Get().Secret, auth.Get().AccessTTL)
 
 	err := p.Init(
 		ctx,
@@ -40,7 +39,6 @@ func main() {
 		// server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
 		server.WithSubServer("chat", chat.NewChatSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
-		server.WithSubServer("oss", oss.NewOSSSubServer, oss.WithAuthProvider(jwtProvider)),
 	)
 	if err != nil {
 		panic(err)

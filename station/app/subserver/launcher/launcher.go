@@ -73,12 +73,12 @@ func (s *launcherSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHandler(
 			launcherURL{name: "launcher-feed", path: "/launcher/feed"},
-			http.HandlerFunc(s.handleGetFeedHTTP),
+			http.HandlerFunc(s.handleGetFeed),
 			server.WithMethod(server.GET),
 		),
 		server.NewHandler(
 			launcherURL{name: "launcher-search", path: "/launcher/search"},
-			http.HandlerFunc(s.handleSearchHTTP),
+			http.HandlerFunc(s.handleSearch),
 			server.WithMethod(server.GET),
 		),
 	}
