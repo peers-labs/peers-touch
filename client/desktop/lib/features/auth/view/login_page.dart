@@ -269,35 +269,7 @@ class LoginPage extends GetView<AuthController> {
                                     ),
                                   ),
                                   const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(handle, style: theme.textTheme.bodyMedium),
-                                        Builder(
-                                          builder: (context) {
-                                            final user = controller.presetUsers.firstWhereOrNull((u) {
-                                              final name = (u['username'] ?? u['handle'] ?? u['name'] ?? '').toString();
-                                              return name == handle;
-                                            });
-                                            final email = user?['email']?.toString() ?? '';
-                                            if (email.isEmpty) return const SizedBox.shrink();
-                                            return Padding(
-                                              padding: const EdgeInsets.only(top: 2),
-                                              child: Text(
-                                                email,
-                                                style: theme.textTheme.bodyMedium?.copyWith(
-                                                  color: UIKit.textSecondary(context),
-                                                  fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14) - 2,
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                  Expanded(child: Text(handle, style: theme.textTheme.bodyMedium)),
                                 ],
                               ),
                             ),
@@ -384,8 +356,239 @@ class LoginPage extends GetView<AuthController> {
             right: 24,
             child: LanguageSelector(),
           ),
+          Positioned(
+            bottom: 24,
+            right: 24,
+            child: IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => _showSettingsDrawer(context),
+              tooltip: '设置',
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  void _showSettingsDrawer(BuildContext context) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            elevation: 16,
+            child: Container(
+              width: 320,
+              height: double.infinity,
+              color: Theme.of(context).colorScheme.surface,
+              child: _buildSettingsContent(context),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOut,
+          )),
+          child: child,
+        );
+      },
+    );
+  }
+
+  Widget _buildSettingsContent(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.outlineVariant,
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Text(
+                '设置',
+                style: theme.textTheme.titleLarge,
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _buildSettingsSection(
+                context,
+                title: '数据管理',
+                children: [
+                  _buildSettingsItem(
+                    context,
+                    icon: Icons.delete_outline,
+                    title: '清除所有缓存',
+                    subtitle: '删除本地保存的所有数据',
+                    onTap: () => _showClearCacheDialog(context),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingsSection(
+    BuildContext context, {
+    required String title,
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        ...children,
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildSettingsItem(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 24, color: theme.colorScheme.onSurface),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: UIKit.textSecondary(context),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: UIKit.textSecondary(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showClearCacheDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('清除所有缓存'),
+        content: const Text(
+          '此操作将删除所有本地缓存数据，包括：\n'
+          '• 历史登录用户\n'
+          '• 用户头像\n'
+          '• 保存的邮箱\n'
+          '• 其他本地数据\n\n'
+          '此操作无法撤销，确定要继续吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _clearAllCache(context);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _clearAllCache(BuildContext context) async {
+    try {
+      await controller.clearAllCache();
+      
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        
+        Get.snackbar(
+          '成功',
+          '所有缓存已清除',
+          snackPosition: SnackPosition.TOP,
+          duration: const Duration(seconds: 2),
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Get.snackbar(
+          '失败',
+          '清除缓存失败: $e',
+          snackPosition: SnackPosition.TOP,
+          duration: const Duration(seconds: 3),
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+      }
+    }
   }
 }

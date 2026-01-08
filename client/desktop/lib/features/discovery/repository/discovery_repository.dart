@@ -82,15 +82,8 @@ class DiscoveryRepository {
   }
 
   Future<Map<String, dynamic>> fetchObjectReplies(String objectId, {bool page = true}) async {
-    // Extract the numeric ID from the ActivityPub URL
-    String numericId = objectId;
-    if (objectId.contains('/')) {
-      final parts = objectId.split('/');
-      numericId = parts.last;
-    }
-    
     final data = await _httpService.get<Map<String, dynamic>>(
-      '/objects/$numericId/replies',
+      '/objects/$objectId/replies',
       queryParameters: {'page': page},
     );
     return data;

@@ -80,7 +80,7 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			RouterURL: RouterURLActorList,
 			Handler:   ListActors,
 			Method:    server.GET,
-			Wrappers:  []server.Wrapper{actorWrapper},
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
 		},
 		{
 			RouterURL: RouterURLActorSearch,

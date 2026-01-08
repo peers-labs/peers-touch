@@ -125,7 +125,6 @@ class AuthController extends GetxController {
         await LocalStorage().set('base_url', trimmed);
         NetworkInitializer.initialize(baseUrl: trimmed);
         detectProtocol(trimmed);
-        loadPresetUsers(trimmed);
         updateLoginPreviewAvatar();
       }
     }, time: const Duration(milliseconds: 800));
@@ -156,7 +155,6 @@ class AuthController extends GetxController {
       ..addAll(presetUsers
           .map((e) => (e['username'] ?? e['handle'] ?? e['name'] ?? '').toString())
           .where((e) => e.isNotEmpty));
-    
     return list
         .where((e) => text.isEmpty || e.toLowerCase().contains(text.toLowerCase()))
         .take(6)
@@ -247,6 +245,30 @@ class AuthController extends GetxController {
     if (avatars != null) {
       recentAvatars.assignAll(avatars.map((k, v) => MapEntry(k.toString(), v.toString())));
     }
+    
+    final emails = await ls.get<Map>('recent_emails');
+    if (emails != null) {
+      final emailMap = emails.cast<String, String>();
+      for (final handle in recentUsers) {
+        final userEmail = emailMap[handle];
+        if (userEmail != null && userEmail.isNotEmpty) {
+          final existing = presetUsers.firstWhereOrNull((u) {
+            final name = (u['username'] ?? u['handle'] ?? u['name'] ?? '').toString();
+            return name == handle;
+          });
+          if (existing != null) {
+            existing['email'] = userEmail;
+          } else {
+            presetUsers.add({
+              'username': handle,
+              'handle': handle,
+              'email': userEmail,
+            });
+          }
+        }
+      }
+    }
+    
     updateLoginPreviewAvatar();
   }
 
@@ -274,7 +296,6 @@ class AuthController extends GetxController {
     super.onReady();
     final url = baseUrl.value.trim();
     if (url.isNotEmpty) {
-      loadPresetUsers(url);
       detectProtocol(url);
     }
   }
@@ -285,39 +306,8 @@ class AuthController extends GetxController {
     }
   }
 
-  Future<void> loadPresetUsers(String baseUrl) async {
-    try {
-      final uri = Uri.parse(
-        baseUrl.endsWith('/') ? '${baseUrl}activitypub/list' : '$baseUrl/activitypub/list',
-      );
-      final resp = await (await HttpClient().getUrl(uri)).close();
-      if (resp.statusCode == 200) {
-        final text = await resp.transform(const Utf8Decoder()).join();
-        final obj = json.decode(text);
-        List list = [];
-        if (obj is Map) {
-          final data = obj['data'];
-          if (data is List) {
-            list = data;
-          } else if (data is Map && data['items'] is List) {
-            list = data['items'] as List;
-          }
-        }
-        presetUsers.assignAll(
-          list
-              .whereType<Map>()
-              .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
-              .toList(),
-        );
-        updateLoginPreviewAvatar();
-        lastStatus.value = resp.statusCode;
-        lastBody.value = text;
-        LoggingService.info(
-          'Loaded preset users (${list.length}) from $baseUrl',
-        );
-      }
-    } catch (_) {}
-  }
+  // Removed loadPresetUsers - no longer fetching user list from server for security reasons
+  // User suggestions now come from local cache only (recent_users, recent_emails, recent_avatars)
 
   void switchTab(int i) {
     authTab.value = i;
@@ -457,9 +447,16 @@ class AuthController extends GetxController {
               
               final avatarUrl = await _fetchAndSaveUserAvatar(handle, baseUrl: (overrideBaseUrl ?? baseUrl.value).trim());
               
+              await _saveRecentUser(
+                handle, 
+                email: email.value.isNotEmpty ? email.value : null,
+                avatarUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
+              );
+              
               await gc.setSession({
                 'actorId': handle,
                 'handle': handle,
+                'email': email.value,
                 'protocol': protocol.value,
                 'baseUrl': (overrideBaseUrl ?? baseUrl.value).trim(),
                 'accessToken': token,
@@ -518,6 +515,48 @@ class AuthController extends GetxController {
     return ident;
   }
 
+  Future<void> _saveRecentUser(String handle, {String? email, String? avatarUrl}) async {
+    try {
+      final ls = LocalStorage();
+      
+      final ru = (await ls.get<List>('recent_users'))?.whereType<String>().toList() ?? <String>[];
+      if (!ru.contains(handle)) {
+        ru.insert(0, handle);
+      } else {
+        ru.remove(handle);
+        ru.insert(0, handle);
+      }
+      await ls.set('recent_users', ru);
+      recentUsers.assignAll(ru);
+      
+      if (email != null && email.isNotEmpty) {
+        final emailMap = (await ls.get<Map>('recent_emails'))?.cast<String, String>() ?? <String, String>{};
+        emailMap[handle] = email;
+        await ls.set('recent_emails', emailMap);
+        
+        final userObj = presetUsers.firstWhereOrNull((u) {
+          final name = (u['username'] ?? u['handle'] ?? u['name'] ?? '').toString();
+          return name == handle;
+        });
+        if (userObj != null) {
+          userObj['email'] = email;
+        } else {
+          presetUsers.add({'username': handle, 'handle': handle, 'email': email});
+        }
+      }
+      
+      if (avatarUrl != null && avatarUrl.isNotEmpty) {
+        final ram = (await ls.get<Map>('recent_avatars'))?.cast<String, String>() ?? <String, String>{};
+        ram[handle] = avatarUrl;
+        await ls.set('recent_avatars', ram);
+        recentAvatars[handle] = avatarUrl;
+        loginPreviewAvatar.value = avatarUrl;
+      }
+    } catch (e) {
+      LoggingService.error('Failed to save recent user: $e');
+    }
+  }
+  
   Future<String> _fetchAndSaveUserAvatar(String handle, {required String baseUrl}) async {
     try {
       final uri = Uri.parse(baseUrl.endsWith('/')
@@ -535,17 +574,9 @@ class AuthController extends GetxController {
         if (data != null) {
           url = (data['avatar'] ?? data['avatar_url'] ?? data['avatarUrl'] ?? '').toString();
         }
-        final ls = LocalStorage();
-        final ru = (await ls.get<List>('recent_users'))?.whereType<String>().toList() ?? <String>[];
-        if (!ru.contains(handle)) ru.add(handle);
-        await ls.set('recent_users', ru);
-        recentUsers.assignAll(ru);
+        
         if (url.isNotEmpty) {
-          final ram = (await ls.get<Map>('recent_avatars')) ?? <String, dynamic>{};
-          ram[handle] = url;
-          await ls.set('recent_avatars', ram);
-          recentAvatars[handle] = url;
-          loginPreviewAvatar.value = url;
+          await _saveRecentUser(handle, avatarUrl: url);
           return url;
         }
       }
@@ -676,6 +707,39 @@ class AuthController extends GetxController {
           await Get.find<GlobalContext>().setProtocolTag(protocol.value);
         }
       } catch (_) {}
+    }
+  }
+
+  Future<void> clearAllCache() async {
+    try {
+      final ls = LocalStorage();
+      
+      await ls.remove('username');
+      await ls.remove('email');
+      await ls.remove('recent_users');
+      await ls.remove('recent_emails');
+      await ls.remove('recent_avatars');
+      await ls.remove('auth_token');
+      await ls.remove('refresh_token');
+      await ls.remove('auth_token_type');
+      
+      await _secureStorage.remove(StorageKeys.tokenKey);
+      await _secureStorage.remove(StorageKeys.refreshTokenKey);
+      
+      recentUsers.clear();
+      recentAvatars.clear();
+      presetUsers.clear();
+      loginPreviewAvatar.value = null;
+      
+      username.value = '';
+      email.value = '';
+      usernameController.clear();
+      emailController.clear();
+      
+      LoggingService.info('All cache cleared successfully');
+    } catch (e) {
+      LoggingService.error('Failed to clear cache: $e');
+      rethrow;
     }
   }
 }

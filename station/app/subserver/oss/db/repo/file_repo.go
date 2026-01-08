@@ -22,13 +22,13 @@ func NewFileRepository(dbName string) FileRepository {
 }
 
 func (r *fileRepo) getDB(ctx context.Context) (*gorm.DB, error) {
+	if r.dbName == "" {
+		return store.GetRDS(ctx)
+	}
 	return store.GetRDS(ctx, store.WithRDSDBName(r.dbName))
 }
 
 func (r *fileRepo) Create(ctx context.Context, meta *ossmodel.FileMeta) error {
-	if r.dbName == "" {
-		return nil
-	}
 	db, err := r.getDB(ctx)
 	if err != nil {
 		return err
@@ -37,9 +37,6 @@ func (r *fileRepo) Create(ctx context.Context, meta *ossmodel.FileMeta) error {
 }
 
 func (r *fileRepo) FindByKey(ctx context.Context, key string) (*ossmodel.FileMeta, error) {
-	if r.dbName == "" {
-		return nil, gorm.ErrRecordNotFound
-	}
 	db, err := r.getDB(ctx)
 	if err != nil {
 		return nil, err

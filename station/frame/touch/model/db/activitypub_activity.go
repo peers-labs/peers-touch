@@ -13,23 +13,22 @@ import (
 
 // ActivityPubActivity represents an ActivityPub activity in the database
 type ActivityPubActivity struct {
-	ID            uint64    `gorm:"primary_key;autoIncrement:false"` // Snowflake ID
-	ActivityPubID string    `gorm:"uniqueIndex;size:512;not null"`   // ActivityPub IRI
-	Type          string    `gorm:"size:50;not null;index"`          // Activity type (Create, Follow, Like, etc.)
-	ActorID       uint64    `gorm:"index"`
-	ObjectID      uint64    `gorm:"index"`
-	TargetID      uint64    `gorm:"index"`
-	InReplyTo     uint64    `gorm:"index"`
-	Reply         bool      `gorm:"default:false;not null;index"` // Whether this is a reply to another post
-	Text          string    `gorm:"type:text"`                    // Content text (for Note)
-	Sensitive     bool      `gorm:"default:false"`                // Sensitive content flag
-	SpoilerText   string    `gorm:"type:text"`                    // Content warning text
-	Visibility    string    `gorm:"size:50;index"`                // Visibility (public, unlisted, private, direct)
-	Language      string    `gorm:"size:10"`                      // Language code
-	Published     time.Time `gorm:"not null;index"`               // When the activity was published
-	Content       []byte    `gorm:"type:bytea"`
-	IsLocal       bool      `gorm:"default:false;not null;index"` // Whether this is a local activity
-	IsPublic      bool      `gorm:"default:true;not null;index"`  // Whether the activity is public
+	ID          uint64    `gorm:"primary_key;autoIncrement:false"` // Snowflake ID
+	Type        string    `gorm:"size:50;not null;index"`          // Activity type (Create, Follow, Like, etc.)
+	ActorID     uint64    `gorm:"not null;index"`
+	ObjectID    uint64    `gorm:"index"`
+	TargetID    uint64    `gorm:"index"`
+	InReplyTo   uint64    `gorm:"index"`
+	Reply       bool      `gorm:"default:false;not null;index"` // Whether this is a reply to another post
+	Text        string    `gorm:"type:text"`                    // Content text (for Note)
+	Sensitive   bool      `gorm:"default:false"`                // Sensitive content flag
+	SpoilerText string    `gorm:"type:text"`                    // Content warning text
+	Visibility  string    `gorm:"size:50;index"`                // Visibility (public, unlisted, private, direct)
+	Language    string    `gorm:"size:10"`                      // Language code
+	Published   time.Time `gorm:"not null;index"`               // When the activity was published
+	Content     []byte    `gorm:"type:bytea"`
+	IsLocal     bool      `gorm:"default:false;not null;index"` // Whether this is a local activity
+	IsPublic    bool      `gorm:"default:true;not null;index"`  // Whether the activity is public
 
 	CreatedAt time.Time `gorm:"created_at"`
 	UpdatedAt time.Time `gorm:"updated_at"`
