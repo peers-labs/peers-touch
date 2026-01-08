@@ -56,9 +56,7 @@ func (s *fileService) SaveFile(ctx context.Context, file multipart.File, header 
 	}
 
 	if err := s.repo.Create(ctx, meta); err != nil {
-		// Log error but we don't necessarily want to fail the request if DB fails but file is saved
-		// For now, let's return error to be strict
-		// return nil, err
+		return nil, err
 	}
 
 	return meta, nil

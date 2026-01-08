@@ -102,47 +102,21 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     }
   }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    
-    final updates = <String, dynamic>{
-      'display_name': _displayNameController.text,
-      'note': _summaryController.text,
-      'region': _regionController.text,
-      'timezone': _timezoneController.text,
-    };
-    
-    if (_avatarUrl != null && _avatarUrl!.trim().isNotEmpty) {
-      updates['avatar'] = _avatarUrl;
-    }
-    if (_headerUrl != null && _headerUrl!.trim().isNotEmpty) {
-      updates['header'] = _headerUrl;
-    }
-    
-    try {
-      await _controller.updateProfile(updates);
-      if (mounted) {
-        Get.back();
-        Get.snackbar(
-          '成功',
-          '个人资料已更新',
-          snackPosition: SnackPosition.TOP,
-          duration: const Duration(seconds: 2),
-          backgroundColor: Colors.green,
-          colorText: Colors.white,
-        );
+  void _save() {
+    if (_formKey.currentState!.validate()) {
+      final updates = <String, dynamic>{
+        'display_name': _displayNameController.text,
+        'note': _summaryController.text,
+        'region': _regionController.text,
+        'timezone': _timezoneController.text,
+      };
+      if (_avatarUrl != null && _avatarUrl!.trim().isNotEmpty) {
+        updates['avatar'] = _avatarUrl;
       }
-    } catch (e) {
-      if (mounted) {
-        Get.snackbar(
-          '失败',
-          '更新失败: $e',
-          snackPosition: SnackPosition.TOP,
-          duration: const Duration(seconds: 3),
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
+      if (_headerUrl != null && _headerUrl!.trim().isNotEmpty) {
+        updates['header'] = _headerUrl;
       }
+      _controller.updateProfile(updates);
     }
   }
 

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"log"
+	"os"
 
 	peers "github.com/peers-labs/peers-touch/station/frame"
 	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
@@ -22,6 +24,9 @@ import (
 )
 
 func main() {
+	_ = log.Print
+	_ = os.Args
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
