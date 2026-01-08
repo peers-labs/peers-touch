@@ -157,12 +157,6 @@ class AuthController extends GetxController {
           .map((e) => (e['username'] ?? e['handle'] ?? e['name'] ?? '').toString())
           .where((e) => e.isNotEmpty));
     
-    if (isLogin) {
-      list.addAll(presetUsers
-          .map((e) => e['email']?.toString() ?? '')
-          .where((e) => e.isNotEmpty));
-    }
-    
     return list
         .where((e) => text.isEmpty || e.toLowerCase().contains(text.toLowerCase()))
         .take(6)

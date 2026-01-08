@@ -269,7 +269,35 @@ class LoginPage extends GetView<AuthController> {
                                     ),
                                   ),
                                   const SizedBox(width: 10),
-                                  Expanded(child: Text(handle, style: theme.textTheme.bodyMedium)),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(handle, style: theme.textTheme.bodyMedium),
+                                        Builder(
+                                          builder: (context) {
+                                            final user = controller.presetUsers.firstWhereOrNull((u) {
+                                              final name = (u['username'] ?? u['handle'] ?? u['name'] ?? '').toString();
+                                              return name == handle;
+                                            });
+                                            final email = user?['email']?.toString() ?? '';
+                                            if (email.isEmpty) return const SizedBox.shrink();
+                                            return Padding(
+                                              padding: const EdgeInsets.only(top: 2),
+                                              child: Text(
+                                                email,
+                                                style: theme.textTheme.bodyMedium?.copyWith(
+                                                  color: UIKit.textSecondary(context),
+                                                  fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14) - 2,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
