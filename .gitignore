@@ -39,3 +39,6 @@ logs/
 **/.dart_tool
 
 dart_libp2pstation/bin/
+
+# Station build artifacts
+station/app/peers-touch-station
