@@ -6,6 +6,7 @@ import (
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/touch/crypto"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -60,7 +61,7 @@ func SeedPresetUsers(c context.Context) error {
 		hash, _ := bcrypt.GenerateFromPassword(pw, bcrypt.DefaultCost)
 		
 		// Generate keys
-		pubPEM, privPEM, _ := GenerateRSAKeyPair(2048)
+		pubPEM, privPEM, _ := crypto.GenerateRSAKeyPair(2048)
 		
 		a := db.Actor{
 			PreferredUsername: p.Username,

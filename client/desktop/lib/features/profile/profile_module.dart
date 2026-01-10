@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_desktop/core/utils/image_utils.dart';
 import 'package:peers_touch_desktop/features/profile/binding/profile_binding.dart';
 import 'package:peers_touch_desktop/features/profile/controller/profile_controller.dart';
 import 'package:peers_touch_desktop/features/profile/view/profile_page.dart';
@@ -10,6 +9,7 @@ import 'package:peers_touch_desktop/features/settings/controller/setting_control
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 /// 个人主页模块注册
 class ProfileModule {
@@ -27,7 +27,6 @@ class ProfileModule {
       final controller = Get.find<ProfileController>();
        return Obx(() {
          final d = controller.detail.value;
-         final avatarProvider = imageProviderFor(d?.avatarUrl);
          
          return GestureDetector(
            behavior: HitTestBehavior.opaque,
@@ -47,21 +46,15 @@ class ProfileModule {
                    width: 40,
                    height: 40,
                    color: theme.colorScheme.surfaceContainerHighest,
-                   child: avatarProvider != null
-                       ? Image(
-                           image: avatarProvider,
-                           fit: BoxFit.cover,
-                           errorBuilder: (_, __, ___) => Icon(
-                             Icons.person,
-                             color: tokens?.textPrimary ?? theme.colorScheme.onSurface,
-                             size: 28,
-                           ),
-                         )
-                       : Icon(
-                           Icons.person,
-                           color: tokens?.textPrimary ?? theme.colorScheme.onSurface,
-                           size: 28,
-                         ),
+                   child: PeersImage(
+                     src: d?.avatarUrl,
+                     fit: BoxFit.cover,
+                     error: Icon(
+                       Icons.person,
+                       color: tokens?.textPrimary ?? theme.colorScheme.onSurface,
+                       size: 28,
+                     ),
+                   ),
                  ),
                ),
              ),

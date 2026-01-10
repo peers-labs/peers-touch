@@ -76,8 +76,9 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := s.fileService.SaveFile(r.Context(), file, hdr)
 	if err != nil {
+		fmt.Printf("[OSS] SaveFile error: %v\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "save_failed"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("save_failed: %v", err)})
 		return
 	}
 

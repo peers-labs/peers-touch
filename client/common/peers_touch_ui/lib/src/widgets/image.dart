@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:peers_touch_ui/src/widgets/peers_image.dart';
 
 class ImageView extends StatelessWidget {
   const ImageView({super.key, this.url, this.width, this.height});
@@ -8,10 +9,12 @@ class ImageView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (url == null || url!.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Image.network(url!, width: width, height: height, fit: BoxFit.cover);
+    return PeersImage(
+      src: url,
+      width: width,
+      height: height,
+      placeholder: const SizedBox.shrink(),
+      error: const SizedBox.shrink(),
+    );
   }
 }
-

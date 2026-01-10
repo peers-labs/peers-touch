@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -22,10 +23,11 @@ func NewFileRepository(dbName string) FileRepository {
 }
 
 func (r *fileRepo) getDB(ctx context.Context) (*gorm.DB, error) {
-	if r.dbName == "" {
-		return store.GetRDS(ctx)
+	db, err := store.GetRDS(ctx, store.WithRDSDBName(r.dbName))
+	if err != nil {
+		return nil, errors.New("database '" + r.dbName + "' not found: " + err.Error())
 	}
-	return store.GetRDS(ctx, store.WithRDSDBName(r.dbName))
+	return db, nil
 }
 
 func (r *fileRepo) Create(ctx context.Context, meta *ossmodel.FileMeta) error {

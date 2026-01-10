@@ -9,6 +9,7 @@ peers:
       peer: true
       message: true
       mastodon: true
+      social: true
   run-mode: 2
   includes: store.yml, store.local.yml, sub_aibox.yml, sub_bootstrap.yml, log.yml, actor.yml, server.host.local.yml, sub_oss.yml
   config:
