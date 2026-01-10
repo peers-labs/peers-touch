@@ -30,6 +30,7 @@ type Actor struct {
 	Inbox         string                 `protobuf:"bytes,5,opt,name=inbox,proto3" json:"inbox,omitempty"`
 	Outbox        string                 `protobuf:"bytes,6,opt,name=outbox,proto3" json:"outbox,omitempty"`
 	Endpoints     map[string]string      `protobuf:"bytes,7,rep,name=endpoints,proto3" json:"endpoints,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	IsFollowing   bool                   `protobuf:"varint,8,opt,name=is_following,proto3" json:"is_following,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,6 +112,13 @@ func (x *Actor) GetEndpoints() map[string]string {
 		return x.Endpoints
 	}
 	return nil
+}
+
+func (x *Actor) GetIsFollowing() bool {
+	if x != nil {
+		return x.IsFollowing
+	}
+	return false
 }
 
 type UserLink struct {
@@ -649,7 +657,7 @@ var File_domain_actor_actor_proto protoreflect.FileDescriptor
 
 const file_domain_actor_actor_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\"\xa8\x02\n" +
+	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\"\xcc\x02\n" +
 	"\x05Actor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
@@ -657,7 +665,8 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x05email\x18\x04 \x01(\tR\x05email\x12\x14\n" +
 	"\x05inbox\x18\x05 \x01(\tR\x05inbox\x12\x16\n" +
 	"\x06outbox\x18\x06 \x01(\tR\x06outbox\x12N\n" +
-	"\tendpoints\x18\a \x03(\v20.peers_touch.model.actor.v1.Actor.EndpointsEntryR\tendpoints\x1a<\n" +
+	"\tendpoints\x18\a \x03(\v20.peers_touch.model.actor.v1.Actor.EndpointsEntryR\tendpoints\x12\"\n" +
+	"\fis_following\x18\b \x01(\bR\fis_following\x1a<\n" +
 	"\x0eEndpointsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"2\n" +

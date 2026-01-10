@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_desktop/core/utils/image_utils.dart';
 import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 class UserProfileCard extends StatelessWidget {
   const UserProfileCard({
@@ -40,21 +40,23 @@ class UserProfileCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header Image
-        (() {
-          final p = imageProviderFor(detail.coverUrl);
-          if (p != null) {
-            return SizedBox(
-              height: 150,
-              width: double.infinity,
-              child: Image(image: p, fit: BoxFit.cover),
-            );
-          }
-          return Container(
-            height: 100,
-            width: double.infinity,
-            color: theme.colorScheme.surfaceContainerHighest,
-          );
-        })(),
+        SizedBox(
+          height: detail.coverUrl != null && detail.coverUrl!.trim().isNotEmpty ? 150 : 100,
+          width: double.infinity,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Container(color: theme.colorScheme.surfaceContainerHighest),
+              ),
+              Positioned.fill(
+                child: PeersImage(
+                  src: detail.coverUrl,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ],
+          ),
+        ),
 
         Padding(
           padding: EdgeInsets.only(
@@ -77,14 +79,15 @@ class UserProfileCard extends StatelessWidget {
                       width: UIKit.avatarBlockHeight,
                       height: UIKit.avatarBlockHeight,
                       color: wx?.bgLevel3 ?? theme.colorScheme.surfaceContainerHighest,
-                      child: (() {
-                        final p = imageProviderFor(detail.avatarUrl);
-                        if (p != null) {
-                          return Image(image: p, fit: BoxFit.cover);
-                        }
-                        return Icon(Icons.person,
-                            size: UIKit.indicatorSizeSm, color: UIKit.textSecondary(context));
-                      })(),
+                      child: PeersImage(
+                        src: detail.avatarUrl,
+                        fit: BoxFit.cover,
+                        error: Icon(
+                          Icons.person,
+                          size: UIKit.indicatorSizeSm,
+                          color: UIKit.textSecondary(context),
+                        ),
+                      ),
                     ),
                   ),
                   SizedBox(width: UIKit.spaceLg(context)),
@@ -160,13 +163,7 @@ class UserProfileCard extends StatelessWidget {
                                     width: UIKit.controlHeightMd,
                                     height: UIKit.controlHeightMd,
                                     color: wx?.bgLevel3 ?? theme.colorScheme.surfaceContainerHighest,
-                                    child: (() {
-                                      final p = imageProviderFor(url);
-                                      if (p != null) {
-                                        return Image(image: p, fit: BoxFit.cover);
-                                      }
-                                      return const SizedBox();
-                                    })(),
+                                    child: PeersImage(src: url, fit: BoxFit.cover),
                                   ),
                                 ),
                               ))

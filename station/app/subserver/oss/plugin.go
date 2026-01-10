@@ -4,6 +4,7 @@ import (
 	"context"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
@@ -35,11 +36,13 @@ type ossPlugin struct{}
 func (p *ossPlugin) Name() string { return "oss" }
 
 func (p *ossPlugin) Options() []option.Option {
+	authProvider := auth.NewJWTProvider(auth.Get().Secret, auth.Get().AccessTTL)
 	return []option.Option{
 		WithPath(ossOptions.Peers.Node.Server.Subserver.Oss.Path),
 		WithDBName(ossOptions.Peers.Node.Server.Subserver.Oss.DBName),
 		WithStorePath(ossOptions.Peers.Node.Server.Subserver.Oss.StorePath),
 		WithSignSecret(ossOptions.Peers.Node.Server.Subserver.Oss.SignSecret),
+		WithAuthProvider(authProvider),
 	}
 }
 

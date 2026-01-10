@@ -210,15 +210,18 @@ class DiscoveryController extends GetxController {
       Map<String, dynamic> data;
       switch (tabName) {
         case 'Me':
+          // TODO: Use new Social API for user's own posts
+          // For now, fallback to ActivityPub outbox
           data = await _repo.fetchOutbox(username);
-          break;
+          return _parseActivityPubCollection(data, username);
         case 'Home':
+          // TODO: Use new Social API timeline
+          // For now, fallback to ActivityPub inbox
           data = await _repo.fetchInbox(username);
-          break;
+          return _parseActivityPubCollection(data, username);
         default:
           return []; // TODO: Implement other tabs (Radar/Follow/etc)
       }
-      return _parseActivityPubCollection(data, username);
     } catch (e) {
       LoggingService.error('Fetch tab $tabName failed: $e');
       rethrow;
@@ -228,8 +231,11 @@ class DiscoveryController extends GetxController {
   Future<void> loadComments(DiscoveryItem item) async {
     try {
       final data = await _repo.fetchObjectReplies(item.objectId);
+      LoggingService.debug('loadComments: Received data: $data');
+      
       if (data['orderedItems'] is List) {
         final commentsList = data['orderedItems'] as List;
+        LoggingService.debug('loadComments: Found ${commentsList.length} comments');
         final comments = <DiscoveryComment>[];
         
         for (var obj in commentsList) {
@@ -239,19 +245,55 @@ class DiscoveryController extends GetxController {
             
             if (obj['attributedTo'] is Map) {
               final attr = obj['attributedTo'] as Map;
-              authorName = attr['name']?.toString() ?? attr['preferredUsername']?.toString() ?? 'Unknown';
+              
+              final nameField = attr['name'];
+              if (nameField is String) {
+                authorName = nameField;
+              } else if (nameField is Map) {
+                authorName = nameField.values.firstOrNull?.toString() ?? '';
+              }
+              
+              if (authorName.isEmpty) {
+                final prefUsernameField = attr['preferredUsername'];
+                if (prefUsernameField is String) {
+                  authorName = prefUsernameField;
+                } else if (prefUsernameField is Map) {
+                  authorName = prefUsernameField.values.firstOrNull?.toString() ?? '';
+                }
+              }
+              
+              if (authorName.isEmpty) {
+                authorName = 'Unknown';
+              }
+              
               if (attr['icon'] is Map) {
-                authorAvatar = (attr['icon'] as Map)['url']?.toString() ?? '';
+                final iconMap = attr['icon'] as Map;
+                final iconUrl = iconMap['url'];
+                if (iconUrl is String) {
+                  authorAvatar = iconUrl;
+                } else if (iconUrl != null) {
+                  authorAvatar = iconUrl.toString();
+                }
               }
             } else if (obj['attributedTo'] is String) {
               authorName = (obj['attributedTo'] as String).split('/').last;
             }
             
+            String content = '';
+            final contentField = obj['content'];
+            if (contentField is String) {
+              content = contentField;
+            } else if (contentField is Map) {
+              content = contentField.values.firstOrNull?.toString() ?? '';
+            }
+            
+            LoggingService.debug('loadComments: Parsed comment - author: $authorName, content: $content');
+            
             comments.add(DiscoveryComment(
               id: obj['id']?.toString() ?? '',
               authorName: authorName,
               authorAvatar: authorAvatar.isNotEmpty ? authorAvatar : 'https://i.pravatar.cc/150?u=$authorName',
-              content: obj['content']?.toString() ?? '',
+              content: content,
               timestamp: DateTime.tryParse(obj['published']?.toString() ?? '') ?? DateTime.now(),
             ));
           }
@@ -260,6 +302,9 @@ class DiscoveryController extends GetxController {
         item.comments.clear();
         item.comments.addAll(comments);
         items.refresh();
+        LoggingService.info('loadComments: Successfully loaded ${comments.length} comments');
+      } else {
+        LoggingService.warning('loadComments: orderedItems is not a List');
       }
     } catch (e) {
       LoggingService.error('Failed to load comments: $e');
@@ -323,11 +368,12 @@ class DiscoveryController extends GetxController {
 
   Future<void> deleteItem(DiscoveryItem item) async {
     try {
-      final String username = _getCurrentUsername();
-      if (username.isEmpty) return;
-
-      // Use objectId for delete
-      await _repo.deleteActivity(username, item.objectId);
+      // Extract post ID from objectId URL
+      // objectId format: http://localhost:18080/posts/{postId}
+      final postId = item.objectId.split('/').last;
+      
+      // Use new Social API for deletion
+      await _repo.deletePost(postId);
       items.remove(item);
       Get.snackbar('Success', 'Post deleted');
     } catch (e) {
@@ -509,7 +555,13 @@ class DiscoveryController extends GetxController {
                objectId = obj['id']?.toString() ?? '';
                if (obj['inReplyTo'] != null && obj['inReplyTo'].toString().isNotEmpty) continue;
 
-               content = obj['content']?.toString() ?? '';
+               final contentField = obj['content'];
+               if (contentField is String) {
+                 content = contentField;
+               } else if (contentField is Map) {
+                 content = contentField.values.firstOrNull?.toString() ?? '';
+               }
+               
                if (obj['summary'] != null && obj['summary'].toString().isNotEmpty) {
                  title = obj['summary'].toString();
                } else if (content.isNotEmpty) {
@@ -539,14 +591,31 @@ class DiscoveryController extends GetxController {
                // Author info from object (preferred)
                if (obj['attributedTo'] is Map) {
                  final attributedTo = obj['attributedTo'];
-                 if (attributedTo['preferredUsername'] != null) {
-                    author = attributedTo['preferredUsername'].toString();
-                 } else if (attributedTo['name'] != null) {
-                    author = attributedTo['name'].toString();
+                 
+                 final prefUsernameField = attributedTo['preferredUsername'];
+                 if (prefUsernameField is String) {
+                   author = prefUsernameField;
+                 } else if (prefUsernameField is Map) {
+                   author = prefUsernameField.values.firstOrNull?.toString() ?? '';
+                 }
+                 
+                 if (author.isEmpty || author == defaultAuthor) {
+                   final nameField = attributedTo['name'];
+                   if (nameField is String) {
+                     author = nameField;
+                   } else if (nameField is Map) {
+                     author = nameField.values.firstOrNull?.toString() ?? '';
+                   }
                  }
                  
                  if (attributedTo['icon'] is Map) {
-                   authorAvatar = attributedTo['icon']['url']?.toString() ?? '';
+                   final iconMap = attributedTo['icon'] as Map;
+                   final iconUrl = iconMap['url'];
+                   if (iconUrl is String) {
+                     authorAvatar = iconUrl;
+                   } else if (iconUrl != null) {
+                     authorAvatar = iconUrl.toString();
+                   }
                  }
                } else if (obj['attributedTo'] is String) {
                   // If attributedTo is string IRI, use it if we haven't set author yet or to override

@@ -17,7 +17,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -600,23 +599,23 @@ func PostUserOutbox(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	rds, err := store.GetRDS(c)
+	actorID, err := strconv.ParseUint(subject.ID, 10, 64)
 	if err != nil {
-		log.Errorf(c, "Failed to get database connection: %v", err)
-		ctx.JSON(http.StatusInternalServerError, "Internal server error")
+		log.Errorf(c, "Invalid actor ID format: %s", subject.ID)
+		ctx.JSON(http.StatusUnauthorized, "Invalid actor ID")
 		return
 	}
 
-	var actor db.Actor
-	if err := rds.Where("id = ?", subject.ID).First(&actor).Error; err != nil {
-		log.Errorf(c, "Actor not found for subject ID: %s", subject.ID)
-		ctx.JSON(http.StatusUnauthorized, "Invalid actor")
-		return
-	}
-
-	if actor.PreferredUsername != user {
-		log.Warnf(c, "Actor mismatch: authenticated as %s but trying to post as %s", actor.PreferredUsername, user)
+	if err := activitypub.ValidateActorOwnership(c, actorID, user); err != nil {
+		log.Warnf(c, "Actor ownership validation failed: %v", err)
 		ctx.JSON(http.StatusForbidden, "Cannot post to another user's outbox")
+		return
+	}
+
+	actor, err := activitypub.GetActorByID(c, actorID)
+	if err != nil {
+		log.Errorf(c, "Failed to get actor: %v", err)
+		ctx.JSON(http.StatusUnauthorized, "Invalid actor")
 		return
 	}
 

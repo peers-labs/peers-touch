@@ -79,6 +79,12 @@ func (s *Server) Handle(h server.Handler) error {
 			s.hertz.POST(h.Path(), hdl)
 		case server.GET:
 			s.hertz.GET(h.Path(), hdl)
+		case server.PUT:
+			s.hertz.PUT(h.Path(), hdl)
+		case server.DELETE:
+			s.hertz.DELETE(h.Path(), hdl)
+		case server.PATCH:
+			s.hertz.PATCH(h.Path(), hdl)
 		default:
 			s.hertz.Any(h.Path(), hdl)
 		}

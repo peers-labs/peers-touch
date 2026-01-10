@@ -41,24 +41,7 @@ func CreateStatus(ctx context.Context, username string, req model.MastodonCreate
 }
 
 func GetStatus(ctx context.Context, id string) (*model.MastodonStatus, error) {
-	rds, err := store.GetRDS(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var obj db.ActivityPubObject
-	// Prefer numeric ID lookup (Mastodon-style), fallback to IRI
-	if isDigits(id) {
-		var oid uint64
-		_, _ = fmt.Sscan(id, &oid)
-		if err := rds.Where("id = ?", oid).First(&obj).Error; err != nil {
-			return nil, err
-		}
-		return &model.MastodonStatus{Id: fmt.Sprintf("%d", obj.ID), Content: obj.Content}, nil
-	}
-	if err := rds.Where("activity_pub_id = ?", id).First(&obj).Error; err != nil {
-		return nil, err
-	}
-	return &model.MastodonStatus{Id: obj.ActivityPubID, Content: obj.Content}, nil
+	return nil, fmt.Errorf("Mastodon API is deprecated, use Social API /api/v1/social/posts/:id instead")
 }
 
 func isDigits(s string) bool {

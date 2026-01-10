@@ -18,6 +18,7 @@ export 'src/widgets/gallery.dart';
 export 'src/widgets/heatmap.dart';
 export 'src/widgets/icon_tabs.dart';
 export 'src/widgets/image.dart';
+export 'src/widgets/peers_image.dart';
 export 'src/widgets/line_chart.dart';
 export 'src/widgets/notice.dart';
 export 'src/widgets/number.dart';

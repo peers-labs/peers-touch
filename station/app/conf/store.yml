@@ -5,10 +5,15 @@ peers:
         # see github.com/peers-labs/peers-touch/station/frame/core/store/rds/sqlite
         - name: sqlite
           default: false
-          enable: true
+          enable: false
           dsn: file:peers.db?cache=shared&_fk=1
         # see github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres
         - name: postgres
           enable: false
-          default: true
+          default: false
           dsn: host=localhost user=peer password=peer dbname=peer_native port=5432 sslmode=disable TimeZone=Asia/Shanghai
+        # OSS dedicated database
+        - name: oss
+          enable: false
+          default: false
+          dsn: host=localhost user=peers_touch password=peers_touch dbname=peers_touch port=5432 sslmode=disable TimeZone=Asia/Shanghai

@@ -1,0 +1,361 @@
+syntax = "proto3";
+
+package peers_touch.model.social.v1;
+
+import "google/protobuf/timestamp.proto";
+import "domain/activity/activity.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+// ============================================================================
+// 帖子核心模型
+// ============================================================================
+
+message Post {
+  string id = 1;
+  string author_id = 2;
+  PostType type = 3;
+  PostVisibility visibility = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  bool is_deleted = 7;
+  
+  PostStats stats = 10;
+  PostAuthor author = 20;
+  PostInteraction interaction = 21;
+  
+  oneof content {
+    TextPost text_post = 30;
+    ImagePost image_post = 31;
+    VideoPost video_post = 32;
+    LinkPost link_post = 33;
+    PollPost poll_post = 34;
+    RepostPost repost_post = 35;
+    LocationPost location_post = 36;
+  }
+  
+  string reply_to_post_id = 40;
+}
+
+enum PostType {
+  TEXT = 0;
+  IMAGE = 1;
+  VIDEO = 2;
+  LINK = 3;
+  POLL = 4;
+  REPOST = 5;
+  LOCATION = 6;
+}
+
+enum PostVisibility {
+  PUBLIC = 0;
+  FOLLOWERS_ONLY = 1;
+  PRIVATE = 2;
+}
+
+message PostStats {
+  int64 likes_count = 1;
+  int64 comments_count = 2;
+  int64 reposts_count = 3;
+  int64 views_count = 4;
+}
+
+message PostAuthor {
+  string id = 1;
+  string username = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+  bool is_following = 5;
+}
+
+message PostInteraction {
+  bool is_liked = 1;
+  bool is_reposted = 2;
+  bool is_bookmarked = 3;
+}
+
+// ============================================================================
+// 各种类型的帖子内容
+// ============================================================================
+
+message TextPost {
+  string text = 1;
+  repeated string hashtags = 2;
+  repeated string mentions = 3;
+}
+
+message ImagePost {
+  string text = 1;
+  repeated ImageAttachment images = 2;
+  repeated string hashtags = 3;
+  repeated string mentions = 4;
+}
+
+message VideoPost {
+  string text = 1;
+  VideoAttachment video = 2;
+  repeated string hashtags = 3;
+  repeated string mentions = 4;
+}
+
+message LinkPost {
+  string text = 1;
+  LinkPreview link = 2;
+  repeated string hashtags = 3;
+  repeated string mentions = 4;
+}
+
+message PollPost {
+  string text = 1;
+  peers_touch.model.activity.v1.Poll poll = 2;
+  repeated string hashtags = 3;
+  repeated string mentions = 4;
+}
+
+message RepostPost {
+  string comment = 1;
+  string original_post_id = 2;
+  Post original_post = 3;
+}
+
+message LocationPost {
+  string text = 1;
+  Location location = 2;
+  repeated ImageAttachment images = 3;
+  repeated string hashtags = 4;
+  repeated string mentions = 5;
+}
+
+// ============================================================================
+// 媒体附件
+// ============================================================================
+
+message ImageAttachment {
+  string id = 1;
+  string url = 2;
+  string thumbnail_url = 3;
+  int64 size_bytes = 4;
+  int32 width = 5;
+  int32 height = 6;
+  string blurhash = 7;
+  string alt_text = 8;
+}
+
+message VideoAttachment {
+  string id = 1;
+  string url = 2;
+  string thumbnail_url = 3;
+  int64 size_bytes = 4;
+  int32 width = 5;
+  int32 height = 6;
+  int32 duration_seconds = 7;
+  string blurhash = 8;
+  VideoQuality quality = 9;
+  repeated VideoVariant variants = 10;
+}
+
+message VideoVariant {
+  string url = 1;
+  int32 bitrate = 2;
+  string codec = 3;
+  int32 width = 4;
+  int32 height = 5;
+}
+
+enum VideoQuality {
+  AUTO = 0;
+  LOW = 1;
+  MEDIUM = 2;
+  HIGH = 3;
+  HD = 4;
+}
+
+message LinkPreview {
+  string url = 1;
+  string title = 2;
+  string description = 3;
+  string image_url = 4;
+  string site_name = 5;
+  string favicon_url = 6;
+}
+
+message Location {
+  string name = 1;
+  double latitude = 2;
+  double longitude = 3;
+  string address = 4;
+  string place_id = 5;
+}
+
+// ============================================================================
+// API 请求/响应
+// ============================================================================
+
+message CreatePostRequest {
+  PostType type = 1;
+  PostVisibility visibility = 2;
+  string reply_to_post_id = 3;
+  
+  oneof content {
+    CreateTextPostRequest text = 10;
+    CreateImagePostRequest image = 11;
+    CreateVideoPostRequest video = 12;
+    CreateLinkPostRequest link = 13;
+    CreatePollPostRequest poll = 14;
+    CreateRepostRequest repost = 15;
+    CreateLocationPostRequest location = 16;
+  }
+}
+
+message CreateTextPostRequest {
+  string text = 1;
+}
+
+message CreateImagePostRequest {
+  string text = 1;
+  repeated string image_ids = 2;
+}
+
+message CreateVideoPostRequest {
+  string text = 1;
+  string video_id = 2;
+}
+
+message CreateLinkPostRequest {
+  string text = 1;
+  string url = 2;
+}
+
+message CreatePollPostRequest {
+  string text = 1;
+  string question = 2;
+  repeated string options = 3;
+  int32 duration_hours = 4;
+  bool multiple_choice = 5;
+}
+
+message CreateRepostRequest {
+  string original_post_id = 1;
+  string comment = 2;
+}
+
+message CreateLocationPostRequest {
+  string text = 1;
+  repeated string image_ids = 2;
+  Location location = 3;
+}
+
+message CreatePostResponse {
+  Post post = 1;
+}
+
+message UpdatePostRequest {
+  string post_id = 1;
+  optional string content = 2;
+  optional PostVisibility visibility = 3;
+}
+
+message UpdatePostResponse {
+  Post post = 1;
+}
+
+message DeletePostRequest {
+  string post_id = 1;
+}
+
+message DeletePostResponse {
+  bool success = 1;
+}
+
+message GetPostRequest {
+  string post_id = 1;
+}
+
+message GetPostResponse {
+  Post post = 1;
+}
+
+message ListPostsRequest {
+  string cursor = 1;
+  int32 limit = 2;
+  PostFilter filter = 3;
+}
+
+message ListPostsResponse {
+  repeated Post posts = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message PostFilter {
+  string author_id = 1;
+  repeated PostVisibility visibility = 2;
+  bool exclude_replies = 3;
+  bool exclude_reposts = 4;
+}
+
+// ============================================================================
+// 时间线
+// ============================================================================
+
+message GetTimelineRequest {
+  TimelineType type = 1;
+  string cursor = 2;
+  int32 limit = 3;
+  string user_id = 4;
+}
+
+message GetTimelineResponse {
+  repeated Post posts = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+enum TimelineType {
+  TIMELINE_HOME = 0;
+  TIMELINE_USER = 1;
+  TIMELINE_PUBLIC = 2;
+}
+
+// ============================================================================
+// 互动
+// ============================================================================
+
+message LikePostRequest {
+  string post_id = 1;
+}
+
+message LikePostResponse {
+  bool success = 1;
+  int64 new_likes_count = 2;
+}
+
+message UnlikePostRequest {
+  string post_id = 1;
+}
+
+message UnlikePostResponse {
+  bool success = 1;
+  int64 new_likes_count = 2;
+}
+
+message RepostRequest {
+  string post_id = 1;
+  optional string comment = 2;
+}
+
+message RepostResponse {
+  Post repost = 1;
+}
+
+message GetPostLikersRequest {
+  string post_id = 1;
+  string cursor = 2;
+  int32 limit = 3;
+}
+
+message GetPostLikersResponse {
+  repeated PostAuthor users = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
