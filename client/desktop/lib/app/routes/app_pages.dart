@@ -11,6 +11,7 @@ import 'package:peers_touch_desktop/features/profile/binding/profile_binding.dar
 import 'package:peers_touch_desktop/features/profile/view/profile_page.dart';
 import 'package:peers_touch_desktop/features/shell/binding/shell_binding.dart';
 import 'package:peers_touch_desktop/features/shell/view/shell_page.dart';
+import 'package:peers_touch_desktop/features/social/social_module.dart';
 
 class AppPages {
   static final pages = <GetPage<dynamic>>[
@@ -47,6 +48,12 @@ class AppPages {
       name: AppRoutes.launch,
       page: () => const LaunchPage(),
       binding: LaunchBinding(),
+      middlewares: [AuthMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.timeline,
+      page: () => const TimelinePage(),
+      binding: SocialBinding(),
       middlewares: [AuthMiddleware()],
     ),
   ];

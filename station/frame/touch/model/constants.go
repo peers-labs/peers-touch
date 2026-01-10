@@ -34,4 +34,5 @@ const (
 	RouteNamePeer        = "peer"
 	RouteNameMessage     = "message"
 	RouteNameMastodon    = "mastodon"
+	RouteNameSocial      = "social"
 )
