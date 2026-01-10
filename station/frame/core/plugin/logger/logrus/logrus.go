@@ -191,7 +191,12 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 
 	// IMPORTANT: Add data-enrichment hooks BEFORE level-split hooks
 	// This ensures request_id/trace_id are added before entry serialization
-	log.AddHook(&PackageFieldHook{})
+	
+	// Only add PackageFieldHook when ReportCaller is enabled
+	// because it requires entry.Caller to extract package info
+	if l.opts.ReportCaller {
+		log.AddHook(&PackageFieldHook{})
+	}
 	log.AddHook(&RequestIDHook{})
 
 	if l.opts.SplitLevel {

@@ -11,6 +11,8 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_svg: ^2.0.9
+  peers_touch_base:
+    path: ../peers_touch_base
 
 dev_dependencies:
   flutter_test:

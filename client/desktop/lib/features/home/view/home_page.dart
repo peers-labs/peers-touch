@@ -36,6 +36,11 @@ class HomePage extends StatelessWidget {
                 text: 'Go Profile',
                 onPressed: () => Get.toNamed(AppRoutes.profile),
               ),
+              SizedBox(height: UIKit.spaceMd(context)),
+              CommonButton(
+                text: 'Timeline',
+                onPressed: () => Get.toNamed(AppRoutes.timeline),
+              ),
             ],
           ),
         ),

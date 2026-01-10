@@ -14,7 +14,9 @@ peers:
        backup-file-name-pattern: app-%Y%m%d-%H.zip
     slogrus:
       formatter: text
-      report-caller: false
+      # When false: no caller info, no pkg/pkg_path fields (better performance)
+      # When true: includes file:line, pkg/pkg_path fields (~10-20% overhead)
+      report-caller: true
       split-level: false
       without-key: false
       without-quote: false

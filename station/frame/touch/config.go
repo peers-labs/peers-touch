@@ -33,6 +33,7 @@ type RouterConfig struct {
 	Peer        bool `json:"peer" pconf:"peer" yaml:"peer"`
 	Message     bool `json:"message" pconf:"message" yaml:"message"`
 	Mastodon    bool `json:"mastodon" pconf:"mastodon" yaml:"mastodon"`
+	Social      bool `json:"social" pconf:"social" yaml:"social"`
 }
 
 // SecurityConfig holds security-related configuration

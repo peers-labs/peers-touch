@@ -8,6 +8,7 @@ import (
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	identity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
+	"github.com/peers-labs/peers-touch/station/frame/touch/crypto"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
@@ -40,7 +41,7 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL strin
 	}
 
 	// Part 1: Generate Keys
-	pubPEM, privPEM, err := GenerateRSAKeyPair(2048)
+	pubPEM, privPEM, err := crypto.GenerateRSAKeyPair(2048)
 	if err != nil {
 		log.Warnf(c, "[SignUp] Generate RSA keys err: %v", err)
 		return err

@@ -34,12 +34,10 @@ class OssClient {
         throw Exception('Upload failed: empty response');
       }
       
-      // Handle case where data might be String (though postResponse generic should handle it if interceptors don't mess it up)
       Map<String, dynamic> jsonMap;
       if (data is Map) {
         jsonMap = Map<String, dynamic>.from(data);
       } else if (data is String) {
-         // Try to parse string as JSON
          try {
            jsonMap = jsonDecode(data);
          } catch (_) {
@@ -51,10 +49,15 @@ class OssClient {
 
       return OssFile.fromJson(jsonMap);
     } catch (e) {
-      if (e is DioException && e.response?.data is Map) {
-        final errMap = e.response!.data as Map;
-        if (errMap.containsKey('error')) {
-          throw Exception(errMap['error']);
+      if (e is DioException) {
+        if (e.response?.statusCode == 401) {
+          throw Exception('认证失败，请重新登录');
+        }
+        if (e.response?.data is Map) {
+          final errMap = e.response!.data as Map;
+          if (errMap.containsKey('error')) {
+            throw Exception(errMap['error']);
+          }
         }
       }
       rethrow;

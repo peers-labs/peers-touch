@@ -26,6 +26,26 @@ class DiscoveryRepository {
     return data;
   }
 
+  /// Fetch timeline using new Social API
+  Future<Map<String, dynamic>> fetchTimeline({String? cursor, int limit = 20}) async {
+    final data = await _httpService.get<Map<String, dynamic>>(
+      '/api/v1/social/timeline',
+      queryParameters: {
+        if (cursor != null) 'cursor': cursor,
+        'limit': limit,
+      },
+    );
+    return data;
+  }
+
+  /// Delete a post using new Social API
+  Future<void> deletePost(String postId) async {
+    await _httpService.delete(
+      '/api/v1/social/posts/$postId',
+    );
+  }
+
+  /// @deprecated Use deletePost instead
   Future<void> deleteActivity(String username, String objectId) async {
     final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
     final actorId = '$baseUrl/activitypub/$username/actor';
@@ -83,7 +103,7 @@ class DiscoveryRepository {
 
   Future<Map<String, dynamic>> fetchObjectReplies(String objectId, {bool page = true}) async {
     final data = await _httpService.get<Map<String, dynamic>>(
-      '/objects/$objectId/replies',
+      '/activitypub/objects/$objectId/replies',
       queryParameters: {'page': page},
     );
     return data;

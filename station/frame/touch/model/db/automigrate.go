@@ -13,20 +13,17 @@ import (
 func init() {
 	store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
 		err := rds.AutoMigrate(
-			&Actor{}, &ActorTouchMeta{}, &PeerAddress{},
-			// ActivityPub models
-			&ActivityPubActivity{}, &ActivityPubObject{},
-			&ActivityPubFollow{}, &ActivityPubLike{}, &ActivityPubCollection{},
+			// Actor models
+			&Actor{}, &ActorTouchMeta{}, &PeerAddress{}, &ActorStatus{},
 			// OAuth models
 			&OAuthClient{}, &OAuthAuthCode{}, &OAuthToken{},
-			&Conversation{},
-			&ConvMember{},
-			&Message{},
-			&Attachment{},
-			&Receipt{},
-			&Reaction{},
-			&KeyEpoch{},
-			&ActorStatus{},
+			// Chat models
+			&Conversation{}, &ConvMember{}, &Message{},
+			&Attachment{}, &Receipt{}, &Reaction{}, &KeyEpoch{},
+			// Social models (ActivityPub compatible)
+			&Post{}, &PostContent{}, &PostMedia{},
+			&PostLike{}, &Comment{}, &CommentLike{},
+			&Follow{}, &PollVote{},
 		)
 		if err != nil {
 			panic(fmt.Errorf("auto migrate failed: %v", err))
