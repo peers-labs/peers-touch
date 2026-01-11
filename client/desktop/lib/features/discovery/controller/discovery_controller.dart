@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
-import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
+import 'package:peers_touch_base/model/domain/social/post.pb.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
@@ -207,18 +207,21 @@ class DiscoveryController extends GetxController {
     if (username.isEmpty) return [];
 
     try {
-      Map<String, dynamic> data;
       switch (tabName) {
         case 'Me':
-          // TODO: Use new Social API for user's own posts
-          // For now, fallback to ActivityPub outbox
-          data = await _repo.fetchOutbox(username);
-          return _parseActivityPubCollection(data, username);
+          // Use new Social API for user's own posts
+          // Get user ID from GlobalContext or AuthController
+          final userId = _getCurrentUserId();
+          if (userId.isEmpty) {
+            LoggingService.warning('User ID not found, cannot fetch user posts');
+            return [];
+          }
+          final userPostsResponse = await _repo.fetchUserPosts(userId);
+          return _convertPostsToDiscoveryItems(userPostsResponse.posts);
         case 'Home':
-          // TODO: Use new Social API timeline
-          // For now, fallback to ActivityPub inbox
-          data = await _repo.fetchInbox(username);
-          return _parseActivityPubCollection(data, username);
+          // Use new Social API timeline
+          final timelineResponse = await _repo.fetchTimeline();
+          return _convertPostsToDiscoveryItems(timelineResponse.posts);
         default:
           return []; // TODO: Implement other tabs (Radar/Follow/etc)
       }
@@ -226,6 +229,76 @@ class DiscoveryController extends GetxController {
       LoggingService.error('Fetch tab $tabName failed: $e');
       rethrow;
     }
+  }
+
+  String _getCurrentUserId() {
+    String userId = '';
+    if (Get.isRegistered<GlobalContext>()) {
+      userId = Get.find<GlobalContext>().actorId ?? '';
+    }
+    // If still empty, actorId might not be set yet
+    if (userId.isEmpty) {
+      LoggingService.warning('Actor ID not found in GlobalContext');
+    }
+    return userId;
+  }
+
+  List<DiscoveryItem> _convertPostsToDiscoveryItems(List<Post> posts) {
+    return posts.map((post) {
+      // Extract text from the oneof content field
+      String text = '';
+      List<String> mediaUrls = [];
+      
+      switch (post.whichContent()) {
+        case Post_Content.textPost:
+          text = post.textPost.text;
+          break;
+        case Post_Content.imagePost:
+          text = post.imagePost.text;
+          mediaUrls = post.imagePost.images.map((img) => img.url).toList();
+          break;
+        case Post_Content.videoPost:
+          text = post.videoPost.text;
+          if (post.videoPost.hasVideo()) {
+            mediaUrls.add(post.videoPost.video.url);
+          }
+          break;
+        case Post_Content.linkPost:
+          text = post.linkPost.text;
+          break;
+        case Post_Content.pollPost:
+          text = post.pollPost.text;
+          break;
+        case Post_Content.repostPost:
+          text = post.repostPost.comment;
+          break;
+        case Post_Content.locationPost:
+          text = post.locationPost.text;
+          mediaUrls = post.locationPost.images.map((img) => img.url).toList();
+          break;
+        default:
+          text = '';
+      }
+      
+      return DiscoveryItem(
+        id: post.id,
+        objectId: post.id,
+        title: text.isNotEmpty ? text : 'Post',
+        content: text,
+        author: post.author.username,
+        authorAvatar: post.author.avatarUrl.isNotEmpty 
+            ? post.author.avatarUrl 
+            : 'https://i.pravatar.cc/150?u=${post.author.username}',
+        timestamp: post.createdAt.toDateTime(),
+        type: 'Create',
+        images: mediaUrls,
+        likesCount: post.stats.likesCount.toInt(),
+        commentsCount: post.stats.commentsCount.toInt(),
+        sharesCount: post.stats.repostsCount.toInt(),
+        isLiked: post.interaction.isLiked,
+        comments: [],
+      );
+    }).toList();
   }
 
   Future<void> loadComments(DiscoveryItem item) async {
@@ -329,26 +402,24 @@ class DiscoveryController extends GetxController {
         return;
       }
 
-      // 2. Construct ActivityInput (Proto)
-      // Use objectId (not activity id) for inReplyTo
-      final input = pb.ActivityInput(
+      // 2. Create reply using new Social API
+      LoggingService.info('Submitting reply to ${parent.id}');
+      final post = await _repo.createPost(
         text: content,
-        replyTo: parent.objectId,
+        replyTo: parent.id,
         visibility: 'public',
       );
 
-      // 3. Submit
-      LoggingService.info('Submitting reply to ${parent.id}');
-      await _repo.submitActivity(username, input);
-
-      // 4. Update UI (Optimistic update)
+      // 3. Update UI (Optimistic update)
       // Add comment to parent.comments
       final newComment = DiscoveryComment(
-        id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
-        authorName: username,
-        authorAvatar: 'https://i.pravatar.cc/150?u=$username',
+        id: post.id,
+        authorName: post.author.username,
+        authorAvatar: post.author.avatarUrl.isNotEmpty 
+            ? post.author.avatarUrl 
+            : 'https://i.pravatar.cc/150?u=${post.author.username}',
         content: content,
-        timestamp: DateTime.now(),
+        timestamp: post.createdAt.toDateTime(),
       );
       
       parent.comments.add(newComment);
@@ -384,9 +455,6 @@ class DiscoveryController extends GetxController {
 
   Future<void> likeItem(DiscoveryItem item) async {
     try {
-      final String username = _getCurrentUsername();
-      if (username.isEmpty) return;
-      
       item.isLiked = !item.isLiked;
       if (item.isLiked) {
         item.likesCount++;
@@ -395,11 +463,17 @@ class DiscoveryController extends GetxController {
       }
       items.refresh();
       
-      await _repo.likeActivity(username, item.objectId);
+      // Use new Social API
+      if (item.isLiked) {
+        await _repo.likePost(item.id);
+      } else {
+        await _repo.unlikePost(item.id);
+      }
       
       Get.snackbar('Success', item.isLiked ? 'Liked post' : 'Unliked post');
     } catch (e) {
       LoggingService.error('Like failed: $e');
+      // Revert on error
       item.isLiked = !item.isLiked;
       if (item.isLiked) {
         item.likesCount++;
@@ -413,13 +487,11 @@ class DiscoveryController extends GetxController {
 
   Future<void> announceItem(DiscoveryItem item) async {
     try {
-      final String username = _getCurrentUsername();
-      if (username.isEmpty) return;
-      
       item.sharesCount++;
       items.refresh();
       
-      await _repo.announceActivity(username, item.objectId);
+      // Use new Social API
+      await _repo.repostPost(item.id);
       Get.snackbar('Success', 'Post reposted');
     } catch (e) {
       LoggingService.error('Announce failed: $e');
@@ -514,133 +586,5 @@ class DiscoveryController extends GetxController {
       }
     }
     return list;
-  }
-
-  List<DiscoveryItem> _parseActivityPubCollection(Map<String, dynamic> data, String defaultAuthor) {
-    final newItems = <DiscoveryItem>[];
-    if (data['orderedItems'] is List) {
-        final itemsList = data['orderedItems'] as List;
-        for (var item in itemsList) {
-          if (item is Map) {
-            String title = 'New Post';
-            String content = '';
-            String objectId = '';
-            String author = defaultAuthor; // Default, can be overridden by attributedTo
-            DateTime timestamp = DateTime.now();
-            final String type = item['type']?.toString() ?? 'Create';
-            
-            final List<String> images = [];
-            int likesCount = 0;
-            int repliesCount = 0;
-            int sharesCount = 0;
-            String authorAvatar = '';
-            
-            // Handle 'Create' wrapping 'Note', or direct 'Note'
-            Map? obj;
-            if (type == 'Create' || type == 'Announce') {
-               if (item['object'] is Map) {
-                 obj = item['object'];
-               }
-               // Extract actor from Activity
-               if (item['actor'] is String) {
-                 author = (item['actor'] as String).split('/').last;
-               } else if (item['actor'] is Map) {
-                  // extract from map
-               }
-            } else {
-               obj = item; // Treat item as object directly
-            }
-
-            if (obj != null) {
-               objectId = obj['id']?.toString() ?? '';
-               if (obj['inReplyTo'] != null && obj['inReplyTo'].toString().isNotEmpty) continue;
-
-               final contentField = obj['content'];
-               if (contentField is String) {
-                 content = contentField;
-               } else if (contentField is Map) {
-                 content = contentField.values.firstOrNull?.toString() ?? '';
-               }
-               
-               if (obj['summary'] != null && obj['summary'].toString().isNotEmpty) {
-                 title = obj['summary'].toString();
-               } else if (content.isNotEmpty) {
-                 final plainText = content.replaceAll(RegExp(r'<[^>]*>'), '');
-                 title = plainText.split('\n').first;
-                 if (title.length > 50) title = '${title.substring(0, 50)}...';
-               }
-               
-               if (obj['published'] != null) {
-                 timestamp = DateTime.tryParse(obj['published'].toString()) ?? DateTime.now();
-               }
-               
-               if (obj['attachment'] is List) {
-                 for (var att in obj['attachment']) {
-                   if (att is Map) {
-                     final url = att['url']?.toString();
-                     if (url != null && url.isNotEmpty) images.add(url);
-                   }
-                 }
-               }
-               
-               // Stats
-               if (obj['likes'] is Map) likesCount = (obj['likes']['totalItems'] as num?)?.toInt() ?? 0;
-               if (obj['replies'] is Map) repliesCount = (obj['replies']['totalItems'] as num?)?.toInt() ?? 0;
-               if (obj['shares'] is Map) sharesCount = (obj['shares']['totalItems'] as num?)?.toInt() ?? 0;
-               
-               // Author info from object (preferred)
-               if (obj['attributedTo'] is Map) {
-                 final attributedTo = obj['attributedTo'];
-                 
-                 final prefUsernameField = attributedTo['preferredUsername'];
-                 if (prefUsernameField is String) {
-                   author = prefUsernameField;
-                 } else if (prefUsernameField is Map) {
-                   author = prefUsernameField.values.firstOrNull?.toString() ?? '';
-                 }
-                 
-                 if (author.isEmpty || author == defaultAuthor) {
-                   final nameField = attributedTo['name'];
-                   if (nameField is String) {
-                     author = nameField;
-                   } else if (nameField is Map) {
-                     author = nameField.values.firstOrNull?.toString() ?? '';
-                   }
-                 }
-                 
-                 if (attributedTo['icon'] is Map) {
-                   final iconMap = attributedTo['icon'] as Map;
-                   final iconUrl = iconMap['url'];
-                   if (iconUrl is String) {
-                     authorAvatar = iconUrl;
-                   } else if (iconUrl != null) {
-                     authorAvatar = iconUrl.toString();
-                   }
-                 }
-               } else if (obj['attributedTo'] is String) {
-                  // If attributedTo is string IRI, use it if we haven't set author yet or to override
-                  // author = (obj['attributedTo'] as String).split('/').last;
-               }
-            }
-            
-            newItems.add(DiscoveryItem(
-              id: item['id']?.toString() ?? DateTime.now().toString(),
-              objectId: objectId.isNotEmpty ? objectId : (item['id']?.toString() ?? ''),
-              title: title,
-              content: content,
-              author: author,
-              authorAvatar: authorAvatar.isNotEmpty ? authorAvatar : 'https://i.pravatar.cc/150?u=$author',
-              timestamp: timestamp,
-              type: type,
-              images: images,
-              likesCount: likesCount,
-              commentsCount: repliesCount,
-              sharesCount: sharesCount,
-              comments: [], // Comments loaded separately usually
-            ));
-          }
-        }
-      }
-      return newItems;
   }
 }

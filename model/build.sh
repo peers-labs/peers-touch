@@ -57,25 +57,26 @@ echo "Ensuring protoc_plugin is available..."
 flutter pub get
 popd > /dev/null
 
-# 2. Define the plugin path.
-# 'dart run' can execute the bin/protoc_gen_dart.dart from the package directly.
-# However, protoc expects an executable. We create a temporary wrapper script.
-
-PLUGIN_WRAPPER="$PROJECT_ROOT/model/.protoc-gen-dart-wrapper"
-
-# Write a wrapper script that invokes the pinned version via 'dart run'
-# We use the path to the pubspec.yaml of peers_touch_base to ensure context
-cat <<EOF > "$PLUGIN_WRAPPER"
+# 2. Use globally installed protoc-gen-dart
+# Check if protoc-gen-dart is available in PATH
+if command -v protoc-gen-dart &> /dev/null; then
+    PLUGIN_OPT=""
+    echo "Using globally installed protoc-gen-dart"
+else
+    # Fallback to project-local version
+    PLUGIN_WRAPPER="$PROJECT_ROOT/model/.protoc-gen-dart-wrapper"
+    
+    # Write a wrapper script that invokes the pinned version via 'dart run'
+    cat <<EOF > "$PLUGIN_WRAPPER"
 #!/bin/bash
 cd "$PROJECT_ROOT/client/common/peers_touch_base"
 exec dart run protoc_plugin:protoc-gen-dart "\$@"
 EOF
-
-chmod +x "$PLUGIN_WRAPPER"
-
-# 3. Use this wrapper as the plugin
-PLUGIN_OPT="--plugin=protoc-gen-dart=$PLUGIN_WRAPPER"
-echo "Using project-local protoc-gen-dart wrapper: $PLUGIN_WRAPPER"
+    
+    chmod +x "$PLUGIN_WRAPPER"
+    PLUGIN_OPT="--plugin=protoc-gen-dart=$PLUGIN_WRAPPER"
+    echo "Using project-local protoc-gen-dart wrapper: $PLUGIN_WRAPPER"
+fi
 
 echo "Running protoc for Dart..."
 # Loop through Dart proto files

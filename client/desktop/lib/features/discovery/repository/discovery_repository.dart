@@ -1,11 +1,14 @@
 import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
+import 'package:peers_touch_base/model/domain/social/post.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import '../../social/service/social_api_service.dart';
 
 class DiscoveryRepository {
   // Don't cache httpService, always get the latest instance from locator
   // This ensures we use the updated instance after auth setup
   IHttpService get _httpService => HttpServiceLocator().httpService;
+  final SocialApiService _socialApiService = SocialApiService();
 
   /// Fetch user's outbox
   Future<Map<String, dynamic>> fetchOutbox(String username, {bool page = true}) async {
@@ -27,21 +30,124 @@ class DiscoveryRepository {
   }
 
   /// Fetch timeline using new Social API
-  Future<Map<String, dynamic>> fetchTimeline({String? cursor, int limit = 20}) async {
-    final data = await _httpService.get<Map<String, dynamic>>(
+  Future<GetTimelineResponse> fetchTimeline({String? cursor, int limit = 20}) async {
+    return await _httpService.get<GetTimelineResponse>(
       '/api/v1/social/timeline',
       queryParameters: {
         if (cursor != null) 'cursor': cursor,
         'limit': limit,
       },
+      fromJson: (bytes) => GetTimelineResponse.fromBuffer(bytes),
     );
-    return data;
+  }
+
+  /// Fetch user's posts using new Social API
+  Future<ListPostsResponse> fetchUserPosts(String userId, {String? cursor, int limit = 20}) async {
+    return await _httpService.get<ListPostsResponse>(
+      '/api/v1/social/users/$userId/posts',
+      queryParameters: {
+        if (cursor != null) 'cursor': cursor,
+        'limit': limit,
+      },
+      fromJson: (bytes) => ListPostsResponse.fromBuffer(bytes),
+    );
+  }
+
+  /// Create a post using new Social API
+  Future<Post> createPost({
+    required String text,
+    List<String>? mediaUrls,
+    String? replyTo,
+    String visibility = 'public',
+  }) async {
+    // Determine post type based on content
+    final bool hasMedia = mediaUrls != null && mediaUrls.isNotEmpty;
+    final PostType postType = hasMedia ? PostType.IMAGE : PostType.TEXT;
+    
+    // Map visibility to Proto enum
+    final PostVisibility visibilityEnum = _mapVisibilityToEnum(visibility);
+    
+    // Build Proto request
+    final CreatePostRequest request = CreatePostRequest(
+      type: postType,
+      visibility: visibilityEnum,
+    );
+    
+    if (replyTo != null && replyTo.isNotEmpty) {
+      request.replyToPostId = replyTo;
+    }
+    
+    // Add content based on type
+    if (hasMedia) {
+      request.image = CreateImagePostRequest(
+        text: text,
+        imageIds: mediaUrls,
+      );
+    } else {
+      request.text = CreateTextPostRequest(
+        text: text,
+      );
+    }
+    
+    return await _socialApiService.createPost(request);
+  }
+  
+  String _mapVisibility(String visibility) {
+    switch (visibility.toLowerCase()) {
+      case 'public':
+        return 'PUBLIC';
+      case 'followers':
+      case 'followers_only':
+        return 'FOLLOWERS_ONLY';
+      case 'private':
+      case 'direct':
+        return 'PRIVATE';
+      default:
+        return 'PUBLIC';
+    }
+  }
+
+  PostVisibility _mapVisibilityToEnum(String visibility) {
+    switch (visibility.toLowerCase()) {
+      case 'public':
+        return PostVisibility.PUBLIC;
+      case 'followers':
+      case 'followers_only':
+        return PostVisibility.FOLLOWERS_ONLY;
+      case 'private':
+      case 'direct':
+        return PostVisibility.PRIVATE;
+      default:
+        return PostVisibility.PUBLIC;
+    }
   }
 
   /// Delete a post using new Social API
   Future<void> deletePost(String postId) async {
     await _httpService.delete(
       '/api/v1/social/posts/$postId',
+    );
+  }
+
+  /// Like a post using new Social API
+  Future<void> likePost(String postId) async {
+    await _httpService.post(
+      '/api/v1/social/posts/$postId/like',
+    );
+  }
+
+  /// Unlike a post using new Social API
+  Future<void> unlikePost(String postId) async {
+    await _httpService.post(
+      '/api/v1/social/posts/$postId/unlike',
+    );
+  }
+
+  /// Repost a post using new Social API
+  Future<Post> repostPost(String postId) async {
+    return await _httpService.post<Post>(
+      '/api/v1/social/posts/$postId/repost',
+      fromJson: (bytes) => Post.fromBuffer(bytes),
     );
   }
 

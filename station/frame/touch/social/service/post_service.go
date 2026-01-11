@@ -325,3 +325,98 @@ func parseCursor(cursorStr string) *repository.Cursor {
 func generateCursor(actors []*db.Actor) string {
 	return ""
 }
+
+func RepostPost(ctx context.Context, req *model.RepostRequest, userID uint64) (*model.RepostResponse, error) {
+	logger.Info(ctx, "RepostPost", "postID", req.PostId, "userID", userID)
+
+	originalPostID := parseID(req.PostId)
+	
+	// Check if original post exists
+	_, err := postRepo.GetByID(ctx, originalPostID)
+	if err != nil {
+		return nil, fmt.Errorf("original post not found")
+	}
+
+	// Create repost
+	var comment string
+	if req.Comment != nil {
+		comment = *req.Comment
+	}
+	
+	createReq := &model.CreatePostRequest{
+		Type:       model.PostType_REPOST,
+		Visibility: model.PostVisibility_PUBLIC,
+		Content: &model.CreatePostRequest_Repost{
+			Repost: &model.CreateRepostRequest{
+				OriginalPostId: req.PostId,
+				Comment:        comment,
+			},
+		},
+	}
+
+	repost, err := CreatePost(ctx, createReq, userID)
+	if err != nil {
+		logger.Error(ctx, "failed to create repost", "error", err)
+		return nil, err
+	}
+
+	// Update repost count on original post
+	err = gormDB.Model(&db.Post{}).
+		Where("id = ?", originalPostID).
+		UpdateColumn("reposts_count", gorm.Expr("reposts_count + 1")).Error
+	if err != nil {
+		logger.Error(ctx, "failed to update repost count", "error", err)
+	}
+
+	logger.Info(ctx, "RepostPost success", "repostID", repost.Id)
+	return &model.RepostResponse{
+		Repost: repost,
+	}, nil
+}
+
+func ListPosts(ctx context.Context, req *model.ListPostsRequest, viewerID uint64) (*model.ListPostsResponse, error) {
+	logger.Debug(ctx, "ListPosts", "filter", req.Filter, "limit", req.Limit)
+
+	limit := int(req.Limit)
+	if limit == 0 {
+		limit = 20
+	}
+
+	var cursor *repository.Cursor
+	if req.Cursor != "" {
+		cursor = parseCursor(req.Cursor)
+	}
+
+	// Get author ID from filter
+	var posts []*db.Post
+	var err error
+	if req.Filter != nil && req.Filter.AuthorId != "" {
+		authorID := parseID(req.Filter.AuthorId)
+		posts, err = postRepo.ListByAuthor(ctx, authorID, cursor, limit)
+	} else {
+		// If no filter, return empty list for now
+		// TODO: implement global timeline
+		posts = []*db.Post{}
+	}
+
+	if err != nil {
+		logger.Error(ctx, "failed to list posts", "error", err)
+		return nil, err
+	}
+
+	protoPosts := make([]*model.Post, 0, len(posts))
+	for _, dbPost := range posts {
+		protoPost, err := postConverter.DBToProto(ctx, dbPost, viewerID)
+		if err != nil {
+			logger.Error(ctx, "failed to convert post", "error", err)
+			continue
+		}
+		protoPosts = append(protoPosts, protoPost)
+	}
+
+	return &model.ListPostsResponse{
+		Posts:      protoPosts,
+		NextCursor: "", // TODO: implement cursor
+		HasMore:    len(posts) == limit,
+	}, nil
+}

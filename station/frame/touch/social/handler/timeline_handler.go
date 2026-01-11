@@ -30,5 +30,5 @@ func GetTimeline(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, protoToJSON(resp))
+	respondWithProto(c, ctx, http.StatusOK, resp)
 }

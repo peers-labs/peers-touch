@@ -132,7 +132,7 @@ func (r *postRepository) ListPublic(ctx context.Context, cursor *Cursor, limit i
 	query := r.db.WithContext(ctx).
 		Preload("Author").
 		Preload("Content").
-		Where("visibility = ? AND deleted_at IS NULL", "public")
+		Where("(visibility = ? OR visibility = ?) AND deleted_at IS NULL", "public", "PUBLIC")
 
 	if cursor != nil {
 		query = query.Where("(created_at, id) < (?, ?)", cursor.CreatedAt, cursor.ID)
