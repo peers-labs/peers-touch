@@ -3,6 +3,7 @@ import 'package:peers_touch_base/context/app_lifecycle_orchestrator.dart';
 import 'package:peers_touch_base/context/default_app_lifecycle_orchestrator.dart';
 import 'package:peers_touch_base/context/default_global_context.dart';
 import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/connectivity_adapter.dart';
 import 'package:peers_touch_base/network/default_token_provider.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
@@ -68,8 +69,13 @@ class InitialBinding extends Bindings {
     NetworkInitializer.setupAuth(
       tokenProvider: tokenProvider,
       onUnauthenticated: () {
-        // Don't automatically logout on 401
-        // Let individual screens handle authentication errors
+        LoggingService.error('Authentication failed: Token invalid or expired');
+        Get.snackbar(
+          '认证失败',
+          '登录已过期，请重新登录',
+          snackPosition: SnackPosition.TOP,
+          duration: const Duration(seconds: 5),
+        );
       },
     );
 

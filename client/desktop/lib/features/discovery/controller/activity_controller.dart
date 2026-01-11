@@ -1,22 +1,18 @@
 import 'dart:io';
 
 import 'package:get/get.dart';
-import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
+import 'package:peers_touch_base/model/domain/social/post.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_desktop/core/services/oss_service.dart';
-import 'package:peers_touch_desktop/features/auth/controller/auth_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
 import 'package:peers_touch_desktop/features/discovery/repository/discovery_repository.dart';
 
 class ActivityController extends GetxController {
   final DiscoveryRepository _repo = Get.find<DiscoveryRepository>();
-  final GlobalContext _gctx = Get.find<GlobalContext>();
   final OssService _ossService = Get.find<OssService>();
-  // ignore: unused_field
-  final AuthController _auth = Get.find<AuthController>();
   
   String? overrideActor;
   
@@ -37,29 +33,6 @@ class ActivityController extends GetxController {
   // TODO: Add Poll state
 
   void setActor(String name) => overrideActor = name;
-
-  String get _actor {
-    // Try to get from AuthController first
-    String name = _auth.username.value;
-    
-    // If username is empty but email exists, try to use email part
-    if (name.isEmpty && _auth.email.value.isNotEmpty) {
-       name = _auth.email.value.split('@').first;
-    }
-
-    // If still empty, try GlobalContext
-    if (name.isEmpty) {
-       final handle = _gctx.actorHandle ?? _gctx.currentSession?['username']?.toString();
-       name = handle ?? '';
-    }
-    
-    // Check override
-    if (overrideActor != null && overrideActor!.isNotEmpty) {
-      name = overrideActor!;
-    }
-    
-    return name.trim().isEmpty ? 'dev' : name.trim();
-  }
 
   void toggleCW() {
     cwEnabled.value = !cwEnabled.value;
@@ -113,34 +86,20 @@ class ActivityController extends GetxController {
       errorText.value = null;
 
       // 1. Upload Attachments
-      final uploadedMedia = <pb.MediaUploadResponse>[];
+      final mediaUrls = <String>[];
       for (var file in attachments) {
         final res = await uploadMedia(file);
         if (res != null) {
-          uploadedMedia.add(res);
+          mediaUrls.add(res.url);
         }
       }
 
-      // 2. Construct ActivityInput (Proto)
-      final actorName = _actor;
-      final input = pb.ActivityInput(
+      // 2. Create post using new Social API
+      final post = await _repo.createPost(
         text: text.value,
+        mediaUrls: mediaUrls.isNotEmpty ? mediaUrls : null,
         visibility: visibility.value,
-        attachments: uploadedMedia.map((m) => pb.Attachment(
-          mediaId: m.mediaId,
-          url: m.url,
-          mediaType: m.mediaType,
-          alt: m.alt,
-        )),
       );
-
-      if (cwEnabled.value && cw.value.isNotEmpty) {
-        input.cw = cw.value;
-        input.sensitive = true;
-      }
-
-      // 3. Submit Activity to Outbox
-      final data = await _repo.submitActivity(actorName, input);
       
       submitting.value = false;
       
@@ -155,34 +114,70 @@ class ActivityController extends GetxController {
       if (Get.isRegistered<DiscoveryController>()) {
         final discovery = Get.find<DiscoveryController>();
         
-        // Convert local data to DiscoveryItem
+        final postText = _getPostText(post);
+        final postImages = _getPostImages(post);
+        
         final newItem = DiscoveryItem(
-          id: data['id']?.toString() ?? DateTime.now().toString(),
-          objectId: data['object']?['id']?.toString() ?? '', // Try to get object ID from response, or use activity ID fallback? Or empty.
-          title: input.hasCw() && input.cw.isNotEmpty ? input.cw : (input.text.isNotEmpty ? input.text : 'New Post'), 
-          content: input.text,
-          author: actorName,
-          authorAvatar: 'https://i.pravatar.cc/150?u=$actorName', // Ideally get from user profile
-          timestamp: DateTime.now(),
+          id: post.id,
+          objectId: post.id,
+          title: postText.isNotEmpty ? postText : 'New Post',
+          content: postText,
+          author: post.author.username,
+          authorAvatar: post.author.avatarUrl.isNotEmpty 
+              ? post.author.avatarUrl 
+              : 'https://i.pravatar.cc/150?u=${post.author.username}',
+          timestamp: post.createdAt.toDateTime(),
           type: 'Create',
-          images: uploadedMedia.map((e) => e.url).toList(), // Use uploadedMedia directly for URLs
-          likesCount: 0,
-          commentsCount: 0,
-          sharesCount: 0,
+          images: postImages,
+          likesCount: post.stats.likesCount.toInt(),
+          commentsCount: post.stats.commentsCount.toInt(),
+          sharesCount: post.stats.repostsCount.toInt(),
         );
         
         discovery.addNewItem(newItem);
       }
 
       return pb.ActivityResponse(
-        postId: data['id'] ?? '', // ActivityPub returns 'id' (activity ID)
-        activityId: data['id'] ?? '',
+        postId: post.id,
+        activityId: post.id,
       );
     } catch (e) {
       submitting.value = false;
       LoggingService.error('CreateActivity', e.toString());
       errorText.value = e.toString();
       return null;
+    }
+  }
+
+  String _getPostText(Post post) {
+    switch (post.whichContent()) {
+      case Post_Content.textPost:
+        return post.textPost.text;
+      case Post_Content.imagePost:
+        return post.imagePost.text;
+      case Post_Content.videoPost:
+        return post.videoPost.text;
+      case Post_Content.linkPost:
+        return post.linkPost.text;
+      case Post_Content.pollPost:
+        return post.pollPost.text;
+      case Post_Content.repostPost:
+        return post.repostPost.comment;
+      case Post_Content.locationPost:
+        return post.locationPost.text;
+      case Post_Content.notSet:
+        return '';
+    }
+  }
+
+  List<String> _getPostImages(Post post) {
+    switch (post.whichContent()) {
+      case Post_Content.imagePost:
+        return post.imagePost.images.map((img) => img.url).toList();
+      case Post_Content.locationPost:
+        return post.locationPost.images.map((img) => img.url).toList();
+      default:
+        return [];
     }
   }
 }
