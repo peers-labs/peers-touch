@@ -4,6 +4,7 @@ import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/network/dio/interceptors/auth_interceptor.dart';
 import 'package:peers_touch_base/network/dio/interceptors/error_interceptor.dart';
 import 'package:peers_touch_base/network/dio/interceptors/logging_interceptor.dart';
+import 'package:peers_touch_base/network/dio/interceptors/proto_interceptor.dart';
 import 'package:peers_touch_base/network/dio/interceptors/retry_interceptor.dart';
 import 'package:peers_touch_base/network/token_provider.dart';
 import 'package:peers_touch_base/network/token_refresher.dart';
@@ -22,7 +23,7 @@ class HttpServiceImpl implements IHttpService {
       BaseOptions(
         baseUrl: baseUrl,
         connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 30), // Increased to avoid timeouts on slow operations
+        receiveTimeout: const Duration(seconds: 30),
       ),
     );
 
@@ -31,6 +32,7 @@ class HttpServiceImpl implements IHttpService {
     }
 
     _dio.interceptors.addAll([
+      ProtoInterceptor(),
       ...?interceptors,
       if (interceptors?.any((i) => i is AuthInterceptor) != true) 
         AuthInterceptor(
@@ -45,7 +47,6 @@ class HttpServiceImpl implements IHttpService {
   }
   late final Dio _dio;
 
-  /// 更新基础URL
   void setBaseUrl(String newBaseUrl) {
     _dio.options.baseUrl = newBaseUrl;
   }
@@ -54,7 +55,16 @@ class HttpServiceImpl implements IHttpService {
   Future<T> get<T>(
     String path, {
     Map<String, dynamic>? queryParameters,
+    ProtoFactory<T>? fromJson,
   }) async {
+    if (fromJson != null) {
+      final response = await _dio.get<List<int>>(
+        path,
+        queryParameters: queryParameters,
+      );
+      return fromJson(response.data!);
+    }
+    
     final response = await getResponse<T>(path, queryParameters: queryParameters);
     return response.data as T;
   }
@@ -64,7 +74,17 @@ class HttpServiceImpl implements IHttpService {
     String path, {
     dynamic data,
     Map<String, dynamic>? queryParameters,
+    ProtoFactory<T>? fromJson,
   }) async {
+    if (fromJson != null) {
+      final response = await _dio.post<List<int>>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+      );
+      return fromJson(response.data!);
+    }
+    
     final response = await postResponse<T>(path, data: data, queryParameters: queryParameters);
     return response.data as T;
   }
@@ -74,7 +94,17 @@ class HttpServiceImpl implements IHttpService {
     String path, {
     dynamic data,
     Map<String, dynamic>? queryParameters,
+    ProtoFactory<T>? fromJson,
   }) async {
+    if (fromJson != null) {
+      final response = await _dio.put<List<int>>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+      );
+      return fromJson(response.data!);
+    }
+    
     final response = await putResponse<T>(path, data: data, queryParameters: queryParameters);
     return response.data as T;
   }
@@ -84,8 +114,38 @@ class HttpServiceImpl implements IHttpService {
     String path, {
     dynamic data,
     Map<String, dynamic>? queryParameters,
+    ProtoFactory<T>? fromJson,
   }) async {
+    if (fromJson != null) {
+      final response = await _dio.delete<List<int>>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+      );
+      return fromJson(response.data!);
+    }
+    
     final response = await deleteResponse<T>(path, data: data, queryParameters: queryParameters);
+    return response.data as T;
+  }
+
+  @override
+  Future<T> patch<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    ProtoFactory<T>? fromJson,
+  }) async {
+    if (fromJson != null) {
+      final response = await _dio.patch<List<int>>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+      );
+      return fromJson(response.data!);
+    }
+    
+    final response = await patchResponse<T>(path, data: data, queryParameters: queryParameters);
     return response.data as T;
   }
 
@@ -137,16 +197,6 @@ class HttpServiceImpl implements IHttpService {
       data: data,
       queryParameters: queryParameters,
     );
-  }
-
-  @override
-  Future<T> patch<T>(
-    String path, {
-    dynamic data,
-    Map<String, dynamic>? queryParameters,
-  }) async {
-    final response = await patchResponse<T>(path, data: data, queryParameters: queryParameters);
-    return response.data as T;
   }
 
   @override

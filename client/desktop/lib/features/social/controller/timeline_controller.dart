@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
-import 'package:peers_touch_desktop/features/social/model/post_model.dart';
+import 'package:peers_touch_base/model/domain/social/post.pb.dart';
 import 'package:peers_touch_desktop/features/social/service/social_api_service.dart';
 
 class TimelineController extends GetxController {
@@ -57,23 +57,10 @@ class TimelineController extends GetxController {
       final index = posts.indexWhere((p) => p.id == postId);
       if (index != -1) {
         final post = posts[index];
-        posts[index] = Post(
-          id: post.id,
-          authorId: post.authorId,
-          author: post.author,
-          content: post.content,
-          stats: PostStats(
-            likesCount: post.stats.likesCount + 1,
-            repliesCount: post.stats.repliesCount,
-            repostsCount: post.stats.repostsCount,
-          ),
-          interaction: PostInteraction(
-            isLiked: true,
-            isReposted: post.interaction.isReposted,
-          ),
-          createdAt: post.createdAt,
-          updatedAt: post.updatedAt,
-        );
+        final updatedPost = post.deepCopy();
+        updatedPost.stats.likesCount += 1;
+        updatedPost.interaction.isLiked = true;
+        posts[index] = updatedPost;
       }
       
       await _apiService.likePost(postId);
@@ -89,23 +76,10 @@ class TimelineController extends GetxController {
       final index = posts.indexWhere((p) => p.id == postId);
       if (index != -1) {
         final post = posts[index];
-        posts[index] = Post(
-          id: post.id,
-          authorId: post.authorId,
-          author: post.author,
-          content: post.content,
-          stats: PostStats(
-            likesCount: post.stats.likesCount - 1,
-            repliesCount: post.stats.repliesCount,
-            repostsCount: post.stats.repostsCount,
-          ),
-          interaction: PostInteraction(
-            isLiked: false,
-            isReposted: post.interaction.isReposted,
-          ),
-          createdAt: post.createdAt,
-          updatedAt: post.updatedAt,
-        );
+        final updatedPost = post.deepCopy();
+        updatedPost.stats.likesCount -= 1;
+        updatedPost.interaction.isLiked = false;
+        posts[index] = updatedPost;
       }
       
       await _apiService.unlikePost(postId);

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -35,10 +36,29 @@ func CreatePost(c context.Context, ctx *app.RequestContext) {
 	}
 
 	var req model.CreatePostRequest
-	if err := ctx.Bind(&req); err != nil {
-		logger.Error(c, "failed to bind request", "error", err)
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-		return
+	
+	// Check Content-Type and parse accordingly
+	contentType := string(ctx.GetHeader("Content-Type"))
+	if strings.Contains(contentType, model.ContentTypeProtobuf) {
+		// Parse Proto binary
+		body, err := ctx.Body()
+		if err != nil {
+			logger.Error(c, "failed to read body", "error", err)
+			ctx.JSON(http.StatusBadRequest, map[string]string{"error": "failed to read body"})
+			return
+		}
+		if err := proto.Unmarshal(body, &req); err != nil {
+			logger.Error(c, "failed to unmarshal proto", "error", err)
+			ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid proto"})
+			return
+		}
+	} else {
+		// Parse JSON
+		if err := ctx.Bind(&req); err != nil {
+			logger.Error(c, "failed to bind request", "error", err)
+			ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+			return
+		}
 	}
 
 	post, err := service.CreatePost(c, &req, userID)
@@ -48,7 +68,7 @@ func CreatePost(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, protoToJSON(post))
+	respondWithProto(c, ctx, http.StatusOK, post)
 }
 
 func GetPost(c context.Context, ctx *app.RequestContext) {
@@ -70,7 +90,7 @@ func GetPost(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, protoToJSON(post))
+	respondWithProto(c, ctx, http.StatusOK, post)
 }
 
 func UpdatePost(c context.Context, ctx *app.RequestContext) {
@@ -94,7 +114,7 @@ func UpdatePost(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, protoToJSON(post))
+	respondWithProto(c, ctx, http.StatusOK, post)
 }
 
 func DeletePost(c context.Context, ctx *app.RequestContext) {
@@ -140,7 +160,7 @@ func LikePost(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, protoToJSON(resp))
+	respondWithProto(c, ctx, http.StatusOK, resp)
 }
 
 func UnlikePost(c context.Context, ctx *app.RequestContext) {
@@ -163,7 +183,7 @@ func UnlikePost(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, protoToJSON(resp))
+	respondWithProto(c, ctx, http.StatusOK, resp)
 }
 
 func GetPostLikers(c context.Context, ctx *app.RequestContext) {
@@ -181,12 +201,95 @@ func GetPostLikers(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, protoToJSON(resp))
+	respondWithProto(c, ctx, http.StatusOK, resp)
 }
 
-func protoToJSON(msg proto.Message) map[string]interface{} {
-	data, _ := json.Marshal(msg)
+func RepostPost(c context.Context, ctx *app.RequestContext) {
+	userID, exists := getUserID(c)
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	postID := ctx.Param("id")
+	if postID == "" {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "post_id is required"})
+		return
+	}
+
+	var req model.RepostRequest
+	if err := ctx.Bind(&req); err != nil {
+		logger.Error(c, "failed to bind request", "error", err)
+		// Allow empty body for simple repost
+	}
+	req.PostId = postID
+
+	resp, err := service.RepostPost(c, &req, userID)
+	if err != nil {
+		logger.Error(c, "failed to repost", "error", err)
+		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	respondWithProto(c, ctx, http.StatusOK, resp)
+}
+
+func GetUserPosts(c context.Context, ctx *app.RequestContext) {
+	userID := ctx.Param("userId")
+	if userID == "" {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "user_id is required"})
+		return
+	}
+
+	var req model.ListPostsRequest
+	if err := ctx.Bind(&req); err != nil {
+		logger.Error(c, "failed to bind request", "error", err)
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+
+	// Set filter to get posts by specific user
+	if req.Filter == nil {
+		req.Filter = &model.PostFilter{}
+	}
+	req.Filter.AuthorId = userID
+
+	var viewerID uint64
+	if vID, exists := getUserID(c); exists {
+		viewerID = vID
+	}
+
+	resp, err := service.ListPosts(c, &req, viewerID)
+	if err != nil {
+		logger.Error(c, "failed to get user posts", "error", err)
+		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	respondWithProto(c, ctx, http.StatusOK, resp)
+}
+
+func respondWithProto(c context.Context, ctx *app.RequestContext, statusCode int, msg proto.Message) {
+	accept := string(ctx.GetHeader("Accept"))
+
+	if strings.Contains(accept, model.AcceptProtobuf) {
+		data, err := proto.Marshal(msg)
+		if err != nil {
+			logger.Error(c, "failed to marshal protobuf", "error", err)
+			ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+			return
+		}
+		ctx.Data(statusCode, model.ContentTypeProtobuf, data)
+		return
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		logger.Error(c, "failed to marshal json", "error", err)
+		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
 	var result map[string]interface{}
 	json.Unmarshal(data, &result)
-	return result
+	ctx.JSON(statusCode, result)
 }

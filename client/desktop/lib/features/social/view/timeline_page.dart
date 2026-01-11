@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/model/domain/social/post.pb.dart';
 import 'package:peers_touch_desktop/features/social/controller/timeline_controller.dart';
-import 'package:peers_touch_desktop/features/social/model/post_model.dart';
 
 class TimelinePage extends GetView<TimelineController> {
   const TimelinePage({super.key});
@@ -74,7 +74,9 @@ class _PostCard extends GetView<TimelineController> {
             Row(
               children: [
                 CircleAvatar(
-                  child: Text(post.author.name.substring(0, 1)),
+                  child: Text(post.author.displayName.isNotEmpty 
+                      ? post.author.displayName.substring(0, 1) 
+                      : post.author.username.substring(0, 1)),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -82,14 +84,16 @@ class _PostCard extends GetView<TimelineController> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        post.author.name,
+                        post.author.displayName.isNotEmpty 
+                            ? post.author.displayName 
+                            : post.author.username,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
                       ),
                       Text(
-                        '@${post.author.preferredUsername}',
+                        '@${post.author.username}',
                         style: TextStyle(
                           color: Colors.grey[600],
                           fontSize: 14,
@@ -99,7 +103,7 @@ class _PostCard extends GetView<TimelineController> {
                   ),
                 ),
                 Text(
-                  _formatTimestamp(post.createdAt),
+                  _formatTimestamp(post.createdAt.toDateTime()),
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontSize: 12,
@@ -108,9 +112,9 @@ class _PostCard extends GetView<TimelineController> {
               ],
             ),
             const SizedBox(height: 12),
-            if (post.content.hasText)
+            if (_getPostText(post).isNotEmpty)
               Text(
-                post.content.text!,
+                _getPostText(post),
                 style: const TextStyle(fontSize: 15),
               ),
             const SizedBox(height: 12),
@@ -133,7 +137,7 @@ class _PostCard extends GetView<TimelineController> {
                 const SizedBox(width: 24),
                 _ActionButton(
                   icon: Icons.comment_outlined,
-                  label: '${post.stats.repliesCount}',
+                  label: '${post.stats.commentsCount}',
                   onTap: () {},
                 ),
                 const SizedBox(width: 24),
@@ -162,6 +166,27 @@ class _PostCard extends GetView<TimelineController> {
         ),
       ),
     );
+  }
+
+  String _getPostText(Post post) {
+    switch (post.whichContent()) {
+      case Post_Content.textPost:
+        return post.textPost.text;
+      case Post_Content.imagePost:
+        return post.imagePost.text;
+      case Post_Content.videoPost:
+        return post.videoPost.text;
+      case Post_Content.linkPost:
+        return post.linkPost.text;
+      case Post_Content.pollPost:
+        return post.pollPost.text;
+      case Post_Content.repostPost:
+        return post.repostPost.comment;
+      case Post_Content.locationPost:
+        return post.locationPost.text;
+      default:
+        return '';
+    }
   }
 
   String _formatTimestamp(DateTime timestamp) {

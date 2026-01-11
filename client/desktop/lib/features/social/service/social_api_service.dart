@@ -1,34 +1,31 @@
+import 'package:peers_touch_base/model/domain/social/post.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_desktop/features/social/model/post_model.dart';
 
 class SocialApiService {
   final IHttpService _httpService = HttpServiceLocator().httpService;
 
-  Future<Post> createPost(Map<String, dynamic> request) async {
-    final response = await _httpService.postResponse<Map<String, dynamic>>(
+  Future<Post> createPost(CreatePostRequest request) async {
+    return await _httpService.post<Post>(
       '/api/v1/social/posts',
       data: request,
+      fromJson: (bytes) => Post.fromBuffer(bytes),
     );
-    
-    return Post.fromJson(response.data!);
   }
 
   Future<Post> getPost(String postId) async {
-    final response = await _httpService.getResponse<Map<String, dynamic>>(
+    return await _httpService.get<Post>(
       '/api/v1/social/posts/$postId',
+      fromJson: (bytes) => Post.fromBuffer(bytes),
     );
-    
-    return Post.fromJson(response.data!);
   }
 
   Future<Post> updatePost(String postId, Map<String, dynamic> request) async {
-    final response = await _httpService.putResponse<Map<String, dynamic>>(
+    return await _httpService.put<Post>(
       '/api/v1/social/posts/$postId',
       data: request,
+      fromJson: (bytes) => Post.fromBuffer(bytes),
     );
-    
-    return Post.fromJson(response.data!);
   }
 
   Future<void> deletePost(String postId) async {
@@ -49,18 +46,17 @@ class SocialApiService {
     );
   }
 
-  Future<TimelineResponse> getTimeline({
+  Future<GetTimelineResponse> getTimeline({
     String? cursor,
     int limit = 20,
   }) async {
-    final response = await _httpService.getResponse<Map<String, dynamic>>(
+    return await _httpService.get<GetTimelineResponse>(
       '/api/v1/social/timeline',
       queryParameters: {
         if (cursor != null) 'cursor': cursor,
         'limit': limit,
       },
+      fromJson: (bytes) => GetTimelineResponse.fromBuffer(bytes),
     );
-    
-    return TimelineResponse.fromJson(response.data!);
   }
 }

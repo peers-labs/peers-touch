@@ -1,6 +1,6 @@
 // This is a generated file - do not edit.
 //
-// Generated from google/protobuf/any.proto.
+// Generated from domain/actor/actor_status.proto.
 
 // @dart = 3.3
 

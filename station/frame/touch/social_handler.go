@@ -67,10 +67,22 @@ func GetSocialHandlers() []SocialHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 		{
+			RouterURL: RouterURLSocialPostRepost,
+			Handler:   handler.RepostPost,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
+		},
+		{
 			RouterURL: RouterURLSocialTimeline,
 			Handler:   handler.GetTimeline,
 			Method:    server.GET,
 			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
+		},
+		{
+			RouterURL: RouterURLSocialUserPosts,
+			Handler:   handler.GetUserPosts,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper},
 		},
 	}
 }

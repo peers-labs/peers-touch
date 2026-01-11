@@ -110,6 +110,29 @@ class MockAiBoxFacadeService extends _i1.Mock
           as _i4.Future<void>);
 
   @override
+  _i4.Future<_i5.Provider?> getCurrentProviderForSession(String? sessionId) =>
+      (super.noSuchMethod(
+            Invocation.method(#getCurrentProviderForSession, [sessionId]),
+            returnValue: _i4.Future<_i5.Provider?>.value(),
+          )
+          as _i4.Future<_i5.Provider?>);
+
+  @override
+  _i4.Future<void> setCurrentProviderForSession(
+    String? sessionId,
+    String? providerId,
+  ) =>
+      (super.noSuchMethod(
+            Invocation.method(#setCurrentProviderForSession, [
+              sessionId,
+              providerId,
+            ]),
+            returnValue: _i4.Future<void>.value(),
+            returnValueForMissingStub: _i4.Future<void>.value(),
+          )
+          as _i4.Future<void>);
+
+  @override
   _i4.Future<List<String>> getProviderModels(String? providerId) =>
       (super.noSuchMethod(
             Invocation.method(#getProviderModels, [providerId]),
