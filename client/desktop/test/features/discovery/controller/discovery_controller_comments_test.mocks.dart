@@ -79,11 +79,13 @@ class MockDiscoveryRepository extends _i1.Mock
 
   @override
   _i4.Future<_i2.GetTimelineResponse> fetchTimeline({
+    _i2.TimelineType? type = _i2.TimelineType.TIMELINE_PUBLIC,
     String? cursor,
     int? limit = 20,
   }) =>
       (super.noSuchMethod(
             Invocation.method(#fetchTimeline, [], {
+              #type: type,
               #cursor: cursor,
               #limit: limit,
             }),
@@ -91,6 +93,7 @@ class MockDiscoveryRepository extends _i1.Mock
               _FakeGetTimelineResponse_0(
                 this,
                 Invocation.method(#fetchTimeline, [], {
+                  #type: type,
                   #cursor: cursor,
                   #limit: limit,
                 }),

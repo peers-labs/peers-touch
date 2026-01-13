@@ -1,0 +1,16 @@
+syntax = "proto3";
+package peers.actor;
+
+import "google/protobuf/timestamp.proto";
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/actor;actor";
+
+message VerifySessionRequest {
+  // Empty request - token is in Authorization header
+}
+
+message VerifySessionResponse {
+  bool valid = 1;
+  string subject_id = 2;
+  map<string, string> attributes = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}

@@ -26,6 +26,7 @@ class Actor extends $pb.GeneratedMessage {
     $core.String? inbox,
     $core.String? outbox,
     $core.Iterable<$core.MapEntry<$core.String, $core.String>>? endpoints,
+    $core.bool? isFollowing,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -35,6 +36,7 @@ class Actor extends $pb.GeneratedMessage {
     if (inbox != null) result.inbox = inbox;
     if (outbox != null) result.outbox = outbox;
     if (endpoints != null) result.endpoints.addEntries(endpoints);
+    if (isFollowing != null) result.isFollowing = isFollowing;
     return result;
   }
 
@@ -63,6 +65,7 @@ class Actor extends $pb.GeneratedMessage {
         keyFieldType: $pb.PbFieldType.OS,
         valueFieldType: $pb.PbFieldType.OS,
         packageName: const $pb.PackageName('peers_touch.model.actor.v1'))
+    ..aOB(8, _omitFieldNames ? '' : 'is_following')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -139,6 +142,15 @@ class Actor extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(7)
   $pb.PbMap<$core.String, $core.String> get endpoints => $_getMap(6);
+
+  @$pb.TagNumber(8)
+  $core.bool get isFollowing => $_getBF(7);
+  @$pb.TagNumber(8)
+  set isFollowing($core.bool value) => $_setBool(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasIsFollowing() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearIsFollowing() => $_clearField(8);
 }
 
 class UserLink extends $pb.GeneratedMessage {

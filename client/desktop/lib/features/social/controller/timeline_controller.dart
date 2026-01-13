@@ -32,6 +32,7 @@ class TimelineController extends GetxController {
       isLoading.value = true;
       
       final response = await _apiService.getTimeline(
+        type: TimelineType.TIMELINE_PUBLIC,
         cursor: _nextCursor,
         limit: 20,
       );

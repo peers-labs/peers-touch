@@ -1,8 +1,14 @@
 peers:
   logger:
     name: slogrus
-    level: debug
+    level: warn
     caller-skip-count: 0
+    # Package path prefix replacements (longest match first)
+    # Simplifies pkg_path field in logs for better readability
+    pkg-path-replacer:
+      "github.com/peers-labs/peers-touch/station/frame": "@frame"
+      "github.com/peers-labs/peers-touch/station/app": "@app"
+      "github.com/peers-labs/peers-touch": "@touch"
     persistence:
        enable: false
        dir: /var/logs/peers-touch

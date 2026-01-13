@@ -33,6 +33,7 @@ const Actor$json = {
       '6': '.peers_touch.model.actor.v1.Actor.EndpointsEntry',
       '10': 'endpoints'
     },
+    {'1': 'is_following', '3': 8, '4': 1, '5': 8, '10': 'is_following'},
   ],
   '3': [Actor_EndpointsEntry$json],
 };
@@ -53,8 +54,8 @@ final $typed_data.Uint8List actorDescriptor = $convert.base64Decode(
     'Rpc3BsYXlfbmFtZRgDIAEoCVILZGlzcGxheU5hbWUSFAoFZW1haWwYBCABKAlSBWVtYWlsEhQK'
     'BWluYm94GAUgASgJUgVpbmJveBIWCgZvdXRib3gYBiABKAlSBm91dGJveBJOCgllbmRwb2ludH'
     'MYByADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3Rvci5FbmRwb2ludHNFbnRy'
-    'eVIJZW5kcG9pbnRzGjwKDkVuZHBvaW50c0VudHJ5EhAKA2tleRgBIAEoCVIDa2V5EhQKBXZhbH'
-    'VlGAIgASgJUgV2YWx1ZToCOAE=');
+    'eVIJZW5kcG9pbnRzEiIKDGlzX2ZvbGxvd2luZxgIIAEoCFIMaXNfZm9sbG93aW5nGjwKDkVuZH'
+    'BvaW50c0VudHJ5EhAKA2tleRgBIAEoCVIDa2V5EhQKBXZhbHVlGAIgASgJUgV2YWx1ZToCOAE=');
 
 @$core.Deprecated('Use userLinkDescriptor instead')
 const UserLink$json = {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/env"
 	"github.com/peers-labs/peers-touch/station/frame/core/pkg/config/source/file"
 )
@@ -286,5 +288,154 @@ func TestSomeConfigLoad(t *testing.T) {
 		); err != nil {
 			t.Fatalf("Expected no error but got %v", err)
 		}
+	}
+}
+
+func TestYAMLFileWithEnvVarSubstitution(t *testing.T) {
+	option.GetOptions(option.WithRootCtx(context.Background()))
+
+	os.Setenv("TEST_DB_HOST", "localhost")
+	os.Setenv("TEST_DB_PORT", "5432")
+	os.Setenv("TEST_STORE_PATH", "/tmp/test-storage")
+	defer func() {
+		os.Unsetenv("TEST_DB_HOST")
+		os.Unsetenv("TEST_DB_PORT")
+		os.Unsetenv("TEST_STORE_PATH")
+	}()
+
+	yamlContent := `
+database:
+  host: ${TEST_DB_HOST}
+  port: ${TEST_DB_PORT}
+storage:
+  path: ${TEST_STORE_PATH}
+  enabled: true
+`
+
+	tmpDir := os.TempDir()
+	yamlPath := filepath.Join(tmpDir, "test_env_config.yml")
+
+	err := os.WriteFile(yamlPath, []byte(yamlContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(yamlPath)
+
+	conf, err := NewConfig()
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+	defer conf.Close()
+
+	err = conf.Load(file.NewSource(file.WithPath(yamlPath)))
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	testCases := []struct {
+		path     []string
+		expected string
+		desc     string
+	}{
+		{[]string{"database", "host"}, "localhost", "database host"},
+		{[]string{"database", "port"}, "5432", "database port"},
+		{[]string{"storage", "path"}, "/tmp/test-storage", "storage path"},
+	}
+
+	for _, tc := range testCases {
+		actual := conf.Get(tc.path...).String("")
+		if actual != tc.expected {
+			t.Errorf("%s: expected %s, got %s", tc.desc, tc.expected, actual)
+		}
+	}
+
+	enabledVal := conf.Get("storage", "enabled").Bool(false)
+	if !enabledVal {
+		t.Errorf("Expected storage.enabled to be true, got false")
+	}
+}
+
+func TestYAMLFileWithMissingEnvVar(t *testing.T) {
+	option.GetOptions(option.WithRootCtx(context.Background()))
+
+	os.Unsetenv("MISSING_ENV_VAR")
+
+	yamlContent := `
+config:
+  missing: ${MISSING_ENV_VAR}
+  static: "value"
+`
+
+	tmpDir := os.TempDir()
+	yamlPath := filepath.Join(tmpDir, "test_missing_env.yml")
+
+	err := os.WriteFile(yamlPath, []byte(yamlContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(yamlPath)
+
+	conf, err := NewConfig()
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+	defer conf.Close()
+
+	err = conf.Load(file.NewSource(file.WithPath(yamlPath)))
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	missingVal := conf.Get("config", "missing").String("default")
+	if missingVal != "" && missingVal != "default" {
+		t.Logf("Note: Missing env var resulted in: '%s'", missingVal)
+	}
+
+	staticVal := conf.Get("config", "static").String("")
+	if staticVal != "value" {
+		t.Errorf("Expected 'value', got '%s'", staticVal)
+	}
+}
+
+func TestYAMLFileWithoutEnvVars(t *testing.T) {
+	option.GetOptions(option.WithRootCtx(context.Background()))
+
+	yamlContent := `
+app:
+  name: "test-app"
+  port: 8080
+  debug: true
+`
+
+	tmpDir := os.TempDir()
+	yamlPath := filepath.Join(tmpDir, "test_no_env.yml")
+
+	err := os.WriteFile(yamlPath, []byte(yamlContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(yamlPath)
+
+	conf, err := NewConfig()
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+	defer conf.Close()
+
+	err = conf.Load(file.NewSource(file.WithPath(yamlPath)))
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if v := conf.Get("app", "name").String(""); v != "test-app" {
+		t.Errorf("Expected 'test-app', got '%s'", v)
+	}
+
+	if v := conf.Get("app", "port").Int(0); v != 8080 {
+		t.Errorf("Expected 8080, got %d", v)
+	}
+
+	if v := conf.Get("app", "debug").Bool(false); !v {
+		t.Errorf("Expected true, got false")
 	}
 }

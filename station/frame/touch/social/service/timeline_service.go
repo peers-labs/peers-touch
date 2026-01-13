@@ -11,7 +11,7 @@ import (
 )
 
 func GetTimeline(ctx context.Context, req *model.GetTimelineRequest, viewerID uint64) (*model.GetTimelineResponse, error) {
-	logger.Debug(ctx, "GetTimeline", "type", req.Type, "viewerID", viewerID)
+	logger.Info(ctx, "GetTimeline", "type", req.Type, "viewerID", viewerID, "limit", req.Limit)
 
 	limit := int(req.Limit)
 	if limit == 0 {
@@ -29,12 +29,17 @@ func GetTimeline(ctx context.Context, req *model.GetTimelineRequest, viewerID ui
 	var dbPosts []*db.Post
 	var err error
 
-	switch req.Type {
+	timelineType := req.Type
+	
+	switch timelineType {
 	case model.TimelineType_TIMELINE_HOME:
+		logger.Info(ctx, "Fetching home timeline")
 		if viewerID == 0 {
-			return nil, fmt.Errorf("authentication required")
+			logger.Warn(ctx, "Home timeline requested without authentication, falling back to public")
+			dbPosts, err = postRepo.ListPublic(ctx, cursor, limit)
+		} else {
+			dbPosts, err = postRepo.ListByFollowing(ctx, viewerID, cursor, limit)
 		}
-		dbPosts, err = postRepo.ListByFollowing(ctx, viewerID, cursor, limit)
 
 	case model.TimelineType_TIMELINE_USER:
 		if req.UserId == "" {
@@ -44,10 +49,11 @@ func GetTimeline(ctx context.Context, req *model.GetTimelineRequest, viewerID ui
 		dbPosts, err = postRepo.ListByAuthor(ctx, userID, cursor, limit)
 
 	case model.TimelineType_TIMELINE_PUBLIC:
+		logger.Info(ctx, "Fetching public timeline")
 		dbPosts, err = postRepo.ListPublic(ctx, cursor, limit)
 
 	default:
-		return nil, fmt.Errorf("invalid timeline type")
+		return nil, fmt.Errorf("invalid timeline type: %v", timelineType)
 	}
 
 	if err != nil {

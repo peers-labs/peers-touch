@@ -71,6 +71,9 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 	if excludes, ok := l.opts.Context.Value(excludePackagesKey{}).([]string); ok {
 		l.opts.ExcludePackages = excludes
 	}
+	if replacer, ok := l.opts.Context.Value(pkgPathReplacerKey{}).(map[string]string); ok {
+		l.opts.PkgPathReplacer = replacer
+	}
 
 	if l.opts.Formatter != nil {
 		if txtFormatter, ok := l.opts.Formatter.(*logrus.TextFormatter); ok {
@@ -191,11 +194,13 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 
 	// IMPORTANT: Add data-enrichment hooks BEFORE level-split hooks
 	// This ensures request_id/trace_id are added before entry serialization
-	
+
 	// Only add PackageFieldHook when ReportCaller is enabled
 	// because it requires entry.Caller to extract package info
 	if l.opts.ReportCaller {
-		log.AddHook(&PackageFieldHook{})
+		log.AddHook(&PackageFieldHook{
+			PkgPathReplacer: l.opts.PkgPathReplacer,
+		})
 	}
 	log.AddHook(&RequestIDHook{})
 

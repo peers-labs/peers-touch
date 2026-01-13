@@ -30,10 +30,15 @@ class DiscoveryRepository {
   }
 
   /// Fetch timeline using new Social API
-  Future<GetTimelineResponse> fetchTimeline({String? cursor, int limit = 20}) async {
+  Future<GetTimelineResponse> fetchTimeline({
+    TimelineType type = TimelineType.TIMELINE_PUBLIC,
+    String? cursor,
+    int limit = 20,
+  }) async {
     return await _httpService.get<GetTimelineResponse>(
       '/api/v1/social/timeline',
       queryParameters: {
+        'type': type.value,
         if (cursor != null) 'cursor': cursor,
         'limit': limit,
       },

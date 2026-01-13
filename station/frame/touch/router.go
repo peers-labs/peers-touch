@@ -94,6 +94,7 @@ func Routers() []option.Option {
 	routers = append(routers, NewMessageRouter())
 	routers = append(routers, NewMastodonRouter())
 	routers = append(routers, NewSocialRouter())
+	routers = append(routers, NewSessionRouter())
 	return []option.Option{
 		server.WithRouters(routers...),
 	}
@@ -113,15 +114,15 @@ func SuccessResponse(ctx *app.RequestContext, msg string, data interface{}) {
 
 func FailedResponse(ctx *app.RequestContext, err error) {
 	if err != nil {
-		var e *model.Error
+		var e *model.ErrorResponse
 		if errors.As(err, &e) {
 			ctx.JSON(http.StatusBadRequest, e)
 			return
 		}
 
-		ctx.JSON(http.StatusBadRequest, model.UndefinedError(err))
+		ctx.JSON(http.StatusInternalServerError, model.UndefinedError(err))
 		return
 	}
 
-	ctx.JSON(http.StatusBadRequest, model.ErrUndefined)
+	ctx.JSON(http.StatusBadRequest, model.UndefinedError(errors.New("undefined error")))
 }

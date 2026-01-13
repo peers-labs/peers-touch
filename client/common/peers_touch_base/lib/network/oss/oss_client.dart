@@ -3,11 +3,36 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/network/dio/interceptors/auth_interceptor.dart';
+import 'package:peers_touch_base/network/dio/interceptors/logging_interceptor.dart';
 import 'package:peers_touch_base/network/oss/model/oss_file.dart';
+import 'package:peers_touch_base/foundation.dart' if (dart.library.ui) 'package:flutter/foundation.dart';
 
 class OssClient {
   final _httpService = HttpServiceLocator().httpService;
   static const String _basePath = '/sub-oss';
+  
+  late final Dio _jsonDio;
+  
+  OssClient() {
+    final locator = HttpServiceLocator();
+    _jsonDio = Dio(BaseOptions(
+      baseUrl: locator.baseUrl,
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
+      headers: {
+        'Accept': 'application/json',
+      },
+    ));
+    
+    _jsonDio.interceptors.addAll([
+      AuthInterceptor(
+        tokenProvider: locator.tokenProvider,
+        tokenRefresher: locator.tokenRefresher,
+      ),
+      if (kDebugMode) LoggingInterceptor(),
+    ]);
+  }
 
   /// Uploads a file to the OSS subserver.
   /// 
@@ -24,7 +49,8 @@ class OssClient {
         ),
       });
 
-      final response = await _httpService.postResponse(
+      // Use dedicated JSON Dio instance for file upload (no Proto interceptor)
+      final response = await _jsonDio.post(
         '$_basePath/upload',
         data: formData,
       );
@@ -69,11 +95,17 @@ class OssClient {
   /// Endpoint: GET /sub-oss/meta?key=...
   Future<OssFile> getFileMeta(String key) async {
     try {
-      final data = await _httpService.get<Map<String, dynamic>>(
+      final response = await _jsonDio.get(
         '$_basePath/meta',
         queryParameters: {'key': key},
       );
-      return OssFile.fromJson(data);
+      
+      final data = response.data;
+      if (data is! Map) {
+        throw Exception('Invalid metadata response');
+      }
+      
+      return OssFile.fromJson(Map<String, dynamic>.from(data));
     } catch (e) {
       rethrow;
     }

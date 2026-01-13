@@ -47,12 +47,15 @@ class SocialApiService {
   }
 
   Future<GetTimelineResponse> getTimeline({
+    TimelineType type = TimelineType.TIMELINE_PUBLIC,
     String? cursor,
     int limit = 20,
   }) async {
+    print('[SocialApiService] getTimeline called with type=${type.value} (${type.name}), limit=$limit');
     return await _httpService.get<GetTimelineResponse>(
       '/api/v1/social/timeline',
       queryParameters: {
+        'type': type.value,
         if (cursor != null) 'cursor': cursor,
         'limit': limit,
       },

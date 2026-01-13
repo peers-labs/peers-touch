@@ -2,17 +2,15 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/social/service"
-	"google.golang.org/protobuf/proto"
+	"github.com/peers-labs/peers-touch/station/frame/touch/util"
 )
 
 const SubjectContextKey = "auth_subject"
@@ -31,50 +29,29 @@ func getUserID(c context.Context) (uint64, bool) {
 func CreatePost(c context.Context, ctx *app.RequestContext) {
 	userID, exists := getUserID(c)
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
 		return
 	}
 
-	var req model.CreatePostRequest
-	
-	// Check Content-Type and parse accordingly
-	contentType := string(ctx.GetHeader("Content-Type"))
-	if strings.Contains(contentType, model.ContentTypeProtobuf) {
-		// Parse Proto binary
-		body, err := ctx.Body()
-		if err != nil {
-			logger.Error(c, "failed to read body", "error", err)
-			ctx.JSON(http.StatusBadRequest, map[string]string{"error": "failed to read body"})
-			return
-		}
-		if err := proto.Unmarshal(body, &req); err != nil {
-			logger.Error(c, "failed to unmarshal proto", "error", err)
-			ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid proto"})
-			return
-		}
-	} else {
-		// Parse JSON
-		if err := ctx.Bind(&req); err != nil {
-			logger.Error(c, "failed to bind request", "error", err)
-			ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-			return
-		}
+	req, err := util.ReqBind(c, ctx, &model.CreatePostRequest{})
+	if err != nil {
+		return
 	}
 
-	post, err := service.CreatePost(c, &req, userID)
+	post, err := service.CreatePost(c, req, userID)
 	if err != nil {
 		logger.Error(c, "failed to create post", "error", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_CREATE_POST_FAILED, err.Error()))
 		return
 	}
 
-	respondWithProto(c, ctx, http.StatusOK, post)
+	util.RspBack(c, ctx, http.StatusOK, post)
 }
 
 func GetPost(c context.Context, ctx *app.RequestContext) {
 	postID := ctx.Param("id")
 	if postID == "" {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "post_id is required"})
+		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
 		return
 	}
 
@@ -86,54 +63,52 @@ func GetPost(c context.Context, ctx *app.RequestContext) {
 	post, err := service.GetPost(c, postID, viewerID)
 	if err != nil {
 		logger.Error(c, "failed to get post", "error", err)
-		ctx.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		util.RspError(c, ctx, http.StatusNotFound, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_GET_POST_FAILED, err.Error()))
 		return
 	}
 
-	respondWithProto(c, ctx, http.StatusOK, post)
+	util.RspBack(c, ctx, http.StatusOK, post)
 }
 
 func UpdatePost(c context.Context, ctx *app.RequestContext) {
 	userID, exists := getUserID(c)
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
 		return
 	}
 
-	var req model.UpdatePostRequest
-	if err := ctx.Bind(&req); err != nil {
-		logger.Error(c, "failed to bind request", "error", err)
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	req, err := util.ReqBind(c, ctx, &model.UpdatePostRequest{})
+	if err != nil {
 		return
 	}
 
-	post, err := service.UpdatePost(c, &req, userID)
+	post, err := service.UpdatePost(c, req, userID)
 	if err != nil {
 		logger.Error(c, "failed to update post", "error", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UPDATE_POST_FAILED, err.Error()))
 		return
 	}
 
-	respondWithProto(c, ctx, http.StatusOK, post)
+	util.RspBack(c, ctx, http.StatusOK, post)
 }
 
 func DeletePost(c context.Context, ctx *app.RequestContext) {
 	userID, exists := getUserID(c)
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
 		return
 	}
 
 	postID := ctx.Param("id")
 	if postID == "" {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "post_id is required"})
+		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
 		return
 	}
 
 	err := service.DeletePost(c, postID, userID)
 	if err != nil {
 		logger.Error(c, "failed to delete post", "error", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_DELETE_POST_FAILED, err.Error()))
 		return
 	}
 
@@ -143,112 +118,106 @@ func DeletePost(c context.Context, ctx *app.RequestContext) {
 func LikePost(c context.Context, ctx *app.RequestContext) {
 	userID, exists := getUserID(c)
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
 		return
 	}
 
 	postID := ctx.Param("id")
 	if postID == "" {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "post_id is required"})
+		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
 		return
 	}
 
 	resp, err := service.LikePost(c, postID, userID)
 	if err != nil {
 		logger.Error(c, "failed to like post", "error", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_LIKE_POST_FAILED, err.Error()))
 		return
 	}
 
-	respondWithProto(c, ctx, http.StatusOK, resp)
+	util.RspBack(c, ctx, http.StatusOK, resp)
 }
 
 func UnlikePost(c context.Context, ctx *app.RequestContext) {
 	userID, exists := getUserID(c)
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
 		return
 	}
 
 	postID := ctx.Param("id")
 	if postID == "" {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "post_id is required"})
+		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
 		return
 	}
 
 	resp, err := service.UnlikePost(c, postID, userID)
 	if err != nil {
 		logger.Error(c, "failed to unlike post", "error", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNLIKE_POST_FAILED, err.Error()))
 		return
 	}
 
-	respondWithProto(c, ctx, http.StatusOK, resp)
+	util.RspBack(c, ctx, http.StatusOK, resp)
 }
 
 func GetPostLikers(c context.Context, ctx *app.RequestContext) {
-	var req model.GetPostLikersRequest
-	if err := ctx.Bind(&req); err != nil {
-		logger.Error(c, "failed to bind request", "error", err)
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	req, err := util.ReqBind(c, ctx, &model.GetPostLikersRequest{})
+	if err != nil {
 		return
 	}
 
-	resp, err := service.GetPostLikers(c, &req)
+	resp, err := service.GetPostLikers(c, req)
 	if err != nil {
 		logger.Error(c, "failed to get post likers", "error", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_GET_LIKERS_FAILED, err.Error()))
 		return
 	}
 
-	respondWithProto(c, ctx, http.StatusOK, resp)
+	util.RspBack(c, ctx, http.StatusOK, resp)
 }
 
 func RepostPost(c context.Context, ctx *app.RequestContext) {
 	userID, exists := getUserID(c)
 	if !exists {
-		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
 		return
 	}
 
 	postID := ctx.Param("id")
 	if postID == "" {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "post_id is required"})
+		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
 		return
 	}
 
-	var req model.RepostRequest
-	if err := ctx.Bind(&req); err != nil {
+	req, err := util.ReqBind(c, ctx, &model.RepostRequest{})
+	if err != nil {
 		logger.Error(c, "failed to bind request", "error", err)
-		// Allow empty body for simple repost
 	}
 	req.PostId = postID
 
-	resp, err := service.RepostPost(c, &req, userID)
+	resp, err := service.RepostPost(c, req, userID)
 	if err != nil {
 		logger.Error(c, "failed to repost", "error", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_REPOST_FAILED, err.Error()))
 		return
 	}
 
-	respondWithProto(c, ctx, http.StatusOK, resp)
+	util.RspBack(c, ctx, http.StatusOK, resp)
 }
 
 func GetUserPosts(c context.Context, ctx *app.RequestContext) {
 	userID := ctx.Param("userId")
 	if userID == "" {
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "user_id is required"})
+		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_USER_ID_REQUIRED))
 		return
 	}
 
-	var req model.ListPostsRequest
-	if err := ctx.Bind(&req); err != nil {
-		logger.Error(c, "failed to bind request", "error", err)
-		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	req, err := util.ReqBind(c, ctx, &model.ListPostsRequest{})
+	if err != nil {
 		return
 	}
 
-	// Set filter to get posts by specific user
 	if req.Filter == nil {
 		req.Filter = &model.PostFilter{}
 	}
@@ -259,37 +228,12 @@ func GetUserPosts(c context.Context, ctx *app.RequestContext) {
 		viewerID = vID
 	}
 
-	resp, err := service.ListPosts(c, &req, viewerID)
+	resp, err := service.ListPosts(c, req, viewerID)
 	if err != nil {
 		logger.Error(c, "failed to get user posts", "error", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_LIST_POSTS_FAILED, err.Error()))
 		return
 	}
 
-	respondWithProto(c, ctx, http.StatusOK, resp)
-}
-
-func respondWithProto(c context.Context, ctx *app.RequestContext, statusCode int, msg proto.Message) {
-	accept := string(ctx.GetHeader("Accept"))
-
-	if strings.Contains(accept, model.AcceptProtobuf) {
-		data, err := proto.Marshal(msg)
-		if err != nil {
-			logger.Error(c, "failed to marshal protobuf", "error", err)
-			ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
-			return
-		}
-		ctx.Data(statusCode, model.ContentTypeProtobuf, data)
-		return
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		logger.Error(c, "failed to marshal json", "error", err)
-		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
-		return
-	}
-	var result map[string]interface{}
-	json.Unmarshal(data, &result)
-	ctx.JSON(statusCode, result)
+	util.RspBack(c, ctx, http.StatusOK, resp)
 }

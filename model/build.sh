@@ -92,6 +92,21 @@ for file in $DART_PROTO_FILES; do
     protoc $PLUGIN_OPT --dart_out="$DART_OUT" -I"$PROTO_ROOT" "$file"
 done
 
+# Fix import paths in generated Dart files
+echo "Fixing import paths in generated Dart files..."
+find "$DART_OUT/domain" -name "*.pb.dart" -type f -exec sed -i '' \
+  's|package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart|package:peers_touch_base/model/google/protobuf/timestamp.pb.dart|g' {} \;
+find "$DART_OUT/domain" -name "*.pb.dart" -type f -exec sed -i '' \
+  's|package:protobuf/well_known_types/google/protobuf/struct.pb.dart|package:peers_touch_base/model/google/protobuf/struct.pb.dart|g' {} \;
+find "$DART_OUT/domain" -name "*.pb.dart" -type f -exec sed -i '' \
+  's|package:protobuf/well_known_types/google/protobuf/any.pb.dart|package:peers_touch_base/model/google/protobuf/any.pb.dart|g' {} \;
+
+# Fix struct.pb.dart enum imports
+sed -i '' 's|package:protobuf/well_known_types/google/protobuf/struct.pbenum.dart|package:peers_touch_base/model/google/protobuf/struct.pbenum.dart|g' \
+  "$DART_OUT/google/protobuf/struct.pb.dart"
+
+echo "Import paths fixed."
+
 # Protobuf 5.1.0+ supports toProto3Json natively
 
 GO_PROTO_FILES=$(find "$PROTO_ROOT/domain" -name "*.proto" -not -path "*/ai_box/ai_box_message.proto")

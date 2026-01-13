@@ -37,7 +37,7 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL strin
 
 	// If any actors found, return duplicate error
 	if len(existsActors) > 0 {
-		return model.ErrActorActorExists
+		return model.ErrActorExists
 	}
 
 	// Part 1: Generate Keys

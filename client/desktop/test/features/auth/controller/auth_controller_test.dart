@@ -33,15 +33,14 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    LocalStorage.mockInstance = MockLocalStorage();
+    Get.testMode = true;
     try {
-      // Mock NetworkInitializer
       NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
     } catch (_) {}
   });
 
   tearDown(() {
-    LocalStorage.mockInstance = null;
+    Get.reset();
   });
 
   test('selectHighlightedItem populates email when user has email', () {

@@ -1,4 +1,4 @@
-package util
+package validator
 
 import (
 	"encoding/base64"
@@ -8,23 +8,17 @@ import (
 	"unicode/utf8"
 )
 
-// PasswordConfig holds password validation configuration
 type PasswordConfig struct {
-	// Pattern is the regex pattern for password validation
-	Pattern string
-	// MinLength is the minimum password length
+	Pattern   string
 	MinLength int
-	// MaxLength is the maximum password length
 	MaxLength int
 }
 
-// ValidatePassword validates password using the provided configuration
 func ValidatePassword(password string, config *PasswordConfig) error {
 	if password == "" {
 		return errors.New("password cannot be empty")
 	}
 
-	// Use default config if not provided
 	if config == nil {
 		config = &PasswordConfig{
 			Pattern:   `^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]{8,20}$`,
@@ -33,7 +27,6 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 		}
 	}
 
-	// Check length
 	if len(password) < config.MinLength {
 		return errors.New("password is too short")
 	}
@@ -41,7 +34,6 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 		return errors.New("password is too long")
 	}
 
-	// Validate against regex pattern
 	matched, err := regexp.MatchString(config.Pattern, password)
 	if err != nil {
 		return fmt.Errorf("invalid password pattern[%s] configuration: %+v", config.Pattern, err)
@@ -50,7 +42,6 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 		return errors.New("password contains invalid characters")
 	}
 
-	// Check for required character types (numbers, letters, symbols)
 	hasNumber := regexp.MustCompile(`[0-9]`).MatchString(password)
 	hasLetter := regexp.MustCompile(`[a-zA-Z]`).MatchString(password)
 	hasSymbol := regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]`).MatchString(password)
@@ -81,13 +72,11 @@ func ValidatePassword(password string, config *PasswordConfig) error {
 	return nil
 }
 
-// ValidateName validates and encodes name to base64
 func ValidateName(name string) (string, error) {
 	if name == "" {
 		return "", errors.New("name cannot be empty")
 	}
 
-	// Check UTF-8 character count (not byte length)
 	charCount := utf8.RuneCountInString(name)
 	if charCount < 5 {
 		return "", errors.New("name must be at least 5 characters long")
@@ -96,12 +85,10 @@ func ValidateName(name string) (string, error) {
 		return "", errors.New("name must be no more than 20 characters long")
 	}
 
-	// Encode to base64
 	encodedName := base64.StdEncoding.EncodeToString([]byte(name))
 	return encodedName, nil
 }
 
-// DecodeName decodes base64 encoded name back to original string
 func DecodeName(encodedName string) (string, error) {
 	if encodedName == "" {
 		return "", errors.New("encoded name cannot be empty")
@@ -115,13 +102,11 @@ func DecodeName(encodedName string) (string, error) {
 	return string(decodedBytes), nil
 }
 
-// ValidateEmail validates email format using standard regex
 func ValidateEmail(email string) error {
 	if email == "" {
 		return errors.New("email cannot be empty")
 	}
 
-	// Standard email regex pattern
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	if !emailRegex.MatchString(email) {
 		return errors.New("invalid email format")

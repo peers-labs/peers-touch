@@ -3,7 +3,7 @@ package touch
 import (
 	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
-	"github.com/peers-labs/peers-touch/station/frame/touch/util"
+	"github.com/peers-labs/peers-touch/station/frame/touch/validator"
 )
 
 var (
@@ -64,20 +64,20 @@ func GetRouterConfig() *RouterConfig {
 }
 
 // GetPasswordConfig returns the password configuration with default values
-func GetPasswordConfig() *util.PasswordConfig {
+func GetPasswordConfig() *validator.PasswordConfig {
 	config := &touchConfig.Peers.Touch.Security.Password
 
 	// Set default values if not configured
 	if config.Pattern == "" || config.MinLength == 0 || config.MaxLength == 0 {
-		return &util.PasswordConfig{
+		return &validator.PasswordConfig{
 			Pattern:   `^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]{8,20}$`,
 			MinLength: 8,
 			MaxLength: 20,
 		}
 	}
 
-	// Convert to util.PasswordConfig
-	return &util.PasswordConfig{
+	// Convert to validator.PasswordConfig
+	return &validator.PasswordConfig{
 		Pattern:   config.Pattern,
 		MinLength: config.MinLength,
 		MaxLength: config.MaxLength,
@@ -87,5 +87,5 @@ func GetPasswordConfig() *util.PasswordConfig {
 // ValidatePassword validates password using configurable pattern
 func ValidatePassword(password string) error {
 	config := GetPasswordConfig()
-	return util.ValidatePassword(password, config)
+	return validator.ValidatePassword(password, config)
 }
