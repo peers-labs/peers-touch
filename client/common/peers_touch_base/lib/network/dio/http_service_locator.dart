@@ -112,4 +112,10 @@ class HttpServiceLocator {
 
   /// 获取当前BaseURL
   String get baseUrl => _baseUrl;
+  
+  /// 获取 TokenProvider
+  TokenProvider? get tokenProvider => _tokenProvider;
+  
+  /// 获取 TokenRefresher
+  TokenRefresher? get tokenRefresher => _tokenRefresher;
 }

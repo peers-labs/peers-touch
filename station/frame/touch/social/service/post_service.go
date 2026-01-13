@@ -12,6 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/social/converter"
 	"github.com/peers-labs/peers-touch/station/frame/touch/social/id"
 	"github.com/peers-labs/peers-touch/station/frame/touch/social/repository"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )
 
@@ -35,7 +36,12 @@ func init() {
 }
 
 func CreatePost(ctx context.Context, req *model.CreatePostRequest, authorID uint64) (*model.Post, error) {
-	logger.Info(ctx, "CreatePost", "authorID", authorID, "type", req.Type)
+	logger.Info(ctx, "CreatePost", "authorID", authorID, "type", req.Type, "replyTo", req.ReplyToPostId)
+
+	// If this is a reply, create a Comment instead
+	if req.ReplyToPostId != "" {
+		return createComment(ctx, req, authorID)
+	}
 
 	if req.Type == model.PostType_TEXT && req.GetText() == nil {
 		return nil, fmt.Errorf("text content is required for TEXT post")
@@ -60,6 +66,15 @@ func CreatePost(ctx context.Context, req *model.CreatePostRequest, authorID uint
 		if err := tx.Create(dbContent).Error; err != nil {
 			return err
 		}
+
+		// Increment parent post's comments count if this is a reply
+		if req.ReplyToPostId != "" {
+			parentID := parseID(req.ReplyToPostId)
+			if err := tx.Model(&db.Post{}).Where("id = ?", parentID).UpdateColumn("comments_count", gorm.Expr("comments_count + 1")).Error; err != nil {
+				logger.Warn(ctx, "failed to increment parent comments count", "error", err)
+			}
+		}
+
 		return nil
 	})
 
@@ -77,6 +92,79 @@ func CreatePost(ctx context.Context, req *model.CreatePostRequest, authorID uint
 	}
 
 	logger.Info(ctx, "CreatePost success", "postID", post.Id)
+	return post, nil
+}
+
+func createComment(ctx context.Context, req *model.CreatePostRequest, authorID uint64) (*model.Post, error) {
+	postID := parseID(req.ReplyToPostId)
+
+	// Get text content
+	var content string
+	if req.Type == model.PostType_TEXT && req.GetText() != nil {
+		content = req.GetText().Text
+	} else {
+		return nil, fmt.Errorf("only text comments are supported")
+	}
+
+	comment := &db.Comment{
+		ID:        id.Next(),
+		PostID:    postID,
+		AuthorID:  authorID,
+		Content:   content,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	err := gormDB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(comment).Error; err != nil {
+			return err
+		}
+
+		// Increment post's comments count
+		if err := tx.Model(&db.Post{}).Where("id = ?", postID).UpdateColumn("comments_count", gorm.Expr("comments_count + 1")).Error; err != nil {
+			logger.Warn(ctx, "failed to increment comments count", "error", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		logger.Error(ctx, "failed to create comment", "error", err)
+		return nil, err
+	}
+
+	// Load author info
+	if err := gormDB.Preload("Author").First(comment, comment.ID).Error; err != nil {
+		logger.Warn(ctx, "failed to load comment author", "error", err)
+	}
+
+	// Convert comment to Post proto (for now, to maintain API compatibility)
+	post := &model.Post{
+		Id:        fmt.Sprintf("%d", comment.ID),
+		AuthorId:  fmt.Sprintf("%d", comment.AuthorID),
+		Type:      model.PostType_TEXT,
+		CreatedAt: timestamppb.New(comment.CreatedAt),
+		UpdatedAt: timestamppb.New(comment.UpdatedAt),
+		Content: &model.Post_TextPost{
+			TextPost: &model.TextPost{
+				Text: comment.Content,
+			},
+		},
+		Stats: &model.PostStats{
+			LikesCount: comment.LikesCount,
+		},
+	}
+
+	if comment.Author != nil {
+		post.Author = &model.PostAuthor{
+			Id:          fmt.Sprintf("%d", comment.Author.ID),
+			Username:    comment.Author.PreferredUsername,
+			DisplayName: comment.Author.Name,
+			AvatarUrl:   comment.Author.Icon,
+		}
+	}
+
+	logger.Info(ctx, "CreateComment success", "commentID", comment.ID, "postID", postID)
 	return post, nil
 }
 
@@ -212,8 +300,8 @@ func LikePost(ctx context.Context, postID string, userID uint64) (*model.LikePos
 
 	logger.Info(ctx, "LikePost success", "postID", postID)
 	return &model.LikePostResponse{
-		Success:        true,
-		NewLikesCount:  count,
+		Success:       true,
+		NewLikesCount: count,
 	}, nil
 }
 
@@ -250,8 +338,8 @@ func UnlikePost(ctx context.Context, postID string, userID uint64) (*model.Unlik
 
 	logger.Info(ctx, "UnlikePost success", "postID", postID)
 	return &model.UnlikePostResponse{
-		Success:        true,
-		NewLikesCount:  count,
+		Success:       true,
+		NewLikesCount: count,
 	}, nil
 }
 
@@ -330,7 +418,7 @@ func RepostPost(ctx context.Context, req *model.RepostRequest, userID uint64) (*
 	logger.Info(ctx, "RepostPost", "postID", req.PostId, "userID", userID)
 
 	originalPostID := parseID(req.PostId)
-	
+
 	// Check if original post exists
 	_, err := postRepo.GetByID(ctx, originalPostID)
 	if err != nil {
@@ -342,7 +430,7 @@ func RepostPost(ctx context.Context, req *model.RepostRequest, userID uint64) (*
 	if req.Comment != nil {
 		comment = *req.Comment
 	}
-	
+
 	createReq := &model.CreatePostRequest{
 		Type:       model.PostType_REPOST,
 		Visibility: model.PostVisibility_PUBLIC,

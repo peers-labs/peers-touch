@@ -3,7 +3,7 @@ package model
 import (
 	"strings"
 
-	"github.com/peers-labs/peers-touch/station/frame/touch/util"
+	"github.com/peers-labs/peers-touch/station/frame/touch/validator"
 )
 
 type WebFingerResource string
@@ -57,24 +57,24 @@ type ActorLoginParams struct {
 
 func (actor ActorSignParams) Check() error {
 	// Validate and encode name (5-20 characters, base64 encoded)
-	encodedName, err := util.ValidateName(actor.Name)
+	encodedName, err := validator.ValidateName(actor.Name)
 	if err != nil {
 		return err
 	}
 	actor.Name = encodedName // Update to base64 encoded version
 
 	// Validate email format
-	if err := util.ValidateEmail(actor.Email); err != nil {
+	if err := validator.ValidateEmail(actor.Email); err != nil {
 		return ErrActorInvalidEmail
 	}
 
 	// Validate password using default pattern
-	config := &util.PasswordConfig{
+	config := &validator.PasswordConfig{
 		Pattern:   DefaultPasswordPattern,
 		MinLength: DefaultPasswordMinLength,
 		MaxLength: DefaultPasswordMaxLength,
 	}
-	if err := util.ValidatePassword(actor.Password, config); err != nil {
+	if err := validator.ValidatePassword(actor.Password, config); err != nil {
 		return ErrActorInvalidPassport.ReplaceMsg(err.Error())
 	}
 
@@ -87,7 +87,7 @@ func (actor ActorLoginParams) Check() error {
 		return ErrActorInvalidEmail
 	}
 	if strings.Contains(val, "@") {
-		if err := util.ValidateEmail(val); err != nil {
+		if err := validator.ValidateEmail(val); err != nil {
 			return ErrActorInvalidEmail
 		}
 	} else {
@@ -98,12 +98,12 @@ func (actor ActorLoginParams) Check() error {
 	}
 
 	// Validate password using default pattern
-	config := &util.PasswordConfig{
+	config := &validator.PasswordConfig{
 		Pattern:   DefaultPasswordPattern,
 		MinLength: DefaultPasswordMinLength,
 		MaxLength: DefaultPasswordMaxLength,
 	}
-	if err := util.ValidatePassword(actor.Password, config); err != nil {
+	if err := validator.ValidatePassword(actor.Password, config); err != nil {
 		return ErrActorInvalidPassword
 	}
 

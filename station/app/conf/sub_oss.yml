@@ -6,5 +6,5 @@ peers:
           enabled: true
           path: /sub-oss
           rds-name: oss
-          store-path: /tmp/oss
+          store-path: ${PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH}
           sign-secret: ""
