@@ -17,6 +17,8 @@ type Options struct {
 	// Package filtering
 	IncludePackages []string
 	ExcludePackages []string
+	// Package path replacer (prefix -> replacement)
+	PkgPathReplacer map[string]string
 	// Exit Function to call when FatalLevel log
 	ExitFunc func(int)
 }
@@ -30,6 +32,7 @@ type withoutQuoteKey struct{}
 type timestampFormat struct{}
 type includePackagesKey struct{}
 type excludePackagesKey struct{}
+type pkgPathReplacerKey struct{}
 
 func TextFormatter(formatter *logrus.TextFormatter) logger.Option {
 	return logger.SetOption(formatterKey{}, formatter)
@@ -73,4 +76,10 @@ func IncludePackages(pkgs ...string) logger.Option {
 // ExcludePackages sets denied package patterns (prefix or "*" suffix supported)
 func ExcludePackages(pkgs ...string) logger.Option {
 	return logger.SetOption(excludePackagesKey{}, pkgs)
+}
+
+// PkgPathReplacer sets package path prefix replacements
+// Example: {"github.com/peers-labs/peers-touch/station/frame": "@frame"}
+func PkgPathReplacer(replacer map[string]string) logger.Option {
+	return logger.SetOption(pkgPathReplacerKey{}, replacer)
 }

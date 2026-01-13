@@ -3,6 +3,7 @@ package logrus
 import (
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	ls "github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
@@ -72,7 +73,9 @@ func (f FilteringFormatter) Format(entry *ls.Entry) ([]byte, error) {
 }
 
 // PackageFieldHook injects pkg and pkg_path fields into entries.
-type PackageFieldHook struct{}
+type PackageFieldHook struct {
+	PkgPathReplacer map[string]string
+}
 
 func (h *PackageFieldHook) Levels() []ls.Level { return ls.AllLevels }
 
@@ -80,7 +83,7 @@ func (h *PackageFieldHook) Fire(e *ls.Entry) error {
 	pkgPath := callerPackagePath(e)
 	if e.Data != nil {
 		e.Data["pkg"] = tailPackage(pkgPath)
-		e.Data["pkg_path"] = pkgPath
+		e.Data["pkg_path"] = replacePkgPath(pkgPath, h.PkgPathReplacer)
 	}
 	return nil
 }
@@ -109,6 +112,33 @@ func tailPackage(pkgPath string) string {
 		return pkgPath[idx+1:]
 	}
 	// fall back to raw path
+	return pkgPath
+}
+
+// replacePkgPath replaces package path prefixes based on the replacer map.
+// Matches longest prefix first to avoid conflicts.
+func replacePkgPath(pkgPath string, replacer map[string]string) string {
+	if len(replacer) == 0 {
+		return pkgPath
+	}
+
+	// Sort keys by length (longest first) for proper prefix matching
+	keys := make([]string, 0, len(replacer))
+	for k := range replacer {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return len(keys[i]) > len(keys[j])
+	})
+
+	// Try to match and replace
+	for _, prefix := range keys {
+		if strings.HasPrefix(pkgPath, prefix) {
+			replacement := replacer[prefix]
+			return replacement + strings.TrimPrefix(pkgPath, prefix)
+		}
+	}
+
 	return pkgPath
 }
 

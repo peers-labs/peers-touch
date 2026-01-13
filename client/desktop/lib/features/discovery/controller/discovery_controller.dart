@@ -220,7 +220,7 @@ class DiscoveryController extends GetxController {
           return _convertPostsToDiscoveryItems(userPostsResponse.posts);
         case 'Home':
           // Use new Social API timeline
-          final timelineResponse = await _repo.fetchTimeline();
+          final timelineResponse = await _repo.fetchTimeline(type: TimelineType.TIMELINE_PUBLIC);
           return _convertPostsToDiscoveryItems(timelineResponse.posts);
         default:
           return []; // TODO: Implement other tabs (Radar/Follow/etc)

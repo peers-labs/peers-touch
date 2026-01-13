@@ -185,10 +185,15 @@ func getCaller() *runtime.Frame {
 	for f, again := frames.Next(); again; f, again = frames.Next() {
 		pkg := getPackageName(f.Function)
 
-		// If the caller isn't part of this package, we're done
-		if pkg != logrusPackage {
-			return &f
+		// Skip logrus internal packages and logger wrapper packages
+		if pkg == logrusPackage ||
+			pkg == "github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus" ||
+			pkg == "github.com/peers-labs/peers-touch/station/frame/core/logger" {
+			continue
 		}
+
+		// Found the real caller
+		return &f
 	}
 
 	// if we got here, we failed to find the caller's context

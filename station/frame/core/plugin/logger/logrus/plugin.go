@@ -12,7 +12,8 @@ var options struct {
 	Peers struct {
 		Logger struct {
 			scfg.Logger
-			Logrus struct {
+			PkgPathReplacer map[string]string `pconf:"pkg-path-replacer"`
+			Logrus          struct {
 				SplitLevel      bool     `pconf:"split-level"`
 				ReportCaller    bool     `pconf:"report-caller"`
 				Formatter       string   `pconf:"formatter"`
@@ -44,6 +45,10 @@ func (l *logrusLogPlugin) Options() []logger.Option {
 
 	if loggerCfg.CallerSkipCount > 0 {
 		opts = append(opts, logger.WithCallerSkipCount(loggerCfg.CallerSkipCount))
+	}
+
+	if len(loggerCfg.PkgPathReplacer) > 0 {
+		opts = append(opts, PkgPathReplacer(loggerCfg.PkgPathReplacer))
 	}
 
 	lc := options.Peers.Logger.Logrus
