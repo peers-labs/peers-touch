@@ -602,6 +602,24 @@ abstract class AppLocalizations {
   /// **'Advanced Settings'**
   String get advancedSettings;
 
+  /// No description provided for @storageDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage Directory'**
+  String get storageDirectory;
+
+  /// No description provided for @storageDirectoryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Application data storage location'**
+  String get storageDirectoryDescription;
+
+  /// No description provided for @openDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Directory'**
+  String get openDirectory;
+
   /// No description provided for @clearData.
   ///
   /// In en, this message translates to:

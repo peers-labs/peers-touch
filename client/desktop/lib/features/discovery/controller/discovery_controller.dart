@@ -279,16 +279,16 @@ class DiscoveryController extends GetxController {
         default:
           text = '';
       }
+      LoggingService.debug('Discovery: Post ${post.id} - author=${post.author.username}, authorId=${post.author.id}, avatarUrl="${post.author.avatarUrl}" (isEmpty: ${post.author.avatarUrl.isEmpty})');
       
-      return DiscoveryItem(
+      final item = DiscoveryItem(
         id: post.id,
         objectId: post.id,
         title: text.isNotEmpty ? text : 'Post',
         content: text,
         author: post.author.username,
-        authorAvatar: post.author.avatarUrl.isNotEmpty 
-            ? post.author.avatarUrl 
-            : 'https://i.pravatar.cc/150?u=${post.author.username}',
+        authorId: post.author.id,
+        authorAvatar: post.author.avatarUrl,
         timestamp: post.createdAt.toDateTime(),
         type: 'Create',
         images: mediaUrls,
@@ -298,6 +298,8 @@ class DiscoveryController extends GetxController {
         isLiked: post.interaction.isLiked,
         comments: [],
       );
+      
+      return item;
     }).toList();
   }
 
@@ -313,11 +315,14 @@ class DiscoveryController extends GetxController {
         
         for (var obj in commentsList) {
           if (obj is Map) {
+            String authorId = '';
             String authorName = 'Unknown';
             String authorAvatar = '';
             
             if (obj['attributedTo'] is Map) {
               final attr = obj['attributedTo'] as Map;
+              
+              authorId = attr['id']?.toString() ?? '';
               
               final nameField = attr['name'];
               if (nameField is String) {
@@ -360,12 +365,13 @@ class DiscoveryController extends GetxController {
               content = contentField.values.firstOrNull?.toString() ?? '';
             }
             
-            LoggingService.debug('loadComments: Parsed comment - author: $authorName, content: $content');
+            LoggingService.debug('loadComments: Parsed comment - authorId: $authorId, author: $authorName, content: $content');
             
             comments.add(DiscoveryComment(
               id: obj['id']?.toString() ?? '',
+              authorId: authorId,
               authorName: authorName,
-              authorAvatar: authorAvatar.isNotEmpty ? authorAvatar : 'https://i.pravatar.cc/150?u=$authorName',
+              authorAvatar: authorAvatar,
               content: content,
               timestamp: DateTime.tryParse(obj['published']?.toString() ?? '') ?? DateTime.now(),
             ));
@@ -414,10 +420,9 @@ class DiscoveryController extends GetxController {
       // Add comment to parent.comments
       final newComment = DiscoveryComment(
         id: post.id,
+        authorId: post.author.id,
         authorName: post.author.username,
-        authorAvatar: post.author.avatarUrl.isNotEmpty 
-            ? post.author.avatarUrl 
-            : 'https://i.pravatar.cc/150?u=${post.author.username}',
+        authorAvatar: post.author.avatarUrl,
         content: content,
         timestamp: post.createdAt.toDateTime(),
       );
@@ -569,17 +574,15 @@ class DiscoveryController extends GetxController {
           list.add(FriendItem(
             id: id,
             name: name,
-            avatarUrl: avatarUrl.isNotEmpty ? avatarUrl : 'https://i.pravatar.cc/150?u=$name',
-            timeOrStatus: '', // Status not always available
+            avatarUrl: avatarUrl,
+            timeOrStatus: '',
             isOnline: false,
           ));
         } else if (item is String) {
-           // Handle string IRI (fetch profile?)
-           // For now, just show ID
            list.add(FriendItem(
              id: item,
              name: item.split('/').last,
-             avatarUrl: 'https://i.pravatar.cc/150?u=$item',
+             avatarUrl: '',
              timeOrStatus: '',
            ));
         }

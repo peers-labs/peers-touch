@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
+import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/profile/binding/profile_binding.dart';
@@ -9,7 +11,6 @@ import 'package:peers_touch_desktop/features/settings/controller/setting_control
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
-import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 /// 个人主页模块注册
 class ProfileModule {
@@ -28,6 +29,12 @@ class ProfileModule {
        return Obx(() {
          final d = controller.detail.value;
          
+         if (d != null) {
+           LoggingService.debug('Avatar Block: id=${d.id}, handle=${d.handle}, avatarUrl=${d.avatarUrl}');
+         } else {
+           LoggingService.debug('Avatar Block: detail is null');
+         }
+         
          return GestureDetector(
            behavior: HitTestBehavior.opaque,
            onTap: () => Get.find<ShellController>().openRightPanelWithOptions(
@@ -37,28 +44,17 @@ class ProfileModule {
              clearCenter: true,
            ),
            child: Container(
-             height: UIKit.avatarBlockHeight,
-             color: tokens?.bgLevel2 ?? theme.colorScheme.surface,
-             child: Center(
-               child: ClipRRect(
-                 borderRadius: BorderRadius.circular(UIKit.radiusLg(context)),
-                 child: Container(
-                   width: 40,
-                   height: 40,
-                   color: theme.colorScheme.surfaceContainerHighest,
-                   child: PeersImage(
-                     src: d?.avatarUrl,
-                     fit: BoxFit.cover,
-                     error: Icon(
-                       Icons.person,
-                       color: tokens?.textPrimary ?? theme.colorScheme.onSurface,
-                       size: 28,
-                     ),
-                   ),
-                 ),
-               ),
-             ),
-           ),
+            height: UIKit.avatarBlockHeight,
+            color: tokens?.bgLevel2 ?? theme.colorScheme.surface,
+            child: Center(
+                child: Avatar(
+                  actorId: d?.id ?? '',
+                  avatarUrl: d?.avatarUrl,
+                  fallbackName: d?.handle ?? 'User',
+                  radius: 20,
+                ),
+              ),
+          ),
          );
        });
      });
