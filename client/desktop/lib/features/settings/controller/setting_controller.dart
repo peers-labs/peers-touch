@@ -6,11 +6,13 @@ import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_impl.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/storage/file_storage_manager.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/core/services/setting_manager.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_search_result.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingController extends GetxController {
   final SettingManager _settingManager = SettingManager();
@@ -53,6 +55,41 @@ class SettingController extends GetxController {
     // Default select first section
     if (sections.isNotEmpty) {
       selectedSection.value = sections.first.id;
+    }
+    
+    // Load storage directory path
+    _loadStorageDirectory();
+  }
+  
+  /// Load storage directory path
+  Future<void> _loadStorageDirectory() async {
+    try {
+      final fileStorageManager = FileStorageManager();
+      final supportDir = await fileStorageManager.getBaseDirectory(StorageLocation.support);
+      
+      final sectionIdx = sections.indexWhere((s) => s.id == 'advanced_design');
+      if (sectionIdx != -1) {
+        final section = sections[sectionIdx];
+        final itemIdx = section.items.indexWhere((i) => i.id == 'storage_directory');
+        if (itemIdx != -1) {
+          final currentItem = section.items[itemIdx];
+          section.items[itemIdx] = SettingItem(
+            id: currentItem.id,
+            title: currentItem.title,
+            description: currentItem.description,
+            icon: currentItem.icon,
+            type: currentItem.type,
+            value: supportDir.path,
+            options: currentItem.options,
+            placeholder: currentItem.placeholder,
+            onTap: currentItem.onTap,
+            onChanged: currentItem.onChanged,
+          );
+          sections.refresh();
+        }
+      }
+    } catch (e) {
+      LoggingService.error('Failed to load storage directory: $e');
     }
   }
   
@@ -294,5 +331,22 @@ class SettingController extends GetxController {
   bool _isSensitive(String itemId) {
     final id = itemId.toLowerCase();
     return id.contains('token') || id.contains('secret') || id.contains('password');
+  }
+  
+  /// Open storage directory in file manager
+  Future<void> openStorageDirectory() async {
+    try {
+      final fileStorageManager = FileStorageManager();
+      final supportDir = await fileStorageManager.getBaseDirectory(StorageLocation.support);
+      final uri = Uri.file(supportDir.path);
+      
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        LoggingService.warning('Cannot open directory: ${supportDir.path}');
+      }
+    } catch (e) {
+      LoggingService.error('Failed to open storage directory: $e');
+    }
   }
 }

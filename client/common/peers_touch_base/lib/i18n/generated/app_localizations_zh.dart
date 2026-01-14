@@ -273,6 +273,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get advancedSettings => '高级设置';
 
   @override
+  String get storageDirectory => '存储目录';
+
+  @override
+  String get storageDirectoryDescription => '应用数据存储位置';
+
+  @override
+  String get openDirectory => '打开目录';
+
+  @override
   String get clearData => '清空数据';
 
   @override

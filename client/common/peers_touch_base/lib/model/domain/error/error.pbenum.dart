@@ -89,6 +89,14 @@ class ErrorCode extends $pb.ProtobufEnum {
       ErrorCode._(30012, _omitEnumNames ? '' : 'ERROR_CODE_GET_LIKERS_FAILED');
   static const ErrorCode ERROR_CODE_GET_TIMELINE_FAILED = ErrorCode._(
       30013, _omitEnumNames ? '' : 'ERROR_CODE_GET_TIMELINE_FAILED');
+  static const ErrorCode ERROR_CODE_COMMENT_ID_REQUIRED = ErrorCode._(
+      30014, _omitEnumNames ? '' : 'ERROR_CODE_COMMENT_ID_REQUIRED');
+  static const ErrorCode ERROR_CODE_CREATE_COMMENT_FAILED = ErrorCode._(
+      30015, _omitEnumNames ? '' : 'ERROR_CODE_CREATE_COMMENT_FAILED');
+  static const ErrorCode ERROR_CODE_GET_COMMENTS_FAILED = ErrorCode._(
+      30016, _omitEnumNames ? '' : 'ERROR_CODE_GET_COMMENTS_FAILED');
+  static const ErrorCode ERROR_CODE_DELETE_COMMENT_FAILED = ErrorCode._(
+      30017, _omitEnumNames ? '' : 'ERROR_CODE_DELETE_COMMENT_FAILED');
 
   static const $core.List<ErrorCode> values = <ErrorCode>[
     ERROR_CODE_UNSPECIFIED,
@@ -124,6 +132,10 @@ class ErrorCode extends $pb.ProtobufEnum {
     ERROR_CODE_REPOST_FAILED,
     ERROR_CODE_GET_LIKERS_FAILED,
     ERROR_CODE_GET_TIMELINE_FAILED,
+    ERROR_CODE_COMMENT_ID_REQUIRED,
+    ERROR_CODE_CREATE_COMMENT_FAILED,
+    ERROR_CODE_GET_COMMENTS_FAILED,
+    ERROR_CODE_DELETE_COMMENT_FAILED,
   ];
 
   static final $core.Map<$core.int, ErrorCode> _byValue =

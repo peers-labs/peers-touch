@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
-import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/peers_touch_base.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
-import 'package:peers_touch_desktop/features/discovery/view/components/discovery_avatar.dart';
 
 class DiscoveryContentItem extends StatelessWidget {
 
@@ -177,11 +176,12 @@ class DiscoveryContentItem extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: Row(
         children: [
-          DiscoveryAvatar(
-            url: item.authorAvatar,
-            fallbackName: item.author,
-            radius: 12,
-          ),
+          Avatar(
+              actorId: item.authorId,
+              avatarUrl: item.authorAvatar,
+              fallbackName: item.author,
+              radius: 20,
+            ),
           const SizedBox(width: 8),
           const Spacer(),
           
@@ -249,21 +249,17 @@ class DiscoveryContentItem extends StatelessWidget {
   }
 
   Widget _buildCommentsSection(BuildContext context) {
-    // Get current user avatar
-    String myAvatar = 'https://i.pravatar.cc/150?u=me';
+    String myActorId = '';
+    String myName = 'Me';
+    String? myAvatarUrl;
+    
     if (Get.isRegistered<GlobalContext>()) {
       final ctx = Get.find<GlobalContext>();
       final session = ctx.currentSession;
-      
       if (session != null) {
-        final avatarUrl = session['avatarUrl'] as String?;
-        if (avatarUrl != null && avatarUrl.isNotEmpty) {
-          myAvatar = avatarUrl;
-          if (myAvatar.startsWith('/')) {
-            final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
-            myAvatar = '$baseUrl$myAvatar';
-          }
-        }
+        myActorId = session['actorId']?.toString() ?? '';
+        myName = session['handle']?.toString() ?? 'Me';
+        myAvatarUrl = session['avatarUrl']?.toString();
       }
     }
 
@@ -282,9 +278,11 @@ class DiscoveryContentItem extends StatelessWidget {
           // Input
           Row(
             children: [
-              CircleAvatar(
+              Avatar(
+                actorId: myActorId,
+                avatarUrl: myAvatarUrl,
+                fallbackName: myName,
                 radius: 16,
-                backgroundImage: NetworkImage(myAvatar),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -370,8 +368,9 @@ class DiscoveryContentItem extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DiscoveryAvatar(
-            url: comment.authorAvatar,
+          Avatar(
+            actorId: comment.authorId,
+            avatarUrl: comment.authorAvatar,
             fallbackName: comment.authorName,
             radius: 14,
           ),

@@ -13,7 +13,7 @@
 import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
-import 'package:protobuf/well_known_types/google/protobuf/any.pb.dart' as $1;
+import 'package:peers_touch_base/model/google/protobuf/any.pb.dart' as $1;
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart'
     as $0;
 

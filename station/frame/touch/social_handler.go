@@ -84,5 +84,23 @@ func GetSocialHandlers() []SocialHandlerInfo {
 			Method:    server.GET,
 			Wrappers:  []server.Wrapper{commonWrapper},
 		},
+		{
+			RouterURL: RouterURLSocialPostComments,
+			Handler:   handler.GetPostComments,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper},
+		},
+		{
+			RouterURL: RouterURLSocialPostComments,
+			Handler:   handler.CreateComment,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
+		},
+		{
+			RouterURL: RouterURLSocialComment,
+			Handler:   handler.DeleteComment,
+			Method:    server.DELETE,
+			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
+		},
 	}
 }

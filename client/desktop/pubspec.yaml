@@ -46,6 +46,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   connectivity_plus: ^7.0.0
   flutter_svg: ^2.0.10+1
+  url_launcher: ^6.3.1
   
   # Local packages
   peers_touch_base:

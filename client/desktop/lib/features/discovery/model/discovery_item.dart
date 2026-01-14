@@ -2,12 +2,14 @@ class DiscoveryComment {
 
   DiscoveryComment({
     required this.id,
+    required this.authorId,
     required this.authorName,
     required this.authorAvatar,
     required this.content,
     required this.timestamp,
   });
   final String id;
+  final String authorId;
   final String authorName;
   final String authorAvatar;
   final String content;
@@ -24,6 +26,7 @@ class DiscoveryItem {
     required this.author,
     required this.timestamp,
     required this.type,
+    this.authorId = '',
     this.authorAvatar = '',
     this.images = const [],
     this.likesCount = 0,
@@ -37,6 +40,7 @@ class DiscoveryItem {
   final String title;
   final String content;
   final String author;
+  final String authorId;
   final String authorAvatar;
   final DateTime timestamp;
   final String type; // 'post', 'group', 'user'
