@@ -2,6 +2,10 @@ package repository
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
@@ -78,6 +82,38 @@ func (r *postRepository) ListByAuthor(ctx context.Context, authorID uint64, curs
 		Find(&posts).Error
 
 	return posts, err
+}
+
+func ParseCursor(encoded string) (*Cursor, error) {
+	decoded, err := base64.URLEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, err
+	}
+
+	parts := strings.Split(string(decoded), "_")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid cursor format")
+	}
+
+	id, err := strconv.ParseUint(parts[0], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	timestamp, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Cursor{
+		ID:        id,
+		CreatedAt: time.Unix(timestamp, 0),
+	}, nil
+}
+
+func EncodeCursor(id uint64, createdAt time.Time) string {
+	cursor := fmt.Sprintf("%d_%d", id, createdAt.Unix())
+	return base64.URLEncoding.EncodeToString([]byte(cursor))
 }
 
 func (r *postRepository) ListByIDs(ctx context.Context, ids []uint64) ([]*db.Post, error) {

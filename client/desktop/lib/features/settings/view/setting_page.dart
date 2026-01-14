@@ -427,6 +427,7 @@ class SettingPage extends StatelessWidget {
                           ),
                         ),
                         style: TextStyle(color: tokens.textPrimary),
+                        readOnly: item.id == 'storage_directory',
                         onChanged: (value) {
                           controller.updateSettingValue(sectionId, item.id, value);
                           item.onChanged?.call(value);
@@ -470,6 +471,21 @@ class SettingPage extends StatelessWidget {
                       minimumSize: Size(UIKit.buttonMinWidthSm, UIKit.controlHeightMd),
                     ),
                     child: Text(l.test),
+                  ),
+                ),
+              ],
+              if (item.id == 'storage_directory') ...[
+                SizedBox(width: UIKit.spaceSm(context)),
+                SizedBox(
+                  height: UIKit.controlHeightMd,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await controller.openStorageDirectory();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: Size(UIKit.buttonMinWidthSm, UIKit.controlHeightMd),
+                    ),
+                    child: Text(l.openDirectory),
                   ),
                 ),
               ],

@@ -296,3 +296,31 @@ func parseID(idStr string) uint64 {
 	fmt.Sscanf(idStr, "%d", &id)
 	return id
 }
+
+func CommentToProto(dbComment *db.Comment) *model.Comment {
+	if dbComment == nil {
+		return nil
+	}
+
+	comment := &model.Comment{
+		Id:           fmt.Sprintf("%d", dbComment.ID),
+		PostId:       fmt.Sprintf("%d", dbComment.PostID),
+		AuthorId:     fmt.Sprintf("%d", dbComment.AuthorID),
+		Content:      dbComment.Content,
+		CreatedAt:    timestamppb.New(dbComment.CreatedAt),
+		UpdatedAt:    timestamppb.New(dbComment.UpdatedAt),
+		LikesCount:   dbComment.LikesCount,
+		RepliesCount: dbComment.RepliesCount,
+	}
+
+	if dbComment.Author != nil {
+		comment.Author = &model.PostAuthor{
+			Id:          fmt.Sprintf("%d", dbComment.Author.ID),
+			Username:    dbComment.Author.PreferredUsername,
+			DisplayName: dbComment.Author.Name,
+			AvatarUrl:   dbComment.Author.Icon,
+		}
+	}
+
+	return comment
+}

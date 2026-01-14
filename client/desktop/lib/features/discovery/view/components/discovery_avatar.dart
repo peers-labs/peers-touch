@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 /// A standardized Avatar component for the Discovery feature.
 /// Handles:
@@ -17,25 +18,35 @@ class DiscoveryAvatar extends StatelessWidget {
   final String fallbackName;
   final double radius;
 
+  String _getFullUrl(String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    if (url.startsWith('/')) {
+      final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+      return '$baseUrl$url';
+    }
+    return url;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 1. Empty State Check
     if (url == null || url!.isEmpty) {
       return _buildPlaceholder();
     }
 
+    final fullUrl = _getFullUrl(url!);
+
     return ClipOval(
       child: Image.network(
-        url!,
+        fullUrl,
         width: radius * 2,
         height: radius * 2,
         fit: BoxFit.cover,
-        // 2. Loading State
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return _buildSkeleton();
         },
-        // 3. Error State
         errorBuilder: (context, error, stackTrace) {
           return _buildPlaceholder();
         },

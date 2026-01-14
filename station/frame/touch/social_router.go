@@ -5,14 +5,16 @@ import (
 )
 
 const (
-	RouterURLSocialPosts        RouterPath = "/api/v1/social/posts"
-	RouterURLSocialPost         RouterPath = "/api/v1/social/posts/:id"
-	RouterURLSocialPostLike     RouterPath = "/api/v1/social/posts/:id/like"
-	RouterURLSocialPostUnlike   RouterPath = "/api/v1/social/posts/:id/unlike"
-	RouterURLSocialPostRepost   RouterPath = "/api/v1/social/posts/:id/repost"
-	RouterURLSocialPostLikers   RouterPath = "/api/v1/social/posts/:id/likers"
-	RouterURLSocialTimeline     RouterPath = "/api/v1/social/timeline"
-	RouterURLSocialUserPosts    RouterPath = "/api/v1/social/users/:userId/posts"
+	RouterURLSocialPosts         RouterPath = "/api/v1/social/posts"
+	RouterURLSocialPost          RouterPath = "/api/v1/social/posts/:id"
+	RouterURLSocialPostLike      RouterPath = "/api/v1/social/posts/:id/like"
+	RouterURLSocialPostUnlike    RouterPath = "/api/v1/social/posts/:id/unlike"
+	RouterURLSocialPostRepost    RouterPath = "/api/v1/social/posts/:id/repost"
+	RouterURLSocialPostLikers    RouterPath = "/api/v1/social/posts/:id/likers"
+	RouterURLSocialPostComments  RouterPath = "/api/v1/social/posts/:id/comments"
+	RouterURLSocialComment       RouterPath = "/api/v1/social/comments/:commentId"
+	RouterURLSocialTimeline      RouterPath = "/api/v1/social/timeline"
+	RouterURLSocialUserPosts     RouterPath = "/api/v1/social/users/:userId/posts"
 )
 
 type SocialRouters struct{}

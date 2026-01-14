@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/storage/file_storage_manager.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/app/routes/app_routes.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
@@ -37,6 +38,9 @@ class AppInitializer {
 
       // Drift database is lazy loaded, no explicit init needed for LocalStorage
       LoggingService.info('Local storage initialized (lazy)');
+      
+      // Log application data storage directory
+      await _logStorageDirectories();
 
       // Initialize window manager
       await WindowOptionsManager.initializeWindowManager();
@@ -138,6 +142,22 @@ class AppInitializer {
       await LocalStorage().remove('email');
     } catch (e) {
       LoggingService.error('Failed to clear auth data: $e');
+    }
+  }
+
+  Future<void> _logStorageDirectories() async {
+    try {
+      final fileStorageManager = FileStorageManager();
+      final supportDir = await fileStorageManager.getBaseDirectory(StorageLocation.support);
+      final documentsDir = await fileStorageManager.getBaseDirectory(StorageLocation.documents);
+      final cacheDir = await fileStorageManager.getBaseDirectory(StorageLocation.cache);
+      
+      LoggingService.info('Application data storage directories:');
+      LoggingService.info('  Support directory: ${supportDir.path}');
+      LoggingService.info('  Documents directory: ${documentsDir.path}');
+      LoggingService.info('  Cache directory: ${cacheDir.path}');
+    } catch (e) {
+      LoggingService.error('Failed to log storage directories: $e');
     }
   }
 }

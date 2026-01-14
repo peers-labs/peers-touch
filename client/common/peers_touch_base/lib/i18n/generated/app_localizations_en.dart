@@ -275,6 +275,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get advancedSettings => 'Advanced Settings';
 
   @override
+  String get storageDirectory => 'Storage Directory';
+
+  @override
+  String get storageDirectoryDescription => 'Application data storage location';
+
+  @override
+  String get openDirectory => 'Open Directory';
+
+  @override
   String get clearData => 'Clear Data';
 
   @override

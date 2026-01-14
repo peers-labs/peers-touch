@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/profile/model/user_detail.dart';
@@ -73,22 +74,11 @@ class UserProfileCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 头像
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(UIKit.radiusLg(context)),
-                    child: Container(
-                      width: UIKit.avatarBlockHeight,
-                      height: UIKit.avatarBlockHeight,
-                      color: wx?.bgLevel3 ?? theme.colorScheme.surfaceContainerHighest,
-                      child: PeersImage(
-                        src: detail.avatarUrl,
-                        fit: BoxFit.cover,
-                        error: Icon(
-                          Icons.person,
-                          size: UIKit.indicatorSizeSm,
-                          color: UIKit.textSecondary(context),
-                        ),
-                      ),
-                    ),
+                  Avatar(
+                    actorId: detail.id,
+                    avatarUrl: detail.avatarUrl,
+                    fallbackName: detail.handle,
+                    radius: UIKit.avatarBlockHeight / 2,
                   ),
                   SizedBox(width: UIKit.spaceLg(context)),
                   Expanded(

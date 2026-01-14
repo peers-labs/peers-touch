@@ -68,7 +68,8 @@
 │   │
 │   └── 23-COMMON/                 # Shared Code (NEW)
 │       ├── 23.0-base.md           # Principles for shared code
-│       └── 23.1-packages.md       # peers_touch_base & ui details
+│       ├── 23.1-packages.md       # peers_touch_base & ui details
+│       └── storage-directory-standards.md  # 🚨 MANDATORY storage directory usage standards
 │
 ├── 30-STATION/                    # Backend/Station prompts
 │   ├── 30-station-base.md         # Base architecture

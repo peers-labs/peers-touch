@@ -123,9 +123,8 @@ class ActivityController extends GetxController {
           title: postText.isNotEmpty ? postText : 'New Post',
           content: postText,
           author: post.author.username,
-          authorAvatar: post.author.avatarUrl.isNotEmpty 
-              ? post.author.avatarUrl 
-              : 'https://i.pravatar.cc/150?u=${post.author.username}',
+          authorId: post.author.id,
+          authorAvatar: post.author.avatarUrl,
           timestamp: post.createdAt.toDateTime(),
           type: 'Create',
           images: postImages,

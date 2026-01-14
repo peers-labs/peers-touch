@@ -17,6 +17,7 @@
 - **Desktop work**: [.prompts/20-CLIENT/21-DESKTOP/21.0-base.md](../../.prompts/20-CLIENT/21-DESKTOP/21.0-base.md)
 - **Mobile work**: [.prompts/20-CLIENT/22-MOBILE/22.0-base.md](../../.prompts/20-CLIENT/22-MOBILE/22.0-base.md)
 - **Station work**: [.prompts/30-STATION/30-station-base.md](../../.prompts/30-STATION/30-station-base.md)
+- **Storage/Directory work**: [.prompts/20-CLIENT/23-COMMON/storage-directory-standards.md](../../.prompts/20-CLIENT/23-COMMON/storage-directory-standards.md) 🚨 MANDATORY
 
 ---
 

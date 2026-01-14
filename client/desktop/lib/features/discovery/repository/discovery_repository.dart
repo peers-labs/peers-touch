@@ -1,4 +1,5 @@
 import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
+import 'package:peers_touch_base/model/domain/social/comment.pb.dart';
 import 'package:peers_touch_base/model/domain/social/post.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
@@ -213,11 +214,41 @@ class DiscoveryRepository {
   }
 
   Future<Map<String, dynamic>> fetchObjectReplies(String objectId, {bool page = true}) async {
-    final data = await _httpService.get<Map<String, dynamic>>(
-      '/activitypub/objects/$objectId/replies',
-      queryParameters: {'page': page},
-    );
-    return data;
+    try {
+      final response = await _httpService.get<GetCommentsResponse>(
+        '/api/v1/social/posts/$objectId/comments',
+        queryParameters: {'limit': 100},
+        fromJson: (bytes) => GetCommentsResponse.fromBuffer(bytes),
+      );
+      
+      final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+      
+      final comments = response.comments.map((comment) {
+        String avatarUrl = comment.author?.avatarUrl ?? '';
+        if (avatarUrl.startsWith('/')) {
+          avatarUrl = '$baseUrl$avatarUrl';
+        }
+        
+        return {
+          'id': comment.id,
+          'content': comment.content,
+          'published': comment.createdAt.toDateTime().toIso8601String(),
+          'attributedTo': {
+            'id': comment.author?.id ?? '',
+            'name': comment.author?.displayName ?? comment.author?.username ?? 'Unknown',
+            'icon': {
+              'url': avatarUrl,
+            },
+          },
+        };
+      }).toList();
+      
+      return {
+        'orderedItems': comments,
+      };
+    } catch (e) {
+      return {'orderedItems': []};
+    }
   }
 
   Future<Map<String, dynamic>> fetchActorList() async {
