@@ -33,6 +33,8 @@ class DiscoveryItem {
     this.commentsCount = 0,
     this.sharesCount = 0,
     this.isLiked = false,
+    this.isCommentsExpanded = false,
+    this.showAllComments = false,
     List<DiscoveryComment>? comments,
   }) : comments = comments ?? [];
   final String id;
@@ -53,6 +55,8 @@ class DiscoveryItem {
   
   // Interaction state (mutable for UI)
   bool isLiked;
+  bool isCommentsExpanded;
+  bool showAllComments;
   
   // Comments
   final List<DiscoveryComment> comments;
