@@ -51,7 +51,7 @@ class ProfileModule {
                   actorId: d?.id ?? '',
                   avatarUrl: d?.avatarUrl,
                   fallbackName: d?.handle ?? 'User',
-                  radius: 20,
+                  size: 40,
                 ),
               ),
           ),

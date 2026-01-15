@@ -78,7 +78,7 @@ class UserProfileCard extends StatelessWidget {
                     actorId: detail.id,
                     avatarUrl: detail.avatarUrl,
                     fallbackName: detail.handle,
-                    radius: UIKit.avatarBlockHeight / 2,
+                    size: UIKit.avatarBlockHeight,
                   ),
                   SizedBox(width: UIKit.spaceLg(context)),
                   Expanded(

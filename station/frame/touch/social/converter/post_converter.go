@@ -92,9 +92,18 @@ func (c *PostConverter) fillContent(post *model.Post, dbContent *db.PostContent)
 			json.Unmarshal([]byte(dbContent.Mentions), &imagePost.Mentions)
 		}
 		if dbContent.Images != "" {
-			var images []*model.ImageAttachment
-			json.Unmarshal([]byte(dbContent.Images), &images)
-			imagePost.Images = images
+			var imageUrls []string
+			if err := json.Unmarshal([]byte(dbContent.Images), &imageUrls); err == nil {
+				for _, url := range imageUrls {
+					imagePost.Images = append(imagePost.Images, &model.ImageAttachment{
+						Url: url,
+					})
+				}
+			} else {
+				var images []*model.ImageAttachment
+				json.Unmarshal([]byte(dbContent.Images), &images)
+				imagePost.Images = images
+			}
 		}
 		post.Content = &model.Post_ImagePost{ImagePost: imagePost}
 
@@ -172,9 +181,18 @@ func (c *PostConverter) fillContent(post *model.Post, dbContent *db.PostContent)
 			locationPost.Location = &location
 		}
 		if dbContent.Images != "" {
-			var images []*model.ImageAttachment
-			json.Unmarshal([]byte(dbContent.Images), &images)
-			locationPost.Images = images
+			var imageUrls []string
+			if err := json.Unmarshal([]byte(dbContent.Images), &imageUrls); err == nil {
+				for _, url := range imageUrls {
+					locationPost.Images = append(locationPost.Images, &model.ImageAttachment{
+						Url: url,
+					})
+				}
+			} else {
+				var images []*model.ImageAttachment
+				json.Unmarshal([]byte(dbContent.Images), &images)
+				locationPost.Images = images
+			}
 		}
 		post.Content = &model.Post_LocationPost{LocationPost: locationPost}
 	}
