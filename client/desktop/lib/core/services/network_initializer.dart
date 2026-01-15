@@ -8,9 +8,12 @@ class NetworkInitializer {
   /// [baseUrl] - 默认API基础地址
   static void initialize({required String baseUrl}) {
     try {
-      // If already initialized, only update base url to preserve auth interceptors
-      final _ = HttpServiceLocator().baseUrl;
-      HttpServiceLocator().updateBaseUrl(baseUrl);
+      final currentBaseUrl = HttpServiceLocator().baseUrl;
+      if (currentBaseUrl.isNotEmpty && HttpServiceLocator().tokenProvider != null) {
+        HttpServiceLocator().updateBaseUrl(baseUrl);
+      } else {
+        HttpServiceLocator().initialize(baseUrl: baseUrl);
+      }
     } catch (_) {
       HttpServiceLocator().initialize(baseUrl: baseUrl);
     }

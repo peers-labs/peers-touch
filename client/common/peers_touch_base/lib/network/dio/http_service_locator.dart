@@ -90,13 +90,14 @@ class HttpServiceLocator {
     if (_httpService is HttpServiceImpl) {
       (httpService as HttpServiceImpl).setBaseUrl(newBaseUrl);
     } else {
-      // 对于其他实现，重新初始化服务
+      // 对于其他实现，重新初始化服务（保留认证配置）
       _httpService = HttpServiceImpl(
         baseUrl: newBaseUrl,
         httpClientAdapter: _adapter,
         interceptors: _interceptors,
         tokenProvider: _tokenProvider,
         tokenRefresher: _tokenRefresher,
+        onUnauthenticated: _onUnauthenticated,
       );
     }
   }

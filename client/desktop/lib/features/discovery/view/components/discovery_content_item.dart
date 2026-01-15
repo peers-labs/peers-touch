@@ -12,40 +12,42 @@ class DiscoveryContentItem extends StatelessWidget {
     required this.item,
     this.controller,
   });
+  
   final DiscoveryItem item;
   final DiscoveryController? controller;
-
-  // Observable state for local interactions (like expanding comments)
-  final RxBool isCommentsExpanded = false.obs;
-  final RxBool showAllComments = false.obs;
   final TextEditingController commentController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
+    return GetBuilder<DiscoveryController>(
+      id: 'item_${item.id}',
+      builder: (_) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 20,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(context),
-          _buildContent(),
-          const SizedBox(height: 12),
-          _buildActions(context),
-          Obx(() => isCommentsExpanded.value 
-            ? _buildCommentsSection(context) 
-            : const SizedBox.shrink()),
-        ],
-      ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(context),
+              _buildContent(),
+              const SizedBox(height: 12),
+              _buildActions(context),
+              item.isCommentsExpanded 
+                ? _buildCommentsSection(context) 
+                : const SizedBox.shrink(),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -180,7 +182,7 @@ class DiscoveryContentItem extends StatelessWidget {
               actorId: item.authorId,
               avatarUrl: item.authorAvatar,
               fallbackName: item.author,
-              radius: 20,
+              size: 40,
             ),
           const SizedBox(width: 8),
           const Spacer(),
@@ -200,8 +202,9 @@ class DiscoveryContentItem extends StatelessWidget {
             color: Colors.blue,
             count: item.commentsCount,
             onTap: () {
-              isCommentsExpanded.toggle();
-              if (isCommentsExpanded.value && item.comments.isEmpty && item.commentsCount > 0) {
+              item.isCommentsExpanded = !item.isCommentsExpanded;
+              controller?.update(['item_${item.id}']);
+              if (item.isCommentsExpanded && item.comments.isEmpty && item.commentsCount > 0) {
                 controller?.loadComments(item);
               }
             },
@@ -282,7 +285,7 @@ class DiscoveryContentItem extends StatelessWidget {
                 actorId: myActorId,
                 avatarUrl: myAvatarUrl,
                 fallbackName: myName,
-                radius: 16,
+                size: 32,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -325,33 +328,37 @@ class DiscoveryContentItem extends StatelessWidget {
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
-            Obx(() {
-              final comments = item.comments;
-              final count = comments.length;
-              final showAll = showAllComments.value;
-              // Show last 10 comments by default
-              final visibleComments = (count > 10 && !showAll)
-                  ? comments.sublist(count - 10)
-                  : comments;
+            Builder(
+              builder: (context) {
+                final comments = item.comments;
+                final count = comments.length;
+                final showAll = item.showAllComments;
+                // Show first 10 comments by default
+                final visibleComments = (count > 10 && !showAll)
+                    ? comments.sublist(0, 10)
+                    : comments;
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (count > 10 && !showAll)
-                    GestureDetector(
-                      onTap: () => showAllComments.value = true,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: Text(
-                          'View all $count comments',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (count > 10 && !showAll)
+                      GestureDetector(
+                        onTap: () {
+                          item.showAllComments = true;
+                          controller?.update();
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: Text(
+                            'Load more... (${count - 10} more comments)',
+                            style: TextStyle(
+                              color: Colors.blue[600],
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ),
-                    ),
                   ...visibleComments.map((c) => _buildCommentItem(c)),
                 ],
               );
@@ -372,7 +379,7 @@ class DiscoveryContentItem extends StatelessWidget {
             actorId: comment.authorId,
             avatarUrl: comment.authorAvatar,
             fallbackName: comment.authorName,
-            radius: 14,
+            size: 28,
           ),
           const SizedBox(width: 12),
           Expanded(

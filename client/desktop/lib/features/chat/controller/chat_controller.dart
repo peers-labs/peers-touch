@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_base/network/dio/http_service_impl.dart';
+import 'package:peers_touch_base/network/dio/http_service.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
@@ -38,7 +39,7 @@ class ChatController extends GetxController {
   final debugStats = <String, dynamic>{}.obs;
   final isFetchingStats = false.obs;
   
-  HttpServiceImpl? _httpService;
+  IHttpService get _httpService => HttpServiceLocator().httpService;
 
   @override
   void onInit() {
@@ -244,18 +245,10 @@ class ChatController extends GetxController {
     
     loadingActors.value = true;
     try {
-      // Ensure HttpService is initialized with correct base URL
-      if (_httpService == null) {
-        // Use server base (without /chat) for HTTP service
-        final server = Uri.parse(base).resolve('/').toString();
-        _httpService = HttpServiceImpl(baseUrl: server);
-      } else {
-        final server = Uri.parse(base).resolve('/').toString();
-        _httpService!.setBaseUrl(server);
-      }
+      final server = Uri.parse(base).resolve('/').toString();
+      NetworkInitializer.updateBaseUrl(server);
 
-      // Use shared library to fetch data (which includes logging)
-      final resp = await _httpService!.get<Map<String, dynamic>>(actorListUrl.value);
+      final resp = await _httpService.get<Map<String, dynamic>>(actorListUrl.value);
       List list = [];
       final data = resp['data'];
       if (data is List) {

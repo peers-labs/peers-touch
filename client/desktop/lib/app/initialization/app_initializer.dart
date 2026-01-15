@@ -46,9 +46,20 @@ class AppInitializer {
       await WindowOptionsManager.initializeWindowManager();
       LoggingService.info('Window manager initialized');
 
-      // Initialize network service
-      NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
-      LoggingService.info('Network service initialized with base URL: http://localhost:18080');
+      // Initialize network service only if not already initialized
+      // This prevents losing TokenProvider during hot restart
+      try {
+        final currentBaseUrl = HttpServiceLocator().baseUrl;
+        if (currentBaseUrl.isEmpty) {
+          NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
+          LoggingService.info('Network service initialized with base URL: http://localhost:18080');
+        } else {
+          LoggingService.info('Network service already initialized with base URL: $currentBaseUrl');
+        }
+      } catch (_) {
+        NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
+        LoggingService.info('Network service initialized with base URL: http://localhost:18080');
+      }
 
       await _checkAuthStatus();
 

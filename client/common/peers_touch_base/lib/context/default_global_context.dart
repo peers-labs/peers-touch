@@ -422,17 +422,24 @@ class DefaultGlobalContext implements GlobalContext {
         _userProfile = (response.data as Map).cast<String, dynamic>();
         _profileCtrl.add(_userProfile);
         
+        LoggingService.debug('GlobalContext.refreshProfile: Raw profile data keys: ${_userProfile?.keys.toList()}');
+        LoggingService.debug('GlobalContext.refreshProfile: avatar field = "${_userProfile?['avatar']}"');
+        LoggingService.debug('GlobalContext.refreshProfile: avatarUrl field = "${_userProfile?['avatarUrl']}"');
+        
         if (_userProfile != null && localStorage != null) {
           await localStorage!.set('profile_cache_$handle', _userProfile);
         }
         
         final avatarUrl = _userProfile?['avatar']?.toString() ?? 
                           _userProfile?['avatarUrl']?.toString();
+        LoggingService.debug('GlobalContext.refreshProfile: Final avatarUrl = "$avatarUrl"');
+        
         if (avatarUrl != null && avatarUrl.isNotEmpty && _session != null) {
           final currentAvatar = _session!['avatarUrl']?.toString() ?? '';
           if (currentAvatar != avatarUrl) {
             _session!['avatarUrl'] = avatarUrl;
             _sessionCtrl.add(_session);
+            LoggingService.info('GlobalContext.refreshProfile: Updated session avatarUrl to "$avatarUrl"');
           }
         }
         
