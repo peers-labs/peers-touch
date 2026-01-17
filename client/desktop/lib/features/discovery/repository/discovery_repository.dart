@@ -213,11 +213,16 @@ class DiscoveryRepository {
     );
   }
 
-  Future<Map<String, dynamic>> fetchObjectReplies(String objectId, {bool page = true}) async {
+  Future<Map<String, dynamic>> fetchObjectReplies(String objectId, {String? cursor, int limit = 10}) async {
     try {
+      final queryParams = <String, dynamic>{'limit': limit};
+      if (cursor != null && cursor.isNotEmpty) {
+        queryParams['cursor'] = cursor;
+      }
+      
       final response = await _httpService.get<GetCommentsResponse>(
         '/api/v1/social/posts/$objectId/comments',
-        queryParameters: {'limit': 100},
+        queryParameters: queryParams,
         fromJson: (bytes) => GetCommentsResponse.fromBuffer(bytes),
       );
       
@@ -245,9 +250,14 @@ class DiscoveryRepository {
       
       return {
         'orderedItems': comments,
+        'nextCursor': response.nextCursor,
+        'hasMore': response.hasMore,
       };
     } catch (e) {
-      return {'orderedItems': []};
+      return {
+        'orderedItems': [],
+        'hasMore': false,
+      };
     }
   }
 

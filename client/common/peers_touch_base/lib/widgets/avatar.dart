@@ -41,10 +41,13 @@ class Avatar extends StatelessWidget {
   }
 
   Widget _buildAvatarContent() {
+    LoggingService.debug('Avatar._buildAvatarContent: actorId="$actorId", avatarUrl="$avatarUrl", isEmpty=${avatarUrl?.isEmpty ?? true}, isNull=${avatarUrl == null}');
+    
     if (avatarUrl != null && avatarUrl!.isNotEmpty) {
       return _buildNetworkAvatar();
     }
 
+    LoggingService.debug('Avatar._buildAvatarContent: Using placeholder for actorId="$actorId", fallbackName="$fallbackName"');
     return _buildPlaceholderAvatar();
   }
 

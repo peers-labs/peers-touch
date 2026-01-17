@@ -51,20 +51,18 @@ class DiscoveryController extends GetxController {
 
   final selectedItem = Rx<DiscoveryItem?>(null);
   final isLoading = false.obs;
+  final isLoadingActors = false.obs;
   final error = Rx<String?>(null);
   final searchQuery = ''.obs;
   final currentTab = 0.obs;
 
   // Track the latest request to prevent race conditions
   int _activeRequestId = 0;
-  final tabs = ['Home', 'Me', 'Radar', 'Follow', 'Announce', 'Comment'];
+  final tabs = ['Home', 'Me', 'Radar'];
   final tabIcons = <IconData>[
     Icons.home_filled,
     Icons.person,
     Icons.radar,
-    Icons.person_add,
-    Icons.campaign,
-    Icons.chat_bubble,
   ];
 
   final scrollController = ScrollController();
@@ -85,11 +83,16 @@ class DiscoveryController extends GetxController {
     loadItems();
     loadGroups();
     loadFriends();
+    loadAllUsers(); // Load local station actors for Radar view
     
     // React to tab changes
-    ever(currentTab, (_) {
+    ever(currentTab, (index) {
       scrollToTop();
-      loadItems();
+      if (tabs[index] == 'Radar') {
+        loadAllUsers();
+      } else {
+        loadItems();
+      }
     });
 
     scrollController.addListener(() {
@@ -139,10 +142,19 @@ class DiscoveryController extends GetxController {
 
   Future<void> loadAllUsers() async {
     try {
-      final data = await _repo.fetchActorList();
+      isLoadingActors.value = true;
+      final response = await _repo.fetchActorList();
+      LoggingService.debug('loadAllUsers: Raw response: $response');
+      
+      final data = response['data'] ?? response;
+      LoggingService.debug('loadAllUsers: Extracted data: $data');
+      
       localStationActors.value = _parseActorList(data);
+      LoggingService.info('loadAllUsers: Loaded ${localStationActors.length} actors');
     } catch (e) {
       LoggingService.error('Failed to load all users: $e');
+    } finally {
+      isLoadingActors.value = false;
     }
   }
 
@@ -303,9 +315,9 @@ class DiscoveryController extends GetxController {
     }).toList();
   }
 
-  Future<void> loadComments(DiscoveryItem item) async {
+  Future<void> loadComments(DiscoveryItem item, {String? cursor}) async {
     try {
-      final data = await _repo.fetchObjectReplies(item.objectId);
+      final data = await _repo.fetchObjectReplies(item.objectId, cursor: cursor, limit: 10);
       LoggingService.debug('loadComments: Received data: $data');
       
       if (data['orderedItems'] is List) {
@@ -378,15 +390,34 @@ class DiscoveryController extends GetxController {
           }
         }
         
-        item.comments.clear();
+        if (cursor == null) {
+          item.comments.clear();
+        }
         item.comments.addAll(comments);
+        item.hasMoreComments = data['hasMore'] == true;
+        item.nextCommentCursor = data['nextCursor']?.toString();
         items.refresh();
-        LoggingService.info('loadComments: Successfully loaded ${comments.length} comments');
+        update(['item_${item.id}']);
+        LoggingService.info('loadComments: Successfully loaded ${comments.length} comments, hasMore: ${item.hasMoreComments}');
       } else {
         LoggingService.warning('loadComments: orderedItems is not a List');
       }
     } catch (e) {
       LoggingService.error('Failed to load comments: $e');
+    }
+  }
+
+  Future<void> loadMoreComments(DiscoveryItem item) async {
+    if (item.loadingMoreComments || !item.hasMoreComments) return;
+    
+    item.loadingMoreComments = true;
+    update(['item_${item.id}']);
+    
+    try {
+      await loadComments(item, cursor: item.nextCommentCursor);
+    } finally {
+      item.loadingMoreComments = false;
+      update(['item_${item.id}']);
     }
   }
 
@@ -532,12 +563,15 @@ class DiscoveryController extends GetxController {
   }
 
   void searchFriends(String query) {
+    searchQuery.value = query;
     if (query.isEmpty) {
       searchResults.clear();
       return;
     }
-    searchResults.value = friends.where((f) => 
-      f.name.toLowerCase().contains(query.toLowerCase())
+    // Search in localStationActors instead of friends
+    searchResults.value = localStationActors.where((f) => 
+      f.name.toLowerCase().contains(query.toLowerCase()) ||
+      f.id.toLowerCase().contains(query.toLowerCase())
     ).toList();
   }
 
@@ -559,21 +593,31 @@ class DiscoveryController extends GetxController {
 
   List<FriendItem> _parseActorList(Map<String, dynamic> data) {
     final list = <FriendItem>[];
-    // Handle ActivityPub OrderedCollection or basic list
     final items = data['items'] ?? data['orderedItems'];
+    
     if (items is List) {
       for (var item in items) {
         if (item is Map) {
           final id = item['id']?.toString() ?? '';
-          final name = item['preferredUsername']?.toString() ?? item['name']?.toString() ?? 'Unknown';
+          final username = item['username']?.toString() ?? 
+                          item['preferredUsername']?.toString() ?? '';
+          final displayName = item['display_name']?.toString() ?? 
+                             item['displayName']?.toString() ?? 
+                             item['name']?.toString() ?? 
+                             username;
+          
           String avatarUrl = '';
           if (item['icon'] is Map) {
             avatarUrl = (item['icon'] as Map)['url']?.toString() ?? '';
+          } else if (item['avatar'] != null) {
+            avatarUrl = item['avatar']?.toString() ?? '';
           }
+          
+          LoggingService.debug('_parseActorList: Parsed actor - id: $id, username: $username, displayName: $displayName, avatar: $avatarUrl');
           
           list.add(FriendItem(
             id: id,
-            name: name,
+            name: displayName.isNotEmpty ? displayName : username,
             avatarUrl: avatarUrl,
             timeOrStatus: '',
             isOnline: false,
@@ -588,6 +632,8 @@ class DiscoveryController extends GetxController {
         }
       }
     }
+    
+    LoggingService.debug('_parseActorList: Total parsed: ${list.length} actors');
     return list;
   }
 }

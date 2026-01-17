@@ -56,14 +56,18 @@ class HttpServiceLocator {
     TokenRefresher? tokenRefresher,
     void Function()? onUnauthenticated,
   }) {
+    final needsReinitialize = _tokenProvider != tokenProvider || 
+                               _tokenRefresher != tokenRefresher;
+    
     _tokenProvider = tokenProvider;
     _tokenRefresher = tokenRefresher;
     if (onUnauthenticated != null) {
       _onUnauthenticated = onUnauthenticated;
     }
     
-    // Re-initialize service to apply changes
-    if (_isInitialized()) {
+    // Only re-initialize service if TokenProvider actually changed
+    // This prevents unnecessary recreation during hot restart
+    if (_isInitialized() && needsReinitialize) {
       _httpService = HttpServiceImpl(
         baseUrl: _baseUrl,
         httpClientAdapter: _adapter,
