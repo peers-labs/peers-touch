@@ -58,11 +58,19 @@ class InitialBinding extends Bindings {
     );
     Get.put<Libp2pNetworkService>(Libp2pNetworkService(), permanent: true);
 
-    final tokenProvider = DefaultTokenProvider(
-      secureStorage: Get.find<SecureStorageAdapter>(),
-      localStorage: Get.find<LocalStorageAdapter>(),
-    );
-    Get.put<TokenProvider>(tokenProvider, permanent: true);
+    // Try to get existing TokenProvider first (for hot restart)
+    TokenProvider? tokenProvider;
+    if (Get.isRegistered<TokenProvider>()) {
+      tokenProvider = Get.find<TokenProvider>();
+      LoggingService.info('InitialBinding: Reusing existing TokenProvider');
+    } else {
+      tokenProvider = DefaultTokenProvider(
+        secureStorage: Get.find<SecureStorageAdapter>(),
+        localStorage: Get.find<LocalStorageAdapter>(),
+      );
+      Get.put<TokenProvider>(tokenProvider, permanent: true);
+      LoggingService.info('InitialBinding: Created new TokenProvider');
+    }
 
     // Setup auth providers for HttpServiceLocator
     // This ensures AuthInterceptor can read tokens from TokenProvider

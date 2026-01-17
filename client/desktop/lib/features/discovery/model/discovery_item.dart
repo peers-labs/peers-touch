@@ -60,4 +60,9 @@ class DiscoveryItem {
   
   // Comments
   final List<DiscoveryComment> comments;
+  
+  // Comments pagination
+  bool hasMoreComments = false;
+  bool loadingMoreComments = false;
+  String? nextCommentCursor;
 }

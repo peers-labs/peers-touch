@@ -49,6 +49,14 @@ func (c *PostConverter) DBToProto(ctx context.Context, dbPost *db.Post, viewerID
 			DisplayName: dbPost.Author.Name,
 			AvatarUrl:   dbPost.Author.Icon,
 		}
+		// Debug logging
+		if dbPost.Author.Icon == "" {
+			fmt.Printf("DEBUG: Post %d author %d (%s) has empty Icon field\n", dbPost.ID, dbPost.Author.ID, dbPost.Author.PreferredUsername)
+		} else {
+			fmt.Printf("DEBUG: Post %d author %d (%s) Icon=%s\n", dbPost.ID, dbPost.Author.ID, dbPost.Author.PreferredUsername, dbPost.Author.Icon)
+		}
+	} else {
+		fmt.Printf("DEBUG: Post %d has nil Author\n", dbPost.ID)
 	}
 
 	if viewerID > 0 {
