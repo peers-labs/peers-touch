@@ -13,9 +13,11 @@ import (
 )
 
 func GetPostComments(c context.Context, ctx *app.RequestContext) {
-	postIDStr := ctx.Param("postId")
+	postIDStr := ctx.Param("id")
+	logger.Debug(c, "GetPostComments: received postId param", "postIDStr", postIDStr)
 	postID, err := strconv.ParseUint(postIDStr, 10, 64)
 	if err != nil {
+		logger.Error(c, "GetPostComments: failed to parse postId", "postIDStr", postIDStr, "error", err)
 		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "invalid post ID"))
 		return
 	}
@@ -44,7 +46,7 @@ func CreateComment(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	postIDStr := ctx.Param("postId")
+	postIDStr := ctx.Param("id")
 	postID, err := strconv.ParseUint(postIDStr, 10, 64)
 	if err != nil {
 		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "invalid post ID"))

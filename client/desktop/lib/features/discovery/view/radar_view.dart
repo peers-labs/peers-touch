@@ -100,35 +100,12 @@ class RadarView extends StatelessWidget {
 
   Widget _buildUserList(DiscoveryController controller) {
     return Obx(() {
-      if (controller.isLoading.value) {
+      if (controller.isLoadingActors.value) {
         return const Center(
           child: CircularProgressIndicator(),
         );
       }
-
-      if (controller.error.value != null) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              Text(
-                controller.error.value!,
-                style: const TextStyle(color: Colors.red),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: controller.loadAllUsers,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-              ),
-            ],
-          ),
-        );
-      }
-
+      
       final displayList = controller.searchQuery.value.isEmpty 
           ? controller.localStationActors 
           : controller.searchResults;
@@ -149,6 +126,14 @@ class RadarView extends StatelessWidget {
                   color: Colors.grey.shade600,
                 ),
               ),
+              if (controller.searchQuery.value.isEmpty) ...[
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: controller.loadAllUsers,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                ),
+              ],
             ],
           ),
         );

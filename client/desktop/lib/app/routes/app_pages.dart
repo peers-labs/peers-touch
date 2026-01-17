@@ -12,9 +12,16 @@ import 'package:peers_touch_desktop/features/profile/view/profile_page.dart';
 import 'package:peers_touch_desktop/features/shell/binding/shell_binding.dart';
 import 'package:peers_touch_desktop/features/shell/view/shell_page.dart';
 import 'package:peers_touch_desktop/features/social/social_module.dart';
+import 'package:peers_touch_desktop/features/splash/binding/splash_binding.dart';
+import 'package:peers_touch_desktop/features/splash/view/splash_page.dart';
 
 class AppPages {
   static final pages = <GetPage<dynamic>>[
+    GetPage(
+      name: AppRoutes.splash,
+      page: () => const SplashPage(),
+      binding: SplashBinding(),
+    ),
     GetPage(
       name: AppRoutes.login,
       page: () => const LoginPage(),

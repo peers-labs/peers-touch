@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/peers_touch_base.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/model/discovery_item.dart';
@@ -11,7 +12,18 @@ class DiscoveryContentItem extends StatelessWidget {
     super.key,
     required this.item,
     this.controller,
-  });
+  }) {
+    LoggingService.debug('DiscoveryContentItem constructor: id=${item.id}, commentsCount=${item.commentsCount}, isExpanded=${item.isCommentsExpanded}, comments.length=${item.comments.length}');
+    
+    if (item.commentsCount > 0 && !item.isCommentsExpanded && item.comments.isEmpty) {
+      LoggingService.debug('DiscoveryContentItem: Auto-expanding comments for item ${item.id}');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        item.isCommentsExpanded = true;
+        controller?.loadComments(item);
+        controller?.update(['item_${item.id}']);
+      });
+    }
+  }
   
   final DiscoveryItem item;
   final DiscoveryController? controller;
@@ -25,22 +37,22 @@ class DiscoveryContentItem extends StatelessWidget {
         return Container(
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 20,
-                offset: const Offset(0, 4),
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context),
-              _buildContent(),
-              const SizedBox(height: 12),
-              _buildActions(context),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          _buildContent(),
+          const SizedBox(height: 8),
+          _buildActions(context),
               item.isCommentsExpanded 
                 ? _buildCommentsSection(context) 
                 : const SizedBox.shrink(),
@@ -52,38 +64,19 @@ class DiscoveryContentItem extends StatelessWidget {
   }
 
   Widget _buildHeader(BuildContext context) {
+    LoggingService.debug('DiscoveryContentItem._buildHeader: item.id=${item.id}, authorId="${item.authorId}", authorAvatar="${item.authorAvatar}", author="${item.author}"');
+    
     return Padding(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: _getTypeColor(item.type),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  _getMonth(item.timestamp),
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(
-                  item.timestamp.day.toString().padLeft(2, '0'),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
+          Avatar(
+            actorId: item.authorId,
+            avatarUrl: item.authorAvatar,
+            fallbackName: item.author,
+            size: 40,
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,15 +84,15 @@ class DiscoveryContentItem extends StatelessWidget {
                 Text(
                   item.title,
                   style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Row(
                   children: [
                     Text(
-                      item.type.toUpperCase(),
+                      item.author,
                       style: const TextStyle(
                         color: Colors.grey,
                         fontSize: 12,
@@ -110,7 +103,7 @@ class DiscoveryContentItem extends StatelessWidget {
                     const Icon(Icons.circle, size: 4, color: Colors.grey),
                     const SizedBox(width: 8),
                     Text(
-                      item.author,
+                      '${_getMonth(item.timestamp)} ${item.timestamp.day}',
                       style: const TextStyle(
                         color: Colors.grey,
                         fontSize: 12,
@@ -150,14 +143,14 @@ class DiscoveryContentItem extends StatelessWidget {
 
   Widget _buildContent() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (item.content.isNotEmpty)
             Text(
               item.content,
-              maxLines: 3,
+              maxLines: 5,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: Colors.grey[600],
@@ -175,16 +168,9 @@ class DiscoveryContentItem extends StatelessWidget {
 
   Widget _buildActions(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          Avatar(
-              actorId: item.authorId,
-              avatarUrl: item.authorAvatar,
-              fallbackName: item.author,
-              size: 40,
-            ),
-          const SizedBox(width: 8),
           const Spacer(),
           
           // Like Action
@@ -271,8 +257,8 @@ class DiscoveryContentItem extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.grey[50],
         borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(20),
-          bottomRight: Radius.circular(20),
+          bottomLeft: Radius.circular(16),
+          bottomRight: Radius.circular(16),
         ),
       ),
       child: Column(
@@ -285,23 +271,26 @@ class DiscoveryContentItem extends StatelessWidget {
                 actorId: myActorId,
                 avatarUrl: myAvatarUrl,
                 fallbackName: myName,
-                size: 32,
+                size: 28,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(18),
                     border: Border.all(color: Colors.grey[300]!),
                   ),
                   child: TextField(
                     controller: commentController,
+                    style: const TextStyle(fontSize: 14),
                     decoration: const InputDecoration(
                       hintText: 'Write a comment...',
+                      hintStyle: TextStyle(fontSize: 14),
                       border: InputBorder.none,
                       isDense: true,
+                      contentPadding: EdgeInsets.zero,
                     ),
                     onSubmitted: (value) {
                       if (value.isNotEmpty) {
@@ -325,44 +314,46 @@ class DiscoveryContentItem extends StatelessWidget {
           ),
           
           if (item.comments.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const Divider(),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
             const SizedBox(height: 8),
             Builder(
               builder: (context) {
-                final comments = item.comments;
-                final count = comments.length;
-                final showAll = item.showAllComments;
-                // Show first 10 comments by default
-                final visibleComments = (count > 10 && !showAll)
-                    ? comments.sublist(0, 10)
-                    : comments;
-
+                LoggingService.debug('DiscoveryContentItem: Rendering ${item.comments.length} comments for item ${item.id}');
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (count > 10 && !showAll)
-                      GestureDetector(
-                        onTap: () {
-                          item.showAllComments = true;
-                          controller?.update();
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
-                          child: Text(
-                            'Load more... (${count - 10} more comments)',
-                            style: TextStyle(
-                              color: Colors.blue[600],
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                  children: item.comments.map((c) => _buildCommentItem(c)).toList(),
+                );
+              },
+            ),
+            if (item.hasMoreComments)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: item.loadingMoreComments
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                       ),
-                  ...visibleComments.map((c) => _buildCommentItem(c)),
-                ],
-              );
-            }),
+                    )
+                  : GestureDetector(
+                      onTap: () {
+                        controller?.loadMoreComments(item);
+                      },
+                      child: Text(
+                        'Load more comments...',
+                        style: TextStyle(
+                          color: Colors.blue[600],
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+              ),
           ],
         ],
       ),
@@ -371,7 +362,7 @@ class DiscoveryContentItem extends StatelessWidget {
 
   Widget _buildCommentItem(DiscoveryComment comment) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -379,9 +370,9 @@ class DiscoveryContentItem extends StatelessWidget {
             actorId: comment.authorId,
             avatarUrl: comment.authorAvatar,
             fallbackName: comment.authorName,
-            size: 28,
+            size: 24,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,11 +382,11 @@ class DiscoveryContentItem extends StatelessWidget {
                     Text(
                       comment.authorName,
                       style: const TextStyle(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Text(
                       _getTimeAgo(comment.timestamp),
                       style: TextStyle(
@@ -405,12 +396,13 @@ class DiscoveryContentItem extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   comment.content,
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey[800],
+                    height: 1.4,
                   ),
                 ),
               ],

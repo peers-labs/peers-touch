@@ -50,18 +50,30 @@ class AppInitializer {
       // This prevents losing TokenProvider during hot restart
       try {
         final currentBaseUrl = HttpServiceLocator().baseUrl;
+        final hasTokenProvider = HttpServiceLocator().tokenProvider != null;
+        
         if (currentBaseUrl.isEmpty) {
+          // First time initialization - just set base URL
           NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
           LoggingService.info('Network service initialized with base URL: http://localhost:18080');
+        } else if (!hasTokenProvider) {
+          // Hot restart case - HttpServiceLocator exists but TokenProvider not set yet
+          // Just update base URL, don't recreate the service
+          // TokenProvider will be set by InitialBinding.setupAuth()
+          LoggingService.info('Network service already exists, skipping re-initialization (waiting for InitialBinding)');
         } else {
-          LoggingService.info('Network service already initialized with base URL: $currentBaseUrl');
+          // Normal case - everything is set up
+          LoggingService.info('Network service already initialized with base URL: $currentBaseUrl and TokenProvider');
         }
       } catch (_) {
         NetworkInitializer.initialize(baseUrl: 'http://localhost:18080');
         LoggingService.info('Network service initialized with base URL: http://localhost:18080');
       }
 
-      await _checkAuthStatus();
+      // Set initial route to splash page
+      // Splash page will handle auth check and navigation
+      _initialRoute = AppRoutes.splash;
+      LoggingService.info('Initial route set to Splash page');
 
       _isInitialized = true;
       LoggingService.info('Application initialization completed successfully');
@@ -107,54 +119,7 @@ class AppInitializer {
     _instance.reset();
   }
 
-  Future<void> _checkAuthStatus() async {
-    try {
-      final token = await LocalStorage().get<String>('auth_token');
-      
-      if (token == null || token.isEmpty) {
-        _initialRoute = AppRoutes.login;
-        LoggingService.info('No auth token found, setting initial route to Login');
-        return;
-      }
 
-      final isValid = await _verifyTokenWithBackend(token);
-      if (isValid) {
-        _initialRoute = AppRoutes.shell;
-        LoggingService.info('Token valid, setting initial route to Shell');
-      } else {
-        await _clearAuthData();
-        _initialRoute = AppRoutes.login;
-        LoggingService.warning('Token invalid or backend unreachable, cleared auth data');
-      }
-    } catch (e) {
-      _initialRoute = AppRoutes.login;
-      LoggingService.error('Failed to check auth status: $e');
-    }
-  }
-
-  Future<bool> _verifyTokenWithBackend(String token) async {
-    try {
-      final client = HttpServiceLocator().httpService;
-      final response = await client.get<dynamic>('/api/v1/session/verify')
-        .timeout(const Duration(seconds: 3));
-      
-      return response.statusCode == 200;
-    } catch (e) {
-      LoggingService.warning('Token verification failed: $e');
-      return false;
-    }
-  }
-
-  Future<void> _clearAuthData() async {
-    try {
-      await LocalStorage().remove('auth_token');
-      await LocalStorage().remove('refresh_token');
-      await LocalStorage().remove('username');
-      await LocalStorage().remove('email');
-    } catch (e) {
-      LoggingService.error('Failed to clear auth data: $e');
-    }
-  }
 
   Future<void> _logStorageDirectories() async {
     try {
