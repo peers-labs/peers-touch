@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package peers_touch.model.social.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+// ============================================================================
+// Follow/Relationship API Messages
+// ============================================================================
+
+message FollowRequest {
+  string target_actor_id = 1;
+}
+
+message FollowResponse {
+  bool success = 1;
+  Relationship relationship = 2;
+}
+
+message UnfollowRequest {
+  string target_actor_id = 1;
+}
+
+message UnfollowResponse {
+  bool success = 1;
+}
+
+message GetRelationshipRequest {
+  string target_actor_id = 1;
+}
+
+message GetRelationshipResponse {
+  Relationship relationship = 1;
+}
+
+message GetRelationshipsRequest {
+  repeated string target_actor_ids = 1;
+}
+
+message GetRelationshipsResponse {
+  repeated Relationship relationships = 1;
+}
+
+message Relationship {
+  string id = 1;
+  string target_actor_id = 2;
+  bool following = 3;
+  bool followed_by = 4;
+  google.protobuf.Timestamp followed_at = 5;
+}
+
+message GetFollowersRequest {
+  string actor_id = 1;
+  string cursor = 2;
+  int32 limit = 3;
+}
+
+message GetFollowersResponse {
+  repeated Follower followers = 1;
+  string next_cursor = 2;
+  int32 total = 3;
+}
+
+message GetFollowingRequest {
+  string actor_id = 1;
+  string cursor = 2;
+  int32 limit = 3;
+}
+
+message GetFollowingResponse {
+  repeated Following following = 1;
+  string next_cursor = 2;
+  int32 total = 3;
+}
+
+message Follower {
+  string actor_id = 1;
+  string username = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+  google.protobuf.Timestamp followed_at = 5;
+}
+
+message Following {
+  string actor_id = 1;
+  string username = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+  google.protobuf.Timestamp followed_at = 5;
+}

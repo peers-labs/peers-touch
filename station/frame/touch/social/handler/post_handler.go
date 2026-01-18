@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/social/service"
 	"github.com/peers-labs/peers-touch/station/frame/touch/util"
@@ -221,7 +222,20 @@ func GetUserPosts(c context.Context, ctx *app.RequestContext) {
 	if req.Filter == nil {
 		req.Filter = &model.PostFilter{}
 	}
-	req.Filter.AuthorId = userID
+
+	authorID := userID
+	if _, err := strconv.ParseUint(userID, 10, 64); err != nil {
+		actorInfo, err := actor.GetActorByUsername(c, userID)
+		if err != nil {
+			logger.Warn(c, "failed to resolve username to actor ID", "username", userID, "error", err)
+			util.RspError(c, ctx, http.StatusNotFound, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_USER_ID_REQUIRED, "user not found"))
+			return
+		}
+		authorID = strconv.FormatUint(actorInfo.ID, 10)
+		logger.Debug(c, "resolved username to actor ID", "username", userID, "actorID", authorID)
+	}
+
+	req.Filter.AuthorId = authorID
 
 	var viewerID uint64
 	if vID, exists := getUserID(c); exists {

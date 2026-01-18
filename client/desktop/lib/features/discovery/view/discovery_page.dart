@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
@@ -183,28 +182,19 @@ class DiscoveryPage extends GetView<DiscoveryController> {
                     return _buildEmptyState(context);
                   }
 
-                  return ScrollConfiguration(
-                    behavior: ScrollConfiguration.of(context).copyWith(
-                      scrollbars: true,
-                      dragDevices: {
-                        PointerDeviceKind.touch,
-                        PointerDeviceKind.mouse,
-                      },
-                    ),
-                    child: ListView.separated(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      controller: controller.scrollController,
-                      padding: const EdgeInsets.fromLTRB(20, 72, 20, 20),
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 16),
-                      itemBuilder: (ctx, i) {
-                        final item = items[i];
-                        return DiscoveryContentItem(
-                          item: item,
-                          controller: controller,
-                        );
-                      },
-                    ),
+                  return ListView.separated(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    controller: controller.scrollController,
+                    padding: const EdgeInsets.fromLTRB(20, 72, 20, 20),
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 16),
+                    itemBuilder: (ctx, i) {
+                      final item = items[i];
+                      return DiscoveryContentItem(
+                        item: item,
+                        controller: controller,
+                      );
+                    },
                   );
                 }),
               );

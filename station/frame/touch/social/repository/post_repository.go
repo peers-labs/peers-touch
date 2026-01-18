@@ -111,9 +111,35 @@ func ParseCursor(encoded string) (*Cursor, error) {
 	}, nil
 }
 
-func EncodeCursor(id uint64, createdAt time.Time) string {
-	cursor := fmt.Sprintf("%d_%d", id, createdAt.Unix())
+func EncodeCursor(c *Cursor) string {
+	cursor := fmt.Sprintf("%d_%d", c.ID, c.CreatedAt.Unix())
 	return base64.URLEncoding.EncodeToString([]byte(cursor))
+}
+
+func DecodeCursor(encoded string, c *Cursor) error {
+	decoded, err := base64.URLEncoding.DecodeString(encoded)
+	if err != nil {
+		return err
+	}
+
+	parts := strings.Split(string(decoded), "_")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid cursor format")
+	}
+
+	id, err := strconv.ParseUint(parts[0], 10, 64)
+	if err != nil {
+		return err
+	}
+
+	timestamp, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return err
+	}
+
+	c.ID = id
+	c.CreatedAt = time.Unix(timestamp, 0)
+	return nil
 }
 
 func (r *postRepository) ListByIDs(ctx context.Context, ids []uint64) ([]*db.Post, error) {
