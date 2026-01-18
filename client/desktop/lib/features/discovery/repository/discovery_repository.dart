@@ -11,7 +11,9 @@ class DiscoveryRepository {
   IHttpService get _httpService => HttpServiceLocator().httpService;
   final SocialApiService _socialApiService = SocialApiService();
 
+  /// @deprecated Use Social API instead
   /// Fetch user's outbox
+  @Deprecated('Use Social API instead')
   Future<Map<String, dynamic>> fetchOutbox(String username, {bool page = true}) async {
     final data = await _httpService.get<Map<String, dynamic>>(
       '/activitypub/$username/outbox',
@@ -20,7 +22,9 @@ class DiscoveryRepository {
     return data;
   }
 
+  /// @deprecated Use createPost from Social API instead
   /// Submit a activity to outbox using Proto structure
+  @Deprecated('Use createPost from Social API instead')
   Future<Map<String, dynamic>> submitActivity(String username, pb.ActivityInput input) async {
     final activity = _convertToActivityPub(username, input);
     final data = await _httpService.post<Map<String, dynamic>>(
@@ -175,6 +179,8 @@ class DiscoveryRepository {
     );
   }
 
+  /// @deprecated Use likePost from Social API instead
+  @Deprecated('Use likePost from Social API instead')
   Future<void> likeActivity(String username, String objectId) async {
     final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
     final actorId = '$baseUrl/activitypub/$username/actor';
@@ -192,6 +198,8 @@ class DiscoveryRepository {
     );
   }
 
+  /// @deprecated Use repostPost from Social API instead
+  @Deprecated('Use repostPost from Social API instead')
   Future<void> announceActivity(String username, String objectId) async {
     final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
     final actorId = '$baseUrl/activitypub/$username/actor';
@@ -261,6 +269,8 @@ class DiscoveryRepository {
     }
   }
 
+  /// @deprecated Use Social API to get user list instead
+  @Deprecated('Use Social API to get user list instead')
   Future<Map<String, dynamic>> fetchActorList() async {
     final data = await _httpService.get<Map<String, dynamic>>(
       '/activitypub/list',
@@ -268,6 +278,8 @@ class DiscoveryRepository {
     return data;
   }
 
+  /// @deprecated Use Social API for notifications instead
+  @Deprecated('Use Social API for notifications instead')
   Future<Map<String, dynamic>> fetchInbox(String username, {bool page = true}) async {
     final data = await _httpService.get<Map<String, dynamic>>(
       '/activitypub/$username/inbox',
@@ -276,6 +288,8 @@ class DiscoveryRepository {
     return data;
   }
 
+  /// @deprecated Use getFollowing from Social API instead
+  @Deprecated('Use getFollowing from Social API instead')
   Future<Map<String, dynamic>> fetchFollowing(String username, {bool page = true}) async {
     final data = await _httpService.get<Map<String, dynamic>>(
       '/activitypub/$username/following',
@@ -284,6 +298,8 @@ class DiscoveryRepository {
     return data;
   }
 
+  /// @deprecated Use Social API search instead
+  @Deprecated('Use Social API search instead')
   Future<Map<String, dynamic>> searchActors(String query) async {
     final data = await _httpService.get<Map<String, dynamic>>(
       '/activitypub/search',
@@ -292,24 +308,16 @@ class DiscoveryRepository {
     return data;
   }
 
-  Future<void> followUser(String currentUsername, String targetUsername) async {
-    final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
-    final actorId = '$baseUrl/activitypub/$currentUsername/actor';
-    final targetActorId = '$baseUrl/activitypub/$targetUsername/actor';
-
-    final activity = {
-      '@context': 'https://www.w3.org/ns/activitystreams',
-      'type': 'Follow',
-      'actor': actorId,
-      'object': targetActorId,
-    };
-
-    await _httpService.post<Map<String, dynamic>>(
-      '/activitypub/$currentUsername/outbox',
-      data: activity,
-    );
+  Future<void> followUser(String targetActorId) async {
+    await _socialApiService.follow(targetActorId);
   }
 
+  Future<void> unfollowUser(String targetActorId) async {
+    await _socialApiService.unfollow(targetActorId);
+  }
+
+  /// @deprecated Internal helper for deprecated ActivityPub methods
+  @Deprecated('Internal helper for deprecated ActivityPub methods')
   Map<String, dynamic> _convertToActivityPub(String username, pb.ActivityInput input) {
     final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
     final actorId = '$baseUrl/activitypub/$username/actor';

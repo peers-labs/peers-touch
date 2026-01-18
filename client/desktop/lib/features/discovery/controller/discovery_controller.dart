@@ -24,7 +24,9 @@ class FriendItem {
     required this.name,
     required this.avatarUrl,
     required this.timeOrStatus,
+    this.actorId,
     this.isOnline = false,
+    this.isFollowing = false,
     this.lat,
     this.lon,
   });
@@ -32,7 +34,9 @@ class FriendItem {
   final String name;
   final String avatarUrl;
   final String timeOrStatus;
+  final String? actorId;
   final bool isOnline;
+  final bool isFollowing;
   final double? lat;
   final double? lon;
 }
@@ -215,43 +219,73 @@ class DiscoveryController extends GetxController {
 
   /// 策略模式：根据 Tab 名称分发数据加载任务
   Future<List<DiscoveryItem>> _fetchDataByTab(String tabName) async {
+    LoggingService.info('=== Fetching data for tab: $tabName ===');
+    
     final username = _getCurrentUsername();
-    if (username.isEmpty) return [];
+    LoggingService.debug('Current username: $username');
+    if (username.isEmpty) {
+      LoggingService.warning('Username is empty, returning empty list');
+      return [];
+    }
 
     try {
       switch (tabName) {
         case 'Me':
-          // Use new Social API for user's own posts
-          // Get user ID from GlobalContext or AuthController
+          LoggingService.info('Fetching user posts for Me tab');
           final userId = _getCurrentUserId();
           if (userId.isEmpty) {
-            LoggingService.warning('User ID not found, cannot fetch user posts');
+            LoggingService.error('User ID not found, cannot fetch user posts');
             return [];
           }
+          LoggingService.info('Calling fetchUserPosts with userId: $userId');
           final userPostsResponse = await _repo.fetchUserPosts(userId);
+          LoggingService.info('Got ${userPostsResponse.posts.length} posts from API');
           return _convertPostsToDiscoveryItems(userPostsResponse.posts);
+          
         case 'Home':
-          // Use new Social API timeline
+          LoggingService.info('Fetching timeline for Home tab');
           final timelineResponse = await _repo.fetchTimeline(type: TimelineType.TIMELINE_PUBLIC);
+          LoggingService.info('Got ${timelineResponse.posts.length} posts from timeline API');
           return _convertPostsToDiscoveryItems(timelineResponse.posts);
+          
         default:
-          return []; // TODO: Implement other tabs (Radar/Follow/etc)
+          LoggingService.warning('Unknown tab: $tabName');
+          return [];
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       LoggingService.error('Fetch tab $tabName failed: $e');
+      LoggingService.debug('Stack trace: $stackTrace');
       rethrow;
     }
   }
 
   String _getCurrentUserId() {
-    String userId = '';
-    if (Get.isRegistered<GlobalContext>()) {
-      userId = Get.find<GlobalContext>().actorId ?? '';
+    LoggingService.debug('=== _getCurrentUserId called ===');
+    
+    if (!Get.isRegistered<GlobalContext>()) {
+      LoggingService.error('GlobalContext is NOT registered!');
+      return '';
     }
-    // If still empty, actorId might not be set yet
+    
+    final context = Get.find<GlobalContext>();
+    LoggingService.debug('GlobalContext found');
+    LoggingService.debug('actorId: ${context.actorId}');
+    LoggingService.debug('actorHandle: ${context.actorHandle}');
+    LoggingService.debug('currentSession: ${context.currentSession}');
+    
+    String userId = context.actorId ?? '';
     if (userId.isEmpty) {
-      LoggingService.warning('Actor ID not found in GlobalContext');
+      LoggingService.error('Actor ID is EMPTY in GlobalContext!');
+      LoggingService.debug('Trying to get from session directly...');
+      if (context.currentSession != null) {
+        userId = context.currentSession!['actorId']?.toString() ?? 
+                 context.currentSession!['userId']?.toString() ?? '';
+        LoggingService.debug('Got userId from session: $userId');
+      }
+    } else {
+      LoggingService.info('Got valid userId: $userId');
     }
+    
     return userId;
   }
 
@@ -577,10 +611,10 @@ class DiscoveryController extends GetxController {
 
   Future<void> followUser(FriendItem user) async {
     try {
-      final username = _getCurrentUsername();
-      if (username.isEmpty) return;
-
-      await _repo.followUser(username, user.name); // user.name is username/handle
+      final targetActorId = user.actorId ?? user.id;
+      
+      LoggingService.info('Following user: $targetActorId (display name: ${user.name})');
+      await _repo.followUser(targetActorId);
       Get.snackbar('Success', 'Followed ${user.name}');
       
       // Refresh friends list
@@ -588,6 +622,22 @@ class DiscoveryController extends GetxController {
     } catch (e) {
       LoggingService.error('Failed to follow user: $e');
       Get.snackbar('Error', 'Failed to follow user');
+    }
+  }
+
+  Future<void> unfollowUser(FriendItem user) async {
+    try {
+      final targetActorId = user.actorId ?? user.id;
+      
+      LoggingService.info('Unfollowing user: $targetActorId (display name: ${user.name})');
+      await _repo.unfollowUser(targetActorId);
+      Get.snackbar('Success', 'Unfollowed ${user.name}');
+      
+      // Refresh friends list
+      loadFriends();
+    } catch (e) {
+      LoggingService.error('Failed to unfollow user: $e');
+      Get.snackbar('Error', 'Failed to unfollow user');
     }
   }
 
@@ -599,6 +649,7 @@ class DiscoveryController extends GetxController {
       for (var item in items) {
         if (item is Map) {
           final id = item['id']?.toString() ?? '';
+          final actorId = item['actor_id']?.toString() ?? id;
           final username = item['username']?.toString() ?? 
                           item['preferredUsername']?.toString() ?? '';
           final displayName = item['display_name']?.toString() ?? 
@@ -613,14 +664,18 @@ class DiscoveryController extends GetxController {
             avatarUrl = item['avatar']?.toString() ?? '';
           }
           
-          LoggingService.debug('_parseActorList: Parsed actor - id: $id, username: $username, displayName: $displayName, avatar: $avatarUrl');
+          final isFollowing = item['is_following'] == true;
+          
+          LoggingService.debug('_parseActorList: Parsed actor - id: $id, actorId: $actorId, username: $username, displayName: $displayName, isFollowing: $isFollowing');
           
           list.add(FriendItem(
-            id: id,
+            id: username.isNotEmpty ? username : id,
             name: displayName.isNotEmpty ? displayName : username,
             avatarUrl: avatarUrl,
             timeOrStatus: '',
+            actorId: actorId,
             isOnline: false,
+            isFollowing: isFollowing,
           ));
         } else if (item is String) {
            list.add(FriendItem(

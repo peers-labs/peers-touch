@@ -27,6 +27,9 @@ import 'package:peers_touch_desktop/features/shared/services/user_status_service
 /// Application dependency injection binding
 /// Focuses on GetX dependency injection registration and management
 class InitialBinding extends Bindings {
+  // Flag to prevent multiple unauthenticated callbacks
+  static bool _isHandlingUnauthenticated = false;
+  
   @override
   void dependencies() {
     _registerStorageServices();
@@ -77,13 +80,78 @@ class InitialBinding extends Bindings {
     NetworkInitializer.setupAuth(
       tokenProvider: tokenProvider,
       onUnauthenticated: () {
+        // Prevent multiple simultaneous unauthenticated callbacks
+        if (_isHandlingUnauthenticated) {
+          LoggingService.debug('Already handling unauthenticated state, ignoring duplicate callback');
+          return;
+        }
+        
+        _isHandlingUnauthenticated = true;
         LoggingService.error('Authentication failed: Token invalid or expired');
+        
+        // Show snackbar with countdown
+        int countdown = 3;
         Get.snackbar(
-          '认证失败',
-          '登录已过期，请重新登录',
+          '登录已过期',
+          '将在 $countdown 秒后跳转到登录页...',
           snackPosition: SnackPosition.TOP,
-          duration: const Duration(seconds: 5),
+          duration: const Duration(seconds: 3),
+          backgroundColor: Get.theme.colorScheme.errorContainer,
+          colorText: Get.theme.colorScheme.onErrorContainer,
         );
+        
+        // Update countdown every second
+        Future.delayed(const Duration(seconds: 1), () {
+          if (!_isHandlingUnauthenticated) return;
+          countdown = 2;
+          Get.closeCurrentSnackbar();
+          Get.snackbar(
+            '登录已过期',
+            '将在 $countdown 秒后跳转到登录页...',
+            snackPosition: SnackPosition.TOP,
+            duration: const Duration(seconds: 2),
+            backgroundColor: Get.theme.colorScheme.errorContainer,
+            colorText: Get.theme.colorScheme.onErrorContainer,
+          );
+        });
+        
+        Future.delayed(const Duration(seconds: 2), () {
+          if (!_isHandlingUnauthenticated) return;
+          countdown = 1;
+          Get.closeCurrentSnackbar();
+          Get.snackbar(
+            '登录已过期',
+            '将在 $countdown 秒后跳转到登录页...',
+            snackPosition: SnackPosition.TOP,
+            duration: const Duration(seconds: 1),
+            backgroundColor: Get.theme.colorScheme.errorContainer,
+            colorText: Get.theme.colorScheme.onErrorContainer,
+          );
+        });
+        
+        // Navigate to login page after 3 seconds
+        Future.delayed(const Duration(seconds: 3), () {
+          if (!_isHandlingUnauthenticated) return;
+          
+          Get.closeCurrentSnackbar();
+          
+          // Clear user session
+          if (Get.isRegistered<GlobalContext>()) {
+            Get.find<GlobalContext>().setSession(null);
+          }
+          if (Get.isRegistered<AuthController>()) {
+            Get.find<AuthController>().logout();
+          }
+          
+          // Navigate to login page
+          Get.offAllNamed('/login');
+          LoggingService.info('Navigated to login page due to token expiration');
+          
+          // Reset flag after navigation (in case user comes back)
+          Future.delayed(const Duration(milliseconds: 500), () {
+            _isHandlingUnauthenticated = false;
+          });
+        });
       },
     );
 

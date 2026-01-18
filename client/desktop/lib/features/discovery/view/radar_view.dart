@@ -173,10 +173,15 @@ class RadarView extends StatelessWidget {
                 fontSize: 14,
               ),
             ),
-            trailing: FilledButton.tonal(
-              onPressed: () => controller.followUser(friend),
-              child: const Text('Follow'),
-            ),
+            trailing: friend.isFollowing
+                ? OutlinedButton(
+                    onPressed: () => controller.unfollowUser(friend),
+                    child: const Text('Following'),
+                  )
+                : FilledButton.tonal(
+                    onPressed: () => controller.followUser(friend),
+                    child: const Text('Follow'),
+                  ),
           );
         },
       );

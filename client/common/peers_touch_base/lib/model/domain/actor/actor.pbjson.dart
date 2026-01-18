@@ -34,6 +34,7 @@ const Actor$json = {
       '10': 'endpoints'
     },
     {'1': 'is_following', '3': 8, '4': 1, '5': 8, '10': 'is_following'},
+    {'1': 'actor_id', '3': 9, '4': 1, '5': 4, '10': 'actor_id'},
   ],
   '3': [Actor_EndpointsEntry$json],
 };
@@ -54,8 +55,9 @@ final $typed_data.Uint8List actorDescriptor = $convert.base64Decode(
     'Rpc3BsYXlfbmFtZRgDIAEoCVILZGlzcGxheU5hbWUSFAoFZW1haWwYBCABKAlSBWVtYWlsEhQK'
     'BWluYm94GAUgASgJUgVpbmJveBIWCgZvdXRib3gYBiABKAlSBm91dGJveBJOCgllbmRwb2ludH'
     'MYByADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3Rvci5FbmRwb2ludHNFbnRy'
-    'eVIJZW5kcG9pbnRzEiIKDGlzX2ZvbGxvd2luZxgIIAEoCFIMaXNfZm9sbG93aW5nGjwKDkVuZH'
-    'BvaW50c0VudHJ5EhAKA2tleRgBIAEoCVIDa2V5EhQKBXZhbHVlGAIgASgJUgV2YWx1ZToCOAE=');
+    'eVIJZW5kcG9pbnRzEiIKDGlzX2ZvbGxvd2luZxgIIAEoCFIMaXNfZm9sbG93aW5nEhoKCGFjdG'
+    '9yX2lkGAkgASgEUghhY3Rvcl9pZBo8Cg5FbmRwb2ludHNFbnRyeRIQCgNrZXkYASABKAlSA2tl'
+    'eRIUCgV2YWx1ZRgCIAEoCVIFdmFsdWU6AjgB');
 
 @$core.Deprecated('Use userLinkDescriptor instead')
 const UserLink$json = {
