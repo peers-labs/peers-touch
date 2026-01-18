@@ -14,6 +14,7 @@ message Actor {
   map<string, string> endpoints = 7;
   bool is_following = 8 [json_name = "is_following"];
   uint64 actor_id = 9 [json_name = "actor_id"];
+  bool followed_by = 10 [json_name = "followed_by"];
 }
 
 message UserLink {

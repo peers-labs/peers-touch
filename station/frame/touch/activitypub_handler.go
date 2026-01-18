@@ -18,10 +18,12 @@ import (
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	socialservice "github.com/peers-labs/peers-touch/station/frame/touch/social/service"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -341,26 +343,49 @@ func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
 // ListActors returns actors from preset configuration
 func ListActors(c context.Context, ctx *app.RequestContext) {
 	// Get current user ID from context (if authenticated)
-	var excludeActorID uint64
+	var currentActorID uint64
 	if subject, ok := c.Value(httpadapter.SubjectContextKey).(*coreauth.Subject); ok && subject != nil {
 		// subject.ID is the actor ID as string
 		if actorID, err := strconv.ParseUint(subject.ID, 10, 64); err == nil {
-			excludeActorID = actorID
-			log.Infof(c, "[ListActors] Excluding current user with actor ID: %d", excludeActorID)
+			currentActorID = actorID
+			log.Infof(c, "[ListActors] Current user actor ID: %d", currentActorID)
 		}
 	}
 
-	actors, err := activitypub.ListActors(c, excludeActorID)
+	actors, err := actor.ListActors(c, currentActorID)
 	if err != nil {
 		log.Warnf(c, "List actors failed: %v", err)
 		FailedResponse(ctx, err)
 		return
 	}
 
-	// Map to proto ActorList
+	// Map to proto ActorList with relationship status
 	items := make([]*modelpb.Actor, 0, len(actors))
 	for _, a := range actors {
-		items = append(items, &modelpb.Actor{Id: a.ID, Username: a.Username, DisplayName: a.DisplayName, Email: a.Email, Inbox: a.Inbox, Outbox: a.Outbox, Endpoints: a.Endpoints})
+		isFollowing := false
+		followedBy := false
+
+		if currentActorID > 0 {
+			// Check if current user is following this actor
+			relationship, err := socialservice.GetRelationship(c, currentActorID, strconv.FormatUint(a.ID, 10))
+			if err == nil && relationship != nil {
+				isFollowing = relationship.Following
+				followedBy = relationship.FollowedBy
+			}
+		}
+
+		items = append(items, &modelpb.Actor{
+			Id:          strconv.FormatUint(a.ID, 10),
+			Username:    a.PreferredUsername,
+			DisplayName: a.Name,
+			Email:       a.Email,
+			Inbox:       a.Inbox,
+			Outbox:      a.Outbox,
+			Endpoints:   nil,
+			ActorId:     a.ID,
+			IsFollowing: isFollowing,
+			FollowedBy:  followedBy,
+		})
 	}
 	SuccessResponse(ctx, "Actor list", &modelpb.ActorList{Items: items, Total: int64(len(items))})
 }
