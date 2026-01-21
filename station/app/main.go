@@ -11,6 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/chat"
+	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
 	touchactivitypub "github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 
@@ -43,6 +44,7 @@ func main() {
 		// Use the new router pattern for station endpoints
 		// server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
 		server.WithSubServer("chat", chat.NewChatSubServer),
+		server.WithSubServer("friend_chat", friendchat.NewFriendChatSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
 	)
 	if err != nil {

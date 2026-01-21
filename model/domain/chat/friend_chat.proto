@@ -1,0 +1,149 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+message FriendChatSession {
+  string ulid = 1;
+  string participant_a_did = 2;
+  string participant_b_did = 3;
+  string last_message_ulid = 4;
+  google.protobuf.Timestamp last_message_at = 5;
+  int32 unread_count_a = 6;
+  int32 unread_count_b = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message FriendChatMessage {
+  string ulid = 1;
+  string session_ulid = 2;
+  string sender_did = 3;
+  string receiver_did = 4;
+  
+  FriendMessageType type = 5;
+  string content = 6;
+  repeated FriendMessageAttachment attachments = 7;
+  
+  string reply_to_ulid = 8;
+  
+  FriendMessageStatus status = 9;
+  google.protobuf.Timestamp sent_at = 10;
+  google.protobuf.Timestamp delivered_at = 11;
+  google.protobuf.Timestamp read_at = 12;
+  
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+enum FriendMessageType {
+  FRIEND_MESSAGE_TYPE_UNSPECIFIED = 0;
+  FRIEND_MESSAGE_TYPE_TEXT = 1;
+  FRIEND_MESSAGE_TYPE_IMAGE = 2;
+  FRIEND_MESSAGE_TYPE_FILE = 3;
+  FRIEND_MESSAGE_TYPE_AUDIO = 4;
+  FRIEND_MESSAGE_TYPE_VIDEO = 5;
+}
+
+enum FriendMessageStatus {
+  FRIEND_MESSAGE_STATUS_UNSPECIFIED = 0;
+  FRIEND_MESSAGE_STATUS_SENDING = 1;
+  FRIEND_MESSAGE_STATUS_SENT = 2;
+  FRIEND_MESSAGE_STATUS_DELIVERED = 3;
+  FRIEND_MESSAGE_STATUS_READ = 4;
+  FRIEND_MESSAGE_STATUS_FAILED = 5;
+}
+
+message FriendMessageAttachment {
+  string cid = 1;
+  string filename = 2;
+  string mime_type = 3;
+  int64 size = 4;
+  string thumbnail_cid = 5;
+}
+
+message MessageEnvelope {
+  string message_ulid = 1;
+  string sender_did = 2;
+  string receiver_did = 3;
+  string session_ulid = 4;
+  bytes encrypted_payload = 5;
+  int64 timestamp = 6;
+  string signature = 7;
+}
+
+message OfflineMessage {
+  string ulid = 1;
+  string receiver_did = 2;
+  string sender_did = 3;
+  string session_ulid = 4;
+  bytes encrypted_payload = 5;
+  OfflineMessageStatus status = 6;
+  google.protobuf.Timestamp expire_at = 7;
+  google.protobuf.Timestamp delivered_at = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+enum OfflineMessageStatus {
+  OFFLINE_MESSAGE_STATUS_UNSPECIFIED = 0;
+  OFFLINE_MESSAGE_STATUS_PENDING = 1;
+  OFFLINE_MESSAGE_STATUS_DELIVERED = 2;
+  OFFLINE_MESSAGE_STATUS_EXPIRED = 3;
+}
+
+message SendMessageRequest {
+  string receiver_did = 1;
+  FriendMessageType type = 2;
+  string content = 3;
+  repeated FriendMessageAttachment attachments = 4;
+  string reply_to_ulid = 5;
+}
+
+message SendMessageResponse {
+  FriendChatMessage message = 1;
+  string relay_status = 2;
+}
+
+message GetMessagesRequest {
+  string session_ulid = 1;
+  string before_ulid = 2;
+  int32 limit = 3;
+}
+
+message GetMessagesResponse {
+  repeated FriendChatMessage messages = 1;
+  bool has_more = 2;
+}
+
+message GetSessionsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message GetSessionsResponse {
+  repeated FriendChatSession sessions = 1;
+  int32 total = 2;
+}
+
+message MarkReadRequest {
+  string session_ulid = 1;
+  string last_read_ulid = 2;
+}
+
+message MarkReadResponse {
+  int32 unread_count = 1;
+}
+
+message RelayMessageRequest {
+  MessageEnvelope envelope = 1;
+}
+
+message RelayMessageResponse {
+  string status = 1;
+  google.protobuf.Timestamp delivered_at = 2;
+  string forwarded_to = 3;
+}
