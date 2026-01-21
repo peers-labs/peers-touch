@@ -1,16 +1,24 @@
 import 'dart:async';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:peers_touch_base/network/ice/ice_service.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 
 typedef PeerConnectionFactory = Future<RTCPeerConnection> Function(Map<String, dynamic> configuration, [Map<String, dynamic> constraints]);
 
 class RTCClient {
 
-  RTCClient(this.signaling, {required this.role, required this.peerId, PeerConnectionFactory? pcFactory})
-      : _pcFactory = pcFactory ?? createPeerConnection;
+  RTCClient(
+    this.signaling, {
+    required this.role,
+    required this.peerId,
+    this.iceService,
+    PeerConnectionFactory? pcFactory,
+  }) : _pcFactory = pcFactory ?? createPeerConnection;
+  
   final RTCSignalingService signaling;
-  final String role; // 'mobile' or 'desktop'
-  final String peerId; // self peer id for identification
+  final String role;
+  final String peerId;
+  final IceService? iceService;
   final PeerConnectionFactory _pcFactory;
 
   RTCPeerConnection? _pc;
@@ -25,26 +33,39 @@ class RTCClient {
   String? _remoteDescType;
 
   Future<void> init() async {
-    // Just placeholder if needed, or maybe setup generic listeners
+  }
+
+  Future<List<Map<String, dynamic>>> _getIceServers() async {
+    if (iceService != null) {
+      try {
+        final servers = await iceService!.getICEServers();
+        return servers.map((s) => s.toRTCIceServer()).toList();
+      } catch (_) {}
+    }
+    return _defaultIceServers();
+  }
+
+  List<Map<String, dynamic>> _defaultIceServers() {
+    return [
+      {'urls': ['stun:stun.l.google.com:19302']},
+      {'urls': ['stun:stun.qq.com:3478']},
+      {'urls': ['stun:stun.miwifi.com:3478']},
+      {'urls': ['stun:stun.xten.com']},
+    ];
   }
 
   Future<void> _createPC(String sessionId) async {
+    final iceServers = await _getIceServers();
     final config = {
-      'iceServers': [
-        {'urls': ['stun:stun.l.google.com:19302']},
-        {'urls': ['stun:stun.qq.com:3478']},
-        {'urls': ['stun:stun.miwifi.com:3478']},
-        {'urls': ['stun:stun.xten.com']},
-      ]
+      'iceServers': iceServers,
     };
     _pc = await _pcFactory(config);
-    // Cache ICE server urls for later reporting
     try {
-      final srv = (config['iceServers'] as List?) ?? [];
-      _iceServerUrls = srv
+      _iceServerUrls = iceServers
           .expand((e) => (e is Map && e['urls'] is List) ? (e['urls'] as List).map((u) => u.toString()) : <String>[])
           .toList();
     } catch (_) {}
+    print('[RTCClient][$peerId] using ICE servers: $_iceServerUrls');
     _pc!.onConnectionState = (state) {
       _connectionStateController.add(state);
       print('[RTCClient][$peerId] connectionState=$state');

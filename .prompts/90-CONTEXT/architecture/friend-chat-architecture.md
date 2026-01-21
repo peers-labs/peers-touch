@@ -1,10 +1,10 @@
 # Friend Chat Architecture Design
 
 > **Status**: Draft  
-> **Version**: 2.0 (Simplified - No ActivityPub)  
-> **Date**: 2026-01-20  
+> **Version**: 3.0 (ICE Integrated)  
+> **Date**: 2026-01-21  
 > **Author**: Architecture Team  
-> **Dependencies**: `ice-capability-design.md`
+> **Dependencies**: `ice-capability-design.md` (✅ Implemented)
 
 ---
 
@@ -19,6 +19,15 @@ This document defines the **Friend Chat** capability as a **decentralized, priva
 3. **Resilient**: Offline message queue, multi-device sync, automatic reconnection
 4. **Integrated**: Seamlessly integrated with Discovery (Radar View) for friend management
 5. **Simple**: Direct HTTP/WebSocket communication between Stations
+
+### ICE Integration Status
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| ICE API | ✅ Implemented | `GET /api/v1/turn/ice-servers` |
+| TURN SubServer | ✅ Implemented | `station/frame/core/plugin/native/subserver/turn/` |
+| IceService (Client) | ✅ Implemented | `peers_touch_base/lib/network/ice/` |
+| RTCClient Integration | ✅ Implemented | `peers_touch_base/lib/network/rtc/rtc_client.dart` |
 
 ---
 
@@ -69,7 +78,7 @@ This document defines the **Friend Chat** capability as a **decentralized, priva
 └─────────────────────────────────────────────────────────────┘
                          ↓ uses
 ┌─────────────────────────────────────────────────────────────┐
-│               Communication Layer (NEW)                     │
+│               Communication Layer                           │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
 │  │ Connection   │  │  Message     │  │   Offline    │     │
 │  │ Manager      │  │  Transport   │  │   Queue      │     │
@@ -77,10 +86,10 @@ This document defines the **Friend Chat** capability as a **decentralized, priva
 └─────────────────────────────────────────────────────────────┘
                          ↓ uses
 ┌─────────────────────────────────────────────────────────────┐
-│                 ICE Capability Layer                        │
-│  (Defined in ice-capability-design.md)                      │
+│            ICE Capability Layer (✅ IMPLEMENTED)            │
+│  (See ice-capability-design.md for details)                 │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ ICE Manager  │  │ STUN Server  │  │ TURN Server  │     │
+│  │ IceService   │  │ RTCClient    │  │ TURN Server  │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘     │
 └─────────────────────────────────────────────────────────────┘
                          ↓ runs on
@@ -106,19 +115,17 @@ class ConnectionManager {
   final Map<String, ChatConnection> _activeConnections = {};
   final ConnectionStrategy _strategy;
   
-  /// Establish connection to a friend
+  ConnectionManager({required IceService iceService})
+      : _iceService = iceService,
+        _strategy = ConnectionStrategy(iceService);
+  
   Future<ChatConnection> connect(String friendDID) async {
-    // Check if already connected
     if (_activeConnections.containsKey(friendDID)) {
       return _activeConnections[friendDID]!;
     }
     
-    // Get ICE servers
-    final iceServers = await _iceService.getICEServers(
-      userDID: currentUserDID,
-    );
+    final iceServers = await _iceService.getICEServers();
     
-    // Try connection strategies in order
     final connection = await _strategy.establishConnection(
       remoteDID: friendDID,
       iceServers: iceServers,
@@ -128,7 +135,6 @@ class ConnectionManager {
     return connection;
   }
   
-  /// Monitor connection quality and upgrade/downgrade as needed
   void monitorConnections() {
     for (final entry in _activeConnections.entries) {
       final quality = entry.value.getQuality();
@@ -147,11 +153,15 @@ class ConnectionManager {
 ```dart
 enum ConnectionType {
   localDirect,    // mDNS local network
-  p2pDirect,      // P2P via STUN
+  p2pDirect,      // P2P via STUN (using IceService)
   stationRelay,   // Station WebSocket/HTTP relay
 }
 
 class ConnectionStrategy {
+  final IceService _iceService;
+  
+  ConnectionStrategy(this._iceService);
+  
   Future<ChatConnection> establishConnection({
     required String remoteDID,
     required List<IceServer> iceServers,
@@ -163,7 +173,7 @@ class ConnectionStrategy {
       LoggingService.debug('Local direct failed: $e');
     }
     
-    // 2. Try P2P direct (via STUN)
+    // 2. Try P2P direct (via STUN/TURN from IceService)
     try {
       return await _tryP2PDirect(remoteDID, iceServers);
     } catch (e) {
@@ -172,6 +182,21 @@ class ConnectionStrategy {
     
     // 3. Fallback to Station relay
     return await _useStationRelay(remoteDID);
+  }
+  
+  Future<ChatConnection> _tryP2PDirect(
+    String remoteDID,
+    List<IceServer> iceServers,
+  ) async {
+    final rtcClient = RTCClient(
+      signaling,
+      role: 'caller',
+      peerId: currentUserDID,
+      iceService: _iceService,
+    );
+    
+    await rtcClient.call(remoteDID);
+    return P2PChatConnection(rtcClient);
   }
 }
 ```
@@ -189,21 +214,17 @@ class MessageTransport {
   final EncryptionService _encryption;
   final ConnectionManager _connectionManager;
   
-  /// Send a message to a friend
   Future<SendResult> sendMessage({
     required String receiverDID,
     required FriendChatMessage message,
   }) async {
-    // 1. Get or establish connection
     final connection = await _connectionManager.connect(receiverDID);
     
-    // 2. Encrypt message payload
     final encrypted = await _encryption.encrypt(
       data: message.writeToBuffer(),
       recipientDID: receiverDID,
     );
     
-    // 3. Create message envelope
     final envelope = MessageEnvelope(
       messageUlid: message.ulid,
       senderDid: currentUserDID,
@@ -213,30 +234,20 @@ class MessageTransport {
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
     
-    // 4. Send via connection
     final result = await connection.send(envelope);
-    
-    // 5. Update local status
     await _updateMessageStatus(message.ulid, result.status);
     
     return result;
   }
   
-  /// Receive and decrypt message
   Future<FriendChatMessage> receiveMessage(MessageEnvelope envelope) async {
-    // 1. Decrypt payload
     final decrypted = await _encryption.decrypt(
       data: envelope.encryptedPayload,
       senderDID: envelope.senderDid,
     );
     
-    // 2. Parse message
     final message = FriendChatMessage.fromBuffer(decrypted);
-    
-    // 3. Store in local database
     await _storeMessage(message);
-    
-    // 4. Send ACK
     await _sendAcknowledgment(envelope.messageUlid, envelope.senderDid);
     
     return message;
@@ -257,18 +268,14 @@ type MessageRelayService struct {
     db              *gorm.DB
     wsManager       *WebSocketManager
     offlineQueue    *OfflineMessageQueue
-    activityPubClient *activitypub.Client
     metrics         *RelayMetrics
 }
 
-// Relay message to recipient
 func (mrs *MessageRelayService) RelayMessage(ctx context.Context, envelope *MessageEnvelope) (*RelayResult, error) {
-    // 1. Validate sender authentication
     if err := mrs.validateSender(ctx, envelope.SenderDid); err != nil {
         return nil, err
     }
     
-    // 2. Check if recipient is local user
     isLocal, err := mrs.isLocalUser(ctx, envelope.ReceiverDid)
     if err != nil {
         return nil, err
@@ -276,16 +283,12 @@ func (mrs *MessageRelayService) RelayMessage(ctx context.Context, envelope *Mess
     
     if isLocal {
         return mrs.relayToLocalUser(ctx, envelope)
-    } else {
-        return mrs.relayToRemoteStation(ctx, envelope)
     }
+    return mrs.relayToRemoteStation(ctx, envelope)
 }
 
-// Relay to local user (same Station)
 func (mrs *MessageRelayService) relayToLocalUser(ctx context.Context, envelope *MessageEnvelope) (*RelayResult, error) {
-    // 1. Check if recipient is online
     if mrs.wsManager.IsOnline(envelope.ReceiverDid) {
-        // Send via WebSocket
         if err := mrs.wsManager.SendToUser(envelope.ReceiverDid, "message.new", envelope); err != nil {
             return nil, err
         }
@@ -296,25 +299,19 @@ func (mrs *MessageRelayService) relayToLocalUser(ctx context.Context, envelope *
         }, nil
     }
     
-    // 2. Recipient offline, queue message
     if err := mrs.offlineQueue.Enqueue(ctx, envelope); err != nil {
         return nil, err
     }
     
-    return &RelayResult{
-        Status: "queued",
-    }, nil
+    return &RelayResult{Status: "queued"}, nil
 }
 
-// Relay to remote Station
 func (mrs *MessageRelayService) relayToRemoteStation(ctx context.Context, envelope *MessageEnvelope) (*RelayResult, error) {
-    // 1. Get recipient's Station URL from DID resolution
     recipientStation, err := mrs.resolveStationFromDID(ctx, envelope.ReceiverDid)
     if err != nil {
         return nil, err
     }
     
-    // 2. Forward message to remote Station
     url := fmt.Sprintf("%s/api/v1/message/receive", recipientStation.BaseURL)
     
     payload, err := proto.Marshal(envelope)
@@ -361,7 +358,6 @@ type OfflineMessageQueue struct {
     ttl time.Duration  // 7 days
 }
 
-// Enqueue offline message
 func (omq *OfflineMessageQueue) Enqueue(ctx context.Context, envelope *MessageEnvelope) error {
     offlineMsg := &model.OfflineMessage{
         ULID:             envelope.MessageUlid,
@@ -377,9 +373,7 @@ func (omq *OfflineMessageQueue) Enqueue(ctx context.Context, envelope *MessageEn
     return omq.db.Create(offlineMsg).Error
 }
 
-// Deliver offline messages when user comes online
 func (omq *OfflineMessageQueue) DeliverToUser(ctx context.Context, userDID string, wsConn *WebSocketConnection) error {
-    // 1. Fetch pending messages
     var messages []*model.OfflineMessage
     if err := omq.db.Where("receiver_did = ? AND status = ?", userDID, "pending").
         Order("created_at ASC").
@@ -389,7 +383,6 @@ func (omq *OfflineMessageQueue) DeliverToUser(ctx context.Context, userDID strin
     
     logger.Info(ctx, "delivering offline messages", "user", userDID, "count", len(messages))
     
-    // 2. Send messages via WebSocket
     var deliveredULIDs []string
     for _, msg := range messages {
         envelope := &MessageEnvelope{
@@ -408,7 +401,6 @@ func (omq *OfflineMessageQueue) DeliverToUser(ctx context.Context, userDID strin
         deliveredULIDs = append(deliveredULIDs, msg.ULID)
     }
     
-    // 3. Mark as delivered
     if len(deliveredULIDs) > 0 {
         if err := omq.db.Model(&model.OfflineMessage{}).
             Where("ulid IN ?", deliveredULIDs).
@@ -423,7 +415,6 @@ func (omq *OfflineMessageQueue) DeliverToUser(ctx context.Context, userDID strin
     return nil
 }
 
-// Clean expired messages (cron job)
 func (omq *OfflineMessageQueue) CleanExpired(ctx context.Context) error {
     result := omq.db.Where("expire_at < ?", time.Now()).
         Delete(&model.OfflineMessage{})
@@ -439,111 +430,35 @@ func (omq *OfflineMessageQueue) CleanExpired(ctx context.Context) error {
 
 ---
 
-### 5. Message Status Synchronization
-
-**Responsibility**: Sync message status (sent/delivered/read) across devices
-
-```go
-// station/frame/touch/message/sync/status_sync.go
-
-type StatusSyncService struct {
-    db        *gorm.DB
-    wsManager *WebSocketManager
-    eventBus  *EventBus
-}
-
-// Update message status
-func (sss *StatusSyncService) UpdateStatus(ctx context.Context, req *UpdateStatusRequest) error {
-    // 1. Update database
-    updates := map[string]interface{}{
-        "status":     req.NewStatus,
-        "updated_at": time.Now(),
-    }
-    
-    if req.NewStatus == "delivered" {
-        updates["delivered_at"] = time.Now()
-    } else if req.NewStatus == "read" {
-        updates["read_at"] = time.Now()
-    }
-    
-    if err := sss.db.Model(&model.Message{}).
-        Where("ulid = ?", req.MessageULID).
-        Updates(updates).Error; err != nil {
-        return err
-    }
-    
-    // 2. Notify sender (push status update)
-    go sss.notifySender(ctx, req)
-    
-    // 3. Sync to sender's other devices
-    go sss.syncToSenderDevices(ctx, req)
-    
-    // 4. Publish event
-    sss.eventBus.Publish(&MessageStatusChangedEvent{
-        MessageULID: req.MessageULID,
-        NewStatus:   req.NewStatus,
-        Timestamp:   time.Now(),
-    })
-    
-    return nil
-}
-
-// Notify sender of status change
-func (sss *StatusSyncService) notifySender(ctx context.Context, req *UpdateStatusRequest) {
-    // Query sender DID
-    var msg model.Message
-    if err := sss.db.Select("sender_did").
-        Where("ulid = ?", req.MessageULID).
-        First(&msg).Error; err != nil {
-        logger.Warn(ctx, "failed to query sender", "error", err)
-        return
-    }
-    
-    // Send WebSocket notification
-    statusUpdate := &StatusUpdateNotification{
-        MessageULID: req.MessageULID,
-        Status:      req.NewStatus,
-        Timestamp:   time.Now().Unix(),
-    }
-    
-    if err := sss.wsManager.SendToUser(msg.SenderDID, "message.status.update", statusUpdate); err != nil {
-        logger.Warn(ctx, "failed to notify sender", "error", err)
-    }
-}
-```
-
----
-
 ## 🔄 Complete Message Flow
 
-### Scenario 1: P2P Direct Connection (Ideal Case)
+### Scenario 1: P2P Direct Connection (Using ICE)
 
 ```
 Alice (Client)                    Station A                    Station B                    Bob (Client)
-     |                                |                            |                            |
-     |---(1) Discover ICE servers---->|                            |                            |
-     |<--(2) Return STUN/TURN---------|                            |                            |
-     |                                |                            |                            |
-     |---(3) Gather candidates------->|                            |                            |
-     |    (host, srflx, relay)        |                            |                            |
-     |                                |                            |                            |
-     |---(4) Send offer (via WebSocket/HTTP)-------------------->|
-     |                                |                            |---(5) Notify Bob---------->|
-     |                                |                            |                            |
-     |                                |                            |<--(6) Bob gathers candidates|
-     |                                |                            |                            |
-     |<--(7) Receive answer (via WebSocket/HTTP)------------------|                            |
-     |                                |                            |                            |
-     |---(8) ICE connectivity check--------------------------------|--------------------------->|
-     |    Try: host→host, srflx→srflx                             |                            |
-     |<--(9) P2P connection established (srflx→srflx)-------------|--------------------------->|
-     |                                |                            |                            |
-     |===(10) Send encrypted message directly====================================>|
-     |                                |                            |                            |
-     |<--(11) ACK received============================================|
-     |                                |                            |                            |
-     |---(12) Update status: delivered|                            |                            |
-     |                                |                            |                            |
+     │                                │                            │                            │
+     │──(1) GET /api/v1/turn/ice-servers──>│                       │                            │
+     │<─(2) Return ICE config─────────│                            │                            │
+     │    {stun, turn, credentials}   │                            │                            │
+     │                                │                            │                            │
+     │──(3) Gather candidates────────>│                            │                            │
+     │    (host, srflx, relay)        │                            │                            │
+     │                                │                            │                            │
+     │──(4) Send offer (via WebSocket/HTTP)──────────────────────>│                            │
+     │                                │                            │──(5) Notify Bob──────────>│
+     │                                │                            │                            │
+     │                                │                            │<─(6) Bob gathers candidates│
+     │                                │                            │                            │
+     │<─(7) Receive answer (via WebSocket/HTTP)───────────────────│                            │
+     │                                │                            │                            │
+     │──(8) ICE connectivity check───────────────────────────────────────────────────────────>│
+     │    Try: host→host, srflx→srflx                             │                            │
+     │<─(9) P2P connection established (srflx→srflx)─────────────────────────────────────────>│
+     │                                │                            │                            │
+     │══(10) Send encrypted message directly══════════════════════════════════════════════════>│
+     │                                │                            │                            │
+     │<─(11) ACK received═══════════════════════════════════════════════════════════════════════│
+     │                                │                            │                            │
 
 Result: Direct P2P connection, ~50ms latency, no Station relay needed
 ```
@@ -552,30 +467,29 @@ Result: Direct P2P connection, ~50ms latency, no Station relay needed
 
 ```
 Alice (Client)                    Station A                    Station B                    Bob (Client)
-     |                                |                            |                            |
-     |---(1) Try P2P connection------>|                            |                            |
-     |<--(2) P2P failed (Symmetric NAT)|                           |                            |
-     |                                |                            |                            |
-     |---(3) Fallback to Station relay|                            |                            |
-     |    POST /api/v1/message/send   |                            |                            |
-     |                                |                            |                            |
-     |                                |---(4) Check Bob's location-|                            |
-     |                                |    (Query ActivityPub)     |                            |
-     |                                |                            |                            |
-     |                                |---(5) Forward to Station B------------------------>|
-     |                                |    POST /api/v1/message/receive                    |
-     |                                |                            |                            |
-     |                                |                            |---(6) Check Bob online---->|
-     |                                |                            |    WebSocket connected     |
-     |                                |                            |                            |
-     |                                |                            |---(7) Push via WebSocket-->|
-     |                                |                            |                            |
-     |                                |                            |<--(8) ACK received---------|
-     |                                |                            |                            |
-     |                                |<--(9) Confirm delivered----|                            |
-     |                                |                            |                            |
-     |<--(10) Return success----------|                            |                            |
-     |                                |                            |                            |
+     │                                │                            │                            │
+     │──(1) Try P2P connection───────>│                            │                            │
+     │<─(2) P2P failed (Symmetric NAT)│                            │                            │
+     │                                │                            │                            │
+     │──(3) Fallback to Station relay─│                            │                            │
+     │    POST /api/v1/message/send   │                            │                            │
+     │                                │                            │                            │
+     │                                │──(4) Resolve Bob's Station─│                            │
+     │                                │                            │                            │
+     │                                │──(5) Forward to Station B──────────────────────────────>│
+     │                                │    POST /api/v1/message/receive                         │
+     │                                │                            │                            │
+     │                                │                            │──(6) Check Bob online─────>│
+     │                                │                            │    WebSocket connected     │
+     │                                │                            │                            │
+     │                                │                            │──(7) Push via WebSocket───>│
+     │                                │                            │                            │
+     │                                │                            │<─(8) ACK received──────────│
+     │                                │                            │                            │
+     │                                │<─(9) Confirm delivered─────│                            │
+     │                                │                            │                            │
+     │<─(10) Return success───────────│                            │                            │
+     │                                │                            │                            │
 
 Result: Station relay, ~100ms latency, federated delivery
 ```
@@ -584,37 +498,29 @@ Result: Station relay, ~100ms latency, federated delivery
 
 ```
 Alice (Client)                    Station A                    Station B                    Bob (Offline)
-     |                                |                            |                            |
-     |---(1) Send message------------>|                            |                            |
-     |    POST /api/v1/message/send   |                            |                            |
-     |                                |                            |                            |
-     |                                |---(2) Forward to Station B------------------------>|
-     |                                |    (Resolve DID)           |                            |
-     |                                |                            |                            |
-     |                                |                            |---(3) Check Bob online---->|
-     |                                |                            |    WebSocket: NOT CONNECTED|
-     |                                |                            |                            |
-     |                                |                            |---(4) Enqueue offline msg->|
-     |                                |                            |    INSERT offline_message  |
-     |                                |                            |    expire_at: +7 days      |
-     |                                |                            |                            |
-     |                                |<--(5) Confirm queued-------|                            |
-     |                                |                            |                            |
-     |<--(6) Return queued status-----|                            |                            |
-     |                                |                            |                            |
-     |                                |                            |    (Bob comes online)      |
-     |                                |                            |<--(7) WebSocket connect----|
-     |                                |                            |                            |
-     |                                |                            |---(8) Deliver offline msgs->|
-     |                                |                            |    SELECT * FROM offline_msg|
-     |                                |                            |                            |
-     |                                |                            |---(9) Push messages------->|
-     |                                |                            |                            |
-     |                                |                            |<--(10) ACK received--------|
-     |                                |                            |                            |
-     |                                |                            |---(11) Mark delivered----->|
-     |                                |                            |    UPDATE offline_message  |
-     |                                |                            |                            |
+     │                                │                            │                            │
+     │──(1) Send message─────────────>│                            │                            │
+     │    POST /api/v1/message/send   │                            │                            │
+     │                                │                            │                            │
+     │                                │──(2) Forward to Station B──────────────────────────────>│
+     │                                │                            │                            │
+     │                                │                            │──(3) Check Bob online─────>│
+     │                                │                            │    WebSocket: NOT CONNECTED│
+     │                                │                            │                            │
+     │                                │                            │──(4) Enqueue offline msg──>│
+     │                                │                            │    expire_at: +7 days      │
+     │                                │                            │                            │
+     │                                │<─(5) Confirm queued────────│                            │
+     │                                │                            │                            │
+     │<─(6) Return queued status──────│                            │                            │
+     │                                │                            │                            │
+     │                                │                            │    (Bob comes online)      │
+     │                                │                            │<─(7) WebSocket connect─────│
+     │                                │                            │                            │
+     │                                │                            │──(8) Deliver offline msgs─>│
+     │                                │                            │                            │
+     │                                │                            │<─(9) ACK received──────────│
+     │                                │                            │                            │
 
 Result: Message queued for 7 days, delivered when Bob comes online
 ```
@@ -639,7 +545,7 @@ Result: Message queued for 7 days, delivered when Bob comes online
 │         │                       │                           │
 │  [🔍]   │  ┌─────────────────┐  │  ┌─────────────────────┐ │
 │  Radar  │  │ 🔍 Search...    │  │  │  Alice              │ │
-│         │  └─────────────────┘  │  │  Online • 2 devices │ │
+│         │  └─────────────────┘  │  │  Online • P2P Direct│ │
 │  [💬]   │                       │  └─────────────────────┘ │
 │  Chat   │  Friends (12)         │                           │
 │         │  ┌─────────────────┐  │  ┌─────────────────────┐ │
@@ -661,7 +567,7 @@ Result: Message queued for 7 days, delivered when Bob comes online
 └─────────┴───────────────────────┴───────────────────────────┘
 ```
 
-### Key UI Elements
+### Key UI Components
 
 #### 1. Friend List (Middle Panel)
 
@@ -671,38 +577,37 @@ Result: Message queued for 7 days, delivered when Bob comes online
 class FriendList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Search bar
-        Padding(
-          padding: EdgeInsets.all(16),
-          child: SearchBar(
-            hintText: 'Search friends or messages...',
-            onChanged: controller.onSearchChanged,
-            onSubmitted: controller.onSearchSubmitted,
+    return GetBuilder<FriendChatController>(
+      builder: (controller) => Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: SearchBar(
+              hintText: 'Search friends or messages...',
+              onChanged: controller.onSearchChanged,
+            ),
           ),
-        ),
-        
-        // Friend list
-        Expanded(
-          child: Obx(() {
-            if (controller.isSearching.value) {
-              return SearchResults(results: controller.searchResults);
-            }
-            
-            return ListView.builder(
-              itemCount: controller.friends.length,
-              itemBuilder: (context, index) {
-                final friend = controller.friends[index];
-                return FriendListItem(
-                  friend: friend,
-                  onTap: () => controller.selectFriend(friend.did),
-                );
-              },
-            );
-          }),
-        ),
-      ],
+          
+          Expanded(
+            child: Obx(() {
+              if (controller.isSearching.value) {
+                return SearchResults(results: controller.searchResults);
+              }
+              
+              return ListView.builder(
+                itemCount: controller.friends.length,
+                itemBuilder: (context, index) {
+                  final friend = controller.friends[index];
+                  return FriendListItem(
+                    friend: friend,
+                    onTap: () => controller.selectFriend(friend.did),
+                  );
+                },
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -716,18 +621,16 @@ class FriendList extends StatelessWidget {
 class ChatWindow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Chat header
-        ChatHeader(
-          friend: controller.selectedFriend,
-          connectionStatus: controller.connectionStatus,
-        ),
-        
-        // Message list
-        Expanded(
-          child: Obx(() {
-            return ListView.builder(
+    return GetBuilder<FriendChatController>(
+      builder: (controller) => Column(
+        children: [
+          ChatHeader(
+            friend: controller.selectedFriend,
+            connectionStatus: controller.connectionStatus,
+          ),
+          
+          Expanded(
+            child: Obx(() => ListView.builder(
               reverse: true,
               itemCount: controller.messages.length,
               itemBuilder: (context, index) {
@@ -737,22 +640,20 @@ class ChatWindow extends StatelessWidget {
                   isMine: message.senderDid == currentUserDID,
                 );
               },
-            );
-          }),
-        ),
-        
-        // Input area
-        ChatInput(
-          onSend: controller.sendMessage,
-          onAttachment: controller.attachFile,
-        ),
-        
-        // Connection status indicator
-        ConnectionStatusBar(
-          type: controller.connectionType,
-          latency: controller.latency,
-        ),
-      ],
+            )),
+          ),
+          
+          ChatInput(
+            onSend: controller.sendMessage,
+            onAttachment: controller.attachFile,
+          ),
+          
+          ConnectionStatusBar(
+            type: controller.connectionType,
+            latency: controller.latency,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -771,6 +672,8 @@ enum MessageStatus {
 
 class MessageStatusIcon extends StatelessWidget {
   final MessageStatus status;
+  
+  const MessageStatusIcon({required this.status});
   
   @override
   Widget build(BuildContext context) {
@@ -807,12 +710,9 @@ class SignalProtocolService {
   final SignedPreKeyStore _signedPreKeyStore;
   final SessionStore _sessionStore;
   
-  /// Initialize session with friend
   Future<void> initializeSession(String friendDID) async {
-    // 1. Fetch friend's prekey bundle from their Station
     final preKeyBundle = await _fetchPreKeyBundle(friendDID);
     
-    // 2. Process prekey bundle and establish session
     final sessionBuilder = SessionBuilder(
       sessionStore: _sessionStore,
       preKeyStore: _preKeyStore,
@@ -824,7 +724,6 @@ class SignalProtocolService {
     await sessionBuilder.processPreKeyBundle(preKeyBundle);
   }
   
-  /// Encrypt message
   Future<Uint8List> encryptMessage(String friendDID, Uint8List plaintext) async {
     final cipher = SessionCipher(
       sessionStore: _sessionStore,
@@ -838,7 +737,6 @@ class SignalProtocolService {
     return ciphertext.serialize();
   }
   
-  /// Decrypt message
   Future<Uint8List> decryptMessage(String friendDID, Uint8List ciphertext) async {
     final cipher = SessionCipher(
       sessionStore: _sessionStore,
@@ -853,37 +751,7 @@ class SignalProtocolService {
 }
 ```
 
-### 2. Key Exchange via ActivityPub
-
-```json
-{
-  "@context": "https://www.w3.org/ns/activitystreams",
-  "type": "Note",
-  "id": "https://station-a.com/users/alice/prekey-bundle",
-  "attributedTo": "https://station-a.com/users/alice",
-  "content": {
-    "identityKey": "base64_encoded_identity_key",
-    "signedPreKey": {
-      "keyId": 1,
-      "publicKey": "base64_encoded_signed_prekey",
-      "signature": "base64_encoded_signature"
-    },
-    "preKeys": [
-      {
-        "keyId": 1,
-        "publicKey": "base64_encoded_prekey_1"
-      },
-      {
-        "keyId": 2,
-        "publicKey": "base64_encoded_prekey_2"
-      }
-    ]
-  },
-  "published": "2026-01-20T00:00:00Z"
-}
-```
-
-### 3. Station Cannot Read Messages
+### 2. Station Cannot Read Messages
 
 **Key Point**: Station only sees encrypted payloads
 
@@ -923,7 +791,6 @@ class SignalProtocolService {
 syntax = "proto3";
 package peers.touch.chat;
 
-// Friend chat session
 message FriendChatSession {
   string ulid = 1;
   string participant_a_did = 2;
@@ -936,7 +803,6 @@ message FriendChatSession {
   int64 updated_at = 9;
 }
 
-// Friend chat message
 message FriendChatMessage {
   string ulid = 1;
   string session_ulid = 2;
@@ -944,10 +810,10 @@ message FriendChatMessage {
   string receiver_did = 4;
   
   MessageType type = 5;
-  string content = 6;  // Plain text (before encryption)
+  string content = 6;
   repeated Attachment attachments = 7;
   
-  string reply_to_ulid = 8;  // For threading (V2)
+  string reply_to_ulid = 8;
   
   MessageStatus status = 9;
   int64 sent_at = 10;
@@ -975,20 +841,19 @@ enum MessageStatus {
 }
 
 message Attachment {
-  string cid = 1;  // Content-addressed ID
+  string cid = 1;
   string filename = 2;
   string mime_type = 3;
   int64 size = 4;
-  string thumbnail_cid = 5;  // For images/videos
+  string thumbnail_cid = 5;
 }
 
-// Message envelope (for transport)
 message MessageEnvelope {
   string message_ulid = 1;
   string sender_did = 2;
   string receiver_did = 3;
   string session_ulid = 4;
-  bytes encrypted_payload = 5;  // Encrypted FriendChatMessage
+  bytes encrypted_payload = 5;
   int64 timestamp = 6;
   string signature = 7;
 }
@@ -1015,16 +880,6 @@ CREATE TABLE friend_chat_session (
     )
 );
 
--- Friend chat messages (extends touch_message)
-ALTER TABLE touch_message ADD COLUMN receiver_did VARCHAR(255);
-ALTER TABLE touch_message ADD COLUMN reply_to_ulid VARCHAR(26);
-ALTER TABLE touch_message ADD COLUMN status VARCHAR(20) DEFAULT 'sent';
-ALTER TABLE touch_message ADD COLUMN delivered_at TIMESTAMP;
-ALTER TABLE touch_message ADD COLUMN read_at TIMESTAMP;
-
-CREATE INDEX idx_touch_message_receiver ON touch_message(receiver_did);
-CREATE INDEX idx_touch_message_session_time ON touch_message(session_ulid, created_at DESC);
-
 -- Offline message queue
 CREATE TABLE offline_message (
     ulid VARCHAR(26) PRIMARY KEY,
@@ -1047,6 +902,16 @@ CREATE TABLE offline_message (
 
 ## 🚀 Implementation Roadmap
 
+### Phase 0: ICE Infrastructure ✅ COMPLETED
+
+| Task | Status | Location |
+|------|--------|----------|
+| TURN SubServer with ICE API | ✅ Done | `turn/ice_handler.go` |
+| IceService (Client) | ✅ Done | `network/ice/ice_service.dart` |
+| IceServer Model | ✅ Done | `network/ice/ice_server.dart` |
+| RTCClient Integration | ✅ Done | `network/rtc/rtc_client.dart` |
+| Configuration | ✅ Done | `sub_turn.yml` |
+
 ### Phase 1: MVP - Station Relay (Week 1-2)
 
 **Goal**: Basic friend chat working via Station relay
@@ -1061,31 +926,19 @@ CREATE TABLE offline_message (
 
 **Deliverable**: Users can chat via Station relay
 
-### Phase 2: E2EE + Service Discovery (Week 3-4)
+### Phase 2: P2P Direct + E2EE (Week 3-4)
 
-**Goal**: Add encryption and ICE service discovery
+**Goal**: Add P2P direct connection and encryption
 
+- [ ] ConnectionManager implementation
+- [ ] ConnectionStrategy (local → P2P → relay)
 - [ ] Signal Protocol integration
-- [ ] Key exchange via ActivityPub
-- [ ] ICE service discovery
-- [ ] Connection manager (try P2P, fallback to relay)
-- [ ] Message encryption/decryption
+- [ ] Key exchange mechanism
+- [ ] P2P message transport
 
-**Deliverable**: E2EE chat with automatic ICE discovery
+**Deliverable**: E2EE chat with P2P when possible
 
-### Phase 3: P2P Direct Connection (Week 5-6)
-
-**Goal**: Enable P2P direct messaging
-
-- [ ] Fix Dart ↔ Go libp2p interop
-- [ ] P2P connection establishment
-- [ ] Connection quality monitoring
-- [ ] Automatic connection upgrade/downgrade
-- [ ] Metrics and monitoring
-
-**Deliverable**: P2P direct chat for 80%+ connections
-
-### Phase 4: Advanced Features (Week 7-8)
+### Phase 3: Advanced Features (Week 5-6)
 
 **Goal**: Polish and optimize
 
@@ -1138,13 +991,13 @@ User Flow:
 4. Clicks "Follow" → Establishes friend relationship (stored locally)
 5. Friend appears in Friend Chat list
 6. User clicks friend → Opens chat window
-7. Sends first message → Connection established
+7. Sends first message → Connection established (P2P or relay)
 ```
 
 **Friend Relationship Storage**:
 - Friend relationships stored in local database
 - DID resolution to find friend's Station URL
-- ICE servers obtained from own Station
+- ICE servers obtained from own Station via `/api/v1/turn/ice-servers`
 - Ready to send messages
 
 ---
@@ -1159,31 +1012,28 @@ User Flow:
 | **Privacy** | E2EE (but metadata visible) | E2EE + metadata hidden |
 | **Censorship** | Possible (centralized) | Resistant (federated) |
 | **Data ownership** | Facebook | User |
-| **Cost** | Free (ad-supported) | Self-hosted ($15-30/month) |
 
 ### vs. Matrix/XMPP (Federated)
 
 | Feature | Matrix | Peers-Touch |
 |---------|--------|-------------|
-| **Protocol** | Matrix Protocol | ActivityPub + ICE |
+| **Protocol** | Matrix Protocol | HTTP/WebSocket + ICE |
 | **P2P** | No (server-to-server) | Yes (client-to-client) |
 | **Setup** | Complex | Simple (one-click Station) |
-| **Mobile** | Heavy (full sync) | Light (selective sync) |
 
 ### vs. Signal (Privacy-First)
 
 | Feature | Signal | Peers-Touch |
 |---------|--------|-------------|
 | **Infrastructure** | Signal servers | Self-hosted Stations |
-| **Federation** | No | Yes (ActivityPub) |
+| **Federation** | No | Yes |
 | **P2P** | No | Yes |
-| **Social features** | Limited | Rich (Discovery, profiles) |
 
 ---
 
 ## 📚 Related Documents
 
-- [ice-capability-design.md](./ice-capability-design.md) - ICE infrastructure (dependency)
+- [ice-capability-design.md](./ice-capability-design.md) - ICE infrastructure (✅ Implemented)
 - [10-GLOBAL/11-architecture.md](../../10-GLOBAL/11-architecture.md) - Overall architecture
 - [10-GLOBAL/12-domain-model.md](../../10-GLOBAL/12-domain-model.md) - Proto models
 - [20-CLIENT/21-DESKTOP/21.0-base.md](../../20-CLIENT/21-DESKTOP/21.0-base.md) - Desktop client architecture
@@ -1194,15 +1044,15 @@ User Flow:
 ## 🎓 Key Takeaways
 
 1. **Friend Chat is the first killer app** of the Peers-Touch network
-2. **Built on ICE capability** - demonstrates the power of self-hosted infrastructure
+2. **Built on ICE capability** (✅ Implemented) - demonstrates the power of self-hosted infrastructure
 3. **Privacy-first by design** - E2EE, P2P direct, no server-side reading
 4. **Simple Station relay** - HTTP/WebSocket communication between Stations
 5. **Progressive enhancement** - works via relay, optimizes to P2P
 6. **Integrated with Discovery** - seamless friend management
 7. **DID-based routing** - resolve friend's Station from their DID
 
-**This design provides a privacy-first messaging system built on self-hosted infrastructure, focusing on simplicity and core functionality before adding federation complexity.**
-
 ---
 
-**Next Steps**: Review both architecture documents together, then proceed with implementation planning.
+**Next Steps**: 
+1. ✅ ICE capability implemented
+2. → Implement Phase 1: Station Relay (Proto models, DB schema, relay service, UI)

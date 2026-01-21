@@ -101,234 +101,87 @@ Benefits:
 
 ## 📐 Component Design
 
-### Architecture Layers
+### Architecture (Simplified)
+
+**设计原则**: 不需要独立的 ICE 层,TURN SubServer 直接提供 ICE 服务器配置 API。
 
 ```
 station/
-├── frame/core/                     # 核心框架层
+├── frame/core/
 │   ├── server/                     # 服务器接口定义
-│   ├── ice/                        # ICE 组网能力 ⭐
-│   │   ├── manager.go              # ICE Manager
-│   │   ├── config.go               # Config Service
-│   │   ├── selector.go             # Candidate Selector
-│   │   ├── handler.go              # HTTP Handlers
-│   │   └── interface.go            # 接口定义
-│   └── plugin/native/subserver/    # 网络服务层
-│       ├── stun/                   # STUN 服务实现
-│       ├── turn/                   # TURN 服务实现
-│       └── bootstrap/              # libp2p 服务实现
+│   └── plugin/native/subserver/
+│       ├── stun/                   # STUN 服务 (NAT 发现)
+│       ├── turn/                   # TURN 服务 (中继) + ICE API ⭐
+│       └── bootstrap/              # libp2p 服务
 │
-└── app/                            # 应用层(组装启动)
-    └── main.go                     # 依赖注入组装
+└── app/
+    └── main.go
 ```
 
-**Dependency Principle**: 
-- `core/ice/` **不直接依赖** `core/plugin/native/subserver/` 的具体实现
-- `core/ice/` 只依赖 `core/server.SubServer` 接口
-- `app/` 层导入具体实现并通过依赖注入组装
-- 完全的依赖倒置: 高层模块不依赖低层模块,都依赖抽象
+**关键点**:
+- ❌ 不需要独立的 `ice/` 目录
+- ✅ TURN SubServer 提供 `/api/v1/turn/ice-servers` API
+- ✅ TURN 内部引用 STUN 获取其公网地址
+- ✅ 客户端只需调用一个 API 获取所有 ICE 配置
 
-**Dependency Graph** (Auto-Discovery Pattern):
+**Dependency Graph**:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        app/main.go                          │
-│                 (Clean, Minimal Configuration)              │
 │                                                             │
-│  p.Init(                                                    │
-│    server.WithICE(ice.WithPublicSTUNFallback(true))        │
-│  )                                                          │
+│  // blank import 自动注册                                    │
+│  _ "station/frame/core/plugin/native/subserver/stun"        │
+│  _ "station/frame/core/plugin/native/subserver/turn"        │
 └─────────────────────────────────────────────────────────────┘
-         │ imports (blank)        │ imports           │ imports
-         ↓                        ↓                   ↓
-┌──────────────────┐    ┌──────────────────┐   ┌──────────────────┐
-│  core/ice/       │    │  subserver/stun/ │   │  subserver/turn/ │
-│  (ICE Manager)   │    │  (STUN Server)   │   │  (TURN Server)   │
-│                  │    │  init() 注册     │   │  init() 注册     │
-└──────────────────┘    └──────────────────┘   └──────────────────┘
-         │                       │                   │
-         │                       ↓ implements        ↓ implements
-         │              ┌─────────────────────────────────────┐
-         │              │  core/server.SubServer (Interface)  │
-         │              └─────────────────────────────────────┘
-         │                       ↑                   ↑
-         │                       │                   │
-         └─── Auto-Discovery ────┴───────────────────┘
-              (via Type() == "network.stun|turn")
-
-Workflow:
-1. main.go: blank import STUN/TURN → init() 自动注册到 Server
-2. main.go: server.WithICE(...) → 创建 ICE Manager
-3. ICE Manager.Init(): 从 Server 查找 Type()=="network.stun|turn"
-4. ICE Manager 自动获取 STUN/TURN 引用,无需手动注入
-
-Key:
-→ Direct import
-⇢ Auto-discovery at runtime
+                    │                        │
+                    ↓                        ↓
+         ┌──────────────────┐      ┌──────────────────┐
+         │  STUN SubServer  │      │  TURN SubServer  │
+         │  (UDP :3478)     │      │  (UDP/TCP :3478) │
+         │                  │      │                  │
+         │  Info() →        │←─────│  引用 STUN       │
+         │  - PublicAddr    │      │                  │
+         └──────────────────┘      │  提供 HTTP API:  │
+                                   │  /api/v1/turn/   │
+                                   │    ice-servers   │
+                                   └──────────────────┘
 ```
 
 ---
 
-### 1. ICE Manager (Coordination Layer)
+### SubServer Interface
 
-**Location**: `station/frame/core/ice/manager.go`
-
-**Responsibility**: Coordinate ICE candidate gathering and connection establishment
+所有 SubServer 实现统一的接口,通过 `Info()` 方法返回服务信息:
 
 ```go
-// station/frame/core/ice/manager.go
+// station/frame/core/server/subserver.go
 
-package ice
-
-import (
-    "context"
-    "github.com/peers-labs/peers-touch/station/frame/core/server"
-)
-
-type Manager struct {
-    // 通过接口引用,不直接依赖具体实现
-    stunService STUNService
-    turnService TURNService
+type SubServer interface {
+    Init(ctx context.Context, opts ...option.Option) error
+    Start(ctx context.Context, opts ...option.Option) error
+    Stop(ctx context.Context) error
+    Status() Status
     
-    configService     *ConfigService
-    candidateSelector *CandidateSelector
-    candidateCache    map[string][]*Candidate
-    metrics           *ICEMetrics
+    Name() string
+    Type() string      // "network.stun", "network.turn", etc.
+    Info() *ServiceInfo
+    Handlers() []Handler  // HTTP handlers
 }
 
-// NewManager 创建 ICE Manager (自动发现 STUN/TURN)
-func NewManager(opts ...option.Option) *Manager {
-    m := &Manager{
-        configService:     NewConfigService(),
-        candidateSelector: NewCandidateSelector(),
-        candidateCache:    make(map[string][]*Candidate),
-    }
-    
-    // 应用配置选项
-    for _, opt := range opts {
-        opt.Apply(m)
-    }
-    
-    return m
-}
-
-// Init 初始化时自动发现 STUN/TURN SubServers
-func (m *Manager) Init(ctx context.Context, opts ...option.Option) error {
-    // 从 Node 获取 Server
-    srv := node.GetService().Server()
-    
-    // 自动发现 STUN SubServer
-    if stunSub := m.findSubServerByType(srv, "network.stun"); stunSub != nil {
-        m.stunService = stunSub
-    }
-    
-    // 自动发现 TURN SubServer
-    if turnSub := m.findSubServerByType(srv, "network.turn"); turnSub != nil {
-        m.turnService = turnSub
-    }
-    
-    return nil
-}
-
-// findSubServerByType 通过类型查找 SubServer
-func (m *Manager) findSubServerByType(srv server.Server, typ string) server.SubServer {
-    opts := srv.Options()
-    for _, sub := range opts.SubServers {
-        if sub.Type() == typ {
-            return sub
-        }
-    }
-    return nil
-}
-
-// Core Methods
-func (m *Manager) GatherCandidates(ctx context.Context, opts *GatherOptions) ([]*Candidate, error)
-func (m *Manager) GetICEServers(ctx context.Context, userDID string) ([]ICEServer, error)
-func (m *Manager) SelectBestCandidate(candidates []*Candidate) *Candidate
-func (m *Manager) MonitorConnectionQuality(conn *Connection) *QualityMetrics
-
-// 使用简化后的接口获取服务信息
-func (m *Manager) GetSTUNServerInfo() *server.ServiceInfo {
-    return m.stunService.Info()  // 包含 PublicAddr
-}
-
-func (m *Manager) GetTURNServerInfo() *server.ServiceInfo {
-    return m.turnService.Info()  // 包含 PublicAddr
-}
-```
-
-**Functional Options**:
-```go
-// station/frame/core/ice/options.go
-package ice
-
-import "github.com/peers-labs/peers-touch/station/frame/core/option"
-
-// WithPublicSTUNFallback 启用公共 STUN 服务器作为后备
-func WithPublicSTUNFallback(enabled bool) option.Option {
-    return option.WrapFunc(func(v interface{}) {
-        if m, ok := v.(*Manager); ok {
-            m.enablePublicFallback = enabled
-        }
-    })
-}
-
-// WithCandidateCacheTTL 设置候选地址缓存时间
-func WithCandidateCacheTTL(ttl time.Duration) option.Option {
-    return option.WrapFunc(func(v interface{}) {
-        if m, ok := v.(*Manager); ok {
-            m.candidateCacheTTL = ttl
-        }
-    })
-}
-```
-
-**Interface Definition**:
-```go
-// station/frame/core/ice/interface.go
-package ice
-
-import "github.com/peers-labs/peers-touch/station/frame/core/server"
-
-// STUNService 定义 STUN 服务接口
-type STUNService interface {
-    server.SubServer
-}
-
-// TURNService 定义 TURN 服务接口
-type TURNService interface {
-    server.SubServer
-    GenerateCredentials(username string) (string, error)
-}
-```
-
-**Key Features**:
-- Automatic candidate gathering
-- Intelligent candidate selection
-- Connection quality monitoring
-- Fallback strategy management
-
-**Interface Design**:
-
-SubServer 接口通过 `Info()` 方法统一返回服务信息,包含监听地址、公网地址、协议等完整信息。
-
-`Type()` 方法返回分层类型标识 (如 `"network.stun"`, `"network.turn"`),便于按类型过滤和管理 Subserver。
-
-**ServiceInfo 结构**:
-```go
 type ServiceInfo struct {
-    Name       string            // "stun"
-    Type       string            // "network.stun"
-    Status     string            // "running"
-    Address    string            // "0.0.0.0:3478" (监听地址)
-    PublicAddr string            // "123.45.67.89:3478" (公网地址)
-    Protocol   string            // "udp"
+    Name       string            // "stun", "turn"
+    Type       string            // "network.stun", "network.turn"
+    Status     string            // "running", "stopped"
+    Address    string            // "0.0.0.0:3478"
+    PublicAddr string            // "123.45.67.89:3478"
+    Protocol   string            // "udp", "tcp", "udp+tcp"
     Metadata   map[string]string // 扩展信息
 }
 ```
 
 ---
 
-### 2. STUN Server (NAT Discovery Subserver)
+### 1. STUN SubServer (NAT Discovery)
 
 **Location**: `station/frame/core/plugin/native/subserver/stun/`
 
@@ -336,153 +189,351 @@ type ServiceInfo struct {
 
 ```go
 // station/frame/core/plugin/native/subserver/stun/stun.go
-
 package stun
 
-import (
-    "context"
-    "net"
-    
-    "github.com/peers-labs/peers-touch/station/frame/core/server"
-    "github.com/pion/stun"
-)
-
-// SubServer implements STUN service
 type SubServer struct {
-    opts *Options
-    
+    opts        *Options
     status      server.Status
-    conn        net.PacketConn  // UDP listener
-    handler     *STUNHandler
-    rateLimiter *RateLimiter
-    
-    publicIP string
-    address  string
+    conn        net.PacketConn
+    publicIP    string
+    address     string
 }
 
-// Implement server.SubServer interface
-func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error
-func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error
-func (s *SubServer) Stop(ctx context.Context) error
-func (s *SubServer) Status() server.Status { return s.status }
-
 func (s *SubServer) Name() string { return "stun" }
-func (s *SubServer) Type() string { return "network.stun" }  // 分层类型标识
+func (s *SubServer) Type() string { return "network.stun" }
 
-// Info 统一返回服务信息(包含公网地址)
 func (s *SubServer) Info() *server.ServiceInfo {
     return &server.ServiceInfo{
         Name:       s.Name(),
         Type:       s.Type(),
         Status:     s.Status().String(),
-        Address:    s.address,        // 监听地址: "0.0.0.0:3478"
-        PublicAddr: s.publicIP,       // 公网地址: "123.45.67.89:3478"
+        Address:    s.address,
+        PublicAddr: s.publicIP,
         Protocol:   "udp",
-        Metadata: map[string]string{
-            "version": "RFC5389",
-        },
     }
 }
 
-// STUN Protocol Implementation
-func (s *SubServer) HandleBindingRequest(req *stun.Message) (*stun.Message, error)
-func (s *SubServer) GetReflexiveAddress(srcAddr net.Addr) (*net.UDPAddr, error)
+func (s *SubServer) Handlers() []server.Handler {
+    return nil  // STUN 不提供 HTTP API
+}
 ```
 
 **Features**:
 - RFC 5389 compliant
-- Rate limiting (prevent abuse)
+- Rate limiting
 - IPv4/IPv6 dual stack
-- Metrics collection
 
 ---
 
-### 3. TURN Server (Relay Service)
+### 2. TURN SubServer (Relay + ICE API)
 
-**Responsibility**: Provide relay service when direct connection fails
+**Location**: `station/frame/core/plugin/native/subserver/turn/`
 
-**Status**: Already implemented in `station/frame/core/plugin/native/subserver/turn/`
-
-**Enhancements Needed**:
-```go
-// Add ICE integration
-func (t *TURNServer) GetRelayCandidate(username string) (*Candidate, error)
-func (t *TURNServer) AllocateRelay(ctx context.Context, opts *AllocateOptions) (*Allocation, error)
-```
-
----
-
-### 4. ICE Config Service (Configuration Provider)
-
-**Location**: `station/frame/core/ice/config.go`
-
-**Responsibility**: Provide ICE server configuration to clients
+**Responsibility**: 
+1. Provide TURN relay service (RFC 5766)
+2. **Provide ICE servers configuration API** ⭐
 
 ```go
-// station/frame/core/ice/config.go
+// station/frame/core/plugin/native/subserver/turn/turn.go
+package turn
 
-package ice
-
-type ConfigService struct {
-    publicSTUNServers []string
+type SubServer struct {
+    opts        *Options
+    status      server.Status
+    publicIP    string
+    address     string
+    realm       string
+    authSecret  string
+    
+    stunSubServer server.SubServer  // 引用 STUN
 }
 
-func NewConfigService() *ConfigService {
-    return &ConfigService{
-        publicSTUNServers: []string{
-            "stun:stun.xten.com:3478",
-            "stun:stun.l.google.com:19302",
+func (t *SubServer) Name() string { return "turn" }
+func (t *SubServer) Type() string { return "network.turn" }
+
+func (t *SubServer) Info() *server.ServiceInfo {
+    return &server.ServiceInfo{
+        Name:       t.Name(),
+        Type:       t.Type(),
+        Status:     t.Status().String(),
+        Address:    t.address,
+        PublicAddr: t.publicIP,
+        Protocol:   "udp+tcp",
+        Metadata: map[string]string{
+            "realm": t.realm,
         },
     }
 }
 
-// Configuration Methods
-func (cs *ConfigService) GetPublicSTUNServers() []ICEServer
-func (cs *ConfigService) GenerateTURNCredentials(userDID string, secret string) (*TURNCredentials, error)
-```
+// Init 时自动发现 STUN SubServer
+func (t *SubServer) Init(ctx context.Context, opts ...option.Option) error {
+    // ... 初始化逻辑
+    
+    // 查找 STUN SubServer
+    srv := node.GetService().Server()
+    for _, sub := range srv.Options().SubServers {
+        if sub.Type() == "network.stun" {
+            t.stunSubServer = sub
+            break
+        }
+    }
+    
+    return nil
+}
 
-**HTTP Handlers**:
-```go
-// station/frame/core/ice/handler.go
-
-package ice
-
-func (m *Manager) Handlers() []server.Handler {
+// HTTP Handlers
+func (t *SubServer) Handlers() []server.Handler {
     return []server.Handler{
         {
-            Path:    "/api/v1/ice/servers",
+            Path:    "/api/v1/turn/ice-servers",
             Method:  "GET",
-            Handler: m.handleGetICEServers,
+            Handler: t.handleGetICEServers,
         },
     }
 }
 
-func (m *Manager) handleGetICEServers(w http.ResponseWriter, r *http.Request) {
+// ICE Servers API
+func (t *SubServer) handleGetICEServers(w http.ResponseWriter, r *http.Request) {
     userDID := r.URL.Query().Get("user_did")
     
-    servers, err := m.GetICEServers(r.Context(), userDID)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
+    servers := []ICEServer{}
+    
+    // 1. STUN Server
+    if t.stunSubServer != nil {
+        info := t.stunSubServer.Info()
+        servers = append(servers, ICEServer{
+            URLs: []string{fmt.Sprintf("stun:%s", info.PublicAddr)},
+        })
     }
     
-    respondJSON(w, map[string]interface{}{
+    // 2. TURN Server (self)
+    creds := t.GenerateCredentials(userDID)
+    servers = append(servers, ICEServer{
+        URLs: []string{
+            fmt.Sprintf("turn:%s?transport=udp", t.publicIP),
+            fmt.Sprintf("turn:%s?transport=tcp", t.publicIP),
+        },
+        Username:   creds.Username,
+        Credential: creds.Password,
+    })
+    
+    // 3. Public STUN fallback (optional)
+    if t.opts.PublicFallbackEnabled {
+        servers = append(servers, ICEServer{
+            URLs: []string{"stun:stun.l.google.com:19302"},
+        })
+    }
+    
+    json.NewEncoder(w).Encode(map[string]interface{}{
         "ice_servers": servers,
+    })
+}
+
+// Generate TURN credentials (HMAC-based)
+func (t *SubServer) GenerateCredentials(userDID string) *TURNCredentials {
+    timestamp := time.Now().Add(24 * time.Hour).Unix()
+    username := fmt.Sprintf("%d:%s", timestamp, userDID)
+    
+    mac := hmac.New(sha1.New, []byte(t.authSecret))
+    mac.Write([]byte(username))
+    password := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+    
+    return &TURNCredentials{
+        Username: username,
+        Password: password,
+    }
+}
+
+type ICEServer struct {
+    URLs       []string `json:"urls"`
+    Username   string   `json:"username,omitempty"`
+    Credential string   `json:"credential,omitempty"`
+}
+
+type TURNCredentials struct {
+    Username string
+    Password string
+}
+```
+
+**Features**:
+- RFC 5766 compliant TURN relay
+- **ICE servers configuration API** (`/api/v1/turn/ice-servers`)
+- HMAC-based credential generation
+- Auto-discovery of STUN SubServer
+- Optional public STUN fallback
+
+---
+
+## 🔧 Station Implementation (Detailed)
+
+### 现有代码分析
+
+Station 端已有:
+- `station/frame/core/plugin/native/subserver/turn/turn.go` - TURN SubServer 基本实现
+- `station/frame/core/server/subserver.go` - Subserver 接口定义
+
+**需要修改**:
+1. TURN SubServer 添加 `Handlers()` 返回 ICE API
+2. 添加 `ice_handler.go` 实现 ICE API
+3. 新建 STUN SubServer
+
+---
+
+### 1. TURN SubServer 增强 - ice_handler.go
+
+**文件**: `station/frame/core/plugin/native/subserver/turn/ice_handler.go`
+
+```go
+package turn
+
+import (
+    "crypto/hmac"
+    "crypto/sha1"
+    "encoding/base64"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "time"
+
+    "github.com/peers-labs/peers-touch/station/frame/core/server"
+)
+
+type ICEServer struct {
+    URLs       []string `json:"urls"`
+    Username   string   `json:"username,omitempty"`
+    Credential string   `json:"credential,omitempty"`
+}
+
+type TURNCredentials struct {
+    Username string
+    Password string
+}
+
+func (s *SubServer) Handlers() []server.Handler {
+    return []server.Handler{
+        server.NewHandler(
+            server.NewRouterURL("/api/v1/turn/ice-servers", http.MethodGet),
+            http.HandlerFunc(s.handleGetICEServers),
+        ),
+    }
+}
+
+func (s *SubServer) handleGetICEServers(w http.ResponseWriter, r *http.Request) {
+    userDID := r.URL.Query().Get("user_did")
+    
+    servers := []ICEServer{}
+    
+    if s.opts.PublicIP != "" {
+        creds := s.GenerateCredentials(userDID)
+        servers = append(servers, ICEServer{
+            URLs: []string{
+                fmt.Sprintf("turn:%s:%d?transport=udp", s.opts.PublicIP, s.opts.Port),
+                fmt.Sprintf("turn:%s:%d?transport=tcp", s.opts.PublicIP, s.opts.Port),
+            },
+            Username:   creds.Username,
+            Credential: creds.Password,
+        })
+        
+        servers = append(servers, ICEServer{
+            URLs: []string{fmt.Sprintf("stun:%s:%d", s.opts.PublicIP, s.opts.Port)},
+        })
+    }
+    
+    servers = append(servers, ICEServer{
+        URLs: []string{"stun:stun.l.google.com:19302"},
+    })
+    
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "ice_servers": servers,
+    })
+}
+
+func (s *SubServer) GenerateCredentials(userDID string) *TURNCredentials {
+    if s.opts.AuthSecret == "" {
+        return &TURNCredentials{Username: userDID, Password: userDID}
+    }
+    
+    timestamp := time.Now().Add(24 * time.Hour).Unix()
+    username := fmt.Sprintf("%d:%s", timestamp, userDID)
+    
+    mac := hmac.New(sha1.New, []byte(s.opts.AuthSecret))
+    mac.Write([]byte(username))
+    password := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+    
+    return &TURNCredentials{
+        Username: username,
+        Password: password,
+    }
+}
+```
+
+---
+
+### 2. 修改 turn.go - 删除空 Handlers
+
+**文件**: `station/frame/core/plugin/native/subserver/turn/turn.go`
+
+**修改前**:
+```go
+// Handlers returns HTTP handlers (none for TURN).
+func (s *SubServer) Handlers() []server.Handler { return nil }
+```
+
+**修改后**: 删除此方法,使用 `ice_handler.go` 中的实现。
+
+---
+
+### 3. 目录结构
+
+```
+station/frame/core/plugin/native/subserver/
+├── turn/
+│   ├── turn.go           # TURN 服务核心实现
+│   ├── ice_handler.go    # 新增: ICE API Handler
+│   ├── options.go        # 配置选项
+│   ├── plugin.go         # 插件注册
+│   └── logger.go         # 日志
+└── stun/                  # 可选: 独立 STUN SubServer
+    ├── stun.go
+    └── options.go
+```
+
+---
+
+### 4. 配置加载
+
+**文件**: `station/frame/core/plugin/native/subserver/turn/plugin.go`
+
+确保配置从 YAML 正确加载:
+
+```go
+func init() {
+    server.RegisterSubServer("turn", func(opts ...option.Option) server.Subserver {
+        return NewTurnSubServer(opts...)
     })
 }
 ```
 
-**API Response**:
+---
+
+**API Response Example**:
 ```json
+GET /api/v1/turn/ice-servers?user_did=did:peers:alice
+
 {
   "ice_servers": [
     {
-      "urls": ["stun:station.example.com:3478"]
+      "urls": ["stun:my-station.com:3478"]
     },
     {
-      "urls": ["turn:station.example.com:3478"],
+      "urls": ["turn:my-station.com:3478?transport=udp", "turn:my-station.com:3478?transport=tcp"],
       "username": "1705708800:did:peers:alice",
       "credential": "hmac_generated_credential"
+    },
+    {
+      "urls": ["stun:stun.l.google.com:19302"]
     }
   ]
 }
@@ -490,88 +541,26 @@ func (m *Manager) handleGetICEServers(w http.ResponseWriter, r *http.Request) {
 
 ---
 
-### 5. Candidate Selector (Intelligent Routing)
+## 🔄 ICE Connection Flow
 
-**Location**: `station/frame/core/ice/selector.go`
-
-**Responsibility**: Select optimal ICE candidates based on network conditions
-
-```go
-// station/frame/core/ice/selector.go
-package ice
-
-type CandidateSelector struct {
-    priorityRules []PriorityRule
-    metrics       *NetworkMetrics
-}
-
-func NewCandidateSelector() *CandidateSelector {
-    return &CandidateSelector{
-        priorityRules: DefaultPriorityRules,
-        metrics:       NewNetworkMetrics(),
-    }
-}
-
-// Selection Algorithm
-func (s *CandidateSelector) SelectBestCandidates(candidates []*Candidate, opts *SelectOptions) []*Candidate {
-    // Priority order:
-    // 1. host (local network) - highest priority
-    // 2. srflx from own Station - second priority
-    // 3. srflx from public STUN - third priority
-    // 4. relay from own Station - fourth priority
-    // 5. relay from public TURN - lowest priority
-    
-    return s.sortByPriority(candidates)
-}
-```
-
-**Priority Rules**:
-```go
-type PriorityRule struct {
-    Type       CandidateType  // host, srflx, relay
-    Source     string         // own, public
-    Priority   int            // 1-100
-    Conditions []Condition    // network conditions
-}
-
-// Example rules
-var DefaultPriorityRules = []PriorityRule{
-    {Type: "host", Source: "local", Priority: 100},
-    {Type: "srflx", Source: "own", Priority: 90},
-    {Type: "srflx", Source: "public", Priority: 70},
-    {Type: "relay", Source: "own", Priority: 60},
-    {Type: "relay", Source: "public", Priority: 40},
-}
-```
-
----
-
-## 🔄 ICE Complete Lifecycle
-
-### How System Layers Map to ICE Lifecycle
-
-**System Layers** (静态架构) 定义了 **组件和职责**  
-**ICE Lifecycle** (动态流程) 展示了 **这些组件如何协作**
+### Client P2P Connection Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              System Layers → ICE Lifecycle Mapping                          │
+│                    Client P2P Connection Flow                               │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-System Layer                    ICE Lifecycle Phase              Components Used
+Phase 1: Get ICE Configuration
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ┌─────────────────────┐
-│ Application Layer   │         Phase 1: Initialization
-│ (Any P2P App)       │         ↓
-└─────────────────────┘         Application initiates P2P connection request
+│ Application Layer   │         
+│ (Chat, Voice, etc.) │         
+└─────────────────────┘         
          ↓
 ┌─────────────────────┐
-│ ICE Capability      │         Phase 1: Get ICE Config
-│ Layer               │         ↓
-│ • ICE Config Service│  ────→  HTTP GET /api/v1/ice/servers
-│ • ICE Manager       │         Returns: STUN/TURN servers + credentials
-└─────────────────────┘
+│ Client ICE Service  │  ────→  GET /api/v1/turn/ice-servers
+└─────────────────────┘         Returns: STUN/TURN servers + credentials
          ↓
 ┌─────────────────────┐
 │ Transport Services  │         Phase 2-3: Candidate Gathering
@@ -1306,9 +1295,9 @@ Stage 3: Optimized
 
 ---
 
-## � Station Integration (main.go)
+## 📦 Station Integration (main.go)
 
-**Clean Main Pattern** - ICE 自动发现 STUN/TURN,无需手动注入:
+**简化设计** - 无需独立的 ICE 层,STUN/TURN 通过 blank import 自动注册:
 
 ```go
 // station/app/main.go
@@ -1318,11 +1307,9 @@ import (
     "context"
     
     peers "github.com/peers-labs/peers-touch/station/frame"
-    "github.com/peers-labs/peers-touch/station/frame/core/ice"
     "github.com/peers-labs/peers-touch/station/frame/core/node"
-    "github.com/peers-labs/peers-touch/station/frame/core/server"
     
-    // 自动注册 STUN/TURN SubServers
+    // 自动注册 STUN/TURN SubServers (TURN 提供 ICE API)
     _ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/stun"
     _ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/turn"
 )
@@ -1337,12 +1324,8 @@ func main() {
         ctx,
         node.WithPrivateKey("private.pem"),
         node.Name("peers-touch-station"),
-        
-        // ICE Manager 自动发现 STUN/TURN (通过 Type() 匹配)
-        server.WithICE(
-            ice.WithPublicSTUNFallback(true),
-            ice.WithCandidateCacheTTL(5 * time.Minute),
-        ),
+        // STUN/TURN 通过 blank import 自动注册
+        // TURN SubServer 自动提供 /api/v1/turn/ice-servers API
     )
     if err != nil {
         panic(err)
@@ -1355,29 +1338,11 @@ func main() {
 }
 ```
 
-**server.WithICE 实现**:
-```go
-// station/frame/core/server/options.go
-
-func WithICE(opts ...option.Option) option.Option {
-    return wrapper.Wrap(func(srvOpts *Options) {
-        // 创建 ICE Manager
-        iceManager := ice.NewManager(opts...)
-        
-        // 注册为特殊组件 (在 Server Init 后自动初始化)
-        srvOpts.ICEManager = iceManager
-        
-        // 注册 HTTP handlers
-        srvOpts.Handlers = append(srvOpts.Handlers, iceManager.Handlers()...)
-    })
-}
-```
-
 **关键点:**
-- ✅ main.go 保持干净,只需 `server.WithICE(...)`
-- ✅ ICE Manager 在 Init 时自动发现 STUN/TURN (通过 `Type()` 匹配)
-- ✅ STUN/TURN 通过 `init()` 自动注册 (blank import)
-- ✅ 使用 Functional Options 配置 ICE 行为
+- ✅ main.go 保持干净,只需 blank import
+- ✅ STUN/TURN 通过 `init()` 自动注册
+- ✅ TURN SubServer 自动提供 `/api/v1/turn/ice-servers` API
+- ✅ TURN 在 Init 时自动发现 STUN (通过 `Type()` 匹配)
 
 ---
 
@@ -1408,7 +1373,7 @@ peers:
 
 ```yaml
 # station/app/conf/sub_turn.yml
-# TURN Server Configuration
+# TURN Server Configuration (also provides ICE API)
 
 peers:
   node:
@@ -1423,42 +1388,24 @@ peers:
           relay-ip-range: 10.0.0.0/24        # Internal relay IP pool
           max-allocations: 1000
           allocation-lifetime: 600s
-```
-
-### sub_ice.yml
-
-```yaml
-# station/app/conf/sub_ice.yml
-# ICE Manager Configuration
-
-peers:
-  node:
-    server:
-      ice:
-        enabled: true
-        public-fallback:
-          enabled: true
-          stun-servers:
-            - stun:stun.l.google.com:19302
-            - stun:stun.xten.com:3478
-        candidate-cache:
-          ttl: 5m
-          max-size: 10000
-        metrics:
-          enabled: true
-          export-interval: 30s
+          # ICE API 配置 (TURN 提供)
+          ice-api:
+            public-fallback:
+              enabled: true
+              stun-servers:
+                - stun:stun.l.google.com:19302
 ```
 
 ### peers.yml (includes)
 
-在主配置文件中引入 ICE 相关配置:
+在主配置文件中引入 STUN/TURN 配置:
 
 ```yaml
 # station/app/conf/peers.yml
 
 peers:
   version: 0.0.1
-  includes: store.yml, log.yml, actor.yml, sub_bootstrap.yml, sub_stun.yml, sub_turn.yml, sub_ice.yml
+  includes: store.yml, log.yml, actor.yml, sub_bootstrap.yml, sub_stun.yml, sub_turn.yml
   # ... other config
 ```
 
@@ -1480,81 +1427,213 @@ PEERS_DOMAIN=peers-touch.com
 
 ---
 
-## 🔌 Client Integration
+## 🔌 Client Integration (Detailed Implementation)
 
-### Dart Client (Flutter)
+### 现有代码分析
+
+客户端已有以下基础设施:
+- `network/core/stun/stun_client.dart` - STUN 客户端实现
+- `network/rtc/rtc_client.dart` - WebRTC 客户端 (ICE 服务器硬编码)
+- `network/libp2p/` - 完整的 libp2p 实现
+
+**需要修改**: `RTCClient` 中硬编码的 ICE 服务器改为从 Station API 获取。
+
+---
+
+### 1. IceService - ICE 服务器配置获取
+
+**文件**: `client/common/peers_touch_base/lib/network/ice/ice_service.dart`
 
 ```dart
-// client/common/peers_touch_base/lib/network/ice/ice_service.dart
+import 'package:peers_touch_base/network/dio/http_service.dart';
 
 class IceService {
   final HttpService _httpService;
+  List<IceServer>? _cachedServers;
+  DateTime? _cacheTime;
+  static const _cacheDuration = Duration(minutes: 5);
   
-  /// Get ICE servers configuration
-  Future<List<IceServer>> getICEServers({
-    required String userDID,
-    bool includePublicFallback = true,
-  }) async {
-    final servers = <IceServer>[];
+  IceService(this._httpService);
+  
+  Future<List<IceServer>> getICEServers({bool forceRefresh = false}) async {
+    if (!forceRefresh && _cachedServers != null && _cacheTime != null) {
+      if (DateTime.now().difference(_cacheTime!) < _cacheDuration) {
+        return _cachedServers!;
+      }
+    }
     
-    // 1. Get own Station's ICE servers
     try {
-      final ownServers = await _getOwnStationICEServers();
-      servers.addAll(ownServers);
+      final response = await _httpService.get('/api/v1/turn/ice-servers');
+      final List<dynamic> serversJson = response['ice_servers'] ?? [];
+      _cachedServers = serversJson.map((json) => IceServer.fromJson(json)).toList();
+      _cacheTime = DateTime.now();
+      return _cachedServers!;
     } catch (e) {
-      LoggingService.warning('Failed to get own Station ICE servers: $e');
+      if (_cachedServers != null) {
+        return _cachedServers!;
+      }
+      return _getPublicFallback();
     }
-    
-    // 2. Add public STUN as fallback
-    if (includePublicFallback) {
-      servers.addAll(_getPublicSTUNServers());
-    }
-    
-    return servers;
   }
   
-  Future<List<IceServer>> _getOwnStationICEServers() async {
-    final response = await _httpService.get('/api/v1/ice/servers');
-    return (response['ice_servers'] as List)
-        .map((json) => IceServer.fromJson(json))
-        .toList();
-  }
-  
-  List<IceServer> _getPublicSTUNServers() {
+  List<IceServer> _getPublicFallback() {
     return [
-      IceServer(urls: ['stun:stun.xten.com:3478']),
-      IceServer(urls: ['stun:stun.voipbuster.com:3478']),
       IceServer(urls: ['stun:stun.l.google.com:19302']),
+      IceServer(urls: ['stun:stun.qq.com:3478']),
     ];
   }
 }
 ```
 
-### Usage in Friend Chat
+---
+
+### 2. IceServer Model
+
+**文件**: `client/common/peers_touch_base/lib/network/ice/ice_server.dart`
 
 ```dart
-// client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart
-
-class FriendChatController extends GetxController {
-  final IceService _iceService = Get.find();
+class IceServer {
+  final List<String> urls;
+  final String? username;
+  final String? credential;
   
-  Future<void> initiateP2PConnection(String friendDID) async {
-    // 1. Get ICE servers
-    final iceServers = await _iceService.getICEServers(
-      userDID: currentUserDID,
+  IceServer({required this.urls, this.username, this.credential});
+  
+  factory IceServer.fromJson(Map<String, dynamic> json) {
+    return IceServer(
+      urls: List<String>.from(json['urls'] ?? []),
+      username: json['username'],
+      credential: json['credential'],
     );
+  }
+  
+  Map<String, dynamic> toJson() {
+    return {
+      'urls': urls,
+      if (username != null) 'username': username,
+      if (credential != null) 'credential': credential,
+    };
+  }
+  
+  Map<String, dynamic> toRTCIceServer() => toJson();
+  
+  bool get isSTUN => urls.any((u) => u.startsWith('stun:'));
+  bool get isTURN => urls.any((u) => u.startsWith('turn:'));
+}
+```
+
+---
+
+### 3. 修改 RTCClient - 使用动态 ICE 配置
+
+**文件**: `client/common/peers_touch_base/lib/network/rtc/rtc_client.dart`
+
+**修改前** (硬编码):
+```dart
+Future<void> _createPC(String sessionId) async {
+  final config = {
+    'iceServers': [
+      {'urls': ['stun:stun.l.google.com:19302']},  // 硬编码
+      {'urls': ['stun:stun.qq.com:3478']},
+    ]
+  };
+  _pc = await _pcFactory(config);
+}
+```
+
+**修改后** (动态获取):
+```dart
+class RTCClient {
+  final RTCSignalingService signaling;
+  final IceService _iceService;  // 新增
+  final String role;
+  final String peerId;
+  final PeerConnectionFactory _pcFactory;
+
+  RTCClient(
+    this.signaling, {
+    required IceService iceService,  // 新增
+    required this.role,
+    required this.peerId,
+    PeerConnectionFactory? pcFactory,
+  }) : _iceService = iceService,
+       _pcFactory = pcFactory ?? createPeerConnection;
+
+  Future<void> _createPC(String sessionId) async {
+    final iceServers = await _iceService.getICEServers();
     
-    // 2. Create P2P connection with ICE servers
-    final connection = await P2PConnectionFactory.create(
-      remoteDID: friendDID,
-      iceServers: iceServers,
+    final config = {
+      'iceServers': iceServers.map((s) => s.toRTCIceServer()).toList(),
+    };
+    
+    _pc = await _pcFactory(config);
+    
+    _iceServerUrls = iceServers
+        .expand((s) => s.urls)
+        .toList();
+    
+    // ... 其余代码不变
+  }
+}
+```
+
+---
+
+### 4. 依赖注入配置
+
+**文件**: `client/common/peers_touch_base/lib/context/default_global_context.dart`
+
+```dart
+void _registerServices() {
+  final httpService = Get.find<HttpService>();
+  
+  Get.lazyPut<IceService>(() => IceService(httpService));
+}
+```
+
+---
+
+### 5. 目录结构
+
+```
+client/common/peers_touch_base/lib/network/
+├── ice/                          # 新增目录
+│   ├── ice_service.dart          # ICE 服务器配置获取
+│   └── ice_server.dart           # ICE Server 模型
+├── rtc/
+│   ├── rtc_client.dart           # 修改: 使用 IceService
+│   └── rtc_signaling.dart
+└── core/
+    └── stun/                     # 已有: 底层 STUN 客户端
+        └── stun_client.dart
+```
+
+---
+
+### 6. 使用示例
+
+```dart
+// 在 FriendChatController 中使用
+class FriendChatController extends GetxController {
+  late final RTCClient _rtcClient;
+  
+  @override
+  void onInit() {
+    super.onInit();
+    
+    final iceService = Get.find<IceService>();
+    final signaling = Get.find<RTCSignalingService>();
+    
+    _rtcClient = RTCClient(
+      signaling,
+      iceService: iceService,
+      role: 'desktop',
+      peerId: currentUserDID,
     );
-    
-    // 3. Establish connection
-    await connection.connect();
-    
-    // 4. Start messaging
-    _activeConnections[friendDID] = connection;
+  }
+  
+  Future<void> callFriend(String friendDID) async {
+    await _rtcClient.call(friendDID);
   }
 }
 ```
@@ -1697,158 +1776,116 @@ Benefits:
 
 ---
 
-## 🚀 Implementation Roadmap
+## 🚀 Implementation Roadmap (Detailed)
 
-### Phase 1: Foundation (Week 1-2)
+### Phase 1: Station ICE API (1-2 天)
 
-**Framework Layer** (`station/frame/core/plugin/native/subserver/`):
-- [ ] Implement STUN Subserver (`subserver/stun/`)
-  - [ ] Implement `server.SubServer` interface
-  - [ ] Implement `server.NetworkSubServer` interface
-  - [ ] UDP listener and STUN protocol handler
-  - [ ] Rate limiting and security
-- [ ] Enhance TURN Subserver (`subserver/turn/`)
-  - [ ] Add credential generation
-  - [ ] Implement allocation management
-  - [ ] Add metrics collection
+**任务清单**:
 
-**Core Layer** (`station/frame/core/ice/`):
-- [ ] Create ICE Manager (`core/ice/manager.go`)
-  - [ ] Define STUNService and TURNService interfaces
-  - [ ] Implement Manager with interface-based dependencies
-  - [ ] Candidate gathering coordination
-- [ ] Create ICE Config Service (`core/ice/config.go`)
-  - [ ] Configuration management
-  - [ ] Credential generation
-- [ ] Add HTTP Handlers (`core/ice/handler.go`)
-  - [ ] `GET /api/v1/ice/servers` endpoint
-  - [ ] Response formatting
+| # | 任务 | 文件 | 预计时间 |
+|---|------|------|----------|
+| 1.1 | 创建 `ice_handler.go` | `turn/ice_handler.go` | 2h |
+| 1.2 | 实现 `handleGetICEServers` | `turn/ice_handler.go` | 1h |
+| 1.3 | 实现 `GenerateCredentials` | `turn/ice_handler.go` | 1h |
+| 1.4 | 删除 `turn.go` 中的空 `Handlers()` | `turn/turn.go` | 10m |
+| 1.5 | 更新 `sub_turn.yml` 配置 | `conf/sub_turn.yml` | 30m |
+| 1.6 | 测试 API 端点 | - | 1h |
 
-**Application Layer** (`station/app/`):
-- [ ] Dependency Injection setup
-  - [ ] Wire STUN/TURN Subservers to ICE Manager
-  - [ ] Register HTTP handlers
-  - [ ] Initialize services
+**验收标准**:
+```bash
+curl http://localhost:8080/api/v1/turn/ice-servers?user_did=did:peers:alice
 
-**Deliverable**: Clients can use own Station's STUN/TURN via HTTP API
+# 预期响应:
+{
+  "ice_servers": [
+    {"urls": ["turn:1.2.3.4:3478?transport=udp", "turn:1.2.3.4:3478?transport=tcp"], "username": "...", "credential": "..."},
+    {"urls": ["stun:1.2.3.4:3478"]},
+    {"urls": ["stun:stun.l.google.com:19302"]}
+  ]
+}
+```
 
-### Phase 2: Client Integration (Week 3-4)
+---
 
-**Station Side** (`station/frame/core/ice/`):
-- [ ] Implement Candidate Selector (`core/ice/selector.go`)
-  - [ ] Priority rules configuration
-  - [ ] Network metrics integration
-  - [ ] Optimal candidate selection algorithm
-- [ ] Add public fallback configuration
-  - [ ] Public STUN server list
-  - [ ] Fallback strategy
+### Phase 2: Client Integration (1-2 天)
 
-**Client Side** (`client/common/peers_touch_base/lib/network/ice/`):
-- [ ] Implement IceService (`ice/ice_service.dart`)
-  - [ ] HTTP client integration
-  - [ ] Get ICE servers from Station API
-  - [ ] Public STUN fallback
-  - [ ] Configuration caching
-- [ ] Implement IceServer model (`ice/ice_server.dart`)
-  - [ ] Proto-based model
-  - [ ] JSON serialization
-- [ ] Integration with P2P connection factory
-  - [ ] Pass ICE servers to WebRTC/libp2p
-  - [ ] Connection establishment
+**任务清单**:
 
-**Deliverable**: Clients can use own Station's ICE services with public fallback
+| # | 任务 | 文件 | 预计时间 |
+|---|------|------|----------|
+| 2.1 | 创建 `ice/` 目录 | `network/ice/` | 10m |
+| 2.2 | 实现 `IceServer` 模型 | `ice/ice_server.dart` | 30m |
+| 2.3 | 实现 `IceService` | `ice/ice_service.dart` | 1h |
+| 2.4 | 修改 `RTCClient` 构造函数 | `rtc/rtc_client.dart` | 30m |
+| 2.5 | 修改 `_createPC` 方法 | `rtc/rtc_client.dart` | 30m |
+| 2.6 | 注册 `IceService` 到 GetX | `context/` | 30m |
+| 2.7 | 端到端测试 | - | 2h |
 
-### Phase 3: Optimization (Week 5-6)
+**验收标准**:
+- RTCClient 使用 Station 返回的 ICE 服务器
+- P2P 连接可以成功建立
+- 日志显示使用了正确的 ICE 服务器
 
-**Monitoring & Metrics** (`station/frame/core/ice/`):
-- [ ] Connection quality monitoring (`core/ice/metrics.go`)
-  - [ ] Success rate tracking
-  - [ ] Latency measurement
-  - [ ] Connection type distribution
-- [ ] Automatic fallback strategy
-  - [ ] Retry logic
-  - [ ] Degradation handling
-  - [ ] Circuit breaker pattern
-- [ ] Performance tuning
-  - [ ] Connection pool optimization
-  - [ ] Candidate gathering optimization
-  - [ ] Memory usage optimization
+---
 
-**Testing**:
-- [ ] Load testing
-  - [ ] Concurrent connection tests
-  - [ ] STUN/TURN server stress tests
-  - [ ] End-to-end P2P connection tests
-- [ ] Chaos engineering
-  - [ ] Network partition simulation
-  - [ ] NAT type variation tests
-  - [ ] Failure scenario testing
+### Phase 3: Testing & Optimization (1 周)
 
-**Deliverable**: Production-ready ICE capability
+**测试场景**:
 
-### Phase 4: Advanced Features (Week 7-8)
+| 场景 | 测试内容 | 预期结果 |
+|------|----------|----------|
+| 同一局域网 | host candidate | 直连成功 |
+| 不同网络 (Full Cone NAT) | srflx candidate | STUN 穿透成功 |
+| 对称 NAT | relay candidate | TURN 中继成功 |
+| Station 不可用 | fallback | 使用公共 STUN |
 
-**Protocol Enhancements** (`station/frame/core/plugin/native/subserver/`):
-- [ ] IPv6 support
-  - [ ] Dual-stack STUN/TURN
-  - [ ] IPv6 candidate gathering
-  - [ ] IPv4/IPv6 interoperability
-- [ ] Mobile network optimization
-  - [ ] Cellular network detection
-  - [ ] Bandwidth adaptation
-  - [ ] Battery optimization
+**性能指标**:
+- ICE API 响应时间 < 100ms
+- P2P 连接建立时间 < 5s
+- TURN 中继延迟 < 200ms
 
-**Security & Management** (`station/frame/core/ice/`):
-- [ ] Advanced security features
-  - [ ] Credential rotation
-  - [ ] Rate limiting per user
-  - [ ] DDoS protection
-- [ ] Admin dashboard
-  - [ ] Real-time metrics visualization
-  - [ ] Connection monitoring
-  - [ ] Configuration management
+---
 
-**Deliverable**: Enterprise-grade ICE service
+### 文件变更清单
+
+**Station (Go)**:
+```
+station/frame/core/plugin/native/subserver/turn/
+├── turn.go           # 修改: 删除空 Handlers()
+├── ice_handler.go    # 新增: ICE API 实现
+└── options.go        # 无变更
+
+station/app/conf/
+└── sub_turn.yml      # 修改: 添加 ICE 配置
+```
+
+**Client (Dart)**:
+```
+client/common/peers_touch_base/lib/network/
+├── ice/                      # 新增目录
+│   ├── ice_service.dart      # 新增
+│   └── ice_server.dart       # 新增
+├── rtc/
+│   └── rtc_client.dart       # 修改: 使用 IceService
+└── ...
+```
+
+---
+
+### Phase 4: Advanced Features (Future)
+
+- [ ] IPv6 支持
+- [ ] 移动网络优化
+- [ ] 凭证轮换
+- [ ] 速率限制
 
 ### Phase 5: Federation Support (Future)
 
-**Station-to-Station P2P** (`station/touch/federation/`):
-- [ ] Station ICE capability
-  - [ ] Station as ICE client
-  - [ ] Station candidate gathering
-  - [ ] Station-to-Station connectivity checks
-- [ ] DHT-based Station discovery
-  - [ ] Station registration in DHT
-  - [ ] Station lookup by DID
-  - [ ] Peer routing table
-- [ ] Station candidate exchange protocol
-  - [ ] Signaling via DHT/Bootstrap
-  - [ ] SDP offer/answer for Stations
-  - [ ] Trickle ICE for Stations
+- [ ] Station-to-Station P2P
+- [ ] DHT-based Station 发现
+- [ ] Home Server NAT 穿透
 
-**Home Server Support**:
-- [ ] NAT traversal for home-deployed Stations
-  - [ ] CGNAT detection
-  - [ ] Public STUN fallback for Stations
-  - [ ] TURN relay for Station federation
-- [ ] Federated message relay over P2P
-  - [ ] Cross-Station message routing
-  - [ ] Content synchronization
-  - [ ] Discovery protocol
-
-**Deployment Scenarios**:
-- [ ] Cloud ↔ Cloud: Direct HTTPS (existing)
-- [ ] Cloud ↔ Home: Persistent WebSocket or ICE
-- [ ] Home ↔ Home: ICE-based P2P (new)
-
-**Deliverable**: True decentralized Station federation
-
-**Note**: Phase 5 is optional for MVP. Start with cloud-deployed Stations using direct HTTPS. Add Station-to-Station ICE when supporting home server deployments.
-
-**Architecture Insight**: Station-to-Station ICE reuses the same architecture:
-- Core layer: STUN/TURN Subservers (same as Client-to-Client)
-- Federation module: Station acts as ICE client, reuses `core/ice/` components
-- Application layer: Wire federation ICE client to existing Subservers
+**Note**: Phase 4-5 为未来扩展,MVP 只需完成 Phase 1-3。
 
 ---
 

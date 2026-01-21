@@ -14,14 +14,15 @@ var options struct {
 			scfg.Logger
 			PkgPathReplacer map[string]string `pconf:"pkg-path-replacer"`
 			Logrus          struct {
-				SplitLevel      bool     `pconf:"split-level"`
-				ReportCaller    bool     `pconf:"report-caller"`
-				Formatter       string   `pconf:"formatter"`
-				WithoutKey      bool     `pconf:"without-key"`
-				WithoutQuote    bool     `pconf:"without-quote"`
-				TimestampFormat string   `pconf:"timestamp-format"`
-				IncludePackages []string `pconf:"include-packages"`
-				ExcludePackages []string `pconf:"exclude-packages"`
+				SplitLevel      bool           `pconf:"split-level"`
+				ReportCaller    bool           `pconf:"report-caller"`
+				Formatter       string         `pconf:"formatter"`
+				WithoutKey      bool           `pconf:"without-key"`
+				WithoutQuote    bool           `pconf:"without-quote"`
+				TimestampFormat string         `pconf:"timestamp-format"`
+				IncludePackages []string       `pconf:"include-packages"`
+				ExcludePackages []string       `pconf:"exclude-packages"`
+				Sampling        SamplingConfig `pconf:"sampling"`
 			} `pconf:"slogrus"`
 		} `pconf:"logger"`
 	} `pconf:"peers"`
@@ -66,6 +67,10 @@ func (l *logrusLogPlugin) Options() []logger.Option {
 	}
 	if len(lc.ExcludePackages) > 0 {
 		opts = append(opts, ExcludePackages(lc.ExcludePackages...))
+	}
+
+	if lc.Sampling.Enable {
+		opts = append(opts, WithSampling(lc.Sampling))
 	}
 
 	switch lc.Formatter {
