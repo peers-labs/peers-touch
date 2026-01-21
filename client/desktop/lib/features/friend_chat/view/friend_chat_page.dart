@@ -104,15 +104,19 @@ class FriendChatPage extends GetView<FriendChatController> {
                   ),
                 );
               }
+              final currentSession = controller.currentSession.value;
+              final remoteName = currentSession?.topic ?? 'User';
               return ListView.builder(
                 padding: EdgeInsets.all(UIKit.spaceMd(context)),
                 itemCount: messageList.length,
                 itemBuilder: (context, index) {
                   final message = messageList[index];
-                  final isMe = message.senderId == 'user1';
+                  final isMe = message.senderId == controller.currentUserId;
                   return ChatMessageItem(
                     message: message,
                     isMe: isMe,
+                    senderName: isMe ? controller.currentUserName : remoteName,
+                    senderAvatarUrl: isMe ? controller.currentUserAvatarUrl : null,
                   );
                 },
               );

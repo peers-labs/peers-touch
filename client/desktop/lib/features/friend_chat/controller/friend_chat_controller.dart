@@ -1,10 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/network/ice/ice_service.dart';
+import 'package:peers_touch_base/network/rtc/rtc_client.dart';
+import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
+import 'package:peers_touch_base/network/social/social_api_service.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
-import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
 
 class FriendChatController extends GetxController {
@@ -21,10 +28,31 @@ class FriendChatController extends GetxController {
 
   final Map<String, List<ChatMessage>> _sessionMessages = {};
 
-  String get _currentUserId {
+  RTCClient? _rtcClient;
+  StreamSubscription<webrtc.RTCPeerConnectionState>? _connectionStateSub;
+  StreamSubscription<webrtc.RTCDataChannelState>? _dataChannelStateSub;
+  StreamSubscription<String>? _messageSub;
+
+  String get currentUserId {
     if (!Get.isRegistered<GlobalContext>()) return '';
     final gc = Get.find<GlobalContext>();
     return gc.actorId ?? gc.currentSession?['actorId']?.toString() ?? '';
+  }
+
+  String get currentUserName {
+    if (!Get.isRegistered<GlobalContext>()) return 'Me';
+    final gc = Get.find<GlobalContext>();
+    return gc.actorHandle ?? gc.currentSession?['handle']?.toString() ?? 'Me';
+  }
+
+  String? get currentUserAvatarUrl {
+    if (!Get.isRegistered<GlobalContext>()) return null;
+    final gc = Get.find<GlobalContext>();
+    return gc.currentSession?['avatarUrl']?.toString();
+  }
+
+  String get _stationBaseUrl {
+    return HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
   }
 
 
@@ -38,6 +66,9 @@ class FriendChatController extends GetxController {
   @override
   void onClose() {
     inputController.dispose();
+    _connectionStateSub?.cancel();
+    _dataChannelStateSub?.cancel();
+    _messageSub?.cancel();
     super.onClose();
   }
 
@@ -46,35 +77,25 @@ class FriendChatController extends GetxController {
     error.value = null;
 
     try {
-      if (!Get.isRegistered<DiscoveryController>()) {
-        LoggingService.warning('DiscoveryController not registered, cannot load friends');
-        return;
-      }
-
-      final discoveryCtrl = Get.find<DiscoveryController>();
-
-      if (discoveryCtrl.friends.isEmpty) {
-        await discoveryCtrl.loadFriends();
-      }
-
-      final friendList = discoveryCtrl.friends.toList();
-      LoggingService.info('FriendChatController: Loaded ${friendList.length} friends');
+      final socialApi = SocialApiService();
+      final response = await socialApi.getFollowing();
+      final followingList = response.following;
+      
+      LoggingService.info('FriendChatController: Loaded ${followingList.length} following users');
 
       final now = DateTime.now();
       final sessionList = <ChatSession>[];
 
-      for (final friend in friendList) {
+      for (final following in followingList) {
         final session = ChatSession(
-          id: 'session_${friend.id}',
-          topic: friend.name,
-          participantIds: [_currentUserId, friend.actorId ?? friend.id],
+          id: 'session_${following.actorId}',
+          topic: following.displayName.isNotEmpty ? following.displayName : following.username,
+          participantIds: [currentUserId, following.actorId],
           lastMessageAt: Timestamp.fromDateTime(now),
           type: SessionType.SESSION_TYPE_DIRECT,
         );
-        session.metadata['avatarUrl'] = friend.avatarUrl;
         sessionList.add(session);
-
-        _sessionMessages['session_${friend.id}'] = [];
+        _sessionMessages['session_${following.actorId}'] = [];
       }
 
       sessions.assignAll(sessionList);
@@ -83,7 +104,7 @@ class FriendChatController extends GetxController {
         selectSession(sessionList.first);
       }
     } catch (e) {
-      LoggingService.error('Failed to load sessions from friends: $e');
+      LoggingService.error('Failed to load sessions from following: $e');
       error.value = 'Failed to load chat sessions';
     } finally {
       isLoading.value = false;
@@ -100,7 +121,7 @@ class FriendChatController extends GetxController {
     messages.assignAll(sessionMsgs);
 
     final remotePeerId = session.participantIds.firstWhere(
-      (id) => id != _currentUserId,
+      (id) => id != currentUserId,
       orElse: () => '',
     );
     connectionStats.value = connectionStats.value.copyWith(
@@ -123,7 +144,7 @@ class FriendChatController extends GetxController {
       final newMessage = ChatMessage(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         sessionId: session.id,
-        senderId: _currentUserId,
+        senderId: currentUserId,
         content: content.trim(),
         sentAt: Timestamp.fromDateTime(now),
         type: MessageType.MESSAGE_TYPE_TEXT,
@@ -151,7 +172,7 @@ class FriendChatController extends GetxController {
     }
   }
 
-  void createNewSession(String recipientId, String recipientName, {String? avatarUrl}) {
+  void createNewSession(String recipientId, String recipientName) {
     final existingSession = sessions.firstWhereOrNull(
       (s) => s.participantIds.contains(recipientId),
     );
@@ -165,13 +186,10 @@ class FriendChatController extends GetxController {
     final newSession = ChatSession(
       id: 'session_${DateTime.now().millisecondsSinceEpoch}',
       topic: recipientName,
-      participantIds: [_currentUserId, recipientId],
+      participantIds: [currentUserId, recipientId],
       lastMessageAt: Timestamp.fromDateTime(now),
       type: SessionType.SESSION_TYPE_DIRECT,
     );
-    if (avatarUrl != null && avatarUrl.isNotEmpty) {
-      newSession.metadata['avatarUrl'] = avatarUrl;
-    }
 
     sessions.insert(0, newSession);
     _sessionMessages[newSession.id] = [];
@@ -199,37 +217,120 @@ class FriendChatController extends GetxController {
     connectionStats.value = stats;
   }
 
+  String get _signalingUrl => '$_stationBaseUrl/chat';
+
   void refreshConnectionStats() {
     connectionStats.value = connectionStats.value.copyWith(
-      signalingUrl: 'http://localhost:18080/chat',
-      localPeerId: _currentUserId.isNotEmpty 
-          ? _currentUserId 
-          : 'desktop-${DateTime.now().millisecondsSinceEpoch % 10000}',
+      signalingUrl: _signalingUrl,
+      localPeerId: currentUserId,
     );
   }
 
   Future<void> connect() async {
+    final remotePeerId = connectionStats.value.remotePeerId;
+    if (remotePeerId.isEmpty) {
+      LoggingService.error('No remote peer selected');
+      return;
+    }
+
     connectionStats.value = connectionStats.value.copyWith(
       connectionState: P2PConnectionState.connecting,
-      signalingUrl: 'http://localhost:18080/chat',
-      localPeerId: _currentUserId,
+      signalingUrl: _signalingUrl,
+      localPeerId: currentUserId,
+      isRegistered: false,
     );
 
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final signaling = RTCSignalingService(_signalingUrl);
+      final iceService = IceService(httpService: HttpServiceLocator().httpService);
 
-    connectionStats.value = connectionStats.value.copyWith(
-      connectionState: P2PConnectionState.connected,
-      iceState: 'connected',
-      pcState: 'connected',
-      dcState: 'open',
-      isRegistered: true,
+      await signaling.registerPeer(currentUserId, 'caller', []);
+      connectionStats.value = connectionStats.value.copyWith(isRegistered: true);
+      LoggingService.info('Registered peer: $currentUserId');
+
+      _rtcClient = RTCClient(
+        signaling,
+        role: 'caller',
+        peerId: currentUserId,
+        iceService: iceService,
+      );
+
+      _connectionStateSub = _rtcClient!.onConnectionState.listen((state) {
+        LoggingService.info('Connection state: $state');
+        connectionStats.value = connectionStats.value.copyWith(
+          pcState: state.toString().split('.').last,
+        );
+        if (state == webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          connectionStats.value = connectionStats.value.copyWith(
+            connectionState: P2PConnectionState.connected,
+          );
+        } else if (state == webrtc.RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+            state == webrtc.RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+          connectionStats.value = connectionStats.value.copyWith(
+            connectionState: P2PConnectionState.disconnected,
+          );
+        }
+      });
+
+      _dataChannelStateSub = _rtcClient!.onDataChannelState.listen((state) {
+        LoggingService.info('DataChannel state: $state');
+        connectionStats.value = connectionStats.value.copyWith(
+          dcState: state.toString().split('.').last,
+        );
+      });
+
+      _messageSub = _rtcClient!.messages().listen((msg) {
+        LoggingService.info('Received message: $msg');
+        incrementMessagesReceived();
+        _handleIncomingMessage(msg);
+      });
+
+      LoggingService.info('Calling remote peer: $remotePeerId');
+      await _rtcClient!.call(remotePeerId);
+
+      final iceInfo = _rtcClient!.getIceInfo();
+      connectionStats.value = connectionStats.value.copyWith(
+        iceState: iceInfo['iceConnState']?.toString() ?? 'gathering',
+      );
+
+    } catch (e) {
+      LoggingService.error('Failed to connect: $e');
+      connectionStats.value = connectionStats.value.copyWith(
+        connectionState: P2PConnectionState.disconnected,
+        iceState: 'error: $e',
+      );
+    }
+  }
+
+  void _handleIncomingMessage(String content) {
+    if (currentSession.value == null) return;
+    final session = currentSession.value!;
+    final remotePeerId = connectionStats.value.remotePeerId;
+
+    final now = DateTime.now();
+    final newMessage = ChatMessage(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      sessionId: session.id,
+      senderId: remotePeerId,
+      content: content,
+      sentAt: Timestamp.fromDateTime(now),
+      type: MessageType.MESSAGE_TYPE_TEXT,
+      status: MessageStatus.MESSAGE_STATUS_DELIVERED,
     );
+
+    messages.add(newMessage);
+    _sessionMessages[session.id] = List<ChatMessage>.from(messages);
   }
 
   Future<void> disconnect() async {
+    _connectionStateSub?.cancel();
+    _dataChannelStateSub?.cancel();
+    _messageSub?.cancel();
+    _rtcClient = null;
+
     connectionStats.value = connectionStats.value.copyWith(
       connectionState: P2PConnectionState.disconnected,
-      iceState: 'disconnected',
+      iceState: 'closed',
       pcState: 'closed',
       dcState: 'closed',
       isRegistered: false,
