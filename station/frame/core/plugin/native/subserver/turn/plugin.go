@@ -9,7 +9,7 @@ import (
 
 var turnOptions struct {
 	Peers struct {
-		Service struct {
+		Node struct {
 			Server struct {
 				Subserver struct {
 					TURN struct {
@@ -36,22 +36,22 @@ func (p *turnPlugin) Name() string {
 func (p *turnPlugin) Options() []option.Option {
 	var opts []option.Option
 
-	opts = append(opts, WithEnabled(turnOptions.Peers.Service.Server.Subserver.TURN.Enabled))
+	opts = append(opts, WithEnabled(turnOptions.Peers.Node.Server.Subserver.TURN.Enabled))
 
-	if turnOptions.Peers.Service.Server.Subserver.TURN.Port > 0 {
-		opts = append(opts, WithPort(turnOptions.Peers.Service.Server.Subserver.TURN.Port))
+	if turnOptions.Peers.Node.Server.Subserver.TURN.Port > 0 {
+		opts = append(opts, WithPort(turnOptions.Peers.Node.Server.Subserver.TURN.Port))
 	}
 
-	if turnOptions.Peers.Service.Server.Subserver.TURN.Realm != "" {
-		opts = append(opts, WithRealm(turnOptions.Peers.Service.Server.Subserver.TURN.Realm))
+	if turnOptions.Peers.Node.Server.Subserver.TURN.Realm != "" {
+		opts = append(opts, WithRealm(turnOptions.Peers.Node.Server.Subserver.TURN.Realm))
 	}
 
-	if turnOptions.Peers.Service.Server.Subserver.TURN.PublicIP != "" {
-		opts = append(opts, WithPublicIP(turnOptions.Peers.Service.Server.Subserver.TURN.PublicIP))
+	if turnOptions.Peers.Node.Server.Subserver.TURN.PublicIP != "" {
+		opts = append(opts, WithPublicIP(turnOptions.Peers.Node.Server.Subserver.TURN.PublicIP))
 	}
 
-	if turnOptions.Peers.Service.Server.Subserver.TURN.AuthSecret != "" {
-		opts = append(opts, WithAuthSecret(turnOptions.Peers.Service.Server.Subserver.TURN.AuthSecret))
+	if turnOptions.Peers.Node.Server.Subserver.TURN.AuthSecret != "" {
+		opts = append(opts, WithAuthSecret(turnOptions.Peers.Node.Server.Subserver.TURN.AuthSecret))
 	}
 
 	return opts
@@ -59,7 +59,7 @@ func (p *turnPlugin) Options() []option.Option {
 
 // Enabled reports whether the TURN subserver is enabled.
 func (p *turnPlugin) Enabled() bool {
-	return turnOptions.Peers.Service.Server.Subserver.TURN.Enabled
+	return turnOptions.Peers.Node.Server.Subserver.TURN.Enabled
 }
 
 // New constructs a new TURN subserver with plugin options.

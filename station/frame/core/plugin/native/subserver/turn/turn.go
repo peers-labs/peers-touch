@@ -121,8 +121,12 @@ func (s *SubServer) Address() server.SubserverAddress {
 // Status returns current server status.
 func (s *SubServer) Status() server.Status { return s.status }
 
-// Handlers returns HTTP handlers (none for TURN).
-func (s *SubServer) Handlers() []server.Handler { return nil }
+// Handlers returns HTTP handlers for ICE server configuration.
+// TURN core relay service (UDP/TCP) is handled by pion/turn library and doesn't need HTTP handlers.
+// Only ICE configuration API needs HTTP endpoint for clients to discover STUN/TURN servers.
+func (s *SubServer) Handlers() []server.Handler {
+	return NewICEHandler(s.opts).Handlers()
+}
 
 // Type returns the subserver type.
 func (s *SubServer) Type() server.SubserverType {

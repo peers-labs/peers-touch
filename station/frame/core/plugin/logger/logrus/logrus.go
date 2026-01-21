@@ -74,6 +74,12 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 	if replacer, ok := l.opts.Context.Value(pkgPathReplacerKey{}).(map[string]string); ok {
 		l.opts.PkgPathReplacer = replacer
 	}
+	if samplingCfg, ok := l.opts.Context.Value(samplingConfigKey{}).(SamplingConfig); ok {
+		l.opts.Sampling = samplingCfg
+	}
+	if samplingRules, ok := l.opts.Context.Value(packageSamplingRulesKey{}).([]*PackageSamplingRule); ok {
+		l.opts.PackageSamplingRules = samplingRules
+	}
 
 	if l.opts.Formatter != nil {
 		if txtFormatter, ok := l.opts.Formatter.(*logrus.TextFormatter); ok {
@@ -203,6 +209,14 @@ func (l *logrusLogger) Init(ctx context.Context, opts ...logger.Option) error {
 		})
 	}
 	log.AddHook(&RequestIDHook{})
+
+	if l.opts.Sampling.Enable || len(l.opts.PackageSamplingRules) > 0 {
+		if l.opts.Sampling.PerPackage || len(l.opts.PackageSamplingRules) > 0 {
+			l.opts.ReportCaller = true
+			log.SetReportCaller(true)
+		}
+		log.AddHook(NewSamplingHook(l.opts.Sampling, l.opts.PackageSamplingRules...))
+	}
 
 	if l.opts.SplitLevel {
 		// Preserve console output; send per-level copies to files via hooks

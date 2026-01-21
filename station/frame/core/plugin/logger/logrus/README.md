@@ -21,6 +21,7 @@ This package provides a [Logrus](https://github.com/sirupsen/logrus)-based imple
 | Timestamp format | ✅ Configurable | ✅ |
 | Caller information | ✅ ReportCaller | ✅ |
 | Log rotation | ✅ Size/Age/Count based | ✅ |
+| Log sampling | ✅ High-frequency log control | ✅ |
 
 ## Configuration
 
@@ -50,6 +51,12 @@ peers:
       timestamp-format: "2006-01-02 15:04:05.999"
       include-packages: []     # Only log from these packages
       exclude-packages: []     # Exclude logs from these packages
+      sampling:
+        enable: false          # Enable log sampling
+        initial: 100           # First N logs always recorded
+        thereafter: 100        # After initial, record 1 out of M
+        window: 1m             # Time window for counter reset
+        per-package: false     # Sample per package+message
 ```
 
 ### Configuration Examples
@@ -124,6 +131,35 @@ peers:
         - "github.com/cloudwego/hertz"
 ```
 
+#### 5. Log Sampling (High-Frequency Log Control)
+
+```yaml
+peers:
+  logger:
+    name: slogrus
+    level: debug
+    slogrus:
+      report-caller: true      # Required for per-package sampling
+      sampling:
+        enable: true
+        initial: 50            # First 50 logs always recorded
+        thereafter: 100        # After that, 1 out of 100
+        window: 1m             # Reset counter every minute
+        per-package: true      # Separate sampling per package
+```
+
+**Use Case**: When a package repeatedly logs the same message (e.g., polling, heartbeat), sampling prevents log flooding while preserving the first occurrences and periodic samples.
+
+**Example Output**:
+```
+[1st log]  level=debug msg="polling status" pkg=mdns
+[2nd log]  level=debug msg="polling status" pkg=mdns
+...
+[50th log] level=debug msg="polling status" pkg=mdns
+[150th log] level=debug msg="polling status" pkg=mdns suppressed_count=99
+[250th log] level=debug msg="polling status" pkg=mdns suppressed_count=99
+```
+
 ## Features in Detail
 
 ### 1. Request ID & Trace ID
@@ -186,7 +222,54 @@ The `caller-skip-count` controls how many path segments to show:
 - `1`: `activitypub/account.go:45`
 - `2`: `account.go:45`
 
-### 6. Package Filtering
+### 6. Log Sampling
+
+Controls high-frequency repeated logs to prevent log flooding.
+
+**How it works**:
+1. First `initial` logs of the same message are always recorded
+2. After that, only 1 out of every `thereafter` logs is recorded
+3. Suppressed log count is added to the next recorded log
+4. Counters reset after `window` duration
+
+**Configuration**:
+
+```yaml
+sampling:
+  enable: true
+  initial: 100           # First 100 logs always pass
+  thereafter: 100        # Then 1 out of 100
+  window: 1m             # Reset every minute
+  per-package: false     # Global sampling by message hash
+```
+
+**Per-Package Sampling**:
+
+When `per-package: true`, sampling is applied separately for each package+message combination. This requires `report-caller: true`.
+
+```yaml
+sampling:
+  enable: true
+  initial: 50
+  thereafter: 100
+  window: 1m
+  per-package: true      # Separate counters per package
+```
+
+**Important Notes**:
+- Only applies to `Debug` and `Info` levels
+- `Warn`, `Error`, and `Fatal` are **never sampled**
+- Sampling key is based on message content hash
+- When `per-package: true`, key includes package path
+
+**Example Scenario**:
+
+A polling loop logs "checking status" every 100ms:
+- Without sampling: 600 logs/minute
+- With sampling (initial=10, thereafter=100): 10 + 5 = 15 logs/minute
+- Reduction: 97.5%
+
+### 7. Package Filtering
 
 Control which packages produce logs:
 
@@ -280,6 +363,7 @@ Current coverage:
 
 - `plugin_test.go`: Configuration loading tests
 - `request_id_hook_test.go`: Hook functionality tests
+- `sampling_hook_test.go`: Log sampling tests
 - Additional tests in `logrus/` subdirectory
 
 ## Troubleshooting
@@ -327,6 +411,23 @@ persistence:
   max-file-size: 50        # Must be > 0
   max-backup-keep-days: 14 # Must be > 0
 ```
+
+### Issue: Too many repeated logs flooding the system
+
+**Problem**: A package repeatedly logs the same message (e.g., polling, heartbeat), filling up disk space.
+
+**Solution**: Enable log sampling:
+```yaml
+slogrus:
+  sampling:
+    enable: true
+    initial: 50            # Keep first 50 occurrences
+    thereafter: 100        # Then 1 out of 100
+    window: 1m             # Reset every minute
+    per-package: true      # Separate sampling per package
+```
+
+This reduces log volume by 95%+ while preserving important information.
 
 ## Performance Considerations
 

@@ -29,3 +29,16 @@ peers:
       timestamp-format: "2006-01-02 15:04:05.999"
       include-packages: []
       exclude-packages: []
+      # Log sampling configuration for high-frequency repeated logs
+      # Only applies to Debug and Info levels; Warn/Error/Fatal are never sampled
+      sampling:
+        enable: false
+        # First N logs are always recorded
+        initial: 100
+        # After initial, record 1 out of every M logs
+        thereafter: 100
+        # Time window for resetting counters (e.g., "1m", "5m", "1h")
+        window: 1m
+        # When true, sampling is applied per package+message; requires report-caller: true
+        # When false, sampling is applied globally per message
+        per-package: false
