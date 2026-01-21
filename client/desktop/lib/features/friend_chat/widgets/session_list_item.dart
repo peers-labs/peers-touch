@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
+import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 
 class SessionListItem extends StatelessWidget {
@@ -103,24 +104,27 @@ class SessionListItem extends StatelessWidget {
 
   Widget _buildAvatar(BuildContext context) {
     final isGroup = session.type == SessionType.SESSION_TYPE_GROUP;
-    final avatarUrl = session.metadata['avatarUrl'] ?? '';
-
-    if (avatarUrl.isNotEmpty) {
-      return CircleAvatar(
-        radius: 24,
-        backgroundImage: NetworkImage(avatarUrl),
-        onBackgroundImageError: (e, s) {},
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+    if (isGroup) {
+      return Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          Icons.group,
+          size: 20,
+          color: Theme.of(context).colorScheme.onPrimaryContainer,
+        ),
       );
     }
 
-    return CircleAvatar(
-      radius: 24,
-      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      child: Icon(
-        isGroup ? Icons.group : Icons.person,
-        color: Theme.of(context).colorScheme.onPrimaryContainer,
-      ),
+    final actorId = session.participantIds.length > 1 ? session.participantIds[1] : '';
+    return Avatar(
+      actorId: actorId,
+      fallbackName: session.topic,
+      size: 40,
     );
   }
 
