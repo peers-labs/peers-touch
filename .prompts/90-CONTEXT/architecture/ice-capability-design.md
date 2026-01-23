@@ -101,9 +101,11 @@ Benefits:
 
 ## 📐 Component Design
 
-### Architecture (Simplified)
+### Architecture
 
-**设计原则**: 不需要独立的 ICE 层,TURN SubServer 直接提供 ICE 服务器配置 API。
+**设计原则**: ICE 能力分为两个独立的 SubServer：
+1. **TURN SubServer** - 提供 STUN/TURN 服务和 ICE 服务器配置 API
+2. **Signaling SubServer** - 提供 WebRTC 信令服务（SDP/ICE candidates 交换）
 
 ```
 station/
@@ -111,7 +113,8 @@ station/
 │   ├── server/                     # 服务器接口定义
 │   └── plugin/native/subserver/
 │       ├── stun/                   # STUN 服务 (NAT 发现)
-│       ├── turn/                   # TURN 服务 (中继) + ICE API ⭐
+│       ├── turn/                   # TURN 服务 (中继) + ICE 配置 API
+│       ├── signaling/              # 信令服务 (SDP/candidates 交换) ⭐
 │       └── bootstrap/              # libp2p 服务
 │
 └── app/
@@ -119,10 +122,10 @@ station/
 ```
 
 **关键点**:
-- ❌ 不需要独立的 `ice/` 目录
-- ✅ TURN SubServer 提供 `/api/v1/turn/ice-servers` API
-- ✅ TURN 内部引用 STUN 获取其公网地址
-- ✅ 客户端只需调用一个 API 获取所有 ICE 配置
+- ✅ TURN SubServer 提供 `/api/v1/turn/ice-servers` API（获取 STUN/TURN 配置）
+- ✅ Signaling SubServer 提供 `/api/v1/ice/*` API（信令交换）
+- ✅ 职责分离：TURN 是 UDP/TCP 服务，Signaling 是 HTTP 服务
+- ✅ 客户端使用两个 API 完成 P2P 连接
 
 **Dependency Graph**:
 ```
@@ -130,22 +133,38 @@ station/
 │                        app/main.go                          │
 │                                                             │
 │  // blank import 自动注册                                    │
-│  _ "station/frame/core/plugin/native/subserver/stun"        │
 │  _ "station/frame/core/plugin/native/subserver/turn"        │
+│  _ "station/frame/core/plugin/native/subserver/signaling"   │
 └─────────────────────────────────────────────────────────────┘
                     │                        │
                     ↓                        ↓
-         ┌──────────────────┐      ┌──────────────────┐
-         │  STUN SubServer  │      │  TURN SubServer  │
-         │  (UDP :3478)     │      │  (UDP/TCP :3478) │
-         │                  │      │                  │
-         │  Info() →        │←─────│  引用 STUN       │
-         │  - PublicAddr    │      │                  │
-         └──────────────────┘      │  提供 HTTP API:  │
-                                   │  /api/v1/turn/   │
-                                   │    ice-servers   │
-                                   └──────────────────┘
+         ┌──────────────────┐      ┌──────────────────────────┐
+         │  TURN SubServer  │      │  Signaling SubServer     │
+         │  (UDP/TCP :3478) │      │  (HTTP)                  │
+         │                  │      │                          │
+         │  提供 HTTP API:  │      │  提供 HTTP API:          │
+         │  /api/v1/turn/   │      │  /api/v1/ice/            │
+         │    ice-servers   │      │    peer/register         │
+         │                  │      │    session/offer         │
+         └──────────────────┘      │    session/answer        │
+                                   │    session/candidates    │
+                                   └──────────────────────────┘
 ```
+
+### Signaling API Endpoints
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/v1/ice/peer/register` | POST | JWT | 注册 peer |
+| `/api/v1/ice/peer/unregister` | POST | JWT | 注销 peer |
+| `/api/v1/ice/peer/get` | GET | - | 获取 peer 信息 |
+| `/api/v1/ice/peers` | GET | - | 获取所有 peers |
+| `/api/v1/ice/session/new` | POST | JWT | 创建会话 |
+| `/api/v1/ice/session/offer` | POST/GET | JWT/- | 发送/获取 SDP offer |
+| `/api/v1/ice/session/answer` | POST/GET | JWT/- | 发送/获取 SDP answer |
+| `/api/v1/ice/session/candidate` | POST | JWT | 发送 ICE candidate |
+| `/api/v1/ice/session/candidates` | GET | - | 获取 ICE candidates |
+| `/api/v1/ice/stats` | GET | - | 获取统计信息 |
 
 ---
 

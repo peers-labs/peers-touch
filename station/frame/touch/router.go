@@ -37,26 +37,26 @@ func CommonAccessControlWrapper(routerFamilyName string) server.Wrapper {
 			// Check if the router family is enabled based on its name
 			var isEnabled bool
 			switch routerFamilyName {
-		case model.RouteNameManagement:
-			isEnabled = routerConfig.Management
-		case model.RouteNameActivityPub:
-			isEnabled = routerConfig.ActivityPub
-		case model.RouteNameWellKnown:
-			isEnabled = routerConfig.WellKnown
-		case model.RouteNameActor:
-			isEnabled = routerConfig.User
-		case model.RouteNamePeer:
-			isEnabled = routerConfig.Peer
-		case model.RouteNameMessage:
-			isEnabled = routerConfig.Message
-		case model.RouteNameMastodon:
-			isEnabled = routerConfig.Mastodon
-		case model.RouteNameSocial:
-			isEnabled = routerConfig.Social
-		default:
-			log.Warnf(r.Context(), "Unknown router family: %s", routerFamilyName)
-			isEnabled = false
-		}
+			case model.RouteNameManagement:
+				isEnabled = routerConfig.Management
+			case model.RouteNameActivityPub:
+				isEnabled = routerConfig.ActivityPub
+			case model.RouteNameWellKnown:
+				isEnabled = routerConfig.WellKnown
+			case model.RouteNameActor:
+				isEnabled = routerConfig.User
+			case model.RouteNamePeer:
+				isEnabled = routerConfig.Peer
+			case model.RouteNameMessage:
+				isEnabled = routerConfig.Message
+			case model.RouteNameMastodon:
+				isEnabled = routerConfig.Mastodon
+			case model.RouteNameSocial:
+				isEnabled = routerConfig.Social
+			default:
+				log.Warnf(r.Context(), "Unknown router family: %s", routerFamilyName)
+				isEnabled = false
+			}
 
 			if !isEnabled {
 				log.Warnf(r.Context(), "Router family %s is disabled by configuration", routerFamilyName)

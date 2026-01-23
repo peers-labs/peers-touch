@@ -8,6 +8,12 @@ enum P2PConnectionState {
   failed,
 }
 
+enum ConnectionMode {
+  p2pDirect,
+  stationRelay,
+  disconnected,
+}
+
 class ConnectionStats {
   const ConnectionStats({
     this.iceState = 'Unknown',
@@ -21,6 +27,9 @@ class ConnectionStats {
     this.messagesReceived = 0,
     this.latencyMs,
     this.connectionState = P2PConnectionState.disconnected,
+    this.connectionMode = ConnectionMode.disconnected,
+    this.pendingSyncCount = 0,
+    this.lastSyncAt,
   });
 
   final String iceState;
@@ -34,6 +43,9 @@ class ConnectionStats {
   final int messagesReceived;
   final int? latencyMs;
   final P2PConnectionState connectionState;
+  final ConnectionMode connectionMode;
+  final int pendingSyncCount;
+  final DateTime? lastSyncAt;
 
   ConnectionStats copyWith({
     String? iceState,
@@ -47,6 +59,9 @@ class ConnectionStats {
     int? messagesReceived,
     int? latencyMs,
     P2PConnectionState? connectionState,
+    ConnectionMode? connectionMode,
+    int? pendingSyncCount,
+    DateTime? lastSyncAt,
   }) {
     return ConnectionStats(
       iceState: iceState ?? this.iceState,
@@ -60,6 +75,9 @@ class ConnectionStats {
       messagesReceived: messagesReceived ?? this.messagesReceived,
       latencyMs: latencyMs ?? this.latencyMs,
       connectionState: connectionState ?? this.connectionState,
+      connectionMode: connectionMode ?? this.connectionMode,
+      pendingSyncCount: pendingSyncCount ?? this.pendingSyncCount,
+      lastSyncAt: lastSyncAt ?? this.lastSyncAt,
     );
   }
 }
@@ -97,6 +115,8 @@ class ConnectionDebugPanel extends StatelessWidget {
                 children: [
                   _buildConnectionStatus(context, theme),
                   SizedBox(height: UIKit.spaceLg(context)),
+                  _buildConnectionModeSection(context, theme),
+                  SizedBox(height: UIKit.spaceLg(context)),
                   _buildSignalingSection(context, theme),
                   SizedBox(height: UIKit.spaceLg(context)),
                   _buildPeerSection(context, theme),
@@ -104,6 +124,8 @@ class ConnectionDebugPanel extends StatelessWidget {
                   _buildStatesSection(context, theme),
                   SizedBox(height: UIKit.spaceLg(context)),
                   _buildStatsSection(context, theme),
+                  SizedBox(height: UIKit.spaceLg(context)),
+                  _buildSyncSection(context, theme),
                 ],
               ),
             ),
@@ -145,23 +167,20 @@ class ConnectionDebugPanel extends StatelessWidget {
   }
 
   Widget _buildConnectionStatus(BuildContext context, ThemeData theme) {
-    final (color, icon, label) = switch (stats.connectionState) {
-      P2PConnectionState.connected => (
+    final (color, icon, label) = switch (stats.connectionMode) {
+      ConnectionMode.p2pDirect => (
           Colors.green,
           Icons.check_circle,
-          'Connected'
+          'P2P Connected'
         ),
-      P2PConnectionState.connecting => (
-          Colors.orange,
-          Icons.sync,
-          'Connecting...'
+      ConnectionMode.stationRelay => (
+          Colors.blue,
+          Icons.cloud,
+          'Station Relay'
         ),
-      P2PConnectionState.failed => (Colors.red, Icons.error, 'Failed'),
-      P2PConnectionState.disconnected => (
-          Colors.grey,
-          Icons.circle_outlined,
-          'Disconnected'
-        ),
+      ConnectionMode.disconnected => stats.connectionState == P2PConnectionState.connecting
+          ? (Colors.orange, Icons.sync, 'Connecting...')
+          : (Colors.grey, Icons.circle_outlined, 'Disconnected'),
     };
 
     return Container(
@@ -245,6 +264,32 @@ class ConnectionDebugPanel extends StatelessWidget {
     );
   }
 
+  Widget _buildConnectionModeSection(BuildContext context, ThemeData theme) {
+    final (modeLabel, modeColor, modeIcon) = switch (stats.connectionMode) {
+      ConnectionMode.p2pDirect => ('P2P Direct', Colors.green, Icons.swap_horiz),
+      ConnectionMode.stationRelay => ('Station Relay', Colors.orange, Icons.cloud_queue),
+      ConnectionMode.disconnected => ('Disconnected', Colors.grey, Icons.cloud_off),
+    };
+
+    return _buildSection(
+      context,
+      theme,
+      title: 'Connection Mode',
+      icon: Icons.router_outlined,
+      children: [
+        _buildInfoRow(
+          context,
+          theme,
+          'Mode',
+          modeLabel,
+          valueColor: modeColor,
+        ),
+        if (stats.latencyMs != null)
+          _buildInfoRow(context, theme, 'Latency', '${stats.latencyMs}ms'),
+      ],
+    );
+  }
+
   Widget _buildStatsSection(BuildContext context, ThemeData theme) {
     return _buildSection(
       context,
@@ -256,6 +301,38 @@ class ConnectionDebugPanel extends StatelessWidget {
         _buildInfoRow(context, theme, 'Received', '${stats.messagesReceived}'),
       ],
     );
+  }
+
+  Widget _buildSyncSection(BuildContext context, ThemeData theme) {
+    final lastSyncText = stats.lastSyncAt != null
+        ? _formatTimeSince(stats.lastSyncAt!)
+        : 'Never';
+
+    return _buildSection(
+      context,
+      theme,
+      title: 'Sync Status',
+      icon: Icons.sync,
+      children: [
+        _buildInfoRow(context, theme, 'Pending', '${stats.pendingSyncCount} messages'),
+        _buildInfoRow(context, theme, 'Last Sync', lastSyncText),
+      ],
+    );
+  }
+
+  String _formatTimeSince(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    
+    if (diff.inSeconds < 60) {
+      return '${diff.inSeconds}s ago';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
+    } else {
+      return '${diff.inDays}d ago';
+    }
   }
 
   Widget _buildSection(

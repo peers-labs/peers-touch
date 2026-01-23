@@ -42,3 +42,16 @@ peers:
         # When true, sampling is applied per package+message; requires report-caller: true
         # When false, sampling is applied globally per message
         per-package: false
+      # Per-package sampling rules (recommended for targeted log control)
+      # Each rule applies only to the specified package, other packages are unaffected
+      package-sampling:
+        # Example: Control high-frequency health check logs
+        - package: "plugin/native/registry"
+          initial: 5           # First 5 logs always recorded
+          thereafter: 20       # Then 1 out of 20
+          window: "1m"         # Reset every minute
+        # Example: Control mDNS discovery logs
+        # - package: "plugin/native/mdns"
+        #   initial: 10
+        #   thereafter: 50
+        #   window: "1m"

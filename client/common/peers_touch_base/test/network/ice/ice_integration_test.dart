@@ -219,25 +219,25 @@ void main() {
       print('✅ IceServer model test passed');
     });
 
-    test('3. Chat signaling stats endpoint works', () async {
-      print('\n--- Test 3: Chat Signaling Stats ---');
+    test('3. ICE signaling stats endpoint works', () async {
+      print('\n--- Test 3: ICE Signaling Stats ---');
 
-      final stats = await chatClient.get('/chat/stats');
+      final stats = await chatClient.get('/api/v1/ice/stats');
       print('  Stats: $stats');
 
       expect(stats, isNotNull);
       expect(stats!['status'], isNotNull);
 
-      print('✅ Chat signaling stats test passed');
+      print('✅ ICE signaling stats test passed');
     });
 
-    test('4. Chat signaling peers endpoint works', () async {
-      print('\n--- Test 4: Chat Signaling Peers ---');
+    test('4. ICE signaling peers endpoint works', () async {
+      print('\n--- Test 4: ICE Signaling Peers ---');
 
-      final peersResp = await chatClient.get('/chat/peers');
+      final peersResp = await chatClient.get('/api/v1/ice/peers');
       print('  Peers response type: ${peersResp.runtimeType}');
 
-      print('✅ Chat signaling peers test passed');
+      print('✅ ICE signaling peers test passed');
     });
 
     test('5. IceService caching works correctly', () async {
@@ -330,17 +330,17 @@ Phase 3: Gather ICE Candidates
   Client A: onIceCandidate → host, srflx, relay candidates
   Client B: onIceCandidate → host, srflx, relay candidates
 
-Phase 4: Signaling (via Station /chat/* endpoints)
+Phase 4: Signaling (via Station /api/v1/ice/* endpoints)
   Note: POST endpoints require JWT authentication
   
-  Client A → Station: POST /chat/session/offer {sdp: ...}
-  Client A → Station: POST /chat/session/candidate {candidate: ...}
-  Client B ← Station: GET /chat/session/offer?id=...
-  Client B ← Station: GET /chat/session/candidates?id=...
-  Client B → Station: POST /chat/session/answer {sdp: ...}
-  Client B → Station: POST /chat/session/candidate {candidate: ...}
-  Client A ← Station: GET /chat/session/answer?id=...
-  Client A ← Station: GET /chat/session/candidates?id=...
+  Client A → Station: POST /api/v1/ice/session/offer {sdp: ...}
+  Client A → Station: POST /api/v1/ice/session/candidate {candidate: ...}
+  Client B ← Station: GET /api/v1/ice/session/offer?id=...
+  Client B ← Station: GET /api/v1/ice/session/candidates?id=...
+  Client B → Station: POST /api/v1/ice/session/answer {sdp: ...}
+  Client B → Station: POST /api/v1/ice/session/candidate {candidate: ...}
+  Client A ← Station: GET /api/v1/ice/session/answer?id=...
+  Client A ← Station: GET /api/v1/ice/session/candidates?id=...
 
 Phase 5: ICE Connectivity Check
   Client A ↔ Client B: STUN binding requests

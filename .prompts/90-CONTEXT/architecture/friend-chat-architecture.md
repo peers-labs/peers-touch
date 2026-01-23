@@ -1,8 +1,8 @@
 # Friend Chat Architecture Design
 
 > **Status**: Draft  
-> **Version**: 3.0 (ICE Integrated)  
-> **Date**: 2026-01-21  
+> **Version**: 4.0 (Refactored)  
+> **Date**: 2026-01-22  
 > **Author**: Architecture Team  
 > **Dependencies**: `ice-capability-design.md` (✅ Implemented)
 
@@ -10,1049 +10,882 @@
 
 ## 📋 Executive Summary
 
-This document defines the **Friend Chat** capability as a **decentralized, privacy-first messaging system** built on top of the Peers-Touch ICE infrastructure. It represents the first major application of the Peers-Touch network's P2P communication capabilities.
+This document defines the **Friend Chat** capability as a **decentralized, privacy-first messaging system** built on top of the Peers-Touch ICE infrastructure.
 
 ### Key Principles
 
 1. **Privacy-First**: End-to-end encryption, no server-side message reading
 2. **Decentralized**: P2P direct connection when possible, Station relay as fallback
-3. **Resilient**: Offline message queue, multi-device sync, automatic reconnection
-4. **Integrated**: Seamlessly integrated with Discovery (Radar View) for friend management
-5. **Simple**: Direct HTTP/WebSocket communication between Stations
-
-### ICE Integration Status
-
-| Component | Status | Location |
-|-----------|--------|----------|
-| ICE API | ✅ Implemented | `GET /api/v1/turn/ice-servers` |
-| TURN SubServer | ✅ Implemented | `station/frame/core/plugin/native/subserver/turn/` |
-| IceService (Client) | ✅ Implemented | `peers_touch_base/lib/network/ice/` |
-| RTCClient Integration | ✅ Implemented | `peers_touch_base/lib/network/rtc/rtc_client.dart` |
+3. **Persistent**: All messages stored in database for history retrieval
+4. **Resilient**: Offline message queue for disconnected users
+5. **Layered**: Clean separation of concerns (Handler → Service → Repository)
 
 ---
 
-## 🎯 Vision: Decentralized Messaging Network
+## 🏗️ Station Architecture
 
-### Design Philosophy
+### Directory Structure (Reference: OSS SubServer)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│         Peers-Touch Friend Chat Network                     │
-│                                                             │
-│   Traditional IM:                                           │
-│   Client → Central Server → Client                          │
-│   ❌ Server reads all messages                              │
-│   ❌ Single point of failure                                │
-│   ❌ Vendor lock-in                                         │
-│                                                             │
-│   Peers-Touch:                                              │
-│   Client ←─ P2P Direct ─→ Client (80% of connections)      │
-│   Client ←─ Station Relay ─→ Client (20% of connections)   │
-│   ✅ End-to-end encryption                                  │
-│   ✅ Self-sovereign infrastructure                          │
-│   ✅ Network effect (more Stations = better service)        │
-└─────────────────────────────────────────────────────────────┘
+station/app/subserver/friend_chat/
+├── db/
+│   ├── model/
+│   │   ├── session.go          # FriendChatSession
+│   │   ├── message.go          # FriendChatMessage
+│   │   ├── attachment.go       # FriendMessageAttachment
+│   │   └── offline.go          # OfflineMessage
+│   └── repo/
+│       ├── session_repo.go     # SessionRepository interface
+│       ├── message_repo.go     # MessageRepository interface
+│       └── offline_repo.go     # OfflineRepository interface
+├── service/
+│   ├── session_service.go      # Session business logic
+│   ├── message_service.go      # Message business logic
+│   └── relay_service.go        # Offline relay logic
+├── handler.go                  # HTTP handlers
+├── friend_chat.go              # SubServer entry point
+└── options.go                  # Configuration options
 ```
-
----
-
-## 🏗️ System Architecture
 
 ### Layered Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  Presentation Layer                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ Friend List  │  │  Chat Window │  │ Message Input│     │
-│  │  (Middle)    │  │   (Right)    │  │   (Bottom)   │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
+│                    HTTP Handlers                             │
+│  handler.go                                                  │
+│  - handleSendMessage()                                       │
+│  - handleSyncMessages()                                      │
+│  - handleGetMessages()                                       │
+│  - handleGetSessions()                                       │
+│  - handleOnline() / handleOffline()                         │
+└─────────────────────────────────────────────────────────────┘
+                         ↓ calls
+┌─────────────────────────────────────────────────────────────┐
+│                    Service Layer                             │
+│  service/message_service.go                                  │
+│  service/session_service.go                                  │
+│  service/relay_service.go                                    │
+│  - Business logic                                            │
+│  - Transaction management                                    │
+│  - Cross-entity operations                                   │
+└─────────────────────────────────────────────────────────────┘
+                         ↓ calls
+┌─────────────────────────────────────────────────────────────┐
+│                   Repository Layer                           │
+│  db/repo/message_repo.go                                     │
+│  db/repo/session_repo.go                                     │
+│  db/repo/offline_repo.go                                     │
+│  - CRUD operations                                           │
+│  - Database abstraction                                      │
 └─────────────────────────────────────────────────────────────┘
                          ↓ uses
 ┌─────────────────────────────────────────────────────────────┐
-│                  Application Layer                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ Chat         │  │  Message     │  │  Session     │     │
-│  │ Controller   │  │  Manager     │  │  Manager     │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-└─────────────────────────────────────────────────────────────┘
-                         ↓ uses
-┌─────────────────────────────────────────────────────────────┐
-│               Communication Layer                           │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ Connection   │  │  Message     │  │   Offline    │     │
-│  │ Manager      │  │  Transport   │  │   Queue      │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-└─────────────────────────────────────────────────────────────┘
-                         ↓ uses
-┌─────────────────────────────────────────────────────────────┐
-│            ICE Capability Layer (✅ IMPLEMENTED)            │
-│  (See ice-capability-design.md for details)                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ IceService   │  │ RTCClient    │  │ TURN Server  │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-└─────────────────────────────────────────────────────────────┘
-                         ↓ runs on
-┌─────────────────────────────────────────────────────────────┐
-│              Station Infrastructure                         │
-│  (HTTP/WebSocket API, Database, Object Storage)             │
+│                    Data Models                               │
+│  db/model/*.go                                               │
+│  - FriendChatSession                                         │
+│  - FriendChatMessage                                         │
+│  - OfflineMessage                                            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📐 Core Components
+## 📡 API Endpoints
 
-### 1. Connection Manager (Client-Side)
+### Complete API List
 
-**Responsibility**: Manage P2P and Station relay connections
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/friend-chat/session/create` | POST | JWT | Create or get existing session |
+| `/friend-chat/sessions` | GET | JWT | Get user's session list |
+| `/friend-chat/message/send` | POST | JWT | Send message (Relay mode, immediate store) |
+| `/friend-chat/message/sync` | POST | JWT | Batch sync messages (P2P mode) |
+| `/friend-chat/messages` | GET | JWT | Get message history |
+| `/friend-chat/message/ack` | POST | JWT | Mark messages as delivered/read |
+| `/friend-chat/online` | POST | JWT | Mark user online |
+| `/friend-chat/offline` | POST | JWT | Mark user offline |
+| `/friend-chat/pending` | GET | JWT | Get pending offline messages |
+| `/friend-chat/stats` | GET | - | Get service statistics |
 
-```dart
-// client/common/peers_touch_base/lib/network/chat/connection_manager.dart
+### API Details
 
-class ConnectionManager {
-  final IceService _iceService;
-  final Map<String, ChatConnection> _activeConnections = {};
-  final ConnectionStrategy _strategy;
-  
-  ConnectionManager({required IceService iceService})
-      : _iceService = iceService,
-        _strategy = ConnectionStrategy(iceService);
-  
-  Future<ChatConnection> connect(String friendDID) async {
-    if (_activeConnections.containsKey(friendDID)) {
-      return _activeConnections[friendDID]!;
-    }
-    
-    final iceServers = await _iceService.getICEServers();
-    
-    final connection = await _strategy.establishConnection(
-      remoteDID: friendDID,
-      iceServers: iceServers,
-    );
-    
-    _activeConnections[friendDID] = connection;
-    return connection;
-  }
-  
-  void monitorConnections() {
-    for (final entry in _activeConnections.entries) {
-      final quality = entry.value.getQuality();
-      
-      if (quality.shouldUpgrade) {
-        _upgradeConnection(entry.key, entry.value);
-      } else if (quality.shouldDowngrade) {
-        _downgradeConnection(entry.key, entry.value);
-      }
-    }
-  }
+#### 1. Send Message (Relay Mode)
+
+```http
+POST /friend-chat/message/send
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+{
+  "session_ulid": "01HQXYZ...",
+  "receiver_did": "did:peers:bob",
+  "type": 1,
+  "content": "Hello!",
+  "reply_to_ulid": ""
+}
+
+Response:
+{
+  "message": {
+    "ulid": "01HQABC...",
+    "session_ulid": "01HQXYZ...",
+    "sender_did": "did:peers:alice",
+    "receiver_did": "did:peers:bob",
+    "type": 1,
+    "content": "Hello!",
+    "status": 1,
+    "sent_at": 1705708800
+  },
+  "delivery_status": "delivered" | "queued"
 }
 ```
 
-**Connection Strategy**:
-```dart
-enum ConnectionType {
-  localDirect,    // mDNS local network
-  p2pDirect,      // P2P via STUN (using IceService)
-  stationRelay,   // Station WebSocket/HTTP relay
+#### 2. Batch Sync Messages (P2P Mode)
+
+```http
+POST /friend-chat/message/sync
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+{
+  "messages": [
+    {
+      "ulid": "01HQABC...",
+      "session_ulid": "01HQXYZ...",
+      "receiver_did": "did:peers:bob",
+      "type": 1,
+      "content": "Hello!",
+      "sent_at": 1705708800
+    },
+    {
+      "ulid": "01HQDEF...",
+      "session_ulid": "01HQXYZ...",
+      "receiver_did": "did:peers:bob",
+      "type": 1,
+      "content": "How are you?",
+      "sent_at": 1705708805
+    }
+  ]
 }
 
-class ConnectionStrategy {
-  final IceService _iceService;
-  
-  ConnectionStrategy(this._iceService);
-  
-  Future<ChatConnection> establishConnection({
-    required String remoteDID,
-    required List<IceServer> iceServers,
-  }) async {
-    // 1. Try local direct (if same network)
-    try {
-      return await _tryLocalDirect(remoteDID);
-    } catch (e) {
-      LoggingService.debug('Local direct failed: $e');
-    }
-    
-    // 2. Try P2P direct (via STUN/TURN from IceService)
-    try {
-      return await _tryP2PDirect(remoteDID, iceServers);
-    } catch (e) {
-      LoggingService.debug('P2P direct failed: $e');
-    }
-    
-    // 3. Fallback to Station relay
-    return await _useStationRelay(remoteDID);
-  }
-  
-  Future<ChatConnection> _tryP2PDirect(
-    String remoteDID,
-    List<IceServer> iceServers,
-  ) async {
-    final rtcClient = RTCClient(
-      signaling,
-      role: 'caller',
-      peerId: currentUserDID,
-      iceService: _iceService,
-    );
-    
-    await rtcClient.call(remoteDID);
-    return P2PChatConnection(rtcClient);
-  }
+Response:
+{
+  "synced": 2,
+  "failed": []
 }
 ```
 
----
+#### 3. Get Messages
 
-### 2. Message Transport Layer
+```http
+GET /friend-chat/messages?session_ulid=01HQXYZ&before_ulid=&limit=50
+Authorization: Bearer <jwt>
 
-**Responsibility**: Handle message encoding, encryption, and transmission
+Response:
+{
+  "messages": [...],
+  "has_more": true
+}
+```
 
-```dart
-// client/common/peers_touch_base/lib/network/chat/message_transport.dart
+#### 4. Create/Get Session
 
-class MessageTransport {
-  final EncryptionService _encryption;
-  final ConnectionManager _connectionManager;
-  
-  Future<SendResult> sendMessage({
-    required String receiverDID,
-    required FriendChatMessage message,
-  }) async {
-    final connection = await _connectionManager.connect(receiverDID);
-    
-    final encrypted = await _encryption.encrypt(
-      data: message.writeToBuffer(),
-      recipientDID: receiverDID,
-    );
-    
-    final envelope = MessageEnvelope(
-      messageUlid: message.ulid,
-      senderDid: currentUserDID,
-      receiverDid: receiverDID,
-      sessionUlid: message.sessionUlid,
-      encryptedPayload: encrypted,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
-    );
-    
-    final result = await connection.send(envelope);
-    await _updateMessageStatus(message.ulid, result.status);
-    
-    return result;
-  }
-  
-  Future<FriendChatMessage> receiveMessage(MessageEnvelope envelope) async {
-    final decrypted = await _encryption.decrypt(
-      data: envelope.encryptedPayload,
-      senderDID: envelope.senderDid,
-    );
-    
-    final message = FriendChatMessage.fromBuffer(decrypted);
-    await _storeMessage(message);
-    await _sendAcknowledgment(envelope.messageUlid, envelope.senderDid);
-    
-    return message;
-  }
+```http
+POST /friend-chat/session/create
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+{
+  "participant_did": "did:peers:bob"
+}
+
+Response:
+{
+  "session": {
+    "ulid": "01HQXYZ...",
+    "participant_a_did": "did:peers:alice",
+    "participant_b_did": "did:peers:bob",
+    "last_message_at": 0,
+    "created_at": 1705708800
+  },
+  "created": true | false
 }
 ```
 
 ---
 
-### 3. Station Message Relay Service
+## 🔄 Message Flow
 
-**Responsibility**: Relay messages when P2P connection fails
+### Key Principle: All Messages Are Stored
 
-```go
-// station/frame/touch/message/relay/relay_service.go
+**无论 P2P 还是 Relay，所有消息都存储到 `FriendChatMessage` 表。**
 
-type MessageRelayService struct {
-    db              *gorm.DB
-    wsManager       *WebSocketManager
-    offlineQueue    *OfflineMessageQueue
-    metrics         *RelayMetrics
-}
+### Connection Modes
 
-func (mrs *MessageRelayService) RelayMessage(ctx context.Context, envelope *MessageEnvelope) (*RelayResult, error) {
-    if err := mrs.validateSender(ctx, envelope.SenderDid); err != nil {
-        return nil, err
-    }
-    
-    isLocal, err := mrs.isLocalUser(ctx, envelope.ReceiverDid)
-    if err != nil {
-        return nil, err
-    }
-    
-    if isLocal {
-        return mrs.relayToLocalUser(ctx, envelope)
-    }
-    return mrs.relayToRemoteStation(ctx, envelope)
-}
+| Mode | Description | Latency | When Used |
+|------|-------------|---------|-----------|
+| **P2P Direct** | WebRTC DataChannel | ~50ms | NAT traversal successful |
+| **Station Relay** | HTTP API | ~100ms | P2P failed, fallback |
 
-func (mrs *MessageRelayService) relayToLocalUser(ctx context.Context, envelope *MessageEnvelope) (*RelayResult, error) {
-    if mrs.wsManager.IsOnline(envelope.ReceiverDid) {
-        if err := mrs.wsManager.SendToUser(envelope.ReceiverDid, "message.new", envelope); err != nil {
-            return nil, err
-        }
-        
-        return &RelayResult{
-            Status:      "delivered",
-            DeliveredAt: time.Now(),
-        }, nil
-    }
-    
-    if err := mrs.offlineQueue.Enqueue(ctx, envelope); err != nil {
-        return nil, err
-    }
-    
-    return &RelayResult{Status: "queued"}, nil
-}
+### Scenario 1: P2P Direct Mode (Real-time + Batch Sync)
 
-func (mrs *MessageRelayService) relayToRemoteStation(ctx context.Context, envelope *MessageEnvelope) (*RelayResult, error) {
-    recipientStation, err := mrs.resolveStationFromDID(ctx, envelope.ReceiverDid)
-    if err != nil {
-        return nil, err
-    }
-    
-    url := fmt.Sprintf("%s/api/v1/message/receive", recipientStation.BaseURL)
-    
-    payload, err := proto.Marshal(envelope)
-    if err != nil {
-        return nil, err
-    }
-    
-    req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
-    if err != nil {
-        return nil, err
-    }
-    
-    req.Header.Set("Content-Type", "application/x-protobuf")
-    req.Header.Set("X-Sender-Station", mrs.localStationURL)
-    
-    resp, err := mrs.httpClient.Do(req)
-    if err != nil {
-        return nil, err
-    }
-    defer resp.Body.Close()
-    
-    if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("remote station returned %d", resp.StatusCode)
-    }
-    
-    return &RelayResult{
-        Status:      "forwarded",
-        ForwardedTo: recipientStation.BaseURL,
-    }, nil
-}
-```
-
----
-
-### 4. Offline Message Queue
-
-**Responsibility**: Store and deliver offline messages
-
-```go
-// station/frame/touch/message/offline/queue.go
-
-type OfflineMessageQueue struct {
-    db  *gorm.DB
-    ttl time.Duration  // 7 days
-}
-
-func (omq *OfflineMessageQueue) Enqueue(ctx context.Context, envelope *MessageEnvelope) error {
-    offlineMsg := &model.OfflineMessage{
-        ULID:             envelope.MessageUlid,
-        ReceiverDID:      envelope.ReceiverDid,
-        SenderDID:        envelope.SenderDid,
-        SessionULID:      envelope.SessionUlid,
-        EncryptedPayload: envelope.EncryptedPayload,
-        Status:           "pending",
-        ExpireAt:         time.Now().Add(omq.ttl),
-        CreatedAt:        time.Now(),
-    }
-    
-    return omq.db.Create(offlineMsg).Error
-}
-
-func (omq *OfflineMessageQueue) DeliverToUser(ctx context.Context, userDID string, wsConn *WebSocketConnection) error {
-    var messages []*model.OfflineMessage
-    if err := omq.db.Where("receiver_did = ? AND status = ?", userDID, "pending").
-        Order("created_at ASC").
-        Find(&messages).Error; err != nil {
-        return err
-    }
-    
-    logger.Info(ctx, "delivering offline messages", "user", userDID, "count", len(messages))
-    
-    var deliveredULIDs []string
-    for _, msg := range messages {
-        envelope := &MessageEnvelope{
-            MessageUlid:      msg.ULID,
-            SenderDid:        msg.SenderDID,
-            ReceiverDid:      msg.ReceiverDID,
-            SessionULID:      msg.SessionULID,
-            EncryptedPayload: msg.EncryptedPayload,
-        }
-        
-        if err := wsConn.Send("message.offline", envelope); err != nil {
-            logger.Warn(ctx, "failed to deliver offline message", "ulid", msg.ULID, "error", err)
-            continue
-        }
-        
-        deliveredULIDs = append(deliveredULIDs, msg.ULID)
-    }
-    
-    if len(deliveredULIDs) > 0 {
-        if err := omq.db.Model(&model.OfflineMessage{}).
-            Where("ulid IN ?", deliveredULIDs).
-            Updates(map[string]interface{}{
-                "status":       "delivered",
-                "delivered_at": time.Now(),
-            }).Error; err != nil {
-            return err
-        }
-    }
-    
-    return nil
-}
-
-func (omq *OfflineMessageQueue) CleanExpired(ctx context.Context) error {
-    result := omq.db.Where("expire_at < ?", time.Now()).
-        Delete(&model.OfflineMessage{})
-    
-    if result.Error != nil {
-        return result.Error
-    }
-    
-    logger.Info(ctx, "cleaned expired offline messages", "count", result.RowsAffected)
-    return nil
-}
-```
-
----
-
-## 🔄 Complete Message Flow
-
-### Scenario 1: P2P Direct Connection (Using ICE)
+**P2P 模式下，消息实时发送，但批量同步到服务器。**
 
 ```
-Alice (Client)                    Station A                    Station B                    Bob (Client)
-     │                                │                            │                            │
-     │──(1) GET /api/v1/turn/ice-servers──>│                       │                            │
-     │<─(2) Return ICE config─────────│                            │                            │
-     │    {stun, turn, credentials}   │                            │                            │
-     │                                │                            │                            │
-     │──(3) Gather candidates────────>│                            │                            │
-     │    (host, srflx, relay)        │                            │                            │
-     │                                │                            │                            │
-     │──(4) Send offer (via WebSocket/HTTP)──────────────────────>│                            │
-     │                                │                            │──(5) Notify Bob──────────>│
-     │                                │                            │                            │
-     │                                │                            │<─(6) Bob gathers candidates│
-     │                                │                            │                            │
-     │<─(7) Receive answer (via WebSocket/HTTP)───────────────────│                            │
-     │                                │                            │                            │
-     │──(8) ICE connectivity check───────────────────────────────────────────────────────────>│
-     │    Try: host→host, srflx→srflx                             │                            │
-     │<─(9) P2P connection established (srflx→srflx)─────────────────────────────────────────>│
-     │                                │                            │                            │
-     │══(10) Send encrypted message directly══════════════════════════════════════════════════>│
-     │                                │                            │                            │
-     │<─(11) ACK received═══════════════════════════════════════════════════════════════════════│
-     │                                │                            │                            │
+Alice (Client)                    Station A                    Bob (Client)
+     │                                │                            │
+     │══(1) P2P Send (RTCClient)═════════════════════════════════>│
+     │    (Real-time, ~50ms)          │                            │
+     │                                │                            │
+     │<═(2) P2P ACK════════════════════════════════════════════════│
+     │                                │                            │
+     │    [Message added to local buffer]                          │
+     │                                │                            │
+     │    ... more P2P messages ...   │                            │
+     │                                │                            │
+     │    [Trigger: 10 messages OR 10 seconds]                     │
+     │                                │                            │
+     │──(3) POST /message/sync───────>│                            │
+     │    {messages: [...10 msgs]}    │                            │
+     │                                │                            │
+     │                                │──(4) Batch store to DB────>│
+     │                                │    FriendChatMessage x 10  │
+     │                                │                            │
+     │<─(5) Return {synced: 10}───────│                            │
+     │                                │                            │
 
-Result: Direct P2P connection, ~50ms latency, no Station relay needed
+Result: Real-time P2P delivery + batch persistence
 ```
 
-### Scenario 2: Station Relay (P2P Failed)
+**Sync Trigger Rules:**
+- **Message count**: Every 10 messages
+- **Time interval**: Every 10 seconds
+- **Whichever comes first**
+
+### Scenario 2: Station Relay Mode (Immediate Store)
+
+**Relay 模式下，每条消息立即存储。**
 
 ```
-Alice (Client)                    Station A                    Station B                    Bob (Client)
-     │                                │                            │                            │
-     │──(1) Try P2P connection───────>│                            │                            │
-     │<─(2) P2P failed (Symmetric NAT)│                            │                            │
-     │                                │                            │                            │
-     │──(3) Fallback to Station relay─│                            │                            │
-     │    POST /api/v1/message/send   │                            │                            │
-     │                                │                            │                            │
-     │                                │──(4) Resolve Bob's Station─│                            │
-     │                                │                            │                            │
-     │                                │──(5) Forward to Station B──────────────────────────────>│
-     │                                │    POST /api/v1/message/receive                         │
-     │                                │                            │                            │
-     │                                │                            │──(6) Check Bob online─────>│
-     │                                │                            │    WebSocket connected     │
-     │                                │                            │                            │
-     │                                │                            │──(7) Push via WebSocket───>│
-     │                                │                            │                            │
-     │                                │                            │<─(8) ACK received──────────│
-     │                                │                            │                            │
-     │                                │<─(9) Confirm delivered─────│                            │
-     │                                │                            │                            │
-     │<─(10) Return success───────────│                            │                            │
-     │                                │                            │                            │
+Alice (Client)                    Station A                    Bob (Client)
+     │                                │                            │
+     │──(1) POST /message/send───────>│                            │
+     │    {receiver: bob, content}    │                            │
+     │                                │                            │
+     │                                │──(2) Store to DB──────────>│
+     │                                │    FriendChatMessage       │
+     │                                │    FriendChatSession       │
+     │                                │                            │
+     │                                │──(3) Check Bob online─────>│
+     │                                │    onlinePeers[bob] = true │
+     │                                │                            │
+     │<─(4) Return {status: delivered}│                            │
+     │                                │                            │
 
-Result: Station relay, ~100ms latency, federated delivery
+Result: Message stored in DB immediately
 ```
 
-### Scenario 3: Offline Message Queue
+### Scenario 3: Receiver Offline (Store + Queue)
 
 ```
-Alice (Client)                    Station A                    Station B                    Bob (Offline)
-     │                                │                            │                            │
-     │──(1) Send message─────────────>│                            │                            │
-     │    POST /api/v1/message/send   │                            │                            │
-     │                                │                            │                            │
-     │                                │──(2) Forward to Station B──────────────────────────────>│
-     │                                │                            │                            │
-     │                                │                            │──(3) Check Bob online─────>│
-     │                                │                            │    WebSocket: NOT CONNECTED│
-     │                                │                            │                            │
-     │                                │                            │──(4) Enqueue offline msg──>│
-     │                                │                            │    expire_at: +7 days      │
-     │                                │                            │                            │
-     │                                │<─(5) Confirm queued────────│                            │
-     │                                │                            │                            │
-     │<─(6) Return queued status──────│                            │                            │
-     │                                │                            │                            │
-     │                                │                            │    (Bob comes online)      │
-     │                                │                            │<─(7) WebSocket connect─────│
-     │                                │                            │                            │
-     │                                │                            │──(8) Deliver offline msgs─>│
-     │                                │                            │                            │
-     │                                │                            │<─(9) ACK received──────────│
-     │                                │                            │                            │
+Alice (Client)                    Station A                    Bob (Offline)
+     │                                │                            │
+     │──(1) POST /message/send───────>│                            │
+     │    {receiver: bob, content}    │                            │
+     │                                │                            │
+     │                                │──(2) Store to DB──────────>│
+     │                                │    FriendChatMessage       │
+     │                                │    FriendChatSession       │
+     │                                │                            │
+     │                                │──(3) Check Bob online─────>│
+     │                                │    onlinePeers[bob] = false│
+     │                                │                            │
+     │                                │──(4) Queue offline msg────>│
+     │                                │    OfflineMessage          │
+     │                                │                            │
+     │<─(5) Return {status: queued}───│                            │
+     │                                │                            │
+     │                                │    (Bob comes online)      │
+     │                                │<─(6) POST /online──────────│
+     │                                │                            │
+     │                                │──(7) GET /pending──────────│
+     │                                │    Return offline messages │
+     │                                │                            │
+     │                                │──(8) POST /message/ack─────│
+     │                                │    Mark as delivered       │
 
-Result: Message queued for 7 days, delivered when Bob comes online
-```
-
----
-
-## 🎨 UI/UX Design
-
-### Desktop Layout
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Peers-Touch Desktop                                    [_][□][×]│
-├─────────────────────────────────────────────────────────────┤
-│  [☰] Discovery  AI Chat  Friend Chat  Settings             │
-├─────────┬───────────────────────┬───────────────────────────┤
-│         │                       │                           │
-│  Left   │      Middle           │         Right             │
-│  Panel  │      Panel            │         Panel             │
-│         │                       │                           │
-│ (Nav)   │  (Friend List)        │    (Chat Window)          │
-│         │                       │                           │
-│  [🔍]   │  ┌─────────────────┐  │  ┌─────────────────────┐ │
-│  Radar  │  │ 🔍 Search...    │  │  │  Alice              │ │
-│         │  └─────────────────┘  │  │  Online • P2P Direct│ │
-│  [💬]   │                       │  └─────────────────────┘ │
-│  Chat   │  Friends (12)         │                           │
-│         │  ┌─────────────────┐  │  ┌─────────────────────┐ │
-│  [⚙️]   │  │ 👤 Alice        │◀─│  │ Alice: Hey!         │ │
-│  Settings│  │ 💬 Hey! How...  │  │  │ 10:30 AM         ✓✓│ │
-│         │  │ 2 min ago    [2]│  │  ├─────────────────────┤ │
-│         │  └─────────────────┘  │  │ You: Good!          │ │
-│         │  ┌─────────────────┐  │  │ 10:31 AM         ✓✓│ │
-│         │  │ 👤 Bob          │  │  └─────────────────────┘ │
-│         │  │ 💬 See you!     │  │                           │
-│         │  │ 1 hour ago      │  │  ┌─────────────────────┐ │
-│         │  └─────────────────┘  │  │ Type a message...   │ │
-│         │  ┌─────────────────┐  │  │ [📎] [😊] [🎤] [Send]│ │
-│         │  │ 👤 Carol        │  │  └─────────────────────┘ │
-│         │  │ Offline         │  │                           │
-│         │  │ Yesterday       │  │  Connection: P2P Direct  │
-│         │  └─────────────────┘  │  Latency: 45ms           │
-│         │                       │                           │
-└─────────┴───────────────────────┴───────────────────────────┘
-```
-
-### Key UI Components
-
-#### 1. Friend List (Middle Panel)
-
-```dart
-// client/desktop/lib/features/friend_chat/view/widgets/friend_list.dart
-
-class FriendList extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return GetBuilder<FriendChatController>(
-      builder: (controller) => Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.all(16),
-            child: SearchBar(
-              hintText: 'Search friends or messages...',
-              onChanged: controller.onSearchChanged,
-            ),
-          ),
-          
-          Expanded(
-            child: Obx(() {
-              if (controller.isSearching.value) {
-                return SearchResults(results: controller.searchResults);
-              }
-              
-              return ListView.builder(
-                itemCount: controller.friends.length,
-                itemBuilder: (context, index) {
-                  final friend = controller.friends[index];
-                  return FriendListItem(
-                    friend: friend,
-                    onTap: () => controller.selectFriend(friend.did),
-                  );
-                },
-              );
-            }),
-          ),
-        ],
-      ),
-    );
-  }
-}
-```
-
-#### 2. Chat Window (Right Panel)
-
-```dart
-// client/desktop/lib/features/friend_chat/view/widgets/chat_window.dart
-
-class ChatWindow extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return GetBuilder<FriendChatController>(
-      builder: (controller) => Column(
-        children: [
-          ChatHeader(
-            friend: controller.selectedFriend,
-            connectionStatus: controller.connectionStatus,
-          ),
-          
-          Expanded(
-            child: Obx(() => ListView.builder(
-              reverse: true,
-              itemCount: controller.messages.length,
-              itemBuilder: (context, index) {
-                final message = controller.messages[index];
-                return MessageBubble(
-                  message: message,
-                  isMine: message.senderDid == currentUserDID,
-                );
-              },
-            )),
-          ),
-          
-          ChatInput(
-            onSend: controller.sendMessage,
-            onAttachment: controller.attachFile,
-          ),
-          
-          ConnectionStatusBar(
-            type: controller.connectionType,
-            latency: controller.latency,
-          ),
-        ],
-      ),
-    );
-  }
-}
-```
-
-#### 3. Message Status Indicators
-
-```dart
-enum MessageStatus {
-  sending,    // ⏳ (clock)
-  sent,       // ✓  (single check)
-  delivered,  // ✓✓ (double check)
-  read,       // ✓✓ (blue double check)
-  failed,     // ❌ (red X)
-}
-
-class MessageStatusIcon extends StatelessWidget {
-  final MessageStatus status;
-  
-  const MessageStatusIcon({required this.status});
-  
-  @override
-  Widget build(BuildContext context) {
-    switch (status) {
-      case MessageStatus.sending:
-        return Icon(Icons.access_time, size: 14, color: Colors.grey);
-      case MessageStatus.sent:
-        return Icon(Icons.check, size: 14, color: Colors.grey);
-      case MessageStatus.delivered:
-        return Icon(Icons.done_all, size: 14, color: Colors.grey);
-      case MessageStatus.read:
-        return Icon(Icons.done_all, size: 14, color: Colors.blue);
-      case MessageStatus.failed:
-        return Icon(Icons.error_outline, size: 14, color: Colors.red);
-    }
-  }
-}
-```
-
----
-
-## 🔐 Security & Privacy
-
-### 1. End-to-End Encryption
-
-**Protocol**: Signal Protocol (Double Ratchet Algorithm)
-
-```dart
-// client/common/peers_touch_base/lib/security/e2ee/signal_protocol.dart
-
-class SignalProtocolService {
-  final IdentityKeyStore _identityStore;
-  final PreKeyStore _preKeyStore;
-  final SignedPreKeyStore _signedPreKeyStore;
-  final SessionStore _sessionStore;
-  
-  Future<void> initializeSession(String friendDID) async {
-    final preKeyBundle = await _fetchPreKeyBundle(friendDID);
-    
-    final sessionBuilder = SessionBuilder(
-      sessionStore: _sessionStore,
-      preKeyStore: _preKeyStore,
-      signedPreKeyStore: _signedPreKeyStore,
-      identityKeyStore: _identityStore,
-      remoteAddress: SignalProtocolAddress(friendDID, 1),
-    );
-    
-    await sessionBuilder.processPreKeyBundle(preKeyBundle);
-  }
-  
-  Future<Uint8List> encryptMessage(String friendDID, Uint8List plaintext) async {
-    final cipher = SessionCipher(
-      sessionStore: _sessionStore,
-      preKeyStore: _preKeyStore,
-      signedPreKeyStore: _signedPreKeyStore,
-      identityKeyStore: _identityStore,
-      remoteAddress: SignalProtocolAddress(friendDID, 1),
-    );
-    
-    final ciphertext = await cipher.encrypt(plaintext);
-    return ciphertext.serialize();
-  }
-  
-  Future<Uint8List> decryptMessage(String friendDID, Uint8List ciphertext) async {
-    final cipher = SessionCipher(
-      sessionStore: _sessionStore,
-      preKeyStore: _preKeyStore,
-      signedPreKeyStore: _signedPreKeyStore,
-      identityKeyStore: _identityStore,
-      remoteAddress: SignalProtocolAddress(friendDID, 1),
-    );
-    
-    return await cipher.decrypt(PreKeySignalMessage(ciphertext));
-  }
-}
-```
-
-### 2. Station Cannot Read Messages
-
-**Key Point**: Station only sees encrypted payloads
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  What Station Sees:                                         │
-│                                                             │
-│  {                                                          │
-│    "message_ulid": "01HQXYZ...",                           │
-│    "sender_did": "did:peers:alice",                        │
-│    "receiver_did": "did:peers:bob",                        │
-│    "encrypted_payload": "AQIDBAUGBwgJCgsMDQ4PEBESExQV...", │
-│    "timestamp": 1705708800                                 │
-│  }                                                          │
-│                                                             │
-│  Station CANNOT:                                            │
-│  ❌ Read message content                                    │
-│  ❌ Modify message content                                  │
-│  ❌ Impersonate sender                                      │
-│                                                             │
-│  Station CAN:                                               │
-│  ✅ Route messages                                          │
-│  ✅ Store offline messages                                  │
-│  ✅ Provide delivery confirmation                           │
-└─────────────────────────────────────────────────────────────┘
+Result: Message stored in DB + queued for offline delivery
 ```
 
 ---
 
 ## 📊 Data Models
 
-### Proto Definitions
-
-```protobuf
-// model/domain/chat/friend_chat.proto
-
-syntax = "proto3";
-package peers.touch.chat;
-
-message FriendChatSession {
-  string ulid = 1;
-  string participant_a_did = 2;
-  string participant_b_did = 3;
-  string last_message_ulid = 4;
-  int64 last_message_at = 5;
-  int32 unread_count_a = 6;
-  int32 unread_count_b = 7;
-  int64 created_at = 8;
-  int64 updated_at = 9;
-}
-
-message FriendChatMessage {
-  string ulid = 1;
-  string session_ulid = 2;
-  string sender_did = 3;
-  string receiver_did = 4;
-  
-  MessageType type = 5;
-  string content = 6;
-  repeated Attachment attachments = 7;
-  
-  string reply_to_ulid = 8;
-  
-  MessageStatus status = 9;
-  int64 sent_at = 10;
-  int64 delivered_at = 11;
-  int64 read_at = 12;
-  
-  int64 created_at = 13;
-  int64 updated_at = 14;
-}
-
-enum MessageType {
-  TEXT = 0;
-  IMAGE = 1;
-  FILE = 2;
-  AUDIO = 3;
-  VIDEO = 4;
-}
-
-enum MessageStatus {
-  SENDING = 0;
-  SENT = 1;
-  DELIVERED = 2;
-  READ = 3;
-  FAILED = 4;
-}
-
-message Attachment {
-  string cid = 1;
-  string filename = 2;
-  string mime_type = 3;
-  int64 size = 4;
-  string thumbnail_cid = 5;
-}
-
-message MessageEnvelope {
-  string message_ulid = 1;
-  string sender_did = 2;
-  string receiver_did = 3;
-  string session_ulid = 4;
-  bytes encrypted_payload = 5;
-  int64 timestamp = 6;
-  string signature = 7;
-}
-```
-
 ### Database Schema
 
 ```sql
--- Friend chat sessions
-CREATE TABLE friend_chat_session (
-    ulid VARCHAR(26) PRIMARY KEY,
+-- Session table (one per friend pair)
+CREATE TABLE touch_friend_chat_session (
+    id BIGINT PRIMARY KEY,
+    ulid VARCHAR(26) UNIQUE NOT NULL,
     participant_a_did VARCHAR(255) NOT NULL,
     participant_b_did VARCHAR(255) NOT NULL,
     last_message_ulid VARCHAR(26),
     last_message_at TIMESTAMP,
     unread_count_a INT DEFAULT 0,
     unread_count_b INT DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
     
-    UNIQUE INDEX idx_participants (
-        LEAST(participant_a_did, participant_b_did),
-        GREATEST(participant_a_did, participant_b_did)
-    )
+    INDEX idx_participants (participant_a_did, participant_b_did)
 );
 
--- Offline message queue
-CREATE TABLE offline_message (
-    ulid VARCHAR(26) PRIMARY KEY,
+-- Message table (all messages)
+CREATE TABLE touch_friend_chat_message (
+    id BIGINT PRIMARY KEY,
+    ulid VARCHAR(26) UNIQUE NOT NULL,
+    session_ulid VARCHAR(26) NOT NULL,
+    sender_did VARCHAR(255) NOT NULL,
+    receiver_did VARCHAR(255) NOT NULL,
+    type INT DEFAULT 1,
+    content TEXT,
+    reply_to_ulid VARCHAR(26),
+    status INT DEFAULT 1,
+    sent_at TIMESTAMP DEFAULT NOW(),
+    delivered_at TIMESTAMP,
+    read_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    
+    INDEX idx_session (session_ulid),
+    INDEX idx_sender (sender_did),
+    INDEX idx_receiver (receiver_did)
+);
+
+-- Offline queue (temporary, for disconnected users)
+CREATE TABLE touch_offline_message (
+    id BIGINT PRIMARY KEY,
+    ulid VARCHAR(26) UNIQUE NOT NULL,
     receiver_did VARCHAR(255) NOT NULL,
     sender_did VARCHAR(255) NOT NULL,
     session_ulid VARCHAR(26) NOT NULL,
-    encrypted_payload BYTEA NOT NULL,
-    status VARCHAR(20) DEFAULT 'pending',
+    message_ulid VARCHAR(26) NOT NULL,           -- Reference to FriendChatMessage
+    encrypted_payload BYTEA NOT NULL,             -- Encrypted message content
+    status INT DEFAULT 1,
     expire_at TIMESTAMP NOT NULL,
     delivered_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
     
-    INDEX idx_offline_msg_receiver_status (receiver_did, status),
-    INDEX idx_offline_msg_expire (expire_at)
+    INDEX idx_receiver_status (receiver_did, status),
+    INDEX idx_expire (expire_at),
+    FOREIGN KEY (message_ulid) REFERENCES touch_friend_chat_message(ulid)
 );
 ```
 
----
+### Go Models
 
-## 🚀 Implementation Roadmap
+```go
+// db/model/session.go
+type FriendChatSession struct {
+    ID              uint64    `gorm:"primaryKey;autoIncrement:false"`
+    ULID            string    `gorm:"uniqueIndex;size:26;not null"`
+    ParticipantADID string    `gorm:"size:255;not null;index"`
+    ParticipantBDID string    `gorm:"size:255;not null;index"`
+    LastMessageULID string    `gorm:"size:26"`
+    LastMessageAt   time.Time `gorm:"index"`
+    UnreadCountA    int32     `gorm:"default:0"`
+    UnreadCountB    int32     `gorm:"default:0"`
+    CreatedAt       time.Time
+    UpdatedAt       time.Time
+}
 
-### Phase 0: ICE Infrastructure ✅ COMPLETED
+// db/model/message.go
+type FriendChatMessage struct {
+    ID          uint64     `gorm:"primaryKey;autoIncrement:false"`
+    ULID        string     `gorm:"uniqueIndex;size:26;not null"`
+    SessionULID string     `gorm:"size:26;not null;index"`
+    SenderDID   string     `gorm:"size:255;not null;index"`
+    ReceiverDID string     `gorm:"size:255;not null;index"`
+    Type        int32      `gorm:"default:1"`
+    Content     string     `gorm:"type:text"`
+    ReplyToULID string     `gorm:"size:26"`
+    Status      int32      `gorm:"default:1"`
+    SentAt      time.Time
+    DeliveredAt *time.Time
+    ReadAt      *time.Time
+    CreatedAt   time.Time
+    UpdatedAt   time.Time
+}
 
-| Task | Status | Location |
-|------|--------|----------|
-| TURN SubServer with ICE API | ✅ Done | `turn/ice_handler.go` |
-| IceService (Client) | ✅ Done | `network/ice/ice_service.dart` |
-| IceServer Model | ✅ Done | `network/ice/ice_server.dart` |
-| RTCClient Integration | ✅ Done | `network/rtc/rtc_client.dart` |
-| Configuration | ✅ Done | `sub_turn.yml` |
-
-### Phase 1: MVP - Station Relay (Week 1-2)
-
-**Goal**: Basic friend chat working via Station relay
-
-- [ ] Proto models (FriendChatSession, FriendChatMessage)
-- [ ] Database schema
-- [ ] Station relay service (HTTP + WebSocket)
-- [ ] Offline message queue
-- [ ] Client UI (friend list + chat window)
-- [ ] Basic message send/receive
-- [ ] Message status sync
-
-**Deliverable**: Users can chat via Station relay
-
-### Phase 2: P2P Direct + E2EE (Week 3-4)
-
-**Goal**: Add P2P direct connection and encryption
-
-- [ ] ConnectionManager implementation
-- [ ] ConnectionStrategy (local → P2P → relay)
-- [ ] Signal Protocol integration
-- [ ] Key exchange mechanism
-- [ ] P2P message transport
-
-**Deliverable**: E2EE chat with P2P when possible
-
-### Phase 3: Advanced Features (Week 5-6)
-
-**Goal**: Polish and optimize
-
-- [ ] Multi-device sync
-- [ ] Message threading (reply_to_ulid)
-- [ ] File attachments
-- [ ] Voice messages
-- [ ] Read receipts
-- [ ] Typing indicators
-- [ ] Message search
-
-**Deliverable**: Production-ready friend chat
-
----
-
-## 📈 Success Metrics
-
-### Technical Metrics
-
-- [ ] 95%+ message delivery success rate
-- [ ] <100ms average message latency (P2P)
-- [ ] <500ms average message latency (Station relay)
-- [ ] 80%+ P2P direct connection rate
-- [ ] 99.9% uptime
-
-### User Experience Metrics
-
-- [ ] <1s message send time (perceived)
-- [ ] Real-time message status updates
-- [ ] Offline messages delivered within 5s of coming online
-- [ ] Zero message loss
-
-### Privacy Metrics
-
-- [ ] 100% E2EE coverage
-- [ ] Zero plaintext messages on Station
-- [ ] Forward secrecy guaranteed
-
----
-
-## 🔗 Integration with Peers-Touch Network
-
-### Friend Management via Discovery (Radar View)
-
-```
-User Flow:
-1. User opens Discovery (Radar View)
-2. Searches for friend by DID/handle
-3. Views friend's profile
-4. Clicks "Follow" → Establishes friend relationship (stored locally)
-5. Friend appears in Friend Chat list
-6. User clicks friend → Opens chat window
-7. Sends first message → Connection established (P2P or relay)
+// db/model/offline.go
+type OfflineMessage struct {
+    ID          uint64     `gorm:"primaryKey;autoIncrement:false"`
+    ULID        string     `gorm:"uniqueIndex;size:26;not null"`
+    ReceiverDID string     `gorm:"size:255;not null;index"`
+    SenderDID   string     `gorm:"size:255;not null"`
+    SessionULID string     `gorm:"size:26;not null"`
+    MessageULID string     `gorm:"size:26;not null"`
+    Status      int32      `gorm:"default:1"`
+    ExpireAt    time.Time  `gorm:"index"`
+    DeliveredAt *time.Time
+    CreatedAt   time.Time
+    UpdatedAt   time.Time
+}
 ```
 
-**Friend Relationship Storage**:
-- Friend relationships stored in local database
-- DID resolution to find friend's Station URL
-- ICE servers obtained from own Station via `/api/v1/turn/ice-servers`
-- Ready to send messages
+---
+
+## 🎨 Client Architecture
+
+### Directory Structure
+
+```
+client/common/peers_touch_base/lib/network/friend_chat/
+├── friend_chat_api_service.dart    # HTTP API client
+├── models/
+│   ├── session.dart                # Session model
+│   └── message.dart                # Message model
+└── friend_chat_service.dart        # High-level service
+
+client/desktop/lib/features/friend_chat/
+├── controller/
+│   └── friend_chat_controller.dart # GetX controller
+├── view/
+│   └── friend_chat_page.dart       # Main page
+└── widgets/
+    ├── session_list_item.dart      # Session list item
+    ├── chat_message_item.dart      # Message bubble
+    ├── chat_input_bar.dart         # Input bar
+    └── connection_debug_panel.dart # Debug panel with connection mode
+```
+
+### Connection Mode Display
+
+**Debug Panel 显示当前连接模式：**
+
+```dart
+enum ConnectionMode {
+  p2pDirect,     // P2P 直连 (WebRTC DataChannel)
+  stationRelay,  // Station 中继 (HTTP API)
+  disconnected,  // 未连接
+}
+
+class ConnectionStats {
+  final ConnectionMode mode;           // 当前连接模式
+  final P2PConnectionState p2pState;   // P2P 连接状态
+  final int latencyMs;                 // 延迟 (ms)
+  final int messagesSent;              // 已发送消息数
+  final int messagesReceived;          // 已接收消息数
+  final int pendingSyncCount;          // 待同步消息数
+  final DateTime? lastSyncAt;          // 上次同步时间
+  // ...
+}
+```
+
+**UI 显示：**
+```
+┌─────────────────────────────────┐
+│ P2P Debug                    🔄 │
+├─────────────────────────────────┤
+│ ● Connected                     │
+│                                 │
+│ 📡 Connection Mode              │
+│ Mode          P2P Direct ✅     │
+│ Latency       45ms              │
+│                                 │
+│ 📊 Sync Status                  │
+│ Pending       3 messages        │
+│ Last Sync     10s ago           │
+│                                 │
+│ 📈 Message Statistics           │
+│ Sent          42                │
+│ Received      38                │
+└─────────────────────────────────┘
+```
+
+### Message Send Flow (Client)
+
+```dart
+// FriendChatController - 连接模式感知的消息发送
+
+class FriendChatController extends GetxController {
+  final connectionMode = ConnectionMode.disconnected.obs;
+  final _pendingMessages = <ChatMessage>[];
+  Timer? _syncTimer;
+  
+  static const _syncMessageThreshold = 10;
+  static const _syncTimeInterval = Duration(seconds: 10);
+
+  @override
+  void onInit() {
+    super.onInit();
+    _startSyncTimer();
+  }
+
+  void _startSyncTimer() {
+    _syncTimer = Timer.periodic(_syncTimeInterval, (_) => _syncPendingMessages());
+  }
+
+  Future<void> sendMessage(String content) async {
+    final message = ChatMessage(
+      ulid: Ulid().toString(),
+      sessionUlid: currentSession.ulid,
+      senderId: currentUserId,
+      content: content,
+      status: MessageStatus.sending,
+    );
+    messages.add(message);
+
+    if (connectionMode.value == ConnectionMode.p2pDirect) {
+      // P2P Mode: Real-time send + batch sync
+      _rtcClient!.send(content);
+      message.status = MessageStatus.sent;
+      _pendingMessages.add(message);
+      
+      // Check if should sync now
+      if (_pendingMessages.length >= _syncMessageThreshold) {
+        await _syncPendingMessages();
+      }
+    } else {
+      // Relay Mode: Immediate store via API
+      final response = await _chatApi.sendMessage(
+        sessionUlid: currentSession.ulid,
+        receiverDid: remotePeerId,
+        content: content,
+      );
+      message.status = response.deliveryStatus == 'delivered'
+          ? MessageStatus.delivered
+          : MessageStatus.sent;
+    }
+  }
+
+  Future<void> _syncPendingMessages() async {
+    if (_pendingMessages.isEmpty) return;
+    
+    final toSync = List<ChatMessage>.from(_pendingMessages);
+    _pendingMessages.clear();
+    
+    try {
+      await _chatApi.syncMessages(toSync);
+      connectionStats.value = connectionStats.value.copyWith(
+        lastSyncAt: DateTime.now(),
+        pendingSyncCount: 0,
+      );
+    } catch (e) {
+      // Put back to pending queue on failure
+      _pendingMessages.insertAll(0, toSync);
+    }
+  }
+}
+```
 
 ---
 
-## 🎯 Competitive Advantages
+## 🔐 Security
 
-### vs. WhatsApp/WeChat (Centralized)
+### Message Status
 
-| Feature | WhatsApp | Peers-Touch |
-|---------|----------|-------------|
-| **Infrastructure** | Facebook servers | Self-hosted Stations |
-| **Privacy** | E2EE (but metadata visible) | E2EE + metadata hidden |
-| **Censorship** | Possible (centralized) | Resistant (federated) |
-| **Data ownership** | Facebook | User |
+| Status | Value | Description |
+|--------|-------|-------------|
+| SENDING | 0 | Client sending |
+| SENT | 1 | Stored in DB |
+| DELIVERED | 2 | Receiver received |
+| READ | 3 | Receiver read |
+| FAILED | 4 | Send failed |
 
-### vs. Matrix/XMPP (Federated)
+### Offline Message Lifecycle
 
-| Feature | Matrix | Peers-Touch |
-|---------|--------|-------------|
-| **Protocol** | Matrix Protocol | HTTP/WebSocket + ICE |
-| **P2P** | No (server-to-server) | Yes (client-to-client) |
-| **Setup** | Complex | Simple (one-click Station) |
+```
+1. Message sent → Store to FriendChatMessage (status=SENT)
+2. Receiver offline → Queue to OfflineMessage (status=pending)
+3. Receiver online → Deliver via /pending API
+4. Receiver ACK → Update OfflineMessage (status=delivered)
+5. 7 days expired → Cleanup OfflineMessage
+```
 
-### vs. Signal (Privacy-First)
+---
 
-| Feature | Signal | Peers-Touch |
-|---------|--------|-------------|
-| **Infrastructure** | Signal servers | Self-hosted Stations |
-| **Federation** | No | Yes |
-| **P2P** | No | Yes |
+## 🔄 Complete End-to-End Flows
+
+### Flow 1: 初始化和会话创建
+
+```
+Client A 启动:
+  1. 调用 POST /friend-chat/online {did: "alice"}
+  2. 调用 GET /friend-chat/sessions?did=alice
+     → 获取所有会话列表
+  3. 用户选择好友 Bob 开始聊天
+  4. 调用 POST /friend-chat/session/create {participant_did: "bob"}
+     → 创建或获取会话 (session_ulid: "01HQXYZ...")
+  5. 调用 GET /friend-chat/messages?session_ulid=01HQXYZ&limit=50
+     → 加载历史消息
+  6. 尝试建立 P2P 连接:
+     a. 调用 POST /api/v1/ice/peer/register {id: "alice", addrs: [...]}
+     b. 调用 POST /api/v1/ice/session/new {a: "alice", b: "bob"}
+     c. 调用 GET /api/v1/turn/ice-servers → 获取 STUN/TURN
+     d. 创建 RTCPeerConnection，设置 ICE servers
+     e. 创建 DataChannel "chat"
+     f. 生成 SDP offer → POST /api/v1/ice/session/offer
+     g. 轮询 GET /api/v1/ice/session/answer 获取 Bob 的 answer
+     h. 交换 ICE candidates
+     i. 连接建立 → connectionMode = p2pDirect
+```
+
+### Flow 2: 发送消息（P2P 模式）
+
+```
+Client A 发送消息:
+  1. 用户输入 "Hello!" 并点击发送
+  2. 生成 message ULID: "01HQABC..."
+  3. 创建本地消息对象:
+     {
+       ulid: "01HQABC...",
+       session_ulid: "01HQXYZ...",
+       sender_did: "alice",
+       receiver_did: "bob",
+       content: "Hello!",
+       status: SENDING,
+       sent_at: now()
+     }
+  4. 添加到 UI (optimistic update)
+  5. 检查连接模式:
+     if (connectionMode == p2pDirect) {
+       a. 通过 DataChannel 发送: rtcClient.send("Hello!")
+       b. 更新状态: status = SENT
+       c. 添加到 _pendingMessages 缓冲区
+       d. 检查同步触发条件:
+          if (_pendingMessages.length >= 10 || lastSync > 10s) {
+            调用 POST /friend-chat/message/sync {messages: [...]}
+          }
+     } else {
+       a. 调用 POST /friend-chat/message/send
+       b. 根据 delivery_status 更新状态
+     }
+
+Client B 接收消息:
+  1. DataChannel.onMessage 触发
+  2. 解析消息内容
+  3. 创建消息对象并添加到 UI
+  4. 调用 POST /friend-chat/message/ack {ulids: ["01HQABC..."], status: 2}
+     → 标记为已送达
+```
+
+### Flow 3: 发送消息（Relay 模式）
+
+```
+Client A 发送消息:
+  1. 用户输入 "Hello!" 并点击发送
+  2. 创建本地消息对象 (status: SENDING)
+  3. 调用 POST /friend-chat/message/send {
+       session_ulid: "01HQXYZ...",
+       receiver_did: "bob",
+       content: "Hello!"
+     }
+  4. Station 处理:
+     a. 存储到 FriendChatMessage 表
+     b. 更新 FriendChatSession.last_message_at
+     c. 检查 Bob 是否在线 (onlinePeers map)
+     d. if (Bob 离线) {
+          存储到 OfflineMessage 表
+          返回 {delivery_status: "queued"}
+        } else {
+          返回 {delivery_status: "delivered"}
+        }
+  5. Client A 更新消息状态
+
+Client B 上线后:
+  1. 调用 POST /friend-chat/online {did: "bob"}
+  2. 调用 GET /friend-chat/pending?did=bob
+     → 获取离线消息列表
+  3. 显示离线消息
+  4. 调用 POST /friend-chat/message/ack {ulids: [...]}
+     → 确认已接收
+```
+
+### Flow 4: P2P 连接失败降级
+
+```
+Client A 尝试 P2P:
+  1. 创建 RTCPeerConnection
+  2. 等待 ICE 连接状态:
+     - checking → 显示 "Connecting..."
+     - connected → connectionMode = p2pDirect
+     - failed → 降级到 Relay 模式
+  3. if (connectionState == failed) {
+       a. 关闭 RTCPeerConnection
+       b. connectionMode = stationRelay
+       c. 将 _pendingMessages 中的消息通过 API 发送
+       d. 后续消息使用 POST /friend-chat/message/send
+     }
+```
+
+### Flow 5: 消息状态更新
+
+```
+消息状态流转:
+  SENDING (0) → 客户端正在发送
+     ↓
+  SENT (1) → 已发送到服务器/P2P
+     ↓
+  DELIVERED (2) → 接收方已收到
+     ↓
+  READ (3) → 接收方已读
+
+实现:
+  1. 发送方: 发送成功后 status = SENT
+  2. 接收方: 收到消息后调用 POST /message/ack {status: 2}
+  3. 发送方: 轮询或通过 P2P 通知更新为 DELIVERED
+  4. 接收方: 用户查看消息后调用 POST /message/ack {status: 3}
+  5. 发送方: 更新为 READ (显示双勾)
+```
+
+### Flow 6: 错误处理和重试
+
+```
+发送失败处理:
+  1. 网络错误:
+     - 保留在 _pendingMessages
+     - 定时器触发重试 (exponential backoff)
+     - 最多重试 3 次
+     - 失败后 status = FAILED，显示重发按钮
+  
+  2. P2P 连接断开:
+     - 自动降级到 Relay 模式
+     - 将缓冲区消息通过 API 发送
+  
+  3. 服务器错误 (5xx):
+     - 显示错误提示
+     - 保留消息在本地
+     - 用户可手动重试
+```
+
+---
+
+## 🚀 Implementation Checklist
+
+### Phase 1: Station Backend ✅ (Completed)
+
+- [x] Refactor `friend_chat` subserver structure
+  - [x] Create `db/model/` directory with models (session, message, attachment, offline)
+  - [x] Create `db/repo/` directory with repositories
+  - [x] Create `service/` directory with services
+  - [x] Update `handler.go` with clean handlers
+- [x] Implement APIs
+  - [x] `POST /friend-chat/session/create`
+  - [x] `GET /friend-chat/sessions`
+  - [x] `POST /friend-chat/message/send`
+  - [x] `POST /friend-chat/message/sync`
+  - [x] `GET /friend-chat/messages`
+  - [x] `POST /friend-chat/message/ack`
+  - [x] `POST /friend-chat/online`
+  - [x] `POST /friend-chat/offline`
+  - [x] `GET /friend-chat/pending`
+
+### Phase 2: Client Integration (Current)
+
+#### 2.1 API Service Layer
+- [ ] Update `FriendChatApiService` with new APIs
+  - [ ] `createSession(participantDid)` → POST /session/create
+  - [ ] `getSessions(did)` → GET /sessions
+  - [ ] `sendMessage(...)` → POST /message/send
+  - [ ] `syncMessages(messages)` → POST /message/sync
+  - [ ] `getMessages(sessionUlid, beforeUlid, limit)` → GET /messages
+  - [ ] `ackMessages(ulids, status)` → POST /message/ack
+  - [ ] `markOnline(did)` → POST /online
+  - [ ] `markOffline(did)` → POST /offline
+  - [ ] `getPendingMessages(did)` → GET /pending
+
+#### 2.2 Controller Layer
+- [ ] Update `FriendChatController`
+  - [ ] Add `connectionMode` observable (p2pDirect/stationRelay/disconnected)
+  - [ ] Add `_pendingMessages` buffer for P2P mode
+  - [ ] Add `_syncTimer` for periodic sync (10 seconds)
+  - [ ] Implement `_autoConnect()` - 自动建立 P2P 连接
+  - [ ] Implement `_determineConnectionMode()` - 根据 P2P 状态决定模式
+  - [ ] Update `sendMessage()` - 根据 connectionMode 选择发送方式
+  - [ ] Implement `_syncPendingMessages()` - 批量同步到服务器
+  - [ ] Implement `_handleP2PMessage()` - 处理 P2P 接收的消息
+  - [ ] Implement `_loadPendingMessages()` - 加载离线消息
+  - [ ] Update `onInit()` - 调用 markOnline 和加载 sessions
+  - [ ] Update `onClose()` - 调用 markOffline 和清理资源
+
+#### 2.3 UI Layer
+- [ ] Update `ConnectionDebugPanel`
+  - [ ] Add `connectionMode` display (P2P Direct / Station Relay)
+  - [ ] Add `pendingSyncCount` display
+  - [ ] Add `lastSyncAt` display
+  - [ ] Add latency indicator
+- [ ] Update `FriendChatPage`
+  - [ ] Show connection mode indicator in header
+  - [ ] Show message status icons (sending/sent/delivered/read)
+  - [ ] Add retry button for failed messages
+- [ ] Update `ChatMessageItem`
+  - [ ] Add status icon (single check / double check / read)
+  - [ ] Add timestamp display
+  - [ ] Add error indicator for failed messages
+
+#### 2.4 Message Flow Implementation
+- [ ] **发送消息流程**
+  - [ ] Optimistic UI update (立即显示消息)
+  - [ ] P2P mode: send via DataChannel + buffer for sync
+  - [ ] Relay mode: send via API immediately
+  - [ ] Handle send failures and retry logic
+- [ ] **接收消息流程**
+  - [ ] P2P mode: handle DataChannel.onMessage
+  - [ ] Relay mode: poll /pending on app resume
+  - [ ] Call /message/ack after receiving
+  - [ ] Update UI with new messages
+- [ ] **消息状态同步**
+  - [ ] Implement status update mechanism (SENT → DELIVERED → READ)
+  - [ ] Update message status icons in UI
+  - [ ] Handle status updates from server
+
+### Phase 3: P2P Connection Management
+
+- [ ] **P2P 连接建立**
+  - [ ] Call `/api/v1/ice/peer/register` on app start
+  - [ ] Call `/api/v1/ice/session/new` when selecting chat
+  - [ ] Get ICE servers from `/api/v1/turn/ice-servers`
+  - [ ] Create RTCPeerConnection with ICE servers
+  - [ ] Create DataChannel "chat"
+  - [ ] Exchange SDP offer/answer via `/api/v1/ice/session/*`
+  - [ ] Exchange ICE candidates
+  - [ ] Monitor connection state changes
+- [ ] **P2P 连接失败处理**
+  - [ ] Detect connection failure (timeout or ICE failed state)
+  - [ ] Auto-fallback to Relay mode
+  - [ ] Flush pending messages via API
+  - [ ] Show connection mode change notification
+- [ ] **P2P 重连机制**
+  - [ ] Detect connection loss (DataChannel closed)
+  - [ ] Attempt reconnection (max 3 retries)
+  - [ ] Fallback to Relay if reconnection fails
+
+### Phase 4: Advanced Features (Future)
+
+- [ ] **End-to-End Encryption**
+  - [ ] Generate key pairs for each user
+  - [ ] Implement message encryption/decryption
+  - [ ] Key exchange via Signal Protocol or similar
+- [ ] **Message Search**
+  - [ ] Add full-text search API
+  - [ ] Implement search UI
+- [ ] **Message Reactions**
+  - [ ] Add reaction API
+  - [ ] Implement reaction UI (emoji picker)
+- [ ] **File Attachments**
+  - [ ] Integrate with OSS subserver
+  - [ ] Upload files and attach CID to messages
+  - [ ] Display image/video previews
+- [ ] **Voice Messages**
+  - [ ] Record audio
+  - [ ] Upload to OSS
+  - [ ] Play audio in chat
 
 ---
 
 ## 📚 Related Documents
 
-- [ice-capability-design.md](./ice-capability-design.md) - ICE infrastructure (✅ Implemented)
-- [10-GLOBAL/11-architecture.md](../../10-GLOBAL/11-architecture.md) - Overall architecture
-- [10-GLOBAL/12-domain-model.md](../../10-GLOBAL/12-domain-model.md) - Proto models
-- [20-CLIENT/21-DESKTOP/21.0-base.md](../../20-CLIENT/21-DESKTOP/21.0-base.md) - Desktop client architecture
-- [30-STATION/30-station-base.md](../../30-STATION/30-station-base.md) - Station architecture
-
----
-
-## 🎓 Key Takeaways
-
-1. **Friend Chat is the first killer app** of the Peers-Touch network
-2. **Built on ICE capability** (✅ Implemented) - demonstrates the power of self-hosted infrastructure
-3. **Privacy-first by design** - E2EE, P2P direct, no server-side reading
-4. **Simple Station relay** - HTTP/WebSocket communication between Stations
-5. **Progressive enhancement** - works via relay, optimizes to P2P
-6. **Integrated with Discovery** - seamless friend management
-7. **DID-based routing** - resolve friend's Station from their DID
-
----
-
-**Next Steps**: 
-1. ✅ ICE capability implemented
-2. → Implement Phase 1: Station Relay (Proto models, DB schema, relay service, UI)
+- [ice-capability-design.md](./ice-capability-design.md) - ICE infrastructure
+- OSS SubServer - Reference implementation for layered architecture

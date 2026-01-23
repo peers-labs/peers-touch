@@ -18,13 +18,6 @@ class GroupItem {
   final String iconUrl;
 }
 
-enum RelationshipFilter {
-  all,
-  following,
-  followers,
-  friends,
-}
-
 class FriendItem {
   FriendItem({
     required this.id,
@@ -34,7 +27,6 @@ class FriendItem {
     this.actorId,
     this.isOnline = false,
     this.isFollowing = false,
-    this.followedBy = false,
     this.lat,
     this.lon,
   });
@@ -45,11 +37,8 @@ class FriendItem {
   final String? actorId;
   final bool isOnline;
   final bool isFollowing;
-  final bool followedBy;
   final double? lat;
   final double? lon;
-  
-  bool get isFriend => isFollowing && followedBy;
 }
 
 class DiscoveryController extends GetxController {
@@ -63,7 +52,6 @@ class DiscoveryController extends GetxController {
   // Radar View Support
   final localStationActors = <FriendItem>[].obs;
   final searchResults = <FriendItem>[].obs;
-  final relationshipFilter = RelationshipFilter.all.obs;
 
   final selectedItem = Rx<DiscoveryItem?>(null);
   final isLoading = false.obs;
@@ -621,25 +609,6 @@ class DiscoveryController extends GetxController {
     ).toList();
   }
 
-  void setRelationshipFilter(RelationshipFilter filter) {
-    relationshipFilter.value = filter;
-  }
-
-  List<FriendItem> get filteredActors {
-    final actors = searchQuery.value.isEmpty ? localStationActors : searchResults;
-    
-    switch (relationshipFilter.value) {
-      case RelationshipFilter.all:
-        return actors;
-      case RelationshipFilter.following:
-        return actors.where((a) => a.isFollowing).toList();
-      case RelationshipFilter.followers:
-        return actors.where((a) => a.followedBy).toList();
-      case RelationshipFilter.friends:
-        return actors.where((a) => a.isFriend).toList();
-    }
-  }
-
   Future<void> followUser(FriendItem user) async {
     try {
       final targetActorId = user.actorId ?? user.id;
@@ -696,9 +665,8 @@ class DiscoveryController extends GetxController {
           }
           
           final isFollowing = item['is_following'] == true;
-          final followedBy = item['followed_by'] == true;
           
-          LoggingService.debug('_parseActorList: Parsed actor - id: $id, actorId: $actorId, username: $username, displayName: $displayName, isFollowing: $isFollowing, followedBy: $followedBy');
+          LoggingService.debug('_parseActorList: Parsed actor - id: $id, actorId: $actorId, username: $username, displayName: $displayName, isFollowing: $isFollowing');
           
           list.add(FriendItem(
             id: username.isNotEmpty ? username : id,
@@ -708,7 +676,6 @@ class DiscoveryController extends GetxController {
             actorId: actorId,
             isOnline: false,
             isFollowing: isFollowing,
-            followedBy: followedBy,
           ));
         } else if (item is String) {
            list.add(FriendItem(

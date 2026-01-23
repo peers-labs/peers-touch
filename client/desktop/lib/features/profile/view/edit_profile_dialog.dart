@@ -190,11 +190,7 @@ class EditProfileDialog extends StatelessWidget {
                       )),
                       SizedBox(width: UIKit.spaceMd(context)),
                       Obx(() => FilledButton(
-                        onPressed: controller.isBusy ? null : () async {
-                          final ok = await controller.save();
-                          if (!context.mounted) return;
-                          if (ok) Navigator.of(context).pop();
-                        },
+                        onPressed: controller.isBusy ? null : controller.save,
                         child: controller.profileController.updatingProfile.value
                           ? const SizedBox(
                               width: 20,

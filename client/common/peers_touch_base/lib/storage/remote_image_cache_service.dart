@@ -114,12 +114,12 @@ class RemoteImageCacheService {
       if (resp.statusCode != 200) return null;
 
       final contentType = resp.headers.contentType?.mimeType ?? '';
+      if (!contentType.startsWith('image/')) return null;
+
       final bytes = await resp.fold<List<int>>(<int>[], (acc, chunk) {
         acc.addAll(chunk);
         return acc;
       });
-
-      if (!_looksLikeImageBytes(bytes)) return null;
 
       final target = await FileStorageManager().getFile(
         StorageLocation.cache,
@@ -150,29 +150,6 @@ class RemoteImageCacheService {
     } finally {
       client.close(force: true);
     }
-  }
-
-  bool _looksLikeImageBytes(List<int> bytes) {
-    if (bytes.length >= 8 &&
-        bytes[0] == 0x89 &&
-        bytes[1] == 0x50 &&
-        bytes[2] == 0x4E &&
-        bytes[3] == 0x47) {
-      return true;
-    }
-    if (bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
-      return true;
-    }
-    if (bytes.length >= 6) {
-      final s = ascii.decode(bytes.take(6).toList(), allowInvalid: true);
-      if (s == 'GIF87a' || s == 'GIF89a') return true;
-    }
-    if (bytes.length >= 12) {
-      final riff = ascii.decode(bytes.take(4).toList(), allowInvalid: true);
-      final webp = ascii.decode(bytes.skip(8).take(4).toList(), allowInvalid: true);
-      if (riff == 'RIFF' && webp == 'WEBP') return true;
-    }
-    return false;
   }
 
   Future<bool> _isImageFile(File file) async {
@@ -206,3 +183,4 @@ class RemoteImageCacheService {
     return false;
   }
 }
+

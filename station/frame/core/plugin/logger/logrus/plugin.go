@@ -1,6 +1,8 @@
 package logrus
 
 import (
+	"time"
+
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	scfg "github.com/peers-labs/peers-touch/station/frame/core/peers/config"
@@ -8,21 +10,29 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/logger/logrus/logrus"
 )
 
+type PackageSamplingConfigItem struct {
+	Package    string `pconf:"package"`
+	Initial    int    `pconf:"initial"`
+	Thereafter int    `pconf:"thereafter"`
+	Window     string `pconf:"window"`
+}
+
 var options struct {
 	Peers struct {
 		Logger struct {
 			scfg.Logger
 			PkgPathReplacer map[string]string `pconf:"pkg-path-replacer"`
 			Logrus          struct {
-				SplitLevel      bool           `pconf:"split-level"`
-				ReportCaller    bool           `pconf:"report-caller"`
-				Formatter       string         `pconf:"formatter"`
-				WithoutKey      bool           `pconf:"without-key"`
-				WithoutQuote    bool           `pconf:"without-quote"`
-				TimestampFormat string         `pconf:"timestamp-format"`
-				IncludePackages []string       `pconf:"include-packages"`
-				ExcludePackages []string       `pconf:"exclude-packages"`
-				Sampling        SamplingConfig `pconf:"sampling"`
+				SplitLevel      bool                        `pconf:"split-level"`
+				ReportCaller    bool                        `pconf:"report-caller"`
+				Formatter       string                      `pconf:"formatter"`
+				WithoutKey      bool                        `pconf:"without-key"`
+				WithoutQuote    bool                        `pconf:"without-quote"`
+				TimestampFormat string                      `pconf:"timestamp-format"`
+				IncludePackages []string                    `pconf:"include-packages"`
+				ExcludePackages []string                    `pconf:"exclude-packages"`
+				Sampling        SamplingConfig              `pconf:"sampling"`
+				PackageSampling []PackageSamplingConfigItem `pconf:"package-sampling"`
 			} `pconf:"slogrus"`
 		} `pconf:"logger"`
 	} `pconf:"peers"`
@@ -71,6 +81,17 @@ func (l *logrusLogPlugin) Options() []logger.Option {
 
 	if lc.Sampling.Enable {
 		opts = append(opts, WithSampling(lc.Sampling))
+	}
+
+	for _, ps := range lc.PackageSampling {
+		if ps.Package == "" {
+			continue
+		}
+		window, err := time.ParseDuration(ps.Window)
+		if err != nil {
+			window = 1 * time.Minute
+		}
+		opts = append(opts, WithPackageSampling(ps.Package, ps.Initial, ps.Thereafter, window))
 	}
 
 	switch lc.Formatter {
