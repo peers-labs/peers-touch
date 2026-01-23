@@ -1,13 +1,19 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:crypto/crypto.dart';
 
 import 'package:peers_touch_base/logger/logging_service.dart';
-import 'package:peers_touch_base/storage/remote_image_cache_service.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
 class Avatar extends StatelessWidget {
+  final String actorId;
+  final String? avatarUrl;
+  final String fallbackName;
+  final double size;
+  final double? fontSize;
+  final double borderRadius;
+
   const Avatar({
     super.key,
     required this.actorId,
@@ -16,16 +22,7 @@ class Avatar extends StatelessWidget {
     this.size = 40,
     this.fontSize,
     this.borderRadius = 8,
-    this.cacheMaxAge = const Duration(days: 30),
   });
-
-  final String actorId;
-  final String? avatarUrl;
-  final String fallbackName;
-  final double size;
-  final double? fontSize;
-  final double borderRadius;
-  final Duration cacheMaxAge;
 
   @override
   Widget build(BuildContext context) {
@@ -38,59 +35,68 @@ class Avatar extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
-        child: _buildAvatarContent(context),
+        child: _buildAvatarContent(),
       ),
     );
   }
 
-  Widget _buildAvatarContent(BuildContext context) {
-    LoggingService.debug('Avatar._buildAvatarContent: actorId="$actorId", avatarUrl="$avatarUrl"');
+  Widget _buildAvatarContent() {
+    LoggingService.debug('Avatar._buildAvatarContent: actorId="$actorId", avatarUrl="$avatarUrl", isEmpty=${avatarUrl?.isEmpty ?? true}, isNull=${avatarUrl == null}');
     
     if (avatarUrl != null && avatarUrl!.isNotEmpty) {
-      return _buildCachedAvatar(context);
+      return _buildNetworkAvatar();
     }
 
     LoggingService.debug('Avatar._buildAvatarContent: Using placeholder for actorId="$actorId", fallbackName="$fallbackName"');
     return _buildPlaceholderAvatar();
   }
 
-  Widget _buildCachedAvatar(BuildContext context) {
-    final src = avatarUrl!;
-    final future = RemoteImageCacheService().getOrFetch(src, maxAge: cacheMaxAge);
-    return FutureBuilder<File?>(
-      future: future,
-      builder: (context, snapshot) {
-        final file = snapshot.data;
-        if (file != null) {
-          return Image.file(
-            file,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              LoggingService.warning('Avatar: Failed to decode cached image for actorId=$actorId, src="$src", error=$error');
-              return _buildPlaceholderAvatar();
-            },
-          );
-        }
+  Widget _buildNetworkAvatar() {
+    String url = avatarUrl!;
+    
+    if (url.startsWith('/')) {
+      final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
+      url = '$baseUrl$url';
+      LoggingService.debug('Avatar: Converted relative URL for actorId=$actorId, original="$avatarUrl", full="$url"');
+    }
+    
+    LoggingService.debug('Avatar: Loading avatar for actorId=$actorId, url="$url"');
 
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return Image.network(
+        url,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          LoggingService.warning('Avatar: Failed to load network image for actorId=$actorId, url="$url", error=$error');
+          return _buildPlaceholderAvatar();
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) {
+            return child;
+          }
           return Container(
             width: size,
             height: size,
             color: Colors.grey[300],
-            child: const Center(
+            child: Center(
               child: SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  value: loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                      : null,
+                ),
               ),
             ),
           );
-        }
+        },
+      );
+    }
 
-        LoggingService.warning('Avatar: Failed to load avatar for actorId=$actorId, src="$src"');
-        return _buildPlaceholderAvatar();
-      },
-    );
+    LoggingService.warning('Avatar: Invalid URL format for actorId=$actorId, url="$url"');
+    return _buildPlaceholderAvatar();
   }
 
   Widget _buildPlaceholderAvatar() {

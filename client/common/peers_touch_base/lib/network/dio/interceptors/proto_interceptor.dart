@@ -41,7 +41,7 @@ class ProtoInterceptor extends Interceptor {
         }
       } else if (data is List<int>) {
         try {
-          final jsonStr = utf8.decode(data);
+          final jsonStr = String.fromCharCodes(data);
           response.data = jsonDecode(jsonStr);
         } catch (e) {
           // Keep as bytes if decode fails

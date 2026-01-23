@@ -51,8 +51,11 @@ class RadarView extends StatelessWidget {
               ),
               const Spacer(),
               Obx(() {
+                final displayList = controller.searchQuery.value.isEmpty 
+                    ? controller.localStationActors 
+                    : controller.searchResults;
                 return Text(
-                  '${controller.filteredActors.length} actors',
+                  '${displayList.length} actors',
                   style: const TextStyle(
                     color: Colors.grey,
                     fontSize: 14,
@@ -90,90 +93,45 @@ class RadarView extends StatelessWidget {
               fillColor: Colors.grey.shade50,
             ),
           ),
-          const SizedBox(height: 16),
-          _buildFilterChips(controller),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChips(DiscoveryController controller) {
-    return Obx(() {
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _buildFilterChip(
-              controller,
-              'All',
-              RelationshipFilter.all,
-              Icons.people,
-            ),
-            const SizedBox(width: 8),
-            _buildFilterChip(
-              controller,
-              'Following',
-              RelationshipFilter.following,
-              Icons.person_add,
-            ),
-            const SizedBox(width: 8),
-            _buildFilterChip(
-              controller,
-              'Followers',
-              RelationshipFilter.followers,
-              Icons.person,
-            ),
-            const SizedBox(width: 8),
-            _buildFilterChip(
-              controller,
-              'Friends',
-              RelationshipFilter.friends,
-              Icons.favorite,
-            ),
-          ],
-        ),
-      );
-    });
-  }
-
-  Widget _buildFilterChip(
-    DiscoveryController controller,
-    String label,
-    RelationshipFilter filter,
-    IconData icon,
-  ) {
-    final isSelected = controller.relationshipFilter.value == filter;
-    return FilterChip(
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: isSelected ? Colors.white : Colors.blue),
-          const SizedBox(width: 4),
-          Text(label),
-        ],
-      ),
-      selected: isSelected,
-      onSelected: (selected) {
-        if (selected) {
-          controller.setRelationshipFilter(filter);
-        }
-      },
-      selectedColor: Colors.blue,
-      checkmarkColor: Colors.white,
-      labelStyle: TextStyle(
-        color: isSelected ? Colors.white : Colors.blue,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
       ),
     );
   }
 
   Widget _buildUserList(DiscoveryController controller) {
     return Obx(() {
-      if (controller.isLoadingActors.value) {
-        return const Center(child: CircularProgressIndicator());
+      if (controller.isLoading.value) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
       }
 
-      final displayList = controller.filteredActors;
+      if (controller.error.value != null) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(
+                controller.error.value!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: controller.loadAllUsers,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      final displayList = controller.searchQuery.value.isEmpty 
+          ? controller.localStationActors 
+          : controller.searchResults;
 
       if (displayList.isEmpty) {
         return Center(
@@ -183,8 +141,8 @@ class RadarView extends StatelessWidget {
               Icon(Icons.people_outline, size: 64, color: Colors.grey.shade400),
               const SizedBox(height: 16),
               Text(
-                controller.searchQuery.value.isEmpty 
-                    ? 'No actors found'
+                controller.searchQuery.value.isEmpty
+                    ? 'No actors found on this station'
                     : 'No results for "${controller.searchQuery.value}"',
                 style: TextStyle(
                   fontSize: 16,
@@ -196,107 +154,47 @@ class RadarView extends StatelessWidget {
         );
       }
 
-      return ListView.builder(
-        padding: const EdgeInsets.all(16),
+      return ListView.separated(
+        padding: const EdgeInsets.all(24),
         itemCount: displayList.length,
+        separatorBuilder: (context, index) => const Divider(height: 1),
         itemBuilder: (context, index) {
           final friend = displayList[index];
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.blue.shade100,
-                child: Text(
-                  friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
-                  style: TextStyle(
-                    color: Colors.blue.shade700,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      friend.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                  if (friend.isFriend)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.pink.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.favorite, size: 12, color: Colors.pink.shade400),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Friends',
-                            style: TextStyle(
-                              color: Colors.pink.shade700,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else if (friend.followedBy && !friend.isFollowing)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'Follows you',
-                        style: TextStyle(
-                          color: Colors.blue.shade700,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              subtitle: Text(
-                '@${friend.id}',
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            leading: CircleAvatar(
+              radius: 28,
+              backgroundColor: Colors.blue.shade100,
+              child: Text(
+                friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
                 style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 14,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade700,
                 ),
               ),
-              trailing: _buildActionButton(controller, friend),
+            ),
+            title: Text(
+              friend.name,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+            subtitle: Text(
+              '@${friend.id}',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+              ),
+            ),
+            trailing: FilledButton.tonal(
+              onPressed: () => controller.followUser(friend),
+              child: const Text('Follow'),
             ),
           );
         },
       );
     });
-  }
-
-  Widget _buildActionButton(DiscoveryController controller, FriendItem friend) {
-    if (friend.isFollowing) {
-      return OutlinedButton(
-        onPressed: () => controller.unfollowUser(friend),
-        child: const Text('Following'),
-      );
-    } else if (friend.followedBy) {
-      return FilledButton(
-        onPressed: () => controller.followUser(friend),
-        child: const Text('Follow Back'),
-      );
-    } else {
-      return FilledButton.tonal(
-        onPressed: () => controller.followUser(friend),
-        child: const Text('Follow'),
-      );
-    }
   }
 }
