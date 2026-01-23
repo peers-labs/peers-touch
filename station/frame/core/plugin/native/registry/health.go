@@ -19,7 +19,7 @@ func (r *nativeRegistry) HealthCheck(ctx context.Context) error {
 		return errors.New("DHT not initialized")
 	}
 	if r.dht.RoutingTable().Size() == 0 {
-		logger.Warnf(ctx, "[HealthCheck] routing table is empty")
+		logger.Infof(ctx, "[HealthCheck] routing table is empty")
 	}
 	if len(r.host.Network().Peers()) == 0 {
 		logger.Warnf(ctx, "[HealthCheck] no connected peers")

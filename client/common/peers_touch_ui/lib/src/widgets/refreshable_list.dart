@@ -21,7 +21,6 @@ class RefreshableList extends StatelessWidget {
           dragDevices: {
             PointerDeviceKind.touch,
             PointerDeviceKind.mouse,
-            PointerDeviceKind.trackpad,
           },
         ),
         child: child,

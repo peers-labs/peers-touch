@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
@@ -7,6 +8,7 @@ import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/network/friend_chat/friend_chat_api_service.dart';
 import 'package:peers_touch_base/network/ice/ice_service.dart';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
@@ -23,10 +25,17 @@ class FriendChatController extends GetxController {
   final error = Rx<String?>(null);
 
   final connectionStats = const ConnectionStats().obs;
+  final connectionMode = ConnectionMode.disconnected.obs;
 
   late final TextEditingController inputController = TextEditingController();
 
   final Map<String, List<ChatMessage>> _sessionMessages = {};
+  final _chatApi = FriendChatApiService();
+  final List<ChatMessage> _pendingMessages = [];
+  Timer? _syncTimer;
+
+  static const _syncMessageThreshold = 10;
+  static const _syncTimeInterval = Duration(seconds: 10);
 
   RTCClient? _rtcClient;
   StreamSubscription<webrtc.RTCPeerConnectionState>? _connectionStateSub;
@@ -60,16 +69,140 @@ class FriendChatController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _startSyncTimer();
     _loadSessionsFromFriends();
+    _markOnline();
+    _loadPendingMessages();
   }
 
   @override
   void onClose() {
+    _markOffline();
+    _syncTimer?.cancel();
     inputController.dispose();
     _connectionStateSub?.cancel();
     _dataChannelStateSub?.cancel();
     _messageSub?.cancel();
     super.onClose();
+  }
+
+  void _startSyncTimer() {
+    _syncTimer = Timer.periodic(_syncTimeInterval, (_) {
+      if (_pendingMessages.isNotEmpty) {
+        _syncPendingMessages();
+      }
+    });
+  }
+
+  Future<void> _markOnline() async {
+    if (currentUserId.isEmpty) return;
+    try {
+      await _chatApi.markOnline(currentUserId);
+      LoggingService.info('Marked online: $currentUserId');
+    } catch (e) {
+      LoggingService.warning('Failed to mark online: $e');
+    }
+  }
+
+  Future<void> _markOffline() async {
+    if (currentUserId.isEmpty) return;
+    try {
+      await _chatApi.markOffline(currentUserId);
+      LoggingService.info('Marked offline: $currentUserId');
+    } catch (e) {
+      LoggingService.warning('Failed to mark offline: $e');
+    }
+  }
+
+  Future<void> _loadPendingMessages() async {
+    if (currentUserId.isEmpty) return;
+    try {
+      final pendingMsgs = await _chatApi.getPendingMessages(currentUserId);
+      LoggingService.info('Loaded ${pendingMsgs.length} pending messages');
+
+      for (final pending in pendingMsgs) {
+        final content = utf8.decode(pending.encryptedPayload);
+        final sessionId = 'session_${pending.sessionUlid}';
+        
+        final session = sessions.firstWhereOrNull((s) => s.id == sessionId);
+        if (session == null) continue;
+
+        final newMessage = ChatMessage(
+          id: pending.ulid,
+          sessionId: sessionId,
+          senderId: pending.senderDid,
+          content: content,
+          sentAt: Timestamp.fromDateTime(
+            DateTime.fromMillisecondsSinceEpoch(pending.createdAt * 1000),
+          ),
+          type: MessageType.MESSAGE_TYPE_TEXT,
+          status: MessageStatus.MESSAGE_STATUS_DELIVERED,
+        );
+
+        if (currentSession.value?.id == sessionId) {
+          messages.add(newMessage);
+        }
+        
+        final sessionMsgs = _sessionMessages[sessionId] ?? [];
+        sessionMsgs.add(newMessage);
+        _sessionMessages[sessionId] = sessionMsgs;
+      }
+
+      if (pendingMsgs.isNotEmpty) {
+        await _chatApi.ackMessages(
+          pendingMsgs.map((m) => m.ulid).toList(),
+          status: 2,
+        );
+      }
+    } catch (e) {
+      LoggingService.warning('Failed to load pending messages: $e');
+    }
+  }
+
+  Future<void> _syncPendingMessages() async {
+    if (_pendingMessages.isEmpty) return;
+
+    final toSync = List<ChatMessage>.from(_pendingMessages);
+    _pendingMessages.clear();
+
+    connectionStats.value = connectionStats.value.copyWith(
+      pendingSyncCount: 0,
+    );
+
+    try {
+      final messagesData = toSync.map((msg) {
+        return {
+          'ulid': msg.id,
+          'session_ulid': msg.sessionId.replaceFirst('session_', ''),
+          'receiver_did': connectionStats.value.remotePeerId,
+          'type': msg.type.value,
+          'content': msg.content,
+          'sent_at': msg.sentAt.seconds,
+        };
+      }).toList();
+
+      final response = await _chatApi.syncMessages(messagesData);
+      LoggingService.info('Synced ${response.synced} messages to server');
+
+      connectionStats.value = connectionStats.value.copyWith(
+        lastSyncAt: DateTime.now(),
+      );
+
+      if (response.failed.isNotEmpty) {
+        LoggingService.warning('Failed to sync ${response.failed.length} messages');
+        final failedMessages = toSync.where((m) => response.failed.contains(m.id)).toList();
+        _pendingMessages.addAll(failedMessages);
+        connectionStats.value = connectionStats.value.copyWith(
+          pendingSyncCount: _pendingMessages.length,
+        );
+      }
+    } catch (e) {
+      LoggingService.error('Failed to sync messages: $e');
+      _pendingMessages.insertAll(0, toSync);
+      connectionStats.value = connectionStats.value.copyWith(
+        pendingSyncCount: _pendingMessages.length,
+      );
+    }
   }
 
   Future<void> _loadSessionsFromFriends() async {
@@ -83,7 +216,6 @@ class FriendChatController extends GetxController {
       
       LoggingService.info('FriendChatController: Loaded ${followingList.length} following users');
 
-      final now = DateTime.now();
       final sessionList = <ChatSession>[];
 
       for (final following in followingList) {
@@ -91,7 +223,6 @@ class FriendChatController extends GetxController {
           id: 'session_${following.actorId}',
           topic: following.displayName.isNotEmpty ? following.displayName : following.username,
           participantIds: [currentUserId, following.actorId],
-          lastMessageAt: Timestamp.fromDateTime(now),
           type: SessionType.SESSION_TYPE_DIRECT,
         );
         sessionList.add(session);
@@ -127,6 +258,78 @@ class FriendChatController extends GetxController {
     connectionStats.value = connectionStats.value.copyWith(
       remotePeerId: remotePeerId,
     );
+
+    _loadMessagesFromServer(session);
+    _autoConnect(remotePeerId);
+  }
+
+  Future<void> _loadMessagesFromServer(ChatSession session) async {
+    final sessionUlid = session.id.replaceFirst('session_', '');
+    try {
+      final response = await _chatApi.getMessages(sessionUlid);
+      if (response.messages.isNotEmpty) {
+        final loadedMessages = response.messages.map((m) {
+          return ChatMessage(
+            id: m.ulid,
+            sessionId: session.id,
+            senderId: m.senderDid,
+            content: m.content,
+            sentAt: Timestamp.fromDateTime(
+              DateTime.fromMillisecondsSinceEpoch(m.sentAt * 1000),
+            ),
+            type: MessageType.valueOf(m.type) ?? MessageType.MESSAGE_TYPE_TEXT,
+            status: MessageStatus.valueOf(m.status) ?? MessageStatus.MESSAGE_STATUS_SENT,
+          );
+        }).toList();
+        loadedMessages.sort((a, b) => a.sentAt.seconds.compareTo(b.sentAt.seconds));
+        messages.assignAll(loadedMessages);
+        _sessionMessages[session.id] = List<ChatMessage>.from(messages);
+      }
+    } catch (e) {
+      LoggingService.warning('Failed to load messages from server: $e');
+    }
+  }
+
+  Future<void> _autoConnect(String remotePeerId) async {
+    if (remotePeerId.isEmpty) {
+      connectionMode.value = ConnectionMode.disconnected;
+      connectionStats.value = connectionStats.value.copyWith(
+        connectionMode: ConnectionMode.disconnected,
+        connectionState: P2PConnectionState.disconnected,
+      );
+      return;
+    }
+    
+    if (_rtcClient != null) {
+      await disconnect();
+    }
+    
+    connectionMode.value = ConnectionMode.stationRelay;
+    connectionStats.value = connectionStats.value.copyWith(
+      connectionMode: ConnectionMode.stationRelay,
+      connectionState: P2PConnectionState.disconnected,
+    );
+    
+    try {
+      await connect().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          LoggingService.warning('P2P connection timeout, using Station Relay mode');
+          connectionMode.value = ConnectionMode.stationRelay;
+          connectionStats.value = connectionStats.value.copyWith(
+            connectionMode: ConnectionMode.stationRelay,
+            connectionState: P2PConnectionState.failed,
+          );
+        },
+      );
+    } catch (e) {
+      LoggingService.error('P2P connection failed: $e, falling back to Station Relay');
+      connectionMode.value = ConnectionMode.stationRelay;
+      connectionStats.value = connectionStats.value.copyWith(
+        connectionMode: ConnectionMode.stationRelay,
+        connectionState: P2PConnectionState.failed,
+      );
+    }
   }
 
   void clearError() => error.value = null;
@@ -141,14 +344,15 @@ class FriendChatController extends GetxController {
 
     try {
       final now = DateTime.now();
+      final trimmedContent = content.trim();
       final newMessage = ChatMessage(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         sessionId: session.id,
         senderId: currentUserId,
-        content: content.trim(),
+        content: trimmedContent,
         sentAt: Timestamp.fromDateTime(now),
         type: MessageType.MESSAGE_TYPE_TEXT,
-        status: MessageStatus.MESSAGE_STATUS_SENT,
+        status: MessageStatus.MESSAGE_STATUS_SENDING,
       );
 
       messages.add(newMessage);
@@ -157,7 +361,7 @@ class FriendChatController extends GetxController {
       final sessionIndex = sessions.indexWhere((s) => s.id == session.id);
       if (sessionIndex != -1) {
         final updatedSession = sessions[sessionIndex].deepCopy()
-          ..lastMessageSnippet = content.trim()
+          ..lastMessageSnippet = trimmedContent
           ..lastMessageAt = Timestamp.fromDateTime(now);
         sessions[sessionIndex] = updatedSession;
         sessions.refresh();
@@ -165,8 +369,39 @@ class FriendChatController extends GetxController {
 
       inputController.clear();
       incrementMessagesSent();
+
+      final remotePeerId = connectionStats.value.remotePeerId;
+      final sessionUlid = session.id.replaceFirst('session_', '');
+
+      if (connectionMode.value == ConnectionMode.p2pDirect) {
+        _rtcClient!.send(trimmedContent);
+        
+        newMessage.status = MessageStatus.MESSAGE_STATUS_SENT;
+        messages.refresh();
+        
+        _pendingMessages.add(newMessage);
+        connectionStats.value = connectionStats.value.copyWith(
+          pendingSyncCount: _pendingMessages.length,
+        );
+
+        if (_pendingMessages.length >= _syncMessageThreshold) {
+          await _syncPendingMessages();
+        }
+      } else {
+        final response = await _chatApi.sendMessage(
+          sessionUlid: sessionUlid,
+          receiverDid: remotePeerId,
+          content: trimmedContent,
+        );
+
+        newMessage.status = response.deliveryStatus == 'delivered'
+            ? MessageStatus.MESSAGE_STATUS_DELIVERED
+            : MessageStatus.MESSAGE_STATUS_SENT;
+        messages.refresh();
+      }
     } catch (e) {
       error.value = 'Failed to send message: $e';
+      LoggingService.error('Failed to send message: $e');
     } finally {
       isSending.value = false;
     }
@@ -217,7 +452,7 @@ class FriendChatController extends GetxController {
     connectionStats.value = stats;
   }
 
-  String get _signalingUrl => '$_stationBaseUrl/chat';
+  String get _signalingUrl => '$_stationBaseUrl/api/v1/ice';
 
   void refreshConnectionStats() {
     connectionStats.value = connectionStats.value.copyWith(
@@ -261,13 +496,17 @@ class FriendChatController extends GetxController {
           pcState: state.toString().split('.').last,
         );
         if (state == webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          connectionMode.value = ConnectionMode.p2pDirect;
           connectionStats.value = connectionStats.value.copyWith(
             connectionState: P2PConnectionState.connected,
+            connectionMode: ConnectionMode.p2pDirect,
           );
         } else if (state == webrtc.RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
             state == webrtc.RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+          connectionMode.value = ConnectionMode.stationRelay;
           connectionStats.value = connectionStats.value.copyWith(
             connectionState: P2PConnectionState.disconnected,
+            connectionMode: ConnectionMode.stationRelay,
           );
         }
       });
@@ -282,7 +521,7 @@ class FriendChatController extends GetxController {
       _messageSub = _rtcClient!.messages().listen((msg) {
         LoggingService.info('Received message: $msg');
         incrementMessagesReceived();
-        _handleIncomingMessage(msg);
+        _handleP2PMessage(msg);
       });
 
       LoggingService.info('Calling remote peer: $remotePeerId');
@@ -302,7 +541,7 @@ class FriendChatController extends GetxController {
     }
   }
 
-  void _handleIncomingMessage(String content) {
+  void _handleP2PMessage(String content) {
     if (currentSession.value == null) return;
     final session = currentSession.value!;
     final remotePeerId = connectionStats.value.remotePeerId;
@@ -320,6 +559,10 @@ class FriendChatController extends GetxController {
 
     messages.add(newMessage);
     _sessionMessages[session.id] = List<ChatMessage>.from(messages);
+
+    unawaited(_chatApi.ackMessages([newMessage.id], status: 2).onError((e, _) {
+      LoggingService.warning('Failed to ack P2P message: $e');
+    }));
   }
 
   Future<void> disconnect() async {
@@ -328,8 +571,10 @@ class FriendChatController extends GetxController {
     _messageSub?.cancel();
     _rtcClient = null;
 
+    connectionMode.value = ConnectionMode.disconnected;
     connectionStats.value = connectionStats.value.copyWith(
       connectionState: P2PConnectionState.disconnected,
+      connectionMode: ConnectionMode.disconnected,
       iceState: 'closed',
       pcState: 'closed',
       dcState: 'closed',

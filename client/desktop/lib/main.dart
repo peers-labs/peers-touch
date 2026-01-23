@@ -9,6 +9,7 @@ import 'package:peers_touch_desktop/app/bindings/initial_binding.dart';
 import 'package:peers_touch_desktop/app/initialization/app_initializer.dart';
 import 'package:peers_touch_desktop/app/routes/app_pages.dart';
 import 'package:peers_touch_desktop/app/theme/app_theme.dart';
+import 'package:peers_touch_desktop/app/theme/scroll_behavior.dart';
 import 'package:peers_touch_desktop/core/constants/app_constants.dart';
 
 class MyHttpOverrides extends HttpOverrides {
@@ -75,6 +76,7 @@ class _AppState extends State<App> {
       initialRoute: AppInitializer().initialRoute,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
+      scrollBehavior: const DesktopScrollBehavior(),
     );
   }
 }

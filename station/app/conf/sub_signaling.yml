@@ -1,0 +1,8 @@
+peers:
+  node:
+    server:
+      subserver:
+        signaling:
+          enabled: true
+          session-ttl: 3600
+          max-peers-per-session: 2
