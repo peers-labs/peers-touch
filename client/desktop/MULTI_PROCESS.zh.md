@@ -1,69 +1,82 @@
 # 多进程多用户运行说明
 
-## 实现效果
+## ✅ 功能已完成
 
-✅ **任意多进程**：可以启动任意数量的客户端进程  
-✅ **按用户隔离**：每个用户使用独立的数据存储  
-✅ **共享用户列表**：所有进程共享历史登录用户列表  
-✅ **同用户多进程**：同一个用户可以在多个进程中登录，共享数据  
-✅ **标准化存储**：使用 `FileStorageManager` 标准化存储路径  
-🚧 **最后登录免密**：最后登录的用户可以快速登录（待实现）  
-🚧 **其他用户需密码**：切换到其他用户需要输入密码（待实现）
+支持启动多个进程，每个进程登录不同的用户，数据完全隔离。
+
+### 核心特性
+✅ **按用户隔离数据**：每个用户使用独立的数据目录和 Keychain  
+✅ **全局用户列表**：所有进程共享历史登录用户列表  
+✅ **标准化存储路径**：使用 `FileStorageManager` 和 `StorageLocation.support`  
+✅ **自动初始化**：应用启动时自动加载最后登录的用户  
+✅ **登录后重启**：切换用户后提示重启以加载新用户数据  
 
 ## 使用方法
 
-### 启动多个实例
+### 场景 1：首次启动
 
 ```bash
-# 终端 1 - 启动第一个实例，登录 alice
-cd client/desktop
-flutter run
-
-# 终端 2 - 启动第二个实例，登录 bob
-cd client/desktop
-flutter run
-
-# 终端 3 - 启动第三个实例，也登录 alice（共享数据）
 cd client/desktop
 flutter run
 ```
 
-- 进程 1 和进程 3 登录同一个用户（alice），共享数据
-- 进程 2 登录不同用户（bob），数据独立
+1. 应用启动，显示登录页面
+2. 输入账号密码，点击登录
+3. 登录成功后，弹出对话框提示"请重启应用"
+4. 点击"立即重启"，应用退出
+5. 再次启动，自动加载该用户的数据，进入主界面
 
-### 登录流程
+### 场景 2：双开（两个用户同时在线）
 
-1. **首次启动**：显示登录页面，输入账号密码登录
-2. **再次启动**：
-   - 如果是最后登录的用户 → 自动登录（待实现）
-   - 如果要切换用户 → 显示历史用户列表，选择后输入密码（待实现）
+```bash
+# 终端 1 - 用户 Alice
+cd client/desktop
+flutter run
+# 登录 alice@example.com → 重启 → 使用 alice 的数据
 
-## 技术实现
+# 终端 2 - 用户 Bob
+cd client/desktop
+flutter run
+# 登录 bob@example.com → 重启 → 使用 bob 的数据
+```
 
-### 1. 按用户隔离存储
+两个进程完全独立，互不干扰！
 
-每个用户使用独立的数据目录和 Keychain 账户：
+### 场景 3：切换用户
+
+```bash
+cd client/desktop
+flutter run
+# 当前用户：alice@example.com
+```
+
+1. 登出当前用户
+2. 重新登录为 bob@example.com
+3. 登录成功后，提示"请重启应用"
+4. 重启后，自动加载 bob 的数据
+
+## 存储结构
 
 ```
 ~/Library/Application Support/peers_touch_desktop/
 ├── global/
-│   └── users.db            # 所有登录过的用户列表（共享）
+│   ├── config.db           # 全局配置（当前登录用户）
+│   └── users.db            # 所有登录过的用户列表
 │
 └── users/
     ├── alice@example.com/
-    │   ├── kv_storage.db   # alice 的数据
+    │   ├── kv_storage.db   # alice 的数据库
     │   └── keychain: alice@example.com  # alice 的 token
     │
     └── bob@example.com/
-        ├── kv_storage.db   # bob 的数据
+        ├── kv_storage.db   # bob 的数据库
         └── keychain: bob@example.com    # bob 的 token
 ```
 
-**特点**：
-- ✅ 按用户隔离，不是按进程
-- ✅ 同一用户在多个进程中共享数据
-- ✅ 符合 macOS 标准存储路径（Application Support）
-- ✅ 使用 `FileStorageManager` 标准化管理
+**数据隔离**：
+- ✅ 每个用户有独立的数据目录
+- ✅ 每个用户有独立的 Keychain 账户
+- ✅ 全局配置和用户列表所有进程共享
 
 ### 2. 核心修改
 

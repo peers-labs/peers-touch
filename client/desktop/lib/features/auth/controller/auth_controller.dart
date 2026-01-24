@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/storage/config_database.dart';
+import 'package:peers_touch_base/storage/global_users_storage.dart';
+import 'package:peers_touch_base/storage/kv/kv_database.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/core/constants/storage_keys.dart';
@@ -464,6 +467,10 @@ class AuthController extends GetxController {
                 'avatarUrl': avatarUrl,
               });
               LoggingService.info('GlobalContext session updated for user: $handle');
+              
+              await _saveUserToGlobalList(handle, email: email.value, avatarUrl: avatarUrl, serverUrl: (overrideBaseUrl ?? baseUrl.value).trim());
+              
+              await _switchToUser(handle);
             }
           } catch (_) {}
           Get.offAllNamed('/shell');
@@ -707,6 +714,40 @@ class AuthController extends GetxController {
           await Get.find<GlobalContext>().setProtocolTag(protocol.value);
         }
       } catch (_) {}
+    }
+  }
+
+  Future<void> _saveUserToGlobalList(String handle, {String? email, String? avatarUrl, required String serverUrl}) async {
+    try {
+      await GlobalUsersStorage().saveUser(
+        handle: handle,
+        email: email,
+        avatarUrl: avatarUrl,
+        serverUrl: serverUrl,
+      );
+      LoggingService.info('User saved to global list: $handle');
+    } catch (e) {
+      LoggingService.error('Failed to save user to global list: $e');
+    }
+  }
+
+  Future<void> _switchToUser(String handle) async {
+    try {
+      final currentUser = await ConfigDatabase().getCurrentUser();
+      
+      if (currentUser == handle) {
+        LoggingService.info('Same user login, no need to switch context');
+        return;
+      }
+      
+      await ConfigDatabase().setCurrentUser(handle);
+      LoggingService.info('Set current user: $handle');
+      
+      KvDatabase.setUserHandle(handle);
+      SecureStorageImpl.setUserHandle(handle);
+      LoggingService.info('Switched user context to: $handle');
+    } catch (e) {
+      LoggingService.error('Failed to switch user: $e');
     }
   }
 

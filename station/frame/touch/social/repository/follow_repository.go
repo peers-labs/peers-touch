@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
@@ -33,15 +34,27 @@ func (r *followRepository) Follow(ctx context.Context, followerID, followingID u
 		return gorm.ErrInvalidData
 	}
 
+	var existingFollow db.Follow
+	err := r.db.WithContext(ctx).
+		Where("follower_id = ? AND following_id = ?", followerID, followingID).
+		First(&existingFollow).Error
+
+	if err == nil {
+		return nil
+	}
+
+	if err != gorm.ErrRecordNotFound {
+		return err
+	}
+
 	follow := &db.Follow{
+		ID:          id.NextID(),
 		FollowerID:  followerID,
 		FollowingID: followingID,
 		CreatedAt:   time.Now(),
 	}
 
-	return r.db.WithContext(ctx).
-		Where("follower_id = ? AND following_id = ?", followerID, followingID).
-		FirstOrCreate(follow).Error
+	return r.db.WithContext(ctx).Create(follow).Error
 }
 
 func (r *followRepository) Unfollow(ctx context.Context, followerID, followingID uint64) error {

@@ -123,7 +123,14 @@ class ShellThreePane extends StatelessWidget {
 
   Widget _wrapScroll(BuildContext context, Widget child, PaneProps props) {
     final padding = props.padding ?? EdgeInsets.zero;
-    // 简化包装：暂时移除滚动与约束逻辑，仅应用内边距，避免在复杂嵌套场景下产生未布局错误。
+    
+    // 如果 scrollPolicy 是 none，直接返回带 padding 的 child
+    if (props.scrollPolicy == ScrollPolicy.none) {
+      return Padding(padding: padding, child: child);
+    }
+    
+    // 否则，child 自己负责滚动（因为它通常已经是 ListView 等可滚动组件）
+    // 只需要应用 padding
     return Padding(padding: padding, child: child);
   }
 }

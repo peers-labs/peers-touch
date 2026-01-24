@@ -1,14 +1,14 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'kv_database.dart';
+part of 'config_database.dart';
 
 // ignore_for_file: type=lint
-class $KeyValueItemsTable extends KeyValueItems
-    with TableInfo<$KeyValueItemsTable, KeyValueItem> {
+class $ConfigItemsTable extends ConfigItems
+    with TableInfo<$ConfigItemsTable, ConfigItem> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $KeyValueItemsTable(this.attachedDatabase, [this._alias]);
+  $ConfigItemsTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _keyMeta = const VerificationMeta('key');
   @override
   late final GeneratedColumn<String> key = GeneratedColumn<String>(
@@ -33,10 +33,10 @@ class $KeyValueItemsTable extends KeyValueItems
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'key_value_items';
+  static const String $name = 'config_items';
   @override
   VerificationContext validateIntegrity(
-    Insertable<KeyValueItem> instance, {
+    Insertable<ConfigItem> instance, {
     bool isInserting = false,
   }) {
     final context = VerificationContext();
@@ -63,9 +63,9 @@ class $KeyValueItemsTable extends KeyValueItems
   @override
   Set<GeneratedColumn> get $primaryKey => {key};
   @override
-  KeyValueItem map(Map<String, dynamic> data, {String? tablePrefix}) {
+  ConfigItem map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return KeyValueItem(
+    return ConfigItem(
       key: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}key'],
@@ -78,18 +78,15 @@ class $KeyValueItemsTable extends KeyValueItems
   }
 
   @override
-  $KeyValueItemsTable createAlias(String alias) {
-    return $KeyValueItemsTable(attachedDatabase, alias);
+  $ConfigItemsTable createAlias(String alias) {
+    return $ConfigItemsTable(attachedDatabase, alias);
   }
 }
 
-class KeyValueItem extends DataClass implements Insertable<KeyValueItem> {
-  /// The key for the stored value.
+class ConfigItem extends DataClass implements Insertable<ConfigItem> {
   final String key;
-
-  /// The stored value, as a string.
   final String value;
-  const KeyValueItem({required this.key, required this.value});
+  const ConfigItem({required this.key, required this.value});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -98,16 +95,16 @@ class KeyValueItem extends DataClass implements Insertable<KeyValueItem> {
     return map;
   }
 
-  KeyValueItemsCompanion toCompanion(bool nullToAbsent) {
-    return KeyValueItemsCompanion(key: Value(key), value: Value(value));
+  ConfigItemsCompanion toCompanion(bool nullToAbsent) {
+    return ConfigItemsCompanion(key: Value(key), value: Value(value));
   }
 
-  factory KeyValueItem.fromJson(
+  factory ConfigItem.fromJson(
     Map<String, dynamic> json, {
     ValueSerializer? serializer,
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return KeyValueItem(
+    return ConfigItem(
       key: serializer.fromJson<String>(json['key']),
       value: serializer.fromJson<String>(json['value']),
     );
@@ -121,10 +118,10 @@ class KeyValueItem extends DataClass implements Insertable<KeyValueItem> {
     };
   }
 
-  KeyValueItem copyWith({String? key, String? value}) =>
-      KeyValueItem(key: key ?? this.key, value: value ?? this.value);
-  KeyValueItem copyWithCompanion(KeyValueItemsCompanion data) {
-    return KeyValueItem(
+  ConfigItem copyWith({String? key, String? value}) =>
+      ConfigItem(key: key ?? this.key, value: value ?? this.value);
+  ConfigItem copyWithCompanion(ConfigItemsCompanion data) {
+    return ConfigItem(
       key: data.key.present ? data.key.value : this.key,
       value: data.value.present ? data.value.value : this.value,
     );
@@ -132,7 +129,7 @@ class KeyValueItem extends DataClass implements Insertable<KeyValueItem> {
 
   @override
   String toString() {
-    return (StringBuffer('KeyValueItem(')
+    return (StringBuffer('ConfigItem(')
           ..write('key: $key, ')
           ..write('value: $value')
           ..write(')'))
@@ -144,27 +141,27 @@ class KeyValueItem extends DataClass implements Insertable<KeyValueItem> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is KeyValueItem &&
+      (other is ConfigItem &&
           other.key == this.key &&
           other.value == this.value);
 }
 
-class KeyValueItemsCompanion extends UpdateCompanion<KeyValueItem> {
+class ConfigItemsCompanion extends UpdateCompanion<ConfigItem> {
   final Value<String> key;
   final Value<String> value;
   final Value<int> rowid;
-  const KeyValueItemsCompanion({
+  const ConfigItemsCompanion({
     this.key = const Value.absent(),
     this.value = const Value.absent(),
     this.rowid = const Value.absent(),
   });
-  KeyValueItemsCompanion.insert({
+  ConfigItemsCompanion.insert({
     required String key,
     required String value,
     this.rowid = const Value.absent(),
   }) : key = Value(key),
        value = Value(value);
-  static Insertable<KeyValueItem> custom({
+  static Insertable<ConfigItem> custom({
     Expression<String>? key,
     Expression<String>? value,
     Expression<int>? rowid,
@@ -176,12 +173,12 @@ class KeyValueItemsCompanion extends UpdateCompanion<KeyValueItem> {
     });
   }
 
-  KeyValueItemsCompanion copyWith({
+  ConfigItemsCompanion copyWith({
     Value<String>? key,
     Value<String>? value,
     Value<int>? rowid,
   }) {
-    return KeyValueItemsCompanion(
+    return ConfigItemsCompanion(
       key: key ?? this.key,
       value: value ?? this.value,
       rowid: rowid ?? this.rowid,
@@ -205,7 +202,7 @@ class KeyValueItemsCompanion extends UpdateCompanion<KeyValueItem> {
 
   @override
   String toString() {
-    return (StringBuffer('KeyValueItemsCompanion(')
+    return (StringBuffer('ConfigItemsCompanion(')
           ..write('key: $key, ')
           ..write('value: $value, ')
           ..write('rowid: $rowid')
@@ -214,33 +211,33 @@ class KeyValueItemsCompanion extends UpdateCompanion<KeyValueItem> {
   }
 }
 
-abstract class _$KvDatabase extends GeneratedDatabase {
-  _$KvDatabase(QueryExecutor e) : super(e);
-  $KvDatabaseManager get managers => $KvDatabaseManager(this);
-  late final $KeyValueItemsTable keyValueItems = $KeyValueItemsTable(this);
+abstract class _$ConfigDatabase extends GeneratedDatabase {
+  _$ConfigDatabase(QueryExecutor e) : super(e);
+  $ConfigDatabaseManager get managers => $ConfigDatabaseManager(this);
+  late final $ConfigItemsTable configItems = $ConfigItemsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities => [keyValueItems];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [configItems];
 }
 
-typedef $$KeyValueItemsTableCreateCompanionBuilder =
-    KeyValueItemsCompanion Function({
+typedef $$ConfigItemsTableCreateCompanionBuilder =
+    ConfigItemsCompanion Function({
       required String key,
       required String value,
       Value<int> rowid,
     });
-typedef $$KeyValueItemsTableUpdateCompanionBuilder =
-    KeyValueItemsCompanion Function({
+typedef $$ConfigItemsTableUpdateCompanionBuilder =
+    ConfigItemsCompanion Function({
       Value<String> key,
       Value<String> value,
       Value<int> rowid,
     });
 
-class $$KeyValueItemsTableFilterComposer
-    extends Composer<_$KvDatabase, $KeyValueItemsTable> {
-  $$KeyValueItemsTableFilterComposer({
+class $$ConfigItemsTableFilterComposer
+    extends Composer<_$ConfigDatabase, $ConfigItemsTable> {
+  $$ConfigItemsTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -258,9 +255,9 @@ class $$KeyValueItemsTableFilterComposer
   );
 }
 
-class $$KeyValueItemsTableOrderingComposer
-    extends Composer<_$KvDatabase, $KeyValueItemsTable> {
-  $$KeyValueItemsTableOrderingComposer({
+class $$ConfigItemsTableOrderingComposer
+    extends Composer<_$ConfigDatabase, $ConfigItemsTable> {
+  $$ConfigItemsTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -278,9 +275,9 @@ class $$KeyValueItemsTableOrderingComposer
   );
 }
 
-class $$KeyValueItemsTableAnnotationComposer
-    extends Composer<_$KvDatabase, $KeyValueItemsTable> {
-  $$KeyValueItemsTableAnnotationComposer({
+class $$ConfigItemsTableAnnotationComposer
+    extends Composer<_$ConfigDatabase, $ConfigItemsTable> {
+  $$ConfigItemsTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -294,48 +291,47 @@ class $$KeyValueItemsTableAnnotationComposer
       $composableBuilder(column: $table.value, builder: (column) => column);
 }
 
-class $$KeyValueItemsTableTableManager
+class $$ConfigItemsTableTableManager
     extends
         RootTableManager<
-          _$KvDatabase,
-          $KeyValueItemsTable,
-          KeyValueItem,
-          $$KeyValueItemsTableFilterComposer,
-          $$KeyValueItemsTableOrderingComposer,
-          $$KeyValueItemsTableAnnotationComposer,
-          $$KeyValueItemsTableCreateCompanionBuilder,
-          $$KeyValueItemsTableUpdateCompanionBuilder,
+          _$ConfigDatabase,
+          $ConfigItemsTable,
+          ConfigItem,
+          $$ConfigItemsTableFilterComposer,
+          $$ConfigItemsTableOrderingComposer,
+          $$ConfigItemsTableAnnotationComposer,
+          $$ConfigItemsTableCreateCompanionBuilder,
+          $$ConfigItemsTableUpdateCompanionBuilder,
           (
-            KeyValueItem,
-            BaseReferences<_$KvDatabase, $KeyValueItemsTable, KeyValueItem>,
+            ConfigItem,
+            BaseReferences<_$ConfigDatabase, $ConfigItemsTable, ConfigItem>,
           ),
-          KeyValueItem,
+          ConfigItem,
           PrefetchHooks Function()
         > {
-  $$KeyValueItemsTableTableManager(_$KvDatabase db, $KeyValueItemsTable table)
+  $$ConfigItemsTableTableManager(_$ConfigDatabase db, $ConfigItemsTable table)
     : super(
         TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$KeyValueItemsTableFilterComposer($db: db, $table: table),
+              $$ConfigItemsTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$KeyValueItemsTableOrderingComposer($db: db, $table: table),
+              $$ConfigItemsTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$KeyValueItemsTableAnnotationComposer($db: db, $table: table),
+              $$ConfigItemsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
                 Value<String> key = const Value.absent(),
                 Value<String> value = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) =>
-                  KeyValueItemsCompanion(key: key, value: value, rowid: rowid),
+              }) => ConfigItemsCompanion(key: key, value: value, rowid: rowid),
           createCompanionCallback:
               ({
                 required String key,
                 required String value,
                 Value<int> rowid = const Value.absent(),
-              }) => KeyValueItemsCompanion.insert(
+              }) => ConfigItemsCompanion.insert(
                 key: key,
                 value: value,
                 rowid: rowid,
@@ -348,27 +344,27 @@ class $$KeyValueItemsTableTableManager
       );
 }
 
-typedef $$KeyValueItemsTableProcessedTableManager =
+typedef $$ConfigItemsTableProcessedTableManager =
     ProcessedTableManager<
-      _$KvDatabase,
-      $KeyValueItemsTable,
-      KeyValueItem,
-      $$KeyValueItemsTableFilterComposer,
-      $$KeyValueItemsTableOrderingComposer,
-      $$KeyValueItemsTableAnnotationComposer,
-      $$KeyValueItemsTableCreateCompanionBuilder,
-      $$KeyValueItemsTableUpdateCompanionBuilder,
+      _$ConfigDatabase,
+      $ConfigItemsTable,
+      ConfigItem,
+      $$ConfigItemsTableFilterComposer,
+      $$ConfigItemsTableOrderingComposer,
+      $$ConfigItemsTableAnnotationComposer,
+      $$ConfigItemsTableCreateCompanionBuilder,
+      $$ConfigItemsTableUpdateCompanionBuilder,
       (
-        KeyValueItem,
-        BaseReferences<_$KvDatabase, $KeyValueItemsTable, KeyValueItem>,
+        ConfigItem,
+        BaseReferences<_$ConfigDatabase, $ConfigItemsTable, ConfigItem>,
       ),
-      KeyValueItem,
+      ConfigItem,
       PrefetchHooks Function()
     >;
 
-class $KvDatabaseManager {
-  final _$KvDatabase _db;
-  $KvDatabaseManager(this._db);
-  $$KeyValueItemsTableTableManager get keyValueItems =>
-      $$KeyValueItemsTableTableManager(_db, _db.keyValueItems);
+class $ConfigDatabaseManager {
+  final _$ConfigDatabase _db;
+  $ConfigDatabaseManager(this._db);
+  $$ConfigItemsTableTableManager get configItems =>
+      $$ConfigItemsTableTableManager(_db, _db.configItems);
 }

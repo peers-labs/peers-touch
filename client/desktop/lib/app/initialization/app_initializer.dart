@@ -1,7 +1,10 @@
 import 'package:flutter/widgets.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/storage/config_database.dart';
 import 'package:peers_touch_base/storage/file_storage_manager.dart';
+import 'package:peers_touch_base/storage/kv/kv_database.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/app/routes/app_routes.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/core/services/network_initializer.dart';
@@ -36,6 +39,9 @@ class AppInitializer {
       LoggingService.initialize();
       LoggingService.info('Starting application initialization...');
 
+      // Initialize current user from config database
+      await _initializeCurrentUser();
+      
       // Drift database is lazy loaded, no explicit init needed for LocalStorage
       LoggingService.info('Local storage initialized (lazy)');
       
@@ -120,6 +126,21 @@ class AppInitializer {
   }
 
 
+
+  Future<void> _initializeCurrentUser() async {
+    try {
+      final currentUser = await ConfigDatabase().getCurrentUser();
+      if (currentUser != null && currentUser.isNotEmpty) {
+        KvDatabase.setUserHandle(currentUser);
+        SecureStorageImpl.setUserHandle(currentUser);
+        LoggingService.info('Current user initialized: $currentUser');
+      } else {
+        LoggingService.info('No current user found, using default storage');
+      }
+    } catch (e) {
+      LoggingService.error('Failed to initialize current user: $e');
+    }
+  }
 
   Future<void> _logStorageDirectories() async {
     try {

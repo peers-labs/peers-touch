@@ -219,14 +219,20 @@ class FriendChatController extends GetxController {
       final sessionList = <ChatSession>[];
 
       for (final following in followingList) {
-        final session = ChatSession(
-          id: 'session_${following.actorId}',
-          topic: following.displayName.isNotEmpty ? following.displayName : following.username,
-          participantIds: [currentUserId, following.actorId],
-          type: SessionType.SESSION_TYPE_DIRECT,
-        );
-        sessionList.add(session);
-        _sessionMessages['session_${following.actorId}'] = [];
+        try {
+          LoggingService.info('Following: actorId=${following.actorId}, username=${following.username}, displayName="${following.displayName}", displayName.length=${following.displayName.length}, displayName.codeUnits=${following.displayName.codeUnits}');
+          final createResponse = await _chatApi.createSession(following.actorId);
+          final session = ChatSession(
+            id: 'session_${createResponse.session.ulid}',
+            topic: following.displayName.isNotEmpty ? following.displayName : following.username,
+            participantIds: [currentUserId, following.actorId],
+            type: SessionType.SESSION_TYPE_DIRECT,
+          );
+          sessionList.add(session);
+          _sessionMessages['session_${createResponse.session.ulid}'] = [];
+        } catch (e) {
+          LoggingService.warning('Failed to create session for ${following.actorId}: $e');
+        }
       }
 
       sessions.assignAll(sessionList);

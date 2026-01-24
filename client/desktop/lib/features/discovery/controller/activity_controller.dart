@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:get/get.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/activity/activity.pb.dart' as pb;
 import 'package:peers_touch_base/model/domain/social/post.pb.dart';
@@ -117,14 +118,36 @@ class ActivityController extends GetxController {
         final postText = _getPostText(post);
         final postImages = _getPostImages(post);
         
+        String authorAvatar = post.author.avatarUrl;
+        String authorName = post.author.username;
+        String authorId = post.author.id;
+        
+        if (Get.isRegistered<GlobalContext>()) {
+          final ctx = Get.find<GlobalContext>();
+          final session = ctx.currentSession;
+          if (session != null) {
+            if (authorAvatar.isEmpty) {
+              authorAvatar = session['avatarUrl']?.toString() ?? '';
+            }
+            if (authorName.isEmpty) {
+              authorName = session['handle']?.toString() ?? post.author.username;
+            }
+            if (authorId.isEmpty) {
+              authorId = session['actorId']?.toString() ?? post.author.id;
+            }
+          }
+        }
+        
+        LoggingService.debug('ActivityController: Creating new item with authorId="$authorId", authorAvatar="$authorAvatar", authorName="$authorName"');
+        
         final newItem = DiscoveryItem(
           id: post.id,
           objectId: post.id,
           title: postText.isNotEmpty ? postText : 'New Post',
           content: postText,
-          author: post.author.username,
-          authorId: post.author.id,
-          authorAvatar: post.author.avatarUrl,
+          author: authorName,
+          authorId: authorId,
+          authorAvatar: authorAvatar,
           timestamp: post.createdAt.toDateTime(),
           type: 'Create',
           images: postImages,
