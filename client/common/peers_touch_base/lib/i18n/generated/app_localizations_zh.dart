@@ -680,4 +680,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pressCtrlEnterToSend => '按 Ctrl+Enter 发送';
+
+  @override
+  String get connectionStatusOnlineP2P => '在线 (P2P)';
+
+  @override
+  String get connectionStatusOnlineRelay => '在线 (中继)';
+
+  @override
+  String get connectionStatusOffline => '离线';
+
+  @override
+  String get connectionStatusConnecting => '连接中...';
 }

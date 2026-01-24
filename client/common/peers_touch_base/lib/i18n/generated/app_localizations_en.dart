@@ -703,4 +703,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pressCtrlEnterToSend => 'Press Ctrl+Enter to send';
+
+  @override
+  String get connectionStatusOnlineP2P => 'Online (P2P)';
+
+  @override
+  String get connectionStatusOnlineRelay => 'Online (Relay)';
+
+  @override
+  String get connectionStatusOffline => 'Offline';
+
+  @override
+  String get connectionStatusConnecting => 'Connecting...';
 }

@@ -5,9 +5,10 @@
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 import 'dart:async' as _i2;
 
+import 'package:dio/dio.dart' as _i3;
 import 'package:mockito/mockito.dart' as _i1;
-import 'package:mockito/src/dummies.dart' as _i4;
-import 'package:peers_touch_base/network/dio/http_service.dart' as _i3;
+import 'package:mockito/src/dummies.dart' as _i5;
+import 'package:peers_touch_base/network/dio/http_service.dart' as _i4;
 
 // ignore_for_file: type=lint
 // ignore_for_file: avoid_redundant_argument_values
@@ -22,37 +23,45 @@ import 'package:peers_touch_base/network/dio/http_service.dart' as _i3;
 // ignore_for_file: unnecessary_parenthesis
 // ignore_for_file: camel_case_types
 // ignore_for_file: subtype_of_sealed_class
-// ignore_for_file: invalid_use_of_internal_member
 
 class _FakeFuture_0<T1> extends _i1.SmartFake implements _i2.Future<T1> {
   _FakeFuture_0(Object parent, Invocation parentInvocation)
     : super(parent, parentInvocation);
 }
 
+class _FakeResponse_1<T1> extends _i1.SmartFake implements _i3.Response<T1> {
+  _FakeResponse_1(Object parent, Invocation parentInvocation)
+    : super(parent, parentInvocation);
+}
+
 /// A class which mocks [IHttpService].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockIHttpService extends _i1.Mock implements _i3.IHttpService {
+class MockIHttpService extends _i1.Mock implements _i4.IHttpService {
   MockIHttpService() {
     _i1.throwOnMissingStub(this);
   }
 
   @override
-  _i2.Future<T> get<T>(String? path, {Map<String, dynamic>? queryParameters}) =>
+  _i2.Future<T> get<T>(
+    String? path, {
+    Map<String, dynamic>? queryParameters,
+    _i4.ProtoFactory<T>? fromJson,
+  }) =>
       (super.noSuchMethod(
             Invocation.method(
               #get,
               [path],
-              {#queryParameters: queryParameters},
+              {#queryParameters: queryParameters, #fromJson: fromJson},
             ),
             returnValue:
-                _i4.ifNotNull(
-                  _i4.dummyValueOrNull<T>(
+                _i5.ifNotNull(
+                  _i5.dummyValueOrNull<T>(
                     this,
                     Invocation.method(
                       #get,
                       [path],
-                      {#queryParameters: queryParameters},
+                      {#queryParameters: queryParameters, #fromJson: fromJson},
                     ),
                   ),
                   (T v) => _i2.Future<T>.value(v),
@@ -62,7 +71,7 @@ class MockIHttpService extends _i1.Mock implements _i3.IHttpService {
                   Invocation.method(
                     #get,
                     [path],
-                    {#queryParameters: queryParameters},
+                    {#queryParameters: queryParameters, #fromJson: fromJson},
                   ),
                 ),
           )
@@ -73,21 +82,30 @@ class MockIHttpService extends _i1.Mock implements _i3.IHttpService {
     String? path, {
     dynamic data,
     Map<String, dynamic>? queryParameters,
+    _i4.ProtoFactory<T>? fromJson,
   }) =>
       (super.noSuchMethod(
             Invocation.method(
               #post,
               [path],
-              {#data: data, #queryParameters: queryParameters},
+              {
+                #data: data,
+                #queryParameters: queryParameters,
+                #fromJson: fromJson,
+              },
             ),
             returnValue:
-                _i4.ifNotNull(
-                  _i4.dummyValueOrNull<T>(
+                _i5.ifNotNull(
+                  _i5.dummyValueOrNull<T>(
                     this,
                     Invocation.method(
                       #post,
                       [path],
-                      {#data: data, #queryParameters: queryParameters},
+                      {
+                        #data: data,
+                        #queryParameters: queryParameters,
+                        #fromJson: fromJson,
+                      },
                     ),
                   ),
                   (T v) => _i2.Future<T>.value(v),
@@ -97,7 +115,11 @@ class MockIHttpService extends _i1.Mock implements _i3.IHttpService {
                   Invocation.method(
                     #post,
                     [path],
-                    {#data: data, #queryParameters: queryParameters},
+                    {
+                      #data: data,
+                      #queryParameters: queryParameters,
+                      #fromJson: fromJson,
+                    },
                   ),
                 ),
           )
@@ -108,21 +130,30 @@ class MockIHttpService extends _i1.Mock implements _i3.IHttpService {
     String? path, {
     dynamic data,
     Map<String, dynamic>? queryParameters,
+    _i4.ProtoFactory<T>? fromJson,
   }) =>
       (super.noSuchMethod(
             Invocation.method(
               #put,
               [path],
-              {#data: data, #queryParameters: queryParameters},
+              {
+                #data: data,
+                #queryParameters: queryParameters,
+                #fromJson: fromJson,
+              },
             ),
             returnValue:
-                _i4.ifNotNull(
-                  _i4.dummyValueOrNull<T>(
+                _i5.ifNotNull(
+                  _i5.dummyValueOrNull<T>(
                     this,
                     Invocation.method(
                       #put,
                       [path],
-                      {#data: data, #queryParameters: queryParameters},
+                      {
+                        #data: data,
+                        #queryParameters: queryParameters,
+                        #fromJson: fromJson,
+                      },
                     ),
                   ),
                   (T v) => _i2.Future<T>.value(v),
@@ -132,7 +163,11 @@ class MockIHttpService extends _i1.Mock implements _i3.IHttpService {
                   Invocation.method(
                     #put,
                     [path],
-                    {#data: data, #queryParameters: queryParameters},
+                    {
+                      #data: data,
+                      #queryParameters: queryParameters,
+                      #fromJson: fromJson,
+                    },
                   ),
                 ),
           )
@@ -143,21 +178,30 @@ class MockIHttpService extends _i1.Mock implements _i3.IHttpService {
     String? path, {
     dynamic data,
     Map<String, dynamic>? queryParameters,
+    _i4.ProtoFactory<T>? fromJson,
   }) =>
       (super.noSuchMethod(
             Invocation.method(
               #delete,
               [path],
-              {#data: data, #queryParameters: queryParameters},
+              {
+                #data: data,
+                #queryParameters: queryParameters,
+                #fromJson: fromJson,
+              },
             ),
             returnValue:
-                _i4.ifNotNull(
-                  _i4.dummyValueOrNull<T>(
+                _i5.ifNotNull(
+                  _i5.dummyValueOrNull<T>(
                     this,
                     Invocation.method(
                       #delete,
                       [path],
-                      {#data: data, #queryParameters: queryParameters},
+                      {
+                        #data: data,
+                        #queryParameters: queryParameters,
+                        #fromJson: fromJson,
+                      },
                     ),
                   ),
                   (T v) => _i2.Future<T>.value(v),
@@ -167,9 +211,185 @@ class MockIHttpService extends _i1.Mock implements _i3.IHttpService {
                   Invocation.method(
                     #delete,
                     [path],
-                    {#data: data, #queryParameters: queryParameters},
+                    {
+                      #data: data,
+                      #queryParameters: queryParameters,
+                      #fromJson: fromJson,
+                    },
                   ),
                 ),
           )
           as _i2.Future<T>);
+
+  @override
+  _i2.Future<T> patch<T>(
+    String? path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    _i4.ProtoFactory<T>? fromJson,
+  }) =>
+      (super.noSuchMethod(
+            Invocation.method(
+              #patch,
+              [path],
+              {
+                #data: data,
+                #queryParameters: queryParameters,
+                #fromJson: fromJson,
+              },
+            ),
+            returnValue:
+                _i5.ifNotNull(
+                  _i5.dummyValueOrNull<T>(
+                    this,
+                    Invocation.method(
+                      #patch,
+                      [path],
+                      {
+                        #data: data,
+                        #queryParameters: queryParameters,
+                        #fromJson: fromJson,
+                      },
+                    ),
+                  ),
+                  (T v) => _i2.Future<T>.value(v),
+                ) ??
+                _FakeFuture_0<T>(
+                  this,
+                  Invocation.method(
+                    #patch,
+                    [path],
+                    {
+                      #data: data,
+                      #queryParameters: queryParameters,
+                      #fromJson: fromJson,
+                    },
+                  ),
+                ),
+          )
+          as _i2.Future<T>);
+
+  @override
+  _i2.Future<_i3.Response<T>> getResponse<T>(
+    String? path, {
+    Map<String, dynamic>? queryParameters,
+  }) =>
+      (super.noSuchMethod(
+            Invocation.method(
+              #getResponse,
+              [path],
+              {#queryParameters: queryParameters},
+            ),
+            returnValue: _i2.Future<_i3.Response<T>>.value(
+              _FakeResponse_1<T>(
+                this,
+                Invocation.method(
+                  #getResponse,
+                  [path],
+                  {#queryParameters: queryParameters},
+                ),
+              ),
+            ),
+          )
+          as _i2.Future<_i3.Response<T>>);
+
+  @override
+  _i2.Future<_i3.Response<T>> postResponse<T>(
+    String? path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+  }) =>
+      (super.noSuchMethod(
+            Invocation.method(
+              #postResponse,
+              [path],
+              {#data: data, #queryParameters: queryParameters},
+            ),
+            returnValue: _i2.Future<_i3.Response<T>>.value(
+              _FakeResponse_1<T>(
+                this,
+                Invocation.method(
+                  #postResponse,
+                  [path],
+                  {#data: data, #queryParameters: queryParameters},
+                ),
+              ),
+            ),
+          )
+          as _i2.Future<_i3.Response<T>>);
+
+  @override
+  _i2.Future<_i3.Response<T>> putResponse<T>(
+    String? path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+  }) =>
+      (super.noSuchMethod(
+            Invocation.method(
+              #putResponse,
+              [path],
+              {#data: data, #queryParameters: queryParameters},
+            ),
+            returnValue: _i2.Future<_i3.Response<T>>.value(
+              _FakeResponse_1<T>(
+                this,
+                Invocation.method(
+                  #putResponse,
+                  [path],
+                  {#data: data, #queryParameters: queryParameters},
+                ),
+              ),
+            ),
+          )
+          as _i2.Future<_i3.Response<T>>);
+
+  @override
+  _i2.Future<_i3.Response<T>> deleteResponse<T>(
+    String? path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+  }) =>
+      (super.noSuchMethod(
+            Invocation.method(
+              #deleteResponse,
+              [path],
+              {#data: data, #queryParameters: queryParameters},
+            ),
+            returnValue: _i2.Future<_i3.Response<T>>.value(
+              _FakeResponse_1<T>(
+                this,
+                Invocation.method(
+                  #deleteResponse,
+                  [path],
+                  {#data: data, #queryParameters: queryParameters},
+                ),
+              ),
+            ),
+          )
+          as _i2.Future<_i3.Response<T>>);
+
+  @override
+  _i2.Future<_i3.Response<T>> patchResponse<T>(
+    String? path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+  }) =>
+      (super.noSuchMethod(
+            Invocation.method(
+              #patchResponse,
+              [path],
+              {#data: data, #queryParameters: queryParameters},
+            ),
+            returnValue: _i2.Future<_i3.Response<T>>.value(
+              _FakeResponse_1<T>(
+                this,
+                Invocation.method(
+                  #patchResponse,
+                  [path],
+                  {#data: data, #queryParameters: queryParameters},
+                ),
+              ),
+            ),
+          )
+          as _i2.Future<_i3.Response<T>>);
 }

@@ -25,7 +25,6 @@ import 'package:peers_touch_base/network/dio/peers_frame/service/ai_box_service.
 // ignore_for_file: unnecessary_parenthesis
 // ignore_for_file: camel_case_types
 // ignore_for_file: subtype_of_sealed_class
-// ignore_for_file: invalid_use_of_internal_member
 
 class _FakeProvider_0 extends _i1.SmartFake implements _i2.Provider {
   _FakeProvider_0(Object parent, Invocation parentInvocation)

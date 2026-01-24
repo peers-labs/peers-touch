@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_controller.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_input_bar.dart';
@@ -162,6 +163,28 @@ class FriendChatPage extends GetView<FriendChatController> {
         children: [
           Obx(() {
             final session = controller.currentSession.value;
+            final connMode = controller.connectionMode.value;
+            final l10n = AppLocalizations.of(context)!;
+            String statusText = '';
+            Color statusColor = UIKit.textSecondary(context);
+            
+            if (session != null) {
+              if (session.participantIds.length > 2) {
+                statusText = '${session.participantIds.length} members';
+              } else {
+                if (connMode == ConnectionMode.p2pDirect) {
+                  statusText = l10n.connectionStatusOnlineP2P;
+                  statusColor = Colors.green;
+                } else if (connMode == ConnectionMode.stationRelay) {
+                  statusText = l10n.connectionStatusOnlineRelay;
+                  statusColor = Colors.blue;
+                } else {
+                  statusText = l10n.connectionStatusOffline;
+                  statusColor = UIKit.textSecondary(context);
+                }
+              }
+            }
+            
             return Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -173,13 +196,11 @@ class FriendChatPage extends GetView<FriendChatController> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (session != null)
+                  if (statusText.isNotEmpty)
                     Text(
-                      session.participantIds.length > 2
-                          ? '${session.participantIds.length} members'
-                          : 'Online',
+                      statusText,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: UIKit.textSecondary(context),
+                            color: statusColor,
                           ),
                     ),
                 ],

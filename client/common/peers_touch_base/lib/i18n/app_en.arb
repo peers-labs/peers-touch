@@ -250,5 +250,9 @@
   "clearInput": "Clear Input",
   "sendSettings": "Send Settings",
   "pressEnterToSend": "Press Enter to send",
-  "pressCtrlEnterToSend": "Press Ctrl+Enter to send"
+  "pressCtrlEnterToSend": "Press Ctrl+Enter to send",
+  "connectionStatusOnlineP2P": "Online (P2P)",
+  "connectionStatusOnlineRelay": "Online (Relay)",
+  "connectionStatusOffline": "Offline",
+  "connectionStatusConnecting": "Connecting..."
 }

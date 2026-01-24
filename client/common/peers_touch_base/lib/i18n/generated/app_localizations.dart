@@ -1399,6 +1399,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Press Ctrl+Enter to send'**
   String get pressCtrlEnterToSend;
+
+  /// No description provided for @connectionStatusOnlineP2P.
+  ///
+  /// In en, this message translates to:
+  /// **'Online (P2P)'**
+  String get connectionStatusOnlineP2P;
+
+  /// No description provided for @connectionStatusOnlineRelay.
+  ///
+  /// In en, this message translates to:
+  /// **'Online (Relay)'**
+  String get connectionStatusOnlineRelay;
+
+  /// No description provided for @connectionStatusOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get connectionStatusOffline;
+
+  /// No description provided for @connectionStatusConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting...'**
+  String get connectionStatusConnecting;
 }
 
 class _AppLocalizationsDelegate
