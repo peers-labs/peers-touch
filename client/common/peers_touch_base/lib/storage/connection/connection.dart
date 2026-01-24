@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
+import 'package:peers_touch_base/storage/file_storage_manager.dart';
 
 /// Opens a persistent database connection.
 ///
@@ -13,34 +14,61 @@ import 'package:path/path.dart' as p;
 /// location for the database file.
 ///
 /// - [dbName]: The filename for the database, e.g., 'app_core.db'.
+/// - [userHandle]: Optional user handle for user-scoped databases.
 class DriftConnectionManager {
   factory DriftConnectionManager() => _instance;
   DriftConnectionManager._internal();
   static final DriftConnectionManager _instance = DriftConnectionManager._internal();
 
   final Map<String, LazyDatabase> _connections = {};
+  final FileStorageManager _storageManager = FileStorageManager();
 
-  LazyDatabase getConnection(String dbName) {
-    if (_connections.containsKey(dbName)) {
-      return _connections[dbName]!;
+  LazyDatabase getConnection(String dbName, {String? userHandle}) {
+    final key = userHandle != null ? '${userHandle}_$dbName' : dbName;
+    if (_connections.containsKey(key)) {
+      return _connections[key]!;
     }
 
     final newConnection = LazyDatabase(() async {
-      // 使用当前工作目录作为数据库存储位置
-      final currentDir = Directory.current;
-      final dbFolder = Directory(p.join(currentDir.path, 'data'));
-      if (!await dbFolder.exists()) {
-        await dbFolder.create(recursive: true);
-      }
-      final file = File(p.join(dbFolder.path, dbName));
+      final subDir = userHandle != null ? 'users/$userHandle' : null;
+      final dir = await _storageManager.getDirectory(
+        StorageLocation.support,
+        StorageNamespace.peersTouchDesktop,
+        subDir: subDir,
+      );
+      final file = File(p.join(dir.path, dbName));
       return NativeDatabase(file);
     });
 
-    _connections[dbName] = newConnection;
+    _connections[key] = newConnection;
+    return newConnection;
+  }
+  
+  LazyDatabase getGlobalConnection(String dbName) {
+    final globalKey = 'global_$dbName';
+    if (_connections.containsKey(globalKey)) {
+      return _connections[globalKey]!;
+    }
+
+    final newConnection = LazyDatabase(() async {
+      final dir = await _storageManager.getDirectory(
+        StorageLocation.support,
+        StorageNamespace.peersTouchDesktop,
+        subDir: 'global',
+      );
+      final file = File(p.join(dir.path, dbName));
+      return NativeDatabase(file);
+    });
+
+    _connections[globalKey] = newConnection;
     return newConnection;
   }
 }
 
-LazyDatabase openConnection(String dbName) {
-  return DriftConnectionManager().getConnection(dbName);
+LazyDatabase openConnection(String dbName, {String? userHandle}) {
+  return DriftConnectionManager().getConnection(dbName, userHandle: userHandle);
+}
+
+LazyDatabase openGlobalConnection(String dbName) {
+  return DriftConnectionManager().getGlobalConnection(dbName);
 }
