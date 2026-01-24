@@ -304,29 +304,29 @@ class FriendChatController extends GetxController {
       await disconnect();
     }
     
-    connectionMode.value = ConnectionMode.stationRelay;
+    connectionMode.value = ConnectionMode.disconnected;
     connectionStats.value = connectionStats.value.copyWith(
-      connectionMode: ConnectionMode.stationRelay,
-      connectionState: P2PConnectionState.disconnected,
+      connectionMode: ConnectionMode.disconnected,
+      connectionState: P2PConnectionState.connecting,
     );
     
     try {
       await connect().timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          LoggingService.warning('P2P connection timeout, using Station Relay mode');
-          connectionMode.value = ConnectionMode.stationRelay;
+          LoggingService.warning('P2P connection timeout, falling back to disconnected');
+          connectionMode.value = ConnectionMode.disconnected;
           connectionStats.value = connectionStats.value.copyWith(
-            connectionMode: ConnectionMode.stationRelay,
+            connectionMode: ConnectionMode.disconnected,
             connectionState: P2PConnectionState.failed,
           );
         },
       );
     } catch (e) {
-      LoggingService.error('P2P connection failed: $e, falling back to Station Relay');
-      connectionMode.value = ConnectionMode.stationRelay;
+      LoggingService.error('P2P connection failed: $e');
+      connectionMode.value = ConnectionMode.disconnected;
       connectionStats.value = connectionStats.value.copyWith(
-        connectionMode: ConnectionMode.stationRelay,
+        connectionMode: ConnectionMode.disconnected,
         connectionState: P2PConnectionState.failed,
       );
     }
@@ -394,9 +394,15 @@ class FriendChatController extends GetxController {
           content: trimmedContent,
         );
 
-        newMessage.status = response.deliveryStatus == 'delivered'
-            ? MessageStatus.MESSAGE_STATUS_DELIVERED
-            : MessageStatus.MESSAGE_STATUS_SENT;
+        if (response.deliveryStatus == 'delivered') {
+          newMessage.status = MessageStatus.MESSAGE_STATUS_DELIVERED;
+          connectionMode.value = ConnectionMode.stationRelay;
+          connectionStats.value = connectionStats.value.copyWith(
+            connectionMode: ConnectionMode.stationRelay,
+          );
+        } else {
+          newMessage.status = MessageStatus.MESSAGE_STATUS_SENT;
+        }
         messages.refresh();
       }
     } catch (e) {

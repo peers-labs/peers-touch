@@ -26,7 +26,6 @@ import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart' as _i8;
 // ignore_for_file: unnecessary_parenthesis
 // ignore_for_file: camel_case_types
 // ignore_for_file: subtype_of_sealed_class
-// ignore_for_file: invalid_use_of_internal_member
 
 class _FakeChatClient_0 extends _i1.SmartFake implements _i2.ChatClient {
   _FakeChatClient_0(Object parent, Invocation parentInvocation)
