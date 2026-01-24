@@ -23,8 +23,18 @@ class KvDatabase extends _$KvDatabase {
     return _instance;
   }
 
-  KvDatabase._internal() : super(openConnection('kv_storage.db'));
+  KvDatabase._internal() : super(_createConnection());
   static final KvDatabase _instance = KvDatabase._internal();
+  
+  static String? _userHandle;
+  
+  static LazyDatabase _createConnection() {
+    return openConnection('kv_storage.db', userHandle: _userHandle);
+  }
+  
+  static void setUserHandle(String? userHandle) {
+    _userHandle = userHandle;
+  }
 
   @override
   int get schemaVersion => 1;

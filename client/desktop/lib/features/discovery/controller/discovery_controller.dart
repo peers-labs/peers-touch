@@ -27,6 +27,7 @@ class FriendItem {
     this.actorId,
     this.isOnline = false,
     this.isFollowing = false,
+    this.followedBy = false,
     this.lat,
     this.lon,
   });
@@ -37,6 +38,7 @@ class FriendItem {
   final String? actorId;
   final bool isOnline;
   final bool isFollowing;
+  final bool followedBy;
   final double? lat;
   final double? lon;
 }
@@ -617,6 +619,32 @@ class DiscoveryController extends GetxController {
       await _repo.followUser(targetActorId);
       Get.snackbar('Success', 'Followed ${user.name}');
       
+      // Update local state
+      final index = localStationActors.indexWhere((f) => 
+        (f.actorId ?? f.id) == targetActorId);
+      if (index != -1) {
+        final updatedFriend = FriendItem(
+          id: user.id,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+          timeOrStatus: user.timeOrStatus,
+          actorId: user.actorId,
+          isOnline: user.isOnline,
+          isFollowing: true,
+          followedBy: user.followedBy,
+          lat: user.lat,
+          lon: user.lon,
+        );
+        localStationActors[index] = updatedFriend;
+        
+        // Also update in search results if present
+        final searchIndex = searchResults.indexWhere((f) => 
+          (f.actorId ?? f.id) == targetActorId);
+        if (searchIndex != -1) {
+          searchResults[searchIndex] = updatedFriend;
+        }
+      }
+      
       // Refresh friends list
       loadFriends();
     } catch (e) {
@@ -632,6 +660,32 @@ class DiscoveryController extends GetxController {
       LoggingService.info('Unfollowing user: $targetActorId (display name: ${user.name})');
       await _repo.unfollowUser(targetActorId);
       Get.snackbar('Success', 'Unfollowed ${user.name}');
+      
+      // Update local state
+      final index = localStationActors.indexWhere((f) => 
+        (f.actorId ?? f.id) == targetActorId);
+      if (index != -1) {
+        final updatedFriend = FriendItem(
+          id: user.id,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+          timeOrStatus: user.timeOrStatus,
+          actorId: user.actorId,
+          isOnline: user.isOnline,
+          isFollowing: false,
+          followedBy: user.followedBy,
+          lat: user.lat,
+          lon: user.lon,
+        );
+        localStationActors[index] = updatedFriend;
+        
+        // Also update in search results if present
+        final searchIndex = searchResults.indexWhere((f) => 
+          (f.actorId ?? f.id) == targetActorId);
+        if (searchIndex != -1) {
+          searchResults[searchIndex] = updatedFriend;
+        }
+      }
       
       // Refresh friends list
       loadFriends();
@@ -665,8 +719,9 @@ class DiscoveryController extends GetxController {
           }
           
           final isFollowing = item['is_following'] == true;
+          final followedBy = item['followed_by'] == true;
           
-          LoggingService.debug('_parseActorList: Parsed actor - id: $id, actorId: $actorId, username: $username, displayName: $displayName, isFollowing: $isFollowing');
+          LoggingService.debug('_parseActorList: Parsed actor - id: $id, actorId: $actorId, username: $username, displayName: $displayName, isFollowing: $isFollowing, followedBy: $followedBy');
           
           list.add(FriendItem(
             id: username.isNotEmpty ? username : id,
@@ -676,6 +731,7 @@ class DiscoveryController extends GetxController {
             actorId: actorId,
             isOnline: false,
             isFollowing: isFollowing,
+            followedBy: followedBy,
           ));
         } else if (item is String) {
            list.add(FriendItem(

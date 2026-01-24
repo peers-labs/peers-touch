@@ -253,6 +253,7 @@ func GetFollowing(ctx context.Context, actorID uint64, cursor string, limit int)
 			AvatarUrl:   getAvatarURL(follow.Following),
 			FollowedAt:  timestamppb.New(follow.CreatedAt),
 		}
+		logger.Info(ctx, "Following user", "actorId", f.ActorId, "username", f.Username, "displayName", f.DisplayName, "displayNameBytes", []byte(f.DisplayName))
 		following = append(following, f)
 	}
 

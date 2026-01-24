@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:peers_touch_base/storage/kv/kv_database.dart';
 
 /// 安全存储服务接口
 abstract class SecureStorage {
@@ -11,19 +13,16 @@ abstract class SecureStorage {
 
 /// 安全存储服务实现（基于 FlutterSecureStorage）
 class SecureStorageImpl implements SecureStorage {
-  SecureStorageImpl({String? userHandle}) {
-    setUserScope(userHandle);
+  SecureStorageImpl() {
+    _initStorage();
   }
 
-  FlutterSecureStorage? _fs;
-  String? _currentUserHandle;
+  late FlutterSecureStorage _fs;
+  static String? _userHandle;
+  bool _keychainFailed = false;
 
-  @override
-  void setUserScope(String? userHandle) {
-    if (_currentUserHandle == userHandle) return;
-    _currentUserHandle = userHandle;
-    
-    final accountName = userHandle ?? 'global';
+  void _initStorage() {
+    final accountName = _userHandle ?? 'global';
     _fs = FlutterSecureStorage(
       iOptions: IOSOptions(
         groupId: 'com.peerstouch',
@@ -36,23 +35,72 @@ class SecureStorageImpl implements SecureStorage {
     );
   }
 
+  static void setUserHandle(String? userHandle) {
+    _userHandle = userHandle;
+  }
+
+  @override
+  void setUserScope(String? userHandle) {
+    setUserHandle(userHandle);
+    _initStorage();
+  }
+
+  String _getFallbackKey(String key) {
+    return 'secure:$key';
+  }
+
   @override
   Future<void> set(String key, String value) async {
-    await _fs!.write(key: key, value: value);
+    try {
+      await _fs.write(key: key, value: value);
+      _keychainFailed = false;
+    } catch (e) {
+      if (kDebugMode) {
+        print('[SecureStorage] Keychain write failed: $e, falling back to KvDatabase');
+      }
+      _keychainFailed = true;
+      await KvDatabase().set(_getFallbackKey(key), value);
+    }
   }
 
   @override
   Future<String?> get(String key) async {
-    return _fs!.read(key: key);
+    try {
+      final value = await _fs.read(key: key);
+      if (value != null || !_keychainFailed) {
+        return value;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[SecureStorage] Keychain read failed: $e, falling back to KvDatabase');
+      }
+      _keychainFailed = true;
+    }
+    
+    return KvDatabase().get(_getFallbackKey(key));
   }
 
   @override
   Future<void> remove(String key) async {
-    await _fs!.delete(key: key);
+    try {
+      await _fs.delete(key: key);
+    } catch (e) {
+      if (kDebugMode) {
+        print('[SecureStorage] Keychain delete failed: $e, falling back to KvDatabase');
+      }
+    }
+    
+    await KvDatabase().remove(_getFallbackKey(key));
   }
 
   @override
   Future<void> clear() async {
-    await _fs!.deleteAll();
+    try {
+      await _fs.deleteAll();
+    } catch (e) {
+      if (kDebugMode) {
+        print('[SecureStorage] Keychain clear failed: $e');
+      }
+    }
   }
 }
