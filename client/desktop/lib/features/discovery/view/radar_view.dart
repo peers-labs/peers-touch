@@ -188,13 +188,42 @@ class RadarView extends StatelessWidget {
                 fontSize: 14,
               ),
             ),
-            trailing: FilledButton.tonal(
-              onPressed: () => controller.followUser(friend),
-              child: const Text('Follow'),
-            ),
+            trailing: _buildFollowButton(friend, controller),
           );
         },
       );
     });
+  }
+
+  Widget _buildFollowButton(FriendItem friend, DiscoveryController controller) {
+    if (friend.isFollowing && friend.followedBy) {
+      return FilledButton(
+        onPressed: () => controller.unfollowUser(friend),
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.green.shade100,
+          foregroundColor: Colors.green.shade700,
+        ),
+        child: const Text('Friends'),
+      );
+    } else if (friend.isFollowing) {
+      return FilledButton(
+        onPressed: () => controller.unfollowUser(friend),
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.grey.shade300,
+          foregroundColor: Colors.grey.shade700,
+        ),
+        child: const Text('Following'),
+      );
+    } else if (friend.followedBy) {
+      return FilledButton.tonal(
+        onPressed: () => controller.followUser(friend),
+        child: const Text('Follow Back'),
+      );
+    } else {
+      return FilledButton.tonal(
+        onPressed: () => controller.followUser(friend),
+        child: const Text('Follow'),
+      );
+    }
   }
 }

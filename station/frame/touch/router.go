@@ -109,6 +109,7 @@ func SuccessResponse(ctx *app.RequestContext, msg string, data interface{}) {
 		msg = "success"
 	}
 
+	ctx.Header("Content-Type", "application/json; charset=utf-8")
 	ctx.JSON(http.StatusOK, model.NewSuccessResponse(msg, data))
 }
 
