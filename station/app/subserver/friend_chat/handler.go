@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/service"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/middleware"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
@@ -16,16 +19,17 @@ func (u friendChatURL) SubPath() string { return u.path }
 func (u friendChatURL) Name() string    { return u.name }
 
 func (s *friendChatSubServer) Handlers() []server.Handler {
+	logIDWrapper := middleware.LogIDWrapper()
 	return []server.Handler{
-		server.NewHandler(friendChatURL{name: "fc-session-create", path: "/friend-chat/session/create"}, http.HandlerFunc(s.handleSessionCreate), server.WithMethod(server.POST), server.WithWrappers(s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-sessions", path: "/friend-chat/sessions"}, http.HandlerFunc(s.handleGetSessions), server.WithMethod(server.GET), server.WithWrappers(s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-message-send", path: "/friend-chat/message/send"}, http.HandlerFunc(s.handleSendMessage), server.WithMethod(server.POST), server.WithWrappers(s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-message-sync", path: "/friend-chat/message/sync"}, http.HandlerFunc(s.handleSyncMessages), server.WithMethod(server.POST), server.WithWrappers(s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-messages", path: "/friend-chat/messages"}, http.HandlerFunc(s.handleGetMessages), server.WithMethod(server.GET), server.WithWrappers(s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-message-ack", path: "/friend-chat/message/ack"}, http.HandlerFunc(s.handleMessageAck), server.WithMethod(server.POST), server.WithWrappers(s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-online", path: "/friend-chat/online"}, http.HandlerFunc(s.handleOnline), server.WithMethod(server.POST), server.WithWrappers(s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-offline", path: "/friend-chat/offline"}, http.HandlerFunc(s.handleOffline), server.WithMethod(server.POST), server.WithWrappers(s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-pending", path: "/friend-chat/pending"}, http.HandlerFunc(s.handleGetPending), server.WithMethod(server.GET), server.WithWrappers(s.jwtWrapper)),
+		server.NewHandler(friendChatURL{name: "fc-session-create", path: "/friend-chat/session/create"}, http.HandlerFunc(s.handleSessionCreate), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
+		server.NewHandler(friendChatURL{name: "fc-sessions", path: "/friend-chat/sessions"}, http.HandlerFunc(s.handleGetSessions), server.WithMethod(server.GET), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
+		server.NewHandler(friendChatURL{name: "fc-message-send", path: "/friend-chat/message/send"}, http.HandlerFunc(s.handleSendMessage), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
+		server.NewHandler(friendChatURL{name: "fc-message-sync", path: "/friend-chat/message/sync"}, http.HandlerFunc(s.handleSyncMessages), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
+		server.NewHandler(friendChatURL{name: "fc-messages", path: "/friend-chat/messages"}, http.HandlerFunc(s.handleGetMessages), server.WithMethod(server.GET), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
+		server.NewHandler(friendChatURL{name: "fc-message-ack", path: "/friend-chat/message/ack"}, http.HandlerFunc(s.handleMessageAck), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
+		server.NewHandler(friendChatURL{name: "fc-online", path: "/friend-chat/online"}, http.HandlerFunc(s.handleOnline), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
+		server.NewHandler(friendChatURL{name: "fc-offline", path: "/friend-chat/offline"}, http.HandlerFunc(s.handleOffline), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
+		server.NewHandler(friendChatURL{name: "fc-pending", path: "/friend-chat/pending"}, http.HandlerFunc(s.handleGetPending), server.WithMethod(server.GET), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
 		server.NewHandler(friendChatURL{name: "fc-stats", path: "/friend-chat/stats"}, http.HandlerFunc(s.handleStats), server.WithMethod(server.GET)),
 	}
 }
@@ -40,29 +44,37 @@ type sessionCreateResp struct {
 }
 
 func (s *friendChatSubServer) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logID := middleware.GetLogID(ctx)
+
 	var req sessionCreateReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ParticipantDID == "" {
+		logger.Errorf(ctx, "[%s] Invalid request: err=%v, participant_did=%s", logID, err, req.ParticipantDID)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
-	senderDID := r.Header.Get("X-User-DID")
-	if senderDID == "" {
-		senderDID = r.URL.Query().Get("sender_did")
-	}
-	if senderDID == "" {
-		http.Error(w, "missing sender_did", http.StatusBadRequest)
+	subject := httpadapter.GetSubject(r)
+	if subject == nil {
+		logger.Errorf(ctx, "[%s] Unauthorized: no subject in context", logID)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	currentActorDID := subject.ID
 
-	session, err := s.sessionService.GetOrCreateSession(r.Context(), senderDID, req.ParticipantDID)
+	session, err := s.sessionService.GetOrCreateSession(ctx, currentActorDID, req.ParticipantDID)
 	if err != nil {
+		logger.Errorf(ctx, "[%s] Failed to create session: actor=%s, participant=%s, error=%v",
+			logID, currentActorDID, req.ParticipantDID, err)
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
 
+	logger.Infof(ctx, "[%s] Session created/retrieved: session_ulid=%s, actor=%s, participant=%s",
+		logID, session.ULID, currentActorDID, req.ParticipantDID)
+
 	unread := session.UnreadCountA
-	if session.ParticipantBDID == senderDID {
+	if session.ParticipantBDID == currentActorDID {
 		unread = session.UnreadCountB
 	}
 
@@ -147,11 +159,14 @@ func (s *friendChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	senderDID := r.Header.Get("X-User-DID")
-	if senderDID == "" {
-		senderDID = r.URL.Query().Get("sender_did")
+	subject := httpadapter.GetSubject(r)
+	if subject == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
-	if senderDID == "" || req.ReceiverDID == "" || req.Content == "" {
+	senderActorDID := subject.ID
+
+	if req.ReceiverDID == "" || req.Content == "" {
 		http.Error(w, "missing required fields", http.StatusBadRequest)
 		return
 	}
@@ -162,7 +177,7 @@ func (s *friendChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.R
 
 	msg, err := s.messageService.SendMessage(r.Context(), &service.SendMessageRequest{
 		SessionULID: req.SessionULID,
-		SenderDID:   senderDID,
+		SenderDID:   senderActorDID,
 		ReceiverDID: req.ReceiverDID,
 		Type:        req.Type,
 		Content:     req.Content,
@@ -185,7 +200,7 @@ func (s *friendChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.R
 		deliveryStatus = "queued"
 		s.relayService.StoreOfflineMessage(r.Context(), &service.StoreOfflineRequest{
 			MessageULID:      msg.ULID,
-			SenderDID:        senderDID,
+			SenderDID:        senderActorDID,
 			ReceiverDID:      req.ReceiverDID,
 			SessionULID:      req.SessionULID,
 			EncryptedPayload: []byte(req.Content),
@@ -233,14 +248,12 @@ func (s *friendChatSubServer) handleSyncMessages(w http.ResponseWriter, r *http.
 		return
 	}
 
-	senderDID := r.Header.Get("X-User-DID")
-	if senderDID == "" {
-		senderDID = r.URL.Query().Get("sender_did")
-	}
-	if senderDID == "" {
-		http.Error(w, "missing sender_did", http.StatusBadRequest)
+	subject := httpadapter.GetSubject(r)
+	if subject == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	senderActorDID := subject.ID
 
 	synced := 0
 	failed := make([]string, 0)
@@ -251,7 +264,7 @@ func (s *friendChatSubServer) handleSyncMessages(w http.ResponseWriter, r *http.
 		}
 		_, err := s.messageService.SendMessage(r.Context(), &service.SendMessageRequest{
 			SessionULID: item.SessionULID,
-			SenderDID:   senderDID,
+			SenderDID:   senderActorDID,
 			ReceiverDID: item.ReceiverDID,
 			Type:        item.Type,
 			Content:     item.Content,

@@ -18,7 +18,11 @@ class LoggingInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     if (kDebugMode) {
+      final logId = response.headers.value('x-log-id') ?? response.headers.value('X-Log-Id');
       print('<-- ${response.statusCode} ${response.requestOptions.uri}');
+      if (logId != null) {
+        print('Log-ID: $logId');
+      }
       print('Response: ${response.data}');
     }
     super.onResponse(response, handler);
@@ -27,7 +31,11 @@ class LoggingInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     if (kDebugMode) {
+      final logId = err.response?.headers.value('x-log-id') ?? err.response?.headers.value('X-Log-Id');
       print('<-- Error: ${err.error} - ${err.message}');
+      if (logId != null) {
+        print('Log-ID: $logId');
+      }
     }
     super.onError(err, handler);
   }

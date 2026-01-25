@@ -16,10 +16,28 @@ import 'package:peers_touch_base/network/social/social_api_service.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
 
+class FriendItem {
+  final String actorId;
+  final String username;
+  final String displayName;
+  final String? avatarUrl;
+  
+  FriendItem({
+    required this.actorId,
+    required this.username,
+    required this.displayName,
+    this.avatarUrl,
+  });
+  
+  String get name => displayName.isNotEmpty ? displayName : username;
+}
+
 class FriendChatController extends GetxController {
+  final friends = <FriendItem>[].obs;
   final sessions = <ChatSession>[].obs;
   final messages = <ChatMessage>[].obs;
   final currentSession = Rx<ChatSession?>(null);
+  final currentFriend = Rx<FriendItem?>(null);
   final isSending = false.obs;
   final isLoading = false.obs;
   final error = Rx<String?>(null);
@@ -70,8 +88,8 @@ class FriendChatController extends GetxController {
   void onInit() {
     super.onInit();
     _startSyncTimer();
-    _loadSessionsFromFriends();
     _markOnline();
+    _loadFriends();
     _loadPendingMessages();
   }
 
@@ -111,6 +129,41 @@ class FriendChatController extends GetxController {
       LoggingService.info('Marked offline: $currentUserId');
     } catch (e) {
       LoggingService.warning('Failed to mark offline: $e');
+    }
+  }
+
+  Future<void> _loadFriends() async {
+    LoggingService.info('FriendChatController: Loading friends list');
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      if (currentUserId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user ID is empty');
+        error.value = 'User not logged in';
+        return;
+      }
+
+      final socialApi = SocialApiService();
+      final response = await socialApi.getFollowing();
+      final followingList = response.following;
+      
+      LoggingService.info('FriendChatController: Loaded ${followingList.length} friends');
+
+      final friendList = followingList.map((f) => FriendItem(
+        actorId: f.actorId,
+        username: f.username,
+        displayName: f.displayName,
+        avatarUrl: f.avatarUrl,
+      )).toList();
+
+      friends.assignAll(friendList);
+    } catch (e, stackTrace) {
+      LoggingService.error('FriendChatController: Failed to load friends: $e');
+      LoggingService.debug('Stack trace: $stackTrace');
+      error.value = 'Failed to load friends: $e';
+    } finally {
+      isLoading.value = false;
     }
   }
 
@@ -206,22 +259,38 @@ class FriendChatController extends GetxController {
   }
 
   Future<void> _loadSessionsFromFriends() async {
+    LoggingService.info('FriendChatController: Starting to load sessions from friends');
     isLoading.value = true;
     error.value = null;
 
     try {
+      if (currentUserId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user ID is empty, cannot load sessions');
+        error.value = 'User not logged in';
+        return;
+      }
+
+      LoggingService.info('FriendChatController: Current user ID: $currentUserId');
+
       final socialApi = SocialApiService();
       final response = await socialApi.getFollowing();
       final followingList = response.following;
       
       LoggingService.info('FriendChatController: Loaded ${followingList.length} following users');
 
+      if (followingList.isEmpty) {
+        LoggingService.info('FriendChatController: No following users found');
+        return;
+      }
+
       final sessionList = <ChatSession>[];
 
       for (final following in followingList) {
         try {
-          LoggingService.info('Following: actorId=${following.actorId}, username=${following.username}, displayName="${following.displayName}", displayName.length=${following.displayName.length}, displayName.codeUnits=${following.displayName.codeUnits}');
+          LoggingService.info('FriendChatController: Creating session for actorId=${following.actorId}, username=${following.username}, displayName="${following.displayName}"');
           final createResponse = await _chatApi.createSession(following.actorId);
+          LoggingService.info('FriendChatController: Session created with ULID: ${createResponse.session.ulid}');
+          
           final session = ChatSession(
             id: 'session_${createResponse.session.ulid}',
             topic: following.displayName.isNotEmpty ? following.displayName : following.username,
@@ -230,26 +299,62 @@ class FriendChatController extends GetxController {
           );
           sessionList.add(session);
           _sessionMessages['session_${createResponse.session.ulid}'] = [];
-        } catch (e) {
-          LoggingService.warning('Failed to create session for ${following.actorId}: $e');
+        } catch (e, stackTrace) {
+          LoggingService.error('FriendChatController: Failed to create session for ${following.actorId}: $e');
+          LoggingService.debug('Stack trace: $stackTrace');
         }
       }
 
+      LoggingService.info('FriendChatController: Created ${sessionList.length} sessions');
       sessions.assignAll(sessionList);
 
       if (sessionList.isNotEmpty && currentSession.value == null) {
         selectSession(sessionList.first);
+        LoggingService.info('FriendChatController: Auto-selected first session: ${sessionList.first.topic}');
       }
-    } catch (e) {
-      LoggingService.error('Failed to load sessions from following: $e');
-      error.value = 'Failed to load chat sessions';
+    } catch (e, stackTrace) {
+      LoggingService.error('FriendChatController: Failed to load sessions from following: $e');
+      LoggingService.debug('Stack trace: $stackTrace');
+      error.value = 'Failed to load chat sessions: $e';
     } finally {
       isLoading.value = false;
+      LoggingService.info('FriendChatController: Finished loading sessions, total: ${sessions.length}');
     }
   }
 
   Future<void> refreshSessions() async {
-    await _loadSessionsFromFriends();
+    await _loadFriends();
+  }
+
+  Future<void> selectFriend(FriendItem friend) async {
+    LoggingService.info('FriendChatController: Selecting friend ${friend.name} (${friend.actorId})');
+    currentFriend.value = friend;
+    
+    try {
+      final response = await _chatApi.createSession(friend.actorId);
+      final sessionUlid = response.session.ulid;
+      
+      LoggingService.info('FriendChatController: Session created/retrieved: $sessionUlid');
+      
+      final session = ChatSession(
+        id: 'session_$sessionUlid',
+        topic: friend.name,
+        participantIds: [currentUserId, friend.actorId],
+        type: SessionType.SESSION_TYPE_DIRECT,
+      );
+      
+      final existingIndex = sessions.indexWhere((s) => s.id == session.id);
+      if (existingIndex == -1) {
+        sessions.insert(0, session);
+        _sessionMessages[session.id] = [];
+      }
+      
+      selectSession(session);
+    } catch (e, stackTrace) {
+      LoggingService.error('FriendChatController: Failed to create session: $e');
+      LoggingService.debug('Stack trace: $stackTrace');
+      error.value = 'Failed to start chat: $e';
+    }
   }
 
   void selectSession(ChatSession session) {
