@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 import 'package:peers_touch_desktop/features/discovery/view/components/discovery_content_item.dart';
 import 'package:peers_touch_desktop/features/discovery/view/composer_page.dart';
@@ -130,9 +131,11 @@ class DiscoveryPage extends GetView<DiscoveryController> {
   Widget _buildFriendItem(FriendItem friend) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 0),
-      leading: CircleAvatar(
-        radius: 12,
-        backgroundImage: NetworkImage(friend.avatarUrl),
+      leading: Avatar(
+        actorId: friend.actorId ?? friend.id,
+        avatarUrl: friend.avatarUrl,
+        fallbackName: friend.name,
+        size: 24,
       ),
       title: Text(
         friend.name,

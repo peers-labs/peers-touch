@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 
 class RadarView extends StatelessWidget {
@@ -162,17 +163,11 @@ class RadarView extends StatelessWidget {
           final friend = displayList[index];
           return ListTile(
             contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            leading: CircleAvatar(
-              radius: 28,
-              backgroundColor: Colors.blue.shade100,
-              child: Text(
-                friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue.shade700,
-                ),
-              ),
+            leading: Avatar(
+              actorId: friend.actorId ?? friend.id,
+              avatarUrl: friend.avatarUrl,
+              fallbackName: friend.name,
+              size: 56,
             ),
             title: Text(
               friend.name,

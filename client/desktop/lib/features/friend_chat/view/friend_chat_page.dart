@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_controller.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_input_bar.dart';
@@ -56,21 +57,72 @@ class FriendChatPage extends GetView<FriendChatController> {
           ),
           Expanded(
             child: Obx(() {
-              final sessionList = controller.sessions.toList();
-              final currentId = controller.currentSession.value?.id;
+              if (controller.isLoading.value) {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+
+              final friendList = controller.friends.toList();
+              
+              if (friendList.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.people_outline,
+                        size: 64,
+                        color: Colors.grey.shade400,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No friends yet',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Follow friends to start chatting',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: controller.refreshSessions,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Refresh'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              final currentFriendId = controller.currentFriend.value?.actorId;
               return ListView.separated(
-                itemCount: sessionList.length,
+                itemCount: friendList.length,
                 separatorBuilder: (_, index) => Divider(
                   height: 1,
                   color: UIKit.dividerColor(context),
                 ),
                 itemBuilder: (context, index) {
-                  final session = sessionList[index];
-                  return SessionListItem(
-                    session: session,
-                    isSelected: session.id == currentId,
-                    onTap: () => controller.selectSession(session),
-                    onDelete: () => controller.deleteSession(session.id),
+                  final friend = friendList[index];
+                  final isSelected = friend.actorId == currentFriendId;
+                  return ListTile(
+                    leading: Avatar(
+                      actorId: friend.actorId,
+                      avatarUrl: friend.avatarUrl,
+                      fallbackName: friend.name,
+                      size: 40,
+                    ),
+                    title: Text(friend.name),
+                    subtitle: Text('@${friend.username}'),
+                    selected: isSelected,
+                    onTap: () => controller.selectFriend(friend),
                   );
                 },
               );
