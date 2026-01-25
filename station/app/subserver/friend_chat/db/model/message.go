@@ -11,8 +11,8 @@ type FriendChatMessage struct {
 	ID          uint64     `gorm:"primary_key;autoIncrement:false"`
 	ULID        string     `gorm:"uniqueIndex;size:26;not null"`
 	SessionULID string     `gorm:"size:26;not null;index:idx_fcm_session"`
-	SenderDID   string     `gorm:"size:255;not null;index:idx_fcm_sender"`
-	ReceiverDID string     `gorm:"size:255;not null;index:idx_fcm_receiver"`
+	SenderDID   string     `gorm:"column:sender_did;size:255;not null;index:idx_fcm_sender"`
+	ReceiverDID string     `gorm:"column:receiver_did;size:255;not null;index:idx_fcm_receiver"`
 	Type        int32      `gorm:"default:1;not null"`
 	Content     string     `gorm:"type:text"`
 	ReplyToULID string     `gorm:"size:26"`
