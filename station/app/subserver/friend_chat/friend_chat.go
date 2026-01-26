@@ -37,7 +37,7 @@ func (s *friendChatSubServer) Init(ctx context.Context, opts ...option.Option) e
 	s.onlinePeers = make(map[string]onlinePeer)
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	s.jwtWrapper = httpadapter.RequireJWT(provider)
+	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 	s.sessionService = service.NewSessionService(s.dbName)
 	s.messageService = service.NewMessageService(s.dbName, s.sessionService)

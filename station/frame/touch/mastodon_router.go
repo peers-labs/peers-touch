@@ -30,18 +30,18 @@ func (mr *MastodonRouters) Handlers() []server.Handler {
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	_ = provider
 	return []server.Handler{
-		server.NewHandler(MastodonURLApps, MastodonApps, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLVerifyCredentials, MastodonVerifyCredentials, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLStatuses, MastodonCreateStatus, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLStatus, MastodonGetStatus, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLFavourite, MastodonFavourite, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLUnfavourite, MastodonUnfavourite, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLReblog, MastodonReblog, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLUnreblog, MastodonUnreblog, server.WithMethod(server.POST), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLTimelinesHome, MastodonTimelinesHome, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLTimelinesPublic, MastodonTimelinesPublic, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLInstance, MastodonInstance, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
-		server.NewHandler(MastodonURLDirectory, MastodonDirectory, server.WithMethod(server.GET), server.WithWrappers(commonWrapper)),
+		server.NewHTTPHandler(MastodonURLApps.Name(), MastodonURLApps.SubPath(), server.POST, server.HertzHandlerFunc(MastodonApps), commonWrapper),
+		server.NewHTTPHandler(MastodonURLVerifyCredentials.Name(), MastodonURLVerifyCredentials.SubPath(), server.GET, server.HertzHandlerFunc(MastodonVerifyCredentials), commonWrapper),
+		server.NewHTTPHandler(MastodonURLStatuses.Name(), MastodonURLStatuses.SubPath(), server.POST, server.HertzHandlerFunc(MastodonCreateStatus), commonWrapper),
+		server.NewHTTPHandler(MastodonURLStatus.Name(), MastodonURLStatus.SubPath(), server.GET, server.HertzHandlerFunc(MastodonGetStatus), commonWrapper),
+		server.NewHTTPHandler(MastodonURLFavourite.Name(), MastodonURLFavourite.SubPath(), server.POST, server.HertzHandlerFunc(MastodonFavourite), commonWrapper),
+		server.NewHTTPHandler(MastodonURLUnfavourite.Name(), MastodonURLUnfavourite.SubPath(), server.POST, server.HertzHandlerFunc(MastodonUnfavourite), commonWrapper),
+		server.NewHTTPHandler(MastodonURLReblog.Name(), MastodonURLReblog.SubPath(), server.POST, server.HertzHandlerFunc(MastodonReblog), commonWrapper),
+		server.NewHTTPHandler(MastodonURLUnreblog.Name(), MastodonURLUnreblog.SubPath(), server.POST, server.HertzHandlerFunc(MastodonUnreblog), commonWrapper),
+		server.NewHTTPHandler(MastodonURLTimelinesHome.Name(), MastodonURLTimelinesHome.SubPath(), server.GET, server.HertzHandlerFunc(MastodonTimelinesHome), commonWrapper),
+		server.NewHTTPHandler(MastodonURLTimelinesPublic.Name(), MastodonURLTimelinesPublic.SubPath(), server.GET, server.HertzHandlerFunc(MastodonTimelinesPublic), commonWrapper),
+		server.NewHTTPHandler(MastodonURLInstance.Name(), MastodonURLInstance.SubPath(), server.GET, server.HertzHandlerFunc(MastodonInstance), commonWrapper),
+		server.NewHTTPHandler(MastodonURLDirectory.Name(), MastodonURLDirectory.SubPath(), server.GET, server.HertzHandlerFunc(MastodonDirectory), commonWrapper),
 	}
 }
 

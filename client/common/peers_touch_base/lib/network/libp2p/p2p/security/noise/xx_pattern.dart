@@ -103,8 +103,8 @@ class NoiseXXPattern {
     return NoiseXXPattern._(isInitiator, staticKeys, ephemeralKeys, state);
   }
 
-  /// Process an incoming handshake message
-  Future<void> readMessage(Uint8List message) async {
+  /// Process an incoming handshake message and return decrypted payload (if any)
+  Future<Uint8List> readMessage(Uint8List message) async {
     if (_state.state == XXHandshakeState.error) {
       throw StateError('Cannot read message in error state');
     }
@@ -112,12 +112,15 @@ class NoiseXXPattern {
     try {
       _validateReadState();
       
-      _state = await switch (_state.state) {
-        XXHandshakeState.initial => _processInitialMessage(message),
-        XXHandshakeState.sentE => _processSecondMessage(message),
-        XXHandshakeState.sentEES => _processFinalMessage(message),
+      final (newState, payload) = await switch (_state.state) {
+        XXHandshakeState.initial => _processInitialMessageWithPayload(message),
+        XXHandshakeState.sentE => _processSecondMessageWithPayload(message),
+        XXHandshakeState.sentEES => _processFinalMessageWithPayload(message),
         _ => throw StateError('Cannot read message in state: ${_state.state}'),
       };
+      
+      _state = newState;
+      return payload;
     } catch (e) {
       // Only set error state for non-validation errors
       if (e is! StateError) {
@@ -127,7 +130,10 @@ class NoiseXXPattern {
     }
   }
 
-  /// Generate the next handshake message
+  /// Generate the next handshake message with optional payload
+  /// - Message 1 (initiator): payload is ignored (no encryption key yet)
+  /// - Message 2 (responder): payload is encrypted and appended
+  /// - Message 3 (initiator): payload is encrypted and appended
   Future<Uint8List> writeMessage(List<int> payload) async {
     if (_state.state == XXHandshakeState.error) {
       throw StateError('Cannot write message in error state');
@@ -138,7 +144,7 @@ class NoiseXXPattern {
       
       final result = await switch (_state.state) {
         XXHandshakeState.initial => _writeInitialMessage(),
-        XXHandshakeState.sentE => _writeSecondMessage(),
+        XXHandshakeState.sentE => _writeSecondMessageWithPayload(payload),
         XXHandshakeState.sentEES => _writeFinalMessage(payload),
         _ => throw StateError('Cannot write message in state: ${_state.state}'),
       };
@@ -192,8 +198,9 @@ class NoiseXXPattern {
     }
   }
 
-  /// Process the initial message (e)
-  Future<HandshakeState> _processInitialMessage(Uint8List message) async {
+  /// Process the initial message (e) - returns (state, payload)
+  /// Note: msg1 has no payload, so payload is always empty
+  Future<(HandshakeState, Uint8List)> _processInitialMessageWithPayload(Uint8List message) async {
     _validateMessageLength(message, KEY_LEN, NoiseMessageType.ephemeralKey);
     
     var state = _state;
@@ -209,13 +216,14 @@ class NoiseXXPattern {
       remoteEphemeralKey: remoteEphemeral,
     );
     
-    return state.copyWith(
-      state: XXHandshakeState.sentE,
+    return (
+      state.copyWith(state: XXHandshakeState.sentE),
+      Uint8List(0), // No payload in msg1
     );
   }
 
-  /// Process the second message (e, ee, s, es)
-  Future<HandshakeState> _processSecondMessage(Uint8List message) async {
+  /// Process the second message (e, ee, s, es + payload) - returns (state, payload)
+  Future<(HandshakeState, Uint8List)> _processSecondMessageWithPayload(Uint8List message) async {
     // Check state first
     if (!_isInitiator && _state.state == XXHandshakeState.sentE) {
       throw StateError('Responder cannot receive second message');
@@ -276,13 +284,35 @@ class NoiseXXPattern {
       state = state.copyWith(chainKey: newChainKey);
     }
     
-    return state.copyWith(
-      state: XXHandshakeState.sentEES,
+    // Decrypt payload if present (msg2 contains responder's handshake payload)
+    Uint8List decryptedPayload = Uint8List(0);
+    final payloadStart = KEY_LEN + KEY_LEN + MAC_LEN;
+    if (message.length > payloadStart) {
+      final encryptedPayload = message.sublist(payloadStart);
+      if (encryptedPayload.length > MAC_LEN) {
+        // Need to derive transport keys first for payload decryption
+        // After es, we have the transport encryption key
+        final (sendKey, recvKey) = await _deriveKeys(state.chainKey);
+        state = state.copyWith(sendKey: sendKey, recvKey: recvKey);
+        
+        decryptedPayload = await _decryptWithAd(
+          encryptedPayload,
+          state.handshakeHash,
+          recvKey,
+        );
+        newHash = await _mixHash(state.handshakeHash, encryptedPayload);
+        state = state.copyWith(handshakeHash: newHash);
+      }
+    }
+    
+    return (
+      state.copyWith(state: XXHandshakeState.sentEES),
+      decryptedPayload,
     );
   }
 
-  /// Process the final message (s, se)
-  Future<HandshakeState> _processFinalMessage(Uint8List message) async {
+  /// Process the final message (s, se + payload) - returns (state, payload)
+  Future<(HandshakeState, Uint8List)> _processFinalMessageWithPayload(Uint8List message) async {
     const minLen = KEY_LEN + MAC_LEN;
     _validateMessageLength(message, minLen, NoiseMessageType.finalMessage);
     
@@ -320,29 +350,28 @@ class NoiseXXPattern {
     );
     state = state.copyWith(chainKey: newChainKey);
     
-    // Process payload if present
-    if (message.length > minLen) {
-      final encryptedPayload = message.sublist(minLen);
-      if (state.recvKey == null) {
-        throw StateError('Receive key is null during payload decryption - this should never happen');
-      }
-      final recvKeyFinal = state.recvKey as SecretKey;
-      final payload = await _decryptWithAd(
-        encryptedPayload,
-        state.handshakeHash,
-        recvKeyFinal,
-      );
-      newHash = await _mixHash(state.handshakeHash, encryptedPayload);
-      state = state.copyWith(handshakeHash: newHash);
-    }
-    
     // Derive final keys
     final (sendKey, recvKey) = await _deriveKeys(state.chainKey);
+    state = state.copyWith(sendKey: sendKey, recvKey: recvKey);
     
-    return state.copyWith(
-      sendKey: sendKey,
-      recvKey: recvKey,
-      state: XXHandshakeState.complete,
+    // Process payload if present (msg3 contains initiator's handshake payload)
+    Uint8List decryptedPayload = Uint8List(0);
+    if (message.length > minLen) {
+      final encryptedPayload = message.sublist(minLen);
+      if (encryptedPayload.length > MAC_LEN) {
+        decryptedPayload = await _decryptWithAd(
+          encryptedPayload,
+          state.handshakeHash,
+          recvKey,
+        );
+        newHash = await _mixHash(state.handshakeHash, encryptedPayload);
+        state = state.copyWith(handshakeHash: newHash);
+      }
+    }
+    
+    return (
+      state.copyWith(state: XXHandshakeState.complete),
+      decryptedPayload,
     );
   }
 
@@ -364,8 +393,8 @@ class NoiseXXPattern {
     );
   }
 
-  /// Write the second message (e, ee, s, es)
-  Future<(Uint8List message, HandshakeState state)> _writeSecondMessage() async {
+  /// Write the second message (e, ee, s, es + optional payload)
+  Future<(Uint8List message, HandshakeState state)> _writeSecondMessageWithPayload(List<int> payload) async {
     var state = _state;
     var newChainKey = state.chainKey;
     final messageBytes = <int>[];
@@ -418,6 +447,22 @@ class NoiseXXPattern {
         state.chainKey,
       );
       state = state.copyWith(chainKey: newChainKey);
+    }
+    
+    // Encrypt and append payload if present
+    if (payload.isNotEmpty) {
+      // Derive transport keys for payload encryption
+      final (sendKey, recvKey) = await _deriveKeys(state.chainKey);
+      state = state.copyWith(sendKey: sendKey, recvKey: recvKey);
+      
+      final encryptedPayload = await _encryptWithAd(
+        payload,
+        state.handshakeHash,
+        sendKey,
+      );
+      messageBytes.addAll(encryptedPayload);
+      newHash = await _mixHash(state.handshakeHash, encryptedPayload);
+      state = state.copyWith(handshakeHash: newHash);
     }
     
     return (

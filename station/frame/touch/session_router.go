@@ -17,14 +17,15 @@ var _ server.Routers = (*SessionRouters)(nil)
 
 func (sr *SessionRouters) Handlers() []server.Handler {
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	jwtWrapper := httpadapter.RequireJWT(provider)
+	jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 	return []server.Handler{
-		server.NewHandler(
-			RouterURLSessionVerify,
-			handler.VerifySession,
-			server.WithMethod("GET"),
-			server.WithWrappers(jwtWrapper),
+		server.NewHTTPHandler(
+			RouterURLSessionVerify.Name(),
+			RouterURLSessionVerify.SubPath(),
+			server.GET,
+			server.HertzHandlerFunc(handler.VerifySession),
+			jwtWrapper,
 		),
 	}
 }

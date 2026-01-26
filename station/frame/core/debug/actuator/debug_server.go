@@ -88,9 +88,8 @@ func (d *debugSubServer) Status() server.Status {
 // Handlers returns debug endpoints.
 func (d *debugSubServer) Handlers() []server.Handler {
 	return []server.Handler{
-		server.NewHandler(
-			debugRouterURL{name: "debugListRegisteredPeers", url: "/debug/registered-peers"},
-			func(c context.Context, ctx *app.RequestContext) {
+		server.NewHTTPHandler("debugListRegisteredPeers", "/debug/registered-peers", server.GET,
+			server.HertzHandlerFunc(func(c context.Context, ctx *app.RequestContext) {
 				peers, err := d.opts.registry.Query(c)
 				if err != nil {
 					ctx.String(http.StatusInternalServerError, fmt.Sprintf("Error getting registered peers: %v", err))
@@ -101,12 +100,10 @@ func (d *debugSubServer) Handlers() []server.Handler {
 					"count": len(peers),
 					"peers": peers,
 				})
-			},
-			server.WithMethod(server.GET),
+			}),
 		),
-		server.NewHandler(
-			debugRouterURL{name: "debugListAllHandlers", url: "/debug/list-all-handlers"},
-			func(c context.Context, ctx *app.RequestContext) {
+		server.NewHTTPHandler("debugListAllHandlers", "/debug/list-all-handlers", server.GET,
+			server.HertzHandlerFunc(func(c context.Context, ctx *app.RequestContext) {
 				handlers := server.GetOptions().Handlers
 				type handlerStruct struct {
 					Name   string
@@ -119,7 +116,6 @@ func (d *debugSubServer) Handlers() []server.Handler {
 						Name:   h.Name(),
 						Path:   h.Path(),
 						Method: string(h.Method()),
-						// todo params
 					})
 				}
 
@@ -127,11 +123,10 @@ func (d *debugSubServer) Handlers() []server.Handler {
 					"count":    len(handlers),
 					"handlers": handlersList,
 				})
-			}, server.WithMethod(server.GET),
+			}),
 		),
-		server.NewHandler(
-			debugRouterURL{name: "debugGetPeerByID", url: "/debug/get-peer-by-id"},
-			func(c context.Context, ctx *app.RequestContext) {
+		server.NewHTTPHandler("debugGetPeerByID", "/debug/get-peer-by-id", server.GET,
+			server.HertzHandlerFunc(func(c context.Context, ctx *app.RequestContext) {
 				id := ctx.Query("id")
 				if id == "" {
 					ctx.String(http.StatusBadRequest, "id is required")
@@ -152,8 +147,7 @@ func (d *debugSubServer) Handlers() []server.Handler {
 				ctx.JSON(http.StatusOK, map[string]interface{}{
 					"data": peers[0],
 				})
-			},
-			server.WithMethod(server.GET),
+			}),
 		),
 	}
 }
