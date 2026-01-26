@@ -21,7 +21,7 @@ type SocialHandlerInfo struct {
 func GetSocialHandlers() []SocialHandlerInfo {
 	commonWrapper := CommonAccessControlWrapper(model.RouteNameSocial)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	jwtWrapper := httpadapter.RequireJWT(provider)
+	jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 	return []SocialHandlerInfo{
 		{
@@ -79,11 +79,11 @@ func GetSocialHandlers() []SocialHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
 		},
 		{
-		RouterURL: RouterURLSocialUserPosts,
-		Handler:   handler.GetUserPosts,
-		Method:    server.GET,
-		Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-	},
+			RouterURL: RouterURLSocialUserPosts,
+			Handler:   handler.GetUserPosts,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
+		},
 		{
 			RouterURL: RouterURLSocialPostComments,
 			Handler:   handler.GetPostComments,

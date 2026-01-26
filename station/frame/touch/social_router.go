@@ -5,21 +5,21 @@ import (
 )
 
 const (
-	RouterURLSocialPosts         RouterPath = "/api/v1/social/posts"
-	RouterURLSocialPost          RouterPath = "/api/v1/social/posts/:id"
-	RouterURLSocialPostLike      RouterPath = "/api/v1/social/posts/:id/like"
-	RouterURLSocialPostUnlike    RouterPath = "/api/v1/social/posts/:id/unlike"
-	RouterURLSocialPostRepost    RouterPath = "/api/v1/social/posts/:id/repost"
-	RouterURLSocialPostLikers    RouterPath = "/api/v1/social/posts/:id/likers"
-	RouterURLSocialPostComments  RouterPath = "/api/v1/social/posts/:id/comments"
-	RouterURLSocialComment       RouterPath = "/api/v1/social/comments/:commentId"
-	RouterURLSocialTimeline      RouterPath = "/api/v1/social/timeline"
-	RouterURLSocialUserPosts     RouterPath = "/api/v1/social/users/:userId/posts"
-	RouterURLSocialFollow        RouterPath = "/api/v1/social/relationships/follow"
-	RouterURLSocialUnfollow      RouterPath = "/api/v1/social/relationships/unfollow"
-	RouterURLSocialRelationship  RouterPath = "/api/v1/social/relationships"
-	RouterURLSocialFollowers     RouterPath = "/api/v1/social/relationships/followers"
-	RouterURLSocialFollowing     RouterPath = "/api/v1/social/relationships/following"
+	RouterURLSocialPosts        RouterPath = "/api/v1/social/posts"
+	RouterURLSocialPost         RouterPath = "/api/v1/social/posts/:id"
+	RouterURLSocialPostLike     RouterPath = "/api/v1/social/posts/:id/like"
+	RouterURLSocialPostUnlike   RouterPath = "/api/v1/social/posts/:id/unlike"
+	RouterURLSocialPostRepost   RouterPath = "/api/v1/social/posts/:id/repost"
+	RouterURLSocialPostLikers   RouterPath = "/api/v1/social/posts/:id/likers"
+	RouterURLSocialPostComments RouterPath = "/api/v1/social/posts/:id/comments"
+	RouterURLSocialComment      RouterPath = "/api/v1/social/comments/:commentId"
+	RouterURLSocialTimeline     RouterPath = "/api/v1/social/timeline"
+	RouterURLSocialUserPosts    RouterPath = "/api/v1/social/users/:userId/posts"
+	RouterURLSocialFollow       RouterPath = "/api/v1/social/relationships/follow"
+	RouterURLSocialUnfollow     RouterPath = "/api/v1/social/relationships/unfollow"
+	RouterURLSocialRelationship RouterPath = "/api/v1/social/relationships"
+	RouterURLSocialFollowers    RouterPath = "/api/v1/social/relationships/followers"
+	RouterURLSocialFollowing    RouterPath = "/api/v1/social/relationships/following"
 )
 
 type SocialRouters struct{}
@@ -31,11 +31,12 @@ func (sr *SocialRouters) Handlers() []server.Handler {
 	handlers := make([]server.Handler, len(handlerInfos))
 
 	for i, info := range handlerInfos {
-		handlers[i] = server.NewHandler(
-			info.RouterURL,
-			info.Handler,
-			server.WithMethod(info.Method),
-			server.WithWrappers(info.Wrappers...),
+		handlers[i] = server.NewHTTPHandler(
+			info.RouterURL.Name(),
+			info.RouterURL.SubPath(),
+			info.Method,
+			server.HertzHandlerFunc(info.Handler),
+			info.Wrappers...,
 		)
 	}
 

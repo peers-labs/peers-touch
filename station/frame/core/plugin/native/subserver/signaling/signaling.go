@@ -73,23 +73,23 @@ func (s *SubServer) Status() server.Status { return s.status }
 
 func (s *SubServer) Handlers() []server.Handler {
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	jwtWrapper := httpadapter.RequireJWT(provider)
+	jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 	return []server.Handler{
-		server.NewHandler(signalingURL{name: "ice-peer-register", path: "/api/v1/ice/peer/register"}, http.HandlerFunc(s.handlePeerRegister), server.WithMethod(server.POST), server.WithWrappers(jwtWrapper)),
-		server.NewHandler(signalingURL{name: "ice-peer-unregister", path: "/api/v1/ice/peer/unregister"}, http.HandlerFunc(s.handlePeerUnregister), server.WithMethod(server.POST), server.WithWrappers(jwtWrapper)),
-		server.NewHandler(signalingURL{name: "ice-peer-get", path: "/api/v1/ice/peer/get"}, http.HandlerFunc(s.handlePeerGet), server.WithMethod(server.GET)),
-		server.NewHandler(signalingURL{name: "ice-peers", path: "/api/v1/ice/peers"}, http.HandlerFunc(s.handlePeers), server.WithMethod(server.GET)),
-		server.NewHandler(signalingURL{name: "ice-stats", path: "/api/v1/ice/stats"}, http.HandlerFunc(s.handleStats), server.WithMethod(server.GET)),
-		server.NewHandler(signalingURL{name: "ice-sessions", path: "/api/v1/ice/sessions"}, http.HandlerFunc(s.handleSessions), server.WithMethod(server.GET)),
-		server.NewHandler(signalingURL{name: "ice-session-new", path: "/api/v1/ice/session/new"}, http.HandlerFunc(s.handleSessionNew), server.WithMethod(server.POST), server.WithWrappers(jwtWrapper)),
-		server.NewHandler(signalingURL{name: "ice-session-get", path: "/api/v1/ice/session/get"}, http.HandlerFunc(s.handleSessionGet), server.WithMethod(server.GET)),
-		server.NewHandler(signalingURL{name: "ice-session-offer-post", path: "/api/v1/ice/session/offer"}, http.HandlerFunc(s.handleOfferPost), server.WithMethod(server.POST), server.WithWrappers(jwtWrapper)),
-		server.NewHandler(signalingURL{name: "ice-session-offer-get", path: "/api/v1/ice/session/offer"}, http.HandlerFunc(s.handleOfferGet), server.WithMethod(server.GET)),
-		server.NewHandler(signalingURL{name: "ice-session-answer-post", path: "/api/v1/ice/session/answer"}, http.HandlerFunc(s.handleAnswerPost), server.WithMethod(server.POST), server.WithWrappers(jwtWrapper)),
-		server.NewHandler(signalingURL{name: "ice-session-answer-get", path: "/api/v1/ice/session/answer"}, http.HandlerFunc(s.handleAnswerGet), server.WithMethod(server.GET)),
-		server.NewHandler(signalingURL{name: "ice-session-candidate-post", path: "/api/v1/ice/session/candidate"}, http.HandlerFunc(s.handleCandidatePost), server.WithMethod(server.POST), server.WithWrappers(jwtWrapper)),
-		server.NewHandler(signalingURL{name: "ice-session-candidates-get", path: "/api/v1/ice/session/candidates"}, http.HandlerFunc(s.handleCandidatesGet), server.WithMethod(server.GET)),
+		server.NewHTTPHandler("ice-peer-register", "/api/v1/ice/peer/register", server.POST, server.HTTPHandlerFunc(s.handlePeerRegister), jwtWrapper),
+		server.NewHTTPHandler("ice-peer-unregister", "/api/v1/ice/peer/unregister", server.POST, server.HTTPHandlerFunc(s.handlePeerUnregister), jwtWrapper),
+		server.NewHTTPHandler("ice-peer-get", "/api/v1/ice/peer/get", server.GET, server.HTTPHandlerFunc(s.handlePeerGet)),
+		server.NewHTTPHandler("ice-peers", "/api/v1/ice/peers", server.GET, server.HTTPHandlerFunc(s.handlePeers)),
+		server.NewHTTPHandler("ice-stats", "/api/v1/ice/stats", server.GET, server.HTTPHandlerFunc(s.handleStats)),
+		server.NewHTTPHandler("ice-sessions", "/api/v1/ice/sessions", server.GET, server.HTTPHandlerFunc(s.handleSessions)),
+		server.NewHTTPHandler("ice-session-new", "/api/v1/ice/session/new", server.POST, server.HTTPHandlerFunc(s.handleSessionNew), jwtWrapper),
+		server.NewHTTPHandler("ice-session-get", "/api/v1/ice/session/get", server.GET, server.HTTPHandlerFunc(s.handleSessionGet)),
+		server.NewHTTPHandler("ice-session-offer-post", "/api/v1/ice/session/offer", server.POST, server.HTTPHandlerFunc(s.handleOfferPost), jwtWrapper),
+		server.NewHTTPHandler("ice-session-offer-get", "/api/v1/ice/session/offer", server.GET, server.HTTPHandlerFunc(s.handleOfferGet)),
+		server.NewHTTPHandler("ice-session-answer-post", "/api/v1/ice/session/answer", server.POST, server.HTTPHandlerFunc(s.handleAnswerPost), jwtWrapper),
+		server.NewHTTPHandler("ice-session-answer-get", "/api/v1/ice/session/answer", server.GET, server.HTTPHandlerFunc(s.handleAnswerGet)),
+		server.NewHTTPHandler("ice-session-candidate-post", "/api/v1/ice/session/candidate", server.POST, server.HTTPHandlerFunc(s.handleCandidatePost), jwtWrapper),
+		server.NewHTTPHandler("ice-session-candidates-get", "/api/v1/ice/session/candidates", server.GET, server.HTTPHandlerFunc(s.handleCandidatesGet)),
 	}
 }
 

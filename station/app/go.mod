@@ -12,8 +12,10 @@ replace (
 
 require (
 	github.com/cloudwego/hertz v0.9.5
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/libp2p/go-libp2p v0.45.0
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/peers-labs/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/native v0.0.0-20251202181316-4ea307e60e21
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres v0.0.0-00010101000000-000000000000
@@ -48,7 +50,6 @@ require (
 	github.com/go-log/log v0.2.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
@@ -73,7 +74,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
 	github.com/koron/go-ssdp v0.0.6 // indirect
-	github.com/lib/pq v1.10.9 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-cidranger v1.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.3.0 // indirect
@@ -107,7 +107,6 @@ require (
 	github.com/multiformats/go-varint v0.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect
-	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
 	github.com/pion/datachannel v1.5.10 // indirect

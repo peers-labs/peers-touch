@@ -42,8 +42,8 @@ func (s *oauthSubServer) Address() server.SubserverAddress {
 
 func (s *oauthSubServer) Handlers() []server.Handler {
 	return []server.Handler{
-		server.NewHandler(oauthURL{name: "oauth-authorize", path: "/oauth/authorize"}, s.handleAuthorize, server.WithMethod(server.GET)),
-		server.NewHandler(oauthURL{name: "oauth-token", path: "/oauth/token"}, s.handleToken, server.WithMethod(server.POST)),
+		server.NewHTTPHandler("oauth-authorize", "/oauth/authorize", server.GET, server.HertzHandlerFunc(s.handleAuthorize)),
+		server.NewHTTPHandler("oauth-token", "/oauth/token", server.POST, server.HertzHandlerFunc(s.handleToken)),
 	}
 }
 

@@ -17,8 +17,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -43,7 +43,7 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 	commonWrapper := CommonAccessControlWrapper(model.RouteNameActivityPub)
 	actorWrapper := CommonAccessControlWrapper(model.RouteNameActor)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	jwtWrapper := httpadapter.RequireJWT(provider)
+	jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 	return []ActivityPubHandlerInfo{
 		// Actor Management Endpoints (Client API)
