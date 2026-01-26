@@ -42,6 +42,10 @@ type Options struct {
 	ReadyChan chan interface{}
 
 	Transport transport.Transport
+
+	// GlobalWrappers are wrappers that will be applied to all handlers automatically
+	// These wrappers are applied before handler-specific wrappers
+	GlobalWrappers []Wrapper
 }
 
 // WithAddress sets the server address.
@@ -62,6 +66,13 @@ func WithTimeout(timeout int) option.Option {
 func WithMetadata(md map[string]string) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Metadata = md
+	})
+}
+
+// WithGlobalWrappers sets global wrappers that will be applied to all handlers.
+func WithGlobalWrappers(wrappers ...Wrapper) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		opts.GlobalWrappers = append(opts.GlobalWrappers, wrappers...)
 	})
 }
 
@@ -90,13 +101,14 @@ func WithRouters(routers ...Routers) option.Option {
 					// Otherwise, prefix with router name
 					prefixedPath = "/" + routerName + handler.Path()
 				}
-				prefixedHandler := &httpHandler{
-					name:     handler.Name(),
-					method:   handler.Method(),
-					path:     prefixedPath,
-					handler:  handler.Handler(),
-					wrappers: handler.Wrappers(),
-				}
+				prefixedHandler := NewHandler(
+					handler.Name(),
+					prefixedPath,
+					handler.Method(),
+					handler.Type(),
+					handler.Handler(),
+					handler.Wrappers()...,
+				)
 				opts.Handlers = append(opts.Handlers, prefixedHandler)
 			}
 		}
@@ -125,33 +137,6 @@ func WithTransport(t transport.Transport) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Transport = t
 	})
-}
-
-// endregion
-
-// region handler options
-
-// HandlerOption configures HandlerOptions.
-type HandlerOption func(*HandlerOptions)
-
-// WithMethod sets handler method.
-func WithMethod(method Method) HandlerOption {
-	return func(opts *HandlerOptions) {
-		opts.Method = method
-	}
-}
-
-// WithWrappers sets middleware wrappers.
-func WithWrappers(wrappers ...Wrapper) HandlerOption {
-	return func(opts *HandlerOptions) {
-		opts.Wrappers = wrappers
-	}
-}
-
-// HandlerOptions holds per-handler configuration.
-type HandlerOptions struct {
-	Method   Method
-	Wrappers []Wrapper
 }
 
 // endregion

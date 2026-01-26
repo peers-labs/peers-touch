@@ -1,13 +1,10 @@
 package hertz
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"sync"
 	"time"
 
@@ -73,22 +70,34 @@ func (s *Server) Init(opts ...option.Option) error {
 
 // Handle registers a handler on the Hertz engine.
 func (s *Server) Handle(h server.Handler) error {
-	if hdl, ok := h.Handler().(func(context.Context, *app.RequestContext)); ok {
-		switch h.Method() {
-		case server.POST:
-			s.hertz.POST(h.Path(), hdl)
-		case server.GET:
-			s.hertz.GET(h.Path(), hdl)
-		case server.PUT:
-			s.hertz.PUT(h.Path(), hdl)
-		case server.DELETE:
-			s.hertz.DELETE(h.Path(), hdl)
-		case server.PATCH:
-			s.hertz.PATCH(h.Path(), hdl)
-		default:
-			s.hertz.Any(h.Path(), hdl)
-		}
-		return nil
+	// Convert EndpointHandler to Hertz handler
+	endpointHandler := h.Handler()
+
+	// Apply wrappers
+	for _, wrapper := range h.Wrappers() {
+		endpointHandler = wrapper(endpointHandler)
+	}
+
+	// Create Hertz handler from EndpointHandler
+	hertzHandler := func(c context.Context, ctx *app.RequestContext) {
+		req := &hertzRequest{ctx: ctx}
+		resp := &hertzResponse{ctx: ctx}
+		_ = endpointHandler(c, req, resp)
+	}
+
+	switch h.Method() {
+	case server.POST:
+		s.hertz.POST(h.Path(), hertzHandler)
+	case server.GET:
+		s.hertz.GET(h.Path(), hertzHandler)
+	case server.PUT:
+		s.hertz.PUT(h.Path(), hertzHandler)
+	case server.DELETE:
+		s.hertz.DELETE(h.Path(), hertzHandler)
+	case server.PATCH:
+		s.hertz.PATCH(h.Path(), hertzHandler)
+	default:
+		s.hertz.Any(h.Path(), hertzHandler)
 	}
 
 	return nil
@@ -124,84 +133,11 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	})
 
 	for _, handler := range s.Options().Handlers {
-		switch h := handler.Handler().(type) {
-		case func(context.Context, *app.RequestContext):
-			// Apply wrappers by creating a wrapped Hertz handler
-			hertzHandler := func(c context.Context, ctx *app.RequestContext) {
-				// If no wrappers, call handler directly
-				if len(handler.Wrappers()) == 0 {
-					h(c, ctx)
-					return
-				}
-
-				// Create http.Request from Hertz context
-				rURL, _ := url.Parse(string(ctx.Request.URI().RequestURI()))
-				req := &http.Request{
-					Method: string(ctx.Method()),
-					URL:    rURL,
-					Header: make(http.Header),
-					Body:   io.NopCloser(bytes.NewReader(ctx.Request.Body())),
-				}
-				req = req.WithContext(c)
-
-				ctx.Request.Header.VisitAll(func(key, value []byte) {
-					req.Header.Set(string(key), string(value))
-				})
-
-				// Create final handler that calls original Hertz handler
-				finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					// Call original handler with modified context
-					h(r.Context(), ctx)
-				})
-
-				// Apply wrappers
-				wrappedHandler := applyWrappers(c, finalHandler, handler.Wrappers())
-
-				// Call wrapped handler
-				rw := &responseWriter{ctx: ctx}
-				wrappedHandler.ServeHTTP(rw, req)
-			}
-
-			err = s.Handle(server.NewHandler(hertzRouterURL{name: handler.Name(), url: handler.Path()},
-				hertzHandler, server.WithMethod(handler.Method())))
-			if err != nil {
-				return err
-			}
-		case http.Handler:
-			// Apply wrappers to http.Handler
-			hw := applyWrappers(ctx, h, handler.Wrappers())
-			// Convert http.Handler to Hertz handler
-			hertzHandler := func(c context.Context, ctx *app.RequestContext) {
-				// Parse URL
-				rURL, _ := url.Parse(string(ctx.Request.URI().RequestURI()))
-
-				// Create http.Request from Hertz context
-				req := &http.Request{
-					Method: string(ctx.Method()),
-					URL:    rURL,
-					Header: make(http.Header),
-					Body:   io.NopCloser(bytes.NewReader(ctx.Request.Body())),
-				}
-
-				// Copy headers
-				ctx.Request.Header.VisitAll(func(key, value []byte) {
-					req.Header.Set(string(key), string(value))
-				})
-
-				// Create response writer
-				rw := &responseWriter{ctx: ctx}
-
-				// Call the wrapped handler
-				hw.ServeHTTP(rw, req)
-			}
-
-			err = s.Handle(server.NewHandler(hertzRouterURL{name: handler.Name(), url: handler.Path()},
-				hertzHandler, server.WithMethod(handler.Method())))
-			if err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("unsupported handler type: %T of %s. ", h, handler.Name())
+		err = s.Handle(handler)
+		if err != nil {
+			log.Errorf(ctx, "failed to register handler %s: %v", handler.Name(), err)
+			cancel()
+			return err
 		}
 	}
 
@@ -281,14 +217,6 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 	w.ctx.SetStatusCode(statusCode)
 }
 
-func applyWrappers(ctx context.Context, h http.Handler, wrappers []server.Wrapper) http.Handler {
-	wrapped := h
-	for i := len(wrappers) - 1; i >= 0; i-- {
-		wrapped = wrappers[i](ctx, wrapped)
-	}
-	return wrapped
-}
-
 func RequestLoggerMiddleware() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		requestID := string(c.Request.Header.Peek("X-Request-ID"))
@@ -312,4 +240,58 @@ func RequestLoggerMiddleware() app.HandlerFunc {
 
 		log.Infof(ctx, "[HTTP] ← %s %s %d %s", method, path, statusCode, latency)
 	}
+}
+
+// hertzRequest adapts Hertz RequestContext to server.Request
+type hertzRequest struct {
+	ctx *app.RequestContext
+}
+
+func (r *hertzRequest) Context() context.Context {
+	return context.Background()
+}
+
+func (r *hertzRequest) Header() map[string]string {
+	h := make(map[string]string)
+	r.ctx.Request.Header.VisitAll(func(key, value []byte) {
+		h[string(key)] = string(value)
+	})
+	return h
+}
+
+func (r *hertzRequest) Method() server.Method {
+	return server.Method(r.ctx.Method())
+}
+
+func (r *hertzRequest) Path() string {
+	return string(r.ctx.Path())
+}
+
+func (r *hertzRequest) Body() []byte {
+	return r.ctx.Request.Body()
+}
+
+// hertzResponse adapts Hertz RequestContext to server.Response
+type hertzResponse struct {
+	ctx *app.RequestContext
+}
+
+func (r *hertzResponse) Header() map[string]string {
+	h := make(map[string]string)
+	r.ctx.Response.Header.VisitAll(func(key, value []byte) {
+		h[string(key)] = string(value)
+	})
+	return h
+}
+
+func (r *hertzResponse) Write(b []byte) (int, error) {
+	return r.ctx.Write(b)
+}
+
+func (r *hertzResponse) WriteHeader(statusCode int) {
+	r.ctx.SetStatusCode(statusCode)
+}
+
+func (r *hertzResponse) Status() int {
+	return r.ctx.Response.StatusCode()
 }

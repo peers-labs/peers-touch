@@ -27,7 +27,7 @@ type Server struct {
 	transport    transport.Transport
 	done         chan struct{}
 	listener     transport.Listener
-	httpHandlers []server.HandlerV2
+	httpHandlers []server.Handler
 	psHandlers   []server.StreamHandler
 }
 
@@ -49,7 +49,7 @@ func (s *Server) SetTransport(t transport.Transport) {
 }
 
 // AddHTTPHandlers adds HTTP handlers to the server
-func (s *Server) AddHTTPHandlers(handlers ...server.HandlerV2) {
+func (s *Server) AddHTTPHandlers(handlers ...server.Handler) {
 	s.httpHandlers = append(s.httpHandlers, handlers...)
 }
 
@@ -97,7 +97,7 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 		}
 
 		s.httpRouter.HandleFunc(h.Path(), func(w http.ResponseWriter, r *http.Request) {
-			if h.Method() != server.ANYV2 && string(h.Method()) != r.Method {
+			if h.Method() != server.ANY && string(h.Method()) != r.Method {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
@@ -217,9 +217,9 @@ func (r *request) Header() map[string]string {
 	return h
 }
 
-// Method returns the HTTP method as server.MethodV2.
-func (r *request) Method() server.MethodV2 {
-	return server.MethodV2(r.r.Method)
+// Method returns the HTTP method as server.Method.
+func (r *request) Method() server.Method {
+	return server.Method(r.r.Method)
 }
 
 // Path returns the request path.

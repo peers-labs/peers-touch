@@ -9,7 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/service"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
-	"github.com/peers-labs/peers-touch/station/frame/core/middleware"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
@@ -19,18 +19,19 @@ func (u friendChatURL) SubPath() string { return u.path }
 func (u friendChatURL) Name() string    { return u.name }
 
 func (s *friendChatSubServer) Handlers() []server.Handler {
-	logIDWrapper := middleware.LogIDWrapper()
+	logIDWrapper := serverwrapper.LogID()
+	jwtWrapper := s.jwtWrapper
 	return []server.Handler{
-		server.NewHandler(friendChatURL{name: "fc-session-create", path: "/friend-chat/session/create"}, http.HandlerFunc(s.handleSessionCreate), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-sessions", path: "/friend-chat/sessions"}, http.HandlerFunc(s.handleGetSessions), server.WithMethod(server.GET), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-message-send", path: "/friend-chat/message/send"}, http.HandlerFunc(s.handleSendMessage), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-message-sync", path: "/friend-chat/message/sync"}, http.HandlerFunc(s.handleSyncMessages), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-messages", path: "/friend-chat/messages"}, http.HandlerFunc(s.handleGetMessages), server.WithMethod(server.GET), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-message-ack", path: "/friend-chat/message/ack"}, http.HandlerFunc(s.handleMessageAck), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-online", path: "/friend-chat/online"}, http.HandlerFunc(s.handleOnline), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-offline", path: "/friend-chat/offline"}, http.HandlerFunc(s.handleOffline), server.WithMethod(server.POST), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-pending", path: "/friend-chat/pending"}, http.HandlerFunc(s.handleGetPending), server.WithMethod(server.GET), server.WithWrappers(logIDWrapper, s.jwtWrapper)),
-		server.NewHandler(friendChatURL{name: "fc-stats", path: "/friend-chat/stats"}, http.HandlerFunc(s.handleStats), server.WithMethod(server.GET)),
+		server.NewHTTPHandler("fc-session-create", "/friend-chat/session/create", server.POST, server.HTTPHandlerFunc(s.handleSessionCreate), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-sessions", "/friend-chat/sessions", server.GET, server.HTTPHandlerFunc(s.handleGetSessions), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-message-send", "/friend-chat/message/send", server.POST, server.HTTPHandlerFunc(s.handleSendMessage), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-message-sync", "/friend-chat/message/sync", server.POST, server.HTTPHandlerFunc(s.handleSyncMessages), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-messages", "/friend-chat/messages", server.GET, server.HTTPHandlerFunc(s.handleGetMessages), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-message-ack", "/friend-chat/message/ack", server.POST, server.HTTPHandlerFunc(s.handleMessageAck), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-online", "/friend-chat/online", server.POST, server.HTTPHandlerFunc(s.handleOnline), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-offline", "/friend-chat/offline", server.POST, server.HTTPHandlerFunc(s.handleOffline), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-pending", "/friend-chat/pending", server.GET, server.HTTPHandlerFunc(s.handleGetPending), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-stats", "/friend-chat/stats", server.GET, server.HTTPHandlerFunc(s.handleStats)),
 	}
 }
 
@@ -45,7 +46,7 @@ type sessionCreateResp struct {
 
 func (s *friendChatSubServer) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	logID := middleware.GetLogID(ctx)
+	logID := serverwrapper.GetLogID(ctx)
 
 	var req sessionCreateReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ParticipantDID == "" {

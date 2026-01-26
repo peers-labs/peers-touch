@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data'; // Added for Uint8List
 
+import 'package:logging/logging.dart';
 import 'package:peers_touch_base/network/libp2p/config/config.dart';
 import 'package:peers_touch_base/network/libp2p/core/crypto/ed25519.dart'; // For generating a default KeyPair
 import 'package:peers_touch_base/network/libp2p/core/crypto/keys.dart'; // For PublicKey
@@ -19,9 +20,12 @@ import 'package:peers_touch_base/network/libp2p/core/protocol/protocol.dart' sho
 // Corrected path for multiaddr protocol constants
 import 'package:peers_touch_base/network/libp2p/p2p/multiaddr/protocol.dart' as multiaddr_protocol;
 import 'package:peers_touch_base/network/libp2p/p2p/protocol/multistream/multistream.dart'; // For MultistreamMuxer
+import 'package:peers_touch_base/network/libp2p/p2p/security/plaintext/plaintext_security.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/security/secured_connection.dart';
 import 'package:peers_touch_base/network/libp2p/p2p/transport/multiplexing/multiplexer.dart' as p2p_mux; // For the Multiplexer type from the factory
 import 'package:peers_touch_base/network/libp2p/p2p/transport/upgrader.dart'; // For Upgrader interface
+
+final _log = Logger('BasicUpgrader');
 
 
 // --- Helper: NegotiationStreamWrapper ---
@@ -111,35 +115,37 @@ class UpgradedConnectionImpl implements Conn, core_mux.MuxedConn {
 
   UpgradedConnectionImpl({
     required core_mux.MuxedConn muxedConn,
-    required SecuredConnection securedConn,
+    required TransportConn transportConn,
     required ProtocolID negotiatedSecurityProto,
     required ProtocolID negotiatedMuxerProto,
     required PeerId localPeerId,
     required PeerId remotePeerId,
+    this.remotePublicKeyValue,
   })  : _muxedConn = muxedConn,
-        _securedConn = securedConn,
+        _transportConn = transportConn,
         _negotiatedSecurityProto = negotiatedSecurityProto,
         _negotiatedMuxerProto = negotiatedMuxerProto,
         _localPeerId = localPeerId,
         _remotePeerId = remotePeerId;
   final core_mux.MuxedConn _muxedConn;
-  final SecuredConnection _securedConn;
+  final TransportConn _transportConn;
   final ProtocolID _negotiatedSecurityProto;
   final ProtocolID _negotiatedMuxerProto;
   final PeerId _localPeerId;
   final PeerId _remotePeerId;
+  final PublicKey? remotePublicKeyValue;
 
   @override
   Future<void> close() => _muxedConn.close();
 
   @override
-  String get id => _securedConn.id;
+  String get id => _transportConn.id;
 
   @override
   bool get isClosed => _muxedConn.isClosed;
 
   @override
-  MultiAddr get localMultiaddr => _securedConn.localMultiaddr;
+  MultiAddr get localMultiaddr => _transportConn.localMultiaddr;
 
   @override
   PeerId get localPeer => _localPeerId;
@@ -173,13 +179,13 @@ class UpgradedConnectionImpl implements Conn, core_mux.MuxedConn {
   PeerId get remotePeer => _remotePeerId;
 
   @override
-  Future<PublicKey?> get remotePublicKey async => _securedConn.remotePublicKey;
+  Future<PublicKey?> get remotePublicKey async => remotePublicKeyValue ?? await _transportConn.remotePublicKey;
 
   @override
-  MultiAddr get remoteMultiaddr => _securedConn.remoteMultiaddr;
+  MultiAddr get remoteMultiaddr => _transportConn.remoteMultiaddr;
 
   @override
-  ConnScope get scope => _securedConn.scope;
+  ConnScope get scope => _transportConn.scope;
 
   // Attempting to make the method static to see if it resolves the persistent linter error.
   static String _extractTransportProtocol(MultiAddr addr) {
@@ -211,7 +217,7 @@ class UpgradedConnectionImpl implements Conn, core_mux.MuxedConn {
 
   @override
   ConnState get state {
-    final transportProtocol = _extractTransportProtocol(_securedConn.remoteMultiaddr);
+    final transportProtocol = _extractTransportProtocol(_transportConn.remoteMultiaddr);
     return ConnState(
       streamMultiplexer: _negotiatedMuxerProto,
       security: _negotiatedSecurityProto,
@@ -221,7 +227,7 @@ class UpgradedConnectionImpl implements Conn, core_mux.MuxedConn {
   }
 
   @override
-  ConnStats get stat => _securedConn.stat; 
+  ConnStats get stat => _transportConn.stat; 
 
   @override
   Future<List<P2PStream>> get streams async {
@@ -247,25 +253,60 @@ class BasicUpgrader implements Upgrader {
     required MultiAddr remoteAddr,
   }) async {
     try {
-      final mssForSecurity = MultistreamMuxer();
-      final securityProtoIDs = config.securityProtocols.map((s) => s.protocolId).toList();
-      final negotiationSecStream = NegotiationStreamWrapper(connection, '/sec-negotiator');
+      TransportConn securedConn;
+      String chosenSecurityId;
+      PeerId actualRemotePeerId;
+      PublicKey? remotePubKey;
 
-      print('Going to try and upgrade to [$securityProtoIDs]');
-      final chosenSecurityIdStr = await mssForSecurity.selectOneOf(negotiationSecStream, securityProtoIDs);
+      if (config.insecure) {
+        // Insecure mode: use Plaintext protocol
+        _log.fine('BasicUpgrader: Using insecure (plaintext) mode');
+        
+        final plaintext = PlaintextSecurity(config.peerKey!);
+        
+        // Still need multistream negotiation for security protocol
+        final mssForSecurity = MultistreamMuxer();
+        final negotiationSecStream = NegotiationStreamWrapper(connection, '/sec-negotiator');
+        
+        final chosenSecurityIdStr = await mssForSecurity.selectOneOf(
+          negotiationSecStream, 
+          [PlaintextSecurity.protocolIdValue],
+        );
+        
+        if (chosenSecurityIdStr == null) {
+          await connection.close();
+          throw Exception('Remote does not support plaintext protocol');
+        }
+        
+        chosenSecurityId = chosenSecurityIdStr;
+        securedConn = await plaintext.secureOutbound(connection);
+        actualRemotePeerId = securedConn.remotePeer;
+        remotePubKey = await securedConn.remotePublicKey;
+      } else {
+        // Normal security protocol negotiation
+        final mssForSecurity = MultistreamMuxer();
+        final securityProtoIDs = config.securityProtocols.map((s) => s.protocolId).toList();
+        final negotiationSecStream = NegotiationStreamWrapper(connection, '/sec-negotiator');
 
-      if (chosenSecurityIdStr == null) {
-        await connection.close();
-        throw Exception('Failed to negotiate security protocol with $remotePeerId at $remoteAddr');
+        _log.fine('BasicUpgrader: Negotiating security protocols: $securityProtoIDs');
+        final chosenSecurityIdStr = await mssForSecurity.selectOneOf(negotiationSecStream, securityProtoIDs);
+
+        if (chosenSecurityIdStr == null) {
+          await connection.close();
+          throw Exception('Failed to negotiate security protocol with $remotePeerId at $remoteAddr');
+        }
+        chosenSecurityId = chosenSecurityIdStr; 
+
+        final securityModule = config.securityProtocols.firstWhere(
+          (s) => s.protocolId == chosenSecurityId,
+          orElse: () => throw Exception('Selected security protocol $chosenSecurityId not found in config'),
+        );
+        securedConn = await securityModule.secureOutbound(connection);
+        actualRemotePeerId = securedConn.remotePeer;
+        remotePubKey = await securedConn.remotePublicKey;
       }
-      final chosenSecurityId = chosenSecurityIdStr; 
 
-      final securityModule = config.securityProtocols.firstWhere(
-        (s) => s.protocolId == chosenSecurityId,
-        orElse: () => throw Exception('Selected security protocol $chosenSecurityId not found in config'),
-      );
-      final SecuredConnection securedConn = await securityModule.secureOutbound(connection);
-
+      // Muxer negotiation (same for both modes)
       final mssForMuxers = MultistreamMuxer();
       final muxerProtoIDs = config.muxers.map((m) => m.id).toList();
       final negotiationMuxStream = NegotiationStreamWrapper(securedConn, '/mux-negotiator');
@@ -273,7 +314,7 @@ class BasicUpgrader implements Upgrader {
 
       if (chosenMuxerIdStr == null) {
         await securedConn.close();
-        throw Exception('Failed to negotiate stream multiplexer with ${securedConn.remotePeer} at $remoteAddr');
+        throw Exception('Failed to negotiate stream multiplexer with $actualRemotePeerId at $remoteAddr');
       }
       final chosenMuxerId = chosenMuxerIdStr; 
 
@@ -288,7 +329,7 @@ class BasicUpgrader implements Upgrader {
       );
       
       final PeerScope peerScope = await resourceManager.viewPeer(
-        securedConn.remotePeer, 
+        actualRemotePeerId, 
         (ps) async => ps 
       );
 
@@ -309,11 +350,12 @@ class BasicUpgrader implements Upgrader {
 
       return UpgradedConnectionImpl(
         muxedConn: muxedConnection,
-        securedConn: securedConn,
+        transportConn: securedConn,
         negotiatedSecurityProto: chosenSecurityId,
         negotiatedMuxerProto: chosenMuxerId,
         localPeerId: localPId,
-        remotePeerId: securedConn.remotePeer,
+        remotePeerId: actualRemotePeerId,
+        remotePublicKeyValue: remotePubKey,
       );
 
     } catch (e) {
@@ -328,30 +370,64 @@ class BasicUpgrader implements Upgrader {
     required Config config,
   }) async {
     try {
-      final mssForSecurity = MultistreamMuxer();
-      final negotiationSecStream = NegotiationStreamWrapper(connection, '/sec-negotiator-in');
+      TransportConn securedConn;
+      String chosenSecurityId;
+      PeerId actualRemotePeerId;
+      PublicKey? remotePubKey;
 
-      final Completer<ProtocolID> securityProtoCompleter = Completer();
-      if (config.securityProtocols.isEmpty) {
-        await connection.close();
-        throw Exception('No security protocols configured for inbound connection');
-      }
-      for (final sp in config.securityProtocols) {
-        mssForSecurity.addHandler(sp.protocolId, (ProtocolID p, P2PStream s) async {
+      if (config.insecure) {
+        // Insecure mode: use Plaintext protocol
+        _log.fine('BasicUpgrader: Using insecure (plaintext) mode for inbound');
+        
+        final plaintext = PlaintextSecurity(config.peerKey!);
+        
+        // Multistream negotiation for security protocol
+        final mssForSecurity = MultistreamMuxer();
+        final negotiationSecStream = NegotiationStreamWrapper(connection, '/sec-negotiator-in');
+        
+        final Completer<ProtocolID> securityProtoCompleter = Completer();
+        mssForSecurity.addHandler(PlaintextSecurity.protocolIdValue, (ProtocolID p, P2PStream s) async {
           if (!securityProtoCompleter.isCompleted) {
             securityProtoCompleter.complete(p);
           }
         });
+        
+        await mssForSecurity.handle(negotiationSecStream);
+        chosenSecurityId = await securityProtoCompleter.future;
+        
+        securedConn = await plaintext.secureInbound(connection);
+        actualRemotePeerId = securedConn.remotePeer;
+        remotePubKey = await securedConn.remotePublicKey;
+      } else {
+        // Normal security protocol negotiation
+        final mssForSecurity = MultistreamMuxer();
+        final negotiationSecStream = NegotiationStreamWrapper(connection, '/sec-negotiator-in');
+
+        final Completer<ProtocolID> securityProtoCompleter = Completer();
+        if (config.securityProtocols.isEmpty) {
+          await connection.close();
+          throw Exception('No security protocols configured for inbound connection');
+        }
+        for (final sp in config.securityProtocols) {
+          mssForSecurity.addHandler(sp.protocolId, (ProtocolID p, P2PStream s) async {
+            if (!securityProtoCompleter.isCompleted) {
+              securityProtoCompleter.complete(p);
+            }
+          });
+        }
+        await mssForSecurity.handle(negotiationSecStream); 
+        chosenSecurityId = await securityProtoCompleter.future;
+
+        final securityModule = config.securityProtocols.firstWhere(
+          (s) => s.protocolId == chosenSecurityId,
+          orElse: () => throw Exception('Client proposed security protocol $chosenSecurityId not found/supported'),
+        );
+        securedConn = await securityModule.secureInbound(connection);
+        actualRemotePeerId = securedConn.remotePeer;
+        remotePubKey = await securedConn.remotePublicKey;
       }
-      await mssForSecurity.handle(negotiationSecStream); 
-      final chosenSecurityId = await securityProtoCompleter.future;
 
-      final securityModule = config.securityProtocols.firstWhere(
-        (s) => s.protocolId == chosenSecurityId,
-        orElse: () => throw Exception('Client proposed security protocol $chosenSecurityId not found/supported'),
-      );
-      final SecuredConnection securedConn = await securityModule.secureInbound(connection);
-
+      // Muxer negotiation (same for both modes)
       final mssForMuxers = MultistreamMuxer();
       final negotiationMuxStream = NegotiationStreamWrapper(securedConn, '/mux-negotiator-in');
       final Completer<ProtocolID> muxerProtoCompleter = Completer();
@@ -381,7 +457,7 @@ class BasicUpgrader implements Upgrader {
       );
 
       final PeerScope peerScope = await resourceManager.viewPeer(
-        securedConn.remotePeer, 
+        actualRemotePeerId, 
         (ps) async => ps 
       );
       
@@ -402,11 +478,12 @@ class BasicUpgrader implements Upgrader {
 
       return UpgradedConnectionImpl(
         muxedConn: muxedConnection,
-        securedConn: securedConn,
+        transportConn: securedConn,
         negotiatedSecurityProto: chosenSecurityId,
         negotiatedMuxerProto: chosenMuxerId,
         localPeerId: localPId,
-        remotePeerId: securedConn.remotePeer,
+        remotePeerId: actualRemotePeerId,
+        remotePublicKeyValue: remotePubKey,
       );
 
     } catch (e) {

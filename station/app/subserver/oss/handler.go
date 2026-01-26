@@ -1,7 +1,6 @@
 package oss
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,16 +20,16 @@ func (u ossURL) Name() string    { return u.name }
 func (s *ossSubServer) Handlers() []server.Handler {
 	base := strings.TrimRight(s.pathBase, "/")
 
-	// Apply middleware if needed (e.g. auth)
-	uploadHandler := http.Handler(http.HandlerFunc(s.handleUpload))
+	// Create upload handler with optional auth wrapper
+	var uploadWrappers []server.Wrapper
 	if s.authProvider != nil {
-		uploadHandler = authhttp.RequireJWT(s.authProvider)(context.Background(), uploadHandler)
+		uploadWrappers = []server.Wrapper{server.HTTPWrapperAdapter(authhttp.RequireJWT(s.authProvider))}
 	}
 
 	return []server.Handler{
-		server.NewHandler(ossURL{name: "oss-upload", path: base + "/upload"}, uploadHandler, server.WithMethod(server.POST)),
-		server.NewHandler(ossURL{name: "oss-file-get", path: base + "/file"}, http.HandlerFunc(s.handleFileGet), server.WithMethod(server.GET)),
-		server.NewHandler(ossURL{name: "oss-meta", path: base + "/meta"}, http.HandlerFunc(s.handleMetaGet), server.WithMethod(server.GET)),
+		server.NewHTTPHandler("oss-upload", base+"/upload", server.POST, server.HTTPHandlerFunc(s.handleUpload), uploadWrappers...),
+		server.NewHTTPHandler("oss-file-get", base+"/file", server.GET, server.HTTPHandlerFunc(s.handleFileGet)),
+		server.NewHTTPHandler("oss-meta", base+"/meta", server.GET, server.HTTPHandlerFunc(s.handleMetaGet)),
 	}
 }
 
