@@ -25,11 +25,12 @@ func (mr *WellKnownRouters) Handlers() []server.Handler {
 	handlers := make([]server.Handler, len(handlerInfos))
 
 	for i, info := range handlerInfos {
-		handlers[i] = server.NewHandler(
-			info.RouterURL,
-			info.Handler,
-			server.WithMethod(info.Method),
-			server.WithWrappers(info.Wrappers...),
+		handlers[i] = server.NewHTTPHandler(
+			info.RouterURL.Name(),
+			info.RouterURL.SubPath(),
+			info.Method,
+			server.HertzHandlerFunc(info.Handler),
+			info.Wrappers...,
 		)
 	}
 

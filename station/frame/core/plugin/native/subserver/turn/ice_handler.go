@@ -42,11 +42,7 @@ func NewICEHandler(opts *Options) *ICEHandler {
 
 func (h *ICEHandler) Handlers() []server.Handler {
 	return []server.Handler{
-		server.NewHandler(
-			iceURL{name: "turn-ice-servers", path: "/api/v1/turn/ice-servers"},
-			http.HandlerFunc(h.handleGetICEServers),
-			server.WithMethod(server.GET),
-		),
+		server.NewHTTPHandler("turn-ice-servers", "/api/v1/turn/ice-servers", server.GET, server.HTTPHandlerFunc(h.handleGetICEServers)),
 	}
 }
 
