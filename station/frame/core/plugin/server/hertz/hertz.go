@@ -133,11 +133,46 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	})
 
 	for _, handler := range s.Options().Handlers {
-		err = s.Handle(handler)
-		if err != nil {
-			log.Errorf(ctx, "failed to register handler %s: %v", handler.Name(), err)
-			cancel()
-			return err
+		// Capture handler in closure to avoid loop variable issues
+		h := handler
+		endpointHandler := h.Handler()
+
+		// Apply endpoint-level wrappers first
+		allWrappers := append(s.Options().GlobalWrappers, h.Wrappers()...)
+		for _, wrapper := range allWrappers {
+			endpointHandler = wrapper(endpointHandler)
+		}
+
+		// Capture the final endpoint handler
+		finalEndpointHandler := endpointHandler
+
+		// Create a Hertz handler that wraps the EndpointHandler
+		hertzHandler := func(c context.Context, ctx *app.RequestContext) {
+			// Create request/response adapters that can provide Hertz context
+			req := &hertzRequestWithContext{ctx: ctx}
+			resp := &hertzResponse{ctx: ctx}
+
+			// Call the endpoint handler
+			if err := finalEndpointHandler(c, req, resp); err != nil {
+				log.Errorf(c, "handler error: %v", err)
+				ctx.SetStatusCode(http.StatusInternalServerError)
+			}
+		}
+
+		// Register handler directly with Hertz router
+		switch h.Method() {
+		case server.POST:
+			s.hertz.POST(h.Path(), hertzHandler)
+		case server.GET:
+			s.hertz.GET(h.Path(), hertzHandler)
+		case server.PUT:
+			s.hertz.PUT(h.Path(), hertzHandler)
+		case server.DELETE:
+			s.hertz.DELETE(h.Path(), hertzHandler)
+		case server.PATCH:
+			s.hertz.PATCH(h.Path(), hertzHandler)
+		default:
+			s.hertz.Any(h.Path(), hertzHandler)
 		}
 	}
 
@@ -217,6 +252,7 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 	w.ctx.SetStatusCode(statusCode)
 }
 
+
 func RequestLoggerMiddleware() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		requestID := string(c.Request.Header.Peek("X-Request-ID"))
@@ -269,6 +305,42 @@ func (r *hertzRequest) Path() string {
 
 func (r *hertzRequest) Body() []byte {
 	return r.ctx.Request.Body()
+}
+
+// hertzRequestWithContext adapts Hertz RequestContext to server.Request
+// and implements hertzContextGetter to provide access to the underlying Hertz context
+type hertzRequestWithContext struct {
+	ctx *app.RequestContext
+}
+
+func (r *hertzRequestWithContext) Context() context.Context {
+	return context.Background()
+}
+
+func (r *hertzRequestWithContext) Header() map[string]string {
+	h := make(map[string]string)
+	r.ctx.Request.Header.VisitAll(func(key, value []byte) {
+		h[string(key)] = string(value)
+	})
+	return h
+}
+
+func (r *hertzRequestWithContext) Method() server.Method {
+	return server.Method(r.ctx.Method())
+}
+
+func (r *hertzRequestWithContext) Path() string {
+	return string(r.ctx.Path())
+}
+
+func (r *hertzRequestWithContext) Body() []byte {
+	return r.ctx.Request.Body()
+}
+
+// GetHertzContext returns the underlying Hertz RequestContext
+// This implements the hertzContextGetter interface used by HertzHandlerFunc
+func (r *hertzRequestWithContext) GetHertzContext() interface{} {
+	return r.ctx
 }
 
 // hertzResponse adapts Hertz RequestContext to server.Response
