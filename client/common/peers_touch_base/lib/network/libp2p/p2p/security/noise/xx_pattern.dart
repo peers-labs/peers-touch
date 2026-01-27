@@ -13,36 +13,44 @@ class HandshakeState {
     required this.chainKey,
     required this.handshakeHash,
     required this.state,
-    this.sendKey,
-    this.recvKey,
+    this.cipherKey, // Current cipher key for encryption/decryption during handshake
+    this.sendKey,   // Final transport send key (after handshake complete)
+    this.recvKey,   // Final transport receive key (after handshake complete)
     this.remoteEphemeralKey,
     this.remoteStaticKey,
+    this.nonce = 0, // Nonce counter for cipher key
   });
   final Uint8List chainKey;
   final Uint8List handshakeHash;
   final XXHandshakeState state;
+  final SecretKey? cipherKey;
   final SecretKey? sendKey;
   final SecretKey? recvKey;
   final Uint8List? remoteEphemeralKey;
   final Uint8List? remoteStaticKey;
+  final int nonce;
 
   HandshakeState copyWith({
     Uint8List? chainKey,
     Uint8List? handshakeHash,
     XXHandshakeState? state,
+    SecretKey? cipherKey,
     SecretKey? sendKey,
     SecretKey? recvKey,
     Uint8List? remoteEphemeralKey,
     Uint8List? remoteStaticKey,
+    int? nonce,
   }) {
     return HandshakeState(
       chainKey: chainKey ?? this.chainKey,
       handshakeHash: handshakeHash ?? this.handshakeHash,
       state: state ?? this.state,
+      cipherKey: cipherKey ?? this.cipherKey,
       sendKey: sendKey ?? this.sendKey,
       recvKey: recvKey ?? this.recvKey,
       remoteEphemeralKey: remoteEphemeralKey ?? this.remoteEphemeralKey,
       remoteStaticKey: remoteStaticKey ?? this.remoteStaticKey,
+      nonce: nonce ?? this.nonce,
     );
   }
 }
@@ -81,23 +89,47 @@ class NoiseXXPattern {
   HandshakeState _state;
 
   /// Creates a new NoiseXXPattern instance
-  static Future<NoiseXXPattern> create(bool isInitiator, SimpleKeyPair staticKeys) async {
+  static Future<NoiseXXPattern> create(bool isInitiator, SimpleKeyPair staticKeys, {List<int>? prologue}) async {
     // Generate ephemeral keys
     final ephemeralKeys = await X25519().newKeyPair();
     
-    // Initialize symmetric state
+    // Initialize symmetric state per Noise spec and flynn/noise behavior:
+    // 1. If len(protocol_name) <= HASHLEN (32): h = protocol_name (padded with zeros)
+    //    Else: h = HASH(protocol_name)
+    // 2. ck = h
+    // 3. MixHash(prologue) - h = SHA256(h || prologue)
+    // 4. k = empty (no cipher key until first MixKey)
     final protocolName = utf8.encode(PROTOCOL_NAME);
     _validateProtocolName(protocolName);
     
-    final initialHash = await Sha256().hash(protocolName);
-    final tempKey = SecretKey(Uint8List.fromList(initialHash.bytes));
+    const hashLen = 32; // SHA256 output length
+    Uint8List initialH;
+    if (protocolName.length <= hashLen) {
+      // Direct copy, pad with zeros if needed
+      initialH = Uint8List(hashLen);
+      for (var i = 0; i < protocolName.length; i++) {
+        initialH[i] = protocolName[i];
+      }
+    } else {
+      // Hash the protocol name
+      final hash = await Sha256().hash(protocolName);
+      initialH = Uint8List.fromList(hash.bytes);
+    }
+    
+    // ck = h (before MixHash)
+    final chainKey = Uint8List.fromList(initialH);
+    
+    // MixHash(prologue) - h = SHA256(h || prologue)
+    // This is ALWAYS called, even with empty prologue
+    final prologueData = prologue ?? <int>[];
+    final mixedHash = await Sha256().hash([...initialH, ...prologueData]);
+    final handshakeHash = Uint8List.fromList(mixedHash.bytes);
     
     final state = HandshakeState(
-      chainKey: Uint8List.fromList(initialHash.bytes),
-      handshakeHash: Uint8List.fromList(initialHash.bytes),
+      chainKey: chainKey,
+      handshakeHash: handshakeHash,
       state: XXHandshakeState.initial,
-      sendKey: tempKey,
-      recvKey: tempKey,
+      // cipherKey starts as null - will be set after first MixKey
     );
     
     return NoiseXXPattern._(isInitiator, staticKeys, ephemeralKeys, state);
@@ -209,20 +241,30 @@ class NoiseXXPattern {
     final remoteEphemeral = message.sublist(0, KEY_LEN);
     await _validatePublicKey(remoteEphemeral);
     
-    // Mix hash
-    final newHash = await _mixHash(state.handshakeHash, remoteEphemeral);
+    // Mix hash with ephemeral key
+    var newHash = await _mixHash(state.handshakeHash, remoteEphemeral);
     state = state.copyWith(
       handshakeHash: newHash,
       remoteEphemeralKey: remoteEphemeral,
     );
     
+    // DecryptAndHash(remaining payload) - since no cipher key, this is just MixHash(payload)
+    // For msg1, the remaining payload after 'e' is empty
+    // This matches flynn/noise behavior where ReadMessage always calls DecryptAndHash on remaining data
+    final remainingPayload = message.length > KEY_LEN ? message.sublist(KEY_LEN) : <int>[];
+    newHash = await _mixHash(state.handshakeHash, remainingPayload);
+    state = state.copyWith(handshakeHash: newHash);
+    
     return (
       state.copyWith(state: XXHandshakeState.sentE),
-      Uint8List(0), // No payload in msg1
+      Uint8List.fromList(remainingPayload), // Payload in msg1 (usually empty)
     );
   }
 
   /// Process the second message (e, ee, s, es + payload) - returns (state, payload)
+  /// 
+  /// For initiator receiving msg2: e, ee, s, es + encrypted_payload
+  /// The payload is encrypted with the key derived after 'es'
   Future<(HandshakeState, Uint8List)> _processSecondMessageWithPayload(Uint8List message) async {
     // Check state first
     if (!_isInitiator && _state.state == XXHandshakeState.sentE) {
@@ -233,56 +275,52 @@ class NoiseXXPattern {
     _validateMessageLength(message, minLen, NoiseMessageType.secondMessage);
     
     var state = _state;
-    var newChainKey = state.chainKey;
     
-    // Extract and validate remote ephemeral key
+    // Extract and validate remote ephemeral key (e)
     final remoteEphemeral = message.sublist(0, KEY_LEN);
     await _validatePublicKey(remoteEphemeral);
     
-    // Mix hash
+    // Mix hash with 'e'
     var newHash = await _mixHash(state.handshakeHash, remoteEphemeral);
     state = state.copyWith(
       handshakeHash: newHash,
       remoteEphemeralKey: remoteEphemeral,
     );
     
-    // ee
-    newChainKey = await _dh(
+    // ee: MixKey(DH(e, re))
+    final (ck1, k1) = await _mixKey(
       _ephemeralKeys,
       remoteEphemeral,
       state.chainKey,
     );
-    state = state.copyWith(chainKey: newChainKey);
+    state = state.copyWith(chainKey: ck1, cipherKey: k1, nonce: 0);
     
-    // Decrypt s
+    // Decrypt s (responder's static key encrypted with k1)
     final encryptedStatic = message.sublist(KEY_LEN, KEY_LEN + KEY_LEN + MAC_LEN);
-    if (state.recvKey == null) {
-      throw StateError('Receive key is null during static key decryption - this should never happen');
-    }
-    final recvKeyFinal = state.recvKey as SecretKey;
-    final remoteStatic = await _decryptWithAd(
+    
+    final remoteStatic = await _decryptWithAdAndNonce(
       encryptedStatic,
       state.handshakeHash,
-      recvKeyFinal,
+      state.cipherKey!,
+      state.nonce,
     );
     await _validatePublicKey(remoteStatic);
+    state = state.copyWith(nonce: state.nonce + 1);
     
-    // Mix hash
+    // Mix hash with encrypted static
     newHash = await _mixHash(state.handshakeHash, encryptedStatic);
     state = state.copyWith(
       handshakeHash: newHash,
       remoteStaticKey: remoteStatic,
     );
     
-    // es - initiator uses ephemeral with responder's static
-    if (_isInitiator) {
-      newChainKey = await _dh(
-        _ephemeralKeys,
-        remoteStatic,
-        state.chainKey,
-      );
-      state = state.copyWith(chainKey: newChainKey);
-    }
+    // es: MixKey(DH(e, rs)) - initiator uses own ephemeral with responder's static
+    final (ck2, k2) = await _mixKey(
+      _ephemeralKeys,
+      remoteStatic,
+      state.chainKey,
+    );
+    state = state.copyWith(chainKey: ck2, cipherKey: k2, nonce: 0);
     
     // Decrypt payload if present (msg2 contains responder's handshake payload)
     Uint8List decryptedPayload = Uint8List(0);
@@ -290,16 +328,15 @@ class NoiseXXPattern {
     if (message.length > payloadStart) {
       final encryptedPayload = message.sublist(payloadStart);
       if (encryptedPayload.length > MAC_LEN) {
-        // Need to derive transport keys first for payload decryption
-        // After es, we have the transport encryption key
-        final (sendKey, recvKey) = await _deriveKeys(state.chainKey);
-        state = state.copyWith(sendKey: sendKey, recvKey: recvKey);
-        
-        decryptedPayload = await _decryptWithAd(
+        decryptedPayload = await _decryptWithAdAndNonce(
           encryptedPayload,
           state.handshakeHash,
-          recvKey,
+          state.cipherKey!,
+          state.nonce,
         );
+        state = state.copyWith(nonce: state.nonce + 1);
+        
+        // Mix hash with encrypted payload
         newHash = await _mixHash(state.handshakeHash, encryptedPayload);
         state = state.copyWith(handshakeHash: newHash);
       }
@@ -312,24 +349,29 @@ class NoiseXXPattern {
   }
 
   /// Process the final message (s, se + payload) - returns (state, payload)
+  /// 
+  /// Responder processes msg3 from initiator: s, se, encrypted_payload
   Future<(HandshakeState, Uint8List)> _processFinalMessageWithPayload(Uint8List message) async {
     const minLen = KEY_LEN + MAC_LEN;
     _validateMessageLength(message, minLen, NoiseMessageType.finalMessage);
     
     var state = _state;
     
-    // Decrypt s
-    final encryptedStatic = message.sublist(0, KEY_LEN + MAC_LEN);
-    if (state.recvKey == null) {
-      throw StateError('Receive key is null during static key decryption - this should never happen');
+    // At this point, cipherKey should be set from processing/writing msg2
+    if (state.cipherKey == null) {
+      throw StateError('Cipher key is null - handshake state corrupted');
     }
-    final recvKeyFinal = state.recvKey as SecretKey;
-    final remoteStatic = await _decryptWithAd(
+    
+    // Decrypt s (initiator's static key)
+    final encryptedStatic = message.sublist(0, KEY_LEN + MAC_LEN);
+    final remoteStatic = await _decryptWithAdAndNonce(
       encryptedStatic,
       state.handshakeHash,
-      recvKeyFinal,
+      state.cipherKey!,
+      state.nonce,
     );
     await _validatePublicKey(remoteStatic);
+    state = state.copyWith(nonce: state.nonce + 1);
     
     // Mix hash with encrypted static key
     var newHash = await _mixHash(state.handshakeHash, encryptedStatic);
@@ -338,36 +380,35 @@ class NoiseXXPattern {
       remoteStaticKey: remoteStatic,
     );
     
-    // se - responder uses ephemeral with initiator's static
-    if (state.remoteEphemeralKey == null) {
-      throw StateError('Remote ephemeral key is null during se operation - this should never happen');
-    }
-    final remoteEphemeral = state.remoteEphemeralKey as List<int>;
-    final newChainKey = await _dh(
-      _isInitiator ? _staticKeys : _ephemeralKeys,
-      _isInitiator ? remoteEphemeral : remoteStatic,
+    // se: MixKey(DH(e, rs)) - responder uses ephemeral with initiator's static
+    final (ck3, k3) = await _mixKey(
+      _ephemeralKeys,
+      remoteStatic,
       state.chainKey,
     );
-    state = state.copyWith(chainKey: newChainKey);
-    
-    // Derive final keys
-    final (sendKey, recvKey) = await _deriveKeys(state.chainKey);
-    state = state.copyWith(sendKey: sendKey, recvKey: recvKey);
+    state = state.copyWith(chainKey: ck3, cipherKey: k3, nonce: 0);
     
     // Process payload if present (msg3 contains initiator's handshake payload)
     Uint8List decryptedPayload = Uint8List(0);
     if (message.length > minLen) {
       final encryptedPayload = message.sublist(minLen);
       if (encryptedPayload.length > MAC_LEN) {
-        decryptedPayload = await _decryptWithAd(
+        decryptedPayload = await _decryptWithAdAndNonce(
           encryptedPayload,
           state.handshakeHash,
-          recvKey,
+          state.cipherKey!,
+          state.nonce,
         );
+        state = state.copyWith(nonce: state.nonce + 1);
+        
         newHash = await _mixHash(state.handshakeHash, encryptedPayload);
         state = state.copyWith(handshakeHash: newHash);
       }
     }
+    
+    // Derive final transport keys
+    final (sendKey, recvKey) = await _deriveKeys(state.chainKey);
+    state = state.copyWith(sendKey: sendKey, recvKey: recvKey);
     
     return (
       state.copyWith(state: XXHandshakeState.complete),
@@ -381,8 +422,12 @@ class NoiseXXPattern {
     final ephemeralPub = await _ephemeralKeys.extractPublicKey();
     final ephemeralBytes = ephemeralPub.bytes;
     
-    // Mix hash
-    final newHash = await _mixHash(_state.handshakeHash, ephemeralBytes);
+    // Mix hash with ephemeral key
+    var newHash = await _mixHash(_state.handshakeHash, ephemeralBytes);
+    
+    // EncryptAndHash(empty payload) - since no cipher key, this is just MixHash(empty)
+    // This matches flynn/noise behavior where WriteMessage always calls EncryptAndHash on payload
+    newHash = await _mixHash(newHash, <int>[]);
     
     return (
       Uint8List.fromList(ephemeralBytes),
@@ -394,9 +439,10 @@ class NoiseXXPattern {
   }
 
   /// Write the second message (e, ee, s, es + optional payload)
+  /// 
+  /// Responder writes msg2: e, ee, s, es, encrypted_payload
   Future<(Uint8List message, HandshakeState state)> _writeSecondMessageWithPayload(List<int> payload) async {
     var state = _state;
-    var newChainKey = state.chainKey;
     final messageBytes = <int>[];
     
     // Validate we have the required keys
@@ -404,63 +450,58 @@ class NoiseXXPattern {
       throw StateError('Cannot write second message without remote ephemeral key');
     }
     
-    // e
+    // e - append our ephemeral public key
     final ephemeralPub = await _ephemeralKeys.extractPublicKey();
     final ephemeralBytes = ephemeralPub.bytes;
     messageBytes.addAll(ephemeralBytes);
     
-    // Mix hash
+    // Mix hash with e
     var newHash = await _mixHash(state.handshakeHash, ephemeralBytes);
     state = state.copyWith(handshakeHash: newHash);
     
-    // ee
-    newChainKey = await _dh(
+    // ee: MixKey(DH(e, re))
+    final (ck1, k1) = await _mixKey(
       _ephemeralKeys,
       state.remoteEphemeralKey as List<int>,
       state.chainKey,
     );
-    state = state.copyWith(chainKey: newChainKey);
+    state = state.copyWith(chainKey: ck1, cipherKey: k1, nonce: 0);
     
-    // s
+    // s - encrypt our static public key with k1
     final staticPub = await _staticKeys.extractPublicKey();
     final staticBytes = staticPub.bytes;
-    if (state.sendKey == null) {
-      throw StateError('Send key is null during static key encryption - this should never happen');
-    }
-    final sendKeyFinal = state.sendKey as SecretKey;
-    final encryptedStatic = await _encryptWithAd(
+    final encryptedStatic = await _encryptWithAdAndNonce(
       staticBytes,
       state.handshakeHash,
-      sendKeyFinal,
+      state.cipherKey!,
+      state.nonce,
     );
     messageBytes.addAll(encryptedStatic);
+    state = state.copyWith(nonce: state.nonce + 1);
     
-    // Mix hash
+    // Mix hash with encrypted static
     newHash = await _mixHash(state.handshakeHash, encryptedStatic);
     state = state.copyWith(handshakeHash: newHash);
     
-    // es - responder uses static with initiator's ephemeral
-    if (!_isInitiator) {
-      newChainKey = await _dh(
-        _staticKeys,
-        state.remoteEphemeralKey as List<int>,
-        state.chainKey,
-      );
-      state = state.copyWith(chainKey: newChainKey);
-    }
+    // es: MixKey(DH(s, re)) - responder uses own static with initiator's ephemeral
+    final (ck2, k2) = await _mixKey(
+      _staticKeys,
+      state.remoteEphemeralKey as List<int>,
+      state.chainKey,
+    );
+    state = state.copyWith(chainKey: ck2, cipherKey: k2, nonce: 0);
     
     // Encrypt and append payload if present
     if (payload.isNotEmpty) {
-      // Derive transport keys for payload encryption
-      final (sendKey, recvKey) = await _deriveKeys(state.chainKey);
-      state = state.copyWith(sendKey: sendKey, recvKey: recvKey);
-      
-      final encryptedPayload = await _encryptWithAd(
+      final encryptedPayload = await _encryptWithAdAndNonce(
         payload,
         state.handshakeHash,
-        sendKey,
+        state.cipherKey!,
+        state.nonce,
       );
       messageBytes.addAll(encryptedPayload);
+      state = state.copyWith(nonce: state.nonce + 1);
+      
       newHash = await _mixHash(state.handshakeHash, encryptedPayload);
       state = state.copyWith(handshakeHash: newHash);
     }
@@ -471,57 +512,61 @@ class NoiseXXPattern {
     );
   }
 
-  /// Write the final message (s, se)
+  /// Write the final message (s, se + payload)
+  /// 
+  /// Initiator writes msg3: s, se, encrypted_payload
   Future<(Uint8List message, HandshakeState state)> _writeFinalMessage(List<int> payload) async {
     var state = _state;
     final messageBytes = <int>[];
     
-    // s - encrypt and send static key
+    // At this point, cipherKey should be set from processing msg2
+    if (state.cipherKey == null) {
+      throw StateError('Cipher key is null - handshake state corrupted');
+    }
+    if (state.remoteEphemeralKey == null) {
+      throw StateError('Remote ephemeral key is null - handshake state corrupted');
+    }
+    
+    // s - encrypt our static key with current cipher key
     final staticPub = await _staticKeys.extractPublicKey();
     final staticBytes = staticPub.bytes;
-    if (state.sendKey == null) {
-      throw StateError('Send key is null during static key encryption - this should never happen');
-    }
-    final sendKeyFinal = state.sendKey as SecretKey;
-    final encryptedStatic = await _encryptWithAd(
+    final encryptedStatic = await _encryptWithAdAndNonce(
       staticBytes,
       state.handshakeHash,
-      sendKeyFinal,
+      state.cipherKey!,
+      state.nonce,
     );
     messageBytes.addAll(encryptedStatic);
+    state = state.copyWith(nonce: state.nonce + 1);
     
     // Mix hash with encrypted static key
     var newHash = await _mixHash(state.handshakeHash, encryptedStatic);
     state = state.copyWith(handshakeHash: newHash);
     
-    // se - initiator uses static with responder's ephemeral
-    if (state.remoteEphemeralKey == null) {
-      throw StateError('Remote ephemeral key is null during se operation - this should never happen');
-    }
-    final remoteEphemeral = state.remoteEphemeralKey as List<int>;
-    final newChainKey = await _dh(
-      _isInitiator ? _staticKeys : _ephemeralKeys,
-      _isInitiator ? remoteEphemeral : state.remoteStaticKey!,
+    // se: MixKey(DH(s, re)) - initiator uses own static with responder's ephemeral
+    final (ck3, k3) = await _mixKey(
+      _staticKeys,
+      state.remoteEphemeralKey as List<int>,
       state.chainKey,
     );
-    state = state.copyWith(chainKey: newChainKey);
+    state = state.copyWith(chainKey: ck3, cipherKey: k3, nonce: 0);
     
     // Encrypt payload if present
     if (payload.isNotEmpty) {
-      if (state.sendKey == null) {
-        throw StateError('Send key is null during payload encryption - this should never happen');
-      }
-      final encryptedPayload = await _encryptWithAd(
+      final encryptedPayload = await _encryptWithAdAndNonce(
         payload,
         state.handshakeHash,
-        sendKeyFinal,
+        state.cipherKey!,
+        state.nonce,
       );
       messageBytes.addAll(encryptedPayload);
+      state = state.copyWith(nonce: state.nonce + 1);
+      
       newHash = await _mixHash(state.handshakeHash, encryptedPayload);
       state = state.copyWith(handshakeHash: newHash);
     }
     
-    // Derive final keys
+    // Derive final transport keys
     final (sendKey, recvKey) = await _deriveKeys(state.chainKey);
     
     return (
@@ -587,12 +632,19 @@ class NoiseXXPattern {
     }
   }
 
-  /// Performs Diffie-Hellman and mixes the result into the chain key
-  Future<Uint8List> _dh(
+  /// Performs Diffie-Hellman and implements MixKey per Noise spec
+  /// Returns (new_chainKey, new_cipherKey)
+  /// 
+  /// MixKey(input_key_material):
+  ///   ck, temp_k = HKDF(ck, input_key_material, 2)
+  ///   k = temp_k
+  ///   n = 0
+  Future<(Uint8List, SecretKey)> _mixKey(
     SimpleKeyPair privateKey,
     List<int> publicKey,
     List<int> currentChainKey,
   ) async {
+    // Perform X25519 DH
     final algorithm = X25519();
     final shared = await algorithm.sharedSecretKey(
       keyPair: privateKey,
@@ -600,12 +652,34 @@ class NoiseXXPattern {
     );
     final sharedBytes = await shared.extractBytes();
     
+    // HKDF with 2 outputs: new_ck and temp_k
+    // HKDF-Extract: temp_key = HMAC(ck, input_key_material)
+    // HKDF-Expand: output1 = HMAC(temp_key, 0x01)
+    //              output2 = HMAC(temp_key, output1 || 0x02)
     final hmac = Hmac.sha256();
-    final result = await hmac.calculateMac(
+    
+    // Extract
+    final tempKey = await hmac.calculateMac(
       sharedBytes,
       secretKey: SecretKey(currentChainKey),
     );
-    return Uint8List.fromList(result.bytes);
+    
+    // Expand - output1 = new chain key
+    final output1 = await hmac.calculateMac(
+      [0x01],
+      secretKey: SecretKey(tempKey.bytes),
+    );
+    
+    // Expand - output2 = new cipher key
+    final output2 = await hmac.calculateMac(
+      [...output1.bytes, 0x02],
+      secretKey: SecretKey(tempKey.bytes),
+    );
+    
+    return (
+      Uint8List.fromList(output1.bytes),
+      SecretKey(Uint8List.fromList(output2.bytes)),
+    );
   }
 
   /// Mixes data into the handshake hash
@@ -614,14 +688,27 @@ class NoiseXXPattern {
     return Uint8List.fromList(hash.bytes);
   }
 
-  /// Encrypts data with additional data
-  Future<Uint8List> _encryptWithAd(
+  /// Creates a 12-byte nonce from a counter value (little-endian, zero-padded)
+  Uint8List _createNonce(int n) {
+    final nonce = Uint8List(12);
+    // Little-endian encoding of counter in lower 8 bytes
+    var value = n;
+    for (var i = 4; i < 12 && value > 0; i++) {
+      nonce[i] = value & 0xFF;
+      value >>= 8;
+    }
+    return nonce;
+  }
+
+  /// Encrypts data with additional data and nonce counter
+  Future<Uint8List> _encryptWithAdAndNonce(
     List<int> plaintext,
     List<int> ad,
     SecretKey key,
+    int n,
   ) async {
     final algorithm = Chacha20.poly1305Aead();
-    final nonce = List<int>.filled(algorithm.nonceLength, 0);
+    final nonce = _createNonce(n);
     final secretBox = await algorithm.encrypt(
       plaintext,
       secretKey: key,
@@ -634,18 +721,19 @@ class NoiseXXPattern {
     ]);
   }
 
-  /// Decrypts data with additional data
-  Future<Uint8List> _decryptWithAd(
+  /// Decrypts data with additional data and nonce counter
+  Future<Uint8List> _decryptWithAdAndNonce(
     List<int> data,
     List<int> ad,
     SecretKey key,
+    int n,
   ) async {
     if (data.length < MAC_LEN) {
       throw StateError('Data too short to contain MAC');
     }
     
     final algorithm = Chacha20.poly1305Aead();
-    final nonce = List<int>.filled(algorithm.nonceLength, 0);
+    final nonce = _createNonce(n);
     final cipherText = data.sublist(0, data.length - MAC_LEN);
     final mac = data.sublist(data.length - MAC_LEN);
     
@@ -656,19 +744,33 @@ class NoiseXXPattern {
     ));
   }
 
-  /// Derives the final cipher keys
+  /// Derives the final cipher keys using Noise Split() function
+  /// Split() uses HKDF to derive two transport keys from the chainKey:
+  ///   tempKey = HMAC-SHA256(ck, [])
+  ///   k1 = HMAC-SHA256(tempKey, [0x01])
+  ///   k2 = HMAC-SHA256(tempKey, k1 || [0x02])
   Future<(SecretKey sendKey, SecretKey recvKey)> _deriveKeys(List<int> chainKey) async {
     final hmac = Hmac.sha256();
-    final k1 = await hmac.calculateMac([0x01], secretKey: SecretKey(chainKey));
-    final k2 = await hmac.calculateMac([0x02], secretKey: SecretKey(chainKey));
+    
+    // tempKey = HMAC-SHA256(chainKey, []) - empty input key material
+    final tempKeyMac = await hmac.calculateMac(<int>[], secretKey: SecretKey(chainKey));
+    final tempKey = Uint8List.fromList(tempKeyMac.bytes);
+    
+    // k1 = HMAC-SHA256(tempKey, [0x01])
+    final k1Mac = await hmac.calculateMac([0x01], secretKey: SecretKey(tempKey));
+    final k1 = Uint8List.fromList(k1Mac.bytes);
+    
+    // k2 = HMAC-SHA256(tempKey, k1 || [0x02])
+    final k2Input = Uint8List.fromList([...k1, 0x02]);
+    final k2Mac = await hmac.calculateMac(k2Input, secretKey: SecretKey(tempKey));
+    final k2 = Uint8List.fromList(k2Mac.bytes);
 
-    final k1Key = SecretKey(Uint8List.fromList(k1.bytes));
-    final k2Key = SecretKey(Uint8List.fromList(k2.bytes));
+    final k1Key = SecretKey(k1);
+    final k2Key = SecretKey(k2);
 
     // According to Noise spec:
-    // For one-way patterns:
-    // - The initiator sends with k1 and receives with k2
-    // - The responder sends with k2 and receives with k1
+    // - Initiator: c1 = encrypt, c2 = decrypt
+    // - Responder: c1 = decrypt, c2 = encrypt
     return _isInitiator ? (k1Key, k2Key) : (k2Key, k1Key);
   }
 
