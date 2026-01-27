@@ -239,9 +239,21 @@ func (s *SubServer) Status() server.Status {
 // Handlers returns HTTP handlers for listing peers, DHT query and info.
 func (s *SubServer) Handlers() []server.Handler {
 	return []server.Handler{
-		server.NewHTTPHandler("bootstrap-list", "/sub-bootstrap/list", server.GET, server.HertzHandlerFunc(s.listPeerInfos)),
-		server.NewHTTPHandler("bootstrap-dht", "/sub-bootstrap/dht", server.GET, server.HertzHandlerFunc(s.queryDHTPeer)),
-		server.NewHTTPHandler("bootstrap-info", "/sub-bootstrap/info", server.GET, server.HertzHandlerFunc(s.info)),
+		server.NewHandlerWithURL(
+			bootstrapRouterURL{name: "bootstrap-info", url: "/sub-bootstrap/list"},
+			s.listPeerInfos,
+			server.WithMethod(server.GET),
+		),
+		server.NewHandlerWithURL(
+			bootstrapRouterURL{name: "bootstrap-info", url: "/sub-bootstrap/dht"},
+			s.queryDHTPeer,
+			server.WithMethod(server.GET),
+		),
+		server.NewHandlerWithURL(
+			bootstrapRouterURL{name: "bootstrap-info", url: "/sub-bootstrap/info"},
+			s.info,
+			server.WithMethod(server.GET),
+		),
 	}
 }
 

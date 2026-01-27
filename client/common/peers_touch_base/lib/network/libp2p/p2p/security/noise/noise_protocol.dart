@@ -99,11 +99,11 @@ class NoiseSecurity implements SecurityProtocol {
         throw NoiseProtocolException('Responder payload missing signature');
       }
 
-      // Verify signature: responder signed initiator's static key
-      final myStaticKey = await pattern.getStaticPublicKey();
+      // Verify signature: responder signed their OWN static key
+      // (Each party signs their own static key to prove identity binding)
       final verified = await _verifyStaticKeySignature(
         remotePublicKey,
-        myStaticKey,
+        pattern.remoteStaticKey, // Responder's static key
         Uint8List.fromList(responderPayload.identitySig),
       );
       if (!verified) {
@@ -111,8 +111,9 @@ class NoiseSecurity implements SecurityProtocol {
       }
 
       // Message 3: -> s, se + encrypted(payload)
-      // Build and send initiator's payload
-      final initiatorPayload = await _buildHandshakePayload(pattern.remoteStaticKey);
+      // Build and send initiator's payload - sign OUR OWN static key
+      final myStaticKey = await pattern.getStaticPublicKey();
+      final initiatorPayload = await _buildHandshakePayloadForOwnKey(myStaticKey);
       final msg3 = await pattern.writeMessage(initiatorPayload);
       await _writeNoiseMessage(connection, msg3);
       _log.fine('NoiseSecurity.secureOutbound: Sent msg3 (s, se + payload), ${msg3.length} bytes');

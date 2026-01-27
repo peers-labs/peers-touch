@@ -8,7 +8,6 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
-	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
@@ -29,34 +28,48 @@ func (apr RouterPath) SubPath() string {
 	return string(apr)
 }
 
-type routerConfigAdapter struct{}
-
-func (a *routerConfigAdapter) IsEnabled(routeName string) bool {
-	routerConfig := GetRouterConfig()
-	switch routeName {
-	case model.RouteNameManagement:
-		return routerConfig.Management
-	case model.RouteNameActivityPub:
-		return routerConfig.ActivityPub
-	case model.RouteNameWellKnown:
-		return routerConfig.WellKnown
-	case model.RouteNameActor:
-		return routerConfig.User
-	case model.RouteNamePeer:
-		return routerConfig.Peer
-	case model.RouteNameMessage:
-		return routerConfig.Message
-	case model.RouteNameMastodon:
-		return routerConfig.Mastodon
-	case model.RouteNameSocial:
-		return routerConfig.Social
-	default:
-		return false
-	}
-}
-
+// CommonAccessControlWrapper creates a wrapper that checks router accessibility based on router family name
 func CommonAccessControlWrapper(routerFamilyName string) server.Wrapper {
-	return wrapper.AccessControl(routerFamilyName, &routerConfigAdapter{})
+	httpWrapper := func(ctx context.Context, next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			routerConfig := GetRouterConfig()
+
+			// Check if the router family is enabled based on its name
+			var isEnabled bool
+			switch routerFamilyName {
+			case model.RouteNameManagement:
+				isEnabled = routerConfig.Management
+			case model.RouteNameActivityPub:
+				isEnabled = routerConfig.ActivityPub
+			case model.RouteNameWellKnown:
+				isEnabled = routerConfig.WellKnown
+			case model.RouteNameActor:
+				isEnabled = routerConfig.User
+			case model.RouteNamePeer:
+				isEnabled = routerConfig.Peer
+			case model.RouteNameMessage:
+				isEnabled = routerConfig.Message
+			case model.RouteNameMastodon:
+				isEnabled = routerConfig.Mastodon
+			case model.RouteNameSocial:
+				isEnabled = routerConfig.Social
+			default:
+				log.Warnf(r.Context(), "Unknown router family: %s", routerFamilyName)
+				isEnabled = false
+			}
+
+			if !isEnabled {
+				log.Warnf(r.Context(), "Router family %s is disabled by configuration", routerFamilyName)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"error":"Page not found"}`)) // Match the existing 404 response format
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+	return server.HTTPWrapperAdapter(httpWrapper)
 }
 
 // wrapHandler creates a wrapper that checks configuration before executing the handler

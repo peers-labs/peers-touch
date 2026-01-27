@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
+	"reflect"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
@@ -56,6 +58,36 @@ type Handler interface {
 	Type() HandlerType
 }
 
+// RouterURL provides name and path for a handler
+type RouterURL interface {
+	Name() string
+	SubPath() string
+}
+
+// HandlerOption is a functional option for configuring handlers
+type HandlerOption func(*handler)
+
+// WithMethod sets the HTTP method for a handler
+func WithMethod(m Method) HandlerOption {
+	return func(h *handler) {
+		h.method = m
+	}
+}
+
+// WithType sets the handler type
+func WithType(t HandlerType) HandlerOption {
+	return func(h *handler) {
+		h.t = t
+	}
+}
+
+// WithWrappers adds wrappers to a handler
+func WithWrappers(w ...Wrapper) HandlerOption {
+	return func(h *handler) {
+		h.wrappers = append(h.wrappers, w...)
+	}
+}
+
 type handler struct {
 	name     string
 	method   Method
@@ -65,19 +97,53 @@ type handler struct {
 	t        HandlerType
 }
 
-func (h *handler) Name() string           { return h.name }
-func (h *handler) Path() string           { return h.path }
-func (h *handler) Method() Method         { return h.method }
+func (h *handler) Name() string             { return h.name }
+func (h *handler) Path() string             { return h.path }
+func (h *handler) Method() Method           { return h.method }
 func (h *handler) Handler() EndpointHandler { return h.h }
-func (h *handler) Wrappers() []Wrapper    { return h.wrappers }
-func (h *handler) Type() HandlerType      { return h.t }
+func (h *handler) Wrappers() []Wrapper      { return h.wrappers }
+func (h *handler) Type() HandlerType        { return h.t }
 
+// NewHandler creates a new handler with explicit parameters
 func NewHandler(name, path string, method Method, typ HandlerType, h EndpointHandler, wrappers ...Wrapper) Handler {
 	return &handler{name: name, path: path, method: method, t: typ, h: h, wrappers: wrappers}
 }
 
+// NewHandlerWithURL creates a handler using a RouterURL interface and options
+func NewHandlerWithURL(url RouterURL, h interface{}, opts ...HandlerOption) Handler {
+	handler := &handler{
+		name:   url.Name(),
+		path:   url.SubPath(),
+		method: GET,
+		t:      HandlerTypeHTTP,
+	}
+
+	// Handle the handler argument
+	switch v := h.(type) {
+	case EndpointHandler:
+		handler.h = v
+	default:
+		// Assume it's a Hertz-style handler, wrap with HertzHandlerFunc
+		handler.h = HertzHandlerFunc(h)
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(handler)
+	}
+
+	return handler
+}
+
 func NewHTTPHandler(name, path string, method Method, h EndpointHandler, wrappers ...Wrapper) Handler {
-	return NewHandler(name, path, method, HandlerTypeHTTP, h, wrappers...)
+	return &handler{
+		name:     name,
+		path:     path,
+		method:   method,
+		t:        HandlerTypeHTTP,
+		h:        h,
+		wrappers: wrappers,
+	}
 }
 
 func HTTPHandlerFunc(h http.HandlerFunc) EndpointHandler {
@@ -127,8 +193,8 @@ func HTTPWrapperAdapter(httpWrapper func(ctx context.Context, next http.Handler)
 			})
 
 			wrapped := httpWrapper(ctx, httpHandler)
-
-			r, err := http.NewRequestWithContext(ctx, string(req.Method()), req.Path(), io.NopCloser(io.Reader(nil)))
+			bodyReader := io.NopCloser(bytes.NewReader(req.Body()))
+			r, err := http.NewRequestWithContext(ctx, string(req.Method()), req.Path(), bodyReader)
 			if err != nil {
 				return err
 			}
@@ -204,21 +270,45 @@ func (r *httpResponseAdapter) Status() int {
 	return 0
 }
 
+// HertzHandlerFunc wraps a Hertz-style handler into an EndpointHandler.
+// The wrapped handler uses reflection to call the original Hertz handler
+// with the proper context extracted from the request.
 func HertzHandlerFunc(h interface{}) EndpointHandler {
-	hertzHandler, ok := h.(func(context.Context, interface{}))
-	if !ok {
+	// Validate that h is a function
+	hv := reflect.ValueOf(h)
+	if hv.Kind() != reflect.Func {
 		return func(ctx context.Context, req Request, resp Response) error {
 			return nil
 		}
 	}
 
 	return func(ctx context.Context, req Request, resp Response) error {
-		hertzCtx := &hertzContextAdapter{
-			ctx:  ctx,
-			req:  req,
-			resp: resp,
+		// Try to extract the underlying Hertz context
+		type hertzContextGetter interface {
+			GetHertzContext() interface{}
 		}
-		hertzHandler(ctx, hertzCtx)
+
+		if getter, ok := req.(hertzContextGetter); ok {
+			hertzCtx := getter.GetHertzContext()
+			// Use reflection to call the original handler
+			args := []reflect.Value{
+				reflect.ValueOf(ctx),
+				reflect.ValueOf(hertzCtx),
+			}
+			hv.Call(args)
+			return nil
+		}
+
+		// Fallback: create adapter for the handler (should not normally happen)
+		hertzCtx := &hertzContextAdapter{
+			ctx: ctx,
+			req: req,
+		}
+		args := []reflect.Value{
+			reflect.ValueOf(ctx),
+			reflect.ValueOf(hertzCtx),
+		}
+		hv.Call(args)
 		return nil
 	}
 }
@@ -226,7 +316,7 @@ func HertzHandlerFunc(h interface{}) EndpointHandler {
 type hertzContextAdapter struct {
 	ctx  context.Context
 	req  Request
-	resp Response
+	// Headers need to be set through a different mechanism
 }
 
 type StreamEndpoint func(ctx context.Context, s transport.Socket) error
@@ -251,12 +341,12 @@ type streamHandler struct {
 	t        HandlerType
 }
 
-func (h *streamHandler) Name() string            { return h.name }
-func (h *streamHandler) Path() string            { return h.path }
-func (h *streamHandler) Method() Method          { return h.method }
-func (h *streamHandler) Handler() StreamEndpoint { return h.h }
+func (h *streamHandler) Name() string              { return h.name }
+func (h *streamHandler) Path() string              { return h.path }
+func (h *streamHandler) Method() Method            { return h.method }
+func (h *streamHandler) Handler() StreamEndpoint   { return h.h }
 func (h *streamHandler) Wrappers() []StreamWrapper { return h.wrappers }
-func (h *streamHandler) Type() HandlerType       { return h.t }
+func (h *streamHandler) Type() HandlerType         { return h.t }
 
 func NewStreamHandler(name, path string, method Method, typ HandlerType, h StreamEndpoint, wrappers ...StreamWrapper) StreamHandler {
 	return &streamHandler{name: name, path: path, method: method, t: typ, h: h, wrappers: wrappers}

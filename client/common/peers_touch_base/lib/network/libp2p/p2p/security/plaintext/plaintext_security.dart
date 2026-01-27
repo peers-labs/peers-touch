@@ -114,7 +114,7 @@ class PlaintextSecurity implements SecurityProtocol {
     return exchange;
   }
 
-  /// Writes an Exchange message with length prefix
+  /// Writes an Exchange message with varint length prefix
   Future<void> _writeExchange(TransportConn conn, Exchange exchange) async {
     final data = exchange.writeToBuffer();
     final length = data.length;
@@ -123,25 +123,19 @@ class PlaintextSecurity implements SecurityProtocol {
       throw PlaintextException('Exchange message too large: $length bytes');
     }
 
-    // Write with 4-byte big-endian length prefix (like Go's varint for small values)
-    final frame = Uint8List(4 + length);
-    frame[0] = (length >> 24) & 0xFF;
-    frame[1] = (length >> 16) & 0xFF;
-    frame[2] = (length >> 8) & 0xFF;
-    frame[3] = length & 0xFF;
-    frame.setAll(4, data);
+    // Write with varint length prefix (like Go's go-libp2p)
+    final varintBytes = _encodeVarint(length);
+    final frame = Uint8List(varintBytes.length + length);
+    frame.setAll(0, varintBytes);
+    frame.setAll(varintBytes.length, data);
 
     await conn.write(frame);
   }
 
-  /// Reads an Exchange message with length prefix
+  /// Reads an Exchange message with varint length prefix
   Future<Exchange> _readExchange(TransportConn conn) async {
-    // Read 4-byte length prefix
-    final lengthBytes = await _readExactly(conn, 4);
-    final length = (lengthBytes[0] << 24) |
-        (lengthBytes[1] << 16) |
-        (lengthBytes[2] << 8) |
-        lengthBytes[3];
+    // Read varint length
+    final length = await _readVarint(conn);
 
     if (length <= 0 || length > 65535) {
       throw PlaintextException('Invalid Exchange message length: $length');
@@ -150,6 +144,37 @@ class PlaintextSecurity implements SecurityProtocol {
     // Read the Exchange message
     final data = await _readExactly(conn, length);
     return Exchange.fromBuffer(data);
+  }
+
+  /// Encodes a varint
+  List<int> _encodeVarint(int value) {
+    final bytes = <int>[];
+    while (value >= 0x80) {
+      bytes.add((value & 0x7F) | 0x80);
+      value >>= 7;
+    }
+    bytes.add(value);
+    return bytes;
+  }
+
+  /// Reads a varint from connection
+  Future<int> _readVarint(TransportConn conn) async {
+    int value = 0;
+    int shift = 0;
+
+    while (true) {
+      final byte = await _readExactly(conn, 1);
+      value |= (byte[0] & 0x7F) << shift;
+      if ((byte[0] & 0x80) == 0) {
+        break;
+      }
+      shift += 7;
+      if (shift > 63) {
+        throw PlaintextException('Varint too long');
+      }
+    }
+
+    return value;
   }
 
   /// Reads exactly the specified number of bytes
