@@ -71,7 +71,7 @@ func SetPeerAddrHandler(c context.Context, ctx *app.RequestContext) {
 	// Validate the PeerAddressParam data
 	if err := param.Check(); err != nil {
 		log.Warnf(c, "SetPeerAddr checked params failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
@@ -88,7 +88,7 @@ func SetPeerAddrHandler(c context.Context, ctx *app.RequestContext) {
 	}
 
 	// If everything is successful, return a success response
-	SuccessResponse(ctx, "Peer address saved successfully", nil)
+	SuccessResponse(c, ctx, "Peer address saved successfully", nil)
 }
 
 func GetMyPeerAddrInfos(c context.Context, ctx *app.RequestContext) {
@@ -96,11 +96,11 @@ func GetMyPeerAddrInfos(c context.Context, ctx *app.RequestContext) {
 	peerAddrInfos, err := peer.GetMyPeerInfos(c)
 	if err != nil {
 		log.Warnf(c, "GetMyPeerInfos executed failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 	// If everything is successful, return the peer address information as a success response
-	SuccessResponse(ctx, "Peer address information retrieved successfully", peerAddrInfos)
+	SuccessResponse(c, ctx, "Peer address information retrieved successfully", peerAddrInfos)
 }
 
 // TouchHiToHandler initiates a connection to a peer address and establishes a stream
@@ -114,7 +114,7 @@ func TouchHiToHandler(c context.Context, ctx *app.RequestContext) {
 
 	if err := param.Check(); err != nil {
 		log.Warnf(c, "TouchHiTo checked params failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
@@ -122,11 +122,11 @@ func TouchHiToHandler(c context.Context, ctx *app.RequestContext) {
 	status, err := peer.TouchHiTo(c, &param)
 	if err != nil {
 		log.Errorf(c, "TouchHiTo connection failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
-	SuccessResponse(ctx, "Connection established successfully", status)
+	SuccessResponse(c, ctx, "Connection established successfully", status)
 }
 
 // Registry endpoint handlers - these implement registry functionality using ctx directly
@@ -191,12 +191,12 @@ func ListNodesHandler(c context.Context, ctx *app.RequestContext) {
 	nodes, total, err := nr.ListNodes(c, filter)
 	if err != nil {
 		log.Errorf(c, "Failed to list nodes: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
 	page := offset/limit + 1
-	SuccessResponse(ctx, "Nodes listed successfully", map[string]interface{}{
+	SuccessResponse(c, ctx, "Nodes listed successfully", map[string]interface{}{
 		"nodes": nodes,
 		"total": total,
 		"page":  page,
@@ -209,7 +209,7 @@ func GetNodeHandler(c context.Context, ctx *app.RequestContext) {
 	nodeID := ctx.Param("id")
 
 	if nodeID == "" {
-		FailedResponse(ctx, errors.New("node id is required"))
+		FailedResponse(c, ctx, errors.New("node id is required"))
 		return
 	}
 
@@ -223,12 +223,12 @@ func GetNodeHandler(c context.Context, ctx *app.RequestContext) {
 			})
 		} else {
 			log.Errorf(c, "Failed to get node %s: %v", nodeID, err)
-			FailedResponse(ctx, err)
+			FailedResponse(c, ctx, err)
 		}
 		return
 	}
 
-	SuccessResponse(ctx, "Node retrieved", map[string]interface{}{
+	SuccessResponse(c, ctx, "Node retrieved", map[string]interface{}{
 		"node": node,
 	})
 }
@@ -247,28 +247,28 @@ func RegisterNodeHandler(c context.Context, ctx *app.RequestContext) {
 
 	if err := ctx.Bind(&req); err != nil {
 		log.Errorf(c, "Failed to bind JSON: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
 	// Validate request parameters
 	if req.Name == "" {
-		FailedResponse(ctx, errors.New("node name is required"))
+		FailedResponse(c, ctx, errors.New("node name is required"))
 		return
 	}
 
 	if req.Version == "" {
-		FailedResponse(ctx, errors.New("node version is required"))
+		FailedResponse(c, ctx, errors.New("node version is required"))
 		return
 	}
 
 	if len(req.Addresses) == 0 {
-		FailedResponse(ctx, errors.New("at least one address is required"))
+		FailedResponse(c, ctx, errors.New("at least one address is required"))
 		return
 	}
 
 	if req.Port <= 0 || req.Port > 65535 {
-		FailedResponse(ctx, errors.New("invalid port number"))
+		FailedResponse(c, ctx, errors.New("invalid port number"))
 		return
 	}
 
@@ -287,13 +287,13 @@ func RegisterNodeHandler(c context.Context, ctx *app.RequestContext) {
 	nr := peer.GetNodeRegistry()
 	if err := nr.Register(c, node); err != nil {
 		log.Errorf(c, "Failed to register node: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
 	log.Infof(c, "Successfully registered node: %s", node.ID)
 
-	SuccessResponse(ctx, "Node registered successfully", map[string]interface{}{
+	SuccessResponse(c, ctx, "Node registered successfully", map[string]interface{}{
 		"node": node,
 	})
 }
@@ -302,7 +302,7 @@ func RegisterNodeHandler(c context.Context, ctx *app.RequestContext) {
 func DeregisterNodeHandler(c context.Context, ctx *app.RequestContext) {
 	nodeID := ctx.Param("id")
 	if nodeID == "" {
-		FailedResponse(ctx, errors.New("node id is required"))
+		FailedResponse(c, ctx, errors.New("node id is required"))
 		return
 	}
 
@@ -315,12 +315,12 @@ func DeregisterNodeHandler(c context.Context, ctx *app.RequestContext) {
 			})
 		} else {
 			log.Errorf(c, "Failed to deregister node %s: %v", nodeID, err)
-			FailedResponse(ctx, err)
+			FailedResponse(c, ctx, err)
 		}
 		return
 	}
 
 	log.Infof(c, "Successfully deregistered node: %s", nodeID)
 
-	SuccessResponse(ctx, "Node deregistered successfully", map[string]string{"id": nodeID})
+	SuccessResponse(c, ctx, "Node deregistered successfully", map[string]string{"id": nodeID})
 }

@@ -247,6 +247,14 @@ func (r *response) Header() map[string]string {
 	return r.header
 }
 
+// SetHeader sets a header key-value pair.
+func (r *response) SetHeader(key, value string) {
+	if r.header == nil {
+		r.header = make(map[string]string)
+	}
+	r.header[key] = value
+}
+
 // Write writes the bytes to the underlying ResponseWriter.
 func (r *response) Write(b []byte) (int, error) {
 	for k, v := range r.header {
