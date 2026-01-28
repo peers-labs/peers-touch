@@ -13,7 +13,7 @@ import (
 )
 
 // listPeerInfos processes the HTTP request and returns peer info
-func (s *SubServer) listPeerInfos(_ context.Context, ctx *app.RequestContext) {
+func (s *SubServer) listPeerInfos(c context.Context, ctx *app.RequestContext) {
 	peers := s.host.Network().Peers()
 
 	var results []model.ConnectionInfoPO
@@ -53,21 +53,21 @@ func (s *SubServer) listPeerInfos(_ context.Context, ctx *app.RequestContext) {
 		No:    1,
 	}
 
-	touch.SuccessResponse(ctx, "query peers infos success", page)
+	touch.SuccessResponse(c, ctx, "query peers infos success", page)
 }
 
 // queryDHTPeer queries DHT for a peer by ID and returns its addresses.
 func (s *SubServer) queryDHTPeer(c context.Context, ctx *app.RequestContext) {
 	peerIDStr := ctx.Query("peer_id")
 	if peerIDStr == "" {
-		touch.FailedResponse(ctx, fmt.Errorf("peer_id parameter is required"))
+		touch.FailedResponse(c, ctx, fmt.Errorf("peer_id parameter is required"))
 
 		return
 	}
 
 	pid, err := peer.Decode(peerIDStr)
 	if err != nil {
-		touch.FailedResponse(ctx, fmt.Errorf("invalid peer ID format: %s", err))
+		touch.FailedResponse(c, ctx, fmt.Errorf("invalid peer ID format: %s", err))
 
 		return
 	}
@@ -75,7 +75,7 @@ func (s *SubServer) queryDHTPeer(c context.Context, ctx *app.RequestContext) {
 	// Query DHT for peer information
 	peerInfo, err := s.dht.FindPeer(c, pid)
 	if err != nil {
-		touch.FailedResponse(ctx, fmt.Errorf("failed to find peer in DHT: %s", err))
+		touch.FailedResponse(c, ctx, fmt.Errorf("failed to find peer in DHT: %s", err))
 
 		return
 	}
@@ -86,7 +86,7 @@ func (s *SubServer) queryDHTPeer(c context.Context, ctx *app.RequestContext) {
 		addrs = append(addrs, addr.String())
 	}
 
-	touch.SuccessResponse(ctx, "DHT peer query successful", map[string]interface{}{
+	touch.SuccessResponse(c, ctx, "DHT peer query successful", map[string]interface{}{
 		"peer_id":   peerInfo.ID.String(),
 		"addresses": addrs,
 	})

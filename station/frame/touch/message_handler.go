@@ -51,16 +51,16 @@ func CreateConv(c context.Context, ctx *app.RequestContext) {
 		Policy    string `json:"policy"`
 	}
 	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 	svc := service.NewConversationService()
 	conv, err := svc.Create(c, &service.CreateConvReq{ConvID: p.ConvID, Type: p.Type, Title: p.Title, AvatarCID: p.AvatarCID, Policy: p.Policy})
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", conv)
+	SuccessResponse(c, ctx, "", conv)
 }
 
 func GetConv(c context.Context, ctx *app.RequestContext) {
@@ -68,10 +68,10 @@ func GetConv(c context.Context, ctx *app.RequestContext) {
 	svc := service.NewConversationService()
 	conv, err := svc.Get(c, id)
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", conv)
+	SuccessResponse(c, ctx, "", conv)
 }
 
 func GetConvState(c context.Context, ctx *app.RequestContext) {
@@ -79,10 +79,10 @@ func GetConvState(c context.Context, ctx *app.RequestContext) {
 	svc := service.NewConversationService()
 	conv, err := svc.Get(c, id)
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", map[string]interface{}{"epoch": conv.Epoch})
+	SuccessResponse(c, ctx, "", map[string]interface{}{"epoch": conv.Epoch})
 }
 
 func UpdateMembers(c context.Context, ctx *app.RequestContext) {
@@ -93,23 +93,23 @@ func UpdateMembers(c context.Context, ctx *app.RequestContext) {
 		Role   string   `json:"role"`
 	}
 	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 	svc := service.NewConversationService()
 	if len(p.Add) > 0 {
 		if err := svc.AddMembers(c, p.ConvPK, p.Add, m.Role(p.Role)); err != nil {
-			FailedResponse(ctx, err)
+			FailedResponse(c, ctx, err)
 			return
 		}
 	}
 	if len(p.Remove) > 0 {
 		if err := svc.RemoveMembers(c, p.ConvPK, p.Remove); err != nil {
-			FailedResponse(ctx, err)
+			FailedResponse(c, ctx, err)
 			return
 		}
 	}
-	SuccessResponse(ctx, "", map[string]interface{}{"ok": true})
+	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
 }
 
 func GetMembers(c context.Context, ctx *app.RequestContext) {
@@ -117,26 +117,26 @@ func GetMembers(c context.Context, ctx *app.RequestContext) {
 		ConvPK uint64 `json:"conv_pk"`
 	}
 	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 	svc := service.NewConversationService()
 	list, err := svc.Members(c, p.ConvPK)
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", list)
+	SuccessResponse(c, ctx, "", list)
 }
 
 func KeyRotate(c context.Context, ctx *app.RequestContext) {
 	id := ctx.Param("id")
 	svc := service.NewConversationService()
 	if err := svc.KeyRotate(c, id); err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", map[string]interface{}{"ok": true})
+	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
 }
 
 func AppendMessage(c context.Context, ctx *app.RequestContext) {
@@ -151,17 +151,17 @@ func AppendMessage(c context.Context, ctx *app.RequestContext) {
 	}
 	convID := ctx.Param("id")
 	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 	svc := service.NewMessageService()
 	now := time.Now().UnixMilli()
 	msg, err := svc.Append(c, &service.AppendReq{ULID: p.ULID, ConvID: convID, SenderDID: p.SenderDID, TS: now, Type: p.Type, ParentID: p.ParentID, ThreadID: p.ThreadID, ContentCID: p.ContentCID, TTLMillis: p.TTLMillis})
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", msg)
+	SuccessResponse(c, ctx, "", msg)
 }
 
 func ListMessages(c context.Context, ctx *app.RequestContext) {
@@ -183,14 +183,14 @@ func ListMessages(c context.Context, ctx *app.RequestContext) {
 	svc := service.NewMessageService()
 	list, err := svc.List(c, convID, after, limit)
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", list)
+	SuccessResponse(c, ctx, "", list)
 }
 
 func StreamMessages(c context.Context, ctx *app.RequestContext) {
-	SuccessResponse(ctx, "", map[string]interface{}{"ok": true})
+	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
 }
 
 func PostReceipt(c context.Context, ctx *app.RequestContext) {
@@ -201,16 +201,16 @@ func PostReceipt(c context.Context, ctx *app.RequestContext) {
 		Read      bool   `json:"read"`
 	}
 	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 	svc := service.NewReceiptService()
 	r, err := svc.Post(c, &service.PostReceiptReq{MsgULID: p.MsgULID, MemberDID: p.MemberDID, Delivered: p.Delivered, Read: p.Read})
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", r)
+	SuccessResponse(c, ctx, "", r)
 }
 
 func GetReceipts(c context.Context, ctx *app.RequestContext) {
@@ -225,10 +225,10 @@ func GetReceipts(c context.Context, ctx *app.RequestContext) {
 	svc := service.NewReceiptService()
 	list, err := svc.List(c, convID, after)
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", list)
+	SuccessResponse(c, ctx, "", list)
 }
 
 func PostAttachment(c context.Context, ctx *app.RequestContext) {
@@ -242,16 +242,16 @@ func PostAttachment(c context.Context, ctx *app.RequestContext) {
 	convID := ctx.Param("id")
 	msgID := string(ctx.QueryArgs().Peek("msg_ulid"))
 	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 	a := &m.Attachment{CID: p.CID, ConvID: convID, MsgULID: msgID, MIME: p.MIME, Bytes: p.Bytes, Digest: p.Digest, Store: p.Store}
 	svc := service.NewAttachmentService()
 	if err := svc.Save(c, a); err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", a)
+	SuccessResponse(c, ctx, "", a)
 }
 
 func GetAttachment(c context.Context, ctx *app.RequestContext) {
@@ -259,20 +259,20 @@ func GetAttachment(c context.Context, ctx *app.RequestContext) {
 	svc := service.NewAttachmentService()
 	a, err := svc.Get(c, cid)
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "", a)
+	SuccessResponse(c, ctx, "", a)
 }
 
 func SearchMessages(c context.Context, ctx *app.RequestContext) {
-	SuccessResponse(ctx, "", []interface{}{})
+	SuccessResponse(c, ctx, "", []interface{}{})
 }
 
 func GetSnapshot(c context.Context, ctx *app.RequestContext) {
-	SuccessResponse(ctx, "", map[string]interface{}{"ok": true})
+	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
 }
 
 func PostSnapshot(c context.Context, ctx *app.RequestContext) {
-	SuccessResponse(ctx, "", map[string]interface{}{"ok": true})
+	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
 }

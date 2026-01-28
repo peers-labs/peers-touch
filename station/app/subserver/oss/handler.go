@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -109,11 +110,61 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rc.Close()
+
+	// Ensure Content-Type is set, fallback to extension-based detection
+	if mt == "" {
+		mt = getMimeTypeByExtension(key)
+	}
 	if mt != "" {
 		w.Header().Set("Content-Type", mt)
 	}
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 	_, _ = io.Copy(w, rc)
+}
+
+// getMimeTypeByExtension returns MIME type based on file extension
+func getMimeTypeByExtension(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".svg":
+		return "image/svg+xml"
+	case ".ico":
+		return "image/x-icon"
+	case ".bmp":
+		return "image/bmp"
+	case ".mp4":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".wav":
+		return "audio/wav"
+	case ".pdf":
+		return "application/pdf"
+	case ".json":
+		return "application/json"
+	case ".xml":
+		return "application/xml"
+	case ".txt":
+		return "text/plain"
+	case ".html", ".htm":
+		return "text/html"
+	case ".css":
+		return "text/css"
+	case ".js":
+		return "application/javascript"
+	default:
+		return "application/octet-stream"
+	}
 }
 
 func (s *ossSubServer) handleMetaGet(w http.ResponseWriter, r *http.Request) {

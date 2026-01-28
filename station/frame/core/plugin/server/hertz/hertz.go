@@ -300,7 +300,12 @@ func (r *hertzRequest) Method() server.Method {
 }
 
 func (r *hertzRequest) Path() string {
-	return string(r.ctx.Path())
+	// Include query string in path for proper URL handling
+	path := string(r.ctx.Path())
+	if qs := r.ctx.URI().QueryString(); len(qs) > 0 {
+		return path + "?" + string(qs)
+	}
+	return path
 }
 
 func (r *hertzRequest) Body() []byte {
@@ -330,7 +335,12 @@ func (r *hertzRequestWithContext) Method() server.Method {
 }
 
 func (r *hertzRequestWithContext) Path() string {
-	return string(r.ctx.Path())
+	// Include query string in path for proper URL handling
+	path := string(r.ctx.Path())
+	if qs := r.ctx.URI().QueryString(); len(qs) > 0 {
+		return path + "?" + string(qs)
+	}
+	return path
 }
 
 func (r *hertzRequestWithContext) Body() []byte {
@@ -354,6 +364,10 @@ func (r *hertzResponse) Header() map[string]string {
 		h[string(key)] = string(value)
 	})
 	return h
+}
+
+func (r *hertzResponse) SetHeader(key, value string) {
+	r.ctx.Response.Header.Set(key, value)
 }
 
 func (r *hertzResponse) Write(b []byte) (int, error) {

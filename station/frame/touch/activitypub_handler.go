@@ -205,18 +205,18 @@ func ActorSignup(c context.Context, ctx *app.RequestContext) {
 
 	if err := params.Check(); err != nil {
 		log.Warnf(c, "Signup checked params failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
 	err := activitypub.SignUp(c, &params, baseURLFrom(ctx))
 	if err != nil {
 		log.Warnf(c, "Signup failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
-	SuccessResponse(ctx, "Actor signup successful", nil)
+	SuccessResponse(c, ctx, "Actor signup successful", nil)
 }
 
 func ActorLogin(c context.Context, ctx *app.RequestContext) {
@@ -229,7 +229,7 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 
 	if err := params.Check(); err != nil {
 		log.Warnf(c, "Login checked params failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
@@ -247,7 +247,7 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 	result, err := auth.LoginWithSession(c, credentials, clientIP, userAgent)
 	if err != nil {
 		log.Warnf(c, "Login failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
@@ -275,7 +275,7 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 	}
 	actorAny, _ := anypb.New(user)
 	data := &modelpb.LoginData{Tokens: tokens, SessionId: result.SessionID, Actor: actorAny}
-	SuccessResponse(ctx, "Login successful", data)
+	SuccessResponse(c, ctx, "Login successful", data)
 }
 
 func GetActorProfile(c context.Context, ctx *app.RequestContext) {
@@ -289,10 +289,10 @@ func GetActorProfile(c context.Context, ctx *app.RequestContext) {
 	resp, err := activitypub.GetWebProfileByID(c, actorID, baseURL)
 	if err != nil {
 		log.Warnf(c, "Get actor profile failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "Actor profile retrieved", resp)
+	SuccessResponse(c, ctx, "Actor profile retrieved", resp)
 }
 
 func PublicProfile(c context.Context, ctx *app.RequestContext) {
@@ -334,10 +334,10 @@ func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
 
 	if err := activitypub.UpdateProfileByID(c, actorID, params); err != nil {
 		log.Warnf(c, "Update profile failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(ctx, "Profile updated successfully", nil)
+	SuccessResponse(c, ctx, "Profile updated successfully", nil)
 }
 
 // ListActors returns actors from preset configuration
@@ -355,7 +355,7 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 	actors, err := actor.ListActors(c, currentActorID)
 	if err != nil {
 		log.Warnf(c, "List actors failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
@@ -387,14 +387,14 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 			FollowedBy:  followedBy,
 		})
 	}
-	SuccessResponse(ctx, "Actor list", &modelpb.ActorList{Items: items, Total: int64(len(items))})
+	SuccessResponse(c, ctx, "Actor list", &modelpb.ActorList{Items: items, Total: int64(len(items))})
 }
 
 // SearchActors searches local actors by query (fuzzy match on username and display name)
 func SearchActors(c context.Context, ctx *app.RequestContext) {
 	query := string(ctx.Query("q"))
 	if query == "" {
-		FailedResponse(ctx, errors.New("query parameter 'q' is required"))
+		FailedResponse(c, ctx, errors.New("query parameter 'q' is required"))
 		return
 	}
 
@@ -411,7 +411,7 @@ func SearchActors(c context.Context, ctx *app.RequestContext) {
 	actors, err := activitypub.SearchActors(c, query, excludeActorID)
 	if err != nil {
 		log.Warnf(c, "Search actors failed: %v", err)
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
@@ -428,7 +428,7 @@ func SearchActors(c context.Context, ctx *app.RequestContext) {
 			Endpoints:   a.Endpoints,
 		})
 	}
-	SuccessResponse(ctx, "Search results", &modelpb.ActorList{Items: items, Total: int64(len(items))})
+	SuccessResponse(c, ctx, "Search results", &modelpb.ActorList{Items: items, Total: int64(len(items))})
 }
 
 func toString(v interface{}) string {
@@ -812,17 +812,17 @@ func CreateActivity(c context.Context, ctx *app.RequestContext) {
 	}
 	var in modelpb.ActivityInput
 	if err := ctx.Bind(&in); err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 	baseURL := baseURLFrom(ctx)
 	postID, actID, err := activitypub.Create(c, actor, baseURL, &in)
 	if err != nil {
-		FailedResponse(ctx, err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 	resp := &modelpb.ActivityResponse{PostId: postID, ActivityId: actID}
-	SuccessResponse(ctx, "ok", resp)
+	SuccessResponse(c, ctx, "ok", resp)
 }
 
 func NodeInfoHandler(c context.Context, ctx *app.RequestContext) {

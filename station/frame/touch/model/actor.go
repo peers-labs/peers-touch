@@ -92,18 +92,14 @@ func (actor ActorLoginParams) Check() error {
 		}
 	} else {
 		// treat as username identifier; minimal non-empty check
-		if len(val) < 3 {
+		if len(val) < 1 {
 			return ErrActorInvalidEmail
 		}
 	}
 
-	// Validate password using default pattern
-	config := &validator.PasswordConfig{
-		Pattern:   DefaultPasswordPattern,
-		MinLength: DefaultPasswordMinLength,
-		MaxLength: DefaultPasswordMaxLength,
-	}
-	if err := validator.ValidatePassword(actor.Password, config); err != nil {
+	// For login, only check password is not empty (no format validation)
+	// Password format is validated on registration, not login
+	if strings.TrimSpace(actor.Password) == "" {
 		return ErrActorInvalidPassword
 	}
 

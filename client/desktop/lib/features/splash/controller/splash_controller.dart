@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/network/token_provider.dart';
@@ -77,16 +78,37 @@ class SplashController extends GetxController {
       final isValid = await _verifyToken();
       
       if (isValid) {
-        LoggingService.info('Splash: Token valid, navigating to shell');
-        statusMessage.value = '登录成功';
-        await Future.delayed(const Duration(milliseconds: 300));
-        Get.offAllNamed(AppRoutes.shell);
+        LoggingService.info('Splash: Token valid, verifying user profile');
+        statusMessage.value = '加载用户信息...';
+        
+        // Refresh profile to verify user still exists
+        final hasProfile = await _verifyUserProfile();
+        if (hasProfile) {
+          LoggingService.info('Splash: User profile valid, navigating to shell');
+          statusMessage.value = '登录成功';
+          await Future.delayed(const Duration(milliseconds: 300));
+          Get.offAllNamed(AppRoutes.shell);
+        } else {
+          LoggingService.warning('Splash: User profile not found, triggering logout');
+          // Use unified logout event
+          if (Get.isRegistered<GlobalContext>()) {
+            Get.find<GlobalContext>().requestLogout(LogoutReason.userNotFound);
+          } else {
+            // Fallback if GlobalContext not ready
+            await tokenProvider.clear();
+            Get.offAllNamed(AppRoutes.login);
+          }
+        }
       } else {
-        LoggingService.warning('Splash: Token invalid, clearing and navigating to login');
-        await tokenProvider.clear();
-        statusMessage.value = '登录已过期';
-        await Future.delayed(const Duration(milliseconds: 300));
-        Get.offAllNamed(AppRoutes.login);
+        LoggingService.warning('Splash: Token invalid, triggering logout');
+        // Use unified logout event
+        if (Get.isRegistered<GlobalContext>()) {
+          Get.find<GlobalContext>().requestLogout(LogoutReason.tokenExpired);
+        } else {
+          // Fallback if GlobalContext not ready
+          await tokenProvider.clear();
+          Get.offAllNamed(AppRoutes.login);
+        }
       }
     } catch (e) {
       LoggingService.error('Splash: Error checking auth: $e');
@@ -104,6 +126,29 @@ class SplashController extends GetxController {
       return response.statusCode == 200;
     } catch (e) {
       LoggingService.warning('Splash: Token verification failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _verifyUserProfile() async {
+    try {
+      // Try to refresh profile from server
+      if (Get.isRegistered<GlobalContext>()) {
+        final globalContext = Get.find<GlobalContext>();
+        await globalContext.refreshProfile();
+        
+        // Check if profile was loaded successfully
+        final profile = globalContext.userProfile;
+        if (profile != null && profile['id'] != null) {
+          LoggingService.info('Splash: User profile verified: id=${profile['id']}');
+          return true;
+        }
+      }
+      
+      LoggingService.warning('Splash: User profile is null or invalid');
+      return false;
+    } catch (e) {
+      LoggingService.warning('Splash: User profile verification failed: $e');
       return false;
     }
   }

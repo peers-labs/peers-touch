@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/types"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // Router is a server handler that can be registered with a server.
@@ -105,26 +109,79 @@ func convertRouterToServerHandler(r Router) server.Handler {
 	return server.Handler(r)
 }
 
-func SuccessResponse(ctx *app.RequestContext, msg string, data interface{}) {
+// shouldUseProto checks if the client prefers protobuf response
+func shouldUseProto(ctx *app.RequestContext) bool {
+	accept := string(ctx.GetHeader("Accept"))
+	contentType := string(ctx.GetHeader("Content-Type"))
+	return strings.Contains(accept, model.AcceptProtobuf) ||
+		strings.Contains(contentType, model.ContentTypeProtobuf)
+}
+
+// SuccessResponse sends a success response in proto or JSON format based on Accept header
+func SuccessResponse(c context.Context, ctx *app.RequestContext, msg string, data interface{}) {
 	if msg == "" {
 		msg = "success"
 	}
 
-	ctx.Header("Content-Type", "application/json; charset=utf-8")
-	ctx.JSON(http.StatusOK, model.NewSuccessResponse(msg, data))
-}
+	// Build PeersResponse
+	resp := &types.PeersResponse{
+		Code: model.SuccessCode,
+		Msg:  msg,
+	}
 
-func FailedResponse(ctx *app.RequestContext, err error) {
-	if err != nil {
-		var e *model.ErrorResponse
-		if errors.As(err, &e) {
-			ctx.JSON(http.StatusBadRequest, e)
+	// Pack data into Any if it's a proto.Message
+	if protoMsg, ok := data.(proto.Message); ok && protoMsg != nil {
+		anyData, err := anypb.New(protoMsg)
+		if err == nil {
+			resp.Data = anyData
+		}
+	}
+
+	if shouldUseProto(ctx) {
+		// Return protobuf
+		respBytes, err := proto.Marshal(resp)
+		if err != nil {
+			log.Errorf(c, "failed to marshal protobuf response: %v", err)
+			ctx.SetStatusCode(http.StatusInternalServerError)
 			return
 		}
-
-		ctx.JSON(http.StatusInternalServerError, model.UndefinedError(err))
+		ctx.Data(http.StatusOK, model.ContentTypeProtobuf, respBytes)
 		return
 	}
 
-	ctx.JSON(http.StatusBadRequest, model.UndefinedError(errors.New("undefined error")))
+	// Return JSON
+	ctx.Header("Content-Type", model.ContentTypeJSONUTF8)
+	ctx.JSON(http.StatusOK, model.NewSuccessResponse(msg, data))
+}
+
+// FailedResponse sends an error response in proto or JSON format based on Accept header
+func FailedResponse(c context.Context, ctx *app.RequestContext, err error) {
+	if err == nil {
+		err = errors.New("undefined error")
+	}
+
+	var errResp *model.ErrorResponse
+	if !errors.As(err, &errResp) {
+		errResp = model.UndefinedError(err)
+	}
+
+	statusCode := http.StatusBadRequest
+	if errResp.Code == model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR {
+		statusCode = http.StatusInternalServerError
+	}
+
+	if shouldUseProto(ctx) {
+		// Return protobuf error
+		respBytes, marshalErr := proto.Marshal(errResp)
+		if marshalErr != nil {
+			log.Errorf(c, "failed to marshal protobuf error: %v", marshalErr)
+			ctx.SetStatusCode(http.StatusInternalServerError)
+			return
+		}
+		ctx.Data(statusCode, model.ContentTypeProtobuf, respBytes)
+		return
+	}
+
+	// Return JSON error
+	ctx.JSON(statusCode, errResp)
 }

@@ -1,7 +1,7 @@
 peers:
   logger:
     name: slogrus
-    level: warn
+    level: info
     caller-skip-count: 0
     # Package path prefix replacements (longest match first)
     # Simplifies pkg_path field in logs for better readability

@@ -25,6 +25,7 @@ class DefaultGlobalContext implements GlobalContext {
   Map<String, dynamic> _preferences = {};
   String? _protocolTag;
   bool _isRefreshingProfile = false;
+  String? _lastLogoutMessage;
   final _sessionCtrl = StreamController<Map<String, dynamic>?>.broadcast();
   final _profileCtrl = StreamController<Map<String, dynamic>?>.broadcast();
   final _accountsCtrl =
@@ -32,6 +33,7 @@ class DefaultGlobalContext implements GlobalContext {
   final _prefsCtrl = StreamController<Map<String, dynamic>>.broadcast();
   final _protocolCtrl = StreamController<String?>.broadcast();
   final _netCtrl = StreamController<List<String>>.broadcast();
+  final _logoutCtrl = StreamController<LogoutReason>.broadcast();
 
   void _bindConnectivity() {
     if (connectivity == null) return;
@@ -408,16 +410,32 @@ class DefaultGlobalContext implements GlobalContext {
 
   @override
   Future<void> refreshProfile() async {
-    if (_isRefreshingProfile) return;
+    if (_isRefreshingProfile) {
+      LoggingService.debug('GlobalContext.refreshProfile: Already refreshing, skipping');
+      // Wait for existing refresh to complete
+      while (_isRefreshingProfile) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      // After waiting, check if profile was loaded
+      if (_userProfile != null && _userProfile!['id'] != null) {
+        return;
+      }
+      throw Exception('Profile refresh failed: no profile available after waiting');
+    }
     final handle = actorHandle;
-    if (handle == null || handle.isEmpty) return;
+    if (handle == null || handle.isEmpty) {
+      LoggingService.warning('GlobalContext.refreshProfile: No handle available');
+      throw Exception('No handle available to refresh profile');
+    }
     
     _isRefreshingProfile = true;
+    LoggingService.info('GlobalContext.refreshProfile: Starting for handle=$handle');
     try {
       final client = HttpServiceLocator().httpService;
       final response = await client.getResponse<dynamic>(
         '/activitypub/$handle/profile',
       );
+      LoggingService.info('GlobalContext.refreshProfile: Response status=${response.statusCode}');
       if (response.statusCode == 200 && response.data is Map) {
         _userProfile = (response.data as Map).cast<String, dynamic>();
         _profileCtrl.add(_userProfile);
@@ -443,10 +461,16 @@ class DefaultGlobalContext implements GlobalContext {
           }
         }
         
-        LoggingService.info('GlobalContext.refreshProfile: $handle loaded');
+        LoggingService.info('GlobalContext.refreshProfile: $handle loaded successfully');
+      } else {
+        LoggingService.warning('GlobalContext.refreshProfile: Invalid response status=${response.statusCode}');
+        // Rethrow to let caller handle this
+        throw Exception('Profile not found: status=${response.statusCode}');
       }
     } catch (e) {
       LoggingService.warning('GlobalContext.refreshProfile failed: $e');
+      // Rethrow so caller knows the profile refresh failed
+      rethrow;
     } finally {
       _isRefreshingProfile = false;
     }
@@ -476,5 +500,33 @@ class DefaultGlobalContext implements GlobalContext {
   void clearProfile() {
     _userProfile = null;
     _profileCtrl.add(null);
+  }
+
+  @override
+  Stream<LogoutReason> get onLogoutRequested => _logoutCtrl.stream;
+
+  @override
+  String? get lastLogoutMessage => _lastLogoutMessage;
+
+  @override
+  void requestLogout(LogoutReason reason, {String? message}) {
+    _lastLogoutMessage = message ?? _defaultMessageForReason(reason);
+    LoggingService.info('GlobalContext.requestLogout: reason=$reason, message=$_lastLogoutMessage');
+    _logoutCtrl.add(reason);
+  }
+
+  String _defaultMessageForReason(LogoutReason reason) {
+    switch (reason) {
+      case LogoutReason.userInitiated:
+        return '您已退出登录';
+      case LogoutReason.tokenExpired:
+        return '登录已过期，请重新登录';
+      case LogoutReason.userNotFound:
+        return '用户不存在，请重新登录';
+      case LogoutReason.forcedByServer:
+        return '您已被强制下线';
+      case LogoutReason.sessionCleared:
+        return '会话已清除，请重新登录';
+    }
   }
 }
