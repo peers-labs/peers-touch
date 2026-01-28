@@ -56,9 +56,12 @@ func SeedPresetUsers(c context.Context) error {
 			continue
 		}
 		
-		// create new
-		pw := []byte("preset-" + p.Username)
-		hash, _ := bcrypt.GenerateFromPassword(pw, bcrypt.DefaultCost)
+		// create new - use password from config, default to "1"
+		pw := p.Password
+		if pw == "" {
+			pw = "1"
+		}
+		hash, _ := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 		
 		// Generate keys
 		pubPEM, privPEM, _ := crypto.GenerateRSAKeyPair(2048)

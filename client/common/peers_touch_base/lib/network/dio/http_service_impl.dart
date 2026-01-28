@@ -65,7 +65,15 @@ class HttpServiceImpl implements IHttpService {
       return fromJson(response.data!);
     }
     
-    final response = await getResponse<T>(path, queryParameters: queryParameters);
+    // When expecting JSON (Map), explicitly request JSON format
+    final response = await _dio.get<T>(
+      path,
+      queryParameters: queryParameters,
+      options: Options(
+        headers: {'Accept': 'application/json'},
+        responseType: ResponseType.json,
+      ),
+    );
     return response.data as T;
   }
 

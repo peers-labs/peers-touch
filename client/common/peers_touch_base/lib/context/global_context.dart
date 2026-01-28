@@ -1,6 +1,20 @@
 import 'package:peers_touch_base/model/domain/actor/preferences.pb.dart';
 import 'package:peers_touch_base/model/domain/actor/session.pb.dart';
 
+/// Logout reason for unified logout event handling
+enum LogoutReason {
+  /// User manually logged out
+  userInitiated,
+  /// Token expired or invalid
+  tokenExpired,
+  /// User not found (e.g., database rebuilt)
+  userNotFound,
+  /// Forced logout by server
+  forcedByServer,
+  /// Session cleared for other reasons
+  sessionCleared,
+}
+
 /// Global Application Context (single source of truth)
 ///
 /// Maintains Actor session, account list, user preferences, protocol tag and
@@ -91,4 +105,15 @@ abstract class GlobalContext {
 
   /// Clear user profile (called on logout)
   void clearProfile();
+
+  /// Event: logout requested (fired when any component triggers logout)
+  /// Router should listen to this and navigate to login page
+  Stream<LogoutReason> get onLogoutRequested;
+
+  /// Request logout with specified reason
+  /// This triggers onLogoutRequested event for unified handling
+  void requestLogout(LogoutReason reason, {String? message});
+
+  /// Get the message associated with the last logout request
+  String? get lastLogoutMessage;
 }
