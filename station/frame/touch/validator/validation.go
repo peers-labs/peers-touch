@@ -107,7 +107,8 @@ func ValidateEmail(email string) error {
 		return errors.New("email cannot be empty")
 	}
 
-	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	// Allow TLD with 1+ characters for development/testing (e.g., a@p.t)
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]+$`)
 	if !emailRegex.MatchString(email) {
 		return errors.New("invalid email format")
 	}

@@ -31,8 +31,14 @@ class LoggingInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     if (kDebugMode) {
-      final logId = err.response?.headers.value('x-log-id') ?? err.response?.headers.value('X-Log-Id');
+      final response = err.response;
+      final logId = response?.headers.value('x-log-id') ?? response?.headers.value('X-Log-Id');
       print('<-- Error: ${err.error} - ${err.message}');
+      if (response != null) {
+        print('Status: ${response.statusCode}');
+        print('Response Headers: ${response.headers.map}');
+        print('Response Body: ${response.data}');
+      }
       if (logId != null) {
         print('Log-ID: $logId');
       }

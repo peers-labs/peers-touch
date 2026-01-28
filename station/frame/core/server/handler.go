@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -40,6 +41,7 @@ type Request interface {
 
 type Response interface {
 	Header() map[string]string
+	SetHeader(key, value string)
 	Write([]byte) (int, error)
 	WriteHeader(int)
 	Status() int
@@ -148,7 +150,14 @@ func NewHTTPHandler(name, path string, method Method, h EndpointHandler, wrapper
 
 func HTTPHandlerFunc(h http.HandlerFunc) EndpointHandler {
 	return func(ctx context.Context, req Request, resp Response) error {
-		r, err := http.NewRequestWithContext(ctx, string(req.Method()), req.Path(), io.NopCloser(io.Reader(nil)))
+		// Create body reader from request body
+		var bodyReader io.Reader
+		if body := req.Body(); len(body) > 0 {
+			bodyReader = bytes.NewReader(body)
+		}
+
+		// Create http.Request with full path including query string
+		r, err := http.NewRequestWithContext(ctx, string(req.Method()), req.Path(), io.NopCloser(bodyReader))
 		if err != nil {
 			return err
 		}
@@ -164,30 +173,51 @@ func HTTPHandlerFunc(h http.HandlerFunc) EndpointHandler {
 }
 
 type httpResponseWriter struct {
-	resp Response
+	resp   Response
+	header http.Header
 }
 
 func (w *httpResponseWriter) Header() http.Header {
-	h := make(http.Header)
-	for k, v := range w.resp.Header() {
-		h.Set(k, v)
+	if w.header == nil {
+		w.header = make(http.Header)
+		// Copy existing headers from response
+		for k, v := range w.resp.Header() {
+			w.header.Set(k, v)
+		}
 	}
-	return h
+	return w.header
 }
 
 func (w *httpResponseWriter) Write(b []byte) (int, error) {
+	// Sync headers before first write
+	w.syncHeaders()
 	return w.resp.Write(b)
 }
 
 func (w *httpResponseWriter) WriteHeader(statusCode int) {
+	// Sync headers before writing status
+	w.syncHeaders()
 	w.resp.WriteHeader(statusCode)
+}
+
+func (w *httpResponseWriter) syncHeaders() {
+	if w.header != nil {
+		for k, vals := range w.header {
+			if len(vals) > 0 {
+				w.resp.SetHeader(k, vals[0])
+			}
+		}
+	}
 }
 
 func HTTPWrapperAdapter(httpWrapper func(ctx context.Context, next http.Handler) http.Handler) Wrapper {
 	return func(next EndpointHandler) EndpointHandler {
 		return func(ctx context.Context, req Request, resp Response) error {
+			// Preserve the original request for Hertz context access
+			originalReq := req
+
 			httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				reqAdapter := &httpRequestAdapter{r: r}
+				reqAdapter := &httpRequestAdapter{r: r, originalReq: originalReq}
 				respAdapter := &httpResponseAdapter{w: w}
 				_ = next(r.Context(), reqAdapter, respAdapter)
 			})
@@ -211,7 +241,8 @@ func HTTPWrapperAdapter(httpWrapper func(ctx context.Context, next http.Handler)
 }
 
 type httpRequestAdapter struct {
-	r *http.Request
+	r           *http.Request
+	originalReq Request // Preserve original request for Hertz context access
 }
 
 func (r *httpRequestAdapter) Context() context.Context {
@@ -244,6 +275,18 @@ func (r *httpRequestAdapter) Body() []byte {
 	return b
 }
 
+// GetHertzContext returns the underlying Hertz context if available
+// This preserves the Hertz context through HTTP wrapper adapters
+func (r *httpRequestAdapter) GetHertzContext() interface{} {
+	type hertzContextGetter interface {
+		GetHertzContext() interface{}
+	}
+	if getter, ok := r.originalReq.(hertzContextGetter); ok {
+		return getter.GetHertzContext()
+	}
+	return nil
+}
+
 type httpResponseAdapter struct {
 	w http.ResponseWriter
 }
@@ -256,6 +299,10 @@ func (r *httpResponseAdapter) Header() map[string]string {
 		}
 	}
 	return h
+}
+
+func (r *httpResponseAdapter) SetHeader(key, value string) {
+	r.w.Header().Set(key, value)
 }
 
 func (r *httpResponseAdapter) Write(b []byte) (int, error) {
@@ -278,11 +325,18 @@ func HertzHandlerFunc(h interface{}) EndpointHandler {
 	hv := reflect.ValueOf(h)
 	if hv.Kind() != reflect.Func {
 		return func(ctx context.Context, req Request, resp Response) error {
-			return nil
+			return fmt.Errorf("HertzHandlerFunc: invalid handler type %T, expected function", h)
 		}
 	}
 
-	return func(ctx context.Context, req Request, resp Response) error {
+	return func(ctx context.Context, req Request, resp Response) (err error) {
+		// Recover from panic and convert to error
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("handler panic: %v", r)
+			}
+		}()
+
 		// Try to extract the underlying Hertz context
 		type hertzContextGetter interface {
 			GetHertzContext() interface{}
@@ -290,13 +344,15 @@ func HertzHandlerFunc(h interface{}) EndpointHandler {
 
 		if getter, ok := req.(hertzContextGetter); ok {
 			hertzCtx := getter.GetHertzContext()
-			// Use reflection to call the original handler
-			args := []reflect.Value{
-				reflect.ValueOf(ctx),
-				reflect.ValueOf(hertzCtx),
+			if hertzCtx != nil {
+				// Use reflection to call the original handler
+				args := []reflect.Value{
+					reflect.ValueOf(ctx),
+					reflect.ValueOf(hertzCtx),
+				}
+				hv.Call(args)
+				return nil
 			}
-			hv.Call(args)
-			return nil
 		}
 
 		// Fallback: create adapter for the handler (should not normally happen)

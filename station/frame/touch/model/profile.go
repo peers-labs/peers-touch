@@ -37,8 +37,9 @@ func (p *ProfileUpdateParams) Validate() error {
 	}
 
 	// Validate email format if provided
+	// Allow TLD with 1+ characters for development/testing (e.g., a@p.t)
 	if p.Email != nil && *p.Email != "" {
-		emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+		emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]+$`)
 		if !emailRegex.MatchString(*p.Email) {
 			return NewError("t20002", "Invalid email format")
 		}

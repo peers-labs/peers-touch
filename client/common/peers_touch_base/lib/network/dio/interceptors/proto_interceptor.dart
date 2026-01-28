@@ -14,8 +14,11 @@ class ProtoInterceptor extends Interceptor {
       options.data = data.writeToBuffer();
     }
     
-    options.headers['Accept'] = 'application/protobuf';
-    options.responseType = ResponseType.bytes;
+    // Only set Accept header if not already set, allowing callers to request JSON
+    if (!options.headers.containsKey('Accept')) {
+      options.headers['Accept'] = 'application/protobuf';
+      options.responseType = ResponseType.bytes;
+    }
     
     handler.next(options);
   }

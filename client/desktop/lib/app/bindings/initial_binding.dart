@@ -89,68 +89,14 @@ class InitialBinding extends Bindings {
         _isHandlingUnauthenticated = true;
         LoggingService.error('Authentication failed: Token invalid or expired');
         
-        // Show snackbar with countdown
-        int countdown = 3;
-        Get.snackbar(
-          '登录已过期',
-          '将在 $countdown 秒后跳转到登录页...',
-          snackPosition: SnackPosition.TOP,
-          duration: const Duration(seconds: 3),
-          backgroundColor: Get.theme.colorScheme.errorContainer,
-          colorText: Get.theme.colorScheme.onErrorContainer,
-        );
+        // Use unified logout event mechanism
+        if (Get.isRegistered<GlobalContext>()) {
+          Get.find<GlobalContext>().requestLogout(LogoutReason.tokenExpired);
+        }
         
-        // Update countdown every second
-        Future.delayed(const Duration(seconds: 1), () {
-          if (!_isHandlingUnauthenticated) return;
-          countdown = 2;
-          Get.closeCurrentSnackbar();
-          Get.snackbar(
-            '登录已过期',
-            '将在 $countdown 秒后跳转到登录页...',
-            snackPosition: SnackPosition.TOP,
-            duration: const Duration(seconds: 2),
-            backgroundColor: Get.theme.colorScheme.errorContainer,
-            colorText: Get.theme.colorScheme.onErrorContainer,
-          );
-        });
-        
+        // Reset flag after a delay
         Future.delayed(const Duration(seconds: 2), () {
-          if (!_isHandlingUnauthenticated) return;
-          countdown = 1;
-          Get.closeCurrentSnackbar();
-          Get.snackbar(
-            '登录已过期',
-            '将在 $countdown 秒后跳转到登录页...',
-            snackPosition: SnackPosition.TOP,
-            duration: const Duration(seconds: 1),
-            backgroundColor: Get.theme.colorScheme.errorContainer,
-            colorText: Get.theme.colorScheme.onErrorContainer,
-          );
-        });
-        
-        // Navigate to login page after 3 seconds
-        Future.delayed(const Duration(seconds: 3), () {
-          if (!_isHandlingUnauthenticated) return;
-          
-          Get.closeCurrentSnackbar();
-          
-          // Clear user session
-          if (Get.isRegistered<GlobalContext>()) {
-            Get.find<GlobalContext>().setSession(null);
-          }
-          if (Get.isRegistered<AuthController>()) {
-            Get.find<AuthController>().logout();
-          }
-          
-          // Navigate to login page
-          Get.offAllNamed('/login');
-          LoggingService.info('Navigated to login page due to token expiration');
-          
-          // Reset flag after navigation (in case user comes back)
-          Future.delayed(const Duration(milliseconds: 500), () {
-            _isHandlingUnauthenticated = false;
-          });
+          _isHandlingUnauthenticated = false;
         });
       },
     );
