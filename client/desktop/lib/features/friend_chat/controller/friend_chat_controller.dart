@@ -91,6 +91,39 @@ class FriendChatController extends GetxController {
     _markOnline();
     _loadFriends();
     _loadPendingMessages();
+    _registerWithSignaling(); // Register with signaling server immediately
+  }
+
+  /// Register this peer with the signaling server (without connecting to a remote peer)
+  Future<void> _registerWithSignaling() async {
+    if (currentUserId.isEmpty) {
+      LoggingService.warning('FriendChatController: Cannot register with signaling - no user ID');
+      return;
+    }
+
+    connectionStats.value = connectionStats.value.copyWith(
+      connectionState: P2PConnectionState.connecting,
+      signalingUrl: _signalingUrl,
+      localPeerId: currentUserId,
+      isRegistered: false,
+    );
+
+    try {
+      final signaling = RTCSignalingService(_signalingUrl);
+      await signaling.registerPeer(currentUserId, 'peer', []);
+      
+      connectionStats.value = connectionStats.value.copyWith(
+        isRegistered: true,
+        connectionState: P2PConnectionState.disconnected, // Registered but not connected to a peer
+      );
+      LoggingService.info('FriendChatController: Registered with signaling server as $currentUserId');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to register with signaling: $e');
+      connectionStats.value = connectionStats.value.copyWith(
+        connectionState: P2PConnectionState.failed,
+        isRegistered: false,
+      );
+    }
   }
 
   @override
@@ -596,13 +629,18 @@ class FriendChatController extends GetxController {
       final signaling = RTCSignalingService(_signalingUrl);
       final iceService = IceService(httpService: HttpServiceLocator().httpService);
 
-      await signaling.registerPeer(currentUserId, 'caller', []);
+      // Determine role based on peer ID comparison
+      // Smaller ID is caller, larger ID is callee
+      final isCaller = currentUserId.compareTo(remotePeerId) < 0;
+      final role = isCaller ? 'caller' : 'callee';
+
+      await signaling.registerPeer(currentUserId, role, []);
       connectionStats.value = connectionStats.value.copyWith(isRegistered: true);
-      LoggingService.info('Registered peer: $currentUserId');
+      LoggingService.info('Registered peer: $currentUserId as $role');
 
       _rtcClient = RTCClient(
         signaling,
-        role: 'caller',
+        role: role,
         peerId: currentUserId,
         iceService: iceService,
       );
@@ -641,8 +679,14 @@ class FriendChatController extends GetxController {
         _handleP2PMessage(msg);
       });
 
-      LoggingService.info('Calling remote peer: $remotePeerId');
-      await _rtcClient!.call(remotePeerId);
+      // Call or answer based on role
+      if (isCaller) {
+        LoggingService.info('Calling remote peer: $remotePeerId (as caller)');
+        await _rtcClient!.call(remotePeerId);
+      } else {
+        LoggingService.info('Waiting for offer from: $remotePeerId (as callee)');
+        await _rtcClient!.answer(remotePeerId);
+      }
 
       final iceInfo = _rtcClient!.getIceInfo();
       connectionStats.value = connectionStats.value.copyWith(
