@@ -130,7 +130,7 @@ class ConnectionDebugPanel extends StatelessWidget {
               ),
             ),
           ),
-          _buildActions(context, theme),
+          // Actions removed - debug panel is read-only
         ],
       ),
     );
