@@ -9,10 +9,10 @@ import (
 
 type OfflineMessage struct {
 	ID               uint64    `gorm:"primary_key;autoIncrement:false"`
-	ULID             string    `gorm:"uniqueIndex;size:26;not null"`
+	ULID             string    `gorm:"column:ul_id;uniqueIndex;size:26;not null"`
 	ReceiverDID      string    `gorm:"column:receiver_did;size:255;not null;index:idx_om_receiver_status"`
 	SenderDID        string    `gorm:"column:sender_did;size:255;not null"`
-	SessionULID      string    `gorm:"size:26;not null"`
+	SessionULID      string    `gorm:"column:session_ul_id;size:26;not null"`
 	EncryptedPayload []byte    `gorm:"type:bytea;not null"`
 	Status           int32     `gorm:"default:1;not null;index:idx_om_receiver_status"`
 	ExpireAt         time.Time `gorm:"not null;index:idx_om_expire"`

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 
@@ -237,7 +238,7 @@ class AiBoxLocalStorageService {
       // 记录同步时间
       await _localStorage.set('last_sync_time', DateTime.now().millisecondsSinceEpoch.toString());
       
-      print('数据同步完成: ${providers.length}个Provider, ${topics.length}个Topic');
+      LoggingService.info('数据同步完成: ${providers.length}个Provider, ${topics.length}个Topic');
     } catch (e) {
       throw StorageException('数据同步失败: $e');
     }
@@ -275,7 +276,7 @@ class AiBoxLocalStorageService {
     try {
       // 在实际项目中，这里会强制将本地数据推送到远程服务器
       await syncAllData();
-      print('强制同步到远程完成');
+      LoggingService.info('强制同步到远程完成');
     } catch (e) {
       throw StorageException('强制同步失败: $e');
     }

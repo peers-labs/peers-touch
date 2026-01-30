@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/storage/kv/kv_database.dart';
 
 /// 安全存储服务接口
@@ -56,7 +57,7 @@ class SecureStorageImpl implements SecureStorage {
       _keychainFailed = false;
     } catch (e) {
       if (kDebugMode) {
-        print('[SecureStorage] Keychain write failed: $e, falling back to KvDatabase');
+        LoggingService.error('[SecureStorage] Keychain write failed: $e, falling back to KvDatabase');
       }
       _keychainFailed = true;
       await KvDatabase().set(_getFallbackKey(key), value);
@@ -72,7 +73,7 @@ class SecureStorageImpl implements SecureStorage {
       }
     } catch (e) {
       if (kDebugMode) {
-        print('[SecureStorage] Keychain read failed: $e, falling back to KvDatabase');
+        LoggingService.error('[SecureStorage] Keychain read failed: $e, falling back to KvDatabase');
       }
       _keychainFailed = true;
     }
@@ -86,7 +87,7 @@ class SecureStorageImpl implements SecureStorage {
       await _fs.delete(key: key);
     } catch (e) {
       if (kDebugMode) {
-        print('[SecureStorage] Keychain delete failed: $e, falling back to KvDatabase');
+        LoggingService.error('[SecureStorage] Keychain delete failed: $e, falling back to KvDatabase');
       }
     }
     
@@ -99,7 +100,7 @@ class SecureStorageImpl implements SecureStorage {
       await _fs.deleteAll();
     } catch (e) {
       if (kDebugMode) {
-        print('[SecureStorage] Keychain clear failed: $e');
+        LoggingService.error('[SecureStorage] Keychain clear failed: $e');
       }
     }
   }

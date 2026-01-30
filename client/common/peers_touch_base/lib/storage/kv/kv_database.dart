@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:drift/drift.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/storage/connection/connection.dart';
 
 part 'kv_database.g.dart';
@@ -42,7 +43,7 @@ class KvDatabase extends _$KvDatabase {
   /// Writes a key-value pair.
   Future<void> set<T>(String key, T value) {
     final serialized = value is String ? value : jsonEncode(value);
-    print('[KvDatabase] set: key=$key, value=$serialized');
+    LoggingService.debug('[KvDatabase] set: key=$key, value=$serialized');
     return into(keyValueItems).insertOnConflictUpdate(
       KeyValueItemsCompanion.insert(key: key, value: serialized),
     );
@@ -51,7 +52,7 @@ class KvDatabase extends _$KvDatabase {
   /// Reads a value by its key.
   Future<T?> get<T>(String key) async {
     final result = await (select(keyValueItems)..where((t) => t.key.equals(key))).getSingleOrNull();
-    print('[KvDatabase] get: key=$key, result=${result?.value}');
+    LoggingService.debug('[KvDatabase] get: key=$key, result=${result?.value}');
     if (result == null) return null;
 
     if (T == String) {

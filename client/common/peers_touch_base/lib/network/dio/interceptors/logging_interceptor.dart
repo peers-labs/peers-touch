@@ -1,15 +1,16 @@
 import 'package:dio/dio.dart';
 import 'package:peers_touch_base/foundation.dart' if (dart.library.ui) 'package:flutter/foundation.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 
 class LoggingInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     if (kDebugMode) {
-      print('--> ${options.method} ${options.uri}');
-      print('Headers: ${options.headers}');
-      print('Query Parameters: ${options.queryParameters}');
+      LoggingService.debug('--> ${options.method} ${options.uri}');
+      LoggingService.debug('Headers: ${options.headers}');
+      LoggingService.debug('Query Parameters: ${options.queryParameters}');
       if (options.data != null) {
-        print('Body: ${options.data}');
+        LoggingService.debug('Body: ${options.data}');
       }
     }
     super.onRequest(options, handler);
@@ -19,11 +20,11 @@ class LoggingInterceptor extends Interceptor {
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     if (kDebugMode) {
       final logId = response.headers.value('x-log-id') ?? response.headers.value('X-Log-Id');
-      print('<-- ${response.statusCode} ${response.requestOptions.uri}');
+      LoggingService.debug('<-- ${response.statusCode} ${response.requestOptions.uri}');
       if (logId != null) {
-        print('Log-ID: $logId');
+        LoggingService.debug('Log-ID: $logId');
       }
-      print('Response: ${response.data}');
+      LoggingService.debug('Response: ${response.data}');
     }
     super.onResponse(response, handler);
   }
@@ -33,14 +34,14 @@ class LoggingInterceptor extends Interceptor {
     if (kDebugMode) {
       final response = err.response;
       final logId = response?.headers.value('x-log-id') ?? response?.headers.value('X-Log-Id');
-      print('<-- Error: ${err.error} - ${err.message}');
+      LoggingService.error('<-- Error: ${err.error} - ${err.message}');
       if (response != null) {
-        print('Status: ${response.statusCode}');
-        print('Response Headers: ${response.headers.map}');
-        print('Response Body: ${response.data}');
+        LoggingService.debug('Status: ${response.statusCode}');
+        LoggingService.debug('Response Headers: ${response.headers.map}');
+        LoggingService.debug('Response Body: ${response.data}');
       }
       if (logId != null) {
-        print('Log-ID: $logId');
+        LoggingService.debug('Log-ID: $logId');
       }
     }
     super.onError(err, handler);

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/ice/ice_service.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 
@@ -65,22 +66,22 @@ class RTCClient {
           .expand((e) => (e is Map && e['urls'] is List) ? (e['urls'] as List).map((u) => u.toString()) : <String>[])
           .toList();
     } catch (_) {}
-    print('[RTCClient][$peerId] using ICE servers: $_iceServerUrls');
+    LoggingService.debug('[RTCClient][$peerId] using ICE servers: $_iceServerUrls');
     _pc!.onConnectionState = (state) {
       _connectionStateController.add(state);
-      print('[RTCClient][$peerId] connectionState=$state');
+      LoggingService.debug('[RTCClient][$peerId] connectionState=$state');
     };
     _pc!.onIceConnectionState = (state) {
       _iceConnState = state;
-      print('[RTCClient][$peerId] iceConnectionState=$state');
+      LoggingService.debug('[RTCClient][$peerId] iceConnectionState=$state');
     };
     _pc!.onSignalingState = (state) {
       _signalingState = state;
-      print('[RTCClient][$peerId] signalingState=$state');
+      LoggingService.debug('[RTCClient][$peerId] signalingState=$state');
     };
     _pc!.onIceGatheringState = (state) {
       _iceGatheringState = state;
-      print('[RTCClient][$peerId] iceGatheringState=$state');
+      LoggingService.debug('[RTCClient][$peerId] iceGatheringState=$state');
     };
     
     _pc!.onIceCandidate = (c) async {
@@ -89,7 +90,7 @@ class RTCClient {
         final parsed = _parseCandidate(c.candidate!);
         if (parsed.isNotEmpty) _localCandidates.add(parsed);
         if (parsed.isNotEmpty) {
-          print('[RTCClient][$peerId] localCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+          LoggingService.debug('[RTCClient][$peerId] localCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
         }
       }
     };
@@ -104,11 +105,11 @@ class RTCClient {
     if (_dc == null) return;
     _dc!.onMessage = (msg) {
        _msgController.add(msg.text); 
-       print('[RTCClient][$peerId] recv=${msg.text}');
+       LoggingService.debug('[RTCClient][$peerId] recv=${msg.text}');
     };
     _dc!.onDataChannelState = (state) {
       _dataChannelStateController.add(state);
-      print('[RTCClient][$peerId] dataChannelState=$state');
+      LoggingService.debug('[RTCClient][$peerId] dataChannelState=$state');
     };
   }
 
@@ -116,7 +117,7 @@ class RTCClient {
     if (_pc == null) return;
     _dc = await _pc!.createDataChannel('chat', RTCDataChannelInit());
     _setupDataChannel();
-    print('[RTCClient][$peerId] dataChannel created');
+    LoggingService.debug('[RTCClient][$peerId] dataChannel created');
   }
 
   final _msgController = StreamController<String>.broadcast();
@@ -138,36 +139,108 @@ class RTCClient {
     return _dc?.state;
   }
 
-  Future<void> call(String remotePeerId) async {
-    final sessionId = '$peerId-$remotePeerId';
+  /// Generate a canonical session ID that is the same regardless of who initiates
+  String _canonicalSessionId(String remotePeerId) {
+    final ids = [peerId, remotePeerId]..sort();
+    return '${ids[0]}-${ids[1]}';
+  }
+
+  /// Determine if this peer should be the initiator based on ID comparison
+  bool _isInitiator(String remotePeerId) {
+    return peerId.compareTo(remotePeerId) < 0;
+  }
+
+  /// Main connection method - handles both initiator and responder roles automatically
+  /// Uses a hybrid approach: both peers try to establish connection regardless of role
+  Future<void> connect(String remotePeerId) async {
+    final sessionId = _canonicalSessionId(remotePeerId);
+    final isInitiator = _isInitiator(remotePeerId);
+    
+    LoggingService.debug('[RTCClient][$peerId] connecting to $remotePeerId, session=$sessionId, isInitiator=$isInitiator');
+    
     await _createPC(sessionId);
-    await createChannel(); // Caller must create channel
     
-    final offer = await _pc!.createOffer();
-    await _pc!.setLocalDescription(offer);
-    _localDescType = offer.type;
-    
-    // Fix: Use offer.sdp, not getConfiguration
-    await signaling.postOffer(sessionId, offer.sdp!);
-    
-    // wait for answer
-    String? ans;
-    for (var i=0;i<60 && ans==null;i++){
-      await Future.delayed(const Duration(seconds:1));
-      ans = await signaling.getAnswer(sessionId);
+    if (isInitiator) {
+      // Initiator: create offer, wait for answer
+      await createChannel();
+      final offer = await _pc!.createOffer();
+      await _pc!.setLocalDescription(offer);
+      _localDescType = offer.type;
+      
+      await signaling.postOffer(sessionId, offer.sdp!);
+      LoggingService.debug('[RTCClient][$peerId] posted offer, waiting for answer...');
+      
+      // Wait for answer with shorter timeout - peer should respond quickly if online
+      String? ans;
+      for (var i = 0; i < 15 && ans == null; i++) {
+        await Future.delayed(const Duration(seconds: 1));
+        ans = await signaling.getAnswer(sessionId);
+      }
+      
+      if (ans != null) {
+        await _pc!.setRemoteDescription(RTCSessionDescription(ans, 'answer'));
+        _remoteDescType = 'answer';
+        LoggingService.debug('[RTCClient][$peerId] got answer, connection established');
+      } else {
+        LoggingService.debug('[RTCClient][$peerId] no answer received, peer may be offline');
+      }
+    } else {
+      // Responder: first check if there's already an offer waiting
+      LoggingService.debug('[RTCClient][$peerId] checking for existing offer from $remotePeerId...');
+      
+      String? offer;
+      // Quick check for existing offer (5 seconds)
+      for (var i = 0; i < 5 && offer == null; i++) {
+        offer = await signaling.getOffer(sessionId);
+        if (offer == null) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      }
+      
+      if (offer != null) {
+        // Found offer, respond as callee
+        await _pc!.setRemoteDescription(RTCSessionDescription(offer, 'offer'));
+        _remoteDescType = 'offer';
+        
+        final answer = await _pc!.createAnswer();
+        await _pc!.setLocalDescription(answer);
+        _localDescType = answer.type;
+        
+        await signaling.postAnswer(sessionId, answer.sdp!);
+        LoggingService.debug('[RTCClient][$peerId] posted answer to existing offer');
+      } else {
+        // No offer yet - the initiator may join later
+        // Wait longer for offer to appear
+        LoggingService.debug('[RTCClient][$peerId] no offer yet, waiting for initiator...');
+        for (var i = 0; i < 15 && offer == null; i++) {
+          await Future.delayed(const Duration(seconds: 1));
+          offer = await signaling.getOffer(sessionId);
+        }
+        
+        if (offer != null) {
+          await _pc!.setRemoteDescription(RTCSessionDescription(offer, 'offer'));
+          _remoteDescType = 'offer';
+          
+          final answer = await _pc!.createAnswer();
+          await _pc!.setLocalDescription(answer);
+          _localDescType = answer.type;
+          
+          await signaling.postAnswer(sessionId, answer.sdp!);
+          LoggingService.debug('[RTCClient][$peerId] posted answer');
+        } else {
+          LoggingService.debug('[RTCClient][$peerId] no offer received after waiting, peer may be offline');
+        }
+      }
     }
     
-    if (ans!=null){
-      await _pc!.setRemoteDescription(RTCSessionDescription(ans, 'answer'));
-      _remoteDescType = 'answer';
-      print('[RTCClient][$peerId] remoteDescription=answer');
-    }
-    
-    // apply candidates
-    // Give some time for candidates to gather
+    // Apply remote candidates
     await Future.delayed(const Duration(seconds: 2));
+    await _applyRemoteCandidates(sessionId);
+  }
+
+  Future<void> _applyRemoteCandidates(String sessionId) async {
     final cands = await signaling.getCandidates(sessionId, excludeFrom: peerId);
-    for (final c in cands){
+    for (final c in cands) {
       if (c is Map) {
         final cand = c['candidate']?.toString() ?? '';
         final mid = c['mid']?.toString() ?? '';
@@ -177,7 +250,7 @@ class RTCClient {
           final parsed = _parseCandidate(cand);
           if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
           if (parsed.isNotEmpty) {
-            print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+            LoggingService.debug('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
           }
         }
       } else if (c is String) {
@@ -185,59 +258,20 @@ class RTCClient {
         final parsed = _parseCandidate(c);
         if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
         if (parsed.isNotEmpty) {
-          print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
+          LoggingService.debug('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
         }
       }
     }
   }
 
+  /// Legacy call method - now just wraps connect()
+  Future<void> call(String remotePeerId) async {
+    await connect(remotePeerId);
+  }
+
+  /// Legacy answer method - now just wraps connect()
   Future<void> answer(String remotePeerId) async {
-    final sessionId = '$remotePeerId-$peerId';
-    await _createPC(sessionId);
-    
-    String? offer;
-    for (var i=0;i<60 && offer==null;i++){
-      await Future.delayed(const Duration(seconds:1));
-      offer = await signaling.getOffer(sessionId);
-    }
-    
-    if (offer==null) return;
-    
-    await _pc!.setRemoteDescription(RTCSessionDescription(offer, 'offer'));
-    final answer = await _pc!.createAnswer();
-    await _pc!.setLocalDescription(answer);
-    _remoteDescType = 'offer';
-    _localDescType = answer.type;
-    print('[RTCClient][$peerId] localDescription=answer');
-    
-    // Fix: Use answer.sdp
-    await signaling.postAnswer(sessionId,  answer.sdp!);
-    
-    // apply candidates
-    await Future.delayed(const Duration(seconds: 2));
-    final cands = await signaling.getCandidates(sessionId, excludeFrom: peerId);
-    for (final c in cands){
-      if (c is Map) {
-        final cand = c['candidate']?.toString() ?? '';
-        final mid = c['mid']?.toString() ?? '';
-        final mline = int.tryParse((c['mline'] ?? '0').toString()) ?? 0;
-        if (cand.isNotEmpty) {
-          await _pc!.addCandidate(RTCIceCandidate(cand, mid, mline));
-          final parsed = _parseCandidate(cand);
-          if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
-          if (parsed.isNotEmpty) {
-            print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
-          }
-        }
-      } else if (c is String) {
-        await _pc!.addCandidate(RTCIceCandidate(c, '', 0));
-        final parsed = _parseCandidate(c);
-        if (parsed.isNotEmpty) _remoteCandidates.add(parsed);
-        if (parsed.isNotEmpty) {
-          print('[RTCClient][$peerId] remoteCandidate typ=${parsed['type']} ${parsed['ip']}:${parsed['port']}');
-        }
-      }
-    }
+    await connect(remotePeerId);
   }
 
   Map<String, dynamic> getIceInfo() {

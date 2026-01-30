@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:peers_touch_base/ai_proxy/provider/provider_manager_interface.dart';
 import 'package:peers_touch_base/ai_proxy/provider/provider_manager_local.dart';
 import 'package:peers_touch_base/ai_proxy/service/ai_box_mode.dart'; // 使用我们自己的枚举定义
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/ai_box/chat.pb.dart';
 import 'package:peers_touch_base/model/domain/ai_box/provider.pb.dart';
 
@@ -161,7 +162,7 @@ class AiBoxFacadeService {
       }
     } catch (e) {
       // 发生任何错误都返回空列表
-      print('Failed to fetch models for provider $providerId: $e');
+      LoggingService.error('Failed to fetch models for provider $providerId: $e');
       return [];
     }
 
