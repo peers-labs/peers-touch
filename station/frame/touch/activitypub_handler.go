@@ -25,8 +25,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	socialservice "github.com/peers-labs/peers-touch/station/frame/touch/social/service"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
-	anypb "google.golang.org/protobuf/types/known/anypb"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )
 
@@ -259,23 +257,35 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 	// Set session cookie
 	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
 
-	// Build standardized proto models
-	tokens := &modelpb.AuthTokens{
-		Token:        result.AccessToken,
-		AccessToken:  result.AccessToken,
-		RefreshToken: result.RefreshToken,
-		TokenType:    result.TokenType,
-		ExpiresAt:    timestamppb.New(result.ExpiresAt),
+	// Extract numeric actor ID for P2P signaling
+	var actorIdNum uint64
+	if id, ok := result.User["id"].(uint64); ok {
+		actorIdNum = id
+	} else if idStr, ok := result.User["id"].(string); ok {
+		if parsed, err := strconv.ParseUint(idStr, 10, 64); err == nil {
+			actorIdNum = parsed
+		}
 	}
-	user := &modelpb.Actor{
-		Id:          toString(result.User["id"]),
-		Username:    toString(result.User["name"]),
-		DisplayName: toString(result.User["display_name"]),
-		Email:       toString(result.User["email"]),
+	// Build response with actor as a plain map to avoid proto Any serialization issues
+	// The actor_id is critical for P2P signaling - it's the numeric DID
+	response := map[string]interface{}{
+		"tokens": map[string]interface{}{
+			"token":         result.AccessToken,
+			"access_token":  result.AccessToken,
+			"refresh_token": result.RefreshToken,
+			"token_type":    result.TokenType,
+			"expires_at":    result.ExpiresAt,
+		},
+		"session_id": result.SessionID,
+		"actor": map[string]interface{}{
+			"id":           toString(result.User["id"]),
+			"actor_id":     actorIdNum, // Critical: numeric ID for P2P signaling
+			"username":     toString(result.User["name"]),
+			"display_name": toString(result.User["display_name"]),
+			"email":        toString(result.User["email"]),
+		},
 	}
-	actorAny, _ := anypb.New(user)
-	data := &modelpb.LoginData{Tokens: tokens, SessionId: result.SessionID, Actor: actorAny}
-	SuccessResponse(c, ctx, "Login successful", data)
+	SuccessResponse(c, ctx, "Login successful", response)
 }
 
 func GetActorProfile(c context.Context, ctx *app.RequestContext) {

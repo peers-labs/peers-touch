@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
 
@@ -27,7 +28,7 @@ class P2PChatProtocol {
           _messageHandler!(peerId, data);
         }
       } catch (e) {
-        print('Error handling P2P chat message: $e');
+        LoggingService.error('Error handling P2P chat message: $e');
       } finally {
         await stream.close();
       }
@@ -87,7 +88,7 @@ class P2PChatProtocol {
       return json.decode(messageJson) as Map<String, dynamic>;
       
     } catch (e) {
-      print('Error reading message from stream: $e');
+      LoggingService.error('Error reading message from stream: $e');
       return null;
     }
   }

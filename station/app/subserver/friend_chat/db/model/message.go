@@ -9,13 +9,13 @@ import (
 
 type FriendChatMessage struct {
 	ID          uint64     `gorm:"primary_key;autoIncrement:false"`
-	ULID        string     `gorm:"uniqueIndex;size:26;not null"`
-	SessionULID string     `gorm:"size:26;not null;index:idx_fcm_session"`
+	ULID        string     `gorm:"column:ul_id;uniqueIndex;size:26;not null"`
+	SessionULID string     `gorm:"column:session_ul_id;size:26;not null;index:idx_fcm_session"`
 	SenderDID   string     `gorm:"column:sender_did;size:255;not null;index:idx_fcm_sender"`
 	ReceiverDID string     `gorm:"column:receiver_did;size:255;not null;index:idx_fcm_receiver"`
 	Type        int32      `gorm:"default:1;not null"`
 	Content     string     `gorm:"type:text"`
-	ReplyToULID string     `gorm:"size:26"`
+	ReplyToULID string     `gorm:"column:reply_to_ul_id;size:26"`
 	Status      int32      `gorm:"default:1;not null"`
 	SentAt      time.Time  `gorm:"not null;default:now()"`
 	DeliveredAt *time.Time `gorm:""`
