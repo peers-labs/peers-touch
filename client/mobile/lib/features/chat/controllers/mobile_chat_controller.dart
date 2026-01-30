@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_base/chat/chat.dart';
 import 'package:peers_touch_base/chat/services/chat_core_service.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
@@ -96,7 +97,7 @@ class MobileChatController extends GetxController {
       // _setupMessageListeners(); // Removed as stream handling needs adjustment
       
     } catch (e) {
-      print('Error initializing chat: $e');
+      LoggingService.error('Error initializing chat: $e');
       Get.snackbar('错误', '初始化聊天功能失败: $e');
     } finally {
       isLoading.value = false;
@@ -109,7 +110,7 @@ class MobileChatController extends GetxController {
       final loadedFriends = await _chatCoreService.getFriends();
       friends.assignAll(loadedFriends);
     } catch (e) {
-      print('Error loading friends: $e');
+      LoggingService.error('Error loading friends: $e');
       Get.snackbar('错误', '加载好友列表失败: $e');
     }
   }
@@ -120,7 +121,7 @@ class MobileChatController extends GetxController {
       final loadedSessions = await _chatCoreService.getSessions();
       sessions.assignAll(loadedSessions);
     } catch (e) {
-      print('Error loading sessions: $e');
+      LoggingService.error('Error loading sessions: $e');
       Get.snackbar('错误', '加载会话列表失败: $e');
     }
   }
@@ -143,7 +144,7 @@ class MobileChatController extends GetxController {
       }
       
     } catch (e) {
-      print('Error selecting friend: $e');
+      LoggingService.error('Error selecting friend: $e');
       Get.snackbar('错误', '选择好友失败: $e');
     }
   }
@@ -164,7 +165,7 @@ class MobileChatController extends GetxController {
       return newSession;
       
     } catch (e) {
-      print('Error finding or creating session: $e');
+      LoggingService.error('Error finding or creating session: $e');
       return null;
     }
   }
@@ -175,7 +176,7 @@ class MobileChatController extends GetxController {
       final loadedMessages = await _chatCoreService.getMessages(sessionId);
       messages.assignAll(loadedMessages);
     } catch (e) {
-      print('Error loading session messages: $e');
+      LoggingService.error('Error loading session messages: $e');
       Get.snackbar('错误', '加载消息失败: $e');
     }
   }
@@ -202,7 +203,7 @@ class MobileChatController extends GetxController {
       _provideHapticFeedback();
       
     } catch (e) {
-      print('Error sending message: $e');
+      LoggingService.error('Error sending message: $e');
       Get.snackbar('错误', '发送消息失败: $e');
     } finally {
       isSending.value = false;
@@ -216,7 +217,7 @@ class MobileChatController extends GetxController {
       await loadFriends();
       Get.snackbar('成功', '好友请求已发送');
     } catch (e) {
-      print('Error adding friend: $e');
+      LoggingService.error('Error adding friend: $e');
       Get.snackbar('错误', '添加好友失败: $e');
     }
   }
@@ -228,7 +229,7 @@ class MobileChatController extends GetxController {
       friends.removeWhere((friend) => friend.user.id == friendId);
       Get.snackbar('成功', '好友已删除');
     } catch (e) {
-      print('Error deleting friend: $e');
+      LoggingService.error('Error deleting friend: $e');
       Get.snackbar('错误', '删除好友失败: $e');
     }
   }
@@ -268,7 +269,7 @@ class MobileChatController extends GetxController {
       await _chatCoreService.markSessionAsRead(selectedSession.value!.id);
       
     } catch (e) {
-      print('Error marking messages as read: $e');
+      LoggingService.error('Error marking messages as read: $e');
     }
   }
 

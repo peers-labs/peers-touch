@@ -366,6 +366,7 @@ class AuthController extends GetxController {
       if (resp.statusCode == 200) {
         final obj = json.decode(text);
         String token = '';
+        String? actorIdFromResponse;  // Declare outside to use later
         if (obj is Map) {
           final data = obj['data'];
           Map<String, dynamic>? dmap;
@@ -416,6 +417,7 @@ class AuthController extends GetxController {
             userMap = obj['actor'];
           }
 
+          // Extract actor_id (DID) from response - this is the numeric ID used for P2P signaling
           if (userMap != null) {
             final name = userMap['username'] ?? userMap['handle'] ?? userMap['name'];
             if (name != null) username.value = name.toString();
@@ -425,6 +427,12 @@ class AuthController extends GetxController {
             
             final disp = userMap['display_name'] ?? userMap['displayName'];
             if (disp != null) displayName.value = disp.toString();
+            
+            // Extract the numeric actor_id (DID) - critical for P2P signaling
+            actorIdFromResponse = userMap['actor_id']?.toString() ?? 
+                                  userMap['actorId']?.toString() ??
+                                  userMap['id']?.toString();
+            LoggingService.info('Extracted actor_id from login response: $actorIdFromResponse');
           }
                 }
 
@@ -456,8 +464,14 @@ class AuthController extends GetxController {
                 avatarUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
               );
               
+              // Use numeric actor_id (DID) for actorId - critical for P2P signaling
+              // Fall back to handle only if actor_id not in response
+              final effectiveActorId = (actorIdFromResponse != null && actorIdFromResponse.isNotEmpty) 
+                  ? actorIdFromResponse 
+                  : handle;
+              
               await gc.setSession({
-                'actorId': handle,
+                'actorId': effectiveActorId,
                 'handle': handle,
                 'email': email.value,
                 'protocol': protocol.value,
@@ -466,7 +480,7 @@ class AuthController extends GetxController {
                 'refreshToken': refresh,
                 'avatarUrl': avatarUrl,
               });
-              LoggingService.info('GlobalContext session updated for user: $handle');
+              LoggingService.info('GlobalContext session updated for user: $handle, actorId: $effectiveActorId');
               
               await _saveUserToGlobalList(handle, email: email.value, avatarUrl: avatarUrl, serverUrl: (overrideBaseUrl ?? baseUrl.value).trim());
               

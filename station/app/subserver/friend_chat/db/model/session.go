@@ -9,10 +9,10 @@ import (
 
 type FriendChatSession struct {
 	ID              uint64    `gorm:"primary_key;autoIncrement:false"`
-	ULID            string    `gorm:"uniqueIndex;size:26;not null"`
+	ULID            string    `gorm:"column:ul_id;uniqueIndex;size:26;not null"`
 	ParticipantADID string    `gorm:"column:participant_a_did;size:255;not null;index:idx_fcs_participants"`
 	ParticipantBDID string    `gorm:"column:participant_b_did;size:255;not null;index:idx_fcs_participants"`
-	LastMessageULID string    `gorm:"size:26"`
+	LastMessageULID string    `gorm:"column:last_message_ul_id;size:26"`
 	LastMessageAt   time.Time `gorm:"index:idx_fcs_last_message_at"`
 	UnreadCountA    int32     `gorm:"default:0"`
 	UnreadCountB    int32     `gorm:"default:0"`

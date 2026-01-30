@@ -60,11 +60,25 @@ class FriendChatController extends GetxController {
   StreamSubscription<webrtc.RTCDataChannelState>? _dataChannelStateSub;
   StreamSubscription<String>? _messageSub;
 
+  // Heartbeat and monitoring timers
+  Timer? _heartbeatTimer;
+  Timer? _peerMonitorTimer;
+  RTCSignalingService? _signalingService;
+  final _onlinePeers = <String>{};  // Cache of known online peers
+  bool _isConnecting = false;  // Prevent concurrent connection attempts
+
+  /// Get current user's DID for P2P signaling
+  /// This should return a consistent format (DID) that matches what's stored in session.participantIds
   String get currentUserId {
     if (!Get.isRegistered<GlobalContext>()) return '';
     final gc = Get.find<GlobalContext>();
+    // Prefer actorId which should be the DID
+    // The actorId might be stored as userId in some cases
     return gc.actorId ?? gc.currentSession?['actorId']?.toString() ?? '';
   }
+
+  /// Get current user's DID (alias for currentUserId for clarity)
+  String get currentUserDid => currentUserId;
 
   String get currentUserName {
     if (!Get.isRegistered<GlobalContext>()) return 'Me';
@@ -91,7 +105,117 @@ class FriendChatController extends GetxController {
     _markOnline();
     _loadFriends();
     _loadPendingMessages();
-    _registerWithSignaling(); // Register with signaling server immediately
+    _initSignalingWithHeartbeat(); // Register and start heartbeat
+  }
+
+  /// Initialize signaling service with heartbeat for persistent presence
+  Future<void> _initSignalingWithHeartbeat() async {
+    if (currentUserId.isEmpty) {
+      LoggingService.warning('FriendChatController: Cannot init signaling - no user ID');
+      return;
+    }
+
+    _signalingService = RTCSignalingService(_signalingUrl);
+    
+    // Initial registration
+    await _registerWithSignaling();
+    
+    // Start heartbeat timer (refresh registration every 30 seconds)
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _refreshSignalingRegistration();
+    });
+
+    // Start peer monitoring timer (check for online peers every 5 seconds)
+    _peerMonitorTimer?.cancel();
+    _peerMonitorTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _checkPeersAndOffers();
+    });
+  }
+
+  /// Refresh signaling registration (heartbeat)
+  Future<void> _refreshSignalingRegistration() async {
+    if (_signalingService == null || currentUserId.isEmpty) return;
+    try {
+      await _signalingService!.registerPeer(currentUserId, 'peer', []);
+    } catch (e) {
+      LoggingService.warning('Failed to refresh signaling registration: $e');
+    }
+  }
+
+  /// Monitor online peers and incoming offers
+  Future<void> _checkPeersAndOffers() async {
+    if (_signalingService == null || currentUserId.isEmpty) return;
+    
+    try {
+      // Get all online peers
+      final peers = await _signalingService!.getPeers();
+      final newOnlinePeers = <String>{};
+      
+      for (final peer in peers) {
+        final peerId = peer['id']?.toString() ?? '';
+        if (peerId.isNotEmpty && peerId != currentUserId) {
+          newOnlinePeers.add(peerId);
+          
+          // Check if this is a new peer coming online
+          if (!_onlinePeers.contains(peerId)) {
+            LoggingService.info('Peer came online: $peerId');
+            _onPeerOnline(peerId);
+          }
+        }
+      }
+      
+      // Update online peers cache
+      _onlinePeers.clear();
+      _onlinePeers.addAll(newOnlinePeers);
+      
+      // Check for incoming offers if we have a selected friend
+      await _checkIncomingOffers();
+      
+    } catch (e) {
+      // Silently ignore monitoring errors
+    }
+  }
+
+  /// Called when a peer comes online
+  void _onPeerOnline(String peerId) {
+    // Check if this is the currently selected friend
+    final remotePeerId = connectionStats.value.remotePeerId;
+    if (remotePeerId == peerId && 
+        connectionMode.value != ConnectionMode.p2pDirect &&
+        !_isConnecting) {
+      LoggingService.info('Selected friend $peerId is now online, initiating P2P connection');
+      _autoConnect(peerId);
+    }
+  }
+
+  /// Check for incoming offers from the selected friend
+  Future<void> _checkIncomingOffers() async {
+    if (_signalingService == null) return;
+    
+    final remotePeerId = connectionStats.value.remotePeerId;
+    if (remotePeerId.isEmpty) return;
+    
+    // Already connected or connecting
+    if (connectionMode.value == ConnectionMode.p2pDirect || _isConnecting) return;
+    
+    // Check if there's an offer waiting for us
+    final sessionId = _canonicalSessionId(currentUserId, remotePeerId);
+    try {
+      final offer = await _signalingService!.getOffer(sessionId);
+      if (offer != null && _rtcClient == null && !_isConnecting) {
+        LoggingService.info('Found incoming offer from $remotePeerId, responding...');
+        _autoConnect(remotePeerId);
+      }
+    } catch (e) {
+      // Silently ignore
+    }
+  }
+
+  /// Generate canonical session ID (same as RTCClient)
+  String _canonicalSessionId(String peerA, String peerB) {
+    final ids = [peerA, peerB]..sort();
+    return '${ids[0]}-${ids[1]}';
   }
 
   /// Register this peer with the signaling server (without connecting to a remote peer)
@@ -130,6 +254,8 @@ class FriendChatController extends GetxController {
   void onClose() {
     _markOffline();
     _syncTimer?.cancel();
+    _heartbeatTimer?.cancel();
+    _peerMonitorTimer?.cancel();
     inputController.dispose();
     _connectionStateSub?.cancel();
     _dataChannelStateSub?.cancel();
@@ -361,6 +487,7 @@ class FriendChatController extends GetxController {
 
   Future<void> selectFriend(FriendItem friend) async {
     LoggingService.info('FriendChatController: Selecting friend ${friend.name} (${friend.actorId})');
+    LoggingService.info('FriendChatController: currentUserId=$currentUserId, friend.actorId=${friend.actorId}');
     currentFriend.value = friend;
     
     try {
@@ -382,7 +509,17 @@ class FriendChatController extends GetxController {
         _sessionMessages[session.id] = [];
       }
       
-      selectSession(session);
+      // Directly set remotePeerId to friend's actorId to avoid ID format mismatch
+      connectionStats.value = connectionStats.value.copyWith(
+        remotePeerId: friend.actorId,
+      );
+      
+      currentSession.value = session;
+      final sessionMsgs = _sessionMessages[session.id] ?? [];
+      messages.assignAll(sessionMsgs);
+      
+      _loadMessagesFromServer(session);
+      _autoConnect(friend.actorId);  // Use friend.actorId directly
     } catch (e, stackTrace) {
       LoggingService.error('FriendChatController: Failed to create session: $e');
       LoggingService.debug('Stack trace: $stackTrace');
@@ -444,6 +581,13 @@ class FriendChatController extends GetxController {
       return;
     }
     
+    // Prevent concurrent connection attempts
+    if (_isConnecting) {
+      LoggingService.info('Already connecting, skipping...');
+      return;
+    }
+    _isConnecting = true;
+    
     if (_rtcClient != null) {
       await disconnect();
     }
@@ -452,27 +596,42 @@ class FriendChatController extends GetxController {
     connectionStats.value = connectionStats.value.copyWith(
       connectionMode: ConnectionMode.disconnected,
       connectionState: P2PConnectionState.connecting,
+      remotePeerId: remotePeerId,
     );
     
     try {
+      // Allow up to 25 seconds for P2P handshake (offer/answer exchange)
       await connect().timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 25),
         onTimeout: () {
-          LoggingService.warning('P2P connection timeout, falling back to disconnected');
-          connectionMode.value = ConnectionMode.disconnected;
+          LoggingService.warning('P2P connection timeout, falling back to relay mode');
+          connectionMode.value = ConnectionMode.stationRelay;
           connectionStats.value = connectionStats.value.copyWith(
-            connectionMode: ConnectionMode.disconnected,
+            connectionMode: ConnectionMode.stationRelay,
             connectionState: P2PConnectionState.failed,
           );
         },
       );
+      
+      // After connect() completes, check if we actually connected
+      // If not, fallback to relay mode (messages will go through station)
+      if (connectionMode.value == ConnectionMode.disconnected) {
+        connectionMode.value = ConnectionMode.stationRelay;
+        connectionStats.value = connectionStats.value.copyWith(
+          connectionMode: ConnectionMode.stationRelay,
+        );
+        LoggingService.info('P2P not established, using station relay mode');
+      }
     } catch (e) {
       LoggingService.error('P2P connection failed: $e');
-      connectionMode.value = ConnectionMode.disconnected;
+      // Fall back to relay mode instead of disconnected
+      connectionMode.value = ConnectionMode.stationRelay;
       connectionStats.value = connectionStats.value.copyWith(
-        connectionMode: ConnectionMode.disconnected,
+        connectionMode: ConnectionMode.stationRelay,
         connectionState: P2PConnectionState.failed,
       );
+    } finally {
+      _isConnecting = false;
     }
   }
 
@@ -629,10 +788,8 @@ class FriendChatController extends GetxController {
       final signaling = RTCSignalingService(_signalingUrl);
       final iceService = IceService(httpService: HttpServiceLocator().httpService);
 
-      // Determine role based on peer ID comparison
-      // Smaller ID is caller, larger ID is callee
-      final isCaller = currentUserId.compareTo(remotePeerId) < 0;
-      final role = isCaller ? 'caller' : 'callee';
+      // Role is determined automatically based on peer ID comparison
+      final role = currentUserId.compareTo(remotePeerId) < 0 ? 'initiator' : 'responder';
 
       await signaling.registerPeer(currentUserId, role, []);
       connectionStats.value = connectionStats.value.copyWith(isRegistered: true);
@@ -679,14 +836,9 @@ class FriendChatController extends GetxController {
         _handleP2PMessage(msg);
       });
 
-      // Call or answer based on role
-      if (isCaller) {
-        LoggingService.info('Calling remote peer: $remotePeerId (as caller)');
-        await _rtcClient!.call(remotePeerId);
-      } else {
-        LoggingService.info('Waiting for offer from: $remotePeerId (as callee)');
-        await _rtcClient!.answer(remotePeerId);
-      }
+      // Use unified connect() which handles role negotiation automatically
+      LoggingService.info('Connecting to peer: $remotePeerId (role=$role)');
+      await _rtcClient!.connect(remotePeerId);
 
       final iceInfo = _rtcClient!.getIceInfo();
       connectionStats.value = connectionStats.value.copyWith(
