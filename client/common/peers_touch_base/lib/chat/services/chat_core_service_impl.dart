@@ -4,6 +4,7 @@ import 'package:peers_touch_base/chat/services/chat_core_service.dart';
 import 'package:peers_touch_base/chat/services/encryption_service.dart';
 import 'package:peers_touch_base/chat/services/p2p_chat_protocol.dart';
 import 'package:peers_touch_base/chat/services/storage_service.dart';
+import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/network/libp2p/core/host/host.dart';
 import 'package:peers_touch_base/network/libp2p/core/peer/peer_id.dart';
@@ -445,7 +446,7 @@ class ChatCoreServiceImpl implements ChatCoreService {
       await _sendMessageDeliveryConfirmation(sender, message.id);
     } catch (e) {
       // 记录错误但不影响其他消息处理
-      print('Error handling incoming chat message: $e');
+      LoggingService.error('Error handling incoming chat message: $e');
     }
   }
 
