@@ -7,13 +7,20 @@ import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_input_bar.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_message_item.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
-import 'package:peers_touch_desktop/features/friend_chat/widgets/session_list_item.dart';
+import 'package:peers_touch_desktop/features/group_chat/view/create_group_dialog.dart';
+import 'package:peers_touch_desktop/features/group_chat/view/group_list_panel.dart';
+import 'package:peers_touch_desktop/features/group_chat/view/group_chat_panel.dart';
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
 
+/// Chat type filter for Messages page
+enum ChatFilter { individual, group }
+
 class FriendChatPage extends GetView<FriendChatController> {
+  /// Selected chat filter (individual or group)
+  static final selectedFilter = ChatFilter.individual.obs;
   const FriendChatPage({super.key});
 
   @override
@@ -40,92 +47,68 @@ class FriendChatPage extends GetView<FriendChatController> {
       color: UIKit.assistantSidebarBg(context),
       child: Column(
         children: [
+          // Search bar with create button
           Container(
             height: UIKit.topBarHeight,
             padding: EdgeInsets.symmetric(horizontal: UIKit.spaceMd(context)),
-            alignment: Alignment.center,
-            child: SearchInput(
-              hintText: 'Search chats...',
-              fillColor: UIKit.inputFillLight(context),
-              borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SearchInput(
+                    hintText: 'Search...',
+                    fillColor: UIKit.inputFillLight(context),
+                    borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Obx(() => selectedFilter.value == ChatFilter.group
+                    ? IconButton(
+                        icon: const Icon(Icons.add),
+                        tooltip: 'Create Group',
+                        onPressed: () => _showCreateGroupDialog(context),
+                      )
+                    : const SizedBox.shrink()),
+              ],
             ),
+          ),
+          // Filter Chips
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: UIKit.spaceMd(context),
+              vertical: UIKit.spaceXs(context),
+            ),
+            child: Obx(() => Row(
+              children: [
+                _buildFilterChip(
+                  context,
+                  label: 'Individual',
+                  icon: Icons.person,
+                  selected: selectedFilter.value == ChatFilter.individual,
+                  onSelected: () => selectedFilter.value = ChatFilter.individual,
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  context,
+                  label: 'Groups',
+                  icon: Icons.group,
+                  selected: selectedFilter.value == ChatFilter.group,
+                  onSelected: () => selectedFilter.value = ChatFilter.group,
+                ),
+              ],
+            )),
           ),
           Divider(
             height: UIKit.spaceLg(context),
             thickness: UIKit.dividerThickness,
             color: UIKit.dividerColor(context),
           ),
+          // Session/Group list based on filter
           Expanded(
             child: Obx(() {
-              if (controller.isLoading.value) {
-                return const Center(
-                  child: CircularProgressIndicator(),
-                );
+              if (selectedFilter.value == ChatFilter.group) {
+                return const GroupListPanel();
               }
-
-              final friendList = controller.friends.toList();
-              
-              if (friendList.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.people_outline,
-                        size: 64,
-                        color: Colors.grey.shade400,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No friends yet',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Follow friends to start chatting',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton.icon(
-                        onPressed: controller.refreshSessions,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Refresh'),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              final currentFriendId = controller.currentFriend.value?.actorId;
-              return ListView.separated(
-                itemCount: friendList.length,
-                separatorBuilder: (_, index) => Divider(
-                  height: 1,
-                  color: UIKit.dividerColor(context),
-                ),
-                itemBuilder: (context, index) {
-                  final friend = friendList[index];
-                  final isSelected = friend.actorId == currentFriendId;
-                  return ListTile(
-                    leading: Avatar(
-                      actorId: friend.actorId,
-                      avatarUrl: friend.avatarUrl,
-                      fallbackName: friend.name,
-                      size: 40,
-                    ),
-                    title: Text(friend.name),
-                    subtitle: Text('@${friend.username}'),
-                    selected: isSelected,
-                    onTap: () => controller.selectFriend(friend),
-                  );
-                },
-              );
+              return _buildFriendList(context);
             }),
           ),
         ],
@@ -133,7 +116,124 @@ class FriendChatPage extends GetView<FriendChatController> {
     );
   }
 
+  Widget _buildFilterChip(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    final theme = Theme.of(context);
+    return FilterChip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(width: 4),
+          Text(label),
+        ],
+      ),
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      showCheckmark: false,
+      selectedColor: theme.colorScheme.primaryContainer,
+      backgroundColor: theme.colorScheme.surfaceContainerHighest,
+      side: BorderSide.none,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    );
+  }
+
+  void _showCreateGroupDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => const CreateGroupDialog(),
+    );
+  }
+
+  Widget _buildFriendList(BuildContext context) {
+    return Obx(() {
+      if (controller.isLoading.value) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      }
+
+      final friendList = controller.friends.toList();
+      
+      if (friendList.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.people_outline,
+                size: 64,
+                color: Colors.grey.shade400,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No friends yet',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Follow friends to start chatting',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: controller.refreshSessions,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      final currentFriendId = controller.currentFriend.value?.actorId;
+      return ListView.separated(
+        itemCount: friendList.length,
+        separatorBuilder: (_, index) => Divider(
+          height: 1,
+          color: UIKit.dividerColor(context),
+        ),
+        itemBuilder: (context, index) {
+          final friend = friendList[index];
+          final isSelected = friend.actorId == currentFriendId;
+          return ListTile(
+            leading: Avatar(
+              actorId: friend.actorId,
+              avatarUrl: friend.avatarUrl,
+              fallbackName: friend.name,
+              size: 40,
+            ),
+            title: Text(friend.name),
+            subtitle: Text('@${friend.username}'),
+            selected: isSelected,
+            onTap: () => controller.selectFriend(friend),
+          );
+        },
+      );
+    });
+  }
+
   Widget _buildChatPanel(BuildContext context) {
+    return Obx(() {
+      if (selectedFilter.value == ChatFilter.group) {
+        return const GroupChatPanel();
+      }
+      return _buildFriendChatPanel(context);
+    });
+  }
+
+  Widget _buildFriendChatPanel(BuildContext context) {
     return Container(
       color: UIKit.chatAreaBg(context),
       child: Column(

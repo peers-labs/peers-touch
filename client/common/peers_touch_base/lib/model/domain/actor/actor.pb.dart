@@ -28,7 +28,6 @@ class Actor extends $pb.GeneratedMessage {
     $core.Iterable<$core.MapEntry<$core.String, $core.String>>? endpoints,
     $core.bool? isFollowing,
     $fixnum.Int64? actorId,
-    $core.bool? followedBy,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -40,7 +39,6 @@ class Actor extends $pb.GeneratedMessage {
     if (endpoints != null) result.endpoints.addEntries(endpoints);
     if (isFollowing != null) result.isFollowing = isFollowing;
     if (actorId != null) result.actorId = actorId;
-    if (followedBy != null) result.followedBy = followedBy;
     return result;
   }
 
@@ -73,7 +71,6 @@ class Actor extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(
         9, _omitFieldNames ? '' : 'actor_id', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOB(10, _omitFieldNames ? '' : 'followed_by')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -168,15 +165,6 @@ class Actor extends $pb.GeneratedMessage {
   $core.bool hasActorId() => $_has(8);
   @$pb.TagNumber(9)
   void clearActorId() => $_clearField(9);
-
-  @$pb.TagNumber(10)
-  $core.bool get followedBy => $_getBF(9);
-  @$pb.TagNumber(10)
-  set followedBy($core.bool value) => $_setBool(9, value);
-  @$pb.TagNumber(10)
-  $core.bool hasFollowedBy() => $_has(9);
-  @$pb.TagNumber(10)
-  void clearFollowedBy() => $_clearField(10);
 }
 
 class UserLink extends $pb.GeneratedMessage {
