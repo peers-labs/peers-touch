@@ -1,0 +1,292 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// ==================== 群组核心模型 ====================
+
+// 群组
+message Group {
+  string ulid = 1;                          // 群组唯一ID
+  string name = 2;                          // 群组名称
+  string description = 3;                   // 群组描述
+  string avatar_cid = 4;                    // 群组头像（IPFS CID）
+  string owner_did = 5;                     // 群主 DID
+  GroupType type = 6;                       // 群组类型
+  GroupVisibility visibility = 7;           // 可见性
+  int32 member_count = 8;                   // 成员数量
+  int32 max_members = 9;                    // 最大成员数（默认500）
+  bool muted = 10;                          // 是否全员禁言
+  map<string, string> settings = 11;        // 扩展设置
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+// 群组类型
+enum GroupType {
+  GROUP_TYPE_UNSPECIFIED = 0;
+  GROUP_TYPE_NORMAL = 1;       // 普通群
+  GROUP_TYPE_ANNOUNCEMENT = 2; // 公告群（只有管理员可发言）
+  GROUP_TYPE_DISCUSSION = 3;   // 讨论群
+}
+
+// 群组可见性
+enum GroupVisibility {
+  GROUP_VISIBILITY_UNSPECIFIED = 0;
+  GROUP_VISIBILITY_PUBLIC = 1;     // 公开（可搜索加入）
+  GROUP_VISIBILITY_PRIVATE = 2;    // 私密（需邀请）
+}
+
+// ==================== 成员管理 ====================
+
+// 群成员
+message GroupMember {
+  string group_ulid = 1;
+  string actor_did = 2;
+  GroupRole role = 3;                        // 角色
+  string nickname = 4;                       // 群内昵称
+  bool muted = 5;                            // 是否被禁言
+  google.protobuf.Timestamp muted_until = 6; // 禁言截止时间
+  google.protobuf.Timestamp joined_at = 7;
+  string invited_by = 8;                     // 邀请人 DID
+}
+
+// 群角色
+enum GroupRole {
+  GROUP_ROLE_UNSPECIFIED = 0;
+  GROUP_ROLE_MEMBER = 1;     // 普通成员
+  GROUP_ROLE_ADMIN = 2;      // 管理员
+  GROUP_ROLE_OWNER = 3;      // 群主
+}
+
+// ==================== 群消息 ====================
+
+// 群消息
+message GroupMessage {
+  string ulid = 1;
+  string group_ulid = 2;
+  string sender_did = 3;
+  GroupMessageType type = 4;
+  string content = 5;
+  repeated GroupMessageAttachment attachments = 6;
+  string reply_to_ulid = 7;                  // 回复的消息ID
+  repeated string mentioned_dids = 8;        // @的成员
+  bool mention_all = 9;                      // @全体成员
+  google.protobuf.Timestamp sent_at = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  bool deleted = 13;                         // 是否被撤回
+}
+
+enum GroupMessageType {
+  GROUP_MESSAGE_TYPE_UNSPECIFIED = 0;
+  GROUP_MESSAGE_TYPE_TEXT = 1;
+  GROUP_MESSAGE_TYPE_IMAGE = 2;
+  GROUP_MESSAGE_TYPE_FILE = 3;
+  GROUP_MESSAGE_TYPE_AUDIO = 4;
+  GROUP_MESSAGE_TYPE_VIDEO = 5;
+  GROUP_MESSAGE_TYPE_SYSTEM = 10;            // 系统消息（入群、退群等）
+}
+
+message GroupMessageAttachment {
+  string cid = 1;
+  string filename = 2;
+  string mime_type = 3;
+  int64 size = 4;
+  string thumbnail_cid = 5;
+}
+
+// ==================== 邀请/申请 ====================
+
+// 群邀请
+message GroupInvitation {
+  string ulid = 1;
+  string group_ulid = 2;
+  string inviter_did = 3;
+  string invitee_did = 4;
+  GroupInvitationStatus status = 5;
+  google.protobuf.Timestamp expire_at = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+enum GroupInvitationStatus {
+  GROUP_INVITATION_STATUS_UNSPECIFIED = 0;
+  GROUP_INVITATION_STATUS_PENDING = 1;
+  GROUP_INVITATION_STATUS_ACCEPTED = 2;
+  GROUP_INVITATION_STATUS_REJECTED = 3;
+  GROUP_INVITATION_STATUS_EXPIRED = 4;
+}
+
+// ==================== API 请求/响应 ====================
+
+// 创建群组
+message CreateGroupRequest {
+  string name = 1;
+  string description = 2;
+  GroupType type = 3;
+  GroupVisibility visibility = 4;
+  repeated string initial_member_dids = 5;   // 初始成员
+}
+
+message CreateGroupResponse {
+  Group group = 1;
+}
+
+// 获取群组列表
+message ListGroupsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListGroupsResponse {
+  repeated Group groups = 1;
+  int32 total = 2;
+}
+
+// 获取群组信息
+message GetGroupRequest {
+  string group_ulid = 1;
+}
+
+message GetGroupResponse {
+  Group group = 1;
+  GroupMember my_membership = 2;             // 当前用户的成员信息
+}
+
+// 更新群组信息
+message UpdateGroupRequest {
+  string group_ulid = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional string avatar_cid = 4;
+  optional GroupType type = 5;
+  optional GroupVisibility visibility = 6;
+  optional bool muted = 7;
+}
+
+message UpdateGroupResponse {
+  Group group = 1;
+}
+
+// 邀请加入群组
+message InviteToGroupRequest {
+  string group_ulid = 1;
+  repeated string invitee_dids = 2;
+}
+
+message InviteToGroupResponse {
+  repeated GroupInvitation invitations = 1;
+}
+
+// 加入群组
+message JoinGroupRequest {
+  string group_ulid = 1;
+  string invitation_ulid = 2;                // 可选，如果通过邀请加入
+}
+
+message JoinGroupResponse {
+  GroupMember membership = 1;
+}
+
+// 离开群组
+message LeaveGroupRequest {
+  string group_ulid = 1;
+}
+
+message LeaveGroupResponse {
+  bool success = 1;
+}
+
+// 获取群成员列表
+message GetGroupMembersRequest {
+  string group_ulid = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message GetGroupMembersResponse {
+  repeated GroupMember members = 1;
+  int32 total = 2;
+}
+
+// 更新成员信息（管理员操作）
+message UpdateMemberRequest {
+  string group_ulid = 1;
+  string actor_did = 2;
+  optional GroupRole role = 3;
+  optional bool muted = 4;
+  optional google.protobuf.Timestamp muted_until = 5;
+}
+
+message UpdateMemberResponse {
+  GroupMember member = 1;
+}
+
+// 移除成员
+message RemoveMemberRequest {
+  string group_ulid = 1;
+  string actor_did = 2;
+}
+
+message RemoveMemberResponse {
+  bool success = 1;
+}
+
+// 发送群消息
+message SendGroupMessageRequest {
+  string group_ulid = 1;
+  GroupMessageType type = 2;
+  string content = 3;
+  repeated GroupMessageAttachment attachments = 4;
+  string reply_to_ulid = 5;
+  repeated string mentioned_dids = 6;
+  bool mention_all = 7;
+}
+
+message SendGroupMessageResponse {
+  GroupMessage message = 1;
+}
+
+// 获取群消息
+message GetGroupMessagesRequest {
+  string group_ulid = 1;
+  string before_ulid = 2;
+  int32 limit = 3;
+}
+
+message GetGroupMessagesResponse {
+  repeated GroupMessage messages = 1;
+  bool has_more = 2;
+}
+
+// 撤回消息
+message RecallGroupMessageRequest {
+  string group_ulid = 1;
+  string message_ulid = 2;
+}
+
+message RecallGroupMessageResponse {
+  bool success = 1;
+}
+
+// 离线消息
+message GroupOfflineMessage {
+  string ulid = 1;
+  string group_ulid = 2;
+  string receiver_did = 3;
+  string message_ulid = 4;
+  GroupOfflineMessageStatus status = 5;
+  google.protobuf.Timestamp expire_at = 6;
+  google.protobuf.Timestamp delivered_at = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+enum GroupOfflineMessageStatus {
+  GROUP_OFFLINE_MESSAGE_STATUS_UNSPECIFIED = 0;
+  GROUP_OFFLINE_MESSAGE_STATUS_PENDING = 1;
+  GROUP_OFFLINE_MESSAGE_STATUS_DELIVERED = 2;
+  GROUP_OFFLINE_MESSAGE_STATUS_EXPIRED = 3;
+}

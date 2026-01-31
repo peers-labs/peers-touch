@@ -393,8 +393,7 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 			Outbox:      a.Outbox,
 			Endpoints:   nil,
 			ActorId:     a.ID,
-			IsFollowing: isFollowing,
-			FollowedBy:  followedBy,
+			IsFollowing: isFollowing || followedBy, // Combine both flags
 		})
 	}
 	SuccessResponse(c, ctx, "Actor list", &modelpb.ActorList{Items: items, Total: int64(len(items))})
