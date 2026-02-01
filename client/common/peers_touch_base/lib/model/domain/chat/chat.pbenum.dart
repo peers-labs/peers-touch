@@ -51,6 +51,12 @@ class MessageType extends $pb.ProtobufEnum {
       MessageType._(4, _omitEnumNames ? '' : 'MESSAGE_TYPE_LOCATION');
   static const MessageType MESSAGE_TYPE_SYSTEM =
       MessageType._(5, _omitEnumNames ? '' : 'MESSAGE_TYPE_SYSTEM');
+  static const MessageType MESSAGE_TYPE_STICKER =
+      MessageType._(6, _omitEnumNames ? '' : 'MESSAGE_TYPE_STICKER');
+  static const MessageType MESSAGE_TYPE_AUDIO =
+      MessageType._(7, _omitEnumNames ? '' : 'MESSAGE_TYPE_AUDIO');
+  static const MessageType MESSAGE_TYPE_VIDEO =
+      MessageType._(8, _omitEnumNames ? '' : 'MESSAGE_TYPE_VIDEO');
 
   static const $core.List<MessageType> values = <MessageType>[
     MESSAGE_TYPE_UNSPECIFIED,
@@ -59,10 +65,13 @@ class MessageType extends $pb.ProtobufEnum {
     MESSAGE_TYPE_FILE,
     MESSAGE_TYPE_LOCATION,
     MESSAGE_TYPE_SYSTEM,
+    MESSAGE_TYPE_STICKER,
+    MESSAGE_TYPE_AUDIO,
+    MESSAGE_TYPE_VIDEO,
   ];
 
   static final $core.List<MessageType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 5);
+      $pb.ProtobufEnum.$_initByValueList(values, 8);
   static MessageType? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 

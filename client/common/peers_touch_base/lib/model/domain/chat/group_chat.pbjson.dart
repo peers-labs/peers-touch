@@ -1000,3 +1000,207 @@ final $typed_data.Uint8List groupOfflineMessageDescriptor = $convert.base64Decod
     'I9CgxkZWxpdmVyZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgtkZWxp'
     'dmVyZWRBdBI5CgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcF'
     'IJY3JlYXRlZEF0');
+
+@$core.Deprecated('Use updateMyNicknameRequestDescriptor instead')
+const UpdateMyNicknameRequest$json = {
+  '1': 'UpdateMyNicknameRequest',
+  '2': [
+    {'1': 'group_ulid', '3': 1, '4': 1, '5': 9, '10': 'groupUlid'},
+    {'1': 'nickname', '3': 2, '4': 1, '5': 9, '10': 'nickname'},
+  ],
+};
+
+/// Descriptor for `UpdateMyNicknameRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List updateMyNicknameRequestDescriptor =
+    $convert.base64Decode(
+        'ChdVcGRhdGVNeU5pY2tuYW1lUmVxdWVzdBIdCgpncm91cF91bGlkGAEgASgJUglncm91cFVsaW'
+        'QSGgoIbmlja25hbWUYAiABKAlSCG5pY2tuYW1l');
+
+@$core.Deprecated('Use updateMyNicknameResponseDescriptor instead')
+const UpdateMyNicknameResponse$json = {
+  '1': 'UpdateMyNicknameResponse',
+  '2': [
+    {
+      '1': 'member',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.GroupMember',
+      '10': 'member'
+    },
+  ],
+};
+
+/// Descriptor for `UpdateMyNicknameResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List updateMyNicknameResponseDescriptor =
+    $convert.base64Decode(
+        'ChhVcGRhdGVNeU5pY2tuYW1lUmVzcG9uc2USPgoGbWVtYmVyGAEgASgLMiYucGVlcnNfdG91Y2'
+        'gubW9kZWwuY2hhdC52MS5Hcm91cE1lbWJlclIGbWVtYmVy');
+
+@$core.Deprecated('Use searchGroupMessagesRequestDescriptor instead')
+const SearchGroupMessagesRequest$json = {
+  '1': 'SearchGroupMessagesRequest',
+  '2': [
+    {'1': 'group_ulid', '3': 1, '4': 1, '5': 9, '10': 'groupUlid'},
+    {'1': 'query', '3': 2, '4': 1, '5': 9, '10': 'query'},
+    {'1': 'limit', '3': 3, '4': 1, '5': 5, '10': 'limit'},
+    {'1': 'before_ulid', '3': 4, '4': 1, '5': 9, '10': 'beforeUlid'},
+  ],
+};
+
+/// Descriptor for `SearchGroupMessagesRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List searchGroupMessagesRequestDescriptor =
+    $convert.base64Decode(
+        'ChpTZWFyY2hHcm91cE1lc3NhZ2VzUmVxdWVzdBIdCgpncm91cF91bGlkGAEgASgJUglncm91cF'
+        'VsaWQSFAoFcXVlcnkYAiABKAlSBXF1ZXJ5EhQKBWxpbWl0GAMgASgFUgVsaW1pdBIfCgtiZWZv'
+        'cmVfdWxpZBgEIAEoCVIKYmVmb3JlVWxpZA==');
+
+@$core.Deprecated('Use searchGroupMessagesResponseDescriptor instead')
+const SearchGroupMessagesResponse$json = {
+  '1': 'SearchGroupMessagesResponse',
+  '2': [
+    {
+      '1': 'messages',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.GroupMessage',
+      '10': 'messages'
+    },
+    {'1': 'has_more', '3': 2, '4': 1, '5': 8, '10': 'hasMore'},
+  ],
+};
+
+/// Descriptor for `SearchGroupMessagesResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List searchGroupMessagesResponseDescriptor =
+    $convert.base64Decode(
+        'ChtTZWFyY2hHcm91cE1lc3NhZ2VzUmVzcG9uc2USQwoIbWVzc2FnZXMYASADKAsyJy5wZWVyc1'
+        '90b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZVIIbWVzc2FnZXMSGQoIaGFzX21vcmUY'
+        'AiABKAhSB2hhc01vcmU=');
+
+@$core.Deprecated('Use getGroupSettingsRequestDescriptor instead')
+const GetGroupSettingsRequest$json = {
+  '1': 'GetGroupSettingsRequest',
+  '2': [
+    {'1': 'group_ulid', '3': 1, '4': 1, '5': 9, '10': 'groupUlid'},
+  ],
+};
+
+/// Descriptor for `GetGroupSettingsRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getGroupSettingsRequestDescriptor =
+    $convert.base64Decode(
+        'ChdHZXRHcm91cFNldHRpbmdzUmVxdWVzdBIdCgpncm91cF91bGlkGAEgASgJUglncm91cFVsaW'
+        'Q=');
+
+@$core.Deprecated('Use getGroupSettingsResponseDescriptor instead')
+const GetGroupSettingsResponse$json = {
+  '1': 'GetGroupSettingsResponse',
+  '2': [
+    {'1': 'is_muted', '3': 1, '4': 1, '5': 8, '10': 'isMuted'},
+    {'1': 'is_pinned', '3': 2, '4': 1, '5': 8, '10': 'isPinned'},
+    {'1': 'my_nickname', '3': 3, '4': 1, '5': 9, '10': 'myNickname'},
+    {
+      '1': 'show_member_nickname',
+      '3': 4,
+      '4': 1,
+      '5': 8,
+      '10': 'showMemberNickname'
+    },
+  ],
+};
+
+/// Descriptor for `GetGroupSettingsResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getGroupSettingsResponseDescriptor = $convert.base64Decode(
+    'ChhHZXRHcm91cFNldHRpbmdzUmVzcG9uc2USGQoIaXNfbXV0ZWQYASABKAhSB2lzTXV0ZWQSGw'
+    'oJaXNfcGlubmVkGAIgASgIUghpc1Bpbm5lZBIfCgtteV9uaWNrbmFtZRgDIAEoCVIKbXlOaWNr'
+    'bmFtZRIwChRzaG93X21lbWJlcl9uaWNrbmFtZRgEIAEoCFISc2hvd01lbWJlck5pY2tuYW1l');
+
+@$core.Deprecated('Use updateGroupSettingsRequestDescriptor instead')
+const UpdateGroupSettingsRequest$json = {
+  '1': 'UpdateGroupSettingsRequest',
+  '2': [
+    {'1': 'group_ulid', '3': 1, '4': 1, '5': 9, '10': 'groupUlid'},
+    {
+      '1': 'is_muted',
+      '3': 2,
+      '4': 1,
+      '5': 8,
+      '9': 0,
+      '10': 'isMuted',
+      '17': true
+    },
+    {
+      '1': 'is_pinned',
+      '3': 3,
+      '4': 1,
+      '5': 8,
+      '9': 1,
+      '10': 'isPinned',
+      '17': true
+    },
+    {
+      '1': 'show_member_nickname',
+      '3': 4,
+      '4': 1,
+      '5': 8,
+      '9': 2,
+      '10': 'showMemberNickname',
+      '17': true
+    },
+  ],
+  '8': [
+    {'1': '_is_muted'},
+    {'1': '_is_pinned'},
+    {'1': '_show_member_nickname'},
+  ],
+};
+
+/// Descriptor for `UpdateGroupSettingsRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List updateGroupSettingsRequestDescriptor = $convert.base64Decode(
+    'ChpVcGRhdGVHcm91cFNldHRpbmdzUmVxdWVzdBIdCgpncm91cF91bGlkGAEgASgJUglncm91cF'
+    'VsaWQSHgoIaXNfbXV0ZWQYAiABKAhIAFIHaXNNdXRlZIgBARIgCglpc19waW5uZWQYAyABKAhI'
+    'AVIIaXNQaW5uZWSIAQESNQoUc2hvd19tZW1iZXJfbmlja25hbWUYBCABKAhIAlISc2hvd01lbW'
+    'Jlck5pY2tuYW1liAEBQgsKCV9pc19tdXRlZEIMCgpfaXNfcGlubmVkQhcKFV9zaG93X21lbWJl'
+    'cl9uaWNrbmFtZQ==');
+
+@$core.Deprecated('Use updateGroupSettingsResponseDescriptor instead')
+const UpdateGroupSettingsResponse$json = {
+  '1': 'UpdateGroupSettingsResponse',
+  '2': [
+    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
+  ],
+};
+
+/// Descriptor for `UpdateGroupSettingsResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List updateGroupSettingsResponseDescriptor =
+    $convert.base64Decode(
+        'ChtVcGRhdGVHcm91cFNldHRpbmdzUmVzcG9uc2USGAoHc3VjY2VzcxgBIAEoCFIHc3VjY2Vzcw'
+        '==');
+
+@$core.Deprecated('Use deleteGroupMessageRequestDescriptor instead')
+const DeleteGroupMessageRequest$json = {
+  '1': 'DeleteGroupMessageRequest',
+  '2': [
+    {'1': 'group_ulid', '3': 1, '4': 1, '5': 9, '10': 'groupUlid'},
+    {'1': 'message_ulid', '3': 2, '4': 1, '5': 9, '10': 'messageUlid'},
+  ],
+};
+
+/// Descriptor for `DeleteGroupMessageRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List deleteGroupMessageRequestDescriptor =
+    $convert.base64Decode(
+        'ChlEZWxldGVHcm91cE1lc3NhZ2VSZXF1ZXN0Eh0KCmdyb3VwX3VsaWQYASABKAlSCWdyb3VwVW'
+        'xpZBIhCgxtZXNzYWdlX3VsaWQYAiABKAlSC21lc3NhZ2VVbGlk');
+
+@$core.Deprecated('Use deleteGroupMessageResponseDescriptor instead')
+const DeleteGroupMessageResponse$json = {
+  '1': 'DeleteGroupMessageResponse',
+  '2': [
+    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
+  ],
+};
+
+/// Descriptor for `DeleteGroupMessageResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List deleteGroupMessageResponseDescriptor =
+    $convert.base64Decode(
+        'ChpEZWxldGVHcm91cE1lc3NhZ2VSZXNwb25zZRIYCgdzdWNjZXNzGAEgASgIUgdzdWNjZXNz');

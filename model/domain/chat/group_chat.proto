@@ -290,3 +290,62 @@ enum GroupOfflineMessageStatus {
   GROUP_OFFLINE_MESSAGE_STATUS_DELIVERED = 2;
   GROUP_OFFLINE_MESSAGE_STATUS_EXPIRED = 3;
 }
+
+// ==================== 扩展 API ====================
+
+// 更新我的群昵称
+message UpdateMyNicknameRequest {
+  string group_ulid = 1;
+  string nickname = 2;
+}
+
+message UpdateMyNicknameResponse {
+  GroupMember member = 1;
+}
+
+// 搜索群消息
+message SearchGroupMessagesRequest {
+  string group_ulid = 1;
+  string query = 2;                           // 搜索关键词
+  int32 limit = 3;
+  string before_ulid = 4;                     // 分页游标
+}
+
+message SearchGroupMessagesResponse {
+  repeated GroupMessage messages = 1;
+  bool has_more = 2;
+}
+
+// 获取群设置（用户个人设置）
+message GetGroupSettingsRequest {
+  string group_ulid = 1;
+}
+
+message GetGroupSettingsResponse {
+  bool is_muted = 1;                          // 是否静音
+  bool is_pinned = 2;                         // 是否置顶
+  string my_nickname = 3;                     // 我的群昵称
+  bool show_member_nickname = 4;              // 是否显示成员昵称
+}
+
+// 更新群设置（用户个人设置）
+message UpdateGroupSettingsRequest {
+  string group_ulid = 1;
+  optional bool is_muted = 2;
+  optional bool is_pinned = 3;
+  optional bool show_member_nickname = 4;
+}
+
+message UpdateGroupSettingsResponse {
+  bool success = 1;
+}
+
+// 删除消息
+message DeleteGroupMessageRequest {
+  string group_ulid = 1;
+  string message_ulid = 2;
+}
+
+message DeleteGroupMessageResponse {
+  bool success = 1;
+}

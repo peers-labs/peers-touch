@@ -31,9 +31,8 @@ class DriftConnectionManager {
 
     final newConnection = LazyDatabase(() async {
       final subDir = userHandle != null ? 'users/$userHandle' : null;
-      final dir = await _storageManager.getDirectory(
+      final dir = await _storageManager.getPlatformDirectory(
         StorageLocation.support,
-        StorageNamespace.peersTouchDesktop,
         subDir: subDir,
       );
       final file = File(p.join(dir.path, dbName));
@@ -51,9 +50,8 @@ class DriftConnectionManager {
     }
 
     final newConnection = LazyDatabase(() async {
-      final dir = await _storageManager.getDirectory(
+      final dir = await _storageManager.getPlatformDirectory(
         StorageLocation.support,
-        StorageNamespace.peersTouchDesktop,
         subDir: 'global',
       );
       final file = File(p.join(dir.path, dbName));
