@@ -5,13 +5,9 @@ import (
 	"net/http"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store/service"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
-
-type appletURL struct{ name, path string }
-
-func (u appletURL) SubPath() string { return u.path }
-func (u appletURL) Name() string    { return u.name }
 
 type AppletHandler struct {
 	pathBase string
@@ -28,13 +24,13 @@ func NewAppletHandler(pathBase string, svc *service.StoreService) *AppletHandler
 func (h *AppletHandler) Handlers() []server.Handler {
 	// Base path is usually /api/v1/applets
 	base := h.pathBase
+	logIDWrapper := serverwrapper.LogID()
 
 	return []server.Handler{
-		server.NewHandler(appletURL{name: "list-applets", path: base}, http.HandlerFunc(h.handleList), server.WithMethod(server.GET)),
-		server.NewHandler(appletURL{name: "get-applet", path: base + "/details"}, http.HandlerFunc(h.handleGetDetails), server.WithMethod(server.GET)),
-		server.NewHandler(appletURL{name: "publish-applet", path: base + "/publish"}, http.HandlerFunc(h.handlePublish), server.WithMethod(server.POST)),
-		// Serve bundle files directly
-		server.NewHandler(appletURL{name: "get-bundle", path: base + "/bundle"}, http.HandlerFunc(h.handleGetBundle), server.WithMethod(server.GET)),
+		server.NewHTTPHandler("list-applets", base, server.GET, server.HTTPHandlerFunc(h.handleList), logIDWrapper),
+		server.NewHTTPHandler("get-applet", base+"/details", server.GET, server.HTTPHandlerFunc(h.handleGetDetails), logIDWrapper),
+		server.NewHTTPHandler("publish-applet", base+"/publish", server.POST, server.HTTPHandlerFunc(h.handlePublish), logIDWrapper),
+		server.NewHTTPHandler("get-bundle", base+"/bundle", server.GET, server.HTTPHandlerFunc(h.handleGetBundle), logIDWrapper),
 	}
 }
 

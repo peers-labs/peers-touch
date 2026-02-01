@@ -17,6 +17,10 @@ message ChatSession {
   bool is_pinned = 7;
   int64 unread_count = 8;
   map<string, string> metadata = 9;
+  bool is_muted = 10;                     // 是否静音
+  MessageType last_message_type = 11;     // 最后消息类型
+  string target_id = 12;                  // 对方ID (好友ID或群ID)
+  string avatar_url = 13;                 // 头像URL
 }
 
 // 聊天消息
@@ -28,9 +32,14 @@ message ChatMessage {
   google.protobuf.Timestamp sent_at = 5;
   MessageType type = 6;
   MessageStatus status = 7;
-  string encrypted_content = 8;  // 加密内容
+  string encrypted_content = 8;           // 加密内容
   repeated MessageAttachment attachments = 9;
   map<string, string> metadata = 10;
+  string reply_to_id = 11;                // Thread 回复的消息ID
+  repeated string mentioned_ids = 12;     // @的用户ID列表
+  bool mention_all = 13;                  // @所有人
+  bool is_deleted = 14;                   // 是否已删除/撤回
+  google.protobuf.Timestamp deleted_at = 15; // 删除时间
 }
 
 // 消息附件
@@ -79,6 +88,9 @@ enum MessageType {
   MESSAGE_TYPE_FILE = 3;          // 文件
   MESSAGE_TYPE_LOCATION = 4;      // 位置
   MESSAGE_TYPE_SYSTEM = 5;        // 系统消息
+  MESSAGE_TYPE_STICKER = 6;       // 贴纸
+  MESSAGE_TYPE_AUDIO = 7;         // 语音
+  MESSAGE_TYPE_VIDEO = 8;         // 视频
 }
 
 // 消息状态

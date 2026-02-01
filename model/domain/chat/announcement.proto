@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// ==================== 群公告 ====================
+
+// 群公告
+message GroupAnnouncement {
+  string ulid = 1;                            // 公告唯一ID
+  string group_ulid = 2;                      // 所属群组ID
+  string author_did = 3;                      // 发布者DID
+  string title = 4;                           // 标题
+  string content = 5;                         // 内容
+  bool is_pinned = 6;                         // 是否置顶
+  int32 read_count = 7;                       // 已读人数
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  google.protobuf.Timestamp deleted_at = 10;  // 软删除时间
+}
+
+// 公告已读记录
+message AnnouncementReadRecord {
+  string announcement_ulid = 1;
+  string reader_did = 2;
+  google.protobuf.Timestamp read_at = 3;
+}
+
+// ==================== API 请求/响应 ====================
+
+// 发布公告
+message CreateAnnouncementRequest {
+  string group_ulid = 1;
+  string title = 2;
+  string content = 3;
+  bool is_pinned = 4;
+}
+
+message CreateAnnouncementResponse {
+  GroupAnnouncement announcement = 1;
+}
+
+// 获取公告列表
+message ListAnnouncementsRequest {
+  string group_ulid = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+  bool pinned_only = 4;                       // 仅获取置顶公告
+}
+
+message ListAnnouncementsResponse {
+  repeated GroupAnnouncement announcements = 1;
+  int32 total = 2;
+}
+
+// 获取单个公告
+message GetAnnouncementRequest {
+  string announcement_ulid = 1;
+}
+
+message GetAnnouncementResponse {
+  GroupAnnouncement announcement = 1;
+  bool is_read = 2;                           // 当前用户是否已读
+}
+
+// 更新公告
+message UpdateAnnouncementRequest {
+  string announcement_ulid = 1;
+  optional string title = 2;
+  optional string content = 3;
+  optional bool is_pinned = 4;
+}
+
+message UpdateAnnouncementResponse {
+  GroupAnnouncement announcement = 1;
+}
+
+// 删除公告
+message DeleteAnnouncementRequest {
+  string announcement_ulid = 1;
+}
+
+message DeleteAnnouncementResponse {
+  bool success = 1;
+}
+
+// 标记公告已读
+message MarkAnnouncementReadRequest {
+  string announcement_ulid = 1;
+}
+
+message MarkAnnouncementReadResponse {
+  bool success = 1;
+}
+
+// 获取公告已读列表
+message GetAnnouncementReadersRequest {
+  string announcement_ulid = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message GetAnnouncementReadersResponse {
+  repeated AnnouncementReadRecord readers = 1;
+  int32 total = 2;
+}

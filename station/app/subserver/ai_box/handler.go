@@ -1,62 +1,229 @@
 package aibox
 
 import (
-    "context"
-    "net/http"
+	"encoding/json"
+	"net/http"
+	"strconv"
 
-    "github.com/cloudwego/hertz/pkg/app"
-    "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/service"
-    "github.com/peers-labs/peers-touch/station/frame/core/types"
+	"github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/ai_box/service"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
+	"github.com/peers-labs/peers-touch/station/frame/core/types"
 )
 
-func (s *aiBoxSubServer) handleNewProvider(c context.Context, ctx *app.RequestContext) {
-    var req serviceRequestCreateProvider
-    if err := ctx.Bind(&req); err != nil { ctx.String(http.StatusBadRequest, "invalid request: %v", err); return }
+// ==================== Request/Response types ====================
 
-    provider, err := service.CreateProvider(c, req.ToProto())
-    if err != nil { ctx.String(http.StatusInternalServerError, "create failed: %v", err); return }
-    ctx.JSON(http.StatusOK, provider)
+type createProviderReq struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Logo        string `json:"logo"`
+	KeyVaults   string `json:"key_vaults"`
+	SettingsJson string `json:"settings_json"`
+	ConfigJson  string `json:"config_json"`
 }
 
-func (s *aiBoxSubServer) handleUpdateProvider(c context.Context, ctx *app.RequestContext) {
-    var req serviceRequestUpdateProvider
-    if err := ctx.Bind(&req); err != nil { ctx.String(http.StatusBadRequest, "invalid request: %v", err); return }
-
-    provider, err := service.UpdateProvider(c, req.ToProto())
-    if err != nil { ctx.String(http.StatusInternalServerError, "update failed: %v", err); return }
-    ctx.JSON(http.StatusOK, provider)
+type updateProviderReq struct {
+	ID          string  `json:"id"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	Logo        *string `json:"logo"`
+	Enabled     *bool   `json:"enabled"`
+	KeyVaults   *string `json:"key_vaults"`
+	SettingsJson *string `json:"settings_json"`
+	ConfigJson  *string `json:"config_json"`
 }
 
-func (s *aiBoxSubServer) handleDeleteProvider(c context.Context, ctx *app.RequestContext) {
-    var req struct { Id string `json:"id"` }
-    if err := ctx.Bind(&req); err != nil || req.Id == "" { ctx.String(http.StatusBadRequest, "invalid request: id required"); return }
-    if err := service.DeleteProvider(c, req.Id); err != nil { ctx.String(http.StatusInternalServerError, "delete failed: %v", err); return }
-    ctx.JSON(http.StatusOK, map[string]interface{}{"deleted": true})
+// ==================== Handlers ====================
+
+func (s *aiBoxSubServer) handleNewProvider(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logID := serverwrapper.GetLogID(ctx)
+
+	var req createProviderReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		logger.Errorf(ctx, "[%s] Invalid create provider request: err=%v", logID, err)
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	protoReq := &model.Provider{
+		Name:        req.Name,
+		Description: req.Description,
+		Logo:        req.Logo,
+		KeyVaults:   req.KeyVaults,
+		SettingsJson: req.SettingsJson,
+		ConfigJson:  req.ConfigJson,
+	}
+
+	provider, err := service.CreateProvider(ctx, protoReq)
+	if err != nil {
+		logger.Errorf(ctx, "[%s] Failed to create provider: %v", logID, err)
+		http.Error(w, "create failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Infof(ctx, "[%s] Provider created: name=%s", logID, req.Name)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"provider": provider,
+	})
 }
 
-func (s *aiBoxSubServer) handleGetProvider(c context.Context, ctx *app.RequestContext) {
-    id := string(ctx.Query("id"))
-    if id == "" { ctx.String(http.StatusBadRequest, "id is required"); return }
-    provider, err := service.GetProvider(c, id)
-    if err != nil { ctx.String(http.StatusInternalServerError, "get failed: %v", err); return }
-    ctx.JSON(http.StatusOK, provider)
+func (s *aiBoxSubServer) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logID := serverwrapper.GetLogID(ctx)
+
+	var req updateProviderReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		logger.Errorf(ctx, "[%s] Invalid update provider request: err=%v", logID, err)
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	protoReq := &model.Provider{
+		Id: req.ID,
+	}
+	if req.Name != nil {
+		protoReq.Name = *req.Name
+	}
+	if req.Description != nil {
+		protoReq.Description = *req.Description
+	}
+	if req.Logo != nil {
+		protoReq.Logo = *req.Logo
+	}
+	if req.Enabled != nil {
+		protoReq.Enabled = *req.Enabled
+	}
+	if req.KeyVaults != nil {
+		protoReq.KeyVaults = *req.KeyVaults
+	}
+	if req.SettingsJson != nil {
+		protoReq.SettingsJson = *req.SettingsJson
+	}
+	if req.ConfigJson != nil {
+		protoReq.ConfigJson = *req.ConfigJson
+	}
+
+	provider, err := service.UpdateProvider(ctx, protoReq)
+	if err != nil {
+		logger.Errorf(ctx, "[%s] Failed to update provider: %v", logID, err)
+		http.Error(w, "update failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Infof(ctx, "[%s] Provider updated: id=%s", logID, req.ID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"provider": provider,
+	})
 }
 
-func (s *aiBoxSubServer) handleListProviders(c context.Context, ctx *app.RequestContext) {
-    pg := types.PageQuery{ PageNumber: 1, PageSize: 10 }
-    if err := ctx.BindQuery(&pg); err != nil { ctx.String(http.StatusBadRequest, "invalid request: %v", err); return }
+func (s *aiBoxSubServer) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logID := serverwrapper.GetLogID(ctx)
 
-    enabledOnly := false
-    if v := ctx.Query("enabled_only"); len(v) > 0 && string(v) == "true" { enabledOnly = true }
-    data, err := service.ListProviders(c, pg, enabledOnly)
-    if err != nil { ctx.String(http.StatusInternalServerError, "list failed: %v", err); return }
-    ctx.JSON(http.StatusOK, data)
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, "invalid request: id required", http.StatusBadRequest)
+		return
+	}
+
+	if err := service.DeleteProvider(ctx, req.ID); err != nil {
+		logger.Errorf(ctx, "[%s] Failed to delete provider: %v", logID, err)
+		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Infof(ctx, "[%s] Provider deleted: id=%s", logID, req.ID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
 }
 
-func (s *aiBoxSubServer) handleTestProvider(c context.Context, ctx *app.RequestContext) {
-    var req struct { Id string `json:"id"` }
-    if err := ctx.Bind(&req); err != nil || req.Id == "" { ctx.String(http.StatusBadRequest, "invalid request: id required"); return }
-    ok, msg, err := service.TestProvider(c, req.Id)
-    if err != nil { ctx.String(http.StatusInternalServerError, "test failed: %v", err); return }
-    ctx.JSON(http.StatusOK, map[string]interface{}{"ok": ok, "message": msg})
+func (s *aiBoxSubServer) handleGetProvider(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logID := serverwrapper.GetLogID(ctx)
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+
+	provider, err := service.GetProvider(ctx, id)
+	if err != nil {
+		logger.Errorf(ctx, "[%s] Failed to get provider: %v", logID, err)
+		http.Error(w, "get failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"provider": provider,
+	})
+}
+
+func (s *aiBoxSubServer) handleListProviders(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logID := serverwrapper.GetLogID(ctx)
+
+	pageNumber, _ := strconv.Atoi(r.URL.Query().Get("page_number"))
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if pageNumber <= 0 {
+		pageNumber = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	enabledOnly := r.URL.Query().Get("enabled_only") == "true"
+
+	pageQuery := types.PageQuery{
+		PageNumber: int32(pageNumber),
+		PageSize:   int32(pageSize),
+	}
+
+	data, err := service.ListProviders(ctx, pageQuery, enabledOnly)
+	if err != nil {
+		logger.Errorf(ctx, "[%s] Failed to list providers: %v", logID, err)
+		http.Error(w, "list failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+func (s *aiBoxSubServer) handleTestProvider(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logID := serverwrapper.GetLogID(ctx)
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, "invalid request: id required", http.StatusBadRequest)
+		return
+	}
+
+	ok, msg, err := service.TestProvider(ctx, req.ID)
+	if err != nil {
+		logger.Errorf(ctx, "[%s] Failed to test provider: %v", logID, err)
+		http.Error(w, "test failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":      ok,
+		"message": msg,
+	})
 }
