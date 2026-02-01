@@ -67,6 +67,11 @@ func (s *memberService) GetMember(ctx context.Context, groupULID, actorDID strin
 		return nil, err
 	}
 
+	// Ensure table exists
+	if err := rds.AutoMigrate(&model.GroupMember{}); err != nil {
+		return nil, err
+	}
+
 	var member model.GroupMember
 	if err := rds.Where("group_ul_id = ? AND actor_did = ?", groupULID, actorDID).First(&member).Error; err != nil {
 		return nil, err
