@@ -9,11 +9,13 @@ import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/network/friend_chat/friend_chat_api_service.dart';
+import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
 import 'package:peers_touch_base/network/ice/ice_service.dart';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 import 'package:peers_touch_base/network/social/social_api_service.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
 
 class FriendItem {
@@ -41,6 +43,14 @@ class FriendChatController extends GetxController {
   final isSending = false.obs;
   final isLoading = false.obs;
   final error = Rx<String?>(null);
+
+  // Unified session list (individuals + groups, sorted by last message time)
+  final unifiedSessions = <UnifiedSession>[].obs;
+  final currentUnifiedSession = Rx<UnifiedSession?>(null);
+  final groups = <GroupInfo>[].obs;
+  final currentGroup = Rx<GroupInfo?>(null);
+  final groupMessages = <GroupMessageInfo>[].obs;
+  final _groupApi = GroupChatApiService();
 
   final connectionStats = const ConnectionStats().obs;
   final connectionMode = ConnectionMode.disconnected.obs;
@@ -103,9 +113,161 @@ class FriendChatController extends GetxController {
     super.onInit();
     _startSyncTimer();
     _markOnline();
-    _loadFriends();
+    _loadAllSessions(); // Load both individual and group chats
     _loadPendingMessages();
     _initSignalingWithHeartbeat(); // Register and start heartbeat
+  }
+
+  /// Load both friends and groups, then merge into unified list
+  Future<void> _loadAllSessions() async {
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      // Load friends and groups in parallel
+      await Future.wait([
+        _loadFriendsInternal(),
+        _loadGroupsInternal(),
+      ]);
+
+      // Merge into unified session list
+      _mergeUnifiedSessions();
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> _loadFriendsInternal() async {
+    try {
+      if (currentUserId.isEmpty) return;
+
+      final socialApi = SocialApiService();
+      final response = await socialApi.getFollowing();
+      final followingList = response.following;
+
+      final friendList = followingList.map((f) => FriendItem(
+        actorId: f.actorId,
+        username: f.username,
+        displayName: f.displayName,
+        avatarUrl: f.avatarUrl,
+      )).toList();
+
+      friends.assignAll(friendList);
+      LoggingService.info('Loaded ${friendList.length} friends');
+    } catch (e) {
+      LoggingService.error('Failed to load friends: $e');
+    }
+  }
+
+  Future<void> _loadGroupsInternal() async {
+    try {
+      if (currentUserId.isEmpty) return;
+
+      final groupList = await _groupApi.listGroups();
+      groups.assignAll(groupList);
+      LoggingService.info('Loaded ${groupList.length} groups');
+    } catch (e) {
+      LoggingService.error('Failed to load groups: $e');
+    }
+  }
+
+  void _mergeUnifiedSessions() {
+    final unified = <UnifiedSession>[];
+
+    // Add individual chats from friends
+    for (final friend in friends) {
+      unified.add(UnifiedSession(
+        id: friend.actorId,
+        type: UnifiedSessionType.individual,
+        name: friend.name,
+        subtitle: '@${friend.username}',
+        avatarUrl: friend.avatarUrl,
+        lastMessageTime: null, // TODO: get from session if available
+        originalData: friend,
+      ));
+    }
+
+    // Add group chats
+    for (final group in groups) {
+      unified.add(UnifiedSession(
+        id: group.ulid,
+        type: UnifiedSessionType.group,
+        name: group.name,
+        subtitle: '${group.memberCount} 人',
+        avatarUrl: group.avatarCid,
+        // TODO: get member avatars for mosaic
+        lastMessageTime: group.updatedAt > 0
+            ? DateTime.fromMillisecondsSinceEpoch(group.updatedAt * 1000)
+            : null,
+        originalData: group,
+      ));
+    }
+
+    // Sort by last message time (most recent first)
+    unified.sort(UnifiedSession.compareByTime);
+    unifiedSessions.assignAll(unified);
+  }
+
+  /// Select a unified session (individual or group)
+  Future<void> selectUnifiedSession(UnifiedSession session) async {
+    currentUnifiedSession.value = session;
+
+    if (session.isIndividual) {
+      final friend = session.originalData as FriendItem;
+      currentGroup.value = null;
+      groupMessages.clear();
+      await selectFriend(friend);
+    } else {
+      final group = session.originalData as GroupInfo;
+      currentFriend.value = null;
+      currentSession.value = null;
+      messages.clear();
+      await _selectGroup(group);
+    }
+  }
+
+  Future<void> _selectGroup(GroupInfo group) async {
+    currentGroup.value = group;
+    groupMessages.clear();
+    
+    try {
+      final loadedMessages = await _groupApi.getMessages(group.ulid);
+      groupMessages.assignAll(loadedMessages);
+      LoggingService.info('Loaded ${loadedMessages.length} messages for group ${group.ulid}');
+    } catch (e) {
+      LoggingService.error('Failed to load group messages: $e');
+      error.value = 'Failed to load messages';
+    }
+  }
+
+  /// Send message to current group
+  Future<void> sendGroupMessage(String content) async {
+    final group = currentGroup.value;
+    if (group == null || content.trim().isEmpty) return;
+
+    isSending.value = true;
+    error.value = null;
+
+    try {
+      final newMessage = await _groupApi.sendMessage(
+        groupUlid: group.ulid,
+        content: content.trim(),
+        type: 1, // TEXT
+      );
+      groupMessages.add(newMessage);
+      inputController.clear();
+      LoggingService.info('Group message sent: ${newMessage.ulid}');
+    } catch (e) {
+      LoggingService.error('Failed to send group message: $e');
+      error.value = 'Failed to send message';
+    } finally {
+      isSending.value = false;
+    }
+  }
+
+  /// Refresh all sessions
+  Future<void> refreshAllSessions() async {
+    await _loadAllSessions();
   }
 
   /// Initialize signaling service with heartbeat for persistent presence
@@ -291,40 +453,7 @@ class FriendChatController extends GetxController {
     }
   }
 
-  Future<void> _loadFriends() async {
-    LoggingService.info('FriendChatController: Loading friends list');
-    isLoading.value = true;
-    error.value = null;
-
-    try {
-      if (currentUserId.isEmpty) {
-        LoggingService.error('FriendChatController: Current user ID is empty');
-        error.value = 'User not logged in';
-        return;
-      }
-
-      final socialApi = SocialApiService();
-      final response = await socialApi.getFollowing();
-      final followingList = response.following;
-      
-      LoggingService.info('FriendChatController: Loaded ${followingList.length} friends');
-
-      final friendList = followingList.map((f) => FriendItem(
-        actorId: f.actorId,
-        username: f.username,
-        displayName: f.displayName,
-        avatarUrl: f.avatarUrl,
-      )).toList();
-
-      friends.assignAll(friendList);
-    } catch (e, stackTrace) {
-      LoggingService.error('FriendChatController: Failed to load friends: $e');
-      LoggingService.debug('Stack trace: $stackTrace');
-      error.value = 'Failed to load friends: $e';
-    } finally {
-      isLoading.value = false;
-    }
-  }
+  // Note: _loadFriends replaced by _loadFriendsInternal for unified loading
 
   Future<void> _loadPendingMessages() async {
     if (currentUserId.isEmpty) return;
@@ -482,7 +611,7 @@ class FriendChatController extends GetxController {
   }
 
   Future<void> refreshSessions() async {
-    await _loadFriends();
+    await _loadAllSessions();
   }
 
   Future<void> selectFriend(FriendItem friend) async {

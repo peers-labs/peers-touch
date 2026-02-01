@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
@@ -156,11 +157,25 @@ func HTTPHandlerFunc(h http.HandlerFunc) EndpointHandler {
 			bodyReader = bytes.NewReader(body)
 		}
 
-		// Create http.Request with full path including query string
-		r, err := http.NewRequestWithContext(ctx, string(req.Method()), req.Path(), io.NopCloser(bodyReader))
+		// Parse the full path which may include query string
+		fullPath := req.Path()
+		
+		// Split path and query string manually
+		path := fullPath
+		rawQuery := ""
+		if idx := strings.Index(fullPath, "?"); idx != -1 {
+			path = fullPath[:idx]
+			rawQuery = fullPath[idx+1:]
+		}
+
+		// Create http.Request with just the path
+		r, err := http.NewRequestWithContext(ctx, string(req.Method()), path, io.NopCloser(bodyReader))
 		if err != nil {
 			return err
 		}
+
+		// Manually set the query string
+		r.URL.RawQuery = rawQuery
 
 		for k, v := range req.Header() {
 			r.Header.Set(k, v)
@@ -224,10 +239,23 @@ func HTTPWrapperAdapter(httpWrapper func(ctx context.Context, next http.Handler)
 
 			wrapped := httpWrapper(ctx, httpHandler)
 			bodyReader := io.NopCloser(bytes.NewReader(req.Body()))
-			r, err := http.NewRequestWithContext(ctx, string(req.Method()), req.Path(), bodyReader)
+			
+			// Parse the full path which may include query string
+			fullPath := req.Path()
+			path := fullPath
+			rawQuery := ""
+			if idx := strings.Index(fullPath, "?"); idx != -1 {
+				path = fullPath[:idx]
+				rawQuery = fullPath[idx+1:]
+			}
+			
+			r, err := http.NewRequestWithContext(ctx, string(req.Method()), path, bodyReader)
 			if err != nil {
 				return err
 			}
+			
+			// Set the query string
+			r.URL.RawQuery = rawQuery
 
 			for k, v := range req.Header() {
 				r.Header.Set(k, v)
@@ -264,6 +292,10 @@ func (r *httpRequestAdapter) Method() Method {
 }
 
 func (r *httpRequestAdapter) Path() string {
+	// Include query string in path for proper URL handling
+	if r.r.URL.RawQuery != "" {
+		return r.r.URL.Path + "?" + r.r.URL.RawQuery
+	}
 	return r.r.URL.Path
 }
 
