@@ -1,26 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_controller.dart';
+import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_input_bar.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_message_item.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
+import 'package:peers_touch_desktop/features/friend_chat/widgets/group_avatar_mosaic.dart';
 import 'package:peers_touch_desktop/features/group_chat/view/create_group_dialog.dart';
-import 'package:peers_touch_desktop/features/group_chat/view/group_list_panel.dart';
-import 'package:peers_touch_desktop/features/group_chat/view/group_chat_panel.dart';
+import 'package:peers_touch_desktop/features/group_chat/widgets/group_message_bubble.dart';
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
 import 'package:peers_touch_desktop/features/shell/controller/shell_controller.dart';
 import 'package:peers_touch_desktop/features/shell/widgets/three_pane_scaffold.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
 
-/// Chat type filter for Messages page
-enum ChatFilter { individual, group }
-
 class FriendChatPage extends GetView<FriendChatController> {
-  /// Selected chat filter (individual or group)
-  static final selectedFilter = ChatFilter.individual.obs;
   const FriendChatPage({super.key});
 
   @override
@@ -47,7 +44,7 @@ class FriendChatPage extends GetView<FriendChatController> {
       color: UIKit.assistantSidebarBg(context),
       child: Column(
         children: [
-          // Search bar with create button
+          // Search bar with create group button
           Container(
             height: UIKit.topBarHeight,
             padding: EdgeInsets.symmetric(horizontal: UIKit.spaceMd(context)),
@@ -61,85 +58,25 @@ class FriendChatPage extends GetView<FriendChatController> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Obx(() => selectedFilter.value == ChatFilter.group
-                    ? IconButton(
-                        icon: const Icon(Icons.add),
-                        tooltip: 'Create Group',
-                        onPressed: () => _showCreateGroupDialog(context),
-                      )
-                    : const SizedBox.shrink()),
-              ],
-            ),
-          ),
-          // Filter Chips
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: UIKit.spaceMd(context),
-              vertical: UIKit.spaceXs(context),
-            ),
-            child: Obx(() => Row(
-              children: [
-                _buildFilterChip(
-                  context,
-                  label: 'Individual',
-                  icon: Icons.person,
-                  selected: selectedFilter.value == ChatFilter.individual,
-                  onSelected: () => selectedFilter.value = ChatFilter.individual,
-                ),
-                const SizedBox(width: 8),
-                _buildFilterChip(
-                  context,
-                  label: 'Groups',
-                  icon: Icons.group,
-                  selected: selectedFilter.value == ChatFilter.group,
-                  onSelected: () => selectedFilter.value = ChatFilter.group,
+                IconButton(
+                  icon: const Icon(Icons.group_add),
+                  tooltip: '创建群组',
+                  onPressed: () => _showCreateGroupDialog(context),
                 ),
               ],
-            )),
+            ),
           ),
           Divider(
-            height: UIKit.spaceLg(context),
+            height: 1,
             thickness: UIKit.dividerThickness,
             color: UIKit.dividerColor(context),
           ),
-          // Session/Group list based on filter
+          // Unified session list (individuals + groups mixed)
           Expanded(
-            child: Obx(() {
-              if (selectedFilter.value == ChatFilter.group) {
-                return const GroupListPanel();
-              }
-              return _buildFriendList(context);
-            }),
+            child: _buildUnifiedList(context),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildFilterChip(
-    BuildContext context, {
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required VoidCallback onSelected,
-  }) {
-    final theme = Theme.of(context);
-    return FilterChip(
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16),
-          const SizedBox(width: 4),
-          Text(label),
-        ],
-      ),
-      selected: selected,
-      onSelected: (_) => onSelected(),
-      showCheckmark: false,
-      selectedColor: theme.colorScheme.primaryContainer,
-      backgroundColor: theme.colorScheme.surfaceContainerHighest,
-      side: BorderSide.none,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     );
   }
 
@@ -147,90 +84,277 @@ class FriendChatPage extends GetView<FriendChatController> {
     showDialog(
       context: context,
       builder: (context) => const CreateGroupDialog(),
-    );
+    ).then((_) {
+      // Refresh sessions after dialog closes
+      controller.refreshAllSessions();
+    });
   }
 
-  Widget _buildFriendList(BuildContext context) {
+  Widget _buildUnifiedList(BuildContext context) {
     return Obx(() {
       if (controller.isLoading.value) {
-        return const Center(
-          child: CircularProgressIndicator(),
-        );
-      }
-
-      final friendList = controller.friends.toList();
-      
-      if (friendList.isEmpty) {
         return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.people_outline,
-                size: 64,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No friends yet',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Follow friends to start chatting',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade500,
-                ),
-              ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: controller.refreshSessions,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Refresh'),
-              ),
-            ],
+          child: SizedBox(
+            width: UIKit.indicatorSizeSm,
+            height: UIKit.indicatorSizeSm,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Theme.of(context).colorScheme.primary,
+            ),
           ),
         );
       }
 
-      final currentFriendId = controller.currentFriend.value?.actorId;
+      final sessionList = controller.unifiedSessions.toList();
+
+      if (sessionList.isEmpty) {
+        return _buildEmptyState(context);
+      }
+
+      final currentId = controller.currentUnifiedSession.value?.id;
       return ListView.separated(
-        itemCount: friendList.length,
-        separatorBuilder: (_, index) => Divider(
+        padding: EdgeInsets.symmetric(vertical: UIKit.spaceXs(context)),
+        itemCount: sessionList.length,
+        separatorBuilder: (_, __) => Divider(
           height: 1,
+          thickness: UIKit.dividerThickness,
           color: UIKit.dividerColor(context),
+          indent: UIKit.spaceLg(context) + 40 + UIKit.spaceSm(context),
         ),
         itemBuilder: (context, index) {
-          final friend = friendList[index];
-          final isSelected = friend.actorId == currentFriendId;
-          return ListTile(
-            leading: Avatar(
-              actorId: friend.actorId,
-              avatarUrl: friend.avatarUrl,
-              fallbackName: friend.name,
-              size: 40,
-            ),
-            title: Text(friend.name),
-            subtitle: Text('@${friend.username}'),
-            selected: isSelected,
-            onTap: () => controller.selectFriend(friend),
+          final session = sessionList[index];
+          final isSelected = session.id == currentId;
+          return _UnifiedSessionTile(
+            session: session,
+            isSelected: isSelected,
+            onTap: () => controller.selectUnifiedSession(session),
           );
         },
       );
     });
   }
 
+  Widget _buildEmptyState(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(UIKit.spaceLg(context)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(UIKit.radiusLg(context)),
+              ),
+              child: Icon(
+                Icons.chat_bubble_outline,
+                size: 32,
+                color: UIKit.textSecondary(context),
+              ),
+            ),
+            SizedBox(height: UIKit.spaceLg(context)),
+            Text(
+              '暂无会话',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: UIKit.textPrimary(context),
+                  ),
+            ),
+            SizedBox(height: UIKit.spaceXs(context)),
+            Text(
+              '关注好友或创建群组开始聊天',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: UIKit.textSecondary(context),
+                  ),
+            ),
+            SizedBox(height: UIKit.spaceLg(context)),
+            FilledButton.icon(
+              onPressed: controller.refreshAllSessions,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('刷新'),
+              style: UIKit.primaryButtonStyle(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildChatPanel(BuildContext context) {
     return Obx(() {
-      if (selectedFilter.value == ChatFilter.group) {
-        return const GroupChatPanel();
+      final session = controller.currentUnifiedSession.value;
+      if (session == null) {
+        return _buildNoChatSelected(context);
+      }
+
+      if (session.isGroup) {
+        return _buildGroupChatPanel(context);
       }
       return _buildFriendChatPanel(context);
     });
+  }
+
+  Widget _buildNoChatSelected(BuildContext context) {
+    return Container(
+      color: UIKit.chatAreaBg(context),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(UIKit.radiusLg(context)),
+              ),
+              child: Icon(
+                Icons.chat_outlined,
+                size: 32,
+                color: UIKit.textSecondary(context),
+              ),
+            ),
+            SizedBox(height: UIKit.spaceLg(context)),
+            Text(
+              '选择一个会话开始聊天',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: UIKit.textPrimary(context),
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupChatPanel(BuildContext context) {
+    final group = controller.currentGroup.value;
+
+    return Container(
+      color: UIKit.chatAreaBg(context),
+      child: Column(
+        children: [
+          _buildGroupHeader(context, group),
+          Divider(
+            height: 1,
+            thickness: UIKit.dividerThickness,
+            color: UIKit.dividerColor(context),
+          ),
+          Expanded(
+            child: Obx(() {
+              final messageList = controller.groupMessages.toList();
+              if (messageList.isEmpty) {
+                return Center(
+                  child: Text(
+                    '暂无消息',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: UIKit.textSecondary(context),
+                        ),
+                  ),
+                );
+              }
+              return ListView.builder(
+                padding: EdgeInsets.all(UIKit.spaceMd(context)),
+                itemCount: messageList.length,
+                itemBuilder: (context, index) {
+                  final message = messageList[index];
+                  final isMe = message.senderDid == controller.currentUserId;
+                  return GroupMessageBubble(
+                    message: message,
+                    isMe: isMe,
+                    senderName: isMe ? controller.currentUserName : _getSenderName(message.senderDid),
+                    senderActorId: message.senderDid,
+                  );
+                },
+              );
+            }),
+          ),
+          Obx(() {
+            final err = controller.error.value;
+            if (err == null) return const SizedBox.shrink();
+            return Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                horizontal: UIKit.spaceMd(context),
+                vertical: UIKit.spaceXs(context),
+              ),
+              color: UIKit.errorColor(context).withValues(alpha: 0.1),
+              child: Text(
+                err,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: UIKit.errorColor(context),
+                    ),
+              ),
+            );
+          }),
+          Divider(
+            height: 1,
+            thickness: UIKit.dividerThickness,
+            color: UIKit.dividerColor(context),
+          ),
+          FriendChatInputBar(
+            controller: controller.inputController,
+            onSend: () {
+              final text = controller.inputController.text;
+              controller.sendGroupMessage(text);
+            },
+            isSending: controller.isSending.value,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupHeader(BuildContext context, GroupInfo? group) {
+    final theme = Theme.of(context);
+
+    return Container(
+      height: UIKit.topBarHeight,
+      padding: EdgeInsets.symmetric(horizontal: UIKit.spaceMd(context)),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  group?.name ?? '选择群组',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: UIKit.textPrimary(context),
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (group != null) ...[
+                  SizedBox(height: UIKit.spaceXs(context) / 2),
+                  Text(
+                    '${group.memberCount} 人',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: UIKit.textSecondary(context),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.info_outline, color: UIKit.textSecondary(context)),
+            tooltip: '群组信息',
+            onPressed: () {},
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getSenderName(String senderDid) {
+    if (senderDid.length > 10) {
+      return '${senderDid.substring(0, 4)}...${senderDid.substring(senderDid.length - 4)}';
+    }
+    return senderDid;
   }
 
   Widget _buildFriendChatPanel(BuildContext context) {
@@ -240,7 +364,7 @@ class FriendChatPage extends GetView<FriendChatController> {
         children: [
           _buildChatHeader(context),
           Divider(
-            height: UIKit.spaceLg(context),
+            height: 1,
             thickness: UIKit.dividerThickness,
             color: UIKit.dividerColor(context),
           ),
@@ -250,7 +374,7 @@ class FriendChatPage extends GetView<FriendChatController> {
               if (messageList.isEmpty) {
                 return Center(
                   child: Text(
-                    'No messages yet',
+                    '暂无消息',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: UIKit.textSecondary(context),
                         ),
@@ -319,7 +443,7 @@ class FriendChatPage extends GetView<FriendChatController> {
             final l10n = AppLocalizations.of(context)!;
             String statusText = '';
             Color statusColor = UIKit.textSecondary(context);
-            
+
             if (session != null) {
               if (session.participantIds.length > 2) {
                 statusText = '${session.participantIds.length} members';
@@ -336,7 +460,7 @@ class FriendChatPage extends GetView<FriendChatController> {
                 }
               }
             }
-            
+
             return Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -395,5 +519,163 @@ class FriendChatPage extends GetView<FriendChatController> {
         );
       }
     });
+  }
+}
+
+/// Unified session list item (supports both individual and group chats)
+class _UnifiedSessionTile extends StatelessWidget {
+  final UnifiedSession session;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _UnifiedSessionTile({
+    required this.session,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: isSelected
+          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+          : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: UIKit.spaceLg(context),
+            vertical: UIKit.spaceSm(context),
+          ),
+          child: Row(
+            children: [
+              _buildAvatar(context),
+              SizedBox(width: UIKit.spaceSm(context)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (session.isGroup)
+                          Padding(
+                            padding: EdgeInsets.only(right: UIKit.spaceXs(context)),
+                            child: Icon(
+                              Icons.group,
+                              size: 14,
+                              color: UIKit.textSecondary(context),
+                            ),
+                          ),
+                        Expanded(
+                          child: Text(
+                            session.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: UIKit.textPrimary(context),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        if (session.lastMessageTime != null)
+                          Text(
+                            _formatTime(session.lastMessageTime!),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: UIKit.textSecondary(context),
+                              fontSize: 11,
+                            ),
+                          ),
+                      ],
+                    ),
+                    SizedBox(height: UIKit.spaceXs(context) / 2),
+                    Text(
+                      session.lastMessage ?? session.subtitle ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: UIKit.textSecondary(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (session.unreadCount > 0)
+                Container(
+                  margin: EdgeInsets.only(left: UIKit.spaceSm(context)),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.error,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    session.unreadCount > 99 ? '99+' : '${session.unreadCount}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onError,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar(BuildContext context) {
+    if (session.isGroup && session.memberAvatarUrls != null && session.memberAvatarUrls!.isNotEmpty) {
+      // Use mosaic avatar for groups with member avatars
+      return GroupAvatarMosaic(
+        memberIds: List.generate(session.memberAvatarUrls!.length, (i) => 'member_$i'),
+        memberAvatarUrls: session.memberAvatarUrls!,
+        size: 44,
+      );
+    }
+
+    if (session.isGroup) {
+      // Fallback group avatar
+      final colorIndex = session.name.hashCode.abs() % Colors.primaries.length;
+      final bgColor = Colors.primaries[colorIndex].withValues(alpha: 0.2);
+      final fgColor = Colors.primaries[colorIndex];
+
+      return Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
+        ),
+        child: Center(
+          child: Icon(Icons.group, color: fgColor, size: 22),
+        ),
+      );
+    }
+
+    // Individual avatar
+    final friend = session.originalData as FriendItem?;
+    return Avatar(
+      actorId: session.id,
+      avatarUrl: session.avatarUrl,
+      fallbackName: friend?.name ?? session.name,
+      size: 44,
+    );
+  }
+
+  String _formatTime(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+
+    if (diff.inDays == 0) {
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } else if (diff.inDays == 1) {
+      return '昨天';
+    } else if (diff.inDays < 7) {
+      const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      return weekdays[dt.weekday % 7];
+    } else {
+      return '${dt.month}/${dt.day}';
+    }
   }
 }
