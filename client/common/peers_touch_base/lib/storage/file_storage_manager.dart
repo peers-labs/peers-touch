@@ -58,6 +58,50 @@ class FileStorageManager {
   FileStorageManager._internal();
   static final FileStorageManager _instance = FileStorageManager._internal();
 
+  /// Returns the platform-specific namespace.
+  /// 
+  /// Desktop (Windows/macOS/Linux) uses [StorageNamespace.peersTouchDesktop].
+  /// Mobile (iOS/Android) uses [StorageNamespace.peersTouchMobile].
+  StorageNamespace get platformNamespace {
+    if (Platform.isIOS || Platform.isAndroid) {
+      return StorageNamespace.peersTouchMobile;
+    }
+    return StorageNamespace.peersTouchDesktop;
+  }
+
+  /// Gets a directory using the platform-specific namespace.
+  /// 
+  /// This is a convenience method that automatically selects the correct
+  /// namespace based on the current platform.
+  Future<Directory> getPlatformDirectory(StorageLocation location, {String? subDir}) async {
+    return getDirectory(location, platformNamespace, subDir: subDir);
+  }
+
+  /// Gets a file using the platform-specific namespace.
+  Future<File> getPlatformFile(StorageLocation location, String filename, {String? subDir}) async {
+    return getFile(location, platformNamespace, filename, subDir: subDir);
+  }
+
+  /// Gets the user-scoped directory for chat media.
+  /// 
+  /// Structure: {platform_namespace}/users/{actorId}/media/{targetType}/{targetId}/
+  Future<Directory> getChatMediaDirectory({
+    required String actorId,
+    required String targetType, // 'friends' or 'groups'
+    required String targetId,
+  }) async {
+    final subDir = 'users/$actorId/media/$targetType/$targetId';
+    return getPlatformDirectory(StorageLocation.support, subDir: subDir);
+  }
+
+  /// Gets the user-scoped directory for database files.
+  /// 
+  /// Structure: {platform_namespace}/users/{actorId}/
+  Future<Directory> getUserDatabaseDirectory(String actorId) async {
+    final subDir = 'users/$actorId';
+    return getPlatformDirectory(StorageLocation.support, subDir: subDir);
+  }
+
   /// Gets the raw base directory for a given [location].
   Future<Directory> getBaseDirectory(StorageLocation location) async {
     switch (location) {

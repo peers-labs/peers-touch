@@ -2,43 +2,31 @@ package aibox
 
 import (
 	"context"
-	_ "embed"
 
+	"gorm.io/gorm"
+
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/ai_box/model"
+	models "github.com/peers-labs/peers-touch/station/app/subserver/ai_box/db/model"
 )
-
-//go:embed db/models/init.sql
-var initSQL string
 
 var (
 	_ server.Subserver = (*aiBoxSubServer)(nil)
 )
 
-// aiBoxURL implements server.RouterURL for station endpoints
-type aiBoxURL struct {
-	name string
-	path string
-}
-
-func (s aiBoxURL) SubPath() string {
-	return s.path
-}
-
-func (s aiBoxURL) Name() string {
-	return s.name
-}
-
-// aiBoxSubServer handles photo upload requests
+// aiBoxSubServer handles AI provider management
 type aiBoxSubServer struct {
 	opts *Options
 
-	addrs  []string      // Populated from configuration
-	status server.Status // Track server status
+	addrs      []string       // Populated from configuration
+	status     server.Status  // Track server status
+	jwtWrapper server.Wrapper // JWT authentication wrapper
 }
 
 func (s *aiBoxSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -54,20 +42,19 @@ func (s *aiBoxSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if err != nil {
 		return err
 	}
-	if err = rds.AutoMigrate(&models.Pro{}); err != nil {
+	if err = rds.AutoMigrate(&models.Provider{}); err != nil {
 		return err
 	}
 
-	// Execute initialization SQL to insert default Ollama configuration
-	if initSQL != "" {
-		logger.Info(ctx, "executing ai-box initialization SQL")
-		if err = rds.Exec(initSQL).Error; err != nil {
-			logger.Warnf(ctx, "failed to execute init SQL (this may be expected if data already exists): %v", err)
-			// Don't return error as this might be expected if data already exists
-		} else {
-			logger.Info(ctx, "ai-box initialization SQL executed successfully")
-		}
+	// Initialize default Ollama provider if not exists
+	if err = s.initDefaultOllamaProvider(ctx, rds); err != nil {
+		logger.Warnf(ctx, "failed to init default Ollama provider: %v", err)
+		// Don't return error as this is optional
 	}
+
+	// Initialize JWT wrapper
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 	s.status = server.StatusStarting
 
@@ -107,39 +94,19 @@ func (s *aiBoxSubServer) Address() server.SubserverAddress {
 	}
 }
 
-// Handlers defines the upload, list, and get endpoints
+// Handlers defines the API endpoints
 func (s *aiBoxSubServer) Handlers() []server.Handler {
+	logIDWrapper := serverwrapper.LogID()
+	jwtWrapper := s.jwtWrapper
+
 	return []server.Handler{
-		server.NewHandler(
-			aiBoxURL{name: "ai-box-create", path: "/ai-box/provider/new"},
-			s.handleNewProvider,
-			server.WithMethod(server.POST),
-		),
-		server.NewHandler(
-			aiBoxURL{name: "ai-box-update", path: "/ai-box/provider/update"},
-			s.handleUpdateProvider,
-			server.WithMethod(server.POST),
-		),
-		server.NewHandler(
-			aiBoxURL{name: "ai-box-delete", path: "/ai-box/provider/delete"},
-			s.handleDeleteProvider,
-			server.WithMethod(server.POST),
-		),
-		server.NewHandler(
-			aiBoxURL{name: "ai-box-get", path: "/ai-box/provider/get"},
-			s.handleGetProvider,
-			server.WithMethod(server.GET),
-		),
-		server.NewHandler(
-			aiBoxURL{name: "ai-box-list", path: "/ai-box/providers"},
-			s.handleListProviders,
-			server.WithMethod(server.GET),
-		),
-		server.NewHandler(
-			aiBoxURL{name: "ai-box-test", path: "/ai-box/provider/test"},
-			s.handleTestProvider,
-			server.WithMethod(server.POST),
-		),
+		// Provider management
+		server.NewHTTPHandler("aibox-provider-create", "/ai-box/provider/new", server.POST, server.HTTPHandlerFunc(s.handleNewProvider), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("aibox-provider-update", "/ai-box/provider/update", server.POST, server.HTTPHandlerFunc(s.handleUpdateProvider), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("aibox-provider-delete", "/ai-box/provider/delete", server.POST, server.HTTPHandlerFunc(s.handleDeleteProvider), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("aibox-provider-get", "/ai-box/provider/get", server.GET, server.HTTPHandlerFunc(s.handleGetProvider), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("aibox-provider-list", "/ai-box/providers", server.GET, server.HTTPHandlerFunc(s.handleListProviders), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("aibox-provider-test", "/ai-box/provider/test", server.POST, server.HTTPHandlerFunc(s.handleTestProvider), logIDWrapper, jwtWrapper),
 	}
 }
 
@@ -152,26 +119,38 @@ func NewAIBoxSubServer(opts ...option.Option) server.Subserver {
 	}
 }
 
-// local request types
-type serviceRequestCreateProvider struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Logo        string `json:"logo"`
-}
-type serviceRequestUpdateProvider struct {
-	Id          string  `json:"id"`
-	DisplayName *string `json:"display_name"`
-	Description *string `json:"description"`
-	Logo        *string `json:"logo"`
-	Enabled     *bool   `json:"enabled"`
-	// Pass-through provider config from HTTP JSON to protobuf
-	Config *aiboxpb.ProviderConfig `json:"config"`
-}
+// initDefaultOllamaProvider creates the default Ollama provider if it doesn't exist
+func (s *aiBoxSubServer) initDefaultOllamaProvider(ctx context.Context, rds *gorm.DB) error {
+	// Check if default provider already exists
+	var count int64
+	if err := rds.Model(&models.Provider{}).Where("id = ? AND peers_user_id = ?", "ollama-default", "system").Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		logger.Debug(ctx, "default Ollama provider already exists, skipping")
+		return nil
+	}
 
-func (r serviceRequestCreateProvider) ToProto() *aiboxpb.CreateProviderRequest {
-	return &aiboxpb.CreateProviderRequest{Name: r.Name, Description: r.Description, Logo: r.Logo}
-}
+	// Create default Ollama provider
+	defaultProvider := &models.Provider{
+		ID:          "ollama-default",
+		Name:        "Ollama",
+		PeersUserID: "system",
+		Sort:        1,
+		Enabled:     true,
+		CheckModel:  "llama3.2:latest",
+		Logo:        "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjRkY2QzAwIi8+Cjwvc3ZnPgo=",
+		Description: "Ollama 是一个开源的本地 AI 模型运行平台，支持多种大语言模型的本地部署和推理。",
+		KeyVaults:   "{}",
+		SourceType:  "local",
+		Settings:    []byte("{}"),
+		Config:      []byte(`{"health_check":{"enabled":true,"interval":30,"endpoint":"/api/tags"},"auto_pull":{"enabled":false,"models":["llama3.2:latest"]},"performance":{"gpu_layers":-1,"num_ctx":8192,"num_predict":4096,"repeat_penalty":1.1,"top_k":40,"top_p":0.9},"ui":{"show_model_info":true,"show_performance_stats":true,"default_model":"llama3.2:latest"}}`),
+	}
 
-func (r serviceRequestUpdateProvider) ToProto() *aiboxpb.UpdateProviderRequest {
-	return &aiboxpb.UpdateProviderRequest{Id: r.Id, DisplayName: r.DisplayName, Description: r.Description, Logo: r.Logo, Enabled: r.Enabled, Config: r.Config}
+	if err := rds.Create(defaultProvider).Error; err != nil {
+		return err
+	}
+
+	logger.Info(ctx, "default Ollama provider created successfully")
+	return nil
 }

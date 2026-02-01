@@ -40,6 +40,9 @@ const MessageType$json = {
     {'1': 'MESSAGE_TYPE_FILE', '2': 3},
     {'1': 'MESSAGE_TYPE_LOCATION', '2': 4},
     {'1': 'MESSAGE_TYPE_SYSTEM', '2': 5},
+    {'1': 'MESSAGE_TYPE_STICKER', '2': 6},
+    {'1': 'MESSAGE_TYPE_AUDIO', '2': 7},
+    {'1': 'MESSAGE_TYPE_VIDEO', '2': 8},
   ],
 };
 
@@ -47,7 +50,9 @@ const MessageType$json = {
 final $typed_data.Uint8List messageTypeDescriptor = $convert.base64Decode(
     'CgtNZXNzYWdlVHlwZRIcChhNRVNTQUdFX1RZUEVfVU5TUEVDSUZJRUQQABIVChFNRVNTQUdFX1'
     'RZUEVfVEVYVBABEhYKEk1FU1NBR0VfVFlQRV9JTUFHRRACEhUKEU1FU1NBR0VfVFlQRV9GSUxF'
-    'EAMSGQoVTUVTU0FHRV9UWVBFX0xPQ0FUSU9OEAQSFwoTTUVTU0FHRV9UWVBFX1NZU1RFTRAF');
+    'EAMSGQoVTUVTU0FHRV9UWVBFX0xPQ0FUSU9OEAQSFwoTTUVTU0FHRV9UWVBFX1NZU1RFTRAFEh'
+    'gKFE1FU1NBR0VfVFlQRV9TVElDS0VSEAYSFgoSTUVTU0FHRV9UWVBFX0FVRElPEAcSFgoSTUVT'
+    'U0FHRV9UWVBFX1ZJREVPEAg=');
 
 @$core.Deprecated('Use messageStatusDescriptor instead')
 const MessageStatus$json = {
@@ -145,6 +150,17 @@ const ChatSession$json = {
       '6': '.peers_touch.model.chat.v1.ChatSession.MetadataEntry',
       '10': 'metadata'
     },
+    {'1': 'is_muted', '3': 10, '4': 1, '5': 8, '10': 'isMuted'},
+    {
+      '1': 'last_message_type',
+      '3': 11,
+      '4': 1,
+      '5': 14,
+      '6': '.peers_touch.model.chat.v1.MessageType',
+      '10': 'lastMessageType'
+    },
+    {'1': 'target_id', '3': 12, '4': 1, '5': 9, '10': 'targetId'},
+    {'1': 'avatar_url', '3': 13, '4': 1, '5': 9, '10': 'avatarUrl'},
   ],
   '3': [ChatSession_MetadataEntry$json],
 };
@@ -168,8 +184,11 @@ final $typed_data.Uint8List chatSessionDescriptor = $convert.base64Decode(
     'KA4yJi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlNlc3Npb25UeXBlUgR0eXBlEhsKCWlzX3'
     'Bpbm5lZBgHIAEoCFIIaXNQaW5uZWQSIQoMdW5yZWFkX2NvdW50GAggASgDUgt1bnJlYWRDb3Vu'
     'dBJQCghtZXRhZGF0YRgJIAMoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ2hhdFNlc3'
-    'Npb24uTWV0YWRhdGFFbnRyeVIIbWV0YWRhdGEaOwoNTWV0YWRhdGFFbnRyeRIQCgNrZXkYASAB'
-    'KAlSA2tleRIUCgV2YWx1ZRgCIAEoCVIFdmFsdWU6AjgB');
+    'Npb24uTWV0YWRhdGFFbnRyeVIIbWV0YWRhdGESGQoIaXNfbXV0ZWQYCiABKAhSB2lzTXV0ZWQS'
+    'UgoRbGFzdF9tZXNzYWdlX3R5cGUYCyABKA4yJi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk'
+    '1lc3NhZ2VUeXBlUg9sYXN0TWVzc2FnZVR5cGUSGwoJdGFyZ2V0X2lkGAwgASgJUgh0YXJnZXRJ'
+    'ZBIdCgphdmF0YXJfdXJsGA0gASgJUglhdmF0YXJVcmwaOwoNTWV0YWRhdGFFbnRyeRIQCgNrZX'
+    'kYASABKAlSA2tleRIUCgV2YWx1ZRgCIAEoCVIFdmFsdWU6AjgB');
 
 @$core.Deprecated('Use chatMessageDescriptor instead')
 const ChatMessage$json = {
@@ -226,6 +245,18 @@ const ChatMessage$json = {
       '6': '.peers_touch.model.chat.v1.ChatMessage.MetadataEntry',
       '10': 'metadata'
     },
+    {'1': 'reply_to_id', '3': 11, '4': 1, '5': 9, '10': 'replyToId'},
+    {'1': 'mentioned_ids', '3': 12, '4': 3, '5': 9, '10': 'mentionedIds'},
+    {'1': 'mention_all', '3': 13, '4': 1, '5': 8, '10': 'mentionAll'},
+    {'1': 'is_deleted', '3': 14, '4': 1, '5': 8, '10': 'isDeleted'},
+    {
+      '1': 'deleted_at',
+      '3': 15,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Timestamp',
+      '10': 'deletedAt'
+    },
   ],
   '3': [ChatMessage_MetadataEntry$json],
 };
@@ -251,8 +282,11 @@ final $typed_data.Uint8List chatMessageDescriptor = $convert.base64Decode(
     'b250ZW50Ek4KC2F0dGFjaG1lbnRzGAkgAygLMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS'
     '5NZXNzYWdlQXR0YWNobWVudFILYXR0YWNobWVudHMSUAoIbWV0YWRhdGEYCiADKAsyNC5wZWVy'
     'c190b3VjaC5tb2RlbC5jaGF0LnYxLkNoYXRNZXNzYWdlLk1ldGFkYXRhRW50cnlSCG1ldGFkYX'
-    'RhGjsKDU1ldGFkYXRhRW50cnkSEAoDa2V5GAEgASgJUgNrZXkSFAoFdmFsdWUYAiABKAlSBXZh'
-    'bHVlOgI4AQ==');
+    'RhEh4KC3JlcGx5X3RvX2lkGAsgASgJUglyZXBseVRvSWQSIwoNbWVudGlvbmVkX2lkcxgMIAMo'
+    'CVIMbWVudGlvbmVkSWRzEh8KC21lbnRpb25fYWxsGA0gASgIUgptZW50aW9uQWxsEh0KCmlzX2'
+    'RlbGV0ZWQYDiABKAhSCWlzRGVsZXRlZBI5CgpkZWxldGVkX2F0GA8gASgLMhouZ29vZ2xlLnBy'
+    'b3RvYnVmLlRpbWVzdGFtcFIJZGVsZXRlZEF0GjsKDU1ldGFkYXRhRW50cnkSEAoDa2V5GAEgAS'
+    'gJUgNrZXkSFAoFdmFsdWUYAiABKAlSBXZhbHVlOgI4AQ==');
 
 @$core.Deprecated('Use messageAttachmentDescriptor instead')
 const MessageAttachment$json = {

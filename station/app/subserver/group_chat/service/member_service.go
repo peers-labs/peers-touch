@@ -13,6 +13,7 @@ type MemberService interface {
 	AddMember(ctx context.Context, groupULID, actorDID string, role int, invitedBy string) error
 	GetMember(ctx context.Context, groupULID, actorDID string) (*model.GroupMember, error)
 	UpdateMember(ctx context.Context, groupULID, actorDID string, role *int, muted *bool, mutedUntil *time.Time) (*model.GroupMember, error)
+	UpdateNickname(ctx context.Context, groupULID, actorDID, nickname string) error
 	RemoveMember(ctx context.Context, groupULID, actorDID string) error
 	ListMembers(ctx context.Context, groupULID string, limit, offset int) ([]model.GroupMember, int, error)
 	IsMember(ctx context.Context, groupULID, actorDID string) bool
@@ -148,4 +149,15 @@ func (s *memberService) ListMembers(ctx context.Context, groupULID string, limit
 func (s *memberService) IsMember(ctx context.Context, groupULID, actorDID string) bool {
 	_, err := s.GetMember(ctx, groupULID, actorDID)
 	return err == nil
+}
+
+func (s *memberService) UpdateNickname(ctx context.Context, groupULID, actorDID, nickname string) error {
+	rds, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	return rds.Model(&model.GroupMember{}).
+		Where("group_ul_id = ? AND actor_did = ?", groupULID, actorDID).
+		Update("nickname", nickname).Error
 }

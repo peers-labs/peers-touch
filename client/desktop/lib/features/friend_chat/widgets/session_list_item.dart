@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 class SessionListItem extends StatelessWidget {
   const SessionListItem({
@@ -11,21 +12,32 @@ class SessionListItem extends StatelessWidget {
     required this.isSelected,
     required this.onTap,
     this.onDelete,
+    this.onPin,
+    this.onMute,
   });
 
   final ChatSession session;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onPin;
+  final VoidCallback? onMute;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return SessionContextMenu(
+      isPinned: session.isPinned,
+      isMuted: session.isMuted,
+      onPin: onPin,
+      onMute: onMute,
+      onDelete: onDelete,
       onTap: onTap,
       child: Container(
         color: isSelected
             ? Theme.of(context).colorScheme.primaryContainer
-            : Colors.transparent,
+            : session.isPinned
+                ? Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
+                : Colors.transparent,
         padding: EdgeInsets.symmetric(
           horizontal: UIKit.spaceMd(context),
           vertical: UIKit.spaceSm(context),
@@ -40,6 +52,26 @@ class SessionListItem extends StatelessWidget {
                 children: [
                   Row(
                     children: [
+                      // 置顶图标
+                      if (session.isPinned)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(
+                            Icons.push_pin,
+                            size: 14,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      // 静音图标
+                      if (session.isMuted)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(
+                            Icons.notifications_off,
+                            size: 14,
+                            color: UIKit.textSecondary(context),
+                          ),
+                        ),
                       Expanded(
                         child: Text(
                           session.topic,
@@ -72,7 +104,7 @@ class SessionListItem extends StatelessWidget {
                               ),
                         ),
                       ),
-                      if (session.unreadCount.toInt() > 0)
+                      if (session.unreadCount.toInt() > 0 && !session.isMuted)
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 6,
@@ -89,6 +121,16 @@ class SessionListItem extends StatelessWidget {
                             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                   color: Theme.of(context).colorScheme.onPrimary,
                                 ),
+                          ),
+                        ),
+                      // 静音时显示灰色小圆点
+                      if (session.unreadCount.toInt() > 0 && session.isMuted)
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: UIKit.textSecondary(context),
+                            shape: BoxShape.circle,
                           ),
                         ),
                     ],

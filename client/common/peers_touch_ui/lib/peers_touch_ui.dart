@@ -29,7 +29,13 @@ export 'src/widgets/slider.dart';
 export 'src/widgets/tabs.dart';
 export 'src/widgets/textbox.dart';
 
-// Export other UI components (to be added later)
-// export 'src/components/buttons.dart';
-// export 'src/components/cards.dart';
-// export 'src/components/forms.dart';
+// Emoji and Sticker picker
+export 'src/emoji/emoji_sticker_picker.dart';
+
+// Context menu (platform adaptive)
+export 'src/context_menu/context_menu_action.dart';
+export 'src/context_menu/context_menu_trigger.dart';
+
+// Chat components
+export 'src/chat/mention_input.dart';
+export 'src/chat/reply_preview.dart';

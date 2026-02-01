@@ -14,6 +14,7 @@ import 'package:peers_touch_base/network/ice/ice_service.dart';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 import 'package:peers_touch_base/network/social/social_api_service.dart';
+import 'package:peers_touch_base/storage/chat/chat_cache_service.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
@@ -111,11 +112,23 @@ class FriendChatController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _initCacheService();
     _startSyncTimer();
     _markOnline();
     _loadAllSessions(); // Load both individual and group chats
     _loadPendingMessages();
     _initSignalingWithHeartbeat(); // Register and start heartbeat
+  }
+
+  /// 初始化本地缓存服务
+  Future<void> _initCacheService() async {
+    if (currentUserId.isEmpty) return;
+    try {
+      await ChatCacheService.instance.initialize(currentUserId);
+      LoggingService.info('ChatCacheService initialized for user: $currentUserId');
+    } catch (e) {
+      LoggingService.error('Failed to init ChatCacheService: $e');
+    }
   }
 
   /// Load both friends and groups, then merge into unified list
@@ -172,38 +185,79 @@ class FriendChatController extends GetxController {
   }
 
   void _mergeUnifiedSessions() {
+    _mergeUnifiedSessionsAsync();
+  }
+
+  Future<void> _mergeUnifiedSessionsAsync() async {
     final unified = <UnifiedSession>[];
+    final cache = ChatCacheService.instance;
+
+    // 尝试从缓存获取会话信息
+    Map<String, dynamic> cachedSessionInfo = {};
+    try {
+      final cachedSessions = await cache.getSessions();
+      for (final s in cachedSessions) {
+        cachedSessionInfo[s.targetId] = {
+          'lastMessage': s.lastMessageSnippet,
+          'lastMessageAt': s.lastMessageAt != null 
+              ? DateTime.fromMillisecondsSinceEpoch(s.lastMessageAt!)
+              : null,
+          'lastMessageType': s.lastMessageType,
+          'unreadCount': s.unreadCount,
+          'isPinned': s.isPinned,
+          'isMuted': s.isMuted,
+        };
+      }
+    } catch (e) {
+      LoggingService.warning('Failed to load cached sessions: $e');
+    }
 
     // Add individual chats from friends
     for (final friend in friends) {
+      final cached = cachedSessionInfo[friend.actorId];
       unified.add(UnifiedSession(
         id: friend.actorId,
         type: UnifiedSessionType.individual,
         name: friend.name,
         subtitle: '@${friend.username}',
         avatarUrl: friend.avatarUrl,
-        lastMessageTime: null, // TODO: get from session if available
+        lastMessage: cached?['lastMessage'],
+        lastMessageTime: cached?['lastMessageAt'],
+        lastMessageType: cached?['lastMessageType'] != null 
+            ? MessageType.valueOf(cached['lastMessageType'])
+            : null,
+        unreadCount: cached?['unreadCount'] ?? 0,
+        isPinned: cached?['isPinned'] ?? false,
+        isMuted: cached?['isMuted'] ?? false,
         originalData: friend,
       ));
     }
 
     // Add group chats
     for (final group in groups) {
+      final cached = cachedSessionInfo[group.ulid];
       unified.add(UnifiedSession(
         id: group.ulid,
         type: UnifiedSessionType.group,
         name: group.name,
         subtitle: '${group.memberCount} 人',
         avatarUrl: group.avatarCid,
-        // TODO: get member avatars for mosaic
-        lastMessageTime: group.updatedAt > 0
-            ? DateTime.fromMillisecondsSinceEpoch(group.updatedAt * 1000)
+        lastMessage: cached?['lastMessage'],
+        lastMessageTime: cached?['lastMessageAt'] ?? 
+            (group.updatedAt > 0
+                ? DateTime.fromMillisecondsSinceEpoch(group.updatedAt * 1000)
+                : null),
+        lastMessageType: cached?['lastMessageType'] != null 
+            ? MessageType.valueOf(cached['lastMessageType'])
             : null,
+        unreadCount: cached?['unreadCount'] ?? 0,
+        isPinned: cached?['isPinned'] ?? false,
+        isMuted: cached?['isMuted'] ?? false,
         originalData: group,
       ));
     }
 
-    // Sort by last message time (most recent first)
+    // Sort by last message time (most recent first), pinned items at top
     unified.sort(UnifiedSession.compareByTime);
     unifiedSessions.assignAll(unified);
   }

@@ -82,6 +82,9 @@ const (
 	MessageType_MESSAGE_TYPE_FILE        MessageType = 3 // 文件
 	MessageType_MESSAGE_TYPE_LOCATION    MessageType = 4 // 位置
 	MessageType_MESSAGE_TYPE_SYSTEM      MessageType = 5 // 系统消息
+	MessageType_MESSAGE_TYPE_STICKER     MessageType = 6 // 贴纸
+	MessageType_MESSAGE_TYPE_AUDIO       MessageType = 7 // 语音
+	MessageType_MESSAGE_TYPE_VIDEO       MessageType = 8 // 视频
 )
 
 // Enum value maps for MessageType.
@@ -93,6 +96,9 @@ var (
 		3: "MESSAGE_TYPE_FILE",
 		4: "MESSAGE_TYPE_LOCATION",
 		5: "MESSAGE_TYPE_SYSTEM",
+		6: "MESSAGE_TYPE_STICKER",
+		7: "MESSAGE_TYPE_AUDIO",
+		8: "MESSAGE_TYPE_VIDEO",
 	}
 	MessageType_value = map[string]int32{
 		"MESSAGE_TYPE_UNSPECIFIED": 0,
@@ -101,6 +107,9 @@ var (
 		"MESSAGE_TYPE_FILE":        3,
 		"MESSAGE_TYPE_LOCATION":    4,
 		"MESSAGE_TYPE_SYSTEM":      5,
+		"MESSAGE_TYPE_STICKER":     6,
+		"MESSAGE_TYPE_AUDIO":       7,
+		"MESSAGE_TYPE_VIDEO":       8,
 	}
 )
 
@@ -311,6 +320,10 @@ type ChatSession struct {
 	IsPinned           bool                   `protobuf:"varint,7,opt,name=is_pinned,json=isPinned,proto3" json:"is_pinned,omitempty"`
 	UnreadCount        int64                  `protobuf:"varint,8,opt,name=unread_count,json=unreadCount,proto3" json:"unread_count,omitempty"`
 	Metadata           map[string]string      `protobuf:"bytes,9,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	IsMuted            bool                   `protobuf:"varint,10,opt,name=is_muted,json=isMuted,proto3" json:"is_muted,omitempty"`                                                                      // 是否静音
+	LastMessageType    MessageType            `protobuf:"varint,11,opt,name=last_message_type,json=lastMessageType,proto3,enum=peers_touch.model.chat.v1.MessageType" json:"last_message_type,omitempty"` // 最后消息类型
+	TargetId           string                 `protobuf:"bytes,12,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`                                                                    // 对方ID (好友ID或群ID)
+	AvatarUrl          string                 `protobuf:"bytes,13,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`                                                                 // 头像URL
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -408,6 +421,34 @@ func (x *ChatSession) GetMetadata() map[string]string {
 	return nil
 }
 
+func (x *ChatSession) GetIsMuted() bool {
+	if x != nil {
+		return x.IsMuted
+	}
+	return false
+}
+
+func (x *ChatSession) GetLastMessageType() MessageType {
+	if x != nil {
+		return x.LastMessageType
+	}
+	return MessageType_MESSAGE_TYPE_UNSPECIFIED
+}
+
+func (x *ChatSession) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *ChatSession) GetAvatarUrl() string {
+	if x != nil {
+		return x.AvatarUrl
+	}
+	return ""
+}
+
 // 聊天消息
 type ChatMessage struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
@@ -421,6 +462,11 @@ type ChatMessage struct {
 	EncryptedContent string                 `protobuf:"bytes,8,opt,name=encrypted_content,json=encryptedContent,proto3" json:"encrypted_content,omitempty"` // 加密内容
 	Attachments      []*MessageAttachment   `protobuf:"bytes,9,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	Metadata         map[string]string      `protobuf:"bytes,10,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ReplyToId        string                 `protobuf:"bytes,11,opt,name=reply_to_id,json=replyToId,proto3" json:"reply_to_id,omitempty"`        // Thread 回复的消息ID
+	MentionedIds     []string               `protobuf:"bytes,12,rep,name=mentioned_ids,json=mentionedIds,proto3" json:"mentioned_ids,omitempty"` // @的用户ID列表
+	MentionAll       bool                   `protobuf:"varint,13,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`      // @所有人
+	IsDeleted        bool                   `protobuf:"varint,14,opt,name=is_deleted,json=isDeleted,proto3" json:"is_deleted,omitempty"`         // 是否已删除/撤回
+	DeletedAt        *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`          // 删除时间
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -521,6 +567,41 @@ func (x *ChatMessage) GetAttachments() []*MessageAttachment {
 func (x *ChatMessage) GetMetadata() map[string]string {
 	if x != nil {
 		return x.Metadata
+	}
+	return nil
+}
+
+func (x *ChatMessage) GetReplyToId() string {
+	if x != nil {
+		return x.ReplyToId
+	}
+	return ""
+}
+
+func (x *ChatMessage) GetMentionedIds() []string {
+	if x != nil {
+		return x.MentionedIds
+	}
+	return nil
+}
+
+func (x *ChatMessage) GetMentionAll() bool {
+	if x != nil {
+		return x.MentionAll
+	}
+	return false
+}
+
+func (x *ChatMessage) GetIsDeleted() bool {
+	if x != nil {
+		return x.IsDeleted
+	}
+	return false
+}
+
+func (x *ChatMessage) GetDeletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DeletedAt
 	}
 	return nil
 }
@@ -792,7 +873,7 @@ var File_domain_chat_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x16domain/chat/chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdd\x03\n" +
+	"\x16domain/chat/chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x88\x05\n" +
 	"\vChatSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05topic\x18\x02 \x01(\tR\x05topic\x12'\n" +
@@ -802,10 +883,16 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"\x04type\x18\x06 \x01(\x0e2&.peers_touch.model.chat.v1.SessionTypeR\x04type\x12\x1b\n" +
 	"\tis_pinned\x18\a \x01(\bR\bisPinned\x12!\n" +
 	"\funread_count\x18\b \x01(\x03R\vunreadCount\x12P\n" +
-	"\bmetadata\x18\t \x03(\v24.peers_touch.model.chat.v1.ChatSession.MetadataEntryR\bmetadata\x1a;\n" +
+	"\bmetadata\x18\t \x03(\v24.peers_touch.model.chat.v1.ChatSession.MetadataEntryR\bmetadata\x12\x19\n" +
+	"\bis_muted\x18\n" +
+	" \x01(\bR\aisMuted\x12R\n" +
+	"\x11last_message_type\x18\v \x01(\x0e2&.peers_touch.model.chat.v1.MessageTypeR\x0flastMessageType\x12\x1b\n" +
+	"\ttarget_id\x18\f \x01(\tR\btargetId\x12\x1d\n" +
+	"\n" +
+	"avatar_url\x18\r \x01(\tR\tavatarUrl\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb2\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf2\x05\n" +
 	"\vChatMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -818,7 +905,15 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"\x11encrypted_content\x18\b \x01(\tR\x10encryptedContent\x12N\n" +
 	"\vattachments\x18\t \x03(\v2,.peers_touch.model.chat.v1.MessageAttachmentR\vattachments\x12P\n" +
 	"\bmetadata\x18\n" +
-	" \x03(\v24.peers_touch.model.chat.v1.ChatMessage.MetadataEntryR\bmetadata\x1a;\n" +
+	" \x03(\v24.peers_touch.model.chat.v1.ChatMessage.MetadataEntryR\bmetadata\x12\x1e\n" +
+	"\vreply_to_id\x18\v \x01(\tR\treplyToId\x12#\n" +
+	"\rmentioned_ids\x18\f \x03(\tR\fmentionedIds\x12\x1f\n" +
+	"\vmention_all\x18\r \x01(\bR\n" +
+	"mentionAll\x12\x1d\n" +
+	"\n" +
+	"is_deleted\x18\x0e \x01(\bR\tisDeleted\x129\n" +
+	"\n" +
+	"deleted_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAt\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xab\x02\n" +
@@ -856,14 +951,17 @@ const file_domain_chat_chat_proto_rawDesc = "" +
 	"\vSessionType\x12\x1c\n" +
 	"\x18SESSION_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13SESSION_TYPE_DIRECT\x10\x01\x12\x16\n" +
-	"\x12SESSION_TYPE_GROUP\x10\x02*\xa5\x01\n" +
+	"\x12SESSION_TYPE_GROUP\x10\x02*\xef\x01\n" +
 	"\vMessageType\x12\x1c\n" +
 	"\x18MESSAGE_TYPE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11MESSAGE_TYPE_TEXT\x10\x01\x12\x16\n" +
 	"\x12MESSAGE_TYPE_IMAGE\x10\x02\x12\x15\n" +
 	"\x11MESSAGE_TYPE_FILE\x10\x03\x12\x19\n" +
 	"\x15MESSAGE_TYPE_LOCATION\x10\x04\x12\x17\n" +
-	"\x13MESSAGE_TYPE_SYSTEM\x10\x05*\x9d\x01\n" +
+	"\x13MESSAGE_TYPE_SYSTEM\x10\x05\x12\x18\n" +
+	"\x14MESSAGE_TYPE_STICKER\x10\x06\x12\x16\n" +
+	"\x12MESSAGE_TYPE_AUDIO\x10\a\x12\x16\n" +
+	"\x12MESSAGE_TYPE_VIDEO\x10\b*\x9d\x01\n" +
 	"\rMessageStatus\x12\x1e\n" +
 	"\x1aMESSAGE_STATUS_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16MESSAGE_STATUS_SENDING\x10\x01\x12\x17\n" +
@@ -918,23 +1016,25 @@ var file_domain_chat_chat_proto_depIdxs = []int32{
 	14, // 0: peers_touch.model.chat.v1.ChatSession.last_message_at:type_name -> google.protobuf.Timestamp
 	0,  // 1: peers_touch.model.chat.v1.ChatSession.type:type_name -> peers_touch.model.chat.v1.SessionType
 	10, // 2: peers_touch.model.chat.v1.ChatSession.metadata:type_name -> peers_touch.model.chat.v1.ChatSession.MetadataEntry
-	14, // 3: peers_touch.model.chat.v1.ChatMessage.sent_at:type_name -> google.protobuf.Timestamp
-	1,  // 4: peers_touch.model.chat.v1.ChatMessage.type:type_name -> peers_touch.model.chat.v1.MessageType
-	2,  // 5: peers_touch.model.chat.v1.ChatMessage.status:type_name -> peers_touch.model.chat.v1.MessageStatus
-	7,  // 6: peers_touch.model.chat.v1.ChatMessage.attachments:type_name -> peers_touch.model.chat.v1.MessageAttachment
-	11, // 7: peers_touch.model.chat.v1.ChatMessage.metadata:type_name -> peers_touch.model.chat.v1.ChatMessage.MetadataEntry
-	12, // 8: peers_touch.model.chat.v1.MessageAttachment.metadata:type_name -> peers_touch.model.chat.v1.MessageAttachment.MetadataEntry
-	3,  // 9: peers_touch.model.chat.v1.Friend.status:type_name -> peers_touch.model.chat.v1.FriendshipStatus
-	14, // 10: peers_touch.model.chat.v1.Friend.friendship_created_at:type_name -> google.protobuf.Timestamp
-	13, // 11: peers_touch.model.chat.v1.Friend.metadata:type_name -> peers_touch.model.chat.v1.Friend.MetadataEntry
-	4,  // 12: peers_touch.model.chat.v1.FriendRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
-	14, // 13: peers_touch.model.chat.v1.FriendRequest.created_at:type_name -> google.protobuf.Timestamp
-	14, // 14: peers_touch.model.chat.v1.FriendRequest.responded_at:type_name -> google.protobuf.Timestamp
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	1,  // 3: peers_touch.model.chat.v1.ChatSession.last_message_type:type_name -> peers_touch.model.chat.v1.MessageType
+	14, // 4: peers_touch.model.chat.v1.ChatMessage.sent_at:type_name -> google.protobuf.Timestamp
+	1,  // 5: peers_touch.model.chat.v1.ChatMessage.type:type_name -> peers_touch.model.chat.v1.MessageType
+	2,  // 6: peers_touch.model.chat.v1.ChatMessage.status:type_name -> peers_touch.model.chat.v1.MessageStatus
+	7,  // 7: peers_touch.model.chat.v1.ChatMessage.attachments:type_name -> peers_touch.model.chat.v1.MessageAttachment
+	11, // 8: peers_touch.model.chat.v1.ChatMessage.metadata:type_name -> peers_touch.model.chat.v1.ChatMessage.MetadataEntry
+	14, // 9: peers_touch.model.chat.v1.ChatMessage.deleted_at:type_name -> google.protobuf.Timestamp
+	12, // 10: peers_touch.model.chat.v1.MessageAttachment.metadata:type_name -> peers_touch.model.chat.v1.MessageAttachment.MetadataEntry
+	3,  // 11: peers_touch.model.chat.v1.Friend.status:type_name -> peers_touch.model.chat.v1.FriendshipStatus
+	14, // 12: peers_touch.model.chat.v1.Friend.friendship_created_at:type_name -> google.protobuf.Timestamp
+	13, // 13: peers_touch.model.chat.v1.Friend.metadata:type_name -> peers_touch.model.chat.v1.Friend.MetadataEntry
+	4,  // 14: peers_touch.model.chat.v1.FriendRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
+	14, // 15: peers_touch.model.chat.v1.FriendRequest.created_at:type_name -> google.protobuf.Timestamp
+	14, // 16: peers_touch.model.chat.v1.FriendRequest.responded_at:type_name -> google.protobuf.Timestamp
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_chat_proto_init() }
