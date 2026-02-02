@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
+import 'package:peers_touch_base/storage/chat/chat_cache_service.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_controller.dart';
@@ -517,13 +518,31 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
     );
     
     if (confirmed == true) {
-      // Clear local messages
-      Get.find<FriendChatController>().groupMessages.clear();
+      // Clear local messages in controller
+      final controller = Get.find<FriendChatController>();
+      controller.groupMessages.clear();
+      
+      // Clear unread count from cache
+      try {
+        final cache = ChatCacheService.instance;
+        await cache.clearUnreadCount(widget.groupUlid);
+      } catch (e) {
+        // Cache might not be initialized
+      }
+      
       Get.snackbar('Success', 'Chat history cleared');
     }
   }
   
   Future<void> _showLeaveGroupDialog(BuildContext context) async {
+    // Check if user is owner
+    final isOwner = _group?.ownerDid == Get.find<FriendChatController>().currentUserId;
+    
+    if (isOwner) {
+      Get.snackbar('Cannot Leave', 'Group owner cannot leave. Transfer ownership first or delete the group.');
+      return;
+    }
+    
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
