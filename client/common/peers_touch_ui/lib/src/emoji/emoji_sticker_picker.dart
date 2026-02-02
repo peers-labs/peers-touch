@@ -342,13 +342,13 @@ class _EmojiStickerPickerState extends State<EmojiStickerPicker>
   }
 }
 
-/// 简化版 Emoji 选择器（仅 Emoji，无贴纸）
+/// 简化版 Emoji 选择器（仅 Emoji，无贴纸）- 微信风格紧凑布局
 class SimpleEmojiPicker extends StatelessWidget {
   const SimpleEmojiPicker({
     super.key,
     required this.onEmojiSelected,
     this.onBackspacePressed,
-    this.height = 260,
+    this.height = 180,
   });
 
   final void Function(String emoji) onEmojiSelected;
@@ -357,11 +357,37 @@ class SimpleEmojiPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return EmojiStickerPicker(
-      onEmojiSelected: onEmojiSelected,
-      onBackspacePressed: onBackspacePressed,
+    return SizedBox(
       height: height,
-      stickerPacks: const [],
+      child: EmojiPicker(
+        onEmojiSelected: (category, emoji) {
+          onEmojiSelected(emoji.emoji);
+        },
+        onBackspacePressed: onBackspacePressed,
+        config: Config(
+          height: height,
+          emojiViewConfig: EmojiViewConfig(
+            columns: 8,
+            emojiSizeMax: 28 * (foundation.defaultTargetPlatform == TargetPlatform.iOS ? 1.20 : 1.0),
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            noRecents: const Text('暂无最近使用', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ),
+          categoryViewConfig: CategoryViewConfig(
+            initCategory: Category.SMILEYS,
+            indicatorColor: Theme.of(context).colorScheme.primary,
+            iconColorSelected: Theme.of(context).colorScheme.primary,
+            iconColor: Colors.grey,
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            categoryIcons: const CategoryIcons(),
+          ),
+          bottomActionBarConfig: const BottomActionBarConfig(
+            enabled: false, // 隐藏底部搜索栏和退格键
+          ),
+          searchViewConfig: const SearchViewConfig(
+            buttonIconColor: Colors.grey,
+          ),
+        ),
+      ),
     );
   }
 }

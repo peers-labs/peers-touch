@@ -39,3 +39,4 @@ export 'src/context_menu/context_menu_trigger.dart';
 // Chat components
 export 'src/chat/mention_input.dart';
 export 'src/chat/reply_preview.dart';
+export 'src/chat/thread_panel.dart';

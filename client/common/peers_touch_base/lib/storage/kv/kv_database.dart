@@ -40,18 +40,20 @@ class KvDatabase extends _$KvDatabase {
   @override
   int get schemaVersion => 1;
 
-  /// Writes a key-value pair.
-  Future<void> set<T>(String key, T value) {
+  /// Writes a key-value pair with retry for database lock.
+  Future<void> set<T>(String key, T value) async {
     final serialized = value is String ? value : jsonEncode(value);
     LoggingService.debug('[KvDatabase] set: key=$key, value=$serialized');
-    return into(keyValueItems).insertOnConflictUpdate(
+    await _withRetry(() => into(keyValueItems).insertOnConflictUpdate(
       KeyValueItemsCompanion.insert(key: key, value: serialized),
-    );
+    ));
   }
 
-  /// Reads a value by its key.
+  /// Reads a value by its key with retry for database lock.
   Future<T?> get<T>(String key) async {
-    final result = await (select(keyValueItems)..where((t) => t.key.equals(key))).getSingleOrNull();
+    final result = await _withRetry(() async {
+      return (select(keyValueItems)..where((t) => t.key.equals(key))).getSingleOrNull();
+    });
     LoggingService.debug('[KvDatabase] get: key=$key, result=${result?.value}');
     if (result == null) return null;
 
@@ -59,6 +61,23 @@ class KvDatabase extends _$KvDatabase {
       return result.value as T?;
     }
     return jsonDecode(result.value) as T?;
+  }
+  
+  /// Execute with retry on database lock
+  Future<T> _withRetry<T>(Future<T> Function() operation, {int maxRetries = 3}) async {
+    int attempts = 0;
+    while (true) {
+      try {
+        return await operation();
+      } catch (e) {
+        attempts++;
+        if (attempts >= maxRetries || !e.toString().contains('database is locked')) {
+          rethrow;
+        }
+        LoggingService.warning('[KvDatabase] Database locked, retrying... (attempt $attempts)');
+        await Future.delayed(Duration(milliseconds: 100 * attempts));
+      }
+    }
   }
 
   /// Removes a key-value pair.

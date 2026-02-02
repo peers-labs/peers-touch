@@ -233,4 +233,118 @@ class GroupChatApiService {
       'invitee_dids': inviteeDids,
     });
   }
+  
+  /// Update group info (name, description, avatar, etc.)
+  Future<GroupInfo> updateGroup({
+    required String groupUlid,
+    String? name,
+    String? description,
+    String? avatarCid,
+    int? type,
+    int? visibility,
+    bool? muted,
+  }) async {
+    final response = await _http.put('/group-chat/update', data: {
+      'group_ulid': groupUlid,
+      if (name != null) 'name': name,
+      if (description != null) 'description': description,
+      if (avatarCid != null) 'avatar_cid': avatarCid,
+      if (type != null) 'type': type,
+      if (visibility != null) 'visibility': visibility,
+      if (muted != null) 'muted': muted,
+    });
+    return GroupInfo.fromJson(response['group'] as Map<String, dynamic>);
+  }
+  
+  /// Update my nickname in the group
+  Future<GroupMemberInfo> updateMyNickname({
+    required String groupUlid,
+    required String nickname,
+  }) async {
+    final response = await _http.put('/group-chat/member/nickname', data: {
+      'group_ulid': groupUlid,
+      'nickname': nickname,
+    });
+    return GroupMemberInfo.fromJson(response['member'] as Map<String, dynamic>);
+  }
+  
+  /// Get my settings for a group
+  Future<Map<String, dynamic>> getMySettings(String groupUlid) async {
+    final response = await _http.get('/group-chat/my-settings', queryParameters: {
+      'group_ulid': groupUlid,
+    });
+    return response;
+  }
+  
+  /// Update my settings (mute, pin) for a group
+  Future<void> updateMySettings({
+    required String groupUlid,
+    bool? isMuted,
+    bool? isPinned,
+  }) async {
+    await _http.put('/group-chat/my-settings', data: {
+      'group_ulid': groupUlid,
+      if (isMuted != null) 'is_muted': isMuted,
+      if (isPinned != null) 'is_pinned': isPinned,
+    });
+  }
+  
+  /// Search messages in a group
+  Future<List<GroupMessageInfo>> searchMessages({
+    required String groupUlid,
+    required String query,
+    int limit = 50,
+  }) async {
+    final response = await _http.get('/group-chat/messages/search', queryParameters: {
+      'group_ulid': groupUlid,
+      'query': query,
+      'limit': limit,
+    });
+    final messages = response['messages'] as List? ?? [];
+    return messages.map((m) => GroupMessageInfo.fromJson(m as Map<String, dynamic>)).toList();
+  }
+  
+  /// Recall a message
+  Future<bool> recallMessage({
+    required String groupUlid,
+    required String messageUlid,
+  }) async {
+    final response = await _http.post('/group-chat/message/recall', data: {
+      'group_ulid': groupUlid,
+      'message_ulid': messageUlid,
+    });
+    return response['success'] == true;
+  }
+  
+  /// Delete a message (admin only)
+  Future<bool> deleteMessage({
+    required String groupUlid,
+    required String messageUlid,
+  }) async {
+    final response = await _http.post('/group-chat/message/delete', data: {
+      'group_ulid': groupUlid,
+      'message_ulid': messageUlid,
+    });
+    return response['success'] == true;
+  }
+  
+  /// Remove a member from the group
+  Future<bool> removeMember({
+    required String groupUlid,
+    required String actorDid,
+  }) async {
+    final response = await _http.post('/group-chat/member/remove', data: {
+      'group_ulid': groupUlid,
+      'actor_did': actorDid,
+    });
+    return response['success'] == true;
+  }
+  
+  /// Get unread message count
+  Future<int> getUnreadCount({String? groupUlid}) async {
+    final response = await _http.get('/group-chat/unread-count', queryParameters: {
+      if (groupUlid != null) 'group_ulid': groupUlid,
+    });
+    return response['unread_count'] as int? ?? 0;
+  }
 }

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 /// A message bubble widget for group chat messages
 /// Follows the same design pattern as ChatMessageItem for friend chat
@@ -12,6 +14,8 @@ class GroupMessageBubble extends StatelessWidget {
   final String senderName;
   final String? senderAvatarUrl;
   final String? senderActorId;
+  final VoidCallback? onReply;
+  final VoidCallback? onDelete;
 
   const GroupMessageBubble({
     super.key,
@@ -20,7 +24,16 @@ class GroupMessageBubble extends StatelessWidget {
     required this.senderName,
     this.senderAvatarUrl,
     this.senderActorId,
+    this.onReply,
+    this.onDelete,
   });
+  
+  bool get canRecall {
+    if (!isMe) return false;
+    final sentAt = DateTime.fromMillisecondsSinceEpoch(message.sentAt * 1000);
+    final diff = DateTime.now().difference(sentAt);
+    return diff.inMinutes <= 2;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,47 +41,58 @@ class GroupMessageBubble extends StatelessWidget {
       return _buildDeletedMessage(context);
     }
 
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: UIKit.spaceXs(context)),
-      child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isMe) ...[
-            _buildAvatar(context),
-            SizedBox(width: UIKit.spaceSm(context)),
-          ],
-          Flexible(
-            child: Column(
-              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                if (!isMe)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: UIKit.spaceXs(context),
-                      bottom: UIKit.spaceXs(context) / 2,
+    return MessageContextMenu(
+      onReply: onReply,
+      onCopy: message.type == 1 ? () => _copyToClipboard(message.content) : null,
+      onDelete: onDelete,
+      canRecall: canRecall,
+      canDelete: isMe,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: UIKit.spaceXs(context)),
+        child: Row(
+          mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isMe) ...[
+              _buildAvatar(context),
+              SizedBox(width: UIKit.spaceSm(context)),
+            ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  if (!isMe)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        left: UIKit.spaceXs(context),
+                        bottom: UIKit.spaceXs(context) / 2,
+                      ),
+                      child: Text(
+                        senderName,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: UIKit.textSecondary(context),
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
                     ),
-                    child: Text(
-                      senderName,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: UIKit.textSecondary(context),
-                            fontWeight: FontWeight.w500,
-                          ),
-                    ),
-                  ),
-                _buildMessageContent(context),
-                SizedBox(height: UIKit.spaceXs(context)),
-                _buildTimestamp(context),
-              ],
+                  _buildMessageContent(context),
+                  SizedBox(height: UIKit.spaceXs(context)),
+                  _buildTimestamp(context),
+                ],
+              ),
             ),
-          ),
-          if (isMe) ...[
-            SizedBox(width: UIKit.spaceSm(context)),
-            _buildAvatar(context),
+            if (isMe) ...[
+              SizedBox(width: UIKit.spaceSm(context)),
+              _buildAvatar(context),
+            ],
           ],
-        ],
+        ),
       ),
     );
+  }
+  
+  void _copyToClipboard(String text) {
+    Clipboard.setData(ClipboardData(text: text));
   }
 
   Widget _buildAvatar(BuildContext context) {

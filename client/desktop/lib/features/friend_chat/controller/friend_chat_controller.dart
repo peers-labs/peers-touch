@@ -44,6 +44,141 @@ class FriendChatController extends GetxController {
   final isSending = false.obs;
   final isLoading = false.obs;
   final error = Rx<String?>(null);
+  final showEmojiPicker = false.obs;
+  
+  // ScrollController for message list - auto scroll to bottom
+  final ScrollController messageScrollController = ScrollController();
+  final ScrollController groupMessageScrollController = ScrollController();
+  
+  // Thread panel state (Slack-style right panel)
+  final showThreadPanel = false.obs;
+  final threadParentMessage = Rx<GroupMessageInfo?>(null);
+  final threadReplies = <GroupMessageInfo>[].obs;
+  final threadInputController = TextEditingController();
+  
+  // Group info panel state (WeChat-style right panel)
+  final showGroupInfoPanel = false.obs;
+  
+  /// Scroll message list to bottom
+  void scrollToBottom({bool animated = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (messageScrollController.hasClients) {
+        if (animated) {
+          messageScrollController.animateTo(
+            messageScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        } else {
+          messageScrollController.jumpTo(messageScrollController.position.maxScrollExtent);
+        }
+      }
+    });
+  }
+  
+  /// Scroll group message list to bottom
+  void scrollGroupToBottom({bool animated = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (groupMessageScrollController.hasClients) {
+        if (animated) {
+          groupMessageScrollController.animateTo(
+            groupMessageScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        } else {
+          groupMessageScrollController.jumpTo(groupMessageScrollController.position.maxScrollExtent);
+        }
+      }
+    });
+  }
+  
+  /// Toggle group info panel
+  void toggleGroupInfoPanel() {
+    if (showGroupInfoPanel.value) {
+      showGroupInfoPanel.value = false;
+    } else {
+      // Close thread panel first
+      showThreadPanel.value = false;
+      showGroupInfoPanel.value = true;
+    }
+  }
+  
+  /// Close group info panel
+  void closeGroupInfoPanel() {
+    showGroupInfoPanel.value = false;
+  }
+  
+  // Reply state for friend chat
+  final replyingToMessage = Rx<ChatMessage?>(null);
+  
+  /// Toggle emoji picker visibility
+  void toggleEmojiPicker() {
+    showEmojiPicker.value = !showEmojiPicker.value;
+  }
+  
+  /// Start replying to a message (friend chat)
+  void startReply(ChatMessage message) {
+    replyingToMessage.value = message;
+  }
+  
+  /// Cancel reply (friend chat)
+  void cancelReply() {
+    replyingToMessage.value = null;
+  }
+  
+  /// Open thread panel for a group message (Slack-style)
+  void openThread(GroupMessageInfo message) {
+    threadParentMessage.value = message;
+    threadReplies.clear();
+    showThreadPanel.value = true;
+    // TODO: Load replies from server based on message.ulid
+    _loadThreadReplies(message.ulid);
+  }
+  
+  /// Close thread panel
+  void closeThread() {
+    showThreadPanel.value = false;
+    threadParentMessage.value = null;
+    threadReplies.clear();
+  }
+  
+  /// Load replies for a thread
+  Future<void> _loadThreadReplies(String parentUlid) async {
+    // TODO: Implement API call to get replies
+    // For now, filter local messages that reply to this message
+    final replies = groupMessages.where((m) => m.replyToUlid == parentUlid).toList();
+    threadReplies.assignAll(replies);
+  }
+  
+  /// Send reply in thread
+  Future<void> sendThreadReply(String content) async {
+    final parent = threadParentMessage.value;
+    if (parent == null || content.trim().isEmpty) return;
+    
+    final group = currentGroup.value;
+    if (group == null) return;
+    
+    isSending.value = true;
+    try {
+      final newMessage = await _groupApi.sendMessage(
+        groupUlid: group.ulid,
+        content: content.trim(),
+        type: 1,
+        replyToUlid: parent.ulid,
+      );
+      // Add to thread replies
+      threadReplies.add(newMessage);
+      // Also add to main message list
+      groupMessages.add(newMessage);
+      threadInputController.clear();
+    } catch (e) {
+      LoggingService.error('Failed to send thread reply: $e');
+      error.value = 'Failed to send reply';
+    } finally {
+      isSending.value = false;
+    }
+  }
 
   // Unified session list (individuals + groups, sorted by last message time)
   final unifiedSessions = <UnifiedSession>[].obs;
@@ -52,6 +187,9 @@ class FriendChatController extends GetxController {
   final currentGroup = Rx<GroupInfo?>(null);
   final groupMessages = <GroupMessageInfo>[].obs;
   final _groupApi = GroupChatApiService();
+  
+  // Group members cache: groupUlid -> Map<actorDid, GroupMemberInfo>
+  final Map<String, Map<String, GroupMemberInfo>> _groupMembersCache = {};
 
   final connectionStats = const ConnectionStats().obs;
   final connectionMode = ConnectionMode.disconnected.obs;
@@ -233,9 +371,18 @@ class FriendChatController extends GetxController {
       ));
     }
 
-    // Add group chats
+    // Add group chats with unread counts from server
     for (final group in groups) {
       final cached = cachedSessionInfo[group.ulid];
+      
+      // Try to get unread count from server
+      int unreadCount = cached?['unreadCount'] ?? 0;
+      try {
+        unreadCount = await _groupApi.getUnreadCount(groupUlid: group.ulid);
+      } catch (_) {
+        // Use cached value if API fails
+      }
+      
       unified.add(UnifiedSession(
         id: group.ulid,
         type: UnifiedSessionType.group,
@@ -250,7 +397,7 @@ class FriendChatController extends GetxController {
         lastMessageType: cached?['lastMessageType'] != null 
             ? MessageType.valueOf(cached['lastMessageType'])
             : null,
-        unreadCount: cached?['unreadCount'] ?? 0,
+        unreadCount: unreadCount,
         isPinned: cached?['isPinned'] ?? false,
         isMuted: cached?['isMuted'] ?? false,
         originalData: group,
@@ -285,13 +432,61 @@ class FriendChatController extends GetxController {
     groupMessages.clear();
     
     try {
+      // Load members first for name resolution
+      await _loadGroupMembers(group.ulid);
+      
       final loadedMessages = await _groupApi.getMessages(group.ulid);
       groupMessages.assignAll(loadedMessages);
+      
+      // Auto scroll to bottom after loading
+      scrollGroupToBottom(animated: false);
+      
       LoggingService.info('Loaded ${loadedMessages.length} messages for group ${group.ulid}');
     } catch (e) {
       LoggingService.error('Failed to load group messages: $e');
       error.value = 'Failed to load messages';
     }
+  }
+  
+  /// Load and cache group members
+  Future<void> _loadGroupMembers(String groupUlid) async {
+    if (_groupMembersCache.containsKey(groupUlid)) {
+      return; // Already cached
+    }
+    
+    try {
+      final members = await _groupApi.getMembers(groupUlid);
+      final memberMap = <String, GroupMemberInfo>{};
+      for (final member in members) {
+        memberMap[member.actorDid] = member;
+      }
+      _groupMembersCache[groupUlid] = memberMap;
+      LoggingService.info('Cached ${members.length} members for group $groupUlid');
+    } catch (e) {
+      LoggingService.error('Failed to load group members: $e');
+    }
+  }
+  
+  /// Get member display name for a group
+  String getMemberDisplayName(String groupUlid, String actorDid) {
+    final members = _groupMembersCache[groupUlid];
+    if (members == null) return _truncateActorId(actorDid);
+    
+    final member = members[actorDid];
+    if (member == null) return _truncateActorId(actorDid);
+    
+    // Use nickname if set, otherwise use truncated actorDid
+    if (member.nickname.isNotEmpty) {
+      return member.nickname;
+    }
+    return _truncateActorId(actorDid);
+  }
+  
+  String _truncateActorId(String actorId) {
+    if (actorId.length > 10) {
+      return '${actorId.substring(0, 4)}...${actorId.substring(actorId.length - 4)}';
+    }
+    return actorId;
   }
 
   /// Send message to current group
@@ -310,6 +505,8 @@ class FriendChatController extends GetxController {
       );
       groupMessages.add(newMessage);
       inputController.clear();
+      // Auto scroll to bottom after sending
+      scrollGroupToBottom();
       LoggingService.info('Group message sent: ${newMessage.ulid}');
     } catch (e) {
       LoggingService.error('Failed to send group message: $e');
