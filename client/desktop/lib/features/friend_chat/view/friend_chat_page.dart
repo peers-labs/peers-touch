@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
+import 'package:peers_touch_base/model/domain/chat/group_chat.pb.dart';
 import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
@@ -10,6 +11,8 @@ import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_input_bar.
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_message_item.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/group_avatar_mosaic.dart';
+import 'package:peers_touch_desktop/features/friend_chat/view/group_info_page.dart';
+import 'package:peers_touch_desktop/features/friend_chat/view/group_info_panel.dart';
 import 'package:peers_touch_desktop/features/group_chat/view/create_group_dialog.dart';
 import 'package:peers_touch_desktop/features/group_chat/widgets/group_message_bubble.dart';
 import 'package:peers_touch_desktop/features/shell/controller/right_panel_mode.dart';
@@ -231,78 +234,184 @@ class FriendChatPage extends GetView<FriendChatController> {
   Widget _buildGroupChatPanel(BuildContext context) {
     final group = controller.currentGroup.value;
 
-    return Container(
-      color: UIKit.chatAreaBg(context),
-      child: Column(
-        children: [
-          _buildGroupHeader(context, group),
-          Divider(
-            height: 1,
-            thickness: UIKit.dividerThickness,
-            color: UIKit.dividerColor(context),
-          ),
-          Expanded(
-            child: Obx(() {
-              final messageList = controller.groupMessages.toList();
-              if (messageList.isEmpty) {
-                return Center(
-                  child: Text(
-                    '暂无消息',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: UIKit.textSecondary(context),
+    return Obx(() => Row(
+      children: [
+        // Main chat area
+        Expanded(
+          child: Container(
+            color: UIKit.chatAreaBg(context),
+            child: Column(
+              children: [
+                _buildGroupHeader(context, group),
+                Divider(
+                  height: 1,
+                  thickness: UIKit.dividerThickness,
+                  color: UIKit.dividerColor(context),
+                ),
+                Expanded(
+                  child: Obx(() {
+                    final messageList = controller.groupMessages.toList();
+                    if (messageList.isEmpty) {
+                      return Center(
+                        child: Text(
+                          '暂无消息',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: UIKit.textSecondary(context),
+                              ),
                         ),
-                  ),
-                );
-              }
-              return ListView.builder(
-                padding: EdgeInsets.all(UIKit.spaceMd(context)),
-                itemCount: messageList.length,
-                itemBuilder: (context, index) {
-                  final message = messageList[index];
-                  final isMe = message.senderDid == controller.currentUserId;
-                  return GroupMessageBubble(
-                    message: message,
-                    isMe: isMe,
-                    senderName: isMe ? controller.currentUserName : _getSenderName(message.senderDid),
-                    senderActorId: message.senderDid,
-                  );
-                },
-              );
-            }),
-          ),
-          Obx(() {
-            final err = controller.error.value;
-            if (err == null) return const SizedBox.shrink();
-            return Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(
-                horizontal: UIKit.spaceMd(context),
-                vertical: UIKit.spaceXs(context),
-              ),
-              color: UIKit.errorColor(context).withValues(alpha: 0.1),
-              child: Text(
-                err,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: UIKit.errorColor(context),
+                      );
+                    }
+                    final groupUlid = controller.currentGroup.value?.ulid ?? '';
+                    return ListView.builder(
+                      controller: controller.groupMessageScrollController,
+                      padding: EdgeInsets.all(UIKit.spaceMd(context)),
+                      itemCount: messageList.length,
+                      itemBuilder: (context, index) {
+                        final message = messageList[index];
+                        final isMe = message.senderDid == controller.currentUserId;
+                        final senderName = isMe 
+                            ? controller.currentUserName 
+                            : controller.getMemberDisplayName(groupUlid, message.senderDid);
+                        // Count replies to this message
+                        final replyCount = messageList.where((m) => m.replyToUlid == message.ulid).length;
+                        return _buildGroupMessageWithReply(
+                          context,
+                          message: message,
+                          isMe: isMe,
+                          senderName: senderName,
+                          replyCount: replyCount,
+                        );
+                      },
+                    );
+                  }),
+                ),
+                Obx(() {
+                  final err = controller.error.value;
+                  if (err == null) return const SizedBox.shrink();
+                  return Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: UIKit.spaceMd(context),
+                      vertical: UIKit.spaceXs(context),
                     ),
+                    color: UIKit.errorColor(context).withValues(alpha: 0.1),
+                    child: Text(
+                      err,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: UIKit.errorColor(context),
+                          ),
+                    ),
+                  );
+                }),
+                Divider(
+                  height: 1,
+                  thickness: UIKit.dividerThickness,
+                  color: UIKit.dividerColor(context),
+                ),
+                Obx(() => FriendChatInputBar(
+                  controller: controller.inputController,
+                  onSend: () {
+                    final text = controller.inputController.text;
+                    controller.sendGroupMessage(text);
+                  },
+                  isSending: controller.isSending.value,
+                  showEmojiPicker: controller.showEmojiPicker.value,
+                  onToggleEmojiPicker: controller.toggleEmojiPicker,
+                )),
+              ],
+            ),
+          ),
+        ),
+        
+        // Thread panel (Slack-style)
+        if (controller.showThreadPanel.value)
+          _buildThreadPanel(context),
+        
+        // Group info panel (WeChat-style)
+        if (controller.showGroupInfoPanel.value && controller.currentGroup.value != null)
+          GroupInfoPanel(
+            groupUlid: controller.currentGroup.value!.ulid,
+            onClose: controller.closeGroupInfoPanel,
+          ),
+      ],
+    ));
+  }
+  
+  /// Build a group message with reply indicator
+  Widget _buildGroupMessageWithReply(
+    BuildContext context, {
+    required GroupMessageInfo message,
+    required bool isMe,
+    required String senderName,
+    required int replyCount,
+  }) {
+    return Column(
+      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        GroupMessageBubble(
+          message: message,
+          isMe: isMe,
+          senderName: senderName,
+          senderActorId: message.senderDid,
+          onReply: () => controller.openThread(message),
+        ),
+        // Reply count indicator
+        if (replyCount > 0)
+          Padding(
+            padding: EdgeInsets.only(
+              left: isMe ? 0 : 52,
+              right: isMe ? 52 : 0,
+              bottom: 4,
+            ),
+            child: InkWell(
+              onTap: () => controller.openThread(message),
+              child: Text(
+                '$replyCount ${replyCount == 1 ? 'reply' : 'replies'}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            );
-          }),
-          Divider(
-            height: 1,
-            thickness: UIKit.dividerThickness,
-            color: UIKit.dividerColor(context),
+            ),
           ),
-          FriendChatInputBar(
-            controller: controller.inputController,
-            onSend: () {
-              final text = controller.inputController.text;
-              controller.sendGroupMessage(text);
-            },
-            isSending: controller.isSending.value,
-          ),
-        ],
+      ],
+    );
+  }
+  
+  /// Build Thread panel (Slack-style)
+  Widget _buildThreadPanel(BuildContext context) {
+    final parent = controller.threadParentMessage.value;
+    if (parent == null) return const SizedBox.shrink();
+    
+    final groupUlid = controller.currentGroup.value?.ulid ?? '';
+    
+    return ThreadPanel(
+      thread: ThreadData(
+        parentMessage: ThreadMessage(
+          id: parent.ulid,
+          senderId: parent.senderDid,
+          senderName: parent.senderDid == controller.currentUserId
+              ? controller.currentUserName
+              : controller.getMemberDisplayName(groupUlid, parent.senderDid),
+          content: parent.content,
+          sentAt: DateTime.fromMillisecondsSinceEpoch(parent.sentAt * 1000),
+        ),
+        replies: controller.threadReplies.map((r) => ThreadMessage(
+          id: r.ulid,
+          senderId: r.senderDid,
+          senderName: r.senderDid == controller.currentUserId
+              ? controller.currentUserName
+              : controller.getMemberDisplayName(groupUlid, r.senderDid),
+          content: r.content,
+          sentAt: DateTime.fromMillisecondsSinceEpoch(r.sentAt * 1000),
+        )).toList(),
+        replyCount: controller.threadReplies.length,
       ),
+      currentUserId: controller.currentUserId,
+      inputController: controller.threadInputController,
+      isSending: controller.isSending.value,
+      onClose: controller.closeThread,
+      onSendReply: controller.sendThreadReply,
     );
   }
 
@@ -343,18 +452,11 @@ class FriendChatPage extends GetView<FriendChatController> {
           IconButton(
             icon: Icon(Icons.info_outline, color: UIKit.textSecondary(context)),
             tooltip: '群组信息',
-            onPressed: () {},
+            onPressed: group != null ? controller.toggleGroupInfoPanel : null,
           ),
         ],
       ),
     );
-  }
-
-  String _getSenderName(String senderDid) {
-    if (senderDid.length > 10) {
-      return '${senderDid.substring(0, 4)}...${senderDid.substring(senderDid.length - 4)}';
-    }
-    return senderDid;
   }
 
   Widget _buildFriendChatPanel(BuildContext context) {
@@ -394,6 +496,7 @@ class FriendChatPage extends GetView<FriendChatController> {
                     isMe: isMe,
                     senderName: isMe ? controller.currentUserName : remoteName,
                     senderAvatarUrl: isMe ? controller.currentUserAvatarUrl : null,
+                    onReply: () => controller.startReply(message),
                   );
                 },
               );
@@ -416,14 +519,32 @@ class FriendChatPage extends GetView<FriendChatController> {
               ),
             );
           }),
-          FriendChatInputBar(
-            controller: controller.inputController,
-            onSend: () {
-              final text = controller.inputController.text;
-              controller.sendMessage(text);
-            },
-            isSending: controller.isSending.value,
-          ),
+          Obx(() {
+            final replyMsg = controller.replyingToMessage.value;
+            ReplyMessage? replyPreview;
+            if (replyMsg != null) {
+              replyPreview = ReplyMessage(
+                id: replyMsg.id,
+                senderName: replyMsg.senderId == controller.currentUserId 
+                    ? controller.currentUserName 
+                    : (controller.currentSession.value?.topic ?? 'User'),
+                content: replyMsg.content,
+              );
+            }
+            return FriendChatInputBar(
+              controller: controller.inputController,
+              onSend: () {
+                final text = controller.inputController.text;
+                controller.sendMessage(text);
+                controller.cancelReply();
+              },
+              isSending: controller.isSending.value,
+              showEmojiPicker: controller.showEmojiPicker.value,
+              onToggleEmojiPicker: controller.toggleEmojiPicker,
+              replyMessage: replyPreview,
+              onCancelReply: controller.cancelReply,
+            );
+          }),
         ],
       ),
     );
