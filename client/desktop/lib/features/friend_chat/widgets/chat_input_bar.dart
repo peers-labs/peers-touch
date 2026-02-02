@@ -143,18 +143,41 @@ class _InputField extends StatelessWidget {
   final VoidCallback onSend;
   final bool isSending;
 
+  /// 检查输入法是否正在输入（composing 状态）
+  bool get _isComposing {
+    final composing = controller.value.composing;
+    return composing.isValid && !composing.isCollapsed;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return KeyboardListener(
-      focusNode: FocusNode(),
-      onKeyEvent: (event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.enter &&
-            !HardwareKeyboard.instance.isShiftPressed) {
+    return Focus(
+      onKeyEvent: (node, event) {
+        // 只处理按键按下事件
+        if (event is! KeyDownEvent) {
+          return KeyEventResult.ignored;
+        }
+        
+        // Enter 键处理
+        if (event.logicalKey == LogicalKeyboardKey.enter) {
+          // 如果正在使用输入法输入，让输入法处理回车（上屏）
+          if (_isComposing) {
+            return KeyEventResult.ignored;
+          }
+          
+          // Shift+Enter 换行
+          if (HardwareKeyboard.instance.isShiftPressed) {
+            return KeyEventResult.ignored;
+          }
+          
+          // 普通回车发送消息
           if (!isSending && controller.text.trim().isNotEmpty) {
             onSend();
+            return KeyEventResult.handled;
           }
         }
+        
+        return KeyEventResult.ignored;
       },
       child: TextField(
         controller: controller,
