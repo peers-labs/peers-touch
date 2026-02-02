@@ -40,3 +40,4 @@ logs/
 
 dart_libp2pstation/bin/
 station/app/peers-touch-app
+station/app/peers-touch-station

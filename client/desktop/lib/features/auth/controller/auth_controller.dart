@@ -357,7 +357,11 @@ class AuthController extends GetxController {
       );
       final req = await HttpClient().postUrl(uri);
       req.headers.contentType = ContentType.json;
-      req.write(json.encode({'email': ident, 'password': password.value}));
+      req.write(json.encode({
+        'email': ident,
+        'password': password.value,
+        'device_type': 'desktop', // For kick detection
+      }));
       final resp = await req.close();
       final text = await resp.transform(const Utf8Decoder()).join();
       lastStatus.value = resp.statusCode;
@@ -367,6 +371,7 @@ class AuthController extends GetxController {
         final obj = json.decode(text);
         String token = '';
         String? actorIdFromResponse;  // Declare outside to use later
+        String? sessionId;
         if (obj is Map) {
           final data = obj['data'];
           Map<String, dynamic>? dmap;
@@ -397,6 +402,13 @@ class AuthController extends GetxController {
             }
           } else {
             token = obj['token']?.toString() ?? '';
+          }
+          
+          // Extract session_id for kick detection
+          sessionId = dmap?['session_id']?.toString() ?? obj['session_id']?.toString();
+          if (sessionId != null && sessionId.isNotEmpty) {
+            await _secureStorage.set(StorageKeys.sessionIdKey, sessionId);
+            LoggingService.info('Session ID stored: ${sessionId.substring(0, 8)}...');
           }
 
           // Try to extract user info from response
@@ -479,6 +491,7 @@ class AuthController extends GetxController {
                 'accessToken': token,
                 'refreshToken': refresh,
                 'avatarUrl': avatarUrl,
+                'sessionId': sessionId, // For kick detection
               });
               LoggingService.info('GlobalContext session updated for user: $handle, actorId: $effectiveActorId');
               

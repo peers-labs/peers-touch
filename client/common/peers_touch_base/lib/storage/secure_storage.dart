@@ -20,10 +20,15 @@ class SecureStorageImpl implements SecureStorage {
 
   late FlutterSecureStorage _fs;
   static String? _userHandle;
+  static String? _instanceId;
   bool _keychainFailed = false;
 
   void _initStorage() {
-    final accountName = _userHandle ?? 'global';
+    // Account name includes instance ID for multi-instance isolation
+    var accountName = _userHandle ?? 'global';
+    if (_instanceId != null && _instanceId!.isNotEmpty) {
+      accountName = '${accountName}_$_instanceId';
+    }
     _fs = FlutterSecureStorage(
       iOptions: IOSOptions(
         groupId: 'com.peerstouch',
@@ -39,6 +44,12 @@ class SecureStorageImpl implements SecureStorage {
   static void setUserHandle(String? userHandle) {
     _userHandle = userHandle;
   }
+  
+  /// Set instance ID for multi-instance isolation.
+  /// Call this before any storage operations.
+  static void setInstanceId(String? instanceId) {
+    _instanceId = instanceId;
+  }
 
   @override
   void setUserScope(String? userHandle) {
@@ -47,6 +58,10 @@ class SecureStorageImpl implements SecureStorage {
   }
 
   String _getFallbackKey(String key) {
+    // Include instance ID in fallback key for isolation
+    if (_instanceId != null && _instanceId!.isNotEmpty) {
+      return 'secure:$_instanceId:$key';
+    }
     return 'secure:$key';
   }
 
