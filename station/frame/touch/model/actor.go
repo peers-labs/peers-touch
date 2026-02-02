@@ -51,8 +51,9 @@ type ActorSignParams struct {
 
 type ActorLoginParams struct {
 	Params
-	Email    string `json:"email" form:"email"`
-	Password string `json:"password" form:"password"`
+	Email      string `json:"email" form:"email"`
+	Password   string `json:"password" form:"password"`
+	DeviceType string `json:"device_type" form:"device_type"` // "desktop" | "mobile" | "web"
 }
 
 func (actor ActorSignParams) Check() error {

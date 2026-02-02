@@ -57,29 +57,53 @@ class FileStorageManager {
   
   FileStorageManager._internal();
   static final FileStorageManager _instance = FileStorageManager._internal();
+  
+  /// Instance ID for multi-instance isolation (e.g., running two desktop apps 
+  /// with different accounts). Set via PEERS_INSTANCE_ID environment variable.
+  static String? _instanceId;
+  
+  /// Initialize instance ID from environment variable.
+  /// Call this before any storage operations.
+  static void initInstanceId() {
+    _instanceId = Platform.environment['PEERS_INSTANCE_ID'];
+  }
+  
+  /// Get current instance ID (null for default instance).
+  static String? get instanceId => _instanceId;
 
-  /// Returns the platform-specific namespace.
+  /// Returns the platform-specific namespace, with optional instance suffix.
   /// 
   /// Desktop (Windows/macOS/Linux) uses [StorageNamespace.peersTouchDesktop].
   /// Mobile (iOS/Android) uses [StorageNamespace.peersTouchMobile].
+  /// 
+  /// If PEERS_INSTANCE_ID is set, appends it to create isolated storage.
   StorageNamespace get platformNamespace {
     if (Platform.isIOS || Platform.isAndroid) {
       return StorageNamespace.peersTouchMobile;
     }
     return StorageNamespace.peersTouchDesktop;
   }
-
-  /// Gets a directory using the platform-specific namespace.
-  /// 
-  /// This is a convenience method that automatically selects the correct
-  /// namespace based on the current platform.
-  Future<Directory> getPlatformDirectory(StorageLocation location, {String? subDir}) async {
-    return getDirectory(location, platformNamespace, subDir: subDir);
+  
+  /// Returns the namespace path with optional instance suffix.
+  String get platformNamespacePath {
+    final base = platformNamespace.path;
+    if (_instanceId != null && _instanceId!.isNotEmpty) {
+      return '${base}_$_instanceId';
+    }
+    return base;
   }
 
-  /// Gets a file using the platform-specific namespace.
+  /// Gets a directory using the platform-specific namespace (with instance isolation).
+  /// 
+  /// This is a convenience method that automatically selects the correct
+  /// namespace based on the current platform and instance ID.
+  Future<Directory> getPlatformDirectory(StorageLocation location, {String? subDir}) async {
+    return getDirectoryWithPath(location, platformNamespacePath, subDir: subDir);
+  }
+
+  /// Gets a file using the platform-specific namespace (with instance isolation).
   Future<File> getPlatformFile(StorageLocation location, String filename, {String? subDir}) async {
-    return getFile(location, platformNamespace, filename, subDir: subDir);
+    return getFileWithPath(location, platformNamespacePath, filename, subDir: subDir);
   }
 
   /// Gets the user-scoped directory for chat media.
@@ -125,8 +149,13 @@ class FileStorageManager {
   /// [subDir] is an optional subdirectory path (e.g. 'users/123/media').
   /// If the directory does not exist, it will be created.
   Future<Directory> getDirectory(StorageLocation location, StorageNamespace namespace, {String? subDir}) async {
+    return getDirectoryWithPath(location, namespace.path, subDir: subDir);
+  }
+  
+  /// Gets a directory with a custom namespace path (supports instance isolation).
+  Future<Directory> getDirectoryWithPath(StorageLocation location, String namespacePath, {String? subDir}) async {
     final base = await getBaseDirectory(location);
-    String fullPath = p.join(base.path, namespace.path);
+    String fullPath = p.join(base.path, namespacePath);
     if (subDir != null && subDir.isNotEmpty) {
       fullPath = p.join(fullPath, subDir);
     }
@@ -142,7 +171,12 @@ class FileStorageManager {
   /// 
   /// Does NOT create the file, only ensures the parent directory exists.
   Future<File> getFile(StorageLocation location, StorageNamespace namespace, String filename, {String? subDir}) async {
-    final dir = await getDirectory(location, namespace, subDir: subDir);
+    return getFileWithPath(location, namespace.path, filename, subDir: subDir);
+  }
+  
+  /// Gets a file with a custom namespace path (supports instance isolation).
+  Future<File> getFileWithPath(StorageLocation location, String namespacePath, String filename, {String? subDir}) async {
+    final dir = await getDirectoryWithPath(location, namespacePath, subDir: subDir);
     return File(p.join(dir.path, filename));
   }
 

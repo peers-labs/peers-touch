@@ -77,14 +77,17 @@ type groupInfo struct {
 }
 
 type memberInfo struct {
-	GroupULID  string `json:"group_ulid"`
-	ActorDID   string `json:"actor_did"`
-	Role       int    `json:"role"`
-	Nickname   string `json:"nickname"`
-	Muted      bool   `json:"muted"`
-	MutedUntil int64  `json:"muted_until"`
-	JoinedAt   int64  `json:"joined_at"`
-	InvitedBy  string `json:"invited_by"`
+	GroupULID   string `json:"group_ulid"`
+	ActorDID    string `json:"actor_did"`
+	Role        int    `json:"role"`
+	Nickname    string `json:"nickname"`
+	DisplayName string `json:"display_name"` // User's display name (from actor table)
+	Username    string `json:"username"`     // User's username
+	AvatarURL   string `json:"avatar_url"`   // User's avatar URL
+	Muted       bool   `json:"muted"`
+	MutedUntil  int64  `json:"muted_until"`
+	JoinedAt    int64  `json:"joined_at"`
+	InvitedBy   string `json:"invited_by"`
 }
 
 type messageInfo struct {

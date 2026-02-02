@@ -17,6 +17,12 @@ class AuthInterceptor extends Interceptor {
         if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
         }
+        
+        // Add session ID for kick detection
+        final sessionId = await tokenProvider!.readSessionId();
+        if (sessionId != null && sessionId.isNotEmpty) {
+          options.headers['X-Session-ID'] = sessionId;
+        }
       } catch (_) {
         // Ignore errors reading token
       }

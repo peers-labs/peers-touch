@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
@@ -425,6 +426,20 @@ class FriendChatController extends GetxController {
       messages.clear();
       await _selectGroup(group);
     }
+    
+    // Clear unread count in local session list
+    if (session.unreadCount > 0) {
+      _clearUnreadCount(session.id);
+    }
+  }
+  
+  /// Clear unread count for a session
+  void _clearUnreadCount(String sessionId) {
+    final index = unifiedSessions.indexWhere((s) => s.id == sessionId);
+    if (index >= 0) {
+      final session = unifiedSessions[index];
+      unifiedSessions[index] = session.copyWith(unreadCount: 0);
+    }
   }
 
   Future<void> _selectGroup(GroupInfo group) async {
@@ -469,16 +484,22 @@ class FriendChatController extends GetxController {
   
   /// Get member display name for a group
   String getMemberDisplayName(String groupUlid, String actorDid) {
+    // 1. Check group member nickname
     final members = _groupMembersCache[groupUlid];
-    if (members == null) return _truncateActorId(actorDid);
-    
-    final member = members[actorDid];
-    if (member == null) return _truncateActorId(actorDid);
-    
-    // Use nickname if set, otherwise use truncated actorDid
-    if (member.nickname.isNotEmpty) {
-      return member.nickname;
+    if (members != null) {
+      final member = members[actorDid];
+      if (member != null && member.nickname.isNotEmpty) {
+        return member.nickname;
+      }
     }
+    
+    // 2. Check friends list for display name
+    final friend = friends.firstWhereOrNull((f) => f.actorId == actorDid);
+    if (friend != null && friend.name.isNotEmpty) {
+      return friend.name;
+    }
+    
+    // 3. Fallback to truncated ID
     return _truncateActorId(actorDid);
   }
   
@@ -681,7 +702,97 @@ class FriendChatController extends GetxController {
       if (_pendingMessages.isNotEmpty) {
         _syncPendingMessages();
       }
+      // Refresh current group messages
+      _refreshCurrentGroupMessages();
+      // Check session validity (every 30 seconds via counter)
+      _sessionCheckCounter++;
+      if (_sessionCheckCounter >= 3) { // Check every ~30 seconds
+        _sessionCheckCounter = 0;
+        _checkSessionValidity();
+      }
     });
+  }
+  
+  int _sessionCheckCounter = 0;
+  
+  /// Check if current session is still valid (not kicked)
+  Future<void> _checkSessionValidity() async {
+    try {
+      final gc = Get.find<GlobalContext>();
+      final sessionId = gc.currentSession?['sessionId']?.toString();
+      if (sessionId == null || sessionId.isEmpty) return;
+      
+      final accessToken = gc.currentSession?['accessToken']?.toString();
+      if (accessToken == null || accessToken.isEmpty) return;
+      
+      final baseUrl = _stationBaseUrl;
+      if (baseUrl.isEmpty) return;
+      
+      // Use dart:io HttpClient to include custom headers
+      final uri = Uri.parse('$baseUrl/api/v1/session/verify');
+      final request = await HttpClient().getUrl(uri);
+      request.headers.set('Authorization', 'Bearer $accessToken');
+      request.headers.set('X-Session-ID', sessionId);
+      
+      final response = await request.close();
+      final body = await response.transform(const Utf8Decoder()).join();
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(body);
+        if (data is Map) {
+          final valid = data['valid'] == true;
+          final reason = data['reason']?.toString() ?? '';
+          
+          if (!valid && reason == 'kicked') {
+            LoggingService.warning('Session kicked by another login');
+            _handleSessionKicked();
+          }
+        }
+      }
+    } catch (e) {
+      // Network error - don't trigger logout
+      LoggingService.error('Session check failed: $e');
+    }
+  }
+  
+  /// Handle session kicked - logout and show message
+  void _handleSessionKicked() {
+    // Clear session
+    Get.find<GlobalContext>().setSession(null);
+    
+    // Show notification
+    Get.snackbar(
+      '登录已失效',
+      '您的账号在另一个设备上登录，当前设备已被登出',
+      snackPosition: SnackPosition.TOP,
+      duration: const Duration(seconds: 5),
+    );
+    
+    // Navigate to login
+    Get.offAllNamed('/login');
+  }
+  
+  /// Refresh messages for current group (polling for new messages)
+  Future<void> _refreshCurrentGroupMessages() async {
+    final group = currentGroup.value;
+    if (group == null) return;
+    
+    try {
+      final loadedMessages = await _groupApi.getMessages(group.ulid);
+      
+      // Only update if there are new messages
+      if (loadedMessages.length != groupMessages.length) {
+        final hadMessages = groupMessages.isNotEmpty;
+        groupMessages.assignAll(loadedMessages);
+        
+        // Auto scroll to bottom if new messages arrived
+        if (hadMessages && loadedMessages.length > groupMessages.length) {
+          scrollGroupToBottom();
+        }
+      }
+    } catch (e) {
+      // Silently ignore refresh errors
+    }
   }
 
   Future<void> _markOnline() async {

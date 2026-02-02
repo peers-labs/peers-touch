@@ -240,9 +240,13 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 	// Get client IP and user agent
 	clientIP := ctx.ClientIP()
 	userAgent := string(ctx.GetHeader("User-Agent"))
+	deviceType := params.DeviceType
+	if deviceType == "" {
+		deviceType = "desktop" // Default to desktop
+	}
 
-	// Use auth service to handle login with session
-	result, err := auth.LoginWithSession(c, credentials, clientIP, userAgent)
+	// Use auth service to handle login with session (with kick mechanism)
+	result, err := auth.LoginWithSession(c, credentials, clientIP, userAgent, deviceType)
 	if err != nil {
 		log.Warnf(c, "Login failed: %v", err)
 		FailedResponse(c, ctx, err)

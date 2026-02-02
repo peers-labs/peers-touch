@@ -9,6 +9,8 @@ import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/token_provider.dart';
+import 'package:peers_touch_base/storage/file_storage_manager.dart';
+import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/app/bindings/initial_binding.dart';
 import 'package:peers_touch_desktop/app/initialization/app_initializer.dart';
 import 'package:peers_touch_desktop/app/routes/app_pages.dart';
@@ -27,6 +29,10 @@ class MyHttpOverrides extends HttpOverrides {
 
 void main() async {
   HttpOverrides.global = MyHttpOverrides();
+  
+  // Initialize instance isolation BEFORE any storage operations.
+  // PEERS_INSTANCE_ID isolates data directories for multi-instance testing.
+  _initInstanceIsolation();
 
   final initialized = await AppInitializer.init();
   if (!initialized) {
@@ -34,6 +40,21 @@ void main() async {
   }
 
   runApp(const App());
+}
+
+/// Initialize instance isolation for multi-instance support.
+/// Each instance with a different PEERS_INSTANCE_ID uses separate storage.
+void _initInstanceIsolation() {
+  // PEERS_INSTANCE_ID takes precedence, fallback to PEERS_DEV_USER
+  final instanceId = Platform.environment['PEERS_INSTANCE_ID'] 
+      ?? Platform.environment['PEERS_DEV_USER'];
+  
+  if (instanceId != null && instanceId.isNotEmpty) {
+    // ignore: avoid_print
+    print('[Instance] Isolating storage for instance: $instanceId');
+    FileStorageManager.initInstanceId();
+    SecureStorageImpl.setInstanceId(instanceId);
+  }
 }
 
 class App extends StatefulWidget {

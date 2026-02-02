@@ -9,11 +9,14 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"gorm.io/gorm"
 
 	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
 	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
 	touchactivitypub "github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
+	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 
 	// default plugins
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
@@ -53,6 +56,14 @@ func main() {
 
 	// Seed preset users into DB (idempotent)
 	_ = touchactivitypub.SeedPresetUsers(ctx)
+
+	// Initialize session store with database
+	getDBWrapper := func(c context.Context) (*gorm.DB, error) {
+		return store.GetRDS(c)
+	}
+	if err := auth.InitDBSessionStore(getDBWrapper); err != nil {
+		log.Printf("Warning: Failed to init DB session store: %v, using memory store", err)
+	}
 
 	err = p.Start()
 	if err != nil {

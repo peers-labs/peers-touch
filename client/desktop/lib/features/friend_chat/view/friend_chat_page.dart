@@ -250,8 +250,13 @@ class FriendChatPage extends GetView<FriendChatController> {
                 ),
                 Expanded(
                   child: Obx(() {
-                    final messageList = controller.groupMessages.toList();
-                    if (messageList.isEmpty) {
+                    final allMessages = controller.groupMessages.toList();
+                    // Filter out reply messages - they should only show in thread card
+                    final topLevelMessages = allMessages.where((m) => 
+                        m.replyToUlid == null || m.replyToUlid!.isEmpty
+                    ).toList();
+                    
+                    if (topLevelMessages.isEmpty) {
                       return Center(
                         child: Text(
                           '暂无消息',
@@ -262,24 +267,29 @@ class FriendChatPage extends GetView<FriendChatController> {
                       );
                     }
                     final groupUlid = controller.currentGroup.value?.ulid ?? '';
+                    final myUserId = controller.currentUserId;
+                    final myUserName = controller.currentUserName;
+                    debugPrint('[DEBUG-LIST] Building message list, myUserId="$myUserId", myUserName="$myUserName", msgCount=${topLevelMessages.length}');
                     return ListView.builder(
                       controller: controller.groupMessageScrollController,
                       padding: EdgeInsets.all(UIKit.spaceMd(context)),
-                      itemCount: messageList.length,
+                      itemCount: topLevelMessages.length,
                       itemBuilder: (context, index) {
-                        final message = messageList[index];
-                        final isMe = message.senderDid == controller.currentUserId;
+                        final message = topLevelMessages[index];
+                        final isMe = message.senderDid == myUserId;
+                        debugPrint('[DEBUG-MSG-$index] content="${message.content.length > 10 ? message.content.substring(0, 10) : message.content}", senderDid="${message.senderDid}", myUserId="$myUserId", isMe=$isMe');
                         final senderName = isMe 
                             ? controller.currentUserName 
                             : controller.getMemberDisplayName(groupUlid, message.senderDid);
-                        // Count replies to this message
-                        final replyCount = messageList.where((m) => m.replyToUlid == message.ulid).length;
-                        return _buildGroupMessageWithReply(
+                        // Get replies to this message
+                        final replies = allMessages.where((m) => m.replyToUlid == message.ulid).toList();
+                        return _buildGroupMessageWithThreadPreview(
                           context,
                           message: message,
                           isMe: isMe,
                           senderName: senderName,
-                          replyCount: replyCount,
+                          replies: replies,
+                          allMessages: allMessages,
                         );
                       },
                     );
@@ -337,14 +347,21 @@ class FriendChatPage extends GetView<FriendChatController> {
     ));
   }
   
-  /// Build a group message with reply indicator
-  Widget _buildGroupMessageWithReply(
+  /// Build a group message with thread preview card
+  Widget _buildGroupMessageWithThreadPreview(
     BuildContext context, {
     required GroupMessageInfo message,
     required bool isMe,
     required String senderName,
-    required int replyCount,
+    required List<GroupMessageInfo> replies,
+    required List<GroupMessageInfo> allMessages,
   }) {
+    final theme = Theme.of(context);
+    final groupUlid = controller.currentGroup.value?.ulid ?? '';
+    const maxPreviewReplies = 5;
+    final previewReplies = replies.take(maxPreviewReplies).toList();
+    final hasMoreReplies = replies.length > maxPreviewReplies;
+    
     return Column(
       crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
@@ -355,21 +372,85 @@ class FriendChatPage extends GetView<FriendChatController> {
           senderActorId: message.senderDid,
           onReply: () => controller.openThread(message),
         ),
-        // Reply count indicator
-        if (replyCount > 0)
-          Padding(
-            padding: EdgeInsets.only(
-              left: isMe ? 0 : 52,
-              right: isMe ? 52 : 0,
-              bottom: 4,
+        // Thread preview card
+        if (replies.isNotEmpty)
+          Container(
+            margin: EdgeInsets.only(
+              left: isMe ? 60 : 52,
+              right: isMe ? 0 : 60,
+              top: 4,
+              bottom: 8,
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+              border: Border(
+                left: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 3,
+                ),
+              ),
             ),
             child: InkWell(
               onTap: () => controller.openThread(message),
-              child: Text(
-                '$replyCount ${replyCount == 1 ? 'reply' : 'replies'}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w500,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Preview replies
+                    ...previewReplies.map((reply) {
+                      final replyerName = reply.senderDid == controller.currentUserId
+                          ? controller.currentUserName
+                          : controller.getMemberDisplayName(groupUlid, reply.senderDid);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '$replyerName: ',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                reply.content,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    // Show more indicator
+                    if (hasMoreReplies)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '${replies.length - maxPreviewReplies} more replies...',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    // Reply count footer
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
