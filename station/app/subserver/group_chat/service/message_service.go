@@ -22,6 +22,7 @@ type MessageService interface {
 	CreateOfflineMessages(ctx context.Context, groupULID, messageULID string, receiverDIDs []string) error
 	GetOfflineMessages(ctx context.Context, receiverDID string, limit int) ([]model.GroupOfflineMessage, error)
 	MarkOfflineMessageDelivered(ctx context.Context, offlineMessageULID string) error
+	MarkGroupOfflineMessagesDelivered(ctx context.Context, receiverDID, groupULID string) (int64, error)
 	GetUndeliveredCount(ctx context.Context, receiverDID, groupULID string) (int64, error)
 }
 
@@ -250,6 +251,28 @@ func (s *messageService) MarkOfflineMessageDelivered(ctx context.Context, offlin
 			"status":       model.OfflineStatusDelivered,
 			"delivered_at": time.Now(),
 		}).Error
+}
+
+// MarkGroupOfflineMessagesDelivered marks all offline messages for a user in a group as delivered
+func (s *messageService) MarkGroupOfflineMessagesDelivered(ctx context.Context, receiverDID, groupULID string) (int64, error) {
+	rds, err := s.getDB(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	result := rds.Model(&model.GroupOfflineMessage{}).
+		Where("receiver_did = ? AND group_ul_id = ? AND status = ? AND expire_at > ?",
+			receiverDID, groupULID, model.OfflineStatusPending, time.Now()).
+		Updates(map[string]interface{}{
+			"status":       model.OfflineStatusDelivered,
+			"delivered_at": time.Now(),
+		})
+
+	if result.Error != nil {
+		return 0, result.Error
+	}
+
+	return result.RowsAffected, nil
 }
 
 // GetUndeliveredCount returns the count of undelivered messages for a receiver in a group

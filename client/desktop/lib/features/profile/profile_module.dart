@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
@@ -112,6 +113,51 @@ class ProfileModule {
           }
         },
       ),
+      SettingItem(
+        id: 'send_read_receipts',
+        title: '发送已读回执',
+        description: '关闭后，对方将看不到你是否已读消息',
+        icon: Icons.done_all,
+        type: SettingItemType.toggle,
+        value: _getFeatureFlag('send_read_receipts', defaultValue: true),
+        onChanged: (val) {
+          if (val is bool) {
+            _setFeatureFlag('send_read_receipts', val);
+          }
+        },
+      ),
+      SettingItem(
+        id: 'show_online_status',
+        title: '显示在线状态',
+        description: '关闭后，其他人将看不到你的在线状态',
+        icon: Icons.visibility,
+        type: SettingItemType.toggle,
+        value: _getFeatureFlag('show_online_status', defaultValue: true),
+        onChanged: (val) {
+          if (val is bool) {
+            _setFeatureFlag('show_online_status', val);
+          }
+        },
+      ),
+      const SettingItem(
+        id: 'notification_header',
+        title: '通知设置',
+        type: SettingItemType.sectionHeader,
+      ),
+      SettingItem(
+        id: 'unread_badge_style',
+        title: '未读角标样式',
+        description: '选择消息未读角标的显示方式',
+        icon: Icons.notifications_active,
+        type: SettingItemType.select,
+        value: _getFeatureFlagString('unread_badge_style', defaultValue: 'number'),
+        options: const ['number', 'dot'],
+        onChanged: (val) {
+          if (val is String) {
+            _setFeatureFlagString('unread_badge_style', val);
+          }
+        },
+      ),
       const SettingItem(
         id: 'account_section',
         title: '账户',
@@ -126,5 +172,57 @@ class ProfileModule {
         onTap: profileController.logout,
       ),
     ]);
+  }
+  
+  /// Get feature flag from GlobalContext preferences (bool)
+  static bool _getFeatureFlag(String key, {bool defaultValue = true}) {
+    if (!Get.isRegistered<GlobalContext>()) return defaultValue;
+    final gc = Get.find<GlobalContext>();
+    final flags = gc.preferences['feature_flags'];
+    if (flags is Map) {
+      return flags[key] == true || (flags[key] == null && defaultValue);
+    }
+    return defaultValue;
+  }
+  
+  /// Get feature flag from GlobalContext preferences (String)
+  static String _getFeatureFlagString(String key, {String defaultValue = ''}) {
+    if (!Get.isRegistered<GlobalContext>()) return defaultValue;
+    final gc = Get.find<GlobalContext>();
+    final flags = gc.preferences['feature_flags'];
+    if (flags is Map && flags[key] is String) {
+      return flags[key] as String;
+    }
+    return defaultValue;
+  }
+  
+  /// Set feature flag in GlobalContext preferences (persists to storage)
+  static Future<void> _setFeatureFlag(String key, bool value) async {
+    await _setFeatureFlagValue(key, value);
+  }
+  
+  /// Set feature flag string in GlobalContext preferences
+  static Future<void> _setFeatureFlagString(String key, String value) async {
+    await _setFeatureFlagValue(key, value);
+  }
+  
+  /// Internal method to set any feature flag value
+  static Future<void> _setFeatureFlagValue(String key, dynamic value) async {
+    if (!Get.isRegistered<GlobalContext>()) return;
+    final gc = Get.find<GlobalContext>();
+    
+    // Get current preferences
+    final prefs = Map<String, dynamic>.from(gc.preferences);
+    final flags = prefs['feature_flags'] is Map 
+        ? Map<String, dynamic>.from(prefs['feature_flags'] as Map)
+        : <String, dynamic>{};
+    
+    // Update flag
+    flags[key] = value;
+    prefs['feature_flags'] = flags;
+    
+    // Persist through GlobalContext (handles LocalStorage + Proto)
+    await gc.updatePreferences(prefs);
+    LoggingService.info('Feature flag updated: $key = $value');
   }
 }

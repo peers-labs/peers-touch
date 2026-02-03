@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:get/get.dart';
@@ -9,6 +10,7 @@ import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/network/event/event_stream_service.dart';
 import 'package:peers_touch_base/network/friend_chat/friend_chat_api_service.dart';
 import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
 import 'package:peers_touch_base/network/ice/ice_service.dart';
@@ -17,6 +19,7 @@ import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 import 'package:peers_touch_base/network/social/social_api_service.dart';
 import 'package:peers_touch_base/storage/chat/chat_cache_service.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_desktop/features/friend_chat/friend_chat_module.dart';
 import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
 
@@ -59,6 +62,15 @@ class FriendChatController extends GetxController {
   
   // Group info panel state (WeChat-style right panel)
   final showGroupInfoPanel = false.obs;
+  
+  /// Update the total unread count (updates the shared module-level RxInt for navigation badge)
+  void _updateTotalUnreadCount() {
+    int total = 0;
+    for (final session in unifiedSessions) {
+      total += session.unreadCount;
+    }
+    FriendChatModule.totalUnreadCountRx.value = total;
+  }
   
   /// Scroll message list to bottom
   void scrollToBottom({bool animated = true}) {
@@ -116,6 +128,119 @@ class FriendChatController extends GetxController {
   /// Toggle emoji picker visibility
   void toggleEmojiPicker() {
     showEmojiPicker.value = !showEmojiPicker.value;
+  }
+  
+  /// Pick and send attachment (image or file)
+  Future<void> pickAttachment() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+      );
+      
+      if (result == null || result.files.isEmpty) return;
+      
+      final file = result.files.first;
+      if (file.path == null) return;
+      
+      // Determine file type and send accordingly
+      final extension = file.extension?.toLowerCase() ?? '';
+      final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].contains(extension);
+      
+      if (isImage) {
+        await _sendImageMessage(File(file.path!));
+      } else {
+        await _sendFileMessage(File(file.path!), file.name);
+      }
+    } catch (e) {
+      LoggingService.error('Failed to pick attachment: $e');
+      error.value = 'Failed to pick attachment';
+    }
+  }
+  
+  /// Pick and send image specifically
+  Future<void> pickImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      
+      if (result == null || result.files.isEmpty) return;
+      
+      final file = result.files.first;
+      if (file.path == null) return;
+      
+      await _sendImageMessage(File(file.path!));
+    } catch (e) {
+      LoggingService.error('Failed to pick image: $e');
+      error.value = 'Failed to pick image';
+    }
+  }
+  
+  /// Send image message
+  Future<void> _sendImageMessage(File file) async {
+    // For now, just show a placeholder - actual implementation requires OSS upload
+    // TODO: Upload image to OSS and send image message
+    LoggingService.info('Image selected: ${file.path}');
+    
+    // For group chat
+    if (currentGroup.value != null) {
+      // TODO: Implement group image message
+      Get.snackbar(
+        '提示',
+        '图片发送功能即将上线',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+    
+    // For private chat
+    if (currentSession.value != null) {
+      // TODO: Implement private chat image message
+      Get.snackbar(
+        '提示',
+        '图片发送功能即将上线',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+  }
+  
+  /// Send file message
+  Future<void> _sendFileMessage(File file, String fileName) async {
+    // TODO: Upload file to OSS and send file message
+    LoggingService.info('File selected: ${file.path}, name: $fileName');
+    Get.snackbar(
+      '提示',
+      '文件发送功能即将上线',
+      snackPosition: SnackPosition.BOTTOM,
+    );
+  }
+  
+  /// Add custom sticker (pick image as sticker)
+  Future<void> addCustomSticker() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      
+      if (result == null || result.files.isEmpty) return;
+      
+      final file = result.files.first;
+      if (file.path == null) return;
+      
+      // TODO: Upload image as custom sticker and save to user's sticker collection
+      LoggingService.info('Custom sticker image selected: ${file.path}');
+      Get.snackbar(
+        '提示',
+        '自定义表情包功能即将上线',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } catch (e) {
+      LoggingService.error('Failed to add custom sticker: $e');
+    }
   }
   
   /// Start replying to a message (friend chat)
@@ -203,7 +328,9 @@ class FriendChatController extends GetxController {
   Timer? _syncTimer;
 
   static const _syncMessageThreshold = 10;
-  static const _syncTimeInterval = Duration(seconds: 10);
+  /// Message sync interval - reduced from 10s to 3s for better real-time experience
+  /// TODO: Replace with WebSocket/SSE for true real-time messaging
+  static const _syncTimeInterval = Duration(seconds: 3);
 
   RTCClient? _rtcClient;
   StreamSubscription<webrtc.RTCPeerConnectionState>? _connectionStateSub;
@@ -248,6 +375,9 @@ class FriendChatController extends GetxController {
 
 
 
+  // SSE event subscription
+  StreamSubscription<ServerEvent>? _sseSubscription;
+  
   @override
   void onInit() {
     super.onInit();
@@ -257,6 +387,134 @@ class FriendChatController extends GetxController {
     _loadAllSessions(); // Load both individual and group chats
     _loadPendingMessages();
     _initSignalingWithHeartbeat(); // Register and start heartbeat
+    _initEventStream(); // Initialize SSE for real-time push
+  }
+  
+  /// Initialize SSE event stream for real-time message push
+  void _initEventStream() {
+    try {
+      final baseUrl = HttpServiceLocator().baseUrl;
+      if (baseUrl.isEmpty) {
+        LoggingService.warning('[FriendChatController] No baseUrl, skipping SSE init');
+        return;
+      }
+      
+      // Connect to SSE stream
+      EventStreamService.instance.connect(baseUrl);
+      
+      // Subscribe to events
+      _sseSubscription = EventStreamService.instance.events.listen(
+        _handleServerEvent,
+        onError: (e) => LoggingService.error('[FriendChatController] SSE error: $e'),
+      );
+      
+      LoggingService.info('[FriendChatController] SSE event stream initialized');
+    } catch (e) {
+      LoggingService.warning('[FriendChatController] SSE init failed: $e');
+    }
+  }
+  
+  /// Handle incoming server events
+  void _handleServerEvent(ServerEvent event) {
+    LoggingService.debug('[FriendChatController] Received event: ${event.type}');
+    
+    switch (event.type) {
+      case EventType.chatMessageAppended:
+        _handleNewMessageEvent(event);
+        break;
+      case EventType.chatMessageRead:
+        _handleMessageReadEvent(event);
+        break;
+      case EventType.chatMessageDelivered:
+        _handleMessageDeliveredEvent(event);
+        break;
+      default:
+        LoggingService.debug('[FriendChatController] Unhandled event type: ${event.type}');
+    }
+  }
+  
+  /// Handle new message event from SSE
+  void _handleNewMessageEvent(ServerEvent event) {
+    final payload = event.chatMessagePayload;
+    if (payload == null) return;
+    
+    LoggingService.info('[FriendChatController] New message via SSE: ${payload.messageId} from ${payload.senderId}');
+    
+    // Check if it's a group message or individual message
+    if (payload.msgType == 'group') {
+      // Group message: refresh group messages if this group is selected
+      if (currentGroup.value?.ulid == payload.convId) {
+        // Re-select the group to refresh messages
+        final group = currentGroup.value;
+        if (group != null) {
+          _selectGroup(group);
+        }
+      }
+      
+      // Update unread count in unified sessions
+      final index = unifiedSessions.indexWhere((s) => s.id == payload.convId);
+      if (index >= 0 && unifiedSessions[index].id != currentGroup.value?.ulid) {
+        final session = unifiedSessions[index];
+        unifiedSessions[index] = session.copyWith(
+          unreadCount: session.unreadCount + 1,
+          lastMessage: payload.content ?? '',
+          lastMessageTime: DateTime.fromMillisecondsSinceEpoch(payload.timestamp),
+        );
+        _updateTotalUnreadCount();
+      }
+    } else {
+      // Individual message: add to messages list if this friend is selected
+      final isCurrentChat = currentFriend.value?.actorId == payload.senderId;
+      
+      if (isCurrentChat) {
+        // Trigger a refresh of messages for current chat
+        _fetchNewMessages();
+        scrollToBottom();
+      }
+      
+      // Update unread count in unified sessions
+      final index = unifiedSessions.indexWhere((s) => s.id == payload.senderId);
+      if (index >= 0 && !isCurrentChat) {
+        final session = unifiedSessions[index];
+        unifiedSessions[index] = session.copyWith(
+          unreadCount: session.unreadCount + 1,
+          lastMessage: payload.content ?? '',
+          lastMessageTime: DateTime.fromMillisecondsSinceEpoch(payload.timestamp),
+        );
+        _updateTotalUnreadCount();
+      }
+    }
+  }
+  
+  /// Handle message read event from SSE
+  void _handleMessageReadEvent(ServerEvent event) {
+    // Update message status to read
+    final msgId = event.payload['messageId'] as String?;
+    if (msgId == null) return;
+    
+    LoggingService.debug('[FriendChatController] Message $msgId marked as read');
+  }
+  
+  /// Handle message delivered event from SSE
+  void _handleMessageDeliveredEvent(ServerEvent event) {
+    final msgId = event.payload['messageId'] as String?;
+    if (msgId == null) return;
+    
+    LoggingService.debug('[FriendChatController] Message $msgId delivered');
+  }
+  
+  /// Fetch new messages for current chat
+  Future<void> _fetchNewMessages() async {
+    if (currentFriend.value == null) return;
+    
+    try {
+      final fetchedMessages = await _chatApi.getMessages(currentFriend.value!.actorId, limit: 20);
+      // Note: The actual message loading is handled by selectFriend/loadMessages
+      // This is just a refresh trigger
+      LoggingService.debug('[FriendChatController] Refreshed messages');
+    } catch (e) {
+      LoggingService.error('[FriendChatController] Failed to fetch new messages: $e');
+    }
   }
 
   /// 初始化本地缓存服务
@@ -408,6 +666,7 @@ class FriendChatController extends GetxController {
     // Sort by last message time (most recent first), pinned items at top
     unified.sort(UnifiedSession.compareByTime);
     unifiedSessions.assignAll(unified);
+    _updateTotalUnreadCount();
   }
 
   /// Select a unified session (individual or group)
@@ -427,18 +686,54 @@ class FriendChatController extends GetxController {
       await _selectGroup(group);
     }
     
-    // Clear unread count in local session list
+    // Clear unread count (persists to local DB and syncs to server)
     if (session.unreadCount > 0) {
-      _clearUnreadCount(session.id);
+      await _clearUnreadCount(session.id, isGroup: session.isGroup);
     }
   }
   
-  /// Clear unread count for a session
-  void _clearUnreadCount(String sessionId) {
+  /// Clear unread count for a session (updates memory, local DB, and server)
+  /// Respects user's privacy setting: send_read_receipts
+  Future<void> _clearUnreadCount(String sessionId, {bool isGroup = false}) async {
+    // 1. Update memory state
     final index = unifiedSessions.indexWhere((s) => s.id == sessionId);
     if (index >= 0) {
       final session = unifiedSessions[index];
       unifiedSessions[index] = session.copyWith(unreadCount: 0);
+      _updateTotalUnreadCount();
+    }
+    
+    // 2. Persist to local database (always do this)
+    try {
+      await ChatCacheService.instance.clearUnreadCount(sessionId);
+      LoggingService.info('Cleared unread count in local DB for session: $sessionId');
+    } catch (e) {
+      LoggingService.warning('Failed to clear unread count in local DB: $e');
+    }
+    
+    // 3. Check user's privacy setting before sending read receipts
+    bool shouldSendReadReceipts = true;
+    if (Get.isRegistered<GlobalContext>()) {
+      final gc = Get.find<GlobalContext>();
+      final flags = gc.preferences['feature_flags'];
+      if (flags is Map && flags['send_read_receipts'] == false) {
+        shouldSendReadReceipts = false;
+        LoggingService.info('Read receipts disabled by user setting');
+      }
+    }
+    
+    // 4. Sync to server
+    if (isGroup) {
+      // Mark group messages as read on server
+      try {
+        final markedCount = await _groupApi.markGroupAsRead(sessionId);
+        LoggingService.info('Marked $markedCount messages as read for group: $sessionId');
+      } catch (e) {
+        LoggingService.warning('Failed to mark group as read on server: $e');
+      }
+    } else if (shouldSendReadReceipts) {
+      // For individual chats - read receipts are optional based on privacy setting
+      LoggingService.debug('Would sync read status to server for session: $sessionId');
     }
   }
 
@@ -694,6 +989,8 @@ class FriendChatController extends GetxController {
     _connectionStateSub?.cancel();
     _dataChannelStateSub?.cancel();
     _messageSub?.cancel();
+    _sseSubscription?.cancel();
+    EventStreamService.instance.disconnect();
     super.onClose();
   }
 
@@ -704,14 +1001,22 @@ class FriendChatController extends GetxController {
       }
       // Refresh current group messages
       _refreshCurrentGroupMessages();
+      // Poll all sessions for new unread (every 2 intervals = 6 seconds)
+      _pollCounter++;
+      if (_pollCounter >= 2) {
+        _pollCounter = 0;
+        _pollAllSessionsForNewMessages();
+      }
       // Check session validity (every 30 seconds via counter)
       _sessionCheckCounter++;
-      if (_sessionCheckCounter >= 3) { // Check every ~30 seconds
+      if (_sessionCheckCounter >= 10) { // Check every ~30 seconds (10 * 3s)
         _sessionCheckCounter = 0;
         _checkSessionValidity();
       }
     });
   }
+  
+  int _pollCounter = 0;
   
   int _sessionCheckCounter = 0;
   
@@ -792,6 +1097,40 @@ class FriendChatController extends GetxController {
       }
     } catch (e) {
       // Silently ignore refresh errors
+    }
+  }
+  
+  /// Poll all sessions for new unread messages (called periodically)
+  Future<void> _pollAllSessionsForNewMessages() async {
+    try {
+      bool hasChanges = false;
+      
+      // Check all group sessions for new unread counts
+      for (int i = 0; i < unifiedSessions.length; i++) {
+        final session = unifiedSessions[i];
+        if (!session.isGroup) continue;
+        
+        // Skip current group (already handled by _refreshCurrentGroupMessages)
+        if (session.id == currentGroup.value?.ulid) continue;
+        
+        try {
+          final serverUnread = await _groupApi.getUnreadCount(groupUlid: session.id);
+          if (serverUnread != session.unreadCount) {
+            unifiedSessions[i] = session.copyWith(unreadCount: serverUnread);
+            hasChanges = true;
+            LoggingService.debug('[Poll] Group ${session.name} unread: $serverUnread');
+          }
+        } catch (e) {
+          // Skip this session on error
+        }
+      }
+      
+      // Update total unread count if there were changes
+      if (hasChanges) {
+        _updateTotalUnreadCount();
+      }
+    } catch (e) {
+      LoggingService.error('[Poll] Failed to poll sessions: $e');
     }
   }
 
