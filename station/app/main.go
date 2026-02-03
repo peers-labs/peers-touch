@@ -6,12 +6,16 @@ import (
 	"os"
 
 	peers "github.com/peers-labs/peers-touch/station/frame"
+	brokerA "github.com/peers-labs/peers-touch/station/frame/core/plugin/broker/a"
 	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
+	"github.com/peers-labs/peers-touch/station/frame/core/event"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
 	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
@@ -49,6 +53,7 @@ func main() {
 		server.WithSubServer("friend_chat", friendchat.NewFriendChatSubServer),
 		server.WithSubServer("group_chat", groupchat.NewGroupChatSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
+		server.WithSubServer("events", events.NewEventsSubServer),
 	)
 	if err != nil {
 		panic(err)
@@ -64,6 +69,13 @@ func main() {
 	if err := auth.InitDBSessionStore(getDBWrapper); err != nil {
 		log.Printf("Warning: Failed to init DB session store: %v, using memory store", err)
 	}
+
+	// Initialize event system for real-time push (SSE)
+	broker := brokerA.New()
+	eventLog := logger.NewLogger(context.Background(), logger.WithLevel(logger.InfoLevel))
+	eventSystem := event.NewEventSystem(broker, eventLog)
+	event.SetGlobalEventSystem(eventSystem)
+	log.Printf("Event system initialized for real-time push")
 
 	err = p.Start()
 	if err != nil {

@@ -348,45 +348,117 @@ class SimpleEmojiPicker extends StatelessWidget {
     super.key,
     required this.onEmojiSelected,
     this.onBackspacePressed,
-    this.height = 180,
+    this.onAddCustomSticker,
+    this.onFavoriteSticker,
+    this.height = 220,
   });
 
   final void Function(String emoji) onEmojiSelected;
   final VoidCallback? onBackspacePressed;
+  /// 添加自定义表情包回调（点击+号）
+  final VoidCallback? onAddCustomSticker;
+  /// 收藏表情回调（点击心号）
+  final VoidCallback? onFavoriteSticker;
   final double height;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    final theme = Theme.of(context);
+    // 底部操作栏高度
+    final hasBottomBar = onAddCustomSticker != null || onFavoriteSticker != null;
+    final bottomBarHeight = hasBottomBar ? 40.0 : 0.0;
+    final pickerHeight = height - bottomBarHeight;
+    
+    return Container(
       height: height,
-      child: EmojiPicker(
-        onEmojiSelected: (category, emoji) {
-          onEmojiSelected(emoji.emoji);
-        },
-        onBackspacePressed: onBackspacePressed,
-        config: Config(
-          height: height,
-          emojiViewConfig: EmojiViewConfig(
-            columns: 8,
-            emojiSizeMax: 28 * (foundation.defaultTargetPlatform == TargetPlatform.iOS ? 1.20 : 1.0),
-            backgroundColor: Theme.of(context).colorScheme.surface,
-            noRecents: const Text('暂无最近使用', style: TextStyle(fontSize: 12, color: Colors.grey)),
-          ),
-          categoryViewConfig: CategoryViewConfig(
-            initCategory: Category.SMILEYS,
-            indicatorColor: Theme.of(context).colorScheme.primary,
-            iconColorSelected: Theme.of(context).colorScheme.primary,
-            iconColor: Colors.grey,
-            backgroundColor: Theme.of(context).colorScheme.surface,
-            categoryIcons: const CategoryIcons(),
-          ),
-          bottomActionBarConfig: const BottomActionBarConfig(
-            enabled: false, // 隐藏底部搜索栏和退格键
-          ),
-          searchViewConfig: const SearchViewConfig(
-            buttonIconColor: Colors.grey,
-          ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(
+          top: BorderSide(color: theme.dividerColor, width: 0.5),
         ),
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: EmojiPicker(
+              onEmojiSelected: (category, emoji) {
+                onEmojiSelected(emoji.emoji);
+              },
+              onBackspacePressed: onBackspacePressed,
+              config: Config(
+                height: pickerHeight,
+                emojiViewConfig: EmojiViewConfig(
+                  // 更紧凑的布局：更多列，更小的 emoji
+                  columns: 10,
+                  emojiSizeMax: 24 * (foundation.defaultTargetPlatform == TargetPlatform.iOS ? 1.15 : 1.0),
+                  verticalSpacing: 4,
+                  horizontalSpacing: 4,
+                  gridPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  backgroundColor: theme.colorScheme.surface,
+                  noRecents: Text(
+                    '暂无最近使用',
+                    style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+                categoryViewConfig: CategoryViewConfig(
+                  initCategory: Category.RECENT,
+                  indicatorColor: theme.colorScheme.primary,
+                  iconColorSelected: theme.colorScheme.primary,
+                  iconColor: theme.colorScheme.onSurfaceVariant,
+                  backgroundColor: theme.colorScheme.surface,
+                  tabIndicatorAnimDuration: kTabScrollDuration,
+                  categoryIcons: const CategoryIcons(),
+                ),
+                bottomActionBarConfig: const BottomActionBarConfig(
+                  enabled: false, // 使用自定义底部栏
+                ),
+                searchViewConfig: SearchViewConfig(
+                  buttonIconColor: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+          if (hasBottomBar) _buildBottomBar(context),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildBottomBar(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(
+          top: BorderSide(color: theme.dividerColor, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          if (onAddCustomSticker != null)
+            IconButton(
+              onPressed: onAddCustomSticker,
+              icon: Icon(
+                Icons.add,
+                size: 22,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              tooltip: '添加自定义表情',
+            ),
+          if (onFavoriteSticker != null)
+            IconButton(
+              onPressed: onFavoriteSticker,
+              icon: Icon(
+                Icons.favorite_border,
+                size: 20,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              tooltip: '收藏的表情',
+            ),
+          const Spacer(),
+          // 可以添加更多操作按钮
+        ],
       ),
     );
   }

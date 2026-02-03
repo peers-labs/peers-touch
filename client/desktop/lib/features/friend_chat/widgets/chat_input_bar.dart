@@ -16,6 +16,8 @@ class FriendChatInputBar extends StatefulWidget {
     this.showEmojiPicker = false,
     this.onEmojiSelected,
     this.onToggleEmojiPicker,
+    this.onAddCustomSticker,
+    this.onFavoriteSticker,
   });
 
   final TextEditingController controller;
@@ -28,6 +30,10 @@ class FriendChatInputBar extends StatefulWidget {
   final bool showEmojiPicker;
   final void Function(String emoji)? onEmojiSelected;
   final VoidCallback? onToggleEmojiPicker;
+  /// 添加自定义表情包回调（点击+号）
+  final VoidCallback? onAddCustomSticker;
+  /// 收藏表情回调
+  final VoidCallback? onFavoriteSticker;
 
   @override
   State<FriendChatInputBar> createState() => _FriendChatInputBarState();
@@ -126,6 +132,8 @@ class _FriendChatInputBarState extends State<FriendChatInputBar> {
                 );
               }
             },
+            onAddCustomSticker: widget.onAddCustomSticker,
+            onFavoriteSticker: widget.onFavoriteSticker,
           ),
       ],
     );

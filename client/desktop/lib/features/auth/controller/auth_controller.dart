@@ -318,27 +318,22 @@ class AuthController extends GetxController {
   }
 
   Future<void> logout() async {
-    // Clear storage
-    await LocalStorage().remove('auth_token');
-    await LocalStorage().remove('refresh_token');
-    await LocalStorage().remove('auth_token_type');
-    await _secureStorage.remove(StorageKeys.tokenKey);
-    await _secureStorage.remove(StorageKeys.refreshTokenKey);
-    
     // Clear Rx variables
     email.value = '';
     password.value = '';
     username.value = '';
     displayName.value = '';
     
-    // Clear GlobalContext session
+    // Trigger unified logout through GlobalContext
+    // This will clear session, tokens (via SecureStorage), and fire onLogoutRequested event
     try {
       if (Get.isRegistered<GlobalContext>()) {
-        await Get.find<GlobalContext>().setSession(null);
+        Get.find<GlobalContext>().requestLogout(LogoutReason.userInitiated);
       }
-    } catch (_) {}
-    
-    Get.offAllNamed('/login');
+    } catch (_) {
+      // Fallback: navigate directly if GlobalContext not available
+      Get.offAllNamed('/login');
+    }
   }
 
   Future<void> login([String? overrideBaseUrl]) async {
@@ -372,6 +367,7 @@ class AuthController extends GetxController {
         String token = '';
         String? actorIdFromResponse;  // Declare outside to use later
         String? sessionId;
+        String? refreshToken;
         if (obj is Map) {
           final data = obj['data'];
           Map<String, dynamic>? dmap;
@@ -387,19 +383,11 @@ class AuthController extends GetxController {
                 tokensMap['access_token']?.toString() ??
                 tokensMap['accessToken']?.toString() ??
                 '';
-            final refresh =
+            refreshToken =
                 tokensMap['refresh_token']?.toString() ??
                 tokensMap['refreshToken']?.toString();
-            final ttype =
-                tokensMap['token_type']?.toString() ??
-                tokensMap['tokenType']?.toString();
-            if (refresh != null && refresh.isNotEmpty) {
-              await LocalStorage().set('refresh_token', refresh);
-              await _secureStorage.set(StorageKeys.refreshTokenKey, refresh);
-            }
-            if (ttype != null && ttype.isNotEmpty) {
-              await LocalStorage().set('auth_token_type', ttype);
-            }
+            // Token storage is handled by GlobalContext.setSession()
+            // No direct LocalStorage operations here
           } else {
             token = obj['token']?.toString() ?? '';
           }
@@ -449,18 +437,12 @@ class AuthController extends GetxController {
                 }
 
         if (token.isNotEmpty) {
-          await LocalStorage().set('auth_token', token);
-          // Also save to SecureStorage for AuthInterceptor
-          await _secureStorage.set(StorageKeys.tokenKey, token);
-          LoggingService.info('Token stored in SecureStorage');
-          
-          // Persist user info
+          // Persist user info for UI (not token-related)
           await LocalStorage().set('username', username.value);
           await LocalStorage().set('email', email.value);
           
           try {
             if (Get.isRegistered<GlobalContext>()) {
-              final refresh = await LocalStorage().get<String>('refresh_token');
               final gc = Get.find<GlobalContext>();
               final handle = username.value.isNotEmpty
                   ? username.value
@@ -489,7 +471,7 @@ class AuthController extends GetxController {
                 'protocol': protocol.value,
                 'baseUrl': (overrideBaseUrl ?? baseUrl.value).trim(),
                 'accessToken': token,
-                'refreshToken': refresh,
+                'refreshToken': refreshToken,
                 'avatarUrl': avatarUrl,
                 'sessionId': sessionId, // For kick detection
               });
@@ -782,17 +764,17 @@ class AuthController extends GetxController {
     try {
       final ls = LocalStorage();
       
+      // Clear UI-related cache (not token-related)
       await ls.remove('username');
       await ls.remove('email');
       await ls.remove('recent_users');
       await ls.remove('recent_emails');
       await ls.remove('recent_avatars');
-      await ls.remove('auth_token');
-      await ls.remove('refresh_token');
-      await ls.remove('auth_token_type');
       
-      await _secureStorage.remove(StorageKeys.tokenKey);
-      await _secureStorage.remove(StorageKeys.refreshTokenKey);
+      // Clear session through GlobalContext (handles token cleanup)
+      if (Get.isRegistered<GlobalContext>()) {
+        await Get.find<GlobalContext>().setSession(null);
+      }
       
       recentUsers.clear();
       recentAvatars.clear();
