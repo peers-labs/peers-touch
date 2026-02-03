@@ -7,6 +7,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/group_chat/db/model"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/event"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -45,6 +46,7 @@ func (s *groupChatSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("gc-offline-messages", "/group-chat/offline-messages", server.GET, server.HTTPHandlerFunc(s.handleGetOfflineMessages), logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("gc-offline-ack", "/group-chat/offline-messages/ack", server.POST, server.HTTPHandlerFunc(s.handleAckOfflineMessages), logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("gc-unread-count", "/group-chat/unread-count", server.GET, server.HTTPHandlerFunc(s.handleGetUnreadCount), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("gc-mark-read", "/group-chat/mark-read", server.POST, server.HTTPHandlerFunc(s.handleMarkGroupRead), logIDWrapper, jwtWrapper),
 
 		// Stats
 		server.NewHTTPHandler("gc-stats", "/group-chat/stats", server.GET, server.HTTPHandlerFunc(s.handleStats)),
@@ -571,8 +573,7 @@ func (s *groupChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Create offline messages for all other members
-	// In production, this should only be for offline members based on presence service
+	// Create offline messages and push real-time events to all other members
 	go func() {
 		members, _, err := s.memberService.ListMembers(ctx, req.GroupULID, 1000, 0)
 		if err != nil {
@@ -588,10 +589,38 @@ func (s *groupChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.Re
 		}
 
 		if len(receiverDIDs) > 0 {
+			// Store offline messages for catch-up
 			if err := s.messageService.CreateOfflineMessages(ctx, req.GroupULID, msg.ULID, receiverDIDs); err != nil {
 				logger.Warnf(ctx, "[%s] Failed to create offline messages: %v", logID, err)
 			} else {
 				logger.Debugf(ctx, "[%s] Created offline messages for %d receivers", logID, len(receiverDIDs))
+			}
+			
+			// Push real-time events via SSE to online members
+			es := event.GetGlobalEventSystem()
+			if es != nil {
+				for _, receiverDID := range receiverDIDs {
+					payload := event.ChatMessagePayload{
+						ConvID:    req.GroupULID,
+						MessageID: msg.ULID,
+						SenderID:  senderDID,
+						Content:   req.Content,
+						MsgType:   "group",
+						Timestamp: msg.SentAt.UnixMilli(),
+					}
+					if err := es.Router.PublishEvent(
+						ctx,
+						event.EventChatMessageAppended,
+						senderDID,
+						receiverDID,
+						msg.ULID,
+						event.ScopeActor,
+						payload,
+					); err != nil {
+						logger.Warnf(ctx, "[%s] Failed to publish event to %s: %v", logID, receiverDID, err)
+					}
+				}
+				logger.Debugf(ctx, "[%s] Published SSE events to %d receivers", logID, len(receiverDIDs))
 			}
 		}
 	}()
@@ -819,6 +848,44 @@ func (s *groupChatSubServer) handleGetUnreadCount(w http.ResponseWriter, r *http
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"unread_count": count,
 		"group_ulid":   groupULID,
+	})
+}
+
+// handleMarkGroupRead marks all offline messages in a group as read for the current user
+func (s *groupChatSubServer) handleMarkGroupRead(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logID := serverwrapper.GetLogID(ctx)
+
+	subject := httpadapter.GetSubject(r)
+	if subject == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	actorDID := subject.ID
+
+	var req struct {
+		GroupULID string `json:"group_ulid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" {
+		http.Error(w, "invalid request: group_ulid required", http.StatusBadRequest)
+		return
+	}
+
+	// Mark all offline messages for this group as delivered
+	count, err := s.messageService.MarkGroupOfflineMessagesDelivered(ctx, actorDID, req.GroupULID)
+	if err != nil {
+		logger.Warnf(ctx, "[%s] Failed to mark group %s as read: %v", logID, req.GroupULID, err)
+		http.Error(w, "failed to mark as read", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Infof(ctx, "[%s] Marked %d messages as read for group %s by user %s", logID, count, req.GroupULID, actorDID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"marked_count": count,
+		"group_ulid":   req.GroupULID,
 	})
 }
 

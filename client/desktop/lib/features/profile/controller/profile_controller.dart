@@ -6,7 +6,6 @@ import 'package:get/get.dart' hide FormData, MultipartFile;
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/core/models/actor_base.dart';
 import 'package:peers_touch_desktop/core/models/upload_result.dart';
 import 'package:peers_touch_desktop/core/services/oss_service.dart';
@@ -71,18 +70,16 @@ class ProfileController extends GetxController {
 
   void logout() async {
     try {
-      await LocalStorage().remove('auth_token');
-      await LocalStorage().remove('username');
-      await LocalStorage().remove('email');
-      
-      if (Get.isRegistered<GlobalContext>()) {
-        final gc = Get.find<GlobalContext>();
-        gc.clearProfile();
-        await gc.setSession(null);
-      }
-      
       _resetState();
-      Get.offAllNamed('/login');
+      
+      // Trigger unified logout through GlobalContext
+      // This handles token cleanup and fires onLogoutRequested event
+      if (Get.isRegistered<GlobalContext>()) {
+        Get.find<GlobalContext>().requestLogout(LogoutReason.userInitiated);
+      } else {
+        // Fallback if GlobalContext not available
+        Get.offAllNamed('/login');
+      }
     } catch (e) {
       LoggingService.error('Logout failed: $e');
     }

@@ -327,6 +327,8 @@ class FriendChatPage extends GetView<FriendChatController> {
                   isSending: controller.isSending.value,
                   showEmojiPicker: controller.showEmojiPicker.value,
                   onToggleEmojiPicker: controller.toggleEmojiPicker,
+                  onAttachmentTap: controller.pickAttachment,
+                  onAddCustomSticker: controller.addCustomSticker,
                 )),
               ],
             ),
@@ -624,6 +626,8 @@ class FriendChatPage extends GetView<FriendChatController> {
               onToggleEmojiPicker: controller.toggleEmojiPicker,
               replyMessage: replyPreview,
               onCancelReply: controller.cancelReply,
+              onAttachmentTap: controller.pickAttachment,
+              onAddCustomSticker: controller.addCustomSticker,
             );
           }),
         ],

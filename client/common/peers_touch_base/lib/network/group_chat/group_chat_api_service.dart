@@ -347,4 +347,12 @@ class GroupChatApiService {
     });
     return response['unread_count'] as int? ?? 0;
   }
+  
+  /// Mark all messages in a group as read
+  Future<int> markGroupAsRead(String groupUlid) async {
+    final response = await _http.post('/group-chat/mark-read', data: {
+      'group_ulid': groupUlid,
+    });
+    return response['marked_count'] as int? ?? 0;
+  }
 }
