@@ -254,5 +254,6 @@
   "connectionStatusOnlineP2P": "在线 (P2P)",
   "connectionStatusOnlineRelay": "在线 (中继)",
   "connectionStatusOffline": "离线",
-  "connectionStatusConnecting": "连接中..."
+  "connectionStatusConnecting": "连接中...",
+  "scrollToLatest": "回到最新消息"
 }

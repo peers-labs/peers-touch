@@ -249,51 +249,70 @@ class FriendChatPage extends GetView<FriendChatController> {
                   color: UIKit.dividerColor(context),
                 ),
                 Expanded(
-                  child: Obx(() {
-                    final allMessages = controller.groupMessages.toList();
-                    // Filter out reply messages - they should only show in thread card
-                    final topLevelMessages = allMessages.where((m) => 
-                        m.replyToUlid == null || m.replyToUlid!.isEmpty
-                    ).toList();
-                    
-                    if (topLevelMessages.isEmpty) {
-                      return Center(
-                        child: Text(
-                          '暂无消息',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: UIKit.textSecondary(context),
-                              ),
-                        ),
-                      );
-                    }
-                    final groupUlid = controller.currentGroup.value?.ulid ?? '';
-                    final myUserId = controller.currentUserId;
-                    final myUserName = controller.currentUserName;
-                    debugPrint('[DEBUG-LIST] Building message list, myUserId="$myUserId", myUserName="$myUserName", msgCount=${topLevelMessages.length}');
-                    return ListView.builder(
-                      controller: controller.groupMessageScrollController,
-                      padding: EdgeInsets.all(UIKit.spaceMd(context)),
-                      itemCount: topLevelMessages.length,
-                      itemBuilder: (context, index) {
-                        final message = topLevelMessages[index];
-                        final isMe = message.senderDid == myUserId;
-                        debugPrint('[DEBUG-MSG-$index] content="${message.content.length > 10 ? message.content.substring(0, 10) : message.content}", senderDid="${message.senderDid}", myUserId="$myUserId", isMe=$isMe');
-                        final senderName = isMe 
-                            ? controller.currentUserName 
-                            : controller.getMemberDisplayName(groupUlid, message.senderDid);
-                        // Get replies to this message
-                        final replies = allMessages.where((m) => m.replyToUlid == message.ulid).toList();
-                        return _buildGroupMessageWithThreadPreview(
-                          context,
-                          message: message,
-                          isMe: isMe,
-                          senderName: senderName,
-                          replies: replies,
-                          allMessages: allMessages,
+                  child: Stack(
+                    children: [
+                      Obx(() {
+                        final allMessages = controller.groupMessages.toList();
+                        // Filter out reply messages - they should only show in thread card
+                        final topLevelMessages = allMessages.where((m) => 
+                            m.replyToUlid == null || m.replyToUlid!.isEmpty
+                        ).toList();
+                        
+                        if (topLevelMessages.isEmpty) {
+                          return Center(
+                            child: Text(
+                              '暂无消息',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: UIKit.textSecondary(context),
+                                  ),
+                            ),
+                          );
+                        }
+                        final groupUlid = controller.currentGroup.value?.ulid ?? '';
+                        final myUserId = controller.currentUserId;
+                        return ListView.builder(
+                          key: ValueKey('group_messages_$groupUlid'),
+                          controller: controller.groupMessageScrollController,
+                          padding: EdgeInsets.all(UIKit.spaceMd(context)),
+                          itemCount: topLevelMessages.length,
+                          itemBuilder: (context, index) {
+                            final message = topLevelMessages[index];
+                            final isMe = message.senderDid == myUserId;
+                            final senderName = isMe 
+                                ? controller.currentUserName 
+                                : controller.getMemberDisplayName(groupUlid, message.senderDid);
+                            // Get replies to this message
+                            final replies = allMessages.where((m) => m.replyToUlid == message.ulid).toList();
+                            return _buildGroupMessageWithThreadPreview(
+                              context,
+                              message: message,
+                              isMe: isMe,
+                              senderName: senderName,
+                              replies: replies,
+                              allMessages: allMessages,
+                              key: ValueKey(message.ulid),
+                            );
+                          },
                         );
-                      },
-                    );
-                  }),
+                      }),
+                      // "Scroll to latest" banner - shown when user is viewing history
+                      Obx(() {
+                        if (!controller.showScrollToLatest.value) {
+                          return const SizedBox.shrink();
+                        }
+                        final l10n = AppLocalizations.of(context)!;
+                        return Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: _ScrollToLatestBanner(
+                            text: l10n.scrollToLatest,
+                            onTap: controller.scrollGroupToLatest,
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
                 ),
                 Obx(() {
                   final err = controller.error.value;
@@ -357,6 +376,7 @@ class FriendChatPage extends GetView<FriendChatController> {
     required String senderName,
     required List<GroupMessageInfo> replies,
     required List<GroupMessageInfo> allMessages,
+    Key? key,
   }) {
     final theme = Theme.of(context);
     final groupUlid = controller.currentGroup.value?.ulid ?? '';
@@ -365,6 +385,7 @@ class FriendChatPage extends GetView<FriendChatController> {
     final hasMoreReplies = replies.length > maxPreviewReplies;
     
     return Column(
+      key: key,
       crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         GroupMessageBubble(
@@ -883,5 +904,65 @@ class _UnifiedSessionTile extends StatelessWidget {
     } else {
       return '${dt.month}/${dt.day}';
     }
+  }
+}
+
+/// Banner widget for "scroll to latest messages" - appears when user is viewing history
+class _ScrollToLatestBanner extends StatelessWidget {
+  final String text;
+  final VoidCallback onTap;
+
+  const _ScrollToLatestBanner({
+    required this.text,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: EdgeInsets.symmetric(
+          horizontal: UIKit.spaceMd(context),
+          vertical: UIKit.spaceXs(context),
+        ),
+        padding: EdgeInsets.symmetric(
+          horizontal: UIKit.spaceMd(context),
+          vertical: UIKit.spaceXs(context),
+        ),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.arrow_downward,
+              size: 16,
+              color: theme.colorScheme.onPrimaryContainer,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              text,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

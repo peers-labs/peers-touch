@@ -176,7 +176,10 @@ class EventStreamService {
       return;
     }
     
-    final url = '$_baseUrl/events/stream';
+    // SSE endpoint is at /events/stream (no /api/v1 prefix)
+    // Remove /api/v1 suffix if present in baseUrl
+    final cleanBaseUrl = _baseUrl!.replaceAll(RegExp(r'/api/v1/?$'), '');
+    final url = '$cleanBaseUrl/events/stream';
     
     try {
       _client = http.Client();

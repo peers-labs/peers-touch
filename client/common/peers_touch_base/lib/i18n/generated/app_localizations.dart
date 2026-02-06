@@ -1423,6 +1423,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connecting...'**
   String get connectionStatusConnecting;
+
+  /// No description provided for @scrollToLatest.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to latest'**
+  String get scrollToLatest;
 }
 
 class _AppLocalizationsDelegate

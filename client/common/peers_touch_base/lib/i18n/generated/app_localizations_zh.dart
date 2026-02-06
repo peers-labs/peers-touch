@@ -692,4 +692,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get connectionStatusConnecting => '连接中...';
+
+  @override
+  String get scrollToLatest => '回到最新消息';
 }
