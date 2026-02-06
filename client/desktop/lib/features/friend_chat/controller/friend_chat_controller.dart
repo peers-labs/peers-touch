@@ -54,6 +54,11 @@ class FriendChatController extends GetxController {
   final ScrollController messageScrollController = ScrollController();
   final ScrollController groupMessageScrollController = ScrollController();
   
+  // Scroll position state for smart auto-scroll
+  final isUserNearGroupBottom = true.obs;  // Track if user is near bottom of group messages
+  final showScrollToLatest = false.obs;    // Show "scroll to latest" banner
+  static const _scrollThreshold = 150.0;   // Pixels from bottom to consider "at bottom"
+  
   // Thread panel state (Slack-style right panel)
   final showThreadPanel = false.obs;
   final threadParentMessage = Rx<GroupMessageInfo?>(null);
@@ -89,21 +94,36 @@ class FriendChatController extends GetxController {
     });
   }
   
-  /// Scroll group message list to bottom
-  void scrollGroupToBottom({bool animated = true}) {
+  /// Scroll group message list to bottom (respects user scroll position)
+  /// Only scrolls if user is already near bottom, otherwise shows "scroll to latest" banner
+  void scrollGroupToBottom({bool animated = true, bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (groupMessageScrollController.hasClients) {
-        if (animated) {
-          groupMessageScrollController.animateTo(
-            groupMessageScrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-          );
+        // Only auto-scroll if user is near bottom OR force is true
+        if (force || isUserNearGroupBottom.value) {
+          if (animated) {
+            groupMessageScrollController.animateTo(
+              groupMessageScrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+            );
+          } else {
+            groupMessageScrollController.jumpTo(groupMessageScrollController.position.maxScrollExtent);
+          }
+          showScrollToLatest.value = false;
         } else {
-          groupMessageScrollController.jumpTo(groupMessageScrollController.position.maxScrollExtent);
+          // User is viewing history, show banner instead
+          showScrollToLatest.value = true;
         }
       }
     });
+  }
+  
+  /// User explicitly wants to scroll to latest (e.g. clicked "scroll to latest" button)
+  void scrollGroupToLatest() {
+    scrollGroupToBottom(animated: true, force: true);
+    showScrollToLatest.value = false;
+    isUserNearGroupBottom.value = true;
   }
   
   /// Toggle group info panel
@@ -388,6 +408,33 @@ class FriendChatController extends GetxController {
     _loadPendingMessages();
     _initSignalingWithHeartbeat(); // Register and start heartbeat
     _initEventStream(); // Initialize SSE for real-time push
+    _initGroupScrollListener(); // Track scroll position for smart auto-scroll
+  }
+  
+  /// Initialize scroll listener for group messages to track user's scroll position
+  void _initGroupScrollListener() {
+    groupMessageScrollController.addListener(_onGroupScroll);
+  }
+  
+  /// Handle group message scroll events
+  void _onGroupScroll() {
+    if (!groupMessageScrollController.hasClients) return;
+    
+    final position = groupMessageScrollController.position;
+    final maxScroll = position.maxScrollExtent;
+    final currentScroll = position.pixels;
+    
+    // User is "near bottom" if within threshold of max scroll
+    final nearBottom = (maxScroll - currentScroll) <= _scrollThreshold;
+    
+    if (nearBottom != isUserNearGroupBottom.value) {
+      isUserNearGroupBottom.value = nearBottom;
+    }
+    
+    // Hide "scroll to latest" when user scrolls to bottom
+    if (nearBottom && showScrollToLatest.value) {
+      showScrollToLatest.value = false;
+    }
   }
   
   /// Initialize SSE event stream for real-time message push
@@ -444,11 +491,8 @@ class FriendChatController extends GetxController {
     if (payload.msgType == 'group') {
       // Group message: refresh group messages if this group is selected
       if (currentGroup.value?.ulid == payload.convId) {
-        // Re-select the group to refresh messages
-        final group = currentGroup.value;
-        if (group != null) {
-          _selectGroup(group);
-        }
+        // Use smart refresh instead of re-selecting the group to avoid UI flickering
+        _refreshCurrentGroupMessages();
       }
       
       // Update unread count in unified sessions
@@ -741,6 +785,10 @@ class FriendChatController extends GetxController {
     currentGroup.value = group;
     groupMessages.clear();
     
+    // Reset scroll state when switching groups
+    isUserNearGroupBottom.value = true;
+    showScrollToLatest.value = false;
+    
     try {
       // Load members first for name resolution
       await _loadGroupMembers(group.ulid);
@@ -748,8 +796,8 @@ class FriendChatController extends GetxController {
       final loadedMessages = await _groupApi.getMessages(group.ulid);
       groupMessages.assignAll(loadedMessages);
       
-      // Auto scroll to bottom after loading
-      scrollGroupToBottom(animated: false);
+      // Auto scroll to bottom after loading (force because it's initial load)
+      scrollGroupToBottom(animated: false, force: true);
       
       LoggingService.info('Loaded ${loadedMessages.length} messages for group ${group.ulid}');
     } catch (e) {
@@ -821,8 +869,8 @@ class FriendChatController extends GetxController {
       );
       groupMessages.add(newMessage);
       inputController.clear();
-      // Auto scroll to bottom after sending
-      scrollGroupToBottom();
+      // Force scroll to bottom after sending (user's own message)
+      scrollGroupToBottom(force: true);
       LoggingService.info('Group message sent: ${newMessage.ulid}');
     } catch (e) {
       LoggingService.error('Failed to send group message: $e');
@@ -991,6 +1039,7 @@ class FriendChatController extends GetxController {
     _messageSub?.cancel();
     _sseSubscription?.cancel();
     EventStreamService.instance.disconnect();
+    groupMessageScrollController.removeListener(_onGroupScroll);
     super.onClose();
   }
 
@@ -1078,6 +1127,7 @@ class FriendChatController extends GetxController {
   }
   
   /// Refresh messages for current group (polling for new messages)
+  /// Uses smart comparison to avoid unnecessary UI updates
   Future<void> _refreshCurrentGroupMessages() async {
     final group = currentGroup.value;
     if (group == null) return;
@@ -1085,15 +1135,42 @@ class FriendChatController extends GetxController {
     try {
       final loadedMessages = await _groupApi.getMessages(group.ulid);
       
-      // Only update if there are new messages
-      if (loadedMessages.length != groupMessages.length) {
-        final hadMessages = groupMessages.isNotEmpty;
-        groupMessages.assignAll(loadedMessages);
-        
-        // Auto scroll to bottom if new messages arrived
-        if (hadMessages && loadedMessages.length > groupMessages.length) {
-          scrollGroupToBottom();
-        }
+      // Build sets for comparison
+      final currentUlids = groupMessages.map((m) => m.ulid).toSet();
+      final serverUlids = loadedMessages.map((m) => m.ulid).toSet();
+      
+      // Check if server has new messages we don't have locally
+      final newMessageUlids = serverUlids.difference(currentUlids);
+      
+      // Check if we have messages locally that server doesn't have (should not happen normally)
+      final removedMessageUlids = currentUlids.difference(serverUlids);
+      
+      // No changes at all
+      if (newMessageUlids.isEmpty && removedMessageUlids.isEmpty) {
+        return;
+      }
+      
+      // Only new messages added (most common case for real-time chat)
+      if (newMessageUlids.isNotEmpty && removedMessageUlids.isEmpty) {
+        // Find new messages in server order and append them
+        final newMessages = loadedMessages.where((m) => newMessageUlids.contains(m.ulid)).toList();
+        groupMessages.addAll(newMessages);
+        scrollGroupToBottom();
+        return;
+      }
+      
+      // Messages were deleted or some complex change - need full refresh
+      // But do it carefully to minimize UI impact
+      if (removedMessageUlids.isNotEmpty) {
+        // Remove deleted messages from local list
+        groupMessages.removeWhere((m) => removedMessageUlids.contains(m.ulid));
+      }
+      
+      // Add any new messages
+      if (newMessageUlids.isNotEmpty) {
+        final newMessages = loadedMessages.where((m) => newMessageUlids.contains(m.ulid)).toList();
+        groupMessages.addAll(newMessages);
+        scrollGroupToBottom();
       }
     } catch (e) {
       // Silently ignore refresh errors

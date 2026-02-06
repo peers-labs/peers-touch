@@ -715,4 +715,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionStatusConnecting => 'Connecting...';
+
+  @override
+  String get scrollToLatest => 'Back to latest';
 }

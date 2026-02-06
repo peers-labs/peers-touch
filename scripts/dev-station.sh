@@ -50,6 +50,20 @@ version_ok() {
 
 # 自动选择合适的 Go 版本
 setup_go_version() {
+    # 优先检查 Homebrew Go (通常是最新版本)
+    if [ -x "/opt/homebrew/bin/go" ]; then
+        local brew_version=$(/opt/homebrew/bin/go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | sed 's/go//' || echo "0.0")
+        if version_ok "$brew_version"; then
+            log_info "使用 Homebrew Go $brew_version ✓"
+            # 设置正确的 GOROOT 以避免 goenv 干扰
+            unset GOROOT
+            export GOROOT=$(/opt/homebrew/bin/go env GOROOT)
+            export PATH="$GOROOT/bin:/opt/homebrew/bin:$PATH"
+            export GOENV_VERSION=system
+            return 0
+        fi
+    fi
+
     # 检查当前 Go 版本
     local current_version=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | sed 's/go//' || echo "0.0")
     
@@ -86,9 +100,13 @@ setup_go_version() {
     if [ -n "$best_version" ]; then
         log_info "切换到 Go $best_version..."
         
-        # 直接修改 PATH 指向正确版本
+        # 直接修改 PATH 指向正确版本，确保在 goenv shim 之前
         export GOROOT="$GOENV_ROOT/versions/$best_version"
+        # 移除 goenv shim 目录，避免被覆盖
+        export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "goenv/shims" | tr '\n' ':' | sed 's/:$//')
         export PATH="$GOROOT/bin:$PATH"
+        # 禁用 goenv 版本覆盖
+        unset GOENV_VERSION
         
         # 验证切换成功
         local new_version=$(go version | grep -oE 'go[0-9]+\.[0-9]+' | sed 's/go//')
@@ -103,7 +121,7 @@ setup_go_version() {
         log_error "未找到 >= $REQUIRED_GO_MAJOR.$REQUIRED_GO_MINOR 的 Go 版本"
         log_error "已安装的版本:"
         ls -1 "$GOENV_ROOT/versions" 2>/dev/null || echo "  (无)"
-        log_error "请安装: goenv install 1.23.3"
+        log_error "请安装: goenv install 1.24.0 或使用 Homebrew: brew install go"
         exit 1
     fi
 }
