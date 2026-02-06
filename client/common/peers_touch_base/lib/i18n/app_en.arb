@@ -254,5 +254,6 @@
   "connectionStatusOnlineP2P": "Online (P2P)",
   "connectionStatusOnlineRelay": "Online (Relay)",
   "connectionStatusOffline": "Offline",
-  "connectionStatusConnecting": "Connecting..."
+  "connectionStatusConnecting": "Connecting...",
+  "scrollToLatest": "Back to latest"
 }
