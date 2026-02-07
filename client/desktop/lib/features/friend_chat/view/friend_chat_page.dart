@@ -384,6 +384,10 @@ class FriendChatPage extends GetView<FriendChatController> {
     final previewReplies = replies.take(maxPreviewReplies).toList();
     final hasMoreReplies = replies.length > maxPreviewReplies;
     
+    final senderAvatarUrl = isMe 
+        ? controller.currentUserAvatarUrl 
+        : controller.getMemberAvatarUrl(groupUlid, message.senderDid);
+    
     return Column(
       key: key,
       crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -393,6 +397,7 @@ class FriendChatPage extends GetView<FriendChatController> {
           isMe: isMe,
           senderName: senderName,
           senderActorId: message.senderDid,
+          senderAvatarUrl: senderAvatarUrl,
           onReply: () => controller.openThread(message),
         ),
         // Thread preview card
@@ -880,13 +885,34 @@ class _UnifiedSessionTile extends StatelessWidget {
       );
     }
 
-    // Individual avatar
+    // Individual avatar with online status indicator
     final friend = session.originalData as FriendItem?;
-    return Avatar(
-      actorId: session.id,
-      avatarUrl: session.avatarUrl,
-      fallbackName: friend?.name ?? session.name,
-      size: 44,
+    return Stack(
+      children: [
+        Avatar(
+          actorId: session.id,
+          avatarUrl: session.avatarUrl,
+          fallbackName: friend?.name ?? session.name,
+          size: 44,
+        ),
+        if (session.isOnline)
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: Colors.green,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.surface,
+                  width: 2,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

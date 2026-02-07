@@ -2,6 +2,7 @@ package friend_chat
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 )
 
 type friendChatURL struct{ name, path string }
@@ -224,27 +227,18 @@ func (s *friendChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.R
 	})
 }
 
-type syncMessagesReq struct {
-	Messages []syncMessageItem `json:"messages"`
-}
-
-type syncMessageItem struct {
-	ULID        string `json:"ulid"`
-	SessionULID string `json:"session_ulid"`
-	ReceiverDID string `json:"receiver_did"`
-	Type        int32  `json:"type"`
-	Content     string `json:"content"`
-	SentAt      int64  `json:"sent_at"`
-}
-
-type syncMessagesResp struct {
-	Synced int      `json:"synced"`
-	Failed []string `json:"failed"`
-}
-
 func (s *friendChatSubServer) handleSyncMessages(w http.ResponseWriter, r *http.Request) {
-	var req syncMessagesReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Messages) == 0 {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	var req chat.SyncMessagesRequest
+	if err := proto.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if len(req.GetMessages()) == 0 {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -256,33 +250,37 @@ func (s *friendChatSubServer) handleSyncMessages(w http.ResponseWriter, r *http.
 	}
 	senderActorDID := subject.ID
 
-	synced := 0
+	synced := int32(0)
 	failed := make([]string, 0)
 
-	for _, item := range req.Messages {
-		if item.Type == 0 {
-			item.Type = 1
+	for _, item := range req.GetMessages() {
+		msgType := item.GetType()
+		if msgType == chat.FriendMessageType_FRIEND_MESSAGE_TYPE_UNSPECIFIED {
+			msgType = chat.FriendMessageType_FRIEND_MESSAGE_TYPE_TEXT
 		}
 		_, err := s.messageService.SendMessage(r.Context(), &service.SendMessageRequest{
-			SessionULID: item.SessionULID,
+			SessionULID: item.GetSessionUlid(),
 			SenderDID:   senderActorDID,
-			ReceiverDID: item.ReceiverDID,
-			Type:        item.Type,
-			Content:     item.Content,
+			ReceiverDID: item.GetReceiverDid(),
+			Type:        int32(msgType),
+			Content:     item.GetContent(),
 			ReplyToULID: "",
 		})
 		if err != nil {
-			failed = append(failed, item.ULID)
+			failed = append(failed, item.GetUlid())
 		} else {
 			synced++
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(syncMessagesResp{
-		Synced: synced,
-		Failed: failed,
-	})
+	resp := &chat.SyncMessagesResponse{Synced: synced, Failed: failed}
+	out, err := proto.Marshal(resp)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/protobuf")
+	_, _ = w.Write(out)
 }
 
 type messagesResp struct {

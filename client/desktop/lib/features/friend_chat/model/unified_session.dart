@@ -42,6 +42,7 @@ class UnifiedSession {
   final int unreadCount;
   final bool isPinned;
   final bool isMuted;
+  final bool isOnline; // Online status for individual chats
 
   // Original data references
   final dynamic originalData;
@@ -59,6 +60,7 @@ class UnifiedSession {
     this.unreadCount = 0,
     this.isPinned = false,
     this.isMuted = false,
+    this.isOnline = false,
     this.originalData,
   });
 
@@ -105,6 +107,7 @@ class UnifiedSession {
     int? unreadCount,
     bool? isPinned,
     bool? isMuted,
+    bool? isOnline,
     dynamic originalData,
   }) {
     return UnifiedSession(
@@ -120,6 +123,7 @@ class UnifiedSession {
       unreadCount: unreadCount ?? this.unreadCount,
       isPinned: isPinned ?? this.isPinned,
       isMuted: isMuted ?? this.isMuted,
+      isOnline: isOnline ?? this.isOnline,
       originalData: originalData ?? this.originalData,
     );
   }

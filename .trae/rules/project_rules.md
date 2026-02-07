@@ -154,6 +154,19 @@ These are **NON-NEGOTIABLE** across all platforms:
 
 ---
 
+## 📡 API and Avatar Standards
+
+1. **Station–Desktop 接口默认 Proto**
+   - 第一等级标准：Station 与 Desktop 之间接口**默认全部使用 Proto**（application/protobuf）。
+   - **禁止**在 Station 与 Desktop 使用 JSON 接口，除非**非用不可的例外**（需标注并计划迁移）。
+   - 新增/改造接口必须用 Proto 定义请求/响应，禁止新增 JSON 接口。
+
+2. **Avatar 组件：只传 uid**
+   - 域内统一使用 **Avatar 组件**，只传 **uid（actorId）**（及 fallbackName），不传 `avatarUrl`。
+   - 头像由组件或域内统一解析（如通过 AvatarResolver / 用户服务），不在业务层到处传递 URL。
+
+---
+
 ## 📖 Terminology
 
 For definitions of key terms, see [.prompts/00-META/GLOSSARY.md](../../.prompts/00-META/GLOSSARY.md).
