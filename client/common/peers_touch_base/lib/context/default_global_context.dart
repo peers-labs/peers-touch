@@ -25,6 +25,8 @@ class DefaultGlobalContext implements GlobalContext {
   Map<String, dynamic> _preferences = {};
   String? _protocolTag;
   bool _isRefreshingProfile = false;
+  bool _isHydrated = false;
+  Completer<void>? _hydrateCompleter;
   String? _lastLogoutMessage;
   final _sessionCtrl = StreamController<Map<String, dynamic>?>.broadcast();
   final _profileCtrl = StreamController<Map<String, dynamic>?>.broadcast();
@@ -323,72 +325,94 @@ class DefaultGlobalContext implements GlobalContext {
 
   @override
   Future<void> hydrate() async {
-    _bindConnectivity();
-    if (localStorage == null) return;
-    // Prefer proto JSON if present
+    // Prevent double hydration — if already hydrated, just return.
+    // If hydration is in progress, await the existing operation.
+    if (_isHydrated) return;
+    if (_hydrateCompleter != null) {
+      await _hydrateCompleter!.future;
+      return;
+    }
+    _hydrateCompleter = Completer<void>();
+    
     try {
-      final sessPb = await localStorage!.get<Map<String, dynamic>>(
-        'global:current_session_pb',
-      );
-      if (sessPb != null) {
-        final snap = ActorSessionSnapshot();
-        snap.mergeFromProto3Json(sessPb);
-        await setSessionSnapshot(snap);
+      _bindConnectivity();
+      if (localStorage == null) {
+        _isHydrated = true;
+        _hydrateCompleter!.complete();
+        return;
       }
-    } catch (_) {}
-    final sess = await localStorage!.get<Map<String, dynamic>>(
-      'global:current_session',
-    );
-    if (sess != null) {
-      _session = _normalizeSession(sess);
-      _sessionCtrl.add(_session);
+      // Prefer proto JSON if present
       try {
-        LoggingService.info(
-          'GlobalContext.hydrate session: ${_session?['handle']}',
+        final sessPb = await localStorage!.get<Map<String, dynamic>>(
+          'global:current_session_pb',
         );
+        if (sessPb != null) {
+          final snap = ActorSessionSnapshot();
+          snap.mergeFromProto3Json(sessPb);
+          await setSessionSnapshot(snap);
+        }
       } catch (_) {}
-    }
-    final accs = await localStorage!.get<List>('global:accounts');
-    if (accs is List) {
-      _accounts
-        ..clear()
-        ..addAll(
-          accs.whereType<Map>().map(
-            (e) => _normalizeSession(e.cast<String, dynamic>()),
-          ),
-        );
-      _accountsCtrl.add(List.unmodifiable(_accounts));
-      final schema = await localStorage!.get<int>('global:accounts_schema');
-      if (schema == null) {
-        await localStorage!.set('global:accounts_schema', 1);
-      }
-    }
-    final prefs = await localStorage!.get<Map<String, dynamic>>(
-      'global:user_preferences',
-    );
-    if (prefs != null) {
-      _preferences = Map<String, dynamic>.from(prefs);
-      if (!_preferences.containsKey('schemaVersion')) {
-        _preferences['schemaVersion'] = 1;
-        await localStorage!.set('global:user_preferences', _preferences);
-      }
-      _prefsCtrl.add(Map.unmodifiable(_preferences));
-      try {
-        LoggingService.info(
-          'GlobalContext.hydrate preferences schema: ${_preferences['schemaVersion']}',
-        );
-      } catch (_) {}
-    }
-    try {
-      final prefsPb = await localStorage!.get<Map<String, dynamic>>(
-        'global:user_preferences_pb',
+      final sess = await localStorage!.get<Map<String, dynamic>>(
+        'global:current_session',
       );
-      if (prefsPb != null) {
-        final pp = ActorPreferences();
-        pp.mergeFromProto3Json(prefsPb);
-        await updatePreferencesSnapshot(pp);
+      if (sess != null) {
+        _session = _normalizeSession(sess);
+        _sessionCtrl.add(_session);
+        try {
+          LoggingService.info(
+            'GlobalContext.hydrate session: ${_session?['handle']}',
+          );
+        } catch (_) {}
       }
-    } catch (_) {}
+      final accs = await localStorage!.get<List>('global:accounts');
+      if (accs is List) {
+        _accounts
+          ..clear()
+          ..addAll(
+            accs.whereType<Map>().map(
+              (e) => _normalizeSession(e.cast<String, dynamic>()),
+            ),
+          );
+        _accountsCtrl.add(List.unmodifiable(_accounts));
+        final schema = await localStorage!.get<int>('global:accounts_schema');
+        if (schema == null) {
+          await localStorage!.set('global:accounts_schema', 1);
+        }
+      }
+      final prefs = await localStorage!.get<Map<String, dynamic>>(
+        'global:user_preferences',
+      );
+      if (prefs != null) {
+        _preferences = Map<String, dynamic>.from(prefs);
+        if (!_preferences.containsKey('schemaVersion')) {
+          _preferences['schemaVersion'] = 1;
+          await localStorage!.set('global:user_preferences', _preferences);
+        }
+        _prefsCtrl.add(Map.unmodifiable(_preferences));
+        try {
+          LoggingService.info(
+            'GlobalContext.hydrate preferences schema: ${_preferences['schemaVersion']}',
+          );
+        } catch (_) {}
+      }
+      try {
+        final prefsPb = await localStorage!.get<Map<String, dynamic>>(
+          'global:user_preferences_pb',
+        );
+        if (prefsPb != null) {
+          final pp = ActorPreferences();
+          pp.mergeFromProto3Json(prefsPb);
+          await updatePreferencesSnapshot(pp);
+        }
+      } catch (_) {}
+      
+      _isHydrated = true;
+      _hydrateCompleter!.complete();
+    } catch (e) {
+      _hydrateCompleter!.completeError(e);
+      _hydrateCompleter = null; // Allow retry on failure
+      rethrow;
+    }
   }
 
   @override

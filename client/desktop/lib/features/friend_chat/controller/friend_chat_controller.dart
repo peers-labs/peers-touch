@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -8,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
+import 'package:peers_touch_base/model/domain/chat/friend_chat.pb.dart' as fc;
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/network/event/event_stream_service.dart';
@@ -401,6 +401,20 @@ class FriendChatController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    
+    // Guard: verify auth state before making any API calls.
+    // If there is no valid token, skip network-dependent initialization
+    // to avoid a cascade of 401s that would trigger logout.
+    if (!_hasValidToken()) {
+      LoggingService.warning(
+        'FriendChatController.onInit: No valid token found, '
+        'skipping network initialization',
+      );
+      _initCacheService();
+      _initGroupScrollListener();
+      return;
+    }
+    
     _initCacheService();
     _startSyncTimer();
     _markOnline();
@@ -409,6 +423,14 @@ class FriendChatController extends GetxController {
     _initSignalingWithHeartbeat(); // Register and start heartbeat
     _initEventStream(); // Initialize SSE for real-time push
     _initGroupScrollListener(); // Track scroll position for smart auto-scroll
+  }
+
+  /// Check whether a valid access token exists before issuing API calls.
+  bool _hasValidToken() {
+    if (!Get.isRegistered<GlobalContext>()) return false;
+    final gc = Get.find<GlobalContext>();
+    final token = gc.currentSession?['accessToken']?.toString();
+    return token != null && token.isNotEmpty;
   }
   
   /// Initialize scroll listener for group messages to track user's scroll position
@@ -852,6 +874,26 @@ class FriendChatController extends GetxController {
     }
     return actorId;
   }
+  
+  /// Get member avatar URL for a group
+  String? getMemberAvatarUrl(String groupUlid, String actorDid) {
+    // 1. Check group member cache for avatar
+    final members = _groupMembersCache[groupUlid];
+    if (members != null) {
+      final member = members[actorDid];
+      if (member != null && member.avatarUrl.isNotEmpty) {
+        return member.avatarUrl;
+      }
+    }
+    
+    // 2. Check friends list for avatar
+    final friend = friends.firstWhereOrNull((f) => f.actorId == actorDid);
+    if (friend != null && friend.avatarUrl != null && friend.avatarUrl!.isNotEmpty) {
+      return friend.avatarUrl;
+    }
+    
+    return null;
+  }
 
   /// Send message to current group
   Future<void> sendGroupMessage(String content) async {
@@ -942,9 +984,17 @@ class FriendChatController extends GetxController {
         }
       }
       
+      // Check if online status changed
+      final statusChanged = !_setEquals(_onlinePeers, newOnlinePeers);
+      
       // Update online peers cache
       _onlinePeers.clear();
       _onlinePeers.addAll(newOnlinePeers);
+      
+      // Update unified sessions online status if changed
+      if (statusChanged) {
+        _updateSessionsOnlineStatus();
+      }
       
       // Check for incoming offers if we have a selected friend
       await _checkIncomingOffers();
@@ -953,6 +1003,34 @@ class FriendChatController extends GetxController {
       // Silently ignore monitoring errors
     }
   }
+  
+  /// Helper to compare two sets
+  bool _setEquals<T>(Set<T> a, Set<T> b) {
+    if (a.length != b.length) return false;
+    return a.every((e) => b.contains(e));
+  }
+  
+  /// Update online status in unified sessions
+  void _updateSessionsOnlineStatus() {
+    bool hasChanges = false;
+    for (int i = 0; i < unifiedSessions.length; i++) {
+      final session = unifiedSessions[i];
+      // Only update individual sessions
+      if (session.isIndividual) {
+        final isOnline = _onlinePeers.contains(session.id);
+        if (session.isOnline != isOnline) {
+          unifiedSessions[i] = session.copyWith(isOnline: isOnline);
+          hasChanges = true;
+        }
+      }
+    }
+    if (hasChanges) {
+      unifiedSessions.refresh();
+    }
+  }
+  
+  /// Check if a peer is online (public getter for UI)
+  bool isPeerOnline(String peerId) => _onlinePeers.contains(peerId);
 
   /// Called when a peer comes online
   void _onPeerOnline(String peerId) {
@@ -1069,38 +1147,27 @@ class FriendChatController extends GetxController {
   
   int _sessionCheckCounter = 0;
   
-  /// Check if current session is still valid (not kicked)
+  /// Check if current session is still valid (not kicked).
+  /// Uses HttpServiceLocator to stay consistent with global auth interceptor.
   Future<void> _checkSessionValidity() async {
     try {
       final gc = Get.find<GlobalContext>();
       final sessionId = gc.currentSession?['sessionId']?.toString();
       if (sessionId == null || sessionId.isEmpty) return;
-      
-      final accessToken = gc.currentSession?['accessToken']?.toString();
-      if (accessToken == null || accessToken.isEmpty) return;
-      
-      final baseUrl = _stationBaseUrl;
-      if (baseUrl.isEmpty) return;
-      
-      // Use dart:io HttpClient to include custom headers
-      final uri = Uri.parse('$baseUrl/api/v1/session/verify');
-      final request = await HttpClient().getUrl(uri);
-      request.headers.set('Authorization', 'Bearer $accessToken');
-      request.headers.set('X-Session-ID', sessionId);
-      
-      final response = await request.close();
-      final body = await response.transform(const Utf8Decoder()).join();
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(body);
-        if (data is Map) {
-          final valid = data['valid'] == true;
-          final reason = data['reason']?.toString() ?? '';
-          
-          if (!valid && reason == 'kicked') {
-            LoggingService.warning('Session kicked by another login');
-            _handleSessionKicked();
-          }
+
+      // Use the shared HttpServiceLocator — tokens and session headers
+      // are attached automatically by AuthInterceptor.
+      final client = HttpServiceLocator().httpService;
+      final response = await client.getResponse<dynamic>('/api/v1/session/verify');
+
+      if (response.statusCode == 200 && response.data is Map) {
+        final data = response.data as Map;
+        final valid = data['valid'] == true;
+        final reason = data['reason']?.toString() ?? '';
+
+        if (!valid && reason == 'kicked') {
+          LoggingService.warning('Session kicked by another login');
+          _handleSessionKicked();
         }
       }
     } catch (e) {
@@ -1108,22 +1175,17 @@ class FriendChatController extends GetxController {
       LoggingService.error('Session check failed: $e');
     }
   }
-  
-  /// Handle session kicked - logout and show message
+
+  /// Handle session kicked — use the unified logout mechanism via
+  /// GlobalContext.requestLogout() so that token cleanup, session clearing,
+  /// navigation, and snackbar are all handled in one place (main.dart listener).
   void _handleSessionKicked() {
-    // Clear session
-    Get.find<GlobalContext>().setSession(null);
-    
-    // Show notification
-    Get.snackbar(
-      '登录已失效',
-      '您的账号在另一个设备上登录，当前设备已被登出',
-      snackPosition: SnackPosition.TOP,
-      duration: const Duration(seconds: 5),
-    );
-    
-    // Navigate to login
-    Get.offAllNamed('/login');
+    if (Get.isRegistered<GlobalContext>()) {
+      Get.find<GlobalContext>().requestLogout(
+        LogoutReason.forcedByServer,
+        message: '您的账号在另一个设备上登录，当前设备已被登出',
+      );
+    }
   }
   
   /// Refresh messages for current group (polling for new messages)
@@ -1289,18 +1351,23 @@ class FriendChatController extends GetxController {
     );
 
     try {
-      final messagesData = toSync.map((msg) {
-        return {
-          'ulid': msg.id,
-          'session_ulid': msg.sessionId.replaceFirst('session_', ''),
-          'receiver_did': connectionStats.value.remotePeerId,
-          'type': msg.type.value,
-          'content': msg.content,
-          'sent_at': msg.sentAt.seconds,
-        };
-      }).toList();
-
-      final response = await _chatApi.syncMessages(messagesData);
+      final request = fc.SyncMessagesRequest(
+        messages: toSync.map((msg) {
+          final ft = fc.FriendMessageType.values.firstWhere(
+            (e) => e.value == msg.type.value,
+            orElse: () => fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT,
+          );
+          return fc.SyncMessageItem(
+            ulid: msg.id,
+            sessionUlid: msg.sessionId.replaceFirst('session_', ''),
+            receiverDid: connectionStats.value.remotePeerId,
+            type: ft,
+            content: msg.content,
+            sentAt: msg.sentAt,
+          );
+        }).toList(),
+      );
+      final response = await _chatApi.syncMessages(request);
       LoggingService.info('Synced ${response.synced} messages to server');
 
       connectionStats.value = connectionStats.value.copyWith(

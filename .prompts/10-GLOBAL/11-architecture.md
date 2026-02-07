@@ -277,7 +277,11 @@ station/app/
 - Generated for all platforms
 - Type-safe across tiers
 
-### 4. **Modular Design**
+### 4. **Station–Desktop API: Proto Only**
+- **Default**: All Station ↔ Desktop APIs use **Proto** (application/protobuf). No JSON.
+- **Exception**: JSON only when strictly unavoidable; must be documented and planned for migration to Proto.
+
+### 5. **Modular Design**
 - Features are self-contained
 - Subservers are independent
 - Easy to add/remove modules

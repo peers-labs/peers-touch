@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
@@ -9,6 +11,7 @@ import 'package:peers_touch_desktop/app/routes/app_routes.dart';
 class SplashController extends GetxController {
   final userAvatar = Rx<String?>(null);
   final userHandle = Rx<String?>(null);
+  // MYQ：说了，不要有语言的硬编码
   final statusMessage = '正在初始化...'.obs;
   final showButtons = false.obs;
   final isLoading = false.obs;
@@ -75,81 +78,108 @@ class SplashController extends GetxController {
       }
       
       LoggingService.info('Splash: Token found, verifying with backend');
-      final isValid = await _verifyToken();
+      final verifyResult = await _verifyToken();
       
-      if (isValid) {
+      if (verifyResult == _VerifyResult.valid) {
         LoggingService.info('Splash: Token valid, verifying user profile');
         statusMessage.value = '加载用户信息...';
         
-        // Refresh profile to verify user still exists
-        final hasProfile = await _verifyUserProfile();
-        if (hasProfile) {
+        final profileResult = await _verifyUserProfile();
+        if (profileResult == _VerifyResult.valid) {
           LoggingService.info('Splash: User profile valid, navigating to shell');
+          statusMessage.value = '登录成功';
+          await Future.delayed(const Duration(milliseconds: 300));
+          Get.offAllNamed(AppRoutes.shell);
+        } else if (profileResult == _VerifyResult.networkError) {
+          // Network error — don't invalidate the session, let user in
+          LoggingService.warning('Splash: Profile check skipped (network error), entering app');
           statusMessage.value = '登录成功';
           await Future.delayed(const Duration(milliseconds: 300));
           Get.offAllNamed(AppRoutes.shell);
         } else {
           LoggingService.warning('Splash: User profile not found, triggering logout');
-          // Use unified logout event
           if (Get.isRegistered<GlobalContext>()) {
             Get.find<GlobalContext>().requestLogout(LogoutReason.userNotFound);
           } else {
-            // Fallback if GlobalContext not ready
             await tokenProvider.clear();
             Get.offAllNamed(AppRoutes.login);
           }
         }
+      } else if (verifyResult == _VerifyResult.networkError) {
+        // Network error — token may still be valid, let user in
+        LoggingService.warning('Splash: Token verify skipped (network error), entering app');
+        statusMessage.value = '登录成功';
+        await Future.delayed(const Duration(milliseconds: 300));
+        Get.offAllNamed(AppRoutes.shell);
       } else {
         LoggingService.warning('Splash: Token invalid, triggering logout');
-        // Use unified logout event
         if (Get.isRegistered<GlobalContext>()) {
           Get.find<GlobalContext>().requestLogout(LogoutReason.tokenExpired);
         } else {
-          // Fallback if GlobalContext not ready
           await tokenProvider.clear();
           Get.offAllNamed(AppRoutes.login);
         }
       }
     } catch (e) {
-      LoggingService.error('Splash: Error checking auth: $e');
-      statusMessage.value = '验证失败';
-      await Future.delayed(const Duration(milliseconds: 300));
-      Get.offAllNamed(AppRoutes.login);
+      // Distinguish network errors from other failures
+      if (_isNetworkError(e)) {
+        LoggingService.warning('Splash: Network error during auth check, entering app: $e');
+        statusMessage.value = '登录成功';
+        await Future.delayed(const Duration(milliseconds: 300));
+        Get.offAllNamed(AppRoutes.shell);
+      } else {
+        LoggingService.error('Splash: Error checking auth: $e');
+        statusMessage.value = '验证失败';
+        await Future.delayed(const Duration(milliseconds: 300));
+        Get.offAllNamed(AppRoutes.login);
+      }
     }
   }
 
-  Future<bool> _verifyToken() async {
+  Future<_VerifyResult> _verifyToken() async {
     try {
       final client = HttpServiceLocator().httpService;
-      final response = await client.get<dynamic>('/api/v1/session/verify')
-        .timeout(const Duration(seconds: 3));
-      return response.statusCode == 200;
+      final response = await client.getResponse<dynamic>('/api/v1/session/verify');
+      if (response.statusCode == 200) return _VerifyResult.valid;
+      if (response.statusCode == 401) return _VerifyResult.invalid;
+      return _VerifyResult.invalid;
     } catch (e) {
       LoggingService.warning('Splash: Token verification failed: $e');
-      return false;
+      return _isNetworkError(e) ? _VerifyResult.networkError : _VerifyResult.invalid;
     }
   }
 
-  Future<bool> _verifyUserProfile() async {
+  Future<_VerifyResult> _verifyUserProfile() async {
     try {
-      // Try to refresh profile from server
       if (Get.isRegistered<GlobalContext>()) {
         final globalContext = Get.find<GlobalContext>();
         await globalContext.refreshProfile();
         
-        // Check if profile was loaded successfully
         final profile = globalContext.userProfile;
         if (profile != null && profile['id'] != null) {
           LoggingService.info('Splash: User profile verified: id=${profile['id']}');
-          return true;
+          return _VerifyResult.valid;
         }
       }
       
       LoggingService.warning('Splash: User profile is null or invalid');
-      return false;
+      return _VerifyResult.invalid;
     } catch (e) {
       LoggingService.warning('Splash: User profile verification failed: $e');
-      return false;
+      return _isNetworkError(e) ? _VerifyResult.networkError : _VerifyResult.invalid;
     }
   }
+
+  bool _isNetworkError(Object e) {
+    if (e is SocketException) return true;
+    final msg = e.toString().toLowerCase();
+    return msg.contains('socketexception') ||
+        msg.contains('connection refused') ||
+        msg.contains('connection reset') ||
+        msg.contains('timed out') ||
+        msg.contains('timeout') ||
+        msg.contains('network is unreachable');
+  }
 }
+
+enum _VerifyResult { valid, invalid, networkError }

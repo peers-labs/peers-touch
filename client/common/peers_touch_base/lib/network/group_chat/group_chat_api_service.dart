@@ -97,6 +97,9 @@ class GroupMemberInfo {
   final String actorDid;
   final int role;
   final String nickname;
+  final String displayName;
+  final String username;
+  final String avatarUrl;
   final bool muted;
   final int mutedUntil;
   final int joinedAt;
@@ -107,6 +110,9 @@ class GroupMemberInfo {
     required this.actorDid,
     required this.role,
     required this.nickname,
+    required this.displayName,
+    required this.username,
+    required this.avatarUrl,
     required this.muted,
     required this.mutedUntil,
     required this.joinedAt,
@@ -119,6 +125,9 @@ class GroupMemberInfo {
       actorDid: json['actor_did'] ?? '',
       role: json['role'] ?? 1,
       nickname: json['nickname'] ?? '',
+      displayName: json['display_name'] ?? '',
+      username: json['username'] ?? '',
+      avatarUrl: json['avatar_url'] ?? '',
       muted: json['muted'] ?? false,
       mutedUntil: json['muted_until'] ?? 0,
       joinedAt: json['joined_at'] ?? 0,

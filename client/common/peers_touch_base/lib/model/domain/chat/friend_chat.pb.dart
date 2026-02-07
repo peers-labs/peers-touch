@@ -1516,6 +1516,237 @@ class RelayMessageResponse extends $pb.GeneratedMessage {
   void clearForwardedTo() => $_clearField(3);
 }
 
+/// SyncMessages: batch sync pending messages to server (POST /friend-chat/message/sync).
+class SyncMessageItem extends $pb.GeneratedMessage {
+  factory SyncMessageItem({
+    $core.String? ulid,
+    $core.String? sessionUlid,
+    $core.String? receiverDid,
+    FriendMessageType? type,
+    $core.String? content,
+    $0.Timestamp? sentAt,
+  }) {
+    final result = create();
+    if (ulid != null) result.ulid = ulid;
+    if (sessionUlid != null) result.sessionUlid = sessionUlid;
+    if (receiverDid != null) result.receiverDid = receiverDid;
+    if (type != null) result.type = type;
+    if (content != null) result.content = content;
+    if (sentAt != null) result.sentAt = sentAt;
+    return result;
+  }
+
+  SyncMessageItem._();
+
+  factory SyncMessageItem.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SyncMessageItem.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SyncMessageItem',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'ulid')
+    ..aOS(2, _omitFieldNames ? '' : 'sessionUlid')
+    ..aOS(3, _omitFieldNames ? '' : 'receiverDid')
+    ..aE<FriendMessageType>(4, _omitFieldNames ? '' : 'type',
+        enumValues: FriendMessageType.values)
+    ..aOS(5, _omitFieldNames ? '' : 'content')
+    ..aOM<$0.Timestamp>(6, _omitFieldNames ? '' : 'sentAt',
+        subBuilder: $0.Timestamp.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SyncMessageItem clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SyncMessageItem copyWith(void Function(SyncMessageItem) updates) =>
+      super.copyWith((message) => updates(message as SyncMessageItem))
+          as SyncMessageItem;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SyncMessageItem create() => SyncMessageItem._();
+  @$core.override
+  SyncMessageItem createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SyncMessageItem getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SyncMessageItem>(create);
+  static SyncMessageItem? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get ulid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set ulid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasUlid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearUlid() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get sessionUlid => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set sessionUlid($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasSessionUlid() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSessionUlid() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get receiverDid => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set receiverDid($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasReceiverDid() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearReceiverDid() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  FriendMessageType get type => $_getN(3);
+  @$pb.TagNumber(4)
+  set type(FriendMessageType value) => $_setField(4, value);
+  @$pb.TagNumber(4)
+  $core.bool hasType() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearType() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get content => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set content($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasContent() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearContent() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $0.Timestamp get sentAt => $_getN(5);
+  @$pb.TagNumber(6)
+  set sentAt($0.Timestamp value) => $_setField(6, value);
+  @$pb.TagNumber(6)
+  $core.bool hasSentAt() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearSentAt() => $_clearField(6);
+  @$pb.TagNumber(6)
+  $0.Timestamp ensureSentAt() => $_ensure(5);
+}
+
+class SyncMessagesRequest extends $pb.GeneratedMessage {
+  factory SyncMessagesRequest({
+    $core.Iterable<SyncMessageItem>? messages,
+  }) {
+    final result = create();
+    if (messages != null) result.messages.addAll(messages);
+    return result;
+  }
+
+  SyncMessagesRequest._();
+
+  factory SyncMessagesRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SyncMessagesRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SyncMessagesRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..pPM<SyncMessageItem>(1, _omitFieldNames ? '' : 'messages',
+        subBuilder: SyncMessageItem.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SyncMessagesRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SyncMessagesRequest copyWith(void Function(SyncMessagesRequest) updates) =>
+      super.copyWith((message) => updates(message as SyncMessagesRequest))
+          as SyncMessagesRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SyncMessagesRequest create() => SyncMessagesRequest._();
+  @$core.override
+  SyncMessagesRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SyncMessagesRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SyncMessagesRequest>(create);
+  static SyncMessagesRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<SyncMessageItem> get messages => $_getList(0);
+}
+
+class SyncMessagesResponse extends $pb.GeneratedMessage {
+  factory SyncMessagesResponse({
+    $core.int? synced,
+    $core.Iterable<$core.String>? failed,
+  }) {
+    final result = create();
+    if (synced != null) result.synced = synced;
+    if (failed != null) result.failed.addAll(failed);
+    return result;
+  }
+
+  SyncMessagesResponse._();
+
+  factory SyncMessagesResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SyncMessagesResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SyncMessagesResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'synced')
+    ..pPS(2, _omitFieldNames ? '' : 'failed')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SyncMessagesResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SyncMessagesResponse copyWith(void Function(SyncMessagesResponse) updates) =>
+      super.copyWith((message) => updates(message as SyncMessagesResponse))
+          as SyncMessagesResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SyncMessagesResponse create() => SyncMessagesResponse._();
+  @$core.override
+  SyncMessagesResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SyncMessagesResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SyncMessagesResponse>(create);
+  static SyncMessagesResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get synced => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set synced($core.int value) => $_setSignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSynced() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSynced() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $pb.PbList<$core.String> get failed => $_getList(1);
+}
+
 const $core.bool _omitFieldNames =
     $core.bool.fromEnvironment('protobuf.omit_field_names');
 const $core.bool _omitMessageNames =

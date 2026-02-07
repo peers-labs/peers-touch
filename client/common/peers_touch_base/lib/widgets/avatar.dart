@@ -2,10 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
+import 'package:get/get.dart';
 
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/widgets/avatar_resolver.dart';
 
+/// Avatar component. [actorId] (uid) is required. [avatarUrl] is optional and supported:
+/// when provided it is used; when null, resolution uses registered [AvatarResolver] by [actorId].
 class Avatar extends StatelessWidget {
   final String actorId;
   final String? avatarUrl;
@@ -24,6 +28,25 @@ class Avatar extends StatelessWidget {
     this.borderRadius = 8,
   });
 
+  /// Resolved URL: explicit [avatarUrl] if set, else from [AvatarResolver] by [actorId].
+  String? get _resolvedUrl {
+    if (avatarUrl != null && avatarUrl!.isNotEmpty) {
+      return avatarUrl;
+    }
+    if (Get.isRegistered<AvatarResolver>()) {
+      return Get.find<AvatarResolver>().getAvatarUrl(actorId);
+    }
+    return null;
+  }
+
+  String get _effectiveFallbackName {
+    if (fallbackName.isNotEmpty) return fallbackName;
+    if (Get.isRegistered<AvatarResolver>()) {
+      return Get.find<AvatarResolver>().getFallbackName(actorId);
+    }
+    return actorId;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -41,33 +64,34 @@ class Avatar extends StatelessWidget {
   }
 
   Widget _buildAvatarContent() {
-    LoggingService.debug('Avatar._buildAvatarContent: actorId="$actorId", avatarUrl="$avatarUrl", isEmpty=${avatarUrl?.isEmpty ?? true}, isNull=${avatarUrl == null}');
+    final url = _resolvedUrl;
+    LoggingService.debug('Avatar._buildAvatarContent: actorId="$actorId", resolvedUrl=${url != null && url.isNotEmpty}');
     
-    if (avatarUrl != null && avatarUrl!.isNotEmpty) {
-      return _buildNetworkAvatar();
+    if (url != null && url.isNotEmpty) {
+      return _buildNetworkAvatar(url);
     }
 
-    LoggingService.debug('Avatar._buildAvatarContent: Using placeholder for actorId="$actorId", fallbackName="$fallbackName"');
+    LoggingService.debug('Avatar._buildAvatarContent: Using placeholder for actorId="$actorId", fallbackName="$_effectiveFallbackName"');
     return _buildPlaceholderAvatar();
   }
 
-  Widget _buildNetworkAvatar() {
-    String url = avatarUrl!;
+  Widget _buildNetworkAvatar(String url) {
     
-    if (url.startsWith('/')) {
+    String fullUrl = url;
+    if (fullUrl.startsWith('/')) {
       final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
-      url = '$baseUrl$url';
-      LoggingService.debug('Avatar: Converted relative URL for actorId=$actorId, original="$avatarUrl", full="$url"');
+      fullUrl = '$baseUrl$fullUrl';
+      LoggingService.debug('Avatar: Converted relative URL for actorId=$actorId, full="$fullUrl"');
     }
     
-    LoggingService.debug('Avatar: Loading avatar for actorId=$actorId, url="$url"');
+    LoggingService.debug('Avatar: Loading avatar for actorId=$actorId, url="$fullUrl"');
 
-    if (url.startsWith('http://') || url.startsWith('https://')) {
+    if (fullUrl.startsWith('http://') || fullUrl.startsWith('https://')) {
       return Image.network(
-        url,
+        fullUrl,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
-          LoggingService.warning('Avatar: Failed to load network image for actorId=$actorId, url="$url", error=$error');
+          LoggingService.warning('Avatar: Failed to load network image for actorId=$actorId, url="$fullUrl", error=$error');
           return _buildPlaceholderAvatar();
         },
         loadingBuilder: (context, child, loadingProgress) {
@@ -95,12 +119,12 @@ class Avatar extends StatelessWidget {
       );
     }
 
-    LoggingService.warning('Avatar: Invalid URL format for actorId=$actorId, url="$url"');
+    LoggingService.warning('Avatar: Invalid URL format for actorId=$actorId, url="$fullUrl"');
     return _buildPlaceholderAvatar();
   }
 
   Widget _buildPlaceholderAvatar() {
-    final letter = _getFirstLetter(fallbackName);
+    final letter = _getFirstLetter(_effectiveFallbackName);
     final color = _generateColorFromActorId(actorId);
     final textColor = _getContrastColor(color);
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:peers_touch_base/context/app_lifecycle_orchestrator.dart';
 import 'package:peers_touch_base/context/default_ready_gate.dart';
 import 'package:peers_touch_base/context/global_context.dart';
@@ -44,7 +46,9 @@ class DefaultAppLifecycleOrchestrator implements AppLifecycleOrchestrator {
 
     bool sessionValid = token != null && token.isNotEmpty;
     
-    // If we have a token, verify user profile exists
+    // If we have a token, try to verify user profile.
+    // IMPORTANT: Only clear session for definitive "user not found" (404).
+    // Network errors or transient failures should NOT invalidate a valid token.
     if (sessionValid) {
       try {
         LoggingService.info('AppLifecycleOrchestrator: Token found, verifying user profile');
@@ -53,8 +57,6 @@ class DefaultAppLifecycleOrchestrator implements AppLifecycleOrchestrator {
         final profile = globalContext.userProfile;
         if (profile == null || profile['id'] == null) {
           LoggingService.warning('AppLifecycleOrchestrator: User profile not found, clearing session');
-          // User doesn't exist anymore, clear session and go to login
-          // GlobalContext.setSession(null) handles token cleanup in SecureStorage
           await globalContext.setSession(null);
           globalContext.clearProfile();
           sessionValid = false;
@@ -62,12 +64,21 @@ class DefaultAppLifecycleOrchestrator implements AppLifecycleOrchestrator {
           LoggingService.info('AppLifecycleOrchestrator: User profile valid: id=${profile['id']}');
         }
       } catch (e) {
-        LoggingService.warning('AppLifecycleOrchestrator: Profile verification failed: $e');
-        // Profile verification failed, clear session and go to login
-        // GlobalContext.setSession(null) handles token cleanup in SecureStorage
-        await globalContext.setSession(null);
-        globalContext.clearProfile();
-        sessionValid = false;
+        // Distinguish network/transient errors from definitive auth failures.
+        // Network errors (SocketException, timeout) should NOT clear the session —
+        // the token might still be valid, the server is just unreachable.
+        if (_isNetworkError(e)) {
+          LoggingService.warning(
+            'AppLifecycleOrchestrator: Profile verification skipped (network error): $e. '
+            'Keeping session valid — will retry when network recovers.',
+          );
+          // Keep sessionValid = true so user can enter the app
+        } else {
+          LoggingService.warning('AppLifecycleOrchestrator: Profile verification failed (auth error): $e');
+          await globalContext.setSession(null);
+          globalContext.clearProfile();
+          sessionValid = false;
+        }
       }
     }
     
@@ -80,5 +91,21 @@ class DefaultAppLifecycleOrchestrator implements AppLifecycleOrchestrator {
       errors: const [],
       initialRoute: initialRoute,
     );
+  }
+
+  /// Check if the error is a transient network error (server unreachable,
+  /// timeout, DNS failure, etc.) rather than a definitive auth failure.
+  bool _isNetworkError(Object e) {
+    if (e is SocketException) return true;
+    final msg = e.toString().toLowerCase();
+    return msg.contains('socketexception') ||
+        msg.contains('connection refused') ||
+        msg.contains('connection reset') ||
+        msg.contains('connection closed') ||
+        msg.contains('timed out') ||
+        msg.contains('timeout') ||
+        msg.contains('network is unreachable') ||
+        msg.contains('host not found') ||
+        msg.contains('no route to host');
   }
 }

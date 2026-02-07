@@ -79,7 +79,10 @@ class _AppState extends State<App> {
           orch.awaitReadyGate().then((snapshot) {
             final target = snapshot.initialRoute;
             final current = Get.currentRoute;
-            if (target.isNotEmpty && target != current) {
+            // Only redirect if user is still on splash (hasn't navigated away
+            // via login flow). If user already logged in and moved to /shell,
+            // don't override their navigation.
+            if (target.isNotEmpty && target != current && current == AppRoutes.splash) {
               Get.offAllNamed(target);
             }
           });
@@ -88,6 +91,8 @@ class _AppState extends State<App> {
     });
   }
 
+  // MYQ: 为什么要把logout逻辑放main里，这是非常丑陋的设计
+  // globalContext 会管理这些逻辑，main 里注入 globalContext 不就可以了吗？
   void _setupLogoutListener() {
     if (!Get.isRegistered<GlobalContext>()) return;
     
@@ -115,6 +120,7 @@ class _AppState extends State<App> {
     });
   }
 
+  // MYQ: 为什么要把logout放main里，这是非常丑陋的设计
   Future<void> _performLogout() async {
     try {
       // Clear token

@@ -1,3 +1,4 @@
+import 'package:peers_touch_base/model/domain/chat/friend_chat.pb.dart' as fc;
 import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
@@ -205,12 +206,17 @@ class FriendChatApiService {
     return SendMessageResponse.fromJson(response.data ?? {});
   }
 
-  Future<SyncMessagesResponse> syncMessages(List<Map<String, dynamic>> messages) async {
-    final response = await _httpService.postResponse<Map<String, dynamic>>(
+  /// Sync messages to server (Proto). Request/response use application/protobuf.
+  Future<SyncMessagesResponse> syncMessages(fc.SyncMessagesRequest request) async {
+    final proto = await _httpService.post<fc.SyncMessagesResponse>(
       '/friend-chat/message/sync',
-      data: {'messages': messages},
+      data: request,
+      fromJson: fc.SyncMessagesResponse.fromBuffer,
     );
-    return SyncMessagesResponse.fromJson(response.data ?? {});
+    return SyncMessagesResponse(
+      synced: proto.synced,
+      failed: List<String>.from(proto.failed),
+    );
   }
 
   Future<GetMessagesResponse> getMessages(

@@ -10,6 +10,7 @@ import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/network/token_provider.dart';
 import 'package:peers_touch_base/repositories/actor_repository.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
+import 'package:peers_touch_base/widgets/avatar_resolver.dart';
 import 'package:peers_touch_base/storage/local_storage_adapter.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
@@ -17,6 +18,7 @@ import 'package:peers_touch_desktop/adapters/connectivity_desktop.dart';
 import 'package:peers_touch_desktop/adapters/local_storage_desktop.dart';
 import 'package:peers_touch_desktop/adapters/secure_storage_desktop.dart';
 import 'package:peers_touch_desktop/core/repositories/actor_repository_desktop.dart';
+import 'package:peers_touch_desktop/core/services/avatar_resolver_desktop.dart';
 import 'package:peers_touch_desktop/core/services/network_discovery/libp2p_network_service.dart';
 import 'package:peers_touch_desktop/core/services/network_initializer.dart';
 import 'package:peers_touch_desktop/core/services/network_status_service.dart';
@@ -133,5 +135,6 @@ class InitialBinding extends Bindings {
       DesktopActorRepository(HttpServiceLocator().httpService),
       permanent: true,
     );
+    Get.put<AvatarResolver>(AvatarResolverDesktop(), permanent: true);
   }
 }
