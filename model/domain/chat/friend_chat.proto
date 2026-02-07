@@ -147,3 +147,22 @@ message RelayMessageResponse {
   google.protobuf.Timestamp delivered_at = 2;
   string forwarded_to = 3;
 }
+
+// SyncMessages: batch sync pending messages to server (POST /friend-chat/message/sync).
+message SyncMessageItem {
+  string ulid = 1;
+  string session_ulid = 2;
+  string receiver_did = 3;
+  FriendMessageType type = 4;
+  string content = 5;
+  google.protobuf.Timestamp sent_at = 6;
+}
+
+message SyncMessagesRequest {
+  repeated SyncMessageItem messages = 1;
+}
+
+message SyncMessagesResponse {
+  int32 synced = 1;
+  repeated string failed = 2;
+}

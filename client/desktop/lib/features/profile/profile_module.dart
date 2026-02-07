@@ -31,7 +31,7 @@ class ProfileModule {
          final d = controller.detail.value;
          
          if (d != null) {
-           LoggingService.debug('Avatar Block: id=${d.id}, handle=${d.handle}, avatarUrl=${d.avatarUrl}');
+           LoggingService.debug('Avatar Block: id=${d.id}, handle=${d.handle}');
          } else {
            LoggingService.debug('Avatar Block: detail is null');
          }
@@ -50,7 +50,6 @@ class ProfileModule {
             child: Center(
                 child: Avatar(
                   actorId: d?.id ?? '',
-                  avatarUrl: d?.avatarUrl,
                   fallbackName: d?.handle ?? 'User',
                   size: 40,
                 ),

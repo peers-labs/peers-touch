@@ -528,3 +528,72 @@ final $typed_data.Uint8List relayMessageResponseDescriptor = $convert.base64Deco
     'ChRSZWxheU1lc3NhZ2VSZXNwb25zZRIWCgZzdGF0dXMYASABKAlSBnN0YXR1cxI9CgxkZWxpdm'
     'VyZWRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgtkZWxpdmVyZWRBdBIh'
     'Cgxmb3J3YXJkZWRfdG8YAyABKAlSC2ZvcndhcmRlZFRv');
+
+@$core.Deprecated('Use syncMessageItemDescriptor instead')
+const SyncMessageItem$json = {
+  '1': 'SyncMessageItem',
+  '2': [
+    {'1': 'ulid', '3': 1, '4': 1, '5': 9, '10': 'ulid'},
+    {'1': 'session_ulid', '3': 2, '4': 1, '5': 9, '10': 'sessionUlid'},
+    {'1': 'receiver_did', '3': 3, '4': 1, '5': 9, '10': 'receiverDid'},
+    {
+      '1': 'type',
+      '3': 4,
+      '4': 1,
+      '5': 14,
+      '6': '.peers_touch.model.chat.v1.FriendMessageType',
+      '10': 'type'
+    },
+    {'1': 'content', '3': 5, '4': 1, '5': 9, '10': 'content'},
+    {
+      '1': 'sent_at',
+      '3': 6,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Timestamp',
+      '10': 'sentAt'
+    },
+  ],
+};
+
+/// Descriptor for `SyncMessageItem`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List syncMessageItemDescriptor = $convert.base64Decode(
+    'Cg9TeW5jTWVzc2FnZUl0ZW0SEgoEdWxpZBgBIAEoCVIEdWxpZBIhCgxzZXNzaW9uX3VsaWQYAi'
+    'ABKAlSC3Nlc3Npb25VbGlkEiEKDHJlY2VpdmVyX2RpZBgDIAEoCVILcmVjZWl2ZXJEaWQSQAoE'
+    'dHlwZRgEIAEoDjIsLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRnJpZW5kTWVzc2FnZVR5cG'
+    'VSBHR5cGUSGAoHY29udGVudBgFIAEoCVIHY29udGVudBIzCgdzZW50X2F0GAYgASgLMhouZ29v'
+    'Z2xlLnByb3RvYnVmLlRpbWVzdGFtcFIGc2VudEF0');
+
+@$core.Deprecated('Use syncMessagesRequestDescriptor instead')
+const SyncMessagesRequest$json = {
+  '1': 'SyncMessagesRequest',
+  '2': [
+    {
+      '1': 'messages',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.SyncMessageItem',
+      '10': 'messages'
+    },
+  ],
+};
+
+/// Descriptor for `SyncMessagesRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List syncMessagesRequestDescriptor = $convert.base64Decode(
+    'ChNTeW5jTWVzc2FnZXNSZXF1ZXN0EkYKCG1lc3NhZ2VzGAEgAygLMioucGVlcnNfdG91Y2gubW'
+    '9kZWwuY2hhdC52MS5TeW5jTWVzc2FnZUl0ZW1SCG1lc3NhZ2Vz');
+
+@$core.Deprecated('Use syncMessagesResponseDescriptor instead')
+const SyncMessagesResponse$json = {
+  '1': 'SyncMessagesResponse',
+  '2': [
+    {'1': 'synced', '3': 1, '4': 1, '5': 5, '10': 'synced'},
+    {'1': 'failed', '3': 2, '4': 3, '5': 9, '10': 'failed'},
+  ],
+};
+
+/// Descriptor for `SyncMessagesResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List syncMessagesResponseDescriptor = $convert.base64Decode(
+    'ChRTeW5jTWVzc2FnZXNSZXNwb25zZRIWCgZzeW5jZWQYASABKAVSBnN5bmNlZBIWCgZmYWlsZW'
+    'QYAiADKAlSBmZhaWxlZA==');

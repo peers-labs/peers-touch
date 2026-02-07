@@ -112,6 +112,16 @@ echo "Import paths fixed."
 GO_PROTO_FILES=$(find "$PROTO_ROOT/domain" -name "*.proto" -not -path "*/ai_box/ai_box_message.proto")
 
 echo "Running protoc for Go..."
+# Prefer explicit plugin path so protoc doesn't trigger goenv shim on protoc-gen-go
+GOBIN=""
+if command -v go &>/dev/null; then
+  GOBIN="$(go env GOPATH)/bin"
+  export PATH="$GOBIN:$PATH"
+fi
+PROTOC_GEN_GO=""
+if [ -n "$GOBIN" ] && [ -x "$GOBIN/protoc-gen-go" ]; then
+  PROTOC_GEN_GO="--plugin=protoc-gen-go=$GOBIN/protoc-gen-go"
+fi
 MODULE_PREFIX="github.com/peers-labs/peers-touch/station/"
 
 for file in $GO_PROTO_FILES; do
@@ -139,7 +149,7 @@ for file in $GO_PROTO_FILES; do
         echo "Generating $file (No go_package option found)"
     fi
 
-    protoc --go_out="$GO_OUT" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$PROTO_ROOT" "$file"
+    protoc $PROTOC_GEN_GO --go_out="$GO_OUT" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$PROTO_ROOT" "$file"
 done
 
 echo "Protobuf code generation complete."

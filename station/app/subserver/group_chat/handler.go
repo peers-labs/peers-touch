@@ -11,6 +11,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
+	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
 func (s *groupChatSubServer) Handlers() []server.Handler {
@@ -456,9 +458,22 @@ func (s *groupChatSubServer) handleMembers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Collect all actor DIDs for batch lookup
+	ptids := make([]string, len(members))
+	for i, m := range members {
+		ptids[i] = m.ActorDID
+	}
+
+	// Batch fetch actor info
+	actorMap, err := actor.GetActorsByPTIDs(ctx, ptids)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to batch fetch actor info: %v", err)
+		actorMap = make(map[string]*dbmodel.Actor) // Continue with empty map
+	}
+
 	result := make([]memberInfo, len(members))
 	for i, m := range members {
-		result[i] = toMemberInfo(&m)
+		result[i] = toMemberInfoWithActor(&m, actorMap[m.ActorDID])
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -726,6 +741,28 @@ func toMemberInfo(m *model.GroupMember) memberInfo {
 		JoinedAt:   m.JoinedAt.Unix(),
 		InvitedBy:  m.InvitedBy,
 	}
+}
+
+func toMemberInfoWithActor(m *model.GroupMember, a *dbmodel.Actor) memberInfo {
+	if m == nil {
+		return memberInfo{}
+	}
+	info := memberInfo{
+		GroupULID:  m.GroupULID,
+		ActorDID:   m.ActorDID,
+		Role:       m.Role,
+		Nickname:   m.Nickname,
+		Muted:      m.Muted,
+		MutedUntil: m.MutedUntil.Unix(),
+		JoinedAt:   m.JoinedAt.Unix(),
+		InvitedBy:  m.InvitedBy,
+	}
+	if a != nil {
+		info.DisplayName = a.Name
+		info.Username = a.PreferredUsername
+		info.AvatarURL = a.Icon
+	}
+	return info
 }
 
 func toMessageInfo(m *model.GroupMessage) messageInfo {

@@ -130,5 +130,23 @@ class DefaultTokenProvider implements TokenProvider {
     if (sessionId != null && sessionId.isNotEmpty) {
       try { await secureStorage.set('session_id_key', sessionId); } catch (_) {}
     }
+    
+    // Sync tokens back to GlobalContext so that all readers (AuthMiddleware,
+    // _checkSessionValidity, etc.) see the updated values.
+    try {
+      if (Get.isRegistered<GlobalContext>()) {
+        final gc = Get.find<GlobalContext>();
+        final session = gc.currentSession;
+        if (session != null) {
+          session['accessToken'] = accessToken;
+          if (refreshToken != null && refreshToken.isNotEmpty) {
+            session['refreshToken'] = refreshToken;
+          }
+          if (sessionId != null && sessionId.isNotEmpty) {
+            session['sessionId'] = sessionId;
+          }
+        }
+      }
+    } catch (_) {}
   }
 }
