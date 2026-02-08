@@ -705,6 +705,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pressCtrlEnterToSend => 'Press Ctrl+Enter to send';
 
   @override
+  String get connectionStatusOnline => 'Online';
+
+  @override
   String get connectionStatusOnlineP2P => 'Online (P2P)';
 
   @override

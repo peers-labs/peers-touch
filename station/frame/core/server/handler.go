@@ -149,6 +149,80 @@ func NewHTTPHandler(name, path string, method Method, h EndpointHandler, wrapper
 	}
 }
 
+// HertzMiddleware is a Hertz-style middleware function
+type HertzMiddleware func(ctx context.Context, c interface{}) bool
+
+// NewHertzHandler creates a handler for Hertz-native handlers with Hertz middlewares
+// The handler function should be of type func(context.Context, *app.RequestContext)
+// Middlewares are applied in order and can abort the request by returning false
+func NewHertzHandler(name, path string, method Method, h interface{}, middlewares ...interface{}) Handler {
+	// Wrap the Hertz handler with middlewares
+	hertzHandler := HertzHandlerFunc(h)
+	
+	// Create middleware wrapper that chains Hertz middlewares
+	if len(middlewares) > 0 {
+		originalHandler := hertzHandler
+		hertzHandler = func(ctx context.Context, req Request, resp Response) error {
+			// Try to extract the underlying Hertz context
+			type hertzContextGetter interface {
+				GetHertzContext() interface{}
+			}
+			
+			var hertzCtx interface{}
+			if getter, ok := req.(hertzContextGetter); ok {
+				hertzCtx = getter.GetHertzContext()
+			}
+			
+			// Apply middlewares if we have Hertz context
+			if hertzCtx != nil {
+				for _, mw := range middlewares {
+					// Call middleware using reflection
+					mwv := reflect.ValueOf(mw)
+					if mwv.Kind() == reflect.Func {
+						args := []reflect.Value{
+							reflect.ValueOf(ctx),
+							reflect.ValueOf(hertzCtx),
+						}
+						mwv.Call(args)
+						
+						// Check if request was aborted (Hertz sets IsAborted flag)
+						if checkAborted(hertzCtx) {
+							return nil // Middleware aborted, don't call handler
+						}
+					}
+				}
+			}
+			
+			return originalHandler(ctx, req, resp)
+		}
+	}
+	
+	return &handler{
+		name:     name,
+		path:     path,
+		method:   method,
+		t:        HandlerTypeHTTP,
+		h:        hertzHandler,
+		wrappers: nil, // Middlewares are handled internally
+	}
+}
+
+// checkAborted checks if the Hertz request context was aborted
+func checkAborted(hertzCtx interface{}) bool {
+	// Use reflection to check IsAborted method
+	v := reflect.ValueOf(hertzCtx)
+	if v.Kind() == reflect.Ptr {
+		method := v.MethodByName("IsAborted")
+		if method.IsValid() {
+			result := method.Call(nil)
+			if len(result) > 0 && result[0].Kind() == reflect.Bool {
+				return result[0].Bool()
+			}
+		}
+	}
+	return false
+}
+
 func HTTPHandlerFunc(h http.HandlerFunc) EndpointHandler {
 	return func(ctx context.Context, req Request, resp Response) error {
 		// Create body reader from request body

@@ -1,10 +1,18 @@
 package events
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/network"
+	"github.com/cloudwego/hertz/pkg/protocol"
+	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	"github.com/peers-labs/peers-touch/station/frame/core/event"
@@ -13,16 +21,24 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
+// newSSEWriter creates an SSE-compatible chunked body writer
+func newSSEWriter(response *protocol.Response, writer network.Writer) network.ExtWriter {
+	return resp.NewChunkedBodyWriter(response, writer)
+}
+
 func (s *eventsSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	
-	// JWT wrapper for authenticated endpoints
+	// JWT wrapper for authenticated endpoints (HTTP style)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 	
+	// Hertz JWT wrapper for SSE endpoint
+	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
+	
 	return []server.Handler{
-		// SSE stream endpoint - main real-time push channel
-		server.NewHTTPHandler("events-stream", "/events/stream", server.GET, server.HTTPHandlerFunc(s.handleSSEStream), logIDWrapper, jwtWrapper),
+		// SSE stream endpoint - uses Hertz native handler for proper SSE streaming
+		server.NewHertzHandler("events-stream", "/events/stream", server.GET, s.handleSSEStreamHertz, hertzJWTWrapper),
 		
 		// Pull endpoint for missed events
 		server.NewHTTPHandler("events-pull", "/events/pull", server.GET, server.HTTPHandlerFunc(s.handlePull), logIDWrapper, jwtWrapper),
@@ -35,51 +51,148 @@ func (s *eventsSubServer) Handlers() []server.Handler {
 	}
 }
 
-// handleSSEStream handles SSE stream connections
+// handleSSEStreamHertz handles SSE stream connections using Hertz native streaming
 // GET /events/stream
-func (s *eventsSubServer) handleSSEStream(w http.ResponseWriter, r *http.Request) {
-	// Get authenticated user
-	subject := httpadapter.GetSubject(r)
+func (s *eventsSubServer) handleSSEStreamHertz(ctx context.Context, c *app.RequestContext) {
+	// Get authenticated user from Hertz context
+	subject := hertzadapter.GetSubject(c)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		c.JSON(401, map[string]string{"error": "unauthorized"})
 		return
 	}
 	actorID := subject.ID
 
 	es := event.GetGlobalEventSystem()
 	if es == nil {
-		http.Error(w, "event system not initialized", http.StatusServiceUnavailable)
+		c.JSON(503, map[string]string{"error": "event system not initialized"})
 		return
 	}
 
-	lastEventID := r.Header.Get("Last-Event-ID")
+	lastEventID := string(c.GetHeader("Last-Event-ID"))
 	if lastEventID == "" {
-		lastEventID = r.URL.Query().Get("lastEventId")
+		lastEventID = c.Query("lastEventId")
 	}
 
-	// Create SSE connection
-	conn, err := event.NewSSEConnection(actorID, w, lastEventID)
-	if err != nil {
-		logger.DefaultHelper.Errorf("Failed to create SSE connection: %v", err)
-		http.Error(w, "failed to establish SSE connection", http.StatusInternalServerError)
-		return
+	// Set SSE headers BEFORE hijacking the writer
+	c.Response.Header.Set("Content-Type", "text/event-stream")
+	c.Response.Header.Set("Cache-Control", "no-cache")
+	c.Response.Header.Set("Connection", "keep-alive")
+	c.Response.Header.Set("X-Accel-Buffering", "no") // Disable nginx buffering
+	c.Response.Header.Set("Transfer-Encoding", "chunked")
+	c.SetStatusCode(200)
+
+	// Hijack the response writer for streaming (chunked transfer)
+	// This enables immediate flushing of data to the client
+	c.Response.HijackWriter(newSSEWriter(&c.Response, c.GetWriter()))
+
+	// Create connection context
+	connCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create event channel for this connection
+	eventChan := make(chan *event.Event, 256)
+	connID := fmt.Sprintf("sse-%s-%d", actorID, time.Now().UnixNano())
+
+	// Create wrapper connection for the hub
+	conn := &event.SSEConnection{
+		ID:          connID,
+		ActorID:     actorID,
+		Context:     connCtx,
+		Cancel:      cancel,
+		LastEventID: lastEventID,
+		ConnectedAt: time.Now(),
+		EventChan:   eventChan,
+		Subscribed:  make(map[event.EventType]bool),
 	}
 
 	// Register connection
-	es.Hub.Register(conn)
+	es.Hub.RegisterSSE(conn)
+	defer es.Hub.Unregister(conn)
 
 	// Subscribe actor to receive all their events
-	es.Hub.GetRegistry().SubscribeActor(actorID, nil) // nil = receive all event types
+	es.Hub.GetRegistry().SubscribeActor(actorID, nil)
 
-	logger.DefaultHelper.Infof("SSE connection established for actor %s", actorID)
+	logger.DefaultHelper.Infof("SSE connection established for actor %s (Hertz streaming)", actorID)
 
-	// If lastEventID provided, send missed events first
+	// Send initial connection message - this must flush immediately
+	c.Write([]byte(": connected\n\n"))
+	c.Flush()
+
+	// If lastEventID provided, send missed events
 	if lastEventID != "" {
-		go s.sendMissedEvents(conn, lastEventID, es)
+		s.sendMissedEventsToHertz(c, actorID, lastEventID, es)
 	}
 
-	// Run the SSE writer loop (blocks until connection closes)
-	es.Hub.RunSSEWriter(conn)
+	// Heartbeat ticker
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer heartbeat.Stop()
+
+	// Main event loop
+	for {
+		select {
+		case <-ctx.Done():
+			logger.DefaultHelper.Infof("SSE connection %s closed by client", connID)
+			return
+
+		case <-connCtx.Done():
+			logger.DefaultHelper.Infof("SSE connection %s closed by server", connID)
+			return
+
+		case evt, ok := <-eventChan:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(evt)
+			if err != nil {
+				logger.DefaultHelper.Errorf("Failed to marshal event: %v", err)
+				continue
+			}
+
+			// Write SSE formatted message
+			sseMsg := fmt.Sprintf("id: %s\nevent: %s\ndata: %s\n\n", evt.ID, evt.Type, string(data))
+			c.Write([]byte(sseMsg))
+			if err := c.Flush(); err != nil {
+				logger.DefaultHelper.Warnf("Failed to flush SSE: %v", err)
+				return
+			}
+
+		case <-heartbeat.C:
+			// Send heartbeat comment
+			c.Write([]byte(": heartbeat\n\n"))
+			if err := c.Flush(); err != nil {
+				logger.DefaultHelper.Warnf("Failed to flush heartbeat: %v", err)
+				return
+			}
+		}
+	}
+}
+
+// sendMissedEventsToHertz sends missed events directly to Hertz context
+func (s *eventsSubServer) sendMissedEventsToHertz(c *app.RequestContext, actorID, lastEventID string, es *event.EventSystem) {
+	if es.Broker == nil {
+		return
+	}
+
+	topic := "events:" + actorID
+	messages, err := es.Broker.Pull(context.Background(), topic, lastEventID, 100, broker.PullOptions{})
+	if err != nil {
+		logger.DefaultHelper.Warnf("Failed to pull missed events: %v", err)
+		return
+	}
+
+	for _, msg := range messages {
+		var evt event.Event
+		if err := json.Unmarshal(msg.Payload, &evt); err != nil {
+			continue
+		}
+		data, _ := json.Marshal(&evt)
+		fmt.Fprintf(c, "id: %s\n", evt.ID)
+		fmt.Fprintf(c, "event: %s\n", evt.Type)
+		fmt.Fprintf(c, "data: %s\n\n", string(data))
+	}
+	c.Flush()
+
+	logger.DefaultHelper.Infof("Sent %d missed events to actor %s", len(messages), actorID)
 }
 
 // sendMissedEvents sends events that were missed while the client was offline

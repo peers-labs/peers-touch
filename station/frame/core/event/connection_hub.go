@@ -225,3 +225,14 @@ func (h *ConnectionHub) RunSSEWriter(conn *SSEConnection) {
 func (h *ConnectionHub) GetRegistry() *SubscriptionRegistry {
 	return h.registry
 }
+
+// RegisterSSE registers an SSE connection (without requiring http.Flusher)
+// Used for Hertz native SSE where flushing is done via RequestContext.Flush()
+func (h *ConnectionHub) RegisterSSE(conn *SSEConnection) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.connections[conn.ActorID] = append(h.connections[conn.ActorID], conn)
+	logger.Infof(context.Background(), "[ConnectionHub] Registered SSE connection %s for actor %s, total connections: %d",
+		conn.ID, conn.ActorID, len(h.connections[conn.ActorID]))
+}
