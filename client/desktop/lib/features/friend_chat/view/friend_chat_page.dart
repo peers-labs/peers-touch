@@ -680,15 +680,26 @@ class FriendChatPage extends GetView<FriendChatController> {
               if (session.participantIds.length > 2) {
                 statusText = '${session.participantIds.length} members';
               } else {
-                if (connMode == ConnectionMode.p2pDirect) {
+                // For individual chats, check if peer is online first (from ICE peers)
+                // Then show connection mode details
+                final remotePeerId = controller.connectionStats.value.remotePeerId;
+                final isPeerOnline = remotePeerId.isNotEmpty && controller.isPeerOnline(remotePeerId);
+                
+                if (!isPeerOnline) {
+                  // Peer not registered in signaling server
+                  statusText = l10n.connectionStatusOffline;
+                  statusColor = UIKit.textSecondary(context);
+                } else if (connMode == ConnectionMode.p2pDirect) {
                   statusText = l10n.connectionStatusOnlineP2P;
                   statusColor = Colors.green;
                 } else if (connMode == ConnectionMode.stationRelay) {
                   statusText = l10n.connectionStatusOnlineRelay;
                   statusColor = Colors.blue;
                 } else {
-                  statusText = l10n.connectionStatusOffline;
-                  statusColor = UIKit.textSecondary(context);
+                  // Peer is online but P2P not yet established
+                  // Show "online" instead of "offline"
+                  statusText = l10n.connectionStatusOnline;
+                  statusColor = Colors.green;
                 }
               }
             }

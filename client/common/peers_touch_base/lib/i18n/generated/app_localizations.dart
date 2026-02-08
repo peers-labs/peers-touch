@@ -1400,6 +1400,12 @@ abstract class AppLocalizations {
   /// **'Press Ctrl+Enter to send'**
   String get pressCtrlEnterToSend;
 
+  /// No description provided for @connectionStatusOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get connectionStatusOnline;
+
   /// No description provided for @connectionStatusOnlineP2P.
   ///
   /// In en, this message translates to:

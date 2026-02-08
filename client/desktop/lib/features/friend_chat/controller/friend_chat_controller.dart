@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -22,6 +23,8 @@ import 'package:peers_touch_desktop/core/services/logging_service.dart';
 import 'package:peers_touch_desktop/features/friend_chat/friend_chat_module.dart';
 import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
+import 'package:peers_touch_desktop/core/services/avatar_resolver_desktop.dart';
+import 'package:peers_touch_base/widgets/avatar_resolver.dart';
 
 class FriendItem {
   final String actorId;
@@ -629,9 +632,31 @@ class FriendChatController extends GetxController {
       )).toList();
 
       friends.assignAll(friendList);
+      
+      // Register friends to AvatarResolver for global avatar resolution
+      _registerFriendsToAvatarResolver(friendList);
+      
       LoggingService.info('Loaded ${friendList.length} friends');
     } catch (e) {
       LoggingService.error('Failed to load friends: $e');
+    }
+  }
+
+  /// Register friends to AvatarResolver for global avatar resolution
+  void _registerFriendsToAvatarResolver(List<FriendItem> friendList) {
+    if (!Get.isRegistered<AvatarResolver>()) return;
+    
+    final resolver = Get.find<AvatarResolver>();
+    if (resolver is AvatarResolverDesktop) {
+      for (final friend in friendList) {
+        resolver.registerActor(
+          actorId: friend.actorId,
+          avatarUrl: friend.avatarUrl,
+          displayName: friend.displayName,
+          username: friend.username,
+        );
+      }
+      LoggingService.debug('Registered ${friendList.length} friends to AvatarResolver');
     }
   }
 
@@ -841,9 +866,31 @@ class FriendChatController extends GetxController {
         memberMap[member.actorDid] = member;
       }
       _groupMembersCache[groupUlid] = memberMap;
+      
+      // Register group members to AvatarResolver for global avatar resolution
+      _registerGroupMembersToAvatarResolver(members);
+      
       LoggingService.info('Cached ${members.length} members for group $groupUlid');
     } catch (e) {
       LoggingService.error('Failed to load group members: $e');
+    }
+  }
+  
+  /// Register group members to AvatarResolver for global avatar resolution
+  void _registerGroupMembersToAvatarResolver(List<GroupMemberInfo> members) {
+    if (!Get.isRegistered<AvatarResolver>()) return;
+    
+    final resolver = Get.find<AvatarResolver>();
+    if (resolver is AvatarResolverDesktop) {
+      for (final member in members) {
+        resolver.registerActor(
+          actorId: member.actorDid,
+          avatarUrl: member.avatarUrl,
+          displayName: member.displayName.isNotEmpty ? member.displayName : member.nickname,
+          username: member.username,
+        );
+      }
+      LoggingService.debug('Registered ${members.length} group members to AvatarResolver');
     }
   }
   
