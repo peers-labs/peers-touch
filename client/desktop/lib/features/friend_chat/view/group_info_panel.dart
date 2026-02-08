@@ -7,6 +7,7 @@ import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_controller.dart';
 
 /// 微信风格的群信息侧边面板
+// MYQ: 不要有硬编码 这里有必要用 statefull吗
 class GroupInfoPanel extends StatefulWidget {
   const GroupInfoPanel({
     super.key,

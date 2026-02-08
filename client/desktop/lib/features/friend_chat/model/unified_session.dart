@@ -10,6 +10,7 @@ class LastMessageTypeDisplay {
   static String getDisplay(MessageType type) {
     switch (type) {
       case MessageType.MESSAGE_TYPE_IMAGE:
+        // MYQ: 不要有硬编码
         return '[图片]';
       case MessageType.MESSAGE_TYPE_FILE:
         return '[文件]';

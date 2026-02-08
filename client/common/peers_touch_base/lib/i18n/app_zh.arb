@@ -251,6 +251,7 @@
   "sendSettings": "发送设置",
   "pressEnterToSend": "按 Enter 发送",
   "pressCtrlEnterToSend": "按 Ctrl+Enter 发送",
+  "connectionStatusOnline": "在线",
   "connectionStatusOnlineP2P": "在线 (P2P)",
   "connectionStatusOnlineRelay": "在线 (中继)",
   "connectionStatusOffline": "离线",

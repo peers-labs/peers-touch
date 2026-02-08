@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
 
+// MYQ: 不要有硬编码 这里有必要用 statefull吗
 class FriendChatInputBar extends StatefulWidget {
   const FriendChatInputBar({
     super.key,
