@@ -100,25 +100,29 @@ class FriendChatController extends GetxController {
   /// Scroll group message list to bottom (respects user scroll position)
   /// Only scrolls if user is already near bottom, otherwise shows "scroll to latest" banner
   void scrollGroupToBottom({bool animated = true, bool force = false}) {
+    // Use double postFrameCallback to ensure ListView has completed layout
+    // after messages are added - this prevents the "shake" effect
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (groupMessageScrollController.hasClients) {
-        // Only auto-scroll if user is near bottom OR force is true
-        if (force || isUserNearGroupBottom.value) {
-          if (animated) {
-            groupMessageScrollController.animateTo(
-              groupMessageScrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOut,
-            );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (groupMessageScrollController.hasClients) {
+          // Only auto-scroll if user is near bottom OR force is true
+          if (force || isUserNearGroupBottom.value) {
+            if (animated) {
+              groupMessageScrollController.animateTo(
+                groupMessageScrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+              );
+            } else {
+              groupMessageScrollController.jumpTo(groupMessageScrollController.position.maxScrollExtent);
+            }
+            showScrollToLatest.value = false;
           } else {
-            groupMessageScrollController.jumpTo(groupMessageScrollController.position.maxScrollExtent);
+            // User is viewing history, show banner instead
+            showScrollToLatest.value = true;
           }
-          showScrollToLatest.value = false;
-        } else {
-          // User is viewing history, show banner instead
-          showScrollToLatest.value = true;
         }
-      }
+      });
     });
   }
   
@@ -364,7 +368,7 @@ class FriendChatController extends GetxController {
   Timer? _heartbeatTimer;
   Timer? _peerMonitorTimer;
   RTCSignalingService? _signalingService;
-  final _onlinePeers = <String>{};  // Cache of known online peers
+  final _onlinePeers = <String>{}.obs;  // Cache of known online peers (reactive)
   bool _isConnecting = false;  // Prevent concurrent connection attempts
 
   /// Get current user's DID for P2P signaling
@@ -1078,6 +1082,9 @@ class FriendChatController extends GetxController {
   
   /// Check if a peer is online (public getter for UI)
   bool isPeerOnline(String peerId) => _onlinePeers.contains(peerId);
+  
+  /// Get online peers count (triggers reactive update in UI)
+  int get onlinePeersCount => _onlinePeers.length;
 
   /// Called when a peer comes online
   void _onPeerOnline(String peerId) {
@@ -1730,10 +1737,66 @@ class FriendChatController extends GetxController {
         messages.refresh();
       }
     } catch (e) {
+      // Mark the message as failed
+      if (messages.isNotEmpty) {
+        final lastMsg = messages.last;
+        if (lastMsg.senderId == currentUserId &&
+            lastMsg.status == MessageStatus.MESSAGE_STATUS_SENDING) {
+          lastMsg.status = MessageStatus.MESSAGE_STATUS_FAILED;
+          messages.refresh();
+        }
+      }
       error.value = 'Failed to send message: $e';
       LoggingService.error('Failed to send message: $e');
     } finally {
       isSending.value = false;
+    }
+  }
+
+  /// Resend a failed message
+  Future<void> resendMessage(ChatMessage message) async {
+    if (message.status != MessageStatus.MESSAGE_STATUS_FAILED) return;
+    if (currentSession.value == null) return;
+
+    final session = currentSession.value!;
+    
+    // Update message status to sending
+    message.status = MessageStatus.MESSAGE_STATUS_SENDING;
+    messages.refresh();
+
+    try {
+      final remotePeerId = connectionStats.value.remotePeerId;
+      final sessionUlid = session.id.replaceFirst('session_', '');
+
+      if (connectionMode.value == ConnectionMode.p2pDirect) {
+        _rtcClient!.send(message.content);
+        message.status = MessageStatus.MESSAGE_STATUS_SENT;
+        messages.refresh();
+        
+        _pendingMessages.add(message);
+        connectionStats.value = connectionStats.value.copyWith(
+          pendingSyncCount: _pendingMessages.length,
+        );
+      } else {
+        final response = await _chatApi.sendMessage(
+          sessionUlid: sessionUlid,
+          receiverDid: remotePeerId,
+          content: message.content,
+        );
+
+        if (response.deliveryStatus == 'delivered') {
+          message.status = MessageStatus.MESSAGE_STATUS_DELIVERED;
+        } else {
+          message.status = MessageStatus.MESSAGE_STATUS_SENT;
+        }
+        messages.refresh();
+      }
+      LoggingService.info('Message resent successfully: ${message.id}');
+    } catch (e) {
+      message.status = MessageStatus.MESSAGE_STATUS_FAILED;
+      messages.refresh();
+      error.value = 'Failed to resend message: $e';
+      LoggingService.error('Failed to resend message: $e');
     }
   }
 

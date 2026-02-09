@@ -11,7 +11,7 @@ class ChatMessageItem extends StatelessWidget {
     super.key,
     required this.message,
     required this.isMe,
-    required this.senderName,
+    this.senderName,
     this.senderAvatarUrl,
     this.showAvatarOnRight = true,
     this.onReply,
@@ -20,13 +20,16 @@ class ChatMessageItem extends StatelessWidget {
     this.onDelete,
     this.onRecall,
     this.onQuote,
+    this.onResend,
     this.replyMessage,
     this.onReplyTap,
   });
 
   final ChatMessage message;
   final bool isMe;
-  final String senderName;
+  /// Optional sender name for fallback avatar letter.
+  /// If null, Avatar will resolve from AvatarResolver using message.senderId.
+  final String? senderName;
   final String? senderAvatarUrl;
   final bool showAvatarOnRight;
   
@@ -37,6 +40,7 @@ class ChatMessageItem extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onRecall;
   final VoidCallback? onQuote;
+  final VoidCallback? onResend;
   
   // 回复消息预览
   final ReplyMessage? replyMessage;
@@ -390,8 +394,27 @@ class ChatMessageItem extends StatelessWidget {
         icon = Icons.done_all;
         color = Theme.of(context).colorScheme.primary;
       case MessageStatus.MESSAGE_STATUS_FAILED:
-        icon = Icons.error_outline;
-        color = UIKit.errorColor(context);
+        // Show resend button for failed messages
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 14, color: UIKit.errorColor(context)),
+            if (onResend != null) ...[
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: onResend,
+                child: Text(
+                  '重发',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
       default:
         icon = Icons.check;
         color = UIKit.textSecondary(context);

@@ -1,62 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_base/network/social/social_api_service.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
-import 'package:peers_touch_desktop/features/group_chat/controller/group_chat_controller.dart';
+import 'package:peers_touch_desktop/features/group_chat/controller/create_group_dialog_controller.dart';
 
 /// 创建群组对话框
-class CreateGroupDialog extends StatefulWidget {
+/// StatelessWidget per project convention (ADR-002)
+class CreateGroupDialog extends StatelessWidget {
   const CreateGroupDialog({super.key});
 
   @override
-  State<CreateGroupDialog> createState() => _CreateGroupDialogState();
-}
-
-class _CreateGroupDialogState extends State<CreateGroupDialog> {
-  final _nameController = TextEditingController();
-  int _type = 1; // 1=普通群, 2=公告群, 3=讨论群
-  int _visibility = 1; // 1=公开, 2=私密
-  bool _isCreating = false;
-  bool _isLoadingFriends = true;
-
-  final _selectedMembers = <String>{};
-  List<_FriendInfo> _friends = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFriends();
-  }
-
-  Future<void> _loadFriends() async {
-    try {
-      final socialApi = SocialApiService();
-      final response = await socialApi.getFollowing();
-      setState(() {
-        _friends = response.following
-            .map((f) => _FriendInfo(
-                  did: f.actorId,
-                  name: f.displayName.isNotEmpty ? f.displayName : f.username,
-                  username: f.username,
-                  avatarUrl: f.avatarUrl,
-                ))
-            .toList();
-        _isLoadingFriends = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingFriends = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    // Create controller for this dialog
+    final controller = Get.put(CreateGroupDialogController());
     final theme = Theme.of(context);
 
     return Dialog(
@@ -103,7 +59,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
               _buildSectionLabel(context, '群名称'),
               SizedBox(height: UIKit.spaceXs(context)),
               TextFormField(
-                controller: _nameController,
+                controller: controller.nameController,
                 decoration: UIKit.inputDecoration(context).copyWith(
                   hintText: '输入群组名称',
                   prefixIcon: Icon(
@@ -113,20 +69,19 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                   ),
                 ),
                 autofocus: true,
-                onChanged: (_) => setState(() {}),
               ),
               SizedBox(height: UIKit.spaceLg(context)),
 
               // 群类型
               _buildSectionLabel(context, '群类型'),
               SizedBox(height: UIKit.spaceXs(context)),
-              _buildTypeSelector(context),
+              _buildTypeSelector(context, controller),
               SizedBox(height: UIKit.spaceLg(context)),
 
               // 可见性
               _buildSectionLabel(context, '可见性'),
               SizedBox(height: UIKit.spaceXs(context)),
-              _buildVisibilitySelector(context),
+              _buildVisibilitySelector(context, controller),
               SizedBox(height: UIKit.spaceLg(context)),
 
               // 选择成员
@@ -134,27 +89,30 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                 children: [
                   _buildSectionLabel(context, '选择成员'),
                   const Spacer(),
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: UIKit.spaceSm(context),
-                      vertical: UIKit.spaceXs(context) / 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _selectedMembers.length >= 2
-                          ? theme.colorScheme.primaryContainer
-                          : theme.colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
-                    ),
-                    child: Text(
-                      '已选 ${_selectedMembers.length} 人',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: _selectedMembers.length >= 2
-                            ? theme.colorScheme.onPrimaryContainer
-                            : theme.colorScheme.onErrorContainer,
-                        fontWeight: FontWeight.w500,
+                  Obx(() {
+                    final count = controller.selectedMembers.length;
+                    return Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: UIKit.spaceSm(context),
+                        vertical: UIKit.spaceXs(context) / 2,
                       ),
-                    ),
-                  ),
+                      decoration: BoxDecoration(
+                        color: count >= 2
+                            ? theme.colorScheme.primaryContainer
+                            : theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
+                      ),
+                      child: Text(
+                        '已选 $count 人',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: count >= 2
+                              ? theme.colorScheme.onPrimaryContainer
+                              : theme.colorScheme.onErrorContainer,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  }),
                 ],
               ),
               SizedBox(height: UIKit.spaceXs(context)),
@@ -167,49 +125,13 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                     border: Border.all(color: UIKit.dividerColor(context)),
                     borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
                   ),
-                  child: _buildFriendList(context),
+                  child: _buildFriendList(context, controller),
                 ),
               ),
               SizedBox(height: UIKit.spaceXl(context)),
 
               // 按钮
-              Row(
-                children: [
-                  if (_selectedMembers.length < 2)
-                    Expanded(
-                      child: Text(
-                        '至少选择2人（加上你共3人）',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: UIKit.textSecondary(context),
-                        ),
-                      ),
-                    )
-                  else
-                    const Spacer(),
-                  TextButton(
-                    onPressed: _isCreating ? null : () => Navigator.of(context).pop(),
-                    child: Text(
-                      '取消',
-                      style: TextStyle(color: UIKit.textSecondary(context)),
-                    ),
-                  ),
-                  SizedBox(width: UIKit.spaceMd(context)),
-                  FilledButton(
-                    onPressed: _canCreate ? _createGroup : null,
-                    style: UIKit.primaryButtonStyle(context),
-                    child: _isCreating
-                        ? SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: theme.colorScheme.onPrimary,
-                            ),
-                          )
-                        : const Text('创建群组'),
-                  ),
-                ],
-              ),
+              _buildButtons(context, controller),
             ],
           ),
         ),
@@ -227,27 +149,31 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
     );
   }
 
-  Widget _buildTypeSelector(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      children: [
-        _buildTypeChip(context, 1, '普通', Icons.chat_bubble_outline),
-        SizedBox(width: UIKit.spaceSm(context)),
-        _buildTypeChip(context, 2, '公告', Icons.campaign_outlined),
-        SizedBox(width: UIKit.spaceSm(context)),
-        _buildTypeChip(context, 3, '讨论', Icons.forum_outlined),
-      ],
-    );
+  Widget _buildTypeSelector(BuildContext context, CreateGroupDialogController controller) {
+    return Obx(() => Row(
+          children: [
+            _buildTypeChip(context, controller, 1, '普通', Icons.chat_bubble_outline),
+            SizedBox(width: UIKit.spaceSm(context)),
+            _buildTypeChip(context, controller, 2, '公告', Icons.campaign_outlined),
+            SizedBox(width: UIKit.spaceSm(context)),
+            _buildTypeChip(context, controller, 3, '讨论', Icons.forum_outlined),
+          ],
+        ));
   }
 
-  Widget _buildTypeChip(BuildContext context, int value, String label, IconData icon) {
+  Widget _buildTypeChip(
+    BuildContext context,
+    CreateGroupDialogController controller,
+    int value,
+    String label,
+    IconData icon,
+  ) {
     final theme = Theme.of(context);
-    final isSelected = _type == value;
+    final isSelected = controller.type.value == value;
 
     return Expanded(
       child: InkWell(
-        onTap: () => setState(() => _type = value),
+        onTap: () => controller.setType(value),
         borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
         child: Container(
           padding: EdgeInsets.symmetric(
@@ -288,31 +214,30 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
     );
   }
 
-  Widget _buildVisibilitySelector(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      children: [
-        _buildVisibilityChip(context, 1, '公开', Icons.public, '任何人可加入'),
-        SizedBox(width: UIKit.spaceSm(context)),
-        _buildVisibilityChip(context, 2, '私密', Icons.lock_outline, '需要邀请'),
-      ],
-    );
+  Widget _buildVisibilitySelector(BuildContext context, CreateGroupDialogController controller) {
+    return Obx(() => Row(
+          children: [
+            _buildVisibilityChip(context, controller, 1, '公开', Icons.public, '任何人可加入'),
+            SizedBox(width: UIKit.spaceSm(context)),
+            _buildVisibilityChip(context, controller, 2, '私密', Icons.lock_outline, '需要邀请'),
+          ],
+        ));
   }
 
   Widget _buildVisibilityChip(
     BuildContext context,
+    CreateGroupDialogController controller,
     int value,
     String label,
     IconData icon,
     String description,
   ) {
     final theme = Theme.of(context);
-    final isSelected = _visibility == value;
+    final isSelected = controller.visibility.value == value;
 
     return Expanded(
       child: InkWell(
-        onTap: () => setState(() => _visibility = value),
+        onTap: () => controller.setVisibility(value),
         borderRadius: BorderRadius.circular(UIKit.radiusSm(context)),
         child: Container(
           padding: EdgeInsets.all(UIKit.spaceSm(context)),
@@ -372,171 +297,174 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
     );
   }
 
-  Widget _buildFriendList(BuildContext context) {
-    if (_isLoadingFriends) {
-      return Center(
-        child: SizedBox(
-          width: UIKit.indicatorSizeSm,
-          height: UIKit.indicatorSizeSm,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-      );
-    }
-
-    if (_friends.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.people_outline,
-              size: 48,
-              color: UIKit.textSecondary(context),
-            ),
-            SizedBox(height: UIKit.spaceMd(context)),
-            Text(
-              '暂无好友',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: UIKit.textSecondary(context),
-                  ),
-            ),
-            SizedBox(height: UIKit.spaceXs(context)),
-            Text(
-              '请先关注一些用户',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: UIKit.textSecondary(context),
-                  ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: EdgeInsets.symmetric(vertical: UIKit.spaceXs(context)),
-      itemCount: _friends.length,
-      separatorBuilder: (_, __) => Divider(
-        height: 1,
-        thickness: UIKit.dividerThickness,
-        color: UIKit.dividerColor(context),
-        indent: UIKit.spaceLg(context) + 36 + UIKit.spaceSm(context),
-      ),
-      itemBuilder: (context, index) {
-        final friend = _friends[index];
-        final isSelected = _selectedMembers.contains(friend.did);
-
-        return InkWell(
-          onTap: () {
-            setState(() {
-              if (isSelected) {
-                _selectedMembers.remove(friend.did);
-              } else {
-                _selectedMembers.add(friend.did);
-              }
-            });
-          },
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: UIKit.spaceMd(context),
-              vertical: UIKit.spaceSm(context),
-            ),
-            child: Row(
-              children: [
-                Avatar(
-                  actorId: friend.did,
-                  avatarUrl: friend.avatarUrl,
-                  fallbackName: friend.name,
-                  size: 36,
-                ),
-                SizedBox(width: UIKit.spaceSm(context)),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        friend.name,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: UIKit.textPrimary(context),
-                              fontWeight: FontWeight.w500,
-                            ),
-                      ),
-                      Text(
-                        '@${friend.username}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: UIKit.textSecondary(context),
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-                Checkbox(
-                  value: isSelected,
-                  onChanged: (v) {
-                    setState(() {
-                      if (v == true) {
-                        _selectedMembers.add(friend.did);
-                      } else {
-                        _selectedMembers.remove(friend.did);
-                      }
-                    });
-                  },
-                ),
-              ],
+  Widget _buildFriendList(BuildContext context, CreateGroupDialogController controller) {
+    return Obx(() {
+      if (controller.isLoadingFriends.value) {
+        return Center(
+          child: SizedBox(
+            width: UIKit.indicatorSizeSm,
+            height: UIKit.indicatorSizeSm,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
         );
-      },
-    );
-  }
+      }
 
-  bool get _canCreate =>
-      !_isCreating && _nameController.text.trim().isNotEmpty && _selectedMembers.length >= 2;
-
-  Future<void> _createGroup() async {
-    if (!_canCreate) return;
-
-    setState(() => _isCreating = true);
-
-    try {
-      final controller = Get.find<GroupChatController>();
-      final group = await controller.createGroup(
-        name: _nameController.text.trim(),
-        type: _type,
-        visibility: _visibility,
-        initialMemberDids: _selectedMembers.toList(),
-      );
-
-      if (group != null && mounted) {
-        Navigator.of(context).pop();
-        controller.selectGroup(group);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('群组「${group.name}」创建成功'),
-            behavior: SnackBarBehavior.floating,
+      if (controller.friends.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.people_outline,
+                size: 48,
+                color: UIKit.textSecondary(context),
+              ),
+              SizedBox(height: UIKit.spaceMd(context)),
+              Text(
+                '暂无好友',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: UIKit.textSecondary(context),
+                    ),
+              ),
+              SizedBox(height: UIKit.spaceXs(context)),
+              Text(
+                '请先关注一些用户',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: UIKit.textSecondary(context),
+                    ),
+              ),
+            ],
           ),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() => _isCreating = false);
-      }
-    }
+
+      return ListView.separated(
+        padding: EdgeInsets.symmetric(vertical: UIKit.spaceXs(context)),
+        itemCount: controller.friends.length,
+        separatorBuilder: (_, __) => Divider(
+          height: 1,
+          thickness: UIKit.dividerThickness,
+          color: UIKit.dividerColor(context),
+          indent: UIKit.spaceLg(context) + 36 + UIKit.spaceSm(context),
+        ),
+        itemBuilder: (context, index) {
+          final friend = controller.friends[index];
+          return Obx(() {
+            final isSelected = controller.selectedMembers.contains(friend.did);
+            return InkWell(
+              onTap: () => controller.toggleMember(friend.did),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: UIKit.spaceMd(context),
+                  vertical: UIKit.spaceSm(context),
+                ),
+                child: Row(
+                  children: [
+                    Avatar(
+                      actorId: friend.did,
+                      avatarUrl: friend.avatarUrl,
+                      fallbackName: friend.name,
+                      size: 36,
+                    ),
+                    SizedBox(width: UIKit.spaceSm(context)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            friend.name,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: UIKit.textPrimary(context),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                          ),
+                          Text(
+                            '@${friend.username}',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: UIKit.textSecondary(context),
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Checkbox(
+                      value: isSelected,
+                      onChanged: (_) => controller.toggleMember(friend.did),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          });
+        },
+      );
+    });
   }
-}
 
-class _FriendInfo {
-  final String did;
-  final String name;
-  final String username;
-  final String? avatarUrl;
-
-  _FriendInfo({
-    required this.did,
-    required this.name,
-    required this.username,
-    this.avatarUrl,
-  });
+  Widget _buildButtons(BuildContext context, CreateGroupDialogController controller) {
+    final theme = Theme.of(context);
+    
+    return Obx(() {
+      final count = controller.selectedMembers.length;
+      final isCreating = controller.isCreating.value;
+      
+      return Row(
+        children: [
+          if (count < 2)
+            Expanded(
+              child: Text(
+                '至少选择2人（加上你共3人）',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: UIKit.textSecondary(context),
+                ),
+              ),
+            )
+          else
+            const Spacer(),
+          TextButton(
+            onPressed: isCreating ? null : () {
+              Get.delete<CreateGroupDialogController>();
+              Navigator.of(context).pop();
+            },
+            child: Text(
+              '取消',
+              style: TextStyle(color: UIKit.textSecondary(context)),
+            ),
+          ),
+          SizedBox(width: UIKit.spaceMd(context)),
+          FilledButton(
+            onPressed: controller.canCreate
+                ? () async {
+                    final success = await controller.createGroup();
+                    if (success && context.mounted) {
+                      Get.delete<CreateGroupDialogController>();
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('群组「${controller.nameController.text}」创建成功'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  }
+                : null,
+            style: UIKit.primaryButtonStyle(context),
+            child: isCreating
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: theme.colorScheme.onPrimary,
+                    ),
+                  )
+                : const Text('创建群组'),
+          ),
+        ],
+      );
+    });
+  }
 }
