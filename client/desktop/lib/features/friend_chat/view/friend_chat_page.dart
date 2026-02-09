@@ -4,6 +4,7 @@ import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_base/model/domain/chat/group_chat.pb.dart';
 import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
+import 'package:peers_touch_base/widgets/avatar_resolver.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_controller.dart';
 import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
@@ -592,8 +593,7 @@ class FriendChatPage extends GetView<FriendChatController> {
                   ),
                 );
               }
-              final currentSession = controller.currentSession.value;
-              final remoteName = currentSession?.topic ?? 'User';
+              // Avatar resolves senderName from AvatarResolver using message.senderId
               return ListView.builder(
                 padding: EdgeInsets.all(UIKit.spaceMd(context)),
                 itemCount: messageList.length,
@@ -603,9 +603,8 @@ class FriendChatPage extends GetView<FriendChatController> {
                   return ChatMessageItem(
                     message: message,
                     isMe: isMe,
-                    senderName: isMe ? controller.currentUserName : remoteName,
-                    senderAvatarUrl: isMe ? controller.currentUserAvatarUrl : null,
                     onReply: () => controller.startReply(message),
+                    onResend: isMe ? () => controller.resendMessage(message) : null,
                   );
                 },
               );
@@ -632,11 +631,14 @@ class FriendChatPage extends GetView<FriendChatController> {
             final replyMsg = controller.replyingToMessage.value;
             ReplyMessage? replyPreview;
             if (replyMsg != null) {
+              // Let AvatarResolver resolve the sender name from senderId
+              String senderName = replyMsg.senderId;
+              if (Get.isRegistered<AvatarResolver>()) {
+                senderName = Get.find<AvatarResolver>().getFallbackName(replyMsg.senderId);
+              }
               replyPreview = ReplyMessage(
                 id: replyMsg.id,
-                senderName: replyMsg.senderId == controller.currentUserId 
-                    ? controller.currentUserName 
-                    : (controller.currentSession.value?.topic ?? 'User'),
+                senderName: senderName,
                 content: replyMsg.content,
               );
             }
@@ -672,6 +674,9 @@ class FriendChatPage extends GetView<FriendChatController> {
           Obx(() {
             final session = controller.currentSession.value;
             final connMode = controller.connectionMode.value;
+            // Access onlinePeers to trigger reactive update
+            // ignore: unused_local_variable
+            final _ = controller.onlinePeersCount;
             final l10n = AppLocalizations.of(context)!;
             String statusText = '';
             Color statusColor = UIKit.textSecondary(context);
@@ -897,13 +902,12 @@ class _UnifiedSessionTile extends StatelessWidget {
     }
 
     // Individual avatar with online status indicator
-    final friend = session.originalData as FriendItem?;
+    // Avatar resolves fallbackName from AvatarResolver using session.id (actorId)
     return Stack(
       children: [
         Avatar(
           actorId: session.id,
           avatarUrl: session.avatarUrl,
-          fallbackName: friend?.name ?? session.name,
           size: 44,
         ),
         if (session.isOnline)

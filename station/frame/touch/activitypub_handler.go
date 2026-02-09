@@ -70,6 +70,12 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper}, // Public access
 		},
 		{
+			RouterURL: RouterURLActorBasicInfo,
+			Handler:   GetActorBasicInfo,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper}, // Public access - for Avatar component
+		},
+		{
 			RouterURL: RouterURLActorProfile,
 			Handler:   UpdateActorProfile,
 			Method:    server.POST,
@@ -330,6 +336,55 @@ func PublicProfile(c context.Context, ctx *app.RequestContext) {
 	}
 
 	ctx.JSON(http.StatusOK, resp)
+}
+
+// ActorBasicInfoResponse contains only non-sensitive public info for an actor
+// Used by Avatar component to resolve unknown actor's avatar/name
+type ActorBasicInfoResponse struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Username    string `json:"username"`
+	AvatarURL   string `json:"avatar_url"`
+	CoverURL    string `json:"cover_url"`
+}
+
+// GetActorBasicInfo returns public basic info (displayName, avatarUrl, coverUrl) for an actor by ID
+// This is a public endpoint (no auth required) for Avatar component to resolve unknown actors
+func GetActorBasicInfo(c context.Context, ctx *app.RequestContext) {
+	idStr := ctx.Param("id")
+	if idStr == "" {
+		ctx.JSON(http.StatusBadRequest, "Actor ID is required")
+		return
+	}
+
+	actorID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, "Invalid actor ID format")
+		return
+	}
+
+	baseURL := baseURLFrom(ctx)
+	resp, err := activitypub.GetWebProfileByID(c, actorID, baseURL)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, "Actor not found")
+			return
+		}
+		log.Errorf(c, "Failed to fetch actor basic info: %v", err)
+		ctx.JSON(http.StatusInternalServerError, "Internal Server Error")
+		return
+	}
+
+	// Return only non-sensitive public info
+	basicInfo := ActorBasicInfoResponse{
+		ID:          resp.ID,
+		DisplayName: resp.DisplayName,
+		Username:    resp.Username,
+		AvatarURL:   resp.Avatar,
+		CoverURL:    resp.Header,
+	}
+
+	ctx.JSON(http.StatusOK, basicInfo)
 }
 
 func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {

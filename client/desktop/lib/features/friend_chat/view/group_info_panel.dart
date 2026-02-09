@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
-import 'package:peers_touch_base/storage/chat/chat_cache_service.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_controller.dart';
+import 'package:peers_touch_desktop/features/friend_chat/controller/group_info_panel_controller.dart';
 
 /// 微信风格的群信息侧边面板
-// MYQ: 不要有硬编码 这里有必要用 statefull吗
-class GroupInfoPanel extends StatefulWidget {
+/// StatelessWidget per project convention (ADR-002)
+class GroupInfoPanel extends StatelessWidget {
   const GroupInfoPanel({
     super.key,
     required this.groupUlid,
@@ -19,66 +19,12 @@ class GroupInfoPanel extends StatefulWidget {
   final VoidCallback onClose;
 
   @override
-  State<GroupInfoPanel> createState() => _GroupInfoPanelState();
-}
-
-class _GroupInfoPanelState extends State<GroupInfoPanel> {
-  final _api = GroupChatApiService();
-  final _searchController = TextEditingController();
-  
-  GroupInfo? _group;
-  List<GroupMemberInfo> _members = [];
-  Map<String, dynamic> _mySettings = {};
-  bool _isLoading = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    
-    try {
-      // Load group info and members (required)
-      final groupFuture = _api.getGroupInfo(widget.groupUlid);
-      final membersFuture = _api.getMembers(widget.groupUlid);
-      
-      final results = await Future.wait([groupFuture, membersFuture]);
-      
-      _group = results[0] as GroupInfo;
-      _members = results[1] as List<GroupMemberInfo>;
-      
-      // Load settings separately (optional, may fail)
-      try {
-        _mySettings = await _api.getMySettings(widget.groupUlid);
-      } catch (_) {
-        // Settings API may not be fully implemented, use defaults
-        _mySettings = {
-          'is_muted': false,
-          'is_pinned': false,
-          'my_nickname': '',
-        };
-      }
-      
-      setState(() {
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
+    // Create controller for this panel
+    final controller = Get.put(
+      GroupInfoPanelController(groupUlid: groupUlid, onClosePanel: onClose),
+      tag: groupUlid, // Use tag to support multiple panels
+    );
     final theme = Theme.of(context);
     
     return Container(
@@ -92,27 +38,36 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
       child: Column(
         children: [
           // Search bar
-          _buildSearchBar(context),
+          _buildSearchBar(context, controller),
           const Divider(height: 1),
           
           // Content
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)))
-                    : _buildContent(context),
+            child: Obx(() {
+              if (controller.isLoading.value) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (controller.error.value != null) {
+                return Center(
+                  child: Text(
+                    controller.error.value!,
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                );
+              }
+              return _buildContent(context, controller);
+            }),
           ),
         ],
       ),
     );
   }
   
-  Widget _buildSearchBar(BuildContext context) {
+  Widget _buildSearchBar(BuildContext context, GroupInfoPanelController controller) {
     return Padding(
       padding: const EdgeInsets.all(8),
       child: TextField(
-        controller: _searchController,
+        controller: controller.searchController,
         decoration: InputDecoration(
           hintText: 'Search',
           prefixIcon: const Icon(Icons.search, size: 20),
@@ -125,144 +80,150 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
           ),
           contentPadding: const EdgeInsets.symmetric(vertical: 8),
         ),
-        onSubmitted: (query) => _searchMessages(query),
+        onSubmitted: (query) => _showChatSearch(context, controller, query),
       ),
     );
   }
   
-  Widget _buildContent(BuildContext context) {
+  Widget _buildContent(BuildContext context, GroupInfoPanelController controller) {
     final theme = Theme.of(context);
-    final myNickname = _mySettings['my_nickname'] as String? ?? '';
-    final isMuted = _mySettings['is_muted'] as bool? ?? false;
-    final isPinned = _mySettings['is_pinned'] as bool? ?? false;
     
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      children: [
-        // Members section
-        _buildMembersSection(context),
-        const SizedBox(height: 12),
-        
-        // Group Name
-        _buildListTile(
-          context,
-          title: 'Group Name',
-          subtitle: _group?.name ?? '',
-          onTap: () => _showEditNameDialog(context),
-        ),
-        
-        // Group Notice
-        _buildListTile(
-          context,
-          title: 'Group Notice',
-          subtitle: _group?.description.isNotEmpty == true 
-              ? _group!.description 
-              : 'Not set by group owner',
-          onTap: () => _showAnnouncementDialog(context),
-        ),
-        
-        // My Alias in Group
-        _buildListTile(
-          context,
-          title: 'My Alias in Group',
-          subtitle: myNickname.isNotEmpty ? myNickname : 'Not set',
-          onTap: () => _showEditNicknameDialog(context),
-        ),
-        
-        const Divider(height: 24),
-        
-        // Search Chat History
-        _buildListTile(
-          context,
-          title: 'Search Chat History',
-          trailing: const Icon(Icons.chevron_right, size: 20),
-          onTap: () => _showChatSearch(context),
-        ),
-        
-        const Divider(height: 24),
-        
-        // Mute Notifications
-        _buildSwitchTile(
-          context,
-          title: 'Mute Notifications',
-          value: isMuted,
-          onChanged: (value) => _updateMuteStatus(value),
-        ),
-        
-        // Sticky
-        _buildSwitchTile(
-          context,
-          title: 'Sticky',
-          value: isPinned,
-          onChanged: (value) => _updatePinnedStatus(value),
-        ),
-        
-        const Divider(height: 24),
-        
-        // Clear Chat History
-        _buildListTile(
-          context,
-          title: 'Clear Chat History',
-          titleColor: theme.colorScheme.error,
-          onTap: () => _showClearHistoryDialog(context),
-        ),
-        
-        // Leave
-        _buildListTile(
-          context,
-          title: 'Leave',
-          titleColor: theme.colorScheme.error,
-          onTap: () => _showLeaveGroupDialog(context),
-        ),
-      ],
-    );
-  }
-  
-  Widget _buildMembersSection(BuildContext context) {
-    final theme = Theme.of(context);
-    final displayMembers = _members.take(4).toList();
-    
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 8,
+    return Obx(() {
+      final myNickname = controller.myNickname;
+      final isMuted = controller.isMuted;
+      final isPinned = controller.isPinned;
+      
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
-          // Member avatars
-          ...displayMembers.map((member) => _buildMemberAvatar(context, member)),
+          // Members section
+          _buildMembersSection(context, controller),
+          const SizedBox(height: 12),
           
-          // Add button
-          InkWell(
-            onTap: () => _showInviteDialog(context),
-            borderRadius: BorderRadius.circular(8),
-            child: Column(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: theme.dividerColor, width: 1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(Icons.add, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
-                ),
-                const SizedBox(height: 4),
-                const Text('Add', style: TextStyle(fontSize: 11)),
-              ],
-            ),
+          // Group Name
+          _buildListTile(
+            context,
+            title: 'Group Name',
+            subtitle: controller.group.value?.name ?? '',
+            onTap: () => _showEditNameDialog(context, controller),
+          ),
+          
+          // Group Notice
+          _buildListTile(
+            context,
+            title: 'Group Notice',
+            subtitle: controller.group.value?.description.isNotEmpty == true 
+                ? controller.group.value!.description 
+                : 'Not set by group owner',
+            onTap: () => _showAnnouncementDialog(context, controller),
+          ),
+          
+          // My Alias in Group
+          _buildListTile(
+            context,
+            title: 'My Alias in Group',
+            subtitle: myNickname.isNotEmpty ? myNickname : 'Not set',
+            onTap: () => _showEditNicknameDialog(context, controller),
+          ),
+          
+          const Divider(height: 24),
+          
+          // Search Chat History
+          _buildListTile(
+            context,
+            title: 'Search Chat History',
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () => _showChatSearch(context, controller, null),
+          ),
+          
+          const Divider(height: 24),
+          
+          // Mute Notifications
+          _buildSwitchTile(
+            context,
+            title: 'Mute Notifications',
+            value: isMuted,
+            onChanged: (value) => controller.updateMuteStatus(value),
+          ),
+          
+          // Sticky
+          _buildSwitchTile(
+            context,
+            title: 'Sticky',
+            value: isPinned,
+            onChanged: (value) => controller.updatePinnedStatus(value),
+          ),
+          
+          const Divider(height: 24),
+          
+          // Clear Chat History
+          _buildListTile(
+            context,
+            title: 'Clear Chat History',
+            titleColor: theme.colorScheme.error,
+            onTap: () => _showClearHistoryDialog(context, controller),
+          ),
+          
+          // Leave
+          _buildListTile(
+            context,
+            title: 'Leave',
+            titleColor: theme.colorScheme.error,
+            onTap: () => _showLeaveGroupDialog(context, controller),
           ),
         ],
-      ),
-    );
+      );
+    });
   }
   
-  Widget _buildMemberAvatar(BuildContext context, GroupMemberInfo member) {
+  Widget _buildMembersSection(BuildContext context, GroupInfoPanelController controller) {
+    final theme = Theme.of(context);
+    
+    return Obx(() {
+      final displayMembers = controller.members.take(4).toList();
+      
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            // Member avatars
+            ...displayMembers.map((member) => _buildMemberAvatar(context, controller, member)),
+            
+            // Add button
+            InkWell(
+              onTap: () => _showInviteDialog(context, controller),
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: theme.dividerColor, width: 1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.add, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Add', style: TextStyle(fontSize: 11)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+  
+  Widget _buildMemberAvatar(BuildContext context, GroupInfoPanelController controller, GroupMemberInfo member) {
     final displayName = member.nickname.isNotEmpty 
         ? member.nickname 
-        : _truncateActorId(member.actorDid);
+        : controller.truncateActorId(member.actorDid);
     
     return InkWell(
-      onTap: () => _showMemberOptions(context, member),
+      onTap: () => _showMemberOptions(context, controller, member),
       borderRadius: BorderRadius.circular(8),
       child: Column(
         children: [
@@ -352,21 +313,16 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
     );
   }
   
-  String _truncateActorId(String actorId) {
-    if (actorId.length <= 8) return actorId;
-    return '${actorId.substring(0, 8)}...';
-  }
+  // ==================== Dialogs ====================
   
-  // ==================== Actions ====================
-  
-  Future<void> _showEditNameDialog(BuildContext context) async {
-    final controller = TextEditingController(text: _group?.name ?? '');
+  Future<void> _showEditNameDialog(BuildContext context, GroupInfoPanelController controller) async {
+    final textController = TextEditingController(text: controller.group.value?.name ?? '');
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Edit Group Name'),
         content: TextField(
-          controller: controller,
+          controller: textController,
           autofocus: true,
           decoration: const InputDecoration(
             labelText: 'Group Name',
@@ -376,32 +332,26 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, textController.text),
             child: const Text('Save'),
           ),
         ],
       ),
     );
     
-    if (result != null && result.isNotEmpty && result != _group?.name) {
-      try {
-        await _api.updateGroup(groupUlid: widget.groupUlid, name: result);
-        _loadData();
-        Get.snackbar('Success', 'Group name updated');
-      } catch (e) {
-        Get.snackbar('Error', 'Failed to update group name: $e');
-      }
+    if (result != null && result.isNotEmpty) {
+      controller.updateGroupName(result);
     }
   }
   
-  Future<void> _showAnnouncementDialog(BuildContext context) async {
-    final controller = TextEditingController(text: _group?.description ?? '');
+  Future<void> _showAnnouncementDialog(BuildContext context, GroupInfoPanelController controller) async {
+    final textController = TextEditingController(text: controller.group.value?.description ?? '');
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Group Notice'),
         content: TextField(
-          controller: controller,
+          controller: textController,
           autofocus: true,
           maxLines: 5,
           decoration: const InputDecoration(
@@ -412,33 +362,26 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, textController.text),
             child: const Text('Save'),
           ),
         ],
       ),
     );
     
-    if (result != null && result != _group?.description) {
-      try {
-        await _api.updateGroup(groupUlid: widget.groupUlid, description: result);
-        _loadData();
-        Get.snackbar('Success', 'Announcement updated');
-      } catch (e) {
-        Get.snackbar('Error', 'Failed to update announcement: $e');
-      }
+    if (result != null) {
+      controller.updateAnnouncement(result);
     }
   }
   
-  Future<void> _showEditNicknameDialog(BuildContext context) async {
-    final currentNickname = _mySettings['my_nickname'] as String? ?? '';
-    final controller = TextEditingController(text: currentNickname);
+  Future<void> _showEditNicknameDialog(BuildContext context, GroupInfoPanelController controller) async {
+    final textController = TextEditingController(text: controller.myNickname);
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('My Alias in Group'),
         content: TextField(
-          controller: controller,
+          controller: textController,
           autofocus: true,
           decoration: const InputDecoration(
             labelText: 'Nickname',
@@ -449,56 +392,26 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, textController.text),
             child: const Text('Save'),
           ),
         ],
       ),
     );
     
-    if (result != null && result != currentNickname) {
-      try {
-        await _api.updateMyNickname(groupUlid: widget.groupUlid, nickname: result);
-        _loadData();
-        Get.snackbar('Success', 'Nickname updated');
-      } catch (e) {
-        Get.snackbar('Error', 'Failed to update nickname: $e');
-      }
+    if (result != null) {
+      controller.updateMyNickname(result);
     }
   }
   
-  void _showChatSearch(BuildContext context) {
+  void _showChatSearch(BuildContext context, GroupInfoPanelController controller, String? initialQuery) {
     showDialog(
       context: context,
-      builder: (context) => _ChatSearchDialog(groupUlid: widget.groupUlid),
+      builder: (context) => ChatSearchDialog(groupUlid: groupUlid, initialQuery: initialQuery),
     );
   }
   
-  Future<void> _updateMuteStatus(bool muted) async {
-    try {
-      await _api.updateMySettings(groupUlid: widget.groupUlid, isMuted: muted);
-      setState(() {
-        _mySettings['is_muted'] = muted;
-      });
-    } catch (e) {
-      Get.snackbar('Error', 'Failed to update mute status: $e');
-    }
-  }
-  
-  Future<void> _updatePinnedStatus(bool pinned) async {
-    try {
-      await _api.updateMySettings(groupUlid: widget.groupUlid, isPinned: pinned);
-      setState(() {
-        _mySettings['is_pinned'] = pinned;
-      });
-      // Notify controller to refresh session list
-      Get.find<FriendChatController>().refreshSessions();
-    } catch (e) {
-      Get.snackbar('Error', 'Failed to update pinned status: $e');
-    }
-  }
-  
-  Future<void> _showClearHistoryDialog(BuildContext context) async {
+  Future<void> _showClearHistoryDialog(BuildContext context, GroupInfoPanelController controller) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -519,31 +432,11 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
     );
     
     if (confirmed == true) {
-      // Clear local messages in controller
-      final controller = Get.find<FriendChatController>();
-      controller.groupMessages.clear();
-      
-      // Clear unread count from cache
-      try {
-        final cache = ChatCacheService.instance;
-        await cache.clearUnreadCount(widget.groupUlid);
-      } catch (e) {
-        // Cache might not be initialized
-      }
-      
-      Get.snackbar('Success', 'Chat history cleared');
+      controller.clearHistory();
     }
   }
   
-  Future<void> _showLeaveGroupDialog(BuildContext context) async {
-    // Check if user is owner
-    final isOwner = _group?.ownerDid == Get.find<FriendChatController>().currentUserId;
-    
-    if (isOwner) {
-      Get.snackbar('Cannot Leave', 'Group owner cannot leave. Transfer ownership first or delete the group.');
-      return;
-    }
-    
+  Future<void> _showLeaveGroupDialog(BuildContext context, GroupInfoPanelController controller) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -564,25 +457,18 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
     );
     
     if (confirmed == true) {
-      try {
-        await _api.leaveGroup(widget.groupUlid);
-        Get.snackbar('Success', 'Left group');
-        widget.onClose();
-        Get.find<FriendChatController>().refreshSessions();
-      } catch (e) {
-        Get.snackbar('Error', 'Failed to leave group: $e');
-      }
+      controller.leaveGroup();
     }
   }
   
-  Future<void> _showInviteDialog(BuildContext context) async {
-    final controller = TextEditingController();
+  Future<void> _showInviteDialog(BuildContext context, GroupInfoPanelController controller) async {
+    final textController = TextEditingController();
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Invite Member'),
         content: TextField(
-          controller: controller,
+          controller: textController,
           autofocus: true,
           decoration: const InputDecoration(
             labelText: 'Actor DID',
@@ -593,7 +479,7 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, textController.text),
             child: const Text('Invite'),
           ),
         ],
@@ -601,17 +487,11 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
     );
     
     if (result != null && result.isNotEmpty) {
-      try {
-        await _api.inviteToGroup(widget.groupUlid, [result]);
-        Get.snackbar('Success', 'Invitation sent');
-        _loadData();
-      } catch (e) {
-        Get.snackbar('Error', 'Failed to invite: $e');
-      }
+      controller.inviteMember(result);
     }
   }
   
-  void _showMemberOptions(BuildContext context, GroupMemberInfo member) {
+  void _showMemberOptions(BuildContext context, GroupInfoPanelController controller, GroupMemberInfo member) {
     showModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
@@ -621,18 +501,18 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
             ListTile(
               leading: const Icon(Icons.person),
               title: Text(member.nickname.isNotEmpty ? member.nickname : member.actorDid),
-              subtitle: Text('Joined ${_formatDate(member.joinedAt)}'),
+              subtitle: Text('Joined ${controller.formatDate(member.joinedAt)}'),
             ),
             const Divider(),
             if (member.role == 3) // Owner
-              ListTile(
-                leading: const Icon(Icons.star, color: Colors.amber),
-                title: const Text('Group Owner'),
+              const ListTile(
+                leading: Icon(Icons.star, color: Colors.amber),
+                title: Text('Group Owner'),
               ),
             if (member.role == 2) // Admin
-              ListTile(
-                leading: const Icon(Icons.admin_panel_settings, color: Colors.blue),
-                title: const Text('Admin'),
+              const ListTile(
+                leading: Icon(Icons.admin_panel_settings, color: Colors.blue),
+                title: Text('Admin'),
               ),
             ListTile(
               leading: const Icon(Icons.message),
@@ -647,24 +527,13 @@ class _GroupInfoPanelState extends State<GroupInfoPanel> {
       ),
     );
   }
-  
-  void _searchMessages(String query) {
-    if (query.isEmpty) return;
-    showDialog(
-      context: context,
-      builder: (context) => _ChatSearchDialog(groupUlid: widget.groupUlid, initialQuery: query),
-    );
-  }
-  
-  String _formatDate(int timestamp) {
-    final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
 }
 
 /// Chat search dialog
-class _ChatSearchDialog extends StatefulWidget {
-  const _ChatSearchDialog({
+/// StatelessWidget per project convention (ADR-002)
+class ChatSearchDialog extends StatelessWidget {
+  const ChatSearchDialog({
+    super.key,
     required this.groupUlid,
     this.initialQuery,
   });
@@ -673,44 +542,12 @@ class _ChatSearchDialog extends StatefulWidget {
   final String? initialQuery;
 
   @override
-  State<_ChatSearchDialog> createState() => _ChatSearchDialogState();
-}
-
-class _ChatSearchDialogState extends State<_ChatSearchDialog> {
-  final _api = GroupChatApiService();
-  final _controller = TextEditingController();
-  List<GroupMessageInfo> _results = [];
-  bool _isLoading = false;
-  
-  @override
-  void initState() {
-    super.initState();
-    if (widget.initialQuery != null) {
-      _controller.text = widget.initialQuery!;
-      _search();
-    }
-  }
-  
-  Future<void> _search() async {
-    final query = _controller.text.trim();
-    if (query.isEmpty) return;
-    
-    setState(() => _isLoading = true);
-    
-    try {
-      final results = await _api.searchMessages(groupUlid: widget.groupUlid, query: query);
-      setState(() {
-        _results = results;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      Get.snackbar('Error', 'Search failed: $e');
-    }
-  }
-  
-  @override
   Widget build(BuildContext context) {
+    // Create controller for this dialog
+    final controller = Get.put(
+      ChatSearchDialogController(groupUlid: groupUlid, initialQuery: initialQuery),
+    );
+    
     return Dialog(
       child: Container(
         width: 400,
@@ -724,49 +561,57 @@ class _ChatSearchDialogState extends State<_ChatSearchDialog> {
               children: [
                 Expanded(
                   child: TextField(
-                    controller: _controller,
+                    controller: controller.searchController,
                     autofocus: true,
                     decoration: const InputDecoration(
                       hintText: 'Enter search query',
                       border: OutlineInputBorder(),
                     ),
-                    onSubmitted: (_) => _search(),
+                    onSubmitted: (_) => controller.search(),
                   ),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: _search,
+                  onPressed: controller.search,
                   child: const Text('Search'),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _results.isEmpty
-                      ? const Center(child: Text('No results'))
-                      : ListView.builder(
-                          itemCount: _results.length,
-                          itemBuilder: (context, index) {
-                            final msg = _results[index];
-                            return ListTile(
-                              title: Text(msg.content, maxLines: 2, overflow: TextOverflow.ellipsis),
-                              subtitle: Text(
-                                DateTime.fromMillisecondsSinceEpoch(msg.sentAt * 1000).toString(),
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              onTap: () {
-                                Navigator.pop(context);
-                                // TODO: Jump to this message in chat
-                              },
-                            );
-                          },
-                        ),
+              child: Obx(() {
+                if (controller.isLoading.value) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (controller.results.isEmpty) {
+                  return const Center(child: Text('No results'));
+                }
+                return ListView.builder(
+                  itemCount: controller.results.length,
+                  itemBuilder: (context, index) {
+                    final msg = controller.results[index];
+                    return ListTile(
+                      title: Text(msg.content, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                        DateTime.fromMillisecondsSinceEpoch(msg.sentAt * 1000).toString(),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      onTap: () {
+                        Get.delete<ChatSearchDialogController>();
+                        Navigator.pop(context);
+                        // TODO: Jump to this message in chat
+                      },
+                    );
+                  },
+                );
+              }),
             ),
             const SizedBox(height: 8),
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                Get.delete<ChatSearchDialogController>();
+                Navigator.pop(context);
+              },
               child: const Text('Close'),
             ),
           ],
