@@ -107,7 +107,7 @@ message Actor {
   string handle = 2;
   string display_name = 3;
   string avatar_url = 4;
-}
+}1
 ```
 
 **Generation**:

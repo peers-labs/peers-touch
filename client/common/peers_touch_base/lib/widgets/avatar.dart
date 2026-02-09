@@ -10,10 +10,17 @@ import 'package:peers_touch_base/widgets/avatar_resolver.dart';
 
 /// Avatar component. [actorId] (uid) is required. [avatarUrl] is optional and supported:
 /// when provided it is used; when null, resolution uses registered [AvatarResolver] by [actorId].
+/// 
+/// [fallbackName] is optional - if not provided, will be resolved from [AvatarResolver.getFallbackName].
+/// 
+/// Note: This is a StatelessWidget per project convention (ADR-002).
+/// Async fetching should be triggered by Controllers that register actors to AvatarResolver.
 class Avatar extends StatelessWidget {
   final String actorId;
   final String? avatarUrl;
-  final String fallbackName;
+  /// Optional fallback name for the avatar letter.
+  /// If null or empty, resolved from AvatarResolver.getFallbackName(actorId).
+  final String? fallbackName;
   final double size;
   final double? fontSize;
   final double borderRadius;
@@ -22,7 +29,7 @@ class Avatar extends StatelessWidget {
     super.key,
     required this.actorId,
     this.avatarUrl,
-    required this.fallbackName,
+    this.fallbackName,
     this.size = 40,
     this.fontSize,
     this.borderRadius = 8,
@@ -30,9 +37,11 @@ class Avatar extends StatelessWidget {
 
   /// Resolved URL: explicit [avatarUrl] if set, else from [AvatarResolver] by [actorId].
   String? get _resolvedUrl {
+    // 1. Check explicit URL
     if (avatarUrl != null && avatarUrl!.isNotEmpty) {
       return avatarUrl;
     }
+    // 2. Check resolver cache
     if (Get.isRegistered<AvatarResolver>()) {
       return Get.find<AvatarResolver>().getAvatarUrl(actorId);
     }
@@ -40,10 +49,15 @@ class Avatar extends StatelessWidget {
   }
 
   String get _effectiveFallbackName {
-    if (fallbackName.isNotEmpty) return fallbackName;
+    // 1. Use explicit fallbackName if provided
+    if (fallbackName != null && fallbackName!.isNotEmpty) {
+      return fallbackName!;
+    }
+    // 2. Resolve from AvatarResolver (which prefers username over displayName)
     if (Get.isRegistered<AvatarResolver>()) {
       return Get.find<AvatarResolver>().getFallbackName(actorId);
     }
+    // 3. Last resort: use actorId
     return actorId;
   }
 
@@ -65,26 +79,21 @@ class Avatar extends StatelessWidget {
 
   Widget _buildAvatarContent() {
     final url = _resolvedUrl;
-    LoggingService.debug('Avatar._buildAvatarContent: actorId="$actorId", resolvedUrl=${url != null && url.isNotEmpty}');
     
     if (url != null && url.isNotEmpty) {
       return _buildNetworkAvatar(url);
     }
 
-    LoggingService.debug('Avatar._buildAvatarContent: Using placeholder for actorId="$actorId", fallbackName="$_effectiveFallbackName"');
+    // Show placeholder
     return _buildPlaceholderAvatar();
   }
 
   Widget _buildNetworkAvatar(String url) {
-    
     String fullUrl = url;
     if (fullUrl.startsWith('/')) {
       final baseUrl = HttpServiceLocator().baseUrl.replaceAll(RegExp(r'/$'), '');
       fullUrl = '$baseUrl$fullUrl';
-      LoggingService.debug('Avatar: Converted relative URL for actorId=$actorId, full="$fullUrl"');
     }
-    
-    LoggingService.debug('Avatar: Loading avatar for actorId=$actorId, url="$fullUrl"');
 
     if (fullUrl.startsWith('http://') || fullUrl.startsWith('https://')) {
       return Image.network(

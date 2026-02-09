@@ -96,10 +96,10 @@ class GroupMessageBubble extends StatelessWidget {
   }
 
   Widget _buildAvatar(BuildContext context) {
+    // Avatar resolves fallbackName from AvatarResolver using actorId
     return Avatar(
       actorId: senderActorId ?? message.senderDid,
       avatarUrl: senderAvatarUrl,
-      fallbackName: senderName,
       size: 40,
     );
   }

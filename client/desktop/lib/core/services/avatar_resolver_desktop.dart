@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/widgets/avatar_resolver.dart';
 
 /// Actor info for caching avatar and display name
@@ -17,7 +18,9 @@ class ActorInfo {
     this.username,
   });
 
-  String get fallbackName => displayName ?? username ?? actorId;
+  /// For avatar fallback letter, prefer username (short unique id like "a", "bob")
+  /// over displayName (which might have common prefixes like "User A")
+  String get fallbackName => username ?? displayName ?? actorId;
 }
 
 /// Desktop implementation: resolve avatar by uid.
@@ -107,10 +110,12 @@ class AvatarResolverDesktop implements AvatarResolver {
     if (gc.actorId == actorId) {
       final profile = gc.userProfile;
       if (profile != null) {
-        final name = profile['displayName'] ??
-            profile['display_name'] ??
-            profile['username'] ??
-            profile['handle'];
+        // Prefer username for avatar letter (short, unique)
+        // over displayName (might have common prefixes like "User")
+        final name = profile['username'] ??
+            profile['handle'] ??
+            profile['displayName'] ??
+            profile['display_name'];
         if (name != null && name.toString().isNotEmpty) {
           return name.toString();
         }
@@ -124,5 +129,58 @@ class AvatarResolverDesktop implements AvatarResolver {
     }
 
     return actorId;
+  }
+
+  /// Track pending fetches to avoid duplicate requests
+  final Set<String> _pendingFetches = {};
+
+  @override
+  Future<String?> fetchAvatarUrl(String actorId) async {
+    // Check cache first
+    final cached = getAvatarUrl(actorId);
+    if (cached != null) {
+      return cached;
+    }
+
+    // Avoid duplicate requests
+    if (_pendingFetches.contains(actorId)) {
+      LoggingService.debug('AvatarResolver: Already fetching $actorId');
+      return null;
+    }
+
+    _pendingFetches.add(actorId);
+
+    try {
+      LoggingService.debug('AvatarResolver: Fetching basic info for $actorId');
+      final client = HttpServiceLocator().httpService;
+      final response = await client.getResponse<Map<String, dynamic>>(
+        '/activitypub/actors/$actorId/basic-info',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data!;
+        final avatarUrl = data['avatar_url'] as String?;
+        final displayName = data['display_name'] as String?;
+        final username = data['username'] as String?;
+
+        // Cache the result
+        registerActor(
+          actorId: actorId,
+          avatarUrl: avatarUrl,
+          displayName: displayName,
+          username: username,
+        );
+
+        LoggingService.debug(
+            'AvatarResolver: Fetched $actorId, avatar=${avatarUrl != null}');
+        return avatarUrl;
+      }
+    } catch (e) {
+      LoggingService.warning('AvatarResolver: Failed to fetch $actorId: $e');
+    } finally {
+      _pendingFetches.remove(actorId);
+    }
+
+    return null;
   }
 }
