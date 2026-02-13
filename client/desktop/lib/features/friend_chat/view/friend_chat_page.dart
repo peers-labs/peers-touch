@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
-import 'package:peers_touch_base/model/domain/chat/group_chat.pb.dart';
 import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
 import 'package:peers_touch_base/widgets/avatar.dart';
 import 'package:peers_touch_base/widgets/avatar_resolver.dart';
@@ -12,7 +11,6 @@ import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_input_bar.
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_message_item.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/group_avatar_mosaic.dart';
-import 'package:peers_touch_desktop/features/friend_chat/view/group_info_page.dart';
 import 'package:peers_touch_desktop/features/friend_chat/view/group_info_panel.dart';
 import 'package:peers_touch_desktop/features/group_chat/view/create_group_dialog.dart';
 import 'package:peers_touch_desktop/features/group_chat/widgets/group_message_bubble.dart';
