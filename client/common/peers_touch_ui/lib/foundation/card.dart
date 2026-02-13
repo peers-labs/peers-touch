@@ -120,7 +120,7 @@ class _HoverableCardState extends State<_HoverableCard> {
         onLongPress: widget.onLongPress,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+          curve: Curves.easeInOut,
           transform: Matrix4.identity()
             ..translate(0.0, _isPressed ? 0.5 : (_isHovered ? -2.0 : 0.0)),
           decoration: BoxDecoration(
