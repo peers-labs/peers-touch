@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_desktop/features/friend_chat/binding/friend_chat_binding.dart';
-import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_controller.dart';
 import 'package:peers_touch_desktop/features/friend_chat/view/friend_chat_page.dart';
 import 'package:peers_touch_desktop/features/shell/manager/primary_menu_manager.dart';
 
