@@ -1,7 +1,11 @@
-# peers_touch_ui package analysis options
-# Inherits from shared client config
-include: ../../analysis_options.yaml
+include: package:flutter_lints/flutter.yaml
 
-analyzer:
-  exclude:
-    - 'example/**'
+linter:
+  rules:
+    prefer_const_constructors: true
+    prefer_const_declarations: true
+    prefer_final_fields: true
+    prefer_final_locals: true
+    avoid_print: true
+    avoid_relative_lib_imports: true
+    always_use_package_imports: true

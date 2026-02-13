@@ -3,7 +3,6 @@ import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/storage/config_database.dart';
 import 'package:peers_touch_base/storage/file_storage_manager.dart';
 import 'package:peers_touch_base/storage/kv/kv_database.dart';
-import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_desktop/app/routes/app_routes.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
