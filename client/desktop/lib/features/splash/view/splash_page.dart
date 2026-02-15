@@ -166,6 +166,18 @@ class SplashPage extends StatelessWidget {
                         color: Colors.grey.shade600,
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: controller.cancelLoading,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey.shade600,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      ),
+                      child: const Text(
+                        '取消',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
                   ],
                 );
               }

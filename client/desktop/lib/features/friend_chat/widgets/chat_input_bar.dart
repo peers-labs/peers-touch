@@ -101,36 +101,14 @@ class FriendChatInputBar extends StatelessWidget {
           ),
         ),
 
-        // 表情选择器
-        if (showEmojiPicker)
-          SimpleEmojiPicker(
-            onEmojiSelected: (emoji) {
-              onEmojiSelected?.call(emoji);
-              // 插入 emoji 到输入框
-              final text = controller.text;
-              final selection = controller.selection;
-              final newText = text.replaceRange(
-                selection.start,
-                selection.end,
-                emoji,
-              );
-              controller.text = newText;
-              controller.selection = TextSelection.collapsed(
-                offset: selection.start + emoji.length,
-              );
-            },
-            onBackspacePressed: () {
-              final text = controller.text;
-              if (text.isNotEmpty) {
-                controller.text = text.substring(0, text.length - 1);
-                controller.selection = TextSelection.collapsed(
-                  offset: controller.text.length,
-                );
-              }
-            },
-            onAddCustomSticker: onAddCustomSticker,
-            onFavoriteSticker: onFavoriteSticker,
-          ),
+        // 表情选择器（暂时移除，需要重新实现）
+        // if (showEmojiPicker)
+        //   SimpleEmojiPicker(
+        //     onEmojiSelected: (emoji) {},
+        //     onBackspacePressed: () {},
+        //     onAddCustomSticker: onAddCustomSticker,
+        //     onFavoriteSticker: onFavoriteSticker,
+        //   ),
       ],
     );
   }

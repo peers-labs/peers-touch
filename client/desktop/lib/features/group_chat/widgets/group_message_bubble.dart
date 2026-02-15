@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
-import 'package:peers_touch_base/widgets/avatar.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
 

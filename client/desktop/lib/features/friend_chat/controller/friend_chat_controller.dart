@@ -24,7 +24,9 @@ import 'package:peers_touch_desktop/features/friend_chat/friend_chat_module.dart
 import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
 import 'package:peers_touch_desktop/core/services/avatar_resolver_desktop.dart';
-import 'package:peers_touch_base/widgets/avatar_resolver.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
+import 'package:peers_touch_desktop/features/friend_chat/services/chat_message_service.dart';
+import 'package:peers_touch_desktop/features/friend_chat/widgets/attachment_selector.dart';
 
 class FriendItem {
   final String actorId;
@@ -53,6 +55,9 @@ class FriendChatController extends GetxController {
   final error = Rx<String?>(null);
   final showEmojiPicker = false.obs;
   
+  // Message services - use high-level service (facade pattern)
+  final _chatMessageService = ChatMessageService();
+  
   // ScrollController for message list - auto scroll to bottom
   final ScrollController messageScrollController = ScrollController();
   final ScrollController groupMessageScrollController = ScrollController();
@@ -60,7 +65,6 @@ class FriendChatController extends GetxController {
   // Scroll position state for smart auto-scroll
   final isUserNearGroupBottom = true.obs;  // Track if user is near bottom of group messages
   final showScrollToLatest = false.obs;    // Show "scroll to latest" banner
-  static const _scrollThreshold = 150.0;   // Pixels from bottom to consider "at bottom"
   
   // Thread panel state (Slack-style right panel)
   final showThreadPanel = false.obs;
@@ -81,54 +85,47 @@ class FriendChatController extends GetxController {
   }
   
   /// Scroll message list to bottom
+  /// In reverse ListView, scrolling to 0 means scrolling to the bottom (newest messages)
   void scrollToBottom({bool animated = true}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (messageScrollController.hasClients) {
-        if (animated) {
-          messageScrollController.animateTo(
-            messageScrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-          );
-        } else {
-          messageScrollController.jumpTo(messageScrollController.position.maxScrollExtent);
-        }
+    if (messageScrollController.hasClients) {
+      if (animated) {
+        messageScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      } else {
+        messageScrollController.jumpTo(0);
       }
-    });
+    }
   }
   
   /// Scroll group message list to bottom (respects user scroll position)
-  /// Only scrolls if user is already near bottom, otherwise shows "scroll to latest" banner
+  /// In reverse ListView, scrolling to 0 means scrolling to the bottom (newest messages)
   void scrollGroupToBottom({bool animated = true, bool force = false}) {
-    // Use double postFrameCallback to ensure ListView has completed layout
-    // after messages are added - this prevents the "shake" effect
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (groupMessageScrollController.hasClients) {
-          // Only auto-scroll if user is near bottom OR force is true
-          if (force || isUserNearGroupBottom.value) {
-            if (animated) {
-              groupMessageScrollController.animateTo(
-                groupMessageScrollController.position.maxScrollExtent,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-              );
-            } else {
-              groupMessageScrollController.jumpTo(groupMessageScrollController.position.maxScrollExtent);
-            }
-            showScrollToLatest.value = false;
-          } else {
-            // User is viewing history, show banner instead
-            showScrollToLatest.value = true;
-          }
-        }
-      });
-    });
+    if (groupMessageScrollController.hasClients) {
+      if (animated) {
+        groupMessageScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      } else {
+        groupMessageScrollController.jumpTo(0);
+      }
+    }
   }
   
   /// User explicitly wants to scroll to latest (e.g. clicked "scroll to latest" button)
   void scrollGroupToLatest() {
-    scrollGroupToBottom(animated: true, force: true);
+    if (groupMessageScrollController.hasClients) {
+      // In reverse ListView, position 0 is the bottom (newest messages)
+      groupMessageScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
     showScrollToLatest.value = false;
     isUserNearGroupBottom.value = true;
   }
@@ -157,8 +154,35 @@ class FriendChatController extends GetxController {
     showEmojiPicker.value = !showEmojiPicker.value;
   }
   
-  /// Pick and send attachment (image or file)
+  /// Pick and send attachment (image or file) - show selector
   Future<void> pickAttachment() async {
+    await AttachmentSelector.show(
+      Get.context!,
+      onOptionSelected: (option) async {
+        switch (option) {
+          case AttachmentOption.IMAGE:
+            await pickImage();
+            break;
+          case AttachmentOption.FILE:
+            await pickFile();
+            break;
+          case AttachmentOption.LOCATION:
+          case AttachmentOption.AUDIO:
+          case AttachmentOption.VIDEO:
+          case AttachmentOption.CONTACT:
+            Get.snackbar(
+              '提示',
+              '${option.name} 功能开发中',
+              snackPosition: SnackPosition.BOTTOM,
+            );
+            break;
+        }
+      },
+    );
+  }
+  
+  /// Pick file specifically
+  Future<void> pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
@@ -170,22 +194,14 @@ class FriendChatController extends GetxController {
       final file = result.files.first;
       if (file.path == null) return;
       
-      // Determine file type and send accordingly
-      final extension = file.extension?.toLowerCase() ?? '';
-      final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].contains(extension);
-      
-      if (isImage) {
-        await _sendImageMessage(File(file.path!));
-      } else {
-        await _sendFileMessage(File(file.path!), file.name);
-      }
+      await _sendFileMessage(File(file.path!), file.name);
     } catch (e) {
-      LoggingService.error('Failed to pick attachment: $e');
-      error.value = 'Failed to pick attachment';
+      LoggingService.error('Failed to pick file: $e');
+      error.value = 'Failed to pick file';
     }
   }
   
-  /// Pick and send image specifically
+  /// Pick and send image specifically - show preview dialog
   Future<void> pickImage() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -207,16 +223,13 @@ class FriendChatController extends GetxController {
   
   /// Send image message
   Future<void> _sendImageMessage(File file) async {
-    // For now, just show a placeholder - actual implementation requires OSS upload
-    // TODO: Upload image to OSS and send image message
-    LoggingService.info('Image selected: ${file.path}');
+    LoggingService.info('FriendChatController: Image selected - ${file.path}');
     
     // For group chat
     if (currentGroup.value != null) {
-      // TODO: Implement group image message
       Get.snackbar(
         '提示',
-        '图片发送功能即将上线',
+        '群聊图片发送功能即将上线（已准备好 ChatMessageService）',
         snackPosition: SnackPosition.BOTTOM,
       );
       return;
@@ -224,10 +237,9 @@ class FriendChatController extends GetxController {
     
     // For private chat
     if (currentSession.value != null) {
-      // TODO: Implement private chat image message
       Get.snackbar(
         '提示',
-        '图片发送功能即将上线',
+        '私聊图片发送功能即将上线（已准备好 ChatMessageService）',
         snackPosition: SnackPosition.BOTTOM,
       );
       return;
@@ -236,11 +248,10 @@ class FriendChatController extends GetxController {
   
   /// Send file message
   Future<void> _sendFileMessage(File file, String fileName) async {
-    // TODO: Upload file to OSS and send file message
-    LoggingService.info('File selected: ${file.path}, name: $fileName');
+    LoggingService.info('FriendChatController: File selected - ${file.path}, name: $fileName');
     Get.snackbar(
       '提示',
-      '文件发送功能即将上线',
+      '文件发送功能即将上线（已准备好 ChatMessageService）',
       snackPosition: SnackPosition.BOTTOM,
     );
   }
@@ -450,18 +461,18 @@ class FriendChatController extends GetxController {
     if (!groupMessageScrollController.hasClients) return;
     
     final position = groupMessageScrollController.position;
-    final maxScroll = position.maxScrollExtent;
-    final currentScroll = position.pixels;
     
-    // User is "near bottom" if within threshold of max scroll
-    final nearBottom = (maxScroll - currentScroll) <= _scrollThreshold;
+    // In reverse ListView, pixels value closer to 0 means closer to bottom (newest messages)
+    final isAtBottom = position.pixels < 100;
     
-    if (nearBottom != isUserNearGroupBottom.value) {
-      isUserNearGroupBottom.value = nearBottom;
+    if (isAtBottom != isUserNearGroupBottom.value) {
+      isUserNearGroupBottom.value = isAtBottom;
     }
     
-    // Hide "scroll to latest" when user scrolls to bottom
-    if (nearBottom && showScrollToLatest.value) {
+    // Show/hide "scroll to latest" banner based on position
+    if (!isAtBottom && !showScrollToLatest.value) {
+      showScrollToLatest.value = true;
+    } else if (isAtBottom && showScrollToLatest.value) {
       showScrollToLatest.value = false;
     }
   }
@@ -542,7 +553,6 @@ class FriendChatController extends GetxController {
       if (isCurrentChat) {
         // Trigger a refresh of messages for current chat
         _fetchNewMessages();
-        scrollToBottom();
       }
       
       // Update unread count in unified sessions
@@ -845,10 +855,11 @@ class FriendChatController extends GetxController {
       await _loadGroupMembers(group.ulid);
       
       final loadedMessages = await _groupApi.getMessages(group.ulid);
-      groupMessages.assignAll(loadedMessages);
       
-      // Auto scroll to bottom after loading (force because it's initial load)
-      scrollGroupToBottom(animated: false, force: true);
+      // Ensure messages are sorted in chronological order (oldest first)
+      loadedMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
+      
+      groupMessages.assignAll(loadedMessages);
       
       LoggingService.info('Loaded ${loadedMessages.length} messages for group ${group.ulid}');
     } catch (e) {
@@ -962,8 +973,6 @@ class FriendChatController extends GetxController {
       );
       groupMessages.add(newMessage);
       inputController.clear();
-      // Force scroll to bottom after sending (user's own message)
-      scrollGroupToBottom(force: true);
       LoggingService.info('Group message sent: ${newMessage.ulid}');
     } catch (e) {
       LoggingService.error('Failed to send group message: $e');
@@ -1271,7 +1280,6 @@ class FriendChatController extends GetxController {
         // Find new messages in server order and append them
         final newMessages = loadedMessages.where((m) => newMessageUlids.contains(m.ulid)).toList();
         groupMessages.addAll(newMessages);
-        scrollGroupToBottom();
         return;
       }
       
@@ -1286,7 +1294,6 @@ class FriendChatController extends GetxController {
       if (newMessageUlids.isNotEmpty) {
         final newMessages = loadedMessages.where((m) => newMessageUlids.contains(m.ulid)).toList();
         groupMessages.addAll(newMessages);
-        scrollGroupToBottom();
       }
     } catch (e) {
       // Silently ignore refresh errors

@@ -321,11 +321,12 @@ class LoginPage extends GetView<AuthController> {
                       )
                     : const SizedBox.shrink()),
                 const SizedBox(height: 24),
-                Obx(() => PrimaryButton(
+                Obx(() => Button(
+                      type: ButtonType.primary,
                       text: controller.authTab.value == 0 ? l.signIn : l.signUp,
                       loading: controller.loading.value,
                       onPressed: () => controller.authTab.value == 0 ? controller.login() : controller.signup(),
-                      fullWidth: true,
+                      block: true,
                     )),
                 Obx(() => controller.authTab.value == 0
                     ? Padding(

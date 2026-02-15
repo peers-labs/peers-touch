@@ -10,7 +10,7 @@ import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/network/token_provider.dart';
 import 'package:peers_touch_base/repositories/actor_repository.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
-import 'package:peers_touch_base/widgets/avatar_resolver.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_base/storage/local_storage_adapter.dart';
 import 'package:peers_touch_base/storage/secure_storage.dart';
 import 'package:peers_touch_base/storage/secure_storage_adapter.dart';
