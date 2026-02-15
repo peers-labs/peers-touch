@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:peers_touch_base/widgets/avatar.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_desktop/features/discovery/controller/discovery_controller.dart';
 
 class RadarView extends StatelessWidget {
