@@ -2,7 +2,7 @@ import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_base/widgets/avatar_resolver.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 /// Actor info for caching avatar and display name
 class ActorInfo {
