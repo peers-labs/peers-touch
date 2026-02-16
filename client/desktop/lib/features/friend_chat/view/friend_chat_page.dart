@@ -10,6 +10,7 @@ import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.d
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_input_bar.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_message_item.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
+import 'package:peers_touch_desktop/features/friend_chat/widgets/emoji_picker_panel.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/group_avatar_mosaic.dart';
 import 'package:peers_touch_desktop/features/friend_chat/view/group_info_panel.dart';
 import 'package:peers_touch_desktop/features/group_chat/view/create_group_dialog.dart';
@@ -643,20 +644,36 @@ class FriendChatPage extends GetView<FriendChatController> {
                 content: replyMsg.content,
               );
             }
-            return FriendChatInputBar(
-              controller: controller.inputController,
-              onSend: () {
-                final text = controller.inputController.text;
-                controller.sendMessage(text);
-                controller.cancelReply();
-              },
-              isSending: controller.isSending.value,
-              showEmojiPicker: controller.showEmojiPicker.value,
-              onToggleEmojiPicker: controller.toggleEmojiPicker,
-              replyMessage: replyPreview,
-              onCancelReply: controller.cancelReply,
-              onAttachmentTap: controller.pickAttachment,
-              onAddCustomSticker: controller.addCustomSticker,
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FriendChatInputBar(
+                  controller: controller.inputController,
+                  onSend: () {
+                    final text = controller.inputController.text;
+                    controller.sendMessage(text);
+                    controller.cancelReply();
+                  },
+                  isSending: controller.isSending.value,
+                  showEmojiPicker: controller.showEmojiPicker.value,
+                  onToggleEmojiPicker: controller.toggleEmojiPicker,
+                  onEmojiSelected: controller.insertEmoji,
+                  replyMessage: replyPreview,
+                  onCancelReply: controller.cancelReply,
+                  onAttachmentTap: controller.pickAttachment,
+                  onAddCustomSticker: controller.addCustomSticker,
+                ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  child: controller.showEmojiPicker.value
+                      ? EmojiPickerPanel(
+                          onEmojiSelected: controller.insertEmoji,
+                          textController: controller.inputController,
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
             );
           }),
         ],

@@ -154,6 +154,22 @@ class FriendChatController extends GetxController {
     showEmojiPicker.value = !showEmojiPicker.value;
   }
   
+  void insertEmoji(String emoji) {
+    final text = inputController.text;
+    final selection = inputController.selection;
+    final newText = text.replaceRange(
+      selection.start,
+      selection.end,
+      emoji,
+    );
+    inputController.value = inputController.value.copyWith(
+      text: newText,
+      selection: TextSelection.collapsed(
+        offset: selection.start + emoji.length,
+      ),
+    );
+  }
+  
   /// Pick and send attachment (image or file) - show selector
   Future<void> pickAttachment() async {
     await AttachmentSelector.show(
@@ -223,37 +239,115 @@ class FriendChatController extends GetxController {
   
   /// Send image message
   Future<void> _sendImageMessage(File file) async {
-    LoggingService.info('FriendChatController: Image selected - ${file.path}');
-    
-    // For group chat
-    if (currentGroup.value != null) {
+    try {
+      LoggingService.info('FriendChatController: Sending image message');
+      
+      // For group chat
+      if (currentGroup.value != null) {
+        Get.snackbar(
+          '提示',
+          '群聊图片发送功能即将上线',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return;
+      }
+      
+      // For private chat
+      final session = currentSession.value;
+      final friend = currentFriend.value;
+      
+      if (session == null || friend == null) {
+        LoggingService.warning('FriendChatController: No active session or friend');
+        return;
+      }
+      
+      final myActorId = currentUserId;
+      if (myActorId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user actor ID is null');
+        error.value = 'User not logged in';
+        return;
+      }
+      
+      // Create optimistic message and add to list immediately
+      final tempMessage = await _chatMessageService.sendImageMessage(
+        from: myActorId,
+        to: friend.actorId,
+        sessionUlid: session.id,
+        imageFile: file,
+        onUpdate: (updated) {
+          _updateMessageInList(updated);
+        },
+      );
+      
+      // Add to messages list for immediate display
+      messages.insert(0, tempMessage);
+      scrollToBottom();
+      
+      LoggingService.info('FriendChatController: Image message sent successfully');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to send image: $e');
+      error.value = 'Failed to send image: $e';
       Get.snackbar(
-        '提示',
-        '群聊图片发送功能即将上线（已准备好 ChatMessageService）',
+        '发送失败',
+        '图片发送失败，请重试',
         snackPosition: SnackPosition.BOTTOM,
       );
-      return;
     }
-    
-    // For private chat
-    if (currentSession.value != null) {
-      Get.snackbar(
-        '提示',
-        '私聊图片发送功能即将上线（已准备好 ChatMessageService）',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
+  }
+  
+  void _updateMessageInList(ChatMessage updated) {
+    final index = messages.indexWhere((m) => m.id == updated.id);
+    if (index != -1) {
+      messages[index] = updated;
+      messages.refresh();
     }
   }
   
   /// Send file message
   Future<void> _sendFileMessage(File file, String fileName) async {
-    LoggingService.info('FriendChatController: File selected - ${file.path}, name: $fileName');
-    Get.snackbar(
-      '提示',
-      '文件发送功能即将上线（已准备好 ChatMessageService）',
-      snackPosition: SnackPosition.BOTTOM,
-    );
+    try {
+      LoggingService.info('FriendChatController: Sending file message - $fileName');
+      
+      final session = currentSession.value;
+      final friend = currentFriend.value;
+      
+      if (session == null || friend == null) {
+        LoggingService.warning('FriendChatController: No active session or friend');
+        return;
+      }
+      
+      final myActorId = currentUserId;
+      if (myActorId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user actor ID is null');
+        error.value = 'User not logged in';
+        return;
+      }
+      
+      // Create optimistic message and add to list immediately
+      final tempMessage = await _chatMessageService.sendFileMessage(
+        from: myActorId,
+        to: friend.actorId,
+        sessionUlid: session.id,
+        file: file,
+        onUpdate: (updated) {
+          _updateMessageInList(updated);
+        },
+      );
+      
+      // Add to messages list for immediate display
+      messages.insert(0, tempMessage);
+      scrollToBottom();
+      
+      LoggingService.info('FriendChatController: File message sent successfully');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to send file: $e');
+      error.value = 'Failed to send file: $e';
+      Get.snackbar(
+        '发送失败',
+        '文件发送失败，请重试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    }
   }
   
   /// Add custom sticker (pick image as sticker)
