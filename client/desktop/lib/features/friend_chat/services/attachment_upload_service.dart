@@ -66,7 +66,7 @@ class AttachmentUploadService {
       ));
 
       final ossFile = await _ossService.uploadFile(compressedFile);
-      LoggingService.info('AttachmentUploadService: Image uploaded to OSS: ${ossFile.remoteUrl}');
+      LoggingService.info('AttachmentUploadService: Image uploaded to OSS: ${ossFile['url']}');
 
       onProgress?.call(UploadProgress(
         percentage: 0.8,
@@ -76,7 +76,7 @@ class AttachmentUploadService {
       ));
 
       final thumbnailOss = await _ossService.uploadFile(thumbnail);
-      LoggingService.info('AttachmentUploadService: Thumbnail uploaded: ${thumbnailOss.remoteUrl}');
+      LoggingService.info('AttachmentUploadService: Thumbnail uploaded: ${thumbnailOss['url']}');
 
       final dimensions = await _getImageDimensions(compressedFile);
 
@@ -86,15 +86,15 @@ class AttachmentUploadService {
 
       return MessageAttachment(
         type: AttachmentType.IMAGE,
-        url: ossFile.key,
-        thumbnailUrl: thumbnailOss.key,
+        url: ossFile['key'] as String,
+        thumbnailUrl: thumbnailOss['key'] as String,
         fileSize: await compressedFile.length(),
         fileName: path.basename(imageFile.path),
         metadata: {
           'width': dimensions['width'],
           'height': dimensions['height'],
-          'oss_key': ossFile.key,
-          'thumbnail_oss_key': thumbnailOss.key,
+          'oss_key': ossFile['key'],
+          'thumbnail_oss_key': thumbnailOss['key'],
         },
       );
     } catch (e) {
@@ -124,7 +124,7 @@ class AttachmentUploadService {
       ));
 
       final ossFile = await _ossService.uploadFile(file);
-      LoggingService.info('AttachmentUploadService: File uploaded to OSS: ${ossFile.remoteUrl}');
+      LoggingService.info('AttachmentUploadService: File uploaded to OSS: ${ossFile['url']}');
 
       onProgress?.call(UploadProgress.completed(fileSize));
 
@@ -133,11 +133,11 @@ class AttachmentUploadService {
 
       return MessageAttachment(
         type: attachmentType,
-        url: ossFile.key,
+        url: ossFile['key'] as String,
         fileSize: fileSize,
         fileName: path.basename(file.path),
         metadata: {
-          'oss_key': ossFile.key,
+          'oss_key': ossFile['key'],
           'mime_type': mimeType,
         },
       );
