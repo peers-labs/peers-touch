@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/message_types/image_message_bubble.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/message_types/file_message_bubble.dart';
-import 'package:peers_touch_desktop/features/shared/extensions/chat_message_extensions.dart';
 
 /// Factory class for creating message bubbles based on message type.
 /// 
