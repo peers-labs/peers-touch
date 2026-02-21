@@ -7,11 +7,13 @@ import 'package:peers_touch_ui/components/media/image_viewer.dart';
 class ImageMessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMe;
+  final VoidCallback? onRetry;
 
   const ImageMessageBubble({
     super.key,
     required this.message,
     required this.isMe,
+    this.onRetry,
   });
 
   @override
@@ -109,7 +111,7 @@ class ImageMessageBubble extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           TextButton(
-            onPressed: () {},
+            onPressed: onRetry,
             child: const Text('重试'),
           ),
         ],

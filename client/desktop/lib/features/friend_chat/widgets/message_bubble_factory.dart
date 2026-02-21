@@ -48,12 +48,14 @@ class MessageBubbleFactory {
         return ImageMessageBubble(
           message: message,
           isMe: isMe,
+          onRetry: onRetry,
         );
 
       case MessageType.MESSAGE_TYPE_FILE:
         return FileMessageBubble(
           message: message,
           isMe: isMe,
+          onRetry: onRetry,
         );
 
       case MessageType.MESSAGE_TYPE_STICKER:

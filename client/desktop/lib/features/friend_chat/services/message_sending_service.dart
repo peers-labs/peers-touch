@@ -124,7 +124,7 @@ class MessageSendingService {
     try {
       LoggingService.info('MessageSendingService: Sending message to server type=${message.type}');
 
-      final messageTypeInt = _mapMessageTypeToInt(message.type);
+      final friendMessageType = _mapMessageTypeToProto(message.type);
       
       String content = message.content;
       if (attachment != null) {
@@ -135,7 +135,7 @@ class MessageSendingService {
         sessionUlid: sessionUlid,
         receiverDid: receiverDid,
         content: content,
-        type: messageTypeInt,
+        type: friendMessageType,
         replyToUlid: message.replyToId.isNotEmpty ? message.replyToId : null,
       );
 
@@ -188,24 +188,24 @@ class MessageSendingService {
     }
   }
 
-  int _mapMessageTypeToInt(MessageType type) {
+  fc.FriendMessageType _mapMessageTypeToProto(MessageType type) {
     switch (type) {
       case MessageType.MESSAGE_TYPE_TEXT:
-        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT.value;
+        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT;
       case MessageType.MESSAGE_TYPE_IMAGE:
-        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_IMAGE.value;
+        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_IMAGE;
       case MessageType.MESSAGE_TYPE_FILE:
-        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_FILE.value;
+        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_FILE;
       case MessageType.MESSAGE_TYPE_AUDIO:
-        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_AUDIO.value;
+        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_AUDIO;
       case MessageType.MESSAGE_TYPE_VIDEO:
-        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_VIDEO.value;
+        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_VIDEO;
       case MessageType.MESSAGE_TYPE_STICKER:
       case MessageType.MESSAGE_TYPE_LOCATION:
       case MessageType.MESSAGE_TYPE_SYSTEM:
-        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT.value;
+        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT;
       default:
-        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT.value;
+        return fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT;
     }
   }
 

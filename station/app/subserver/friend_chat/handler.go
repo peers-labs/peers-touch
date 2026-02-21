@@ -27,7 +27,7 @@ func (s *friendChatSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHTTPHandler("fc-session-create", "/friend-chat/session/create", server.POST, server.HTTPHandlerFunc(s.handleSessionCreate), logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("fc-sessions", "/friend-chat/sessions", server.GET, server.HTTPHandlerFunc(s.handleGetSessions), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("fc-message-send", "/friend-chat/message/send", server.POST, server.HTTPHandlerFunc(s.handleSendMessage), logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("fc-message-send", "/friend-chat/message/send", server.POST, server.HTTPHandlerFunc(s.handleSendMessageProto), logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("fc-message-sync", "/friend-chat/message/sync", server.POST, server.HTTPHandlerFunc(s.handleSyncMessages), logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("fc-messages", "/friend-chat/messages", server.GET, server.HTTPHandlerFunc(s.handleGetMessages), logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("fc-message-ack", "/friend-chat/message/ack", server.POST, server.HTTPHandlerFunc(s.handleMessageAck), logIDWrapper, jwtWrapper),
@@ -154,6 +154,96 @@ type sendMessageReq struct {
 type sendMessageResp struct {
 	Message        messageInfo `json:"message"`
 	DeliveryStatus string      `json:"delivery_status"`
+}
+
+func (s *friendChatSubServer) handleSendMessageProto(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		logger.Error(r.Context(), "Failed to read request body", "error", err)
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	var req chat.SendMessageRequest
+	if err := proto.Unmarshal(body, &req); err != nil {
+		logger.Error(r.Context(), "Failed to unmarshal proto request", "error", err)
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	subject := httpadapter.GetSubject(r)
+	if subject == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	senderActorDID := subject.ID
+
+	if req.ReceiverDid == "" || req.Content == "" {
+		http.Error(w, "missing required fields", http.StatusBadRequest)
+		return
+	}
+
+	msgType := int32(req.Type)
+	if msgType == 0 {
+		msgType = 1
+	}
+
+	msg, err := s.messageService.SendMessage(r.Context(), &service.SendMessageRequest{
+		SessionULID: req.SessionUlid,
+		SenderDID:   senderActorDID,
+		ReceiverDID: req.ReceiverDid,
+		Type:        msgType,
+		Content:     req.Content,
+		ReplyToULID: req.ReplyToUlid,
+	})
+	if err != nil {
+		logger.Error(r.Context(), "Failed to send message", "error", err)
+		http.Error(w, "failed to send message", http.StatusInternalServerError)
+		return
+	}
+
+	s.mu.RLock()
+	peer, isOnline := s.onlinePeers[req.ReceiverDid]
+	if isOnline && time.Now().Unix()-peer.UpdatedAt > 60 {
+		isOnline = false
+	}
+	s.mu.RUnlock()
+
+	relayStatus := "delivered"
+	if !isOnline {
+		relayStatus = "queued"
+		s.relayService.StoreOfflineMessage(r.Context(), &service.StoreOfflineRequest{
+			MessageULID:      msg.ULID,
+			SenderDID:        senderActorDID,
+			ReceiverDID:      req.ReceiverDid,
+			SessionULID:      req.SessionUlid,
+			EncryptedPayload: []byte(req.Content),
+			ExpireDuration:   0,
+		})
+	}
+
+	resp := &chat.SendMessageResponse{
+		Message: &chat.FriendChatMessage{
+			Ulid:        msg.ULID,
+			SessionUlid: msg.SessionULID,
+			SenderDid:   msg.SenderDID,
+			ReceiverDid: msg.ReceiverDID,
+			Type:        chat.FriendMessageType(msg.Type),
+			Content:     msg.Content,
+			Status:      chat.FriendMessageStatus(msg.Status),
+		},
+		RelayStatus: relayStatus,
+	}
+
+	out, err := proto.Marshal(resp)
+	if err != nil {
+		logger.Error(r.Context(), "Failed to marshal proto response", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/protobuf")
+	w.Write(out)
 }
 
 func (s *friendChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.Request) {
