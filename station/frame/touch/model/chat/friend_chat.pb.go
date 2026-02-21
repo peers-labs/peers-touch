@@ -732,11 +732,12 @@ func (x *OfflineMessage) GetUpdatedAt() *timestamppb.Timestamp {
 
 type SendMessageRequest struct {
 	state         protoimpl.MessageState     `protogen:"open.v1"`
-	ReceiverDid   string                     `protobuf:"bytes,1,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
-	Type          FriendMessageType          `protobuf:"varint,2,opt,name=type,proto3,enum=peers_touch.model.chat.v1.FriendMessageType" json:"type,omitempty"`
-	Content       string                     `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
-	Attachments   []*FriendMessageAttachment `protobuf:"bytes,4,rep,name=attachments,proto3" json:"attachments,omitempty"`
-	ReplyToUlid   string                     `protobuf:"bytes,5,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
+	SessionUlid   string                     `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	ReceiverDid   string                     `protobuf:"bytes,2,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
+	Type          FriendMessageType          `protobuf:"varint,3,opt,name=type,proto3,enum=peers_touch.model.chat.v1.FriendMessageType" json:"type,omitempty"`
+	Content       string                     `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
+	Attachments   []*FriendMessageAttachment `protobuf:"bytes,5,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	ReplyToUlid   string                     `protobuf:"bytes,6,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -769,6 +770,13 @@ func (x *SendMessageRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SendMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendMessageRequest) Descriptor() ([]byte, []int) {
 	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SendMessageRequest) GetSessionUlid() string {
+	if x != nil {
+		return x.SessionUlid
+	}
+	return ""
 }
 
 func (x *SendMessageRequest) GetReceiverDid() string {

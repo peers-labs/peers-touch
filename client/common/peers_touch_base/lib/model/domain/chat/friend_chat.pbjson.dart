@@ -335,35 +335,37 @@ final $typed_data.Uint8List offlineMessageDescriptor = $convert.base64Decode(
 const SendMessageRequest$json = {
   '1': 'SendMessageRequest',
   '2': [
-    {'1': 'receiver_did', '3': 1, '4': 1, '5': 9, '10': 'receiverDid'},
+    {'1': 'session_ulid', '3': 1, '4': 1, '5': 9, '10': 'sessionUlid'},
+    {'1': 'receiver_did', '3': 2, '4': 1, '5': 9, '10': 'receiverDid'},
     {
       '1': 'type',
-      '3': 2,
+      '3': 3,
       '4': 1,
       '5': 14,
       '6': '.peers_touch.model.chat.v1.FriendMessageType',
       '10': 'type'
     },
-    {'1': 'content', '3': 3, '4': 1, '5': 9, '10': 'content'},
+    {'1': 'content', '3': 4, '4': 1, '5': 9, '10': 'content'},
     {
       '1': 'attachments',
-      '3': 4,
+      '3': 5,
       '4': 3,
       '5': 11,
       '6': '.peers_touch.model.chat.v1.FriendMessageAttachment',
       '10': 'attachments'
     },
-    {'1': 'reply_to_ulid', '3': 5, '4': 1, '5': 9, '10': 'replyToUlid'},
+    {'1': 'reply_to_ulid', '3': 6, '4': 1, '5': 9, '10': 'replyToUlid'},
   ],
 };
 
 /// Descriptor for `SendMessageRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List sendMessageRequestDescriptor = $convert.base64Decode(
-    'ChJTZW5kTWVzc2FnZVJlcXVlc3QSIQoMcmVjZWl2ZXJfZGlkGAEgASgJUgtyZWNlaXZlckRpZB'
-    'JACgR0eXBlGAIgASgOMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5GcmllbmRNZXNzYWdl'
-    'VHlwZVIEdHlwZRIYCgdjb250ZW50GAMgASgJUgdjb250ZW50ElQKC2F0dGFjaG1lbnRzGAQgAy'
-    'gLMjIucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5GcmllbmRNZXNzYWdlQXR0YWNobWVudFIL'
-    'YXR0YWNobWVudHMSIgoNcmVwbHlfdG9fdWxpZBgFIAEoCVILcmVwbHlUb1VsaWQ=');
+    'ChJTZW5kTWVzc2FnZVJlcXVlc3QSIQoMc2Vzc2lvbl91bGlkGAEgASgJUgtzZXNzaW9uVWxpZB'
+    'IhCgxyZWNlaXZlcl9kaWQYAiABKAlSC3JlY2VpdmVyRGlkEkAKBHR5cGUYAyABKA4yLC5wZWVy'
+    'c190b3VjaC5tb2RlbC5jaGF0LnYxLkZyaWVuZE1lc3NhZ2VUeXBlUgR0eXBlEhgKB2NvbnRlbn'
+    'QYBCABKAlSB2NvbnRlbnQSVAoLYXR0YWNobWVudHMYBSADKAsyMi5wZWVyc190b3VjaC5tb2Rl'
+    'bC5jaGF0LnYxLkZyaWVuZE1lc3NhZ2VBdHRhY2htZW50UgthdHRhY2htZW50cxIiCg1yZXBseV'
+    '90b191bGlkGAYgASgJUgtyZXBseVRvVWxpZA==');
 
 @$core.Deprecated('Use sendMessageResponseDescriptor instead')
 const SendMessageResponse$json = {

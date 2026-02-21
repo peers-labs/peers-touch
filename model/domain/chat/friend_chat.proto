@@ -96,11 +96,12 @@ enum OfflineMessageStatus {
 }
 
 message SendMessageRequest {
-  string receiver_did = 1;
-  FriendMessageType type = 2;
-  string content = 3;
-  repeated FriendMessageAttachment attachments = 4;
-  string reply_to_ulid = 5;
+  string session_ulid = 1;
+  string receiver_did = 2;
+  FriendMessageType type = 3;
+  string content = 4;
+  repeated FriendMessageAttachment attachments = 5;
+  string reply_to_ulid = 6;
 }
 
 message SendMessageResponse {

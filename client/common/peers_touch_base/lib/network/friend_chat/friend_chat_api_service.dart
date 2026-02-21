@@ -186,24 +186,28 @@ class FriendChatApiService {
     return GetSessionsResponse.fromJson(response.data ?? {});
   }
 
-  Future<SendMessageResponse> sendMessage({
+  Future<fc.SendMessageResponse> sendMessage({
     required String sessionUlid,
     required String receiverDid,
     required String content,
-    int type = 1,
+    fc.FriendMessageType type = fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT,
     String? replyToUlid,
   }) async {
-    final response = await _httpService.postResponse<Map<String, dynamic>>(
-      '/friend-chat/message/send',
-      data: {
-        'session_ulid': sessionUlid,
-        'receiver_did': receiverDid,
-        'type': type,
-        'content': content,
-        if (replyToUlid != null) 'reply_to_ulid': replyToUlid,
-      },
+    final request = fc.SendMessageRequest(
+      sessionUlid: sessionUlid,
+      receiverDid: receiverDid,
+      type: type,
+      content: content,
+      replyToUlid: replyToUlid ?? '',
     );
-    return SendMessageResponse.fromJson(response.data ?? {});
+
+    final proto = await _httpService.post<fc.SendMessageResponse>(
+      '/friend-chat/message/send',
+      data: request,
+      fromJson: fc.SendMessageResponse.fromBuffer,
+    );
+    
+    return proto;
   }
 
   /// Sync messages to server (Proto). Request/response use application/protobuf.
