@@ -9,6 +9,7 @@ import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/model/domain/chat/friend_chat.pb.dart' as fc;
+import 'package:peers_touch_desktop/features/shared/extensions/chat_message_extensions.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/network/event/event_stream_service.dart';
@@ -168,6 +169,48 @@ class FriendChatController extends GetxController {
         offset: selection.start + emoji.length,
       ),
     );
+  }
+  
+  Future<void> sendSticker(String stickerUrl) async {
+    try {
+      LoggingService.info('FriendChatController: Sending sticker message');
+      
+      final session = currentSession.value;
+      final friend = currentFriend.value;
+      
+      if (session == null || friend == null) {
+        LoggingService.warning('FriendChatController: No active session or friend');
+        return;
+      }
+      
+      final myActorId = currentUserId;
+      if (myActorId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user actor ID is null');
+        error.value = 'User not logged in';
+        return;
+      }
+      
+      final sentMessage = await _chatMessageService.sendStickerMessage(
+        from: myActorId,
+        to: friend.actorId,
+        sessionUlid: session.id,
+        stickerUrl: stickerUrl,
+        stickerName: 'sticker',
+      );
+      
+      messages.insert(0, sentMessage);
+      scrollToBottom();
+      
+      LoggingService.info('FriendChatController: Sticker message sent successfully');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to send sticker: $e');
+      error.value = 'Failed to send sticker: $e';
+      Get.snackbar(
+        '发送失败',
+        '贴纸发送失败，请重试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    }
   }
   
   /// Pick and send attachment (image or file) - show selector
@@ -1826,7 +1869,7 @@ class FriendChatController extends GetxController {
           content: trimmedContent,
         );
 
-        if (response.deliveryStatus == 'delivered') {
+        if (response.relayStatus == 'delivered') {
           newMessage.status = MessageStatus.MESSAGE_STATUS_DELIVERED;
           connectionMode.value = ConnectionMode.stationRelay;
           connectionStats.value = connectionStats.value.copyWith(
@@ -1857,47 +1900,50 @@ class FriendChatController extends GetxController {
   /// Resend a failed message
   Future<void> resendMessage(ChatMessage message) async {
     if (message.status != MessageStatus.MESSAGE_STATUS_FAILED) return;
-    if (currentSession.value == null) return;
-
-    final session = currentSession.value!;
     
-    // Update message status to sending
-    message.status = MessageStatus.MESSAGE_STATUS_SENDING;
-    messages.refresh();
-
+    final session = currentSession.value;
+    final friend = currentFriend.value;
+    
+    if (session == null || friend == null) {
+      LoggingService.warning('FriendChatController: Cannot resend - no active session or friend');
+      return;
+    }
+    
     try {
-      final remotePeerId = connectionStats.value.remotePeerId;
-      final sessionUlid = session.id.replaceFirst('session_', '');
-
-      if (connectionMode.value == ConnectionMode.p2pDirect) {
-        _rtcClient!.send(message.content);
-        message.status = MessageStatus.MESSAGE_STATUS_SENT;
-        messages.refresh();
-        
-        _pendingMessages.add(message);
-        connectionStats.value = connectionStats.value.copyWith(
-          pendingSyncCount: _pendingMessages.length,
-        );
-      } else {
-        final response = await _chatApi.sendMessage(
-          sessionUlid: sessionUlid,
-          receiverDid: remotePeerId,
-          content: message.content,
-        );
-
-        if (response.deliveryStatus == 'delivered') {
-          message.status = MessageStatus.MESSAGE_STATUS_DELIVERED;
-        } else {
-          message.status = MessageStatus.MESSAGE_STATUS_SENT;
-        }
-        messages.refresh();
-      }
-      LoggingService.info('Message resent successfully: ${message.id}');
+      LoggingService.info('FriendChatController: Retrying failed message type=${message.type}');
+      
+      // Update message status to sending
+      final updatedMessage = message.copyWithMetadata(
+        status: MessageStatus.MESSAGE_STATUS_SENDING,
+      );
+      _updateMessageInList(updatedMessage);
+      
+      // Use ChatMessageService for retry (architecture: delegate to service layer)
+      final sentMessage = await _chatMessageService.retryFailedMessage(
+        message,
+        sessionUlid: session.id,
+        receiverDid: friend.actorId,
+      );
+      
+      // Update with sent message
+      _updateMessageInList(sentMessage);
+      
+      LoggingService.info('FriendChatController: Message resent successfully: ${message.id}');
     } catch (e) {
-      message.status = MessageStatus.MESSAGE_STATUS_FAILED;
-      messages.refresh();
+      LoggingService.error('FriendChatController: Message resend failed: $e');
+      
+      // Revert to failed status
+      final failedMessage = message.copyWithMetadata(
+        status: MessageStatus.MESSAGE_STATUS_FAILED,
+      );
+      _updateMessageInList(failedMessage);
+      
       error.value = 'Failed to resend message: $e';
-      LoggingService.error('Failed to resend message: $e');
+      Get.snackbar(
+        '重试失败',
+        '消息重发失败，请稍后再试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     }
   }
 

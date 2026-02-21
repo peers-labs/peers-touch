@@ -7,11 +7,13 @@ import 'package:peers_touch_desktop/features/friend_chat/services/attachment_upl
 class FileMessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMe;
+  final VoidCallback? onRetry;
 
   const FileMessageBubble({
     super.key,
     required this.message,
     required this.isMe,
+    this.onRetry,
   });
 
   @override
@@ -164,7 +166,7 @@ class FileMessageBubble extends StatelessWidget {
           ),
           const Spacer(),
           TextButton(
-            onPressed: () {},
+            onPressed: onRetry,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               minimumSize: const Size(0, 32),

@@ -817,6 +817,7 @@ class OfflineMessage extends $pb.GeneratedMessage {
 
 class SendMessageRequest extends $pb.GeneratedMessage {
   factory SendMessageRequest({
+    $core.String? sessionUlid,
     $core.String? receiverDid,
     FriendMessageType? type,
     $core.String? content,
@@ -824,6 +825,7 @@ class SendMessageRequest extends $pb.GeneratedMessage {
     $core.String? replyToUlid,
   }) {
     final result = create();
+    if (sessionUlid != null) result.sessionUlid = sessionUlid;
     if (receiverDid != null) result.receiverDid = receiverDid;
     if (type != null) result.type = type;
     if (content != null) result.content = content;
@@ -846,13 +848,14 @@ class SendMessageRequest extends $pb.GeneratedMessage {
       package: const $pb.PackageName(
           _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
       createEmptyInstance: create)
-    ..aOS(1, _omitFieldNames ? '' : 'receiverDid')
-    ..aE<FriendMessageType>(2, _omitFieldNames ? '' : 'type',
+    ..aOS(1, _omitFieldNames ? '' : 'sessionUlid')
+    ..aOS(2, _omitFieldNames ? '' : 'receiverDid')
+    ..aE<FriendMessageType>(3, _omitFieldNames ? '' : 'type',
         enumValues: FriendMessageType.values)
-    ..aOS(3, _omitFieldNames ? '' : 'content')
-    ..pPM<FriendMessageAttachment>(4, _omitFieldNames ? '' : 'attachments',
+    ..aOS(4, _omitFieldNames ? '' : 'content')
+    ..pPM<FriendMessageAttachment>(5, _omitFieldNames ? '' : 'attachments',
         subBuilder: FriendMessageAttachment.create)
-    ..aOS(5, _omitFieldNames ? '' : 'replyToUlid')
+    ..aOS(6, _omitFieldNames ? '' : 'replyToUlid')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -875,43 +878,52 @@ class SendMessageRequest extends $pb.GeneratedMessage {
   static SendMessageRequest? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.String get receiverDid => $_getSZ(0);
+  $core.String get sessionUlid => $_getSZ(0);
   @$pb.TagNumber(1)
-  set receiverDid($core.String value) => $_setString(0, value);
+  set sessionUlid($core.String value) => $_setString(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasReceiverDid() => $_has(0);
+  $core.bool hasSessionUlid() => $_has(0);
   @$pb.TagNumber(1)
-  void clearReceiverDid() => $_clearField(1);
+  void clearSessionUlid() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  FriendMessageType get type => $_getN(1);
+  $core.String get receiverDid => $_getSZ(1);
   @$pb.TagNumber(2)
-  set type(FriendMessageType value) => $_setField(2, value);
+  set receiverDid($core.String value) => $_setString(1, value);
   @$pb.TagNumber(2)
-  $core.bool hasType() => $_has(1);
+  $core.bool hasReceiverDid() => $_has(1);
   @$pb.TagNumber(2)
-  void clearType() => $_clearField(2);
+  void clearReceiverDid() => $_clearField(2);
 
   @$pb.TagNumber(3)
-  $core.String get content => $_getSZ(2);
+  FriendMessageType get type => $_getN(2);
   @$pb.TagNumber(3)
-  set content($core.String value) => $_setString(2, value);
+  set type(FriendMessageType value) => $_setField(3, value);
   @$pb.TagNumber(3)
-  $core.bool hasContent() => $_has(2);
+  $core.bool hasType() => $_has(2);
   @$pb.TagNumber(3)
-  void clearContent() => $_clearField(3);
+  void clearType() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $pb.PbList<FriendMessageAttachment> get attachments => $_getList(3);
+  $core.String get content => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set content($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasContent() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearContent() => $_clearField(4);
 
   @$pb.TagNumber(5)
-  $core.String get replyToUlid => $_getSZ(4);
-  @$pb.TagNumber(5)
-  set replyToUlid($core.String value) => $_setString(4, value);
-  @$pb.TagNumber(5)
-  $core.bool hasReplyToUlid() => $_has(4);
-  @$pb.TagNumber(5)
-  void clearReplyToUlid() => $_clearField(5);
+  $pb.PbList<FriendMessageAttachment> get attachments => $_getList(4);
+
+  @$pb.TagNumber(6)
+  $core.String get replyToUlid => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set replyToUlid($core.String value) => $_setString(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasReplyToUlid() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearReplyToUlid() => $_clearField(6);
 }
 
 class SendMessageResponse extends $pb.GeneratedMessage {
