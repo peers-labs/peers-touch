@@ -130,6 +130,300 @@ GetPage(
 
 ---
 
+## 🤖 AI Agent Workflow (MUST READ)
+
+> **For AI Assistants**: This section defines the mandatory workflow you MUST follow when completing any task.
+
+### ⚠️ Task Completion Standard
+
+**You can ONLY report "task completed" when ALL of these conditions are met:**
+
+1. ✅ **Code Implementation Complete**: Feature fully implemented according to requirements
+2. 🚨 **Lint Passed**: Zero errors, zero warnings
+3. 🚨 **Build Succeeded**: Code compiles without errors
+4. 🚨 **Tests Passed**: All relevant tests pass
+5. ✅ **Functional Verification**: Manually tested and working (when applicable)
+
+**If ANY condition is not met, you MUST fix it before reporting completion. NO EXCEPTIONS.**
+
+---
+
+### 📋 Mandatory Verification Steps (Execute in Order)
+
+After implementing code, execute these steps **in order**. Each step is **mandatory** (🚨).
+
+#### Step 1: 🚨 Lint Check (MANDATORY)
+
+**Client (Dart/Flutter)**:
+```bash
+cd client/desktop  # or client/mobile
+flutter analyze
+```
+
+**Station (Go)**:
+```bash
+cd station
+gofmt -l .  # Should output NOTHING
+```
+
+**Expected Result**: 0 errors, 0 warnings
+
+**If Failed**:
+1. Read ALL error/warning messages carefully
+2. Fix EVERY issue (one by one)
+3. Re-run lint until it passes
+4. **DO NOT skip this step**
+5. **DO NOT report "done" until lint passes**
+
+---
+
+#### Step 2: 🚨 Build Check (MANDATORY)
+
+**Client (Desktop)**:
+```bash
+cd client/desktop
+
+# Choose your platform:
+flutter build macos --debug    # macOS
+flutter build windows --debug  # Windows
+flutter build linux --debug    # Linux
+```
+
+**Station**:
+```bash
+cd station/app
+go build -o /tmp/station-test .
+```
+
+**Expected Result**: Build succeeds without errors
+
+**If Failed**:
+1. Read the FIRST error carefully (later errors may be cascading)
+2. Check imports, types, and syntax
+3. Fix the error
+4. Re-build
+5. **DO NOT skip this step**
+6. **DO NOT report "done" until build succeeds**
+
+---
+
+#### Step 3: 🚨 Test Check (MANDATORY)
+
+**Client**:
+```bash
+cd client/desktop  # or client/mobile
+flutter test
+```
+
+**Station**:
+```bash
+cd station
+go test ./...
+```
+
+**Expected Result**: All tests pass
+
+**If Failed**:
+1. Run with verbose flag: `flutter test -v` or `go test -v ./...`
+2. Analyze WHY tests failed:
+   - New bug in code?
+   - Tests need updating?
+   - Test data mismatch?
+3. Fix code OR update tests
+4. Re-run tests
+5. **If you cannot fix after multiple attempts**: Report to user with details, do NOT claim completion
+6. **DO NOT report "done" if tests fail**
+
+---
+
+#### Step 4: ✅ Functional Verification (RECOMMENDED)
+
+While not strictly mandatory, you should:
+- Launch the application
+- Manually test the implemented feature
+- Check logs for errors
+- Test edge cases
+
+---
+
+### 📝 Completion Report Template
+
+**ONLY use this template after ALL mandatory steps (🚨) have passed:**
+
+```markdown
+✅ Task Completed
+
+## Implementation
+- [List what was implemented]
+- [Key changes made]
+
+## Verification Results
+- ✅ Lint Check: Passed (0 errors, 0 warnings)
+- ✅ Build Check: Success
+- ✅ Test Check: All tests passed (X/Y)
+- ✅ Functional Test: Manually verified working
+
+## Modified Files
+- [file1.dart](file:///path/to/file1.dart)
+- [file2.go](file:///path/to/file2.go)
+
+## Notes (if any)
+- [Usage instructions or known limitations]
+```
+
+---
+
+### 🔧 Failure Handling Procedures
+
+#### When Lint Fails
+
+```
+STEP 1: Read all error/warning messages
+STEP 2: Understand each issue
+STEP 3: Fix according to coding standards (see 13-coding-standards.md)
+STEP 4: Re-run flutter analyze / gofmt
+STEP 5: Repeat until clean
+STEP 6: ⚠️ DO NOT report completion until lint passes
+```
+
+**Common lint issues**:
+- Unused imports: Remove them
+- Unused variables: Remove or use them
+- Missing `const`: Add `const` where suggested
+- Code formatting: Run `dart format .` or `gofmt -w .`
+
+---
+
+#### When Build Fails
+
+```
+STEP 1: Read the compilation error output FULLY
+STEP 2: Find the FIRST error (ignore cascading errors)
+STEP 3: Check:
+   - Are imports correct?
+   - Are types matching?
+   - Is syntax correct?
+STEP 4: Fix the error
+STEP 5: Re-build
+STEP 6: ⚠️ DO NOT report completion until build succeeds
+```
+
+**Common build issues**:
+- Import not found: Check package name and path
+- Type mismatch: Check variable/parameter types
+- Missing dependency: Check `pubspec.yaml` or `go.mod`
+
+---
+
+#### When Tests Fail
+
+```
+STEP 1: Run with verbose: flutter test -v / go test -v ./...
+STEP 2: Identify WHICH test failed
+STEP 3: Analyze WHY:
+   Option A: New code introduced a bug → Fix code
+   Option B: Test needs updating → Update test
+   Option C: Test data is wrong → Fix test data
+STEP 4: Make the fix
+STEP 5: Re-run tests
+STEP 6: If fixed, continue. If not, repeat analysis.
+STEP 7: If you CANNOT fix after 2-3 attempts, report to user:
+   
+   ⚠️ Implementation complete, but tests failing
+   
+   Failed test: test/path/test_name
+   Error message: [exact error]
+   
+   Attempted fixes:
+   - [What you tried]
+   
+   Need guidance: Should I modify code or update tests?
+```
+
+---
+
+### 🚫 Common Mistakes to AVOID
+
+#### ❌ Mistake 1: Reporting Completion Without Verification
+
+**WRONG**:
+```
+"I've implemented the feature. Code is in feature_page.dart"
+```
+
+**Problem**: No lint, no build, no tests run
+
+**CORRECT**:
+```
+Implement → Lint → Build → Test → Functional Check → Report Complete
+```
+
+---
+
+#### ❌ Mistake 2: Asking User About Lint Errors
+
+**WRONG**:
+```
+"flutter analyze found 3 warnings. Should I fix them?"
+```
+
+**Problem**: Lint errors/warnings MUST be fixed, no questions asked
+
+**CORRECT**:
+```
+[Silently fix all lint issues, then continue]
+```
+
+---
+
+#### ❌ Mistake 3: Skipping Tests
+
+**WRONG**:
+```
+"Feature implemented and manually tested successfully"
+(without running flutter test / go test)
+```
+
+**Problem**: Automated tests are MANDATORY, not optional
+
+**CORRECT**:
+```
+[Always run automated tests, even if manual test passed]
+```
+
+---
+
+#### ❌ Mistake 4: Reporting Incomplete Work
+
+**WRONG**:
+```
+"Feature is 90% done, just needs some polish"
+```
+
+**Problem**: "90% done" is NOT done
+
+**CORRECT**:
+```
+[Complete 100% of implementation + all verification steps]
+```
+
+---
+
+### ✅ AI Self-Check Checklist
+
+Before reporting "Task Completed", verify:
+
+- [ ] 🚨 Ran Lint Check and it PASSED (0 errors, 0 warnings)
+- [ ] 🚨 Ran Build Check and it SUCCEEDED
+- [ ] 🚨 Ran Test Check and ALL tests PASSED
+- [ ] ✅ Did functional verification (if applicable)
+- [ ] 📝 Prepared completion report with verification results
+- [ ] ⚠️ If any failed, fixed it OR reported to user
+
+**Only when ALL boxes are checked can you report "Completed".**
+
+---
+
 ## 🧪 Quality Assurance Workflow
 
 ### Before Committing Code
