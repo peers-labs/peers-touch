@@ -120,6 +120,15 @@ message GetMessagesResponse {
   bool has_more = 2;
 }
 
+message CreateSessionRequest {
+  string participant_did = 1;
+}
+
+message CreateSessionResponse {
+  FriendChatSession session = 1;
+  bool created = 2;
+}
+
 message GetSessionsRequest {
   int32 limit = 1;
   int32 offset = 2;
