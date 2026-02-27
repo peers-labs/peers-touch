@@ -176,3 +176,50 @@ message SyncMessagesResponse {
   int32 synced = 1;
   repeated string failed = 2;
 }
+
+// MessageAck: acknowledge message delivery/read status
+message MessageAckRequest {
+  repeated string ulids = 1;
+  int32 status = 2;
+}
+
+message MessageAckResponse {
+  // Empty success response
+}
+
+// Online/Offline status
+message OnlineRequest {
+  string did = 1;
+}
+
+message OnlineResponse {
+  string status = 1;
+}
+
+// Pending offline messages
+message GetPendingRequest {
+  int32 limit = 1;
+}
+
+message PendingMessageInfo {
+  string ulid = 1;
+  string sender_did = 2;
+  string session_ulid = 3;
+  bytes encrypted_payload = 4;
+  int64 created_at = 5;
+}
+
+message GetPendingResponse {
+  repeated PendingMessageInfo messages = 1;
+}
+
+// Stats
+message GetStatsRequest {
+  // Empty request
+}
+
+message GetStatsResponse {
+  int32 online_peers = 1;
+  int64 pending_messages = 2;
+  string status = 3;
+}

@@ -1,596 +1,434 @@
 package group_chat
 
 import (
-	"encoding/json"
-	"net/http"
-	"strconv"
+	"context"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/group_chat/db/model"
-	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/event"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func (s *groupChatSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	jwtWrapper := s.jwtWrapper
 	return []server.Handler{
-		// Group management
-		server.NewHTTPHandler("gc-create", "/group-chat/create", server.POST, server.HTTPHandlerFunc(s.handleCreate), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-list", "/group-chat/list", server.GET, server.HTTPHandlerFunc(s.handleList), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-info", "/group-chat/info", server.GET, server.HTTPHandlerFunc(s.handleInfo), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-update", "/group-chat/update", server.PUT, server.HTTPHandlerFunc(s.handleUpdate), logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-create", "/group-chat/create", server.POST, s.handleCreate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-list", "/group-chat/list", server.GET, s.handleList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-info", "/group-chat/info", server.GET, s.handleInfo, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-update", "/group-chat/update", server.PUT, s.handleUpdate, logIDWrapper, jwtWrapper),
 
-		// Member management
-		server.NewHTTPHandler("gc-invite", "/group-chat/invite", server.POST, server.HTTPHandlerFunc(s.handleInvite), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-join", "/group-chat/join", server.POST, server.HTTPHandlerFunc(s.handleJoin), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-leave", "/group-chat/leave", server.POST, server.HTTPHandlerFunc(s.handleLeave), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-members", "/group-chat/members", server.GET, server.HTTPHandlerFunc(s.handleMembers), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-remove-member", "/group-chat/member/remove", server.POST, server.HTTPHandlerFunc(s.handleRemoveMember), logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-invite", "/group-chat/invite", server.POST, s.handleInvite, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-join", "/group-chat/join", server.POST, s.handleJoin, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-leave", "/group-chat/leave", server.POST, s.handleLeave, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-members", "/group-chat/members", server.GET, s.handleMembers, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-remove-member", "/group-chat/member/remove", server.POST, s.handleRemoveMember, logIDWrapper, jwtWrapper),
 
-		// Messages
-		server.NewHTTPHandler("gc-message-send", "/group-chat/message/send", server.POST, server.HTTPHandlerFunc(s.handleSendMessage), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-messages", "/group-chat/messages", server.GET, server.HTTPHandlerFunc(s.handleGetMessages), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-message-recall", "/group-chat/message/recall", server.POST, server.HTTPHandlerFunc(s.handleRecallMessage), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-message-delete", "/group-chat/message/delete", server.POST, server.HTTPHandlerFunc(s.handleDeleteMessage), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-message-search", "/group-chat/messages/search", server.GET, server.HTTPHandlerFunc(s.handleSearchMessages), logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-message-send", "/group-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-messages", "/group-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-message-recall", "/group-chat/message/recall", server.POST, s.handleRecallMessage, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-message-delete", "/group-chat/message/delete", server.POST, s.handleDeleteMessage, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-message-search", "/group-chat/messages/search", server.GET, s.handleSearchMessages, logIDWrapper, jwtWrapper),
 
-		// Member settings
-		server.NewHTTPHandler("gc-update-nickname", "/group-chat/member/nickname", server.PUT, server.HTTPHandlerFunc(s.handleUpdateMyNickname), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-my-settings", "/group-chat/my-settings", server.GET, server.HTTPHandlerFunc(s.handleGetMySettings), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-update-my-settings", "/group-chat/my-settings", server.PUT, server.HTTPHandlerFunc(s.handleUpdateMySettings), logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-update-nickname", "/group-chat/member/nickname", server.PUT, s.handleUpdateMyNickname, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-my-settings", "/group-chat/my-settings", server.GET, s.handleGetMySettings, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-update-my-settings", "/group-chat/my-settings", server.PUT, s.handleUpdateMySettings, logIDWrapper, jwtWrapper),
 
-		// Offline messages
-		server.NewHTTPHandler("gc-offline-messages", "/group-chat/offline-messages", server.GET, server.HTTPHandlerFunc(s.handleGetOfflineMessages), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-offline-ack", "/group-chat/offline-messages/ack", server.POST, server.HTTPHandlerFunc(s.handleAckOfflineMessages), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-unread-count", "/group-chat/unread-count", server.GET, server.HTTPHandlerFunc(s.handleGetUnreadCount), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("gc-mark-read", "/group-chat/mark-read", server.POST, server.HTTPHandlerFunc(s.handleMarkGroupRead), logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-offline-messages", "/group-chat/offline-messages", server.GET, s.handleGetOfflineMessages, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-offline-ack", "/group-chat/offline-messages/ack", server.POST, s.handleAckOfflineMessages, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-unread-count", "/group-chat/unread-count", server.GET, s.handleGetUnreadCount, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("gc-mark-read", "/group-chat/mark-read", server.POST, s.handleMarkGroupRead, logIDWrapper, jwtWrapper),
 
-		// Stats
-		server.NewHTTPHandler("gc-stats", "/group-chat/stats", server.GET, server.HTTPHandlerFunc(s.handleStats)),
+		server.NewTypedHandler("gc-stats", "/group-chat/stats", server.GET, s.handleStats),
 	}
 }
 
-// ==================== Request/Response types ====================
-
-type createGroupReq struct {
-	Name             string   `json:"name"`
-	Description      string   `json:"description"`
-	Type             int      `json:"type"`
-	Visibility       int      `json:"visibility"`
-	InitialMemberDIDs []string `json:"initial_member_dids"`
-}
-
-type groupInfo struct {
-	ULID        string            `json:"ulid"`
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	AvatarCID   string            `json:"avatar_cid"`
-	OwnerDID    string            `json:"owner_did"`
-	Type        int               `json:"type"`
-	Visibility  int               `json:"visibility"`
-	MemberCount int               `json:"member_count"`
-	MaxMembers  int               `json:"max_members"`
-	Muted       bool              `json:"muted"`
-	CreatedAt   int64             `json:"created_at"`
-	UpdatedAt   int64             `json:"updated_at"`
-}
-
-type memberInfo struct {
-	GroupULID   string `json:"group_ulid"`
-	ActorDID    string `json:"actor_did"`
-	Role        int    `json:"role"`
-	Nickname    string `json:"nickname"`
-	DisplayName string `json:"display_name"` // User's display name (from actor table)
-	Username    string `json:"username"`     // User's username
-	AvatarURL   string `json:"avatar_url"`   // User's avatar URL
-	Muted       bool   `json:"muted"`
-	MutedUntil  int64  `json:"muted_until"`
-	JoinedAt    int64  `json:"joined_at"`
-	InvitedBy   string `json:"invited_by"`
-}
-
-type messageInfo struct {
-	ULID          string   `json:"ulid"`
-	GroupULID     string   `json:"group_ulid"`
-	SenderDID     string   `json:"sender_did"`
-	Type          int      `json:"type"`
-	Content       string   `json:"content"`
-	ReplyToULID   string   `json:"reply_to_ulid"`
-	MentionedDIDs []string `json:"mentioned_dids"`
-	MentionAll    bool     `json:"mention_all"`
-	SentAt        int64    `json:"sent_at"`
-	Deleted       bool     `json:"deleted"`
-}
-
-// ==================== Handlers ====================
-
-func (s *groupChatSubServer) handleCreate(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *groupChatSubServer) handleCreate(ctx context.Context, req *chat.CreateGroupRequest) (*chat.CreateGroupResponse, error) {
 	logID := serverwrapper.GetLogID(ctx)
 
-	var req createGroupReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-		logger.Errorf(ctx, "[%s] Invalid create group request: err=%v", logID, err)
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
+	if req.Name == "" {
+		return nil, server.BadRequest("name is required")
 	}
 
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	ownerDID := subject.ID
 
-	group, err := s.groupService.CreateGroup(ctx, ownerDID, req.Name, req.Description, req.Type, req.Visibility)
+	group, err := s.groupService.CreateGroup(ctx, ownerDID, req.Name, req.Description, int(req.Type), int(req.Visibility))
 	if err != nil {
 		logger.Errorf(ctx, "[%s] Failed to create group: %v", logID, err)
-		http.Error(w, "failed to create group", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to create group", err)
 	}
 
-	// Add owner as the first member with OWNER role
-	if err := s.memberService.AddMember(ctx, group.ULID, ownerDID, model.GroupRoleOwner, ""); err != nil {
-		logger.Errorf(ctx, "[%s] Failed to add owner as member: %v", logID, err)
-		http.Error(w, "failed to add owner as member", http.StatusInternalServerError)
-		return
+	if addErr := s.memberService.AddMember(ctx, group.ULID, ownerDID, model.GroupRoleOwner, ""); addErr != nil {
+		logger.Errorf(ctx, "[%s] Failed to add owner as member: %v", logID, addErr)
+		return nil, server.InternalErrorWithCause("failed to add owner as member", addErr)
 	}
 
-	// Add initial members
-	for _, memberDID := range req.InitialMemberDIDs {
+	for _, memberDID := range req.InitialMemberDids {
 		if memberDID != ownerDID {
-			if err := s.memberService.AddMember(ctx, group.ULID, memberDID, model.GroupRoleMember, ownerDID); err != nil {
-				logger.Warnf(ctx, "[%s] Failed to add member %s: %v", logID, memberDID, err)
+			if addErr := s.memberService.AddMember(ctx, group.ULID, memberDID, model.GroupRoleMember, ownerDID); addErr != nil {
+				logger.Warnf(ctx, "[%s] Failed to add member %s: %v", logID, memberDID, addErr)
 			}
 		}
 	}
 
-	// Reload group to get updated member_count
 	group, err = s.groupService.GetGroup(ctx, group.ULID)
 	if err != nil {
 		logger.Errorf(ctx, "[%s] Failed to reload group: %v", logID, err)
-		http.Error(w, "failed to reload group", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to reload group", err)
 	}
 
 	logger.Infof(ctx, "[%s] Group created: ulid=%s, name=%s, owner=%s, members=%d", logID, group.ULID, group.Name, ownerDID, group.MemberCount)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"group": toGroupInfo(group),
-	})
+	return &chat.CreateGroupResponse{
+		Group: toProtoGroup(group),
+	}, nil
 }
 
-func (s *groupChatSubServer) handleList(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	subject := httpadapter.GetSubject(r)
+func (s *groupChatSubServer) handleList(ctx context.Context, req *chat.ListGroupsRequest) (*chat.ListGroupsResponse, error) {
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit := int(req.Limit)
+	offset := int(req.Offset)
 	if limit <= 0 {
 		limit = 50
 	}
 
 	groups, total, err := s.groupService.ListGroupsByMember(ctx, actorDID, limit, offset)
 	if err != nil {
-		http.Error(w, "failed to list groups", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to list groups", err)
 	}
 
-	result := make([]groupInfo, len(groups))
+	protoGroups := make([]*chat.Group, len(groups))
 	for i, g := range groups {
-		result[i] = toGroupInfo(&g)
+		protoGroups[i] = toProtoGroup(&g)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"groups": result,
-		"total":  total,
-	})
+	return &chat.ListGroupsResponse{
+		Groups: protoGroups,
+		Total:  int32(total),
+	}, nil
 }
 
-func (s *groupChatSubServer) handleInfo(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	subject := httpadapter.GetSubject(r)
+func (s *groupChatSubServer) handleInfo(ctx context.Context, req *chat.GetGroupRequest) (*chat.GetGroupResponse, error) {
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	groupULID := r.URL.Query().Get("group_ulid")
-	if groupULID == "" {
-		http.Error(w, "group_ulid required", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
 	}
 
-	group, err := s.groupService.GetGroup(ctx, groupULID)
+	group, err := s.groupService.GetGroup(ctx, req.GroupUlid)
 	if err != nil {
-		http.Error(w, "group not found", http.StatusNotFound)
-		return
+		return nil, server.NotFound("group not found")
 	}
 
-	member, _ := s.memberService.GetMember(ctx, groupULID, actorDID)
+	member, _ := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"group":         toGroupInfo(group),
-		"my_membership": toMemberInfo(member),
-	})
+	return &chat.GetGroupResponse{
+		Group:        toProtoGroup(group),
+		MyMembership: toProtoGroupMember(member),
+	}, nil
 }
 
-func (s *groupChatSubServer) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *groupChatSubServer) handleUpdate(ctx context.Context, req *chat.UpdateGroupRequest) (*chat.UpdateGroupResponse, error) {
 	logID := serverwrapper.GetLogID(ctx)
 
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	var req struct {
-		GroupULID   string  `json:"group_ulid"`
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
-		AvatarCID   *string `json:"avatar_cid"`
-		Type        *int    `json:"type"`
-		Visibility  *int    `json:"visibility"`
-		Muted       *bool   `json:"muted"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
 	}
 
-	// Check permission (must be admin or owner)
-	member, err := s.memberService.GetMember(ctx, req.GroupULID, actorDID)
+	member, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
 	if err != nil || (member.Role != model.GroupRoleOwner && member.Role != model.GroupRoleAdmin) {
-		http.Error(w, "permission denied", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("permission denied")
 	}
 
-	group, err := s.groupService.UpdateGroup(ctx, req.GroupULID, req.Name, req.Description, req.AvatarCID, req.Type, req.Visibility, req.Muted)
+	var name, description, avatarCID *string
+	var groupType, visibility *int
+	var muted *bool
+
+	if req.Name != nil {
+		name = req.Name
+	}
+	if req.Description != nil {
+		description = req.Description
+	}
+	if req.AvatarCid != nil {
+		avatarCID = req.AvatarCid
+	}
+	if req.Type != nil {
+		t := int(*req.Type)
+		groupType = &t
+	}
+	if req.Visibility != nil {
+		v := int(*req.Visibility)
+		visibility = &v
+	}
+	if req.Muted != nil {
+		muted = req.Muted
+	}
+
+	group, err := s.groupService.UpdateGroup(ctx, req.GroupUlid, name, description, avatarCID, groupType, visibility, muted)
 	if err != nil {
 		logger.Errorf(ctx, "[%s] Failed to update group: %v", logID, err)
-		http.Error(w, "failed to update group", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to update group", err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"group": toGroupInfo(group),
-	})
+	return &chat.UpdateGroupResponse{
+		Group: toProtoGroup(group),
+	}, nil
 }
 
-func (s *groupChatSubServer) handleInvite(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *groupChatSubServer) handleInvite(ctx context.Context, req *chat.InviteToGroupRequest) (*chat.InviteToGroupResponse, error) {
 	logID := serverwrapper.GetLogID(ctx)
 
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	inviterDID := subject.ID
 
-	var req struct {
-		GroupULID   string   `json:"group_ulid"`
-		InviteeDIDs []string `json:"invitee_dids"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" || len(req.InviteeDIDs) == 0 {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" || len(req.InviteeDids) == 0 {
+		return nil, server.BadRequest("group_ulid and invitee_dids are required")
 	}
 
-	// Check if inviter is a member
-	_, err := s.memberService.GetMember(ctx, req.GroupULID, inviterDID)
+	_, err := s.memberService.GetMember(ctx, req.GroupUlid, inviterDID)
 	if err != nil {
-		http.Error(w, "not a member", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("not a member")
 	}
 
-	invitations := make([]map[string]interface{}, 0)
-	for _, inviteeDID := range req.InviteeDIDs {
-		inv, err := s.groupService.CreateInvitation(ctx, req.GroupULID, inviterDID, inviteeDID)
+	invitations := make([]*chat.GroupInvitation, 0)
+	for _, inviteeDID := range req.InviteeDids {
+		inv, err := s.groupService.CreateInvitation(ctx, req.GroupUlid, inviterDID, inviteeDID)
 		if err != nil {
 			logger.Warnf(ctx, "[%s] Failed to create invitation for %s: %v", logID, inviteeDID, err)
 			continue
 		}
-		invitations = append(invitations, map[string]interface{}{
-			"ulid":        inv.ULID,
-			"group_ulid":  inv.GroupULID,
-			"inviter_did": inv.InviterDID,
-			"invitee_did": inv.InviteeDID,
-			"status":      inv.Status,
-		})
+		invitations = append(invitations, toProtoGroupInvitation(inv))
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"invitations": invitations,
-	})
+	return &chat.InviteToGroupResponse{
+		Invitations: invitations,
+	}, nil
 }
 
-func (s *groupChatSubServer) handleJoin(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *groupChatSubServer) handleJoin(ctx context.Context, req *chat.JoinGroupRequest) (*chat.JoinGroupResponse, error) {
 	logID := serverwrapper.GetLogID(ctx)
 
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	var req struct {
-		GroupULID      string `json:"group_ulid"`
-		InvitationULID string `json:"invitation_ulid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
 	}
 
-	// Check group visibility or invitation
-	group, err := s.groupService.GetGroup(ctx, req.GroupULID)
+	group, err := s.groupService.GetGroup(ctx, req.GroupUlid)
 	if err != nil {
-		http.Error(w, "group not found", http.StatusNotFound)
-		return
+		return nil, server.NotFound("group not found")
 	}
 
-	if group.Visibility == model.GroupVisibilityPrivate && req.InvitationULID == "" {
-		http.Error(w, "invitation required for private group", http.StatusForbidden)
-		return
+	if group.Visibility == model.GroupVisibilityPrivate && req.InvitationUlid == "" {
+		return nil, server.Forbidden("invitation required for private group")
 	}
 
-	// If invitation provided, validate it
-	if req.InvitationULID != "" {
-		if err := s.groupService.AcceptInvitation(ctx, req.InvitationULID, actorDID); err != nil {
+	if req.InvitationUlid != "" {
+		if err := s.groupService.AcceptInvitation(ctx, req.InvitationUlid, actorDID); err != nil {
 			logger.Errorf(ctx, "[%s] Failed to accept invitation: %v", logID, err)
-			http.Error(w, "invalid invitation", http.StatusBadRequest)
-			return
+			return nil, server.BadRequest("invalid invitation")
 		}
 	}
 
-	// Add member
-	if err := s.memberService.AddMember(ctx, req.GroupULID, actorDID, model.GroupRoleMember, ""); err != nil {
+	if err := s.memberService.AddMember(ctx, req.GroupUlid, actorDID, model.GroupRoleMember, ""); err != nil {
 		logger.Errorf(ctx, "[%s] Failed to add member: %v", logID, err)
-		http.Error(w, "failed to join group", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to join group", err)
 	}
 
-	member, _ := s.memberService.GetMember(ctx, req.GroupULID, actorDID)
+	member, _ := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"membership": toMemberInfo(member),
-	})
+	return &chat.JoinGroupResponse{
+		Membership: toProtoGroupMember(member),
+	}, nil
 }
 
-func (s *groupChatSubServer) handleLeave(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *groupChatSubServer) handleLeave(ctx context.Context, req *chat.LeaveGroupRequest) (*chat.LeaveGroupResponse, error) {
 	logID := serverwrapper.GetLogID(ctx)
 
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	var req struct {
-		GroupULID string `json:"group_ulid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
 	}
 
-	// Check if owner (owner cannot leave)
-	member, err := s.memberService.GetMember(ctx, req.GroupULID, actorDID)
+	member, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
 	if err != nil {
-		http.Error(w, "not a member", http.StatusBadRequest)
-		return
+		return nil, server.BadRequest("not a member")
 	}
 	if member.Role == model.GroupRoleOwner {
-		http.Error(w, "owner cannot leave group, transfer ownership first", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("owner cannot leave group, transfer ownership first")
 	}
 
-	if err := s.memberService.RemoveMember(ctx, req.GroupULID, actorDID); err != nil {
+	if err := s.memberService.RemoveMember(ctx, req.GroupUlid, actorDID); err != nil {
 		logger.Errorf(ctx, "[%s] Failed to leave group: %v", logID, err)
-		http.Error(w, "failed to leave group", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to leave group", err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-	})
+	return &chat.LeaveGroupResponse{
+		Success: true,
+	}, nil
 }
 
-func (s *groupChatSubServer) handleMembers(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	subject := httpadapter.GetSubject(r)
+func (s *groupChatSubServer) handleMembers(ctx context.Context, req *chat.GetGroupMembersRequest) (*chat.GetGroupMembersResponse, error) {
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	groupULID := r.URL.Query().Get("group_ulid")
-	if groupULID == "" {
-		http.Error(w, "group_ulid required", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
 	}
 
-	// Check if requester is a member
-	_, err := s.memberService.GetMember(ctx, groupULID, actorDID)
+	_, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
 	if err != nil {
-		http.Error(w, "not a member", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("not a member")
 	}
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit := int(req.Limit)
+	offset := int(req.Offset)
 	if limit <= 0 {
 		limit = 100
 	}
 
-	members, total, err := s.memberService.ListMembers(ctx, groupULID, limit, offset)
+	members, total, err := s.memberService.ListMembers(ctx, req.GroupUlid, limit, offset)
 	if err != nil {
-		http.Error(w, "failed to list members", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to list members", err)
 	}
 
-	// Collect all actor DIDs for batch lookup
 	ptids := make([]string, len(members))
 	for i, m := range members {
 		ptids[i] = m.ActorDID
 	}
 
-	// Batch fetch actor info
 	actorMap, err := actor.GetActorsByPTIDs(ctx, ptids)
 	if err != nil {
 		logger.Warnf(ctx, "Failed to batch fetch actor info: %v", err)
-		actorMap = make(map[string]*dbmodel.Actor) // Continue with empty map
+		actorMap = make(map[string]*dbmodel.Actor)
 	}
 
-	result := make([]memberInfo, len(members))
+	protoMembers := make([]*chat.GroupMember, len(members))
 	for i, m := range members {
-		result[i] = toMemberInfoWithActor(&m, actorMap[m.ActorDID])
+		protoMembers[i] = toProtoGroupMemberWithActor(&m, actorMap[m.ActorDID])
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"members": result,
-		"total":   total,
-	})
+	return &chat.GetGroupMembersResponse{
+		Members: protoMembers,
+		Total:   int32(total),
+	}, nil
 }
 
-func (s *groupChatSubServer) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *groupChatSubServer) handleRemoveMember(ctx context.Context, req *chat.RemoveMemberRequest) (*chat.RemoveMemberResponse, error) {
 	logID := serverwrapper.GetLogID(ctx)
 
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	var req struct {
-		GroupULID string `json:"group_ulid"`
-		ActorDID  string `json:"actor_did"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" || req.ActorDID == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" || req.ActorDid == "" {
+		return nil, server.BadRequest("group_ulid and actor_did are required")
 	}
 
-	// Check permission (must be admin or owner)
-	member, err := s.memberService.GetMember(ctx, req.GroupULID, actorDID)
+	member, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
 	if err != nil || (member.Role != model.GroupRoleOwner && member.Role != model.GroupRoleAdmin) {
-		http.Error(w, "permission denied", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("permission denied")
 	}
 
-	// Cannot remove owner
-	target, err := s.memberService.GetMember(ctx, req.GroupULID, req.ActorDID)
+	target, err := s.memberService.GetMember(ctx, req.GroupUlid, req.ActorDid)
 	if err != nil {
-		http.Error(w, "member not found", http.StatusNotFound)
-		return
+		return nil, server.NotFound("member not found")
 	}
 	if target.Role == model.GroupRoleOwner {
-		http.Error(w, "cannot remove owner", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("cannot remove owner")
 	}
 
-	if err := s.memberService.RemoveMember(ctx, req.GroupULID, req.ActorDID); err != nil {
+	if err := s.memberService.RemoveMember(ctx, req.GroupUlid, req.ActorDid); err != nil {
 		logger.Errorf(ctx, "[%s] Failed to remove member: %v", logID, err)
-		http.Error(w, "failed to remove member", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to remove member", err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-	})
+	return &chat.RemoveMemberResponse{
+		Success: true,
+	}, nil
 }
 
-func (s *groupChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *groupChatSubServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMessageRequest) (*chat.SendGroupMessageResponse, error) {
 	logID := serverwrapper.GetLogID(ctx)
 
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	senderDID := subject.ID
 
-	var req struct {
-		GroupULID    string   `json:"group_ulid"`
-		Type         int      `json:"type"`
-		Content      string   `json:"content"`
-		ReplyToULID  string   `json:"reply_to_ulid"`
-		MentionedDIDs []string `json:"mentioned_dids"`
-		MentionAll   bool     `json:"mention_all"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" || req.Content == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" || req.Content == "" {
+		return nil, server.BadRequest("group_ulid and content are required")
 	}
 
-	// Check if sender is a member
-	member, err := s.memberService.GetMember(ctx, req.GroupULID, senderDID)
+	member, err := s.memberService.GetMember(ctx, req.GroupUlid, senderDID)
 	if err != nil {
-		http.Error(w, "not a member", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("not a member")
 	}
 
-	// Check if muted
 	if member.Muted {
-		http.Error(w, "you are muted", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("you are muted")
 	}
 
-	// Check group mute status
-	group, err := s.groupService.GetGroup(ctx, req.GroupULID)
+	group, err := s.groupService.GetGroup(ctx, req.GroupUlid)
 	if err != nil {
-		http.Error(w, "group not found", http.StatusNotFound)
-		return
+		return nil, server.NotFound("group not found")
 	}
 	if group.Muted && member.Role == model.GroupRoleMember {
-		http.Error(w, "group is muted", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("group is muted")
 	}
 
-	msg, err := s.messageService.SendMessage(ctx, req.GroupULID, senderDID, req.Type, req.Content, req.ReplyToULID, req.MentionedDIDs, req.MentionAll)
+	msg, err := s.messageService.SendMessage(ctx, req.GroupUlid, senderDID, int(req.Type), req.Content, req.ReplyToUlid, req.MentionedDids, req.MentionAll)
 	if err != nil {
 		logger.Errorf(ctx, "[%s] Failed to send message: %v", logID, err)
-		http.Error(w, "failed to send message", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to send message", err)
 	}
 
-	// Create offline messages and push real-time events to all other members
 	go func() {
-		members, _, err := s.memberService.ListMembers(ctx, req.GroupULID, 1000, 0)
+		members, _, err := s.memberService.ListMembers(ctx, req.GroupUlid, 1000, 0)
 		if err != nil {
 			logger.Warnf(ctx, "[%s] Failed to list members for offline messages: %v", logID, err)
 			return
@@ -604,19 +442,17 @@ func (s *groupChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.Re
 		}
 
 		if len(receiverDIDs) > 0 {
-			// Store offline messages for catch-up
-			if err := s.messageService.CreateOfflineMessages(ctx, req.GroupULID, msg.ULID, receiverDIDs); err != nil {
+			if err := s.messageService.CreateOfflineMessages(ctx, req.GroupUlid, msg.ULID, receiverDIDs); err != nil {
 				logger.Warnf(ctx, "[%s] Failed to create offline messages: %v", logID, err)
 			} else {
 				logger.Debugf(ctx, "[%s] Created offline messages for %d receivers", logID, len(receiverDIDs))
 			}
-			
-			// Push real-time events via SSE to online members
+
 			es := event.GetGlobalEventSystem()
 			if es != nil {
 				for _, receiverDID := range receiverDIDs {
 					payload := event.ChatMessagePayload{
-						ConvID:    req.GroupULID,
+						ConvID:    req.GroupUlid,
 						MessageID: msg.ULID,
 						SenderID:  senderDID,
 						Content:   req.Content,
@@ -640,216 +476,275 @@ func (s *groupChatSubServer) handleSendMessage(w http.ResponseWriter, r *http.Re
 		}
 	}()
 
-	logger.Infof(ctx, "[%s] Group message sent: ulid=%s, group=%s, sender=%s", logID, msg.ULID, req.GroupULID, senderDID)
+	logger.Infof(ctx, "[%s] Group message sent: ulid=%s, group=%s, sender=%s", logID, msg.ULID, req.GroupUlid, senderDID)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": toMessageInfo(msg),
-	})
+	return &chat.SendGroupMessageResponse{
+		Message: toProtoGroupMessage(msg),
+	}, nil
 }
 
-func (s *groupChatSubServer) handleGetMessages(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	subject := httpadapter.GetSubject(r)
+func (s *groupChatSubServer) handleGetMessages(ctx context.Context, req *chat.GetGroupMessagesRequest) (*chat.GetGroupMessagesResponse, error) {
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	groupULID := r.URL.Query().Get("group_ulid")
-	if groupULID == "" {
-		http.Error(w, "group_ulid required", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
 	}
 
-	// Check if requester is a member
-	_, err := s.memberService.GetMember(ctx, groupULID, actorDID)
+	_, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
 	if err != nil {
-		http.Error(w, "not a member", http.StatusForbidden)
-		return
+		return nil, server.Forbidden("not a member")
 	}
 
-	beforeULID := r.URL.Query().Get("before_ulid")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	limit := int(req.Limit)
 	if limit <= 0 {
 		limit = 50
 	}
 
-	messages, hasMore, err := s.messageService.GetMessages(ctx, groupULID, beforeULID, limit)
+	messages, hasMore, err := s.messageService.GetMessages(ctx, req.GroupUlid, req.BeforeUlid, limit)
 	if err != nil {
-		http.Error(w, "failed to get messages", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to get messages", err)
 	}
 
-	result := make([]messageInfo, len(messages))
+	protoMessages := make([]*chat.GroupMessage, len(messages))
 	for i, m := range messages {
-		result[i] = toMessageInfo(&m)
+		protoMessages[i] = toProtoGroupMessage(&m)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"messages": result,
-		"has_more": hasMore,
-	})
+	return &chat.GetGroupMessagesResponse{
+		Messages: protoMessages,
+		HasMore:  hasMore,
+	}, nil
 }
 
-func (s *groupChatSubServer) handleStats(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *groupChatSubServer) handleRecallMessage(ctx context.Context, req *chat.RecallGroupMessageRequest) (*chat.RecallGroupMessageResponse, error) {
+	logID := serverwrapper.GetLogID(ctx)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "running",
-	})
-}
-
-// ==================== Helper functions ====================
-
-func toGroupInfo(g *model.Group) groupInfo {
-	if g == nil {
-		return groupInfo{}
-	}
-	return groupInfo{
-		ULID:        g.ULID,
-		Name:        g.Name,
-		Description: g.Description,
-		AvatarCID:   g.AvatarCID,
-		OwnerDID:    g.OwnerDID,
-		Type:        g.Type,
-		Visibility:  g.Visibility,
-		MemberCount: g.MemberCount,
-		MaxMembers:  g.MaxMembers,
-		Muted:       g.Muted,
-		CreatedAt:   g.CreatedAt.Unix(),
-		UpdatedAt:   g.UpdatedAt.Unix(),
-	}
-}
-
-func toMemberInfo(m *model.GroupMember) memberInfo {
-	if m == nil {
-		return memberInfo{}
-	}
-	return memberInfo{
-		GroupULID:  m.GroupULID,
-		ActorDID:   m.ActorDID,
-		Role:       m.Role,
-		Nickname:   m.Nickname,
-		Muted:      m.Muted,
-		MutedUntil: m.MutedUntil.Unix(),
-		JoinedAt:   m.JoinedAt.Unix(),
-		InvitedBy:  m.InvitedBy,
-	}
-}
-
-func toMemberInfoWithActor(m *model.GroupMember, a *dbmodel.Actor) memberInfo {
-	if m == nil {
-		return memberInfo{}
-	}
-	info := memberInfo{
-		GroupULID:  m.GroupULID,
-		ActorDID:   m.ActorDID,
-		Role:       m.Role,
-		Nickname:   m.Nickname,
-		Muted:      m.Muted,
-		MutedUntil: m.MutedUntil.Unix(),
-		JoinedAt:   m.JoinedAt.Unix(),
-		InvitedBy:  m.InvitedBy,
-	}
-	if a != nil {
-		info.DisplayName = a.Name
-		info.Username = a.PreferredUsername
-		info.AvatarURL = a.Icon
-	}
-	return info
-}
-
-func toMessageInfo(m *model.GroupMessage) messageInfo {
-	if m == nil {
-		return messageInfo{}
-	}
-	return messageInfo{
-		ULID:          m.ULID,
-		GroupULID:     m.GroupULID,
-		SenderDID:     m.SenderDID,
-		Type:          m.Type,
-		Content:       m.Content,
-		ReplyToULID:   m.ReplyToULID,
-		MentionedDIDs: m.MentionedDIDs,
-		MentionAll:    m.MentionAll,
-		SentAt:        m.SentAt.Unix(),
-		Deleted:       m.Deleted,
-	}
-}
-
-// ==================== Offline Messages Handlers ====================
-
-func (s *groupChatSubServer) handleGetOfflineMessages(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if req.GroupUlid == "" || req.MessageUlid == "" {
+		return nil, server.BadRequest("group_ulid and message_ulid are required")
+	}
+
+	msg, err := s.messageService.GetMessage(ctx, req.MessageUlid)
+	if err != nil {
+		return nil, server.NotFound("message not found")
+	}
+
+	if msg.SenderDID != actorDID {
+		member, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
+		if err != nil || (member.Role != model.GroupRoleOwner && member.Role != model.GroupRoleAdmin) {
+			return nil, server.Forbidden("permission denied")
+		}
+	}
+
+	if err := s.messageService.RecallMessage(ctx, req.MessageUlid); err != nil {
+		logger.Errorf(ctx, "[%s] Failed to recall message: %v", logID, err)
+		return nil, server.InternalErrorWithCause("failed to recall message", err)
+	}
+
+	logger.Infof(ctx, "[%s] Message recalled: ulid=%s, by=%s", logID, req.MessageUlid, actorDID)
+
+	return &chat.RecallGroupMessageResponse{
+		Success: true,
+	}, nil
+}
+
+func (s *groupChatSubServer) handleDeleteMessage(ctx context.Context, req *chat.DeleteGroupMessageRequest) (*chat.DeleteGroupMessageResponse, error) {
+	logID := serverwrapper.GetLogID(ctx)
+
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	actorDID := subject.ID
+
+	if req.GroupUlid == "" || req.MessageUlid == "" {
+		return nil, server.BadRequest("group_ulid and message_ulid are required")
+	}
+
+	member, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
+	if err != nil || (member.Role != model.GroupRoleOwner && member.Role != model.GroupRoleAdmin) {
+		return nil, server.Forbidden("permission denied")
+	}
+
+	if err := s.messageService.DeleteMessage(ctx, req.MessageUlid); err != nil {
+		logger.Errorf(ctx, "[%s] Failed to delete message: %v", logID, err)
+		return nil, server.InternalErrorWithCause("failed to delete message", err)
+	}
+
+	logger.Infof(ctx, "[%s] Message deleted: ulid=%s, by=%s", logID, req.MessageUlid, actorDID)
+
+	return &chat.DeleteGroupMessageResponse{
+		Success: true,
+	}, nil
+}
+
+func (s *groupChatSubServer) handleSearchMessages(ctx context.Context, req *chat.SearchGroupMessagesRequest) (*chat.SearchGroupMessagesResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	actorDID := subject.ID
+
+	if req.GroupUlid == "" || req.Query == "" {
+		return nil, server.BadRequest("group_ulid and query are required")
+	}
+
+	_, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
+	if err != nil {
+		return nil, server.Forbidden("not a member")
+	}
+
+	limit := int(req.Limit)
+	if limit <= 0 {
+		limit = 50
+	}
+
+	messages, hasMore, err := s.messageService.SearchMessages(ctx, req.GroupUlid, req.Query, limit)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to search messages", err)
+	}
+
+	protoMessages := make([]*chat.GroupMessage, len(messages))
+	for i, m := range messages {
+		protoMessages[i] = toProtoGroupMessage(&m)
+	}
+
+	return &chat.SearchGroupMessagesResponse{
+		Messages: protoMessages,
+		HasMore:  hasMore,
+	}, nil
+}
+
+func (s *groupChatSubServer) handleUpdateMyNickname(ctx context.Context, req *chat.UpdateMyNicknameRequest) (*chat.UpdateMyNicknameResponse, error) {
+	logID := serverwrapper.GetLogID(ctx)
+
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	actorDID := subject.ID
+
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
+	}
+
+	_, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
+	if err != nil {
+		return nil, server.Forbidden("not a member")
+	}
+
+	if err := s.memberService.UpdateNickname(ctx, req.GroupUlid, actorDID, req.Nickname); err != nil {
+		logger.Errorf(ctx, "[%s] Failed to update nickname: %v", logID, err)
+		return nil, server.InternalErrorWithCause("failed to update nickname", err)
+	}
+
+	member, _ := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
+
+	return &chat.UpdateMyNicknameResponse{
+		Member: toProtoGroupMember(member),
+	}, nil
+}
+
+func (s *groupChatSubServer) handleGetMySettings(ctx context.Context, req *chat.GetGroupSettingsRequest) (*chat.GetGroupSettingsResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	actorDID := subject.ID
+
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
+	}
+
+	member, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
+	if err != nil {
+		return nil, server.Forbidden("not a member")
+	}
+
+	return &chat.GetGroupSettingsResponse{
+		IsMuted:            false,
+		IsPinned:           false,
+		MyNickname:         member.Nickname,
+		ShowMemberNickname: false,
+	}, nil
+}
+
+func (s *groupChatSubServer) handleUpdateMySettings(ctx context.Context, req *chat.UpdateGroupSettingsRequest) (*chat.UpdateGroupSettingsResponse, error) {
+	logID := serverwrapper.GetLogID(ctx)
+
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	actorDID := subject.ID
+
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
+	}
+
+	_, err := s.memberService.GetMember(ctx, req.GroupUlid, actorDID)
+	if err != nil {
+		return nil, server.Forbidden("not a member")
+	}
+
+	logger.Infof(ctx, "[%s] Update my settings: group=%s, actor=%s, muted=%v, pinned=%v",
+		logID, req.GroupUlid, actorDID, req.IsMuted, req.IsPinned)
+
+	return &chat.UpdateGroupSettingsResponse{
+		Success: true,
+	}, nil
+}
+
+func (s *groupChatSubServer) handleGetOfflineMessages(ctx context.Context, req *chat.GetOfflineMessagesRequest) (*chat.GetOfflineMessagesResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	actorDID := subject.ID
+
+	limit := int(req.Limit)
 	if limit <= 0 {
 		limit = 100
 	}
 
 	offlineMessages, err := s.messageService.GetOfflineMessages(ctx, actorDID, limit)
 	if err != nil {
-		http.Error(w, "failed to get offline messages", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to get offline messages", err)
 	}
 
-	// Group by group_ulid and fetch actual messages
-	type offlineInfo struct {
-		ULID        string `json:"ulid"`
-		GroupULID   string `json:"group_ulid"`
-		MessageULID string `json:"message_ulid"`
-		CreatedAt   int64  `json:"created_at"`
-	}
-
-	result := make([]offlineInfo, len(offlineMessages))
+	protoMessages := make([]*chat.GroupOfflineMessage, len(offlineMessages))
 	for i, om := range offlineMessages {
-		result[i] = offlineInfo{
-			ULID:        om.ULID,
-			GroupULID:   om.GroupULID,
-			MessageULID: om.MessageULID,
-			CreatedAt:   om.CreatedAt.Unix(),
-		}
+		protoMessages[i] = toProtoGroupOfflineMessage(&om)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"offline_messages": result,
-	})
+	return &chat.GetOfflineMessagesResponse{
+		Messages: protoMessages,
+	}, nil
 }
 
-func (s *groupChatSubServer) handleAckOfflineMessages(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *groupChatSubServer) handleAckOfflineMessages(ctx context.Context, req *chat.AckOfflineMessagesRequest) (*chat.AckOfflineMessagesResponse, error) {
 	logID := serverwrapper.GetLogID(ctx)
 
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	var req struct {
-		OfflineMessageULIDs []string `json:"offline_message_ulids"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.OfflineMessageULIDs) == 0 {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
+	if len(req.Ulids) == 0 {
+		return nil, server.BadRequest("ulids are required")
 	}
 
 	acked := 0
-	for _, ulid := range req.OfflineMessageULIDs {
+	for _, ulid := range req.Ulids {
 		if err := s.messageService.MarkOfflineMessageDelivered(ctx, ulid); err != nil {
 			logger.Warnf(ctx, "[%s] Failed to ack offline message %s: %v", logID, ulid, err)
 		} else {
@@ -857,334 +752,154 @@ func (s *groupChatSubServer) handleAckOfflineMessages(w http.ResponseWriter, r *
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"acked": acked,
-	})
+	return &chat.AckOfflineMessagesResponse{
+		Success: true,
+	}, nil
 }
 
-func (s *groupChatSubServer) handleGetUnreadCount(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	subject := httpadapter.GetSubject(r)
+func (s *groupChatSubServer) handleGetUnreadCount(ctx context.Context, req *chat.GetUnreadCountRequest) (*chat.GetUnreadCountResponse, error) {
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	groupULID := r.URL.Query().Get("group_ulid")
-
-	count, err := s.messageService.GetUndeliveredCount(ctx, actorDID, groupULID)
+	count, err := s.messageService.GetUndeliveredCount(ctx, actorDID, req.GroupUlid)
 	if err != nil {
-		http.Error(w, "failed to get unread count", http.StatusInternalServerError)
-		return
+		return nil, server.InternalErrorWithCause("failed to get unread count", err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"unread_count": count,
-		"group_ulid":   groupULID,
-	})
+	return &chat.GetUnreadCountResponse{
+		UnreadCount: int64(count),
+	}, nil
 }
 
-// handleMarkGroupRead marks all offline messages in a group as read for the current user
-func (s *groupChatSubServer) handleMarkGroupRead(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *groupChatSubServer) handleMarkGroupRead(ctx context.Context, req *chat.MarkGroupReadRequest) (*chat.MarkGroupReadResponse, error) {
 	logID := serverwrapper.GetLogID(ctx)
 
-	subject := httpadapter.GetSubject(r)
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorDID := subject.ID
 
-	var req struct {
-		GroupULID string `json:"group_ulid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" {
-		http.Error(w, "invalid request: group_ulid required", http.StatusBadRequest)
-		return
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
 	}
 
-	// Mark all offline messages for this group as delivered
-	count, err := s.messageService.MarkGroupOfflineMessagesDelivered(ctx, actorDID, req.GroupULID)
+	count, err := s.messageService.MarkGroupOfflineMessagesDelivered(ctx, actorDID, req.GroupUlid)
 	if err != nil {
-		logger.Warnf(ctx, "[%s] Failed to mark group %s as read: %v", logID, req.GroupULID, err)
-		http.Error(w, "failed to mark as read", http.StatusInternalServerError)
-		return
+		logger.Warnf(ctx, "[%s] Failed to mark group %s as read: %v", logID, req.GroupUlid, err)
+		return nil, server.InternalErrorWithCause("failed to mark as read", err)
 	}
 
-	logger.Infof(ctx, "[%s] Marked %d messages as read for group %s by user %s", logID, count, req.GroupULID, actorDID)
+	logger.Infof(ctx, "[%s] Marked %d messages as read for group %s by user %s", logID, count, req.GroupUlid, actorDID)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":      true,
-		"marked_count": count,
-		"group_ulid":   req.GroupULID,
-	})
+	return &chat.MarkGroupReadResponse{
+		Success: true,
+	}, nil
 }
 
-// ==================== Message Recall/Delete Handlers ====================
+func (s *groupChatSubServer) handleStats(ctx context.Context, req *chat.GetGroupStatsRequest) (*chat.GetGroupStatsResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-func (s *groupChatSubServer) handleRecallMessage(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	logID := serverwrapper.GetLogID(ctx)
-
-	subject := httpadapter.GetSubject(r)
-	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	actorDID := subject.ID
-
-	var req struct {
-		GroupULID   string `json:"group_ulid"`
-		MessageULID string `json:"message_ulid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" || req.MessageULID == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-
-	// Get message to check ownership and time
-	msg, err := s.messageService.GetMessage(ctx, req.MessageULID)
-	if err != nil {
-		http.Error(w, "message not found", http.StatusNotFound)
-		return
-	}
-
-	// Check if sender
-	if msg.SenderDID != actorDID {
-		// Check if admin/owner can recall any message
-		member, err := s.memberService.GetMember(ctx, req.GroupULID, actorDID)
-		if err != nil || (member.Role != model.GroupRoleOwner && member.Role != model.GroupRoleAdmin) {
-			http.Error(w, "permission denied", http.StatusForbidden)
-			return
-		}
-	} else {
-		// Check recall time limit (2 minutes for regular users)
-		// elapsed := time.Since(msg.SentAt)
-		// if elapsed > 2*time.Minute {
-		// 	http.Error(w, "message too old to recall", http.StatusBadRequest)
-		// 	return
-		// }
-	}
-
-	if err := s.messageService.RecallMessage(ctx, req.MessageULID); err != nil {
-		logger.Errorf(ctx, "[%s] Failed to recall message: %v", logID, err)
-		http.Error(w, "failed to recall message", http.StatusInternalServerError)
-		return
-	}
-
-	logger.Infof(ctx, "[%s] Message recalled: ulid=%s, by=%s", logID, req.MessageULID, actorDID)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-	})
+	return &chat.GetGroupStatsResponse{
+		TotalGroups:   0,
+		TotalMembers:  0,
+		TotalMessages: 0,
+		ActiveGroups:  0,
+	}, nil
 }
 
-func (s *groupChatSubServer) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	logID := serverwrapper.GetLogID(ctx)
-
-	subject := httpadapter.GetSubject(r)
-	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+func toProtoGroup(g *model.Group) *chat.Group {
+	if g == nil {
+		return nil
 	}
-	actorDID := subject.ID
-
-	var req struct {
-		GroupULID   string `json:"group_ulid"`
-		MessageULID string `json:"message_ulid"`
+	return &chat.Group{
+		Ulid:        g.ULID,
+		Name:        g.Name,
+		Description: g.Description,
+		AvatarCid:   g.AvatarCID,
+		OwnerDid:    g.OwnerDID,
+		Type:        chat.GroupType(g.Type),
+		Visibility:  chat.GroupVisibility(g.Visibility),
+		MemberCount: int32(g.MemberCount),
+		MaxMembers:  int32(g.MaxMembers),
+		Muted:       g.Muted,
+		CreatedAt:   timestamppb.New(g.CreatedAt),
+		UpdatedAt:   timestamppb.New(g.UpdatedAt),
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" || req.MessageULID == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-
-	// Check permission (must be admin/owner)
-	member, err := s.memberService.GetMember(ctx, req.GroupULID, actorDID)
-	if err != nil || (member.Role != model.GroupRoleOwner && member.Role != model.GroupRoleAdmin) {
-		http.Error(w, "permission denied", http.StatusForbidden)
-		return
-	}
-
-	if err := s.messageService.DeleteMessage(ctx, req.MessageULID); err != nil {
-		logger.Errorf(ctx, "[%s] Failed to delete message: %v", logID, err)
-		http.Error(w, "failed to delete message", http.StatusInternalServerError)
-		return
-	}
-
-	logger.Infof(ctx, "[%s] Message deleted: ulid=%s, by=%s", logID, req.MessageULID, actorDID)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-	})
 }
 
-func (s *groupChatSubServer) handleSearchMessages(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	subject := httpadapter.GetSubject(r)
-	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+func toProtoGroupMember(m *model.GroupMember) *chat.GroupMember {
+	if m == nil {
+		return nil
 	}
-	actorDID := subject.ID
-
-	groupULID := r.URL.Query().Get("group_ulid")
-	query := r.URL.Query().Get("query")
-	if groupULID == "" || query == "" {
-		http.Error(w, "group_ulid and query required", http.StatusBadRequest)
-		return
+	return &chat.GroupMember{
+		GroupUlid:  m.GroupULID,
+		ActorDid:   m.ActorDID,
+		Role:       chat.GroupRole(m.Role),
+		Nickname:   m.Nickname,
+		Muted:      m.Muted,
+		MutedUntil: timestamppb.New(m.MutedUntil),
+		JoinedAt:   timestamppb.New(m.JoinedAt),
+		InvitedBy:  m.InvitedBy,
 	}
-
-	// Check if requester is a member
-	_, err := s.memberService.GetMember(ctx, groupULID, actorDID)
-	if err != nil {
-		http.Error(w, "not a member", http.StatusForbidden)
-		return
-	}
-
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit <= 0 {
-		limit = 50
-	}
-
-	messages, hasMore, err := s.messageService.SearchMessages(ctx, groupULID, query, limit)
-	if err != nil {
-		http.Error(w, "failed to search messages", http.StatusInternalServerError)
-		return
-	}
-
-	result := make([]messageInfo, len(messages))
-	for i, m := range messages {
-		result[i] = toMessageInfo(&m)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"messages": result,
-		"has_more": hasMore,
-	})
 }
 
-// ==================== Member Settings Handlers ====================
-
-func (s *groupChatSubServer) handleUpdateMyNickname(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	logID := serverwrapper.GetLogID(ctx)
-
-	subject := httpadapter.GetSubject(r)
-	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+func toProtoGroupMemberWithActor(m *model.GroupMember, _ *dbmodel.Actor) *chat.GroupMember {
+	if m == nil {
+		return nil
 	}
-	actorDID := subject.ID
-
-	var req struct {
-		GroupULID string `json:"group_ulid"`
-		Nickname  string `json:"nickname"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-
-	// Check if member
-	_, err := s.memberService.GetMember(ctx, req.GroupULID, actorDID)
-	if err != nil {
-		http.Error(w, "not a member", http.StatusForbidden)
-		return
-	}
-
-	if err := s.memberService.UpdateNickname(ctx, req.GroupULID, actorDID, req.Nickname); err != nil {
-		logger.Errorf(ctx, "[%s] Failed to update nickname: %v", logID, err)
-		http.Error(w, "failed to update nickname", http.StatusInternalServerError)
-		return
-	}
-
-	member, _ := s.memberService.GetMember(ctx, req.GroupULID, actorDID)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"member": toMemberInfo(member),
-	})
+	return toProtoGroupMember(m)
 }
 
-func (s *groupChatSubServer) handleGetMySettings(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	subject := httpadapter.GetSubject(r)
-	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+func toProtoGroupMessage(m *model.GroupMessage) *chat.GroupMessage {
+	if m == nil {
+		return nil
 	}
-	actorDID := subject.ID
-
-	groupULID := r.URL.Query().Get("group_ulid")
-	if groupULID == "" {
-		http.Error(w, "group_ulid required", http.StatusBadRequest)
-		return
+	return &chat.GroupMessage{
+		Ulid:          m.ULID,
+		GroupUlid:     m.GroupULID,
+		SenderDid:     m.SenderDID,
+		Type:          chat.GroupMessageType(m.Type),
+		Content:       m.Content,
+		ReplyToUlid:   m.ReplyToULID,
+		MentionedDids: m.MentionedDIDs,
+		MentionAll:    m.MentionAll,
+		SentAt:        timestamppb.New(m.SentAt),
+		Deleted:       m.Deleted,
 	}
-
-	member, err := s.memberService.GetMember(ctx, groupULID, actorDID)
-	if err != nil {
-		http.Error(w, "not a member", http.StatusForbidden)
-		return
-	}
-
-	// Get user's personal settings for this group (stored in member or separate table)
-	// For now, return member info with settings fields
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"group_ulid":  groupULID,
-		"is_muted":    false, // TODO: store in member_settings table
-		"is_pinned":   false, // TODO: store in member_settings table
-		"my_nickname": member.Nickname,
-	})
 }
 
-func (s *groupChatSubServer) handleUpdateMySettings(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	logID := serverwrapper.GetLogID(ctx)
-
-	subject := httpadapter.GetSubject(r)
-	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+func toProtoGroupInvitation(inv *model.GroupInvitation) *chat.GroupInvitation {
+	if inv == nil {
+		return nil
 	}
-	actorDID := subject.ID
-
-	var req struct {
-		GroupULID string `json:"group_ulid"`
-		IsMuted   *bool  `json:"is_muted"`
-		IsPinned  *bool  `json:"is_pinned"`
+	return &chat.GroupInvitation{
+		Ulid:        inv.ULID,
+		GroupUlid:   inv.GroupULID,
+		InviterDid:  inv.InviterDID,
+		InviteeDid:  inv.InviteeDID,
+		Status:      chat.GroupInvitationStatus(inv.Status),
+		ExpireAt:    timestamppb.New(inv.ExpireAt),
+		CreatedAt:   timestamppb.New(inv.CreatedAt),
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.GroupULID == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
+}
+
+func toProtoGroupOfflineMessage(om *model.GroupOfflineMessage) *chat.GroupOfflineMessage {
+	if om == nil {
+		return nil
 	}
-
-	// Check if member
-	_, err := s.memberService.GetMember(ctx, req.GroupULID, actorDID)
-	if err != nil {
-		http.Error(w, "not a member", http.StatusForbidden)
-		return
+	return &chat.GroupOfflineMessage{
+		Ulid:        om.ULID,
+		GroupUlid:   om.GroupULID,
+		ReceiverDid: om.ReceiverDID,
+		MessageUlid: om.MessageULID,
+		Status:      chat.GroupOfflineMessageStatus(om.Status),
+		ExpireAt:    timestamppb.New(om.ExpireAt),
+		DeliveredAt: timestamppb.New(om.DeliveredAt),
+		CreatedAt:   timestamppb.New(om.CreatedAt),
 	}
-
-	// TODO: Store settings in member_settings table
-	// For now, just log and return success
-	logger.Infof(ctx, "[%s] Update my settings: group=%s, actor=%s, muted=%v, pinned=%v",
-		logID, req.GroupULID, actorDID, req.IsMuted, req.IsPinned)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-	})
 }

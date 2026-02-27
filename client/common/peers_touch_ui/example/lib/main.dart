@@ -31,6 +31,7 @@ class EmojiPickerDemo extends StatefulWidget {
 class _EmojiPickerDemoState extends State<EmojiPickerDemo> {
   final TextEditingController _textController = TextEditingController();
   final List<String> _recentEmojis = ['😀', '😂', '❤️', '👍', '🎉'];
+  final List<String> _favoriteEmojis = ['❤️', '👍', '🎉'];
   bool _showEmojiPicker = false;
 
   @override
@@ -110,10 +111,11 @@ class _EmojiPickerDemoState extends State<EmojiPickerDemo> {
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeInOut,
             child: _showEmojiPicker
-                ? EmojiPickerPanel(
+                ? EmojiAndStickerPicker(
                     onEmojiSelected: _insertEmoji,
                     textController: _textController,
                     recentEmojis: _recentEmojis,
+                    favoriteEmojis: _favoriteEmojis,
                   )
                 : const SizedBox.shrink(),
           ),
