@@ -1204,3 +1204,143 @@ const DeleteGroupMessageResponse$json = {
 final $typed_data.Uint8List deleteGroupMessageResponseDescriptor =
     $convert.base64Decode(
         'ChpEZWxldGVHcm91cE1lc3NhZ2VSZXNwb25zZRIYCgdzdWNjZXNzGAEgASgIUgdzdWNjZXNz');
+
+@$core.Deprecated('Use getOfflineMessagesRequestDescriptor instead')
+const GetOfflineMessagesRequest$json = {
+  '1': 'GetOfflineMessagesRequest',
+  '2': [
+    {'1': 'limit', '3': 1, '4': 1, '5': 5, '10': 'limit'},
+  ],
+};
+
+/// Descriptor for `GetOfflineMessagesRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getOfflineMessagesRequestDescriptor =
+    $convert.base64Decode(
+        'ChlHZXRPZmZsaW5lTWVzc2FnZXNSZXF1ZXN0EhQKBWxpbWl0GAEgASgFUgVsaW1pdA==');
+
+@$core.Deprecated('Use getOfflineMessagesResponseDescriptor instead')
+const GetOfflineMessagesResponse$json = {
+  '1': 'GetOfflineMessagesResponse',
+  '2': [
+    {
+      '1': 'messages',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.GroupOfflineMessage',
+      '10': 'messages'
+    },
+  ],
+};
+
+/// Descriptor for `GetOfflineMessagesResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getOfflineMessagesResponseDescriptor =
+    $convert.base64Decode(
+        'ChpHZXRPZmZsaW5lTWVzc2FnZXNSZXNwb25zZRJKCghtZXNzYWdlcxgBIAMoCzIuLnBlZXJzX3'
+        'RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBPZmZsaW5lTWVzc2FnZVIIbWVzc2FnZXM=');
+
+@$core.Deprecated('Use ackOfflineMessagesRequestDescriptor instead')
+const AckOfflineMessagesRequest$json = {
+  '1': 'AckOfflineMessagesRequest',
+  '2': [
+    {'1': 'ulids', '3': 1, '4': 3, '5': 9, '10': 'ulids'},
+  ],
+};
+
+/// Descriptor for `AckOfflineMessagesRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List ackOfflineMessagesRequestDescriptor =
+    $convert.base64Decode(
+        'ChlBY2tPZmZsaW5lTWVzc2FnZXNSZXF1ZXN0EhQKBXVsaWRzGAEgAygJUgV1bGlkcw==');
+
+@$core.Deprecated('Use ackOfflineMessagesResponseDescriptor instead')
+const AckOfflineMessagesResponse$json = {
+  '1': 'AckOfflineMessagesResponse',
+  '2': [
+    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
+  ],
+};
+
+/// Descriptor for `AckOfflineMessagesResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List ackOfflineMessagesResponseDescriptor =
+    $convert.base64Decode(
+        'ChpBY2tPZmZsaW5lTWVzc2FnZXNSZXNwb25zZRIYCgdzdWNjZXNzGAEgASgIUgdzdWNjZXNz');
+
+@$core.Deprecated('Use getUnreadCountRequestDescriptor instead')
+const GetUnreadCountRequest$json = {
+  '1': 'GetUnreadCountRequest',
+  '2': [
+    {'1': 'group_ulid', '3': 1, '4': 1, '5': 9, '10': 'groupUlid'},
+  ],
+};
+
+/// Descriptor for `GetUnreadCountRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getUnreadCountRequestDescriptor = $convert.base64Decode(
+    'ChVHZXRVbnJlYWRDb3VudFJlcXVlc3QSHQoKZ3JvdXBfdWxpZBgBIAEoCVIJZ3JvdXBVbGlk');
+
+@$core.Deprecated('Use getUnreadCountResponseDescriptor instead')
+const GetUnreadCountResponse$json = {
+  '1': 'GetUnreadCountResponse',
+  '2': [
+    {'1': 'unread_count', '3': 1, '4': 1, '5': 3, '10': 'unreadCount'},
+  ],
+};
+
+/// Descriptor for `GetUnreadCountResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getUnreadCountResponseDescriptor =
+    $convert.base64Decode(
+        'ChZHZXRVbnJlYWRDb3VudFJlc3BvbnNlEiEKDHVucmVhZF9jb3VudBgBIAEoA1ILdW5yZWFkQ2'
+        '91bnQ=');
+
+@$core.Deprecated('Use markGroupReadRequestDescriptor instead')
+const MarkGroupReadRequest$json = {
+  '1': 'MarkGroupReadRequest',
+  '2': [
+    {'1': 'group_ulid', '3': 1, '4': 1, '5': 9, '10': 'groupUlid'},
+    {'1': 'up_to_ulid', '3': 2, '4': 1, '5': 9, '10': 'upToUlid'},
+  ],
+};
+
+/// Descriptor for `MarkGroupReadRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List markGroupReadRequestDescriptor = $convert.base64Decode(
+    'ChRNYXJrR3JvdXBSZWFkUmVxdWVzdBIdCgpncm91cF91bGlkGAEgASgJUglncm91cFVsaWQSHA'
+    'oKdXBfdG9fdWxpZBgCIAEoCVIIdXBUb1VsaWQ=');
+
+@$core.Deprecated('Use markGroupReadResponseDescriptor instead')
+const MarkGroupReadResponse$json = {
+  '1': 'MarkGroupReadResponse',
+  '2': [
+    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
+  ],
+};
+
+/// Descriptor for `MarkGroupReadResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List markGroupReadResponseDescriptor =
+    $convert.base64Decode(
+        'ChVNYXJrR3JvdXBSZWFkUmVzcG9uc2USGAoHc3VjY2VzcxgBIAEoCFIHc3VjY2Vzcw==');
+
+@$core.Deprecated('Use getGroupStatsRequestDescriptor instead')
+const GetGroupStatsRequest$json = {
+  '1': 'GetGroupStatsRequest',
+};
+
+/// Descriptor for `GetGroupStatsRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getGroupStatsRequestDescriptor =
+    $convert.base64Decode('ChRHZXRHcm91cFN0YXRzUmVxdWVzdA==');
+
+@$core.Deprecated('Use getGroupStatsResponseDescriptor instead')
+const GetGroupStatsResponse$json = {
+  '1': 'GetGroupStatsResponse',
+  '2': [
+    {'1': 'total_groups', '3': 1, '4': 1, '5': 3, '10': 'totalGroups'},
+    {'1': 'total_members', '3': 2, '4': 1, '5': 3, '10': 'totalMembers'},
+    {'1': 'total_messages', '3': 3, '4': 1, '5': 3, '10': 'totalMessages'},
+    {'1': 'active_groups', '3': 4, '4': 1, '5': 3, '10': 'activeGroups'},
+  ],
+};
+
+/// Descriptor for `GetGroupStatsResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getGroupStatsResponseDescriptor = $convert.base64Decode(
+    'ChVHZXRHcm91cFN0YXRzUmVzcG9uc2USIQoMdG90YWxfZ3JvdXBzGAEgASgDUgt0b3RhbEdyb3'
+    'VwcxIjCg10b3RhbF9tZW1iZXJzGAIgASgDUgx0b3RhbE1lbWJlcnMSJQoOdG90YWxfbWVzc2Fn'
+    'ZXMYAyABKANSDXRvdGFsTWVzc2FnZXMSIwoNYWN0aXZlX2dyb3VwcxgEIAEoA1IMYWN0aXZlR3'
+    'JvdXBz');
