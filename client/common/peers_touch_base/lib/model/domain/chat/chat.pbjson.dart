@@ -62,7 +62,8 @@ const MessageStatus$json = {
     {'1': 'MESSAGE_STATUS_SENDING', '2': 1},
     {'1': 'MESSAGE_STATUS_SENT', '2': 2},
     {'1': 'MESSAGE_STATUS_DELIVERED', '2': 3},
-    {'1': 'MESSAGE_STATUS_FAILED', '2': 4},
+    {'1': 'MESSAGE_STATUS_READ', '2': 4},
+    {'1': 'MESSAGE_STATUS_FAILED', '2': 5},
   ],
 };
 
@@ -70,7 +71,8 @@ const MessageStatus$json = {
 final $typed_data.Uint8List messageStatusDescriptor = $convert.base64Decode(
     'Cg1NZXNzYWdlU3RhdHVzEh4KGk1FU1NBR0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASGgoWTUVTU0'
     'FHRV9TVEFUVVNfU0VORElORxABEhcKE01FU1NBR0VfU1RBVFVTX1NFTlQQAhIcChhNRVNTQUdF'
-    'X1NUQVRVU19ERUxJVkVSRUQQAxIZChVNRVNTQUdFX1NUQVRVU19GQUlMRUQQBA==');
+    'X1NUQVRVU19ERUxJVkVSRUQQAxIXChNNRVNTQUdFX1NUQVRVU19SRUFEEAQSGQoVTUVTU0FHRV'
+    '9TVEFUVVNfRkFJTEVEEAU=');
 
 @$core.Deprecated('Use friendshipStatusDescriptor instead')
 const FriendshipStatus$json = {

@@ -1137,6 +1137,132 @@ class GetMessagesResponse extends $pb.GeneratedMessage {
   void clearHasMore() => $_clearField(2);
 }
 
+class CreateSessionRequest extends $pb.GeneratedMessage {
+  factory CreateSessionRequest({
+    $core.String? participantDid,
+  }) {
+    final result = create();
+    if (participantDid != null) result.participantDid = participantDid;
+    return result;
+  }
+
+  CreateSessionRequest._();
+
+  factory CreateSessionRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory CreateSessionRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'CreateSessionRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'participantDid')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CreateSessionRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CreateSessionRequest copyWith(void Function(CreateSessionRequest) updates) =>
+      super.copyWith((message) => updates(message as CreateSessionRequest))
+          as CreateSessionRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CreateSessionRequest create() => CreateSessionRequest._();
+  @$core.override
+  CreateSessionRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static CreateSessionRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<CreateSessionRequest>(create);
+  static CreateSessionRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get participantDid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set participantDid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasParticipantDid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearParticipantDid() => $_clearField(1);
+}
+
+class CreateSessionResponse extends $pb.GeneratedMessage {
+  factory CreateSessionResponse({
+    FriendChatSession? session,
+    $core.bool? created,
+  }) {
+    final result = create();
+    if (session != null) result.session = session;
+    if (created != null) result.created = created;
+    return result;
+  }
+
+  CreateSessionResponse._();
+
+  factory CreateSessionResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory CreateSessionResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'CreateSessionResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOM<FriendChatSession>(1, _omitFieldNames ? '' : 'session',
+        subBuilder: FriendChatSession.create)
+    ..aOB(2, _omitFieldNames ? '' : 'created')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CreateSessionResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CreateSessionResponse copyWith(
+          void Function(CreateSessionResponse) updates) =>
+      super.copyWith((message) => updates(message as CreateSessionResponse))
+          as CreateSessionResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CreateSessionResponse create() => CreateSessionResponse._();
+  @$core.override
+  CreateSessionResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static CreateSessionResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<CreateSessionResponse>(create);
+  static CreateSessionResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  FriendChatSession get session => $_getN(0);
+  @$pb.TagNumber(1)
+  set session(FriendChatSession value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSession() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSession() => $_clearField(1);
+  @$pb.TagNumber(1)
+  FriendChatSession ensureSession() => $_ensure(0);
+
+  @$pb.TagNumber(2)
+  $core.bool get created => $_getBF(1);
+  @$pb.TagNumber(2)
+  set created($core.bool value) => $_setBool(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasCreated() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCreated() => $_clearField(2);
+}
+
 class GetSessionsRequest extends $pb.GeneratedMessage {
   factory GetSessionsRequest({
     $core.int? limit,
@@ -1757,6 +1883,587 @@ class SyncMessagesResponse extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(2)
   $pb.PbList<$core.String> get failed => $_getList(1);
+}
+
+/// MessageAck: acknowledge message delivery/read status
+class MessageAckRequest extends $pb.GeneratedMessage {
+  factory MessageAckRequest({
+    $core.Iterable<$core.String>? ulids,
+    $core.int? status,
+  }) {
+    final result = create();
+    if (ulids != null) result.ulids.addAll(ulids);
+    if (status != null) result.status = status;
+    return result;
+  }
+
+  MessageAckRequest._();
+
+  factory MessageAckRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory MessageAckRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'MessageAckRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..pPS(1, _omitFieldNames ? '' : 'ulids')
+    ..aI(2, _omitFieldNames ? '' : 'status')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MessageAckRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MessageAckRequest copyWith(void Function(MessageAckRequest) updates) =>
+      super.copyWith((message) => updates(message as MessageAckRequest))
+          as MessageAckRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static MessageAckRequest create() => MessageAckRequest._();
+  @$core.override
+  MessageAckRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static MessageAckRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<MessageAckRequest>(create);
+  static MessageAckRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<$core.String> get ulids => $_getList(0);
+
+  @$pb.TagNumber(2)
+  $core.int get status => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set status($core.int value) => $_setSignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasStatus() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearStatus() => $_clearField(2);
+}
+
+class MessageAckResponse extends $pb.GeneratedMessage {
+  factory MessageAckResponse() => create();
+
+  MessageAckResponse._();
+
+  factory MessageAckResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory MessageAckResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'MessageAckResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MessageAckResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MessageAckResponse copyWith(void Function(MessageAckResponse) updates) =>
+      super.copyWith((message) => updates(message as MessageAckResponse))
+          as MessageAckResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static MessageAckResponse create() => MessageAckResponse._();
+  @$core.override
+  MessageAckResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static MessageAckResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<MessageAckResponse>(create);
+  static MessageAckResponse? _defaultInstance;
+}
+
+/// Online/Offline status
+class OnlineRequest extends $pb.GeneratedMessage {
+  factory OnlineRequest({
+    $core.String? did,
+  }) {
+    final result = create();
+    if (did != null) result.did = did;
+    return result;
+  }
+
+  OnlineRequest._();
+
+  factory OnlineRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory OnlineRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'OnlineRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'did')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OnlineRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OnlineRequest copyWith(void Function(OnlineRequest) updates) =>
+      super.copyWith((message) => updates(message as OnlineRequest))
+          as OnlineRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static OnlineRequest create() => OnlineRequest._();
+  @$core.override
+  OnlineRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static OnlineRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<OnlineRequest>(create);
+  static OnlineRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get did => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set did($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasDid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearDid() => $_clearField(1);
+}
+
+class OnlineResponse extends $pb.GeneratedMessage {
+  factory OnlineResponse({
+    $core.String? status,
+  }) {
+    final result = create();
+    if (status != null) result.status = status;
+    return result;
+  }
+
+  OnlineResponse._();
+
+  factory OnlineResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory OnlineResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'OnlineResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'status')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OnlineResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OnlineResponse copyWith(void Function(OnlineResponse) updates) =>
+      super.copyWith((message) => updates(message as OnlineResponse))
+          as OnlineResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static OnlineResponse create() => OnlineResponse._();
+  @$core.override
+  OnlineResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static OnlineResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<OnlineResponse>(create);
+  static OnlineResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get status => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set status($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasStatus() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearStatus() => $_clearField(1);
+}
+
+/// Pending offline messages
+class GetPendingRequest extends $pb.GeneratedMessage {
+  factory GetPendingRequest({
+    $core.int? limit,
+  }) {
+    final result = create();
+    if (limit != null) result.limit = limit;
+    return result;
+  }
+
+  GetPendingRequest._();
+
+  factory GetPendingRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetPendingRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetPendingRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'limit')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetPendingRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetPendingRequest copyWith(void Function(GetPendingRequest) updates) =>
+      super.copyWith((message) => updates(message as GetPendingRequest))
+          as GetPendingRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetPendingRequest create() => GetPendingRequest._();
+  @$core.override
+  GetPendingRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetPendingRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetPendingRequest>(create);
+  static GetPendingRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get limit => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set limit($core.int value) => $_setSignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasLimit() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearLimit() => $_clearField(1);
+}
+
+class PendingMessageInfo extends $pb.GeneratedMessage {
+  factory PendingMessageInfo({
+    $core.String? ulid,
+    $core.String? senderDid,
+    $core.String? sessionUlid,
+    $core.List<$core.int>? encryptedPayload,
+    $fixnum.Int64? createdAt,
+  }) {
+    final result = create();
+    if (ulid != null) result.ulid = ulid;
+    if (senderDid != null) result.senderDid = senderDid;
+    if (sessionUlid != null) result.sessionUlid = sessionUlid;
+    if (encryptedPayload != null) result.encryptedPayload = encryptedPayload;
+    if (createdAt != null) result.createdAt = createdAt;
+    return result;
+  }
+
+  PendingMessageInfo._();
+
+  factory PendingMessageInfo.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory PendingMessageInfo.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'PendingMessageInfo',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'ulid')
+    ..aOS(2, _omitFieldNames ? '' : 'senderDid')
+    ..aOS(3, _omitFieldNames ? '' : 'sessionUlid')
+    ..a<$core.List<$core.int>>(
+        4, _omitFieldNames ? '' : 'encryptedPayload', $pb.PbFieldType.OY)
+    ..aInt64(5, _omitFieldNames ? '' : 'createdAt')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PendingMessageInfo clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PendingMessageInfo copyWith(void Function(PendingMessageInfo) updates) =>
+      super.copyWith((message) => updates(message as PendingMessageInfo))
+          as PendingMessageInfo;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static PendingMessageInfo create() => PendingMessageInfo._();
+  @$core.override
+  PendingMessageInfo createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static PendingMessageInfo getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<PendingMessageInfo>(create);
+  static PendingMessageInfo? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get ulid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set ulid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasUlid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearUlid() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get senderDid => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set senderDid($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasSenderDid() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSenderDid() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get sessionUlid => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set sessionUlid($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasSessionUlid() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSessionUlid() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.List<$core.int> get encryptedPayload => $_getN(3);
+  @$pb.TagNumber(4)
+  set encryptedPayload($core.List<$core.int> value) => $_setBytes(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasEncryptedPayload() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearEncryptedPayload() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $fixnum.Int64 get createdAt => $_getI64(4);
+  @$pb.TagNumber(5)
+  set createdAt($fixnum.Int64 value) => $_setInt64(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasCreatedAt() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearCreatedAt() => $_clearField(5);
+}
+
+class GetPendingResponse extends $pb.GeneratedMessage {
+  factory GetPendingResponse({
+    $core.Iterable<PendingMessageInfo>? messages,
+  }) {
+    final result = create();
+    if (messages != null) result.messages.addAll(messages);
+    return result;
+  }
+
+  GetPendingResponse._();
+
+  factory GetPendingResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetPendingResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetPendingResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..pPM<PendingMessageInfo>(1, _omitFieldNames ? '' : 'messages',
+        subBuilder: PendingMessageInfo.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetPendingResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetPendingResponse copyWith(void Function(GetPendingResponse) updates) =>
+      super.copyWith((message) => updates(message as GetPendingResponse))
+          as GetPendingResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetPendingResponse create() => GetPendingResponse._();
+  @$core.override
+  GetPendingResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetPendingResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetPendingResponse>(create);
+  static GetPendingResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<PendingMessageInfo> get messages => $_getList(0);
+}
+
+/// Stats
+class GetStatsRequest extends $pb.GeneratedMessage {
+  factory GetStatsRequest() => create();
+
+  GetStatsRequest._();
+
+  factory GetStatsRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetStatsRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetStatsRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetStatsRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetStatsRequest copyWith(void Function(GetStatsRequest) updates) =>
+      super.copyWith((message) => updates(message as GetStatsRequest))
+          as GetStatsRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetStatsRequest create() => GetStatsRequest._();
+  @$core.override
+  GetStatsRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetStatsRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetStatsRequest>(create);
+  static GetStatsRequest? _defaultInstance;
+}
+
+class GetStatsResponse extends $pb.GeneratedMessage {
+  factory GetStatsResponse({
+    $core.int? onlinePeers,
+    $fixnum.Int64? pendingMessages,
+    $core.String? status,
+  }) {
+    final result = create();
+    if (onlinePeers != null) result.onlinePeers = onlinePeers;
+    if (pendingMessages != null) result.pendingMessages = pendingMessages;
+    if (status != null) result.status = status;
+    return result;
+  }
+
+  GetStatsResponse._();
+
+  factory GetStatsResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetStatsResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetStatsResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'onlinePeers')
+    ..aInt64(2, _omitFieldNames ? '' : 'pendingMessages')
+    ..aOS(3, _omitFieldNames ? '' : 'status')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetStatsResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetStatsResponse copyWith(void Function(GetStatsResponse) updates) =>
+      super.copyWith((message) => updates(message as GetStatsResponse))
+          as GetStatsResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetStatsResponse create() => GetStatsResponse._();
+  @$core.override
+  GetStatsResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetStatsResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetStatsResponse>(create);
+  static GetStatsResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get onlinePeers => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set onlinePeers($core.int value) => $_setSignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasOnlinePeers() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearOnlinePeers() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $fixnum.Int64 get pendingMessages => $_getI64(1);
+  @$pb.TagNumber(2)
+  set pendingMessages($fixnum.Int64 value) => $_setInt64(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasPendingMessages() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearPendingMessages() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get status => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set status($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasStatus() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearStatus() => $_clearField(3);
+}
+
+/// Common empty request for APIs that don't need parameters
+class EmptyRequest extends $pb.GeneratedMessage {
+  factory EmptyRequest() => create();
+
+  EmptyRequest._();
+
+  factory EmptyRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EmptyRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EmptyRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EmptyRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EmptyRequest copyWith(void Function(EmptyRequest) updates) =>
+      super.copyWith((message) => updates(message as EmptyRequest))
+          as EmptyRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EmptyRequest create() => EmptyRequest._();
+  @$core.override
+  EmptyRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EmptyRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EmptyRequest>(create);
+  static EmptyRequest? _defaultInstance;
 }
 
 const $core.bool _omitFieldNames =

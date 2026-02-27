@@ -28,6 +28,7 @@ import 'package:peers_touch_desktop/core/services/avatar_resolver_desktop.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_desktop/features/friend_chat/services/chat_message_service.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/attachment_selector.dart';
+import 'package:peers_touch_desktop/core/services/emoji_picker_service.dart';
 
 class FriendItem {
   final String actorId;
@@ -55,6 +56,10 @@ class FriendChatController extends GetxController {
   final isLoading = false.obs;
   final error = Rx<String?>(null);
   final showEmojiPicker = false.obs;
+
+  final EmojiPickerService _emojiPickerService = EmojiPickerService();
+  final recentEmojis = <String>[].obs;
+  final favoriteEmojis = <String>[].obs;
   
   // Message services - use high-level service (facade pattern)
   final _chatMessageService = ChatMessageService();
@@ -169,6 +174,35 @@ class FriendChatController extends GetxController {
         offset: selection.start + emoji.length,
       ),
     );
+    
+    _addRecentEmoji(emoji);
+  }
+
+  Future<void> _addRecentEmoji(String emoji) async {
+    try {
+      await _emojiPickerService.addRecentEmoji(emoji);
+      recentEmojis.assignAll(await _emojiPickerService.getRecentEmojis());
+    } catch (e) {
+      LoggingService.error('Failed to add recent emoji: $e');
+    }
+  }
+
+  Future<void> addFavoriteEmoji(String emoji) async {
+    try {
+      await _emojiPickerService.addFavoriteEmoji(emoji);
+      favoriteEmojis.assignAll(await _emojiPickerService.getFavoriteEmojis());
+    } catch (e) {
+      LoggingService.error('Failed to add favorite emoji: $e');
+    }
+  }
+
+  Future<void> removeFavoriteEmoji(String emoji) async {
+    try {
+      await _emojiPickerService.removeFavoriteEmoji(emoji);
+      favoriteEmojis.assignAll(await _emojiPickerService.getFavoriteEmojis());
+    } catch (e) {
+      LoggingService.error('Failed to remove favorite emoji: $e');
+    }
   }
   
   Future<void> sendSticker(String stickerUrl) async {
@@ -557,6 +591,8 @@ class FriendChatController extends GetxController {
   void onInit() {
     super.onInit();
     
+    _initEmojiPickerService();
+    
     // Guard: verify auth state before making any API calls.
     // If there is no valid token, skip network-dependent initialization
     // to avoid a cascade of 401s that would trigger logout.
@@ -578,6 +614,17 @@ class FriendChatController extends GetxController {
     _initSignalingWithHeartbeat(); // Register and start heartbeat
     _initEventStream(); // Initialize SSE for real-time push
     _initGroupScrollListener(); // Track scroll position for smart auto-scroll
+  }
+
+  Future<void> _initEmojiPickerService() async {
+    try {
+      await _emojiPickerService.initialize();
+      recentEmojis.assignAll(await _emojiPickerService.getRecentEmojis());
+      favoriteEmojis.assignAll(await _emojiPickerService.getFavoriteEmojis());
+      LoggingService.info('EmojiPickerService initialized');
+    } catch (e) {
+      LoggingService.error('Failed to initialize EmojiPickerService: $e');
+    }
   }
 
   /// Check whether a valid access token exists before issuing API calls.
@@ -1737,6 +1784,16 @@ class FriendChatController extends GetxController {
         loadedMessages.sort((a, b) => a.sentAt.seconds.compareTo(b.sentAt.seconds));
         messages.assignAll(loadedMessages);
         _sessionMessages[session.id] = List<ChatMessage>.from(messages);
+        
+        final messagesToMarkRead = loadedMessages
+            .where((m) => m.senderId != currentUserId && m.status.value < 4)
+            .map((m) => m.id)
+            .toList();
+        if (messagesToMarkRead.isNotEmpty) {
+          _chatApi.ackMessages(messagesToMarkRead, status: 4).catchError((e) {
+            LoggingService.warning('Failed to mark messages as read: $e');
+          });
+        }
       }
     } catch (e) {
       LoggingService.warning('Failed to load messages from server: $e');

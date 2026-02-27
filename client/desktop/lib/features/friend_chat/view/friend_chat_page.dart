@@ -10,7 +10,7 @@ import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.d
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_input_bar.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_message_item.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
-import 'package:peers_touch_desktop/features/friend_chat/widgets/emoji_picker_panel.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/group_avatar_mosaic.dart';
 import 'package:peers_touch_desktop/features/friend_chat/view/group_info_panel.dart';
 import 'package:peers_touch_desktop/features/group_chat/view/create_group_dialog.dart';
@@ -666,12 +666,16 @@ class FriendChatPage extends GetView<FriendChatController> {
                 AnimatedSize(
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeInOut,
-                  child: controller.showEmojiPicker.value
+                  child: Obx(() => controller.showEmojiPicker.value
                       ? EmojiPickerPanel(
                           onEmojiSelected: controller.insertEmoji,
                           textController: controller.inputController,
+                          recentEmojis: controller.recentEmojis,
+                          favoriteEmojis: controller.favoriteEmojis,
+                          onAddFavorite: controller.addFavoriteEmoji,
+                          onRemoveFavorite: controller.removeFavoriteEmoji,
                         )
-                      : const SizedBox.shrink(),
+                      : const SizedBox.shrink()),
                 ),
               ],
             );
