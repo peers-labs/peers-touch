@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:peers_touch_base/widgets/avatar.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 
 /// A mosaic avatar composed of multiple member avatars (like WeChat group avatars)
 class GroupAvatarMosaic extends StatelessWidget {

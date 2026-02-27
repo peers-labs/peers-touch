@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
-import 'package:peers_touch_base/widgets/avatar.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/profile/binding/profile_binding.dart';

@@ -44,17 +44,18 @@
 
 ```
 .prompts/
-├── 00-META/                       # Meta Information
+├── 00-META/           # Meta Information
 │   ├── INDEX.md                   # 👈 You are here
 │   ├── GLOSSARY.md                # Terminology reference
 │   └── CHANGELOG.md               # Prompt evolution history
 │
 ├── 10-GLOBAL/                     # Cross-platform rules (READ FIRST)
+│   ├── 00-first-principles.md     # 🔴 First Principles (MUST READ FIRST)
 │   ├── 10-project-identity.md     # What is Peers-Touch?
 │   ├── 11-architecture.md         # Overall architecture
 │   ├── 12-domain-model.md         # Proto-based domain models
 │   ├── 13-coding-standards.md     # Universal coding standards
-│   └── 14-workflow.md             # Development workflow
+│   └── 14-workflow.md             # 🚨 Development workflow (includes AI mandatory verification)
 │
 ├── 20-CLIENT/                     # Client-side prompts
 │   ├── 21-DESKTOP/                # Desktop (Flutter + GetX)
@@ -86,6 +87,13 @@
 
 ## 🤖 AI Reading Strategy
 
+### ALWAYS READ FIRST (Mandatory):
+```
+🔴 L0/L1 Rules (NEVER VIOLATE):
+1. 00-first-principles.md         ← What you MUST NOT violate
+2. 14-workflow.md                  ← How to verify your work (MANDATORY self-test)
+```
+
 ### When working on Client Common code:
 ```
 MUST READ:
@@ -97,9 +105,10 @@ MUST READ:
 ```
 MUST READ (in order):
 1. 30-STATION/30-station-base.md
-2. 30-STATION/32-app-layer.md (if working on business logic)
-3. 30-STATION/33-frame-layer.md (if working on core infra)
-4. 30-STATION/31-go-standards.md
+2. 30-STATION/35-lib-usage.md      ← Logger, Config, Store usage (MANDATORY)
+3. 30-STATION/32-app-layer.md (if working on business logic)
+4. 30-STATION/33-frame-layer.md (if working on core infra)
+5. 30-STATION/31-go-standards.md
 ```
 
 ---
