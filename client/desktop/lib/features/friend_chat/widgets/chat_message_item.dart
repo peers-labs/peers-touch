@@ -389,6 +389,9 @@ class ChatMessageItem extends StatelessWidget {
         color = UIKit.textSecondary(context);
       case MessageStatus.MESSAGE_STATUS_DELIVERED:
         icon = Icons.done_all;
+        color = UIKit.textSecondary(context);
+      case MessageStatus.MESSAGE_STATUS_READ:
+        icon = Icons.done_all;
         color = Theme.of(context).colorScheme.primary;
       case MessageStatus.MESSAGE_STATUS_FAILED:
         // Show resend button for failed messages
