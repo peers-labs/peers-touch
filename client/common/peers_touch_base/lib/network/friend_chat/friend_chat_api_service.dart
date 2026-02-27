@@ -239,7 +239,7 @@ class FriendChatApiService {
     return GetMessagesResponse.fromJson(response.data ?? {});
   }
 
-  Future<void> ackMessages(List<String> ulids, {int status = 2}) async {
+  Future<void> ackMessages(List<String> ulids, {int status = 4}) async {
     await _httpService.postResponse(
       '/friend-chat/message/ack',
       data: {

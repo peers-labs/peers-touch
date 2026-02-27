@@ -426,6 +426,41 @@ final $typed_data.Uint8List getMessagesResponseDescriptor = $convert.base64Decod
     '9kZWwuY2hhdC52MS5GcmllbmRDaGF0TWVzc2FnZVIIbWVzc2FnZXMSGQoIaGFzX21vcmUYAiAB'
     'KAhSB2hhc01vcmU=');
 
+@$core.Deprecated('Use createSessionRequestDescriptor instead')
+const CreateSessionRequest$json = {
+  '1': 'CreateSessionRequest',
+  '2': [
+    {'1': 'participant_did', '3': 1, '4': 1, '5': 9, '10': 'participantDid'},
+  ],
+};
+
+/// Descriptor for `CreateSessionRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List createSessionRequestDescriptor = $convert.base64Decode(
+    'ChRDcmVhdGVTZXNzaW9uUmVxdWVzdBInCg9wYXJ0aWNpcGFudF9kaWQYASABKAlSDnBhcnRpY2'
+    'lwYW50RGlk');
+
+@$core.Deprecated('Use createSessionResponseDescriptor instead')
+const CreateSessionResponse$json = {
+  '1': 'CreateSessionResponse',
+  '2': [
+    {
+      '1': 'session',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.FriendChatSession',
+      '10': 'session'
+    },
+    {'1': 'created', '3': 2, '4': 1, '5': 8, '10': 'created'},
+  ],
+};
+
+/// Descriptor for `CreateSessionResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List createSessionResponseDescriptor = $convert.base64Decode(
+    'ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USRgoHc2Vzc2lvbhgBIAEoCzIsLnBlZXJzX3RvdWNoLm'
+    '1vZGVsLmNoYXQudjEuRnJpZW5kQ2hhdFNlc3Npb25SB3Nlc3Npb24SGAoHY3JlYXRlZBgCIAEo'
+    'CFIHY3JlYXRlZA==');
+
 @$core.Deprecated('Use getSessionsRequestDescriptor instead')
 const GetSessionsRequest$json = {
   '1': 'GetSessionsRequest',
@@ -599,3 +634,141 @@ const SyncMessagesResponse$json = {
 final $typed_data.Uint8List syncMessagesResponseDescriptor = $convert.base64Decode(
     'ChRTeW5jTWVzc2FnZXNSZXNwb25zZRIWCgZzeW5jZWQYASABKAVSBnN5bmNlZBIWCgZmYWlsZW'
     'QYAiADKAlSBmZhaWxlZA==');
+
+@$core.Deprecated('Use messageAckRequestDescriptor instead')
+const MessageAckRequest$json = {
+  '1': 'MessageAckRequest',
+  '2': [
+    {'1': 'ulids', '3': 1, '4': 3, '5': 9, '10': 'ulids'},
+    {'1': 'status', '3': 2, '4': 1, '5': 5, '10': 'status'},
+  ],
+};
+
+/// Descriptor for `MessageAckRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List messageAckRequestDescriptor = $convert.base64Decode(
+    'ChFNZXNzYWdlQWNrUmVxdWVzdBIUCgV1bGlkcxgBIAMoCVIFdWxpZHMSFgoGc3RhdHVzGAIgAS'
+    'gFUgZzdGF0dXM=');
+
+@$core.Deprecated('Use messageAckResponseDescriptor instead')
+const MessageAckResponse$json = {
+  '1': 'MessageAckResponse',
+};
+
+/// Descriptor for `MessageAckResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List messageAckResponseDescriptor =
+    $convert.base64Decode('ChJNZXNzYWdlQWNrUmVzcG9uc2U=');
+
+@$core.Deprecated('Use onlineRequestDescriptor instead')
+const OnlineRequest$json = {
+  '1': 'OnlineRequest',
+  '2': [
+    {'1': 'did', '3': 1, '4': 1, '5': 9, '10': 'did'},
+  ],
+};
+
+/// Descriptor for `OnlineRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List onlineRequestDescriptor =
+    $convert.base64Decode('Cg1PbmxpbmVSZXF1ZXN0EhAKA2RpZBgBIAEoCVIDZGlk');
+
+@$core.Deprecated('Use onlineResponseDescriptor instead')
+const OnlineResponse$json = {
+  '1': 'OnlineResponse',
+  '2': [
+    {'1': 'status', '3': 1, '4': 1, '5': 9, '10': 'status'},
+  ],
+};
+
+/// Descriptor for `OnlineResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List onlineResponseDescriptor = $convert
+    .base64Decode('Cg5PbmxpbmVSZXNwb25zZRIWCgZzdGF0dXMYASABKAlSBnN0YXR1cw==');
+
+@$core.Deprecated('Use getPendingRequestDescriptor instead')
+const GetPendingRequest$json = {
+  '1': 'GetPendingRequest',
+  '2': [
+    {'1': 'limit', '3': 1, '4': 1, '5': 5, '10': 'limit'},
+  ],
+};
+
+/// Descriptor for `GetPendingRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getPendingRequestDescriptor = $convert
+    .base64Decode('ChFHZXRQZW5kaW5nUmVxdWVzdBIUCgVsaW1pdBgBIAEoBVIFbGltaXQ=');
+
+@$core.Deprecated('Use pendingMessageInfoDescriptor instead')
+const PendingMessageInfo$json = {
+  '1': 'PendingMessageInfo',
+  '2': [
+    {'1': 'ulid', '3': 1, '4': 1, '5': 9, '10': 'ulid'},
+    {'1': 'sender_did', '3': 2, '4': 1, '5': 9, '10': 'senderDid'},
+    {'1': 'session_ulid', '3': 3, '4': 1, '5': 9, '10': 'sessionUlid'},
+    {
+      '1': 'encrypted_payload',
+      '3': 4,
+      '4': 1,
+      '5': 12,
+      '10': 'encryptedPayload'
+    },
+    {'1': 'created_at', '3': 5, '4': 1, '5': 3, '10': 'createdAt'},
+  ],
+};
+
+/// Descriptor for `PendingMessageInfo`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List pendingMessageInfoDescriptor = $convert.base64Decode(
+    'ChJQZW5kaW5nTWVzc2FnZUluZm8SEgoEdWxpZBgBIAEoCVIEdWxpZBIdCgpzZW5kZXJfZGlkGA'
+    'IgASgJUglzZW5kZXJEaWQSIQoMc2Vzc2lvbl91bGlkGAMgASgJUgtzZXNzaW9uVWxpZBIrChFl'
+    'bmNyeXB0ZWRfcGF5bG9hZBgEIAEoDFIQZW5jcnlwdGVkUGF5bG9hZBIdCgpjcmVhdGVkX2F0GA'
+    'UgASgDUgljcmVhdGVkQXQ=');
+
+@$core.Deprecated('Use getPendingResponseDescriptor instead')
+const GetPendingResponse$json = {
+  '1': 'GetPendingResponse',
+  '2': [
+    {
+      '1': 'messages',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.PendingMessageInfo',
+      '10': 'messages'
+    },
+  ],
+};
+
+/// Descriptor for `GetPendingResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getPendingResponseDescriptor = $convert.base64Decode(
+    'ChJHZXRQZW5kaW5nUmVzcG9uc2USSQoIbWVzc2FnZXMYASADKAsyLS5wZWVyc190b3VjaC5tb2'
+    'RlbC5jaGF0LnYxLlBlbmRpbmdNZXNzYWdlSW5mb1IIbWVzc2FnZXM=');
+
+@$core.Deprecated('Use getStatsRequestDescriptor instead')
+const GetStatsRequest$json = {
+  '1': 'GetStatsRequest',
+};
+
+/// Descriptor for `GetStatsRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getStatsRequestDescriptor =
+    $convert.base64Decode('Cg9HZXRTdGF0c1JlcXVlc3Q=');
+
+@$core.Deprecated('Use getStatsResponseDescriptor instead')
+const GetStatsResponse$json = {
+  '1': 'GetStatsResponse',
+  '2': [
+    {'1': 'online_peers', '3': 1, '4': 1, '5': 5, '10': 'onlinePeers'},
+    {'1': 'pending_messages', '3': 2, '4': 1, '5': 3, '10': 'pendingMessages'},
+    {'1': 'status', '3': 3, '4': 1, '5': 9, '10': 'status'},
+  ],
+};
+
+/// Descriptor for `GetStatsResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getStatsResponseDescriptor = $convert.base64Decode(
+    'ChBHZXRTdGF0c1Jlc3BvbnNlEiEKDG9ubGluZV9wZWVycxgBIAEoBVILb25saW5lUGVlcnMSKQ'
+    'oQcGVuZGluZ19tZXNzYWdlcxgCIAEoA1IPcGVuZGluZ01lc3NhZ2VzEhYKBnN0YXR1cxgDIAEo'
+    'CVIGc3RhdHVz');
+
+@$core.Deprecated('Use emptyRequestDescriptor instead')
+const EmptyRequest$json = {
+  '1': 'EmptyRequest',
+};
+
+/// Descriptor for `EmptyRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List emptyRequestDescriptor =
+    $convert.base64Decode('CgxFbXB0eVJlcXVlc3Q=');
