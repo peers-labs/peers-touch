@@ -2426,46 +2426,6 @@ class GetStatsResponse extends $pb.GeneratedMessage {
   void clearStatus() => $_clearField(3);
 }
 
-/// Common empty request for APIs that don't need parameters
-class EmptyRequest extends $pb.GeneratedMessage {
-  factory EmptyRequest() => create();
-
-  EmptyRequest._();
-
-  factory EmptyRequest.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory EmptyRequest.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'EmptyRequest',
-      package: const $pb.PackageName(
-          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
-      createEmptyInstance: create)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  EmptyRequest clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  EmptyRequest copyWith(void Function(EmptyRequest) updates) =>
-      super.copyWith((message) => updates(message as EmptyRequest))
-          as EmptyRequest;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static EmptyRequest create() => EmptyRequest._();
-  @$core.override
-  EmptyRequest createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static EmptyRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<EmptyRequest>(create);
-  static EmptyRequest? _defaultInstance;
-}
-
 const $core.bool _omitFieldNames =
     $core.bool.fromEnvironment('protobuf.omit_field_names');
 const $core.bool _omitMessageNames =
