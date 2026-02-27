@@ -2,154 +2,109 @@ package handler
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 
-	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/social/service"
-	"github.com/peers-labs/peers-touch/station/frame/touch/util"
 )
 
-func Follow(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleFollow(ctx context.Context, req *model.FollowRequest) (*model.FollowResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
-	}
-
-	req, err := util.ReqBind(c, ctx, &model.FollowRequest{})
-	if err != nil {
-		logger.Error(c, "failed to bind request", "error", err)
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "invalid request"))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
 	if req.TargetActorId == "" {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "target_actor_id is required"))
-		return
+		return nil, server.BadRequest("target_actor_id is required")
 	}
 
-	logger.Info(c, "Follow request", "userID", userID, "targetActorId", req.TargetActorId)
+	logger.Info(ctx, "Follow request", "userID", userID, "targetActorId", req.TargetActorId)
 
-	relationship, err := service.Follow(c, userID, req.TargetActorId)
+	relationship, err := service.Follow(ctx, userID, req.TargetActorId)
 	if err != nil {
-		logger.Error(c, "failed to follow", "error", err, "userID", userID, "targetActorId", req.TargetActorId)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR, err.Error()))
-		return
+		logger.Error(ctx, "failed to follow", "error", err, "userID", userID, "targetActorId", req.TargetActorId)
+		return nil, server.InternalErrorWithCause("failed to follow", err)
 	}
 
-	response := &model.FollowResponse{
+	return &model.FollowResponse{
 		Success:      true,
 		Relationship: relationship,
-	}
-
-	util.RspBack(c, ctx, http.StatusOK, response)
+	}, nil
 }
 
-func Unfollow(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleUnfollow(ctx context.Context, req *model.UnfollowRequest) (*model.UnfollowResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
-	}
-
-	req, err := util.ReqBind(c, ctx, &model.UnfollowRequest{})
-	if err != nil {
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
 	if req.TargetActorId == "" {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "target_actor_id is required"))
-		return
+		return nil, server.BadRequest("target_actor_id is required")
 	}
 
-	err = service.Unfollow(c, userID, req.TargetActorId)
+	err := service.Unfollow(ctx, userID, req.TargetActorId)
 	if err != nil {
-		logger.Error(c, "failed to unfollow", "error", err, "userID", userID, "targetActorId", req.TargetActorId)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR, err.Error()))
-		return
+		logger.Error(ctx, "failed to unfollow", "error", err, "userID", userID, "targetActorId", req.TargetActorId)
+		return nil, server.InternalErrorWithCause("failed to unfollow", err)
 	}
 
-	response := &model.UnfollowResponse{
+	return &model.UnfollowResponse{
 		Success: true,
-	}
-
-	util.RspBack(c, ctx, http.StatusOK, response)
+	}, nil
 }
 
-func GetRelationship(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleGetRelationship(ctx context.Context, req *model.GetRelationshipRequest) (*model.GetRelationshipResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	targetActorId := ctx.Query("target_actor_id")
-	if targetActorId == "" {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "target_actor_id is required"))
-		return
+	if req.TargetActorId == "" {
+		return nil, server.BadRequest("target_actor_id is required")
 	}
 
-	relationship, err := service.GetRelationship(c, userID, targetActorId)
+	relationship, err := service.GetRelationship(ctx, userID, req.TargetActorId)
 	if err != nil {
-		logger.Error(c, "failed to get relationship", "error", err, "userID", userID, "targetActorId", targetActorId)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR, err.Error()))
-		return
+		logger.Error(ctx, "failed to get relationship", "error", err, "userID", userID, "targetActorId", req.TargetActorId)
+		return nil, server.InternalErrorWithCause("failed to get relationship", err)
 	}
 
-	response := &model.GetRelationshipResponse{
+	return &model.GetRelationshipResponse{
 		Relationship: relationship,
-	}
-
-	util.RspBack(c, ctx, http.StatusOK, response)
+	}, nil
 }
 
-func GetRelationships(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleGetRelationships(ctx context.Context, req *model.GetRelationshipsRequest) (*model.GetRelationshipsResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	req, err := util.ReqBind(c, ctx, &model.GetRelationshipsRequest{})
+	relationships, err := service.GetRelationships(ctx, userID, req.TargetActorIds)
 	if err != nil {
-		return
+		logger.Error(ctx, "failed to get relationships", "error", err, "userID", userID, "count", len(req.TargetActorIds))
+		return nil, server.InternalErrorWithCause("failed to get relationships", err)
 	}
 
-	relationships, err := service.GetRelationships(c, userID, req.TargetActorIds)
-	if err != nil {
-		logger.Error(c, "failed to get relationships", "error", err, "userID", userID, "count", len(req.TargetActorIds))
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR, err.Error()))
-		return
-	}
-
-	response := &model.GetRelationshipsResponse{
+	return &model.GetRelationshipsResponse{
 		Relationships: relationships,
-	}
-
-	util.RspBack(c, ctx, http.StatusOK, response)
+	}, nil
 }
 
-func GetFollowers(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleGetFollowers(ctx context.Context, req *model.GetFollowersRequest) (*model.GetFollowersResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
-	}
-
-	req, err := util.ReqBind(c, ctx, &model.GetFollowersRequest{})
-	if err != nil {
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
 	actorID := userID
 	if req.ActorId != "" {
+		var err error
 		actorID, err = strconv.ParseUint(req.ActorId, 10, 64)
 		if err != nil {
-			util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "invalid actor_id"))
-			return
+			return nil, server.BadRequest("invalid actor_id")
 		}
 	}
 
@@ -158,40 +113,31 @@ func GetFollowers(c context.Context, ctx *app.RequestContext) {
 		limit = 20
 	}
 
-	followers, nextCursor, total, err := service.GetFollowers(c, actorID, req.Cursor, limit)
+	followers, nextCursor, total, err := service.GetFollowers(ctx, actorID, req.Cursor, limit)
 	if err != nil {
-		logger.Error(c, "failed to get followers", "error", err, "actorID", actorID)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR, err.Error()))
-		return
+		logger.Error(ctx, "failed to get followers", "error", err, "actorID", actorID)
+		return nil, server.InternalErrorWithCause("failed to get followers", err)
 	}
 
-	response := &model.GetFollowersResponse{
+	return &model.GetFollowersResponse{
 		Followers:  followers,
 		NextCursor: nextCursor,
 		Total:      total,
-	}
-
-	util.RspBack(c, ctx, http.StatusOK, response)
+	}, nil
 }
 
-func GetFollowing(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleGetFollowing(ctx context.Context, req *model.GetFollowingRequest) (*model.GetFollowingResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
-	}
-
-	req, err := util.ReqBind(c, ctx, &model.GetFollowingRequest{})
-	if err != nil {
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
 	actorID := userID
 	if req.ActorId != "" {
+		var err error
 		actorID, err = strconv.ParseUint(req.ActorId, 10, 64)
 		if err != nil {
-			util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "invalid actor_id"))
-			return
+			return nil, server.BadRequest("invalid actor_id")
 		}
 	}
 
@@ -200,18 +146,15 @@ func GetFollowing(c context.Context, ctx *app.RequestContext) {
 		limit = 20
 	}
 
-	following, nextCursor, total, err := service.GetFollowing(c, actorID, req.Cursor, limit)
+	following, nextCursor, total, err := service.GetFollowing(ctx, actorID, req.Cursor, limit)
 	if err != nil {
-		logger.Error(c, "failed to get following", "error", err, "actorID", actorID)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR, err.Error()))
-		return
+		logger.Error(ctx, "failed to get following", "error", err, "actorID", actorID)
+		return nil, server.InternalErrorWithCause("failed to get following", err)
 	}
 
-	response := &model.GetFollowingResponse{
+	return &model.GetFollowingResponse{
 		Following:  following,
 		NextCursor: nextCursor,
 		Total:      total,
-	}
-
-	util.RspBack(c, ctx, http.StatusOK, response)
+	}, nil
 }

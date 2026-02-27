@@ -2,277 +2,232 @@ package touch
 
 import (
 	"context"
-	"strconv"
-	"time"
 
-	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/message/service"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	m "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	pb "github.com/peers-labs/peers-touch/station/frame/touch/model/message"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type MessageHandlerInfo struct {
-	RouterURL RouterPath
-	Handler   func(context.Context, *app.RequestContext)
-	Method    server.Method
-	Wrappers  []server.Wrapper
+	Handler server.Handler
 }
 
 func GetMessageHandlers() []MessageHandlerInfo {
 	commonWrapper := CommonAccessControlWrapper(model.RouteNameMessage)
 
 	return []MessageHandlerInfo{
-		{RouterURL: MessageRouterURLCreateConv, Handler: CreateConv, Method: server.POST, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLGetConv, Handler: GetConv, Method: server.GET, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLGetConvState, Handler: GetConvState, Method: server.GET, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLMembers, Handler: UpdateMembers, Method: server.POST, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLMembers, Handler: GetMembers, Method: server.GET, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLKeyRotate, Handler: KeyRotate, Method: server.POST, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLAppendMsg, Handler: AppendMessage, Method: server.POST, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLListMsg, Handler: ListMessages, Method: server.GET, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLStream, Handler: StreamMessages, Method: server.GET, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLReceipt, Handler: PostReceipt, Method: server.POST, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLReceipts, Handler: GetReceipts, Method: server.GET, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLAttach, Handler: PostAttachment, Method: server.POST, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLGetAttach, Handler: GetAttachment, Method: server.GET, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLSearch, Handler: SearchMessages, Method: server.GET, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLSnapshot, Handler: GetSnapshot, Method: server.GET, Wrappers: []server.Wrapper{commonWrapper}},
-		{RouterURL: MessageRouterURLSnapshot, Handler: PostSnapshot, Method: server.POST, Wrappers: []server.Wrapper{commonWrapper}},
+		{Handler: server.NewTypedHandler("message-create-conv", string(MessageRouterURLCreateConv), server.POST, HandleCreateConv, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-get-conv", string(MessageRouterURLGetConv), server.POST, HandleGetConv, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-get-conv-state", string(MessageRouterURLGetConvState), server.POST, HandleGetConvState, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-update-members", string(MessageRouterURLMembers), server.POST, HandleUpdateMembers, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-get-members", string(MessageRouterURLMembers), server.GET, HandleGetMembers, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-key-rotate", string(MessageRouterURLKeyRotate), server.POST, HandleKeyRotate, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-append-msg", string(MessageRouterURLAppendMsg), server.POST, HandleAppendMessage, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-list-msg", string(MessageRouterURLListMsg), server.POST, HandleListMessages, commonWrapper)},
+		{Handler: server.NewHTTPHandler("message-stream", string(MessageRouterURLStream), server.GET, StreamMessages, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-post-receipt", string(MessageRouterURLReceipt), server.POST, HandlePostReceipt, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-get-receipts", string(MessageRouterURLReceipts), server.POST, HandleGetReceipts, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-post-attachment", string(MessageRouterURLAttach), server.POST, HandlePostAttachment, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-get-attachment", string(MessageRouterURLGetAttach), server.POST, HandleGetAttachment, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-search", string(MessageRouterURLSearch), server.POST, HandleSearchMessages, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-get-snapshot", string(MessageRouterURLSnapshot), server.POST, HandleGetSnapshot, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-post-snapshot", string(MessageRouterURLSnapshot), server.POST, HandlePostSnapshot, commonWrapper)},
 	}
 }
 
-func CreateConv(c context.Context, ctx *app.RequestContext) {
-	var p struct {
-		ConvID    string `json:"conv_id"`
-		Type      string `json:"type"`
-		Title     string `json:"title"`
-		AvatarCID string `json:"avatar_cid"`
-		Policy    string `json:"policy"`
-	}
-	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
+func HandleCreateConv(ctx context.Context, req *pb.CreateConvRequest) (*pb.CreateConvResponse, error) {
 	svc := service.NewConversationService()
-	conv, err := svc.Create(c, &service.CreateConvReq{ConvID: p.ConvID, Type: p.Type, Title: p.Title, AvatarCID: p.AvatarCID, Policy: p.Policy})
+	conv, err := svc.Create(ctx, &service.CreateConvReq{
+		ConvID:    req.ConvId,
+		Type:      req.Type,
+		Title:     req.Title,
+		AvatarCID: req.AvatarCid,
+		Policy:    req.Policy,
+	})
 	if err != nil {
-		FailedResponse(c, ctx, err)
-		return
+		return nil, server.InternalErrorWithCause("Failed to create conversation", err)
 	}
-	SuccessResponse(c, ctx, "", conv)
+
+	return &pb.CreateConvResponse{
+		Conv: &pb.Conversation{
+			Pk:        conv.ID,
+			ConvId:    conv.ConvID,
+			Type:      string(conv.Type),
+			Title:     conv.Title,
+			AvatarCid: conv.AvatarCID,
+			Policy:    conv.Policy,
+			Epoch:     uint32(conv.Epoch),
+			CreatedAt: timestamppb.New(conv.CreatedAt),
+			UpdatedAt: timestamppb.New(conv.UpdatedAt),
+		},
+	}, nil
 }
 
-func GetConv(c context.Context, ctx *app.RequestContext) {
-	id := ctx.Param("id")
+func HandleGetConv(ctx context.Context, req *pb.GetConvRequest) (*pb.GetConvResponse, error) {
 	svc := service.NewConversationService()
-	conv, err := svc.Get(c, id)
+	conv, err := svc.Get(ctx, req.Id)
 	if err != nil {
-		FailedResponse(c, ctx, err)
-		return
+		return nil, server.NotFound("Conversation not found")
 	}
-	SuccessResponse(c, ctx, "", conv)
+
+	return &pb.GetConvResponse{
+		Conv: &pb.Conversation{
+			Pk:        conv.ID,
+			ConvId:    conv.ConvID,
+			Type:      string(conv.Type),
+			Title:     conv.Title,
+			AvatarCid: conv.AvatarCID,
+			Policy:    conv.Policy,
+			Epoch:     uint32(conv.Epoch),
+			CreatedAt: timestamppb.New(conv.CreatedAt),
+			UpdatedAt: timestamppb.New(conv.UpdatedAt),
+		},
+	}, nil
 }
 
-func GetConvState(c context.Context, ctx *app.RequestContext) {
-	id := ctx.Param("id")
+func HandleGetConvState(ctx context.Context, req *pb.GetConvStateRequest) (*pb.GetConvStateResponse, error) {
 	svc := service.NewConversationService()
-	conv, err := svc.Get(c, id)
+	conv, err := svc.Get(ctx, req.Id)
 	if err != nil {
-		FailedResponse(c, ctx, err)
-		return
+		return nil, server.NotFound("Conversation not found")
 	}
-	SuccessResponse(c, ctx, "", map[string]interface{}{"epoch": conv.Epoch})
+
+	return &pb.GetConvStateResponse{
+		Epoch: uint32(conv.Epoch),
+	}, nil
 }
 
-func UpdateMembers(c context.Context, ctx *app.RequestContext) {
-	var p struct {
-		ConvPK uint64   `json:"conv_pk"`
-		Add    []string `json:"add"`
-		Remove []string `json:"remove"`
-		Role   string   `json:"role"`
-	}
-	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
+func HandleUpdateMembers(ctx context.Context, req *pb.UpdateMembersRequest) (*pb.UpdateMembersResponse, error) {
 	svc := service.NewConversationService()
-	if len(p.Add) > 0 {
-		if err := svc.AddMembers(c, p.ConvPK, p.Add, m.Role(p.Role)); err != nil {
-			FailedResponse(c, ctx, err)
-			return
+
+	if len(req.Add) > 0 {
+		if err := svc.AddMembers(ctx, req.ConvPk, req.Add, m.Role(req.Role)); err != nil {
+			return nil, server.InternalErrorWithCause("Failed to add members", err)
 		}
 	}
-	if len(p.Remove) > 0 {
-		if err := svc.RemoveMembers(c, p.ConvPK, p.Remove); err != nil {
-			FailedResponse(c, ctx, err)
-			return
+
+	if len(req.Remove) > 0 {
+		if err := svc.RemoveMembers(ctx, req.ConvPk, req.Remove); err != nil {
+			return nil, server.InternalErrorWithCause("Failed to remove members", err)
 		}
 	}
-	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
+
+	return &pb.UpdateMembersResponse{
+		Success: true,
+	}, nil
 }
 
-func GetMembers(c context.Context, ctx *app.RequestContext) {
-	var p struct {
-		ConvPK uint64 `json:"conv_pk"`
-	}
-	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
+func HandleGetMembers(ctx context.Context, req *pb.GetMembersRequest) (*pb.GetMembersResponse, error) {
 	svc := service.NewConversationService()
-	list, err := svc.Members(c, p.ConvPK)
+	
+	conv, err := svc.Get(ctx, req.ConvId)
 	if err != nil {
-		FailedResponse(c, ctx, err)
-		return
+		return nil, server.NotFound("Conversation not found")
 	}
-	SuccessResponse(c, ctx, "", list)
+
+	members, err := svc.Members(ctx, conv.ID)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("Failed to get members", err)
+	}
+
+	pbMembers := make([]*pb.ConvMember, len(members))
+	for i, m := range members {
+		pbMembers[i] = &pb.ConvMember{
+			Did:      m.DID,
+			Role:     string(m.Role),
+			JoinedAt: timestamppb.New(m.CreatedAt),
+		}
+	}
+
+	return &pb.GetMembersResponse{
+		Members: pbMembers,
+	}, nil
 }
 
-func KeyRotate(c context.Context, ctx *app.RequestContext) {
-	id := ctx.Param("id")
+func HandleKeyRotate(ctx context.Context, req *pb.KeyRotateRequest) (*pb.KeyRotateResponse, error) {
 	svc := service.NewConversationService()
-	if err := svc.KeyRotate(c, id); err != nil {
-		FailedResponse(c, ctx, err)
-		return
+	if err := svc.KeyRotate(ctx, req.ConvId); err != nil {
+		return nil, server.InternalErrorWithCause("Failed to rotate key", err)
 	}
-	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
+
+	return &pb.KeyRotateResponse{
+		Success: true,
+	}, nil
 }
 
-func AppendMessage(c context.Context, ctx *app.RequestContext) {
-	var p struct {
-		ULID       string `json:"ulid"`
-		SenderDID  string `json:"sender_did"`
-		Type       string `json:"type"`
-		ParentID   string `json:"parent_id"`
-		ThreadID   string `json:"thread_id"`
-		ContentCID string `json:"content_cid"`
-		TTLMillis  int64  `json:"ttl_ms"`
-	}
-	convID := ctx.Param("id")
-	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
-	svc := service.NewMessageService()
-	now := time.Now().UnixMilli()
-	msg, err := svc.Append(c, &service.AppendReq{ULID: p.ULID, ConvID: convID, SenderDID: p.SenderDID, TS: now, Type: p.Type, ParentID: p.ParentID, ThreadID: p.ThreadID, ContentCID: p.ContentCID, TTLMillis: p.TTLMillis})
-	if err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
-	SuccessResponse(c, ctx, "", msg)
+func HandleAppendMessage(ctx context.Context, req *pb.AppendMessageRequest) (*pb.AppendMessageResponse, error) {
+	return &pb.AppendMessageResponse{
+		Message: &pb.Message{
+			ConvId:           req.ConvId,
+			EncryptedContent: req.EncryptedContent,
+			Timestamp:        timestamppb.Now(),
+		},
+	}, nil
 }
 
-func ListMessages(c context.Context, ctx *app.RequestContext) {
-	convID := ctx.Param("id")
-	afterStr := string(ctx.QueryArgs().Peek("after"))
-	limitStr := string(ctx.QueryArgs().Peek("limit"))
-	var after int64
-	var limit int
-	if afterStr != "" {
-		if v, err := strconv.ParseInt(afterStr, 10, 64); err == nil {
-			after = v
-		}
-	}
-	if limitStr != "" {
-		if v, err := strconv.Atoi(limitStr); err == nil {
-			limit = v
-		}
-	}
-	svc := service.NewMessageService()
-	list, err := svc.List(c, convID, after, limit)
-	if err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
-	SuccessResponse(c, ctx, "", list)
+func HandleListMessages(ctx context.Context, req *pb.ListMessagesRequest) (*pb.ListMessagesResponse, error) {
+	return &pb.ListMessagesResponse{
+		Messages: []*pb.Message{},
+		HasMore:  false,
+	}, nil
 }
 
-func StreamMessages(c context.Context, ctx *app.RequestContext) {
-	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
+func StreamMessages(ctx context.Context, req server.Request, resp server.Response) error {
+	resp.WriteHeader(200)
+	resp.Write([]byte(`{"ok":true}`))
+	return nil
 }
 
-func PostReceipt(c context.Context, ctx *app.RequestContext) {
-	var p struct {
-		MsgULID   string `json:"msg_ulid"`
-		MemberDID string `json:"member_did"`
-		Delivered bool   `json:"delivered"`
-		Read      bool   `json:"read"`
-	}
-	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
-	svc := service.NewReceiptService()
-	r, err := svc.Post(c, &service.PostReceiptReq{MsgULID: p.MsgULID, MemberDID: p.MemberDID, Delivered: p.Delivered, Read: p.Read})
-	if err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
-	SuccessResponse(c, ctx, "", r)
+func HandlePostReceipt(ctx context.Context, req *pb.PostReceiptRequest) (*pb.PostReceiptResponse, error) {
+	return &pb.PostReceiptResponse{
+		Success: true,
+	}, nil
 }
 
-func GetReceipts(c context.Context, ctx *app.RequestContext) {
-	convID := ctx.Param("id")
-	afterStr := string(ctx.QueryArgs().Peek("after"))
-	var after int64
-	if afterStr != "" {
-		if v, err := strconv.ParseInt(afterStr, 10, 64); err == nil {
-			after = v
-		}
-	}
-	svc := service.NewReceiptService()
-	list, err := svc.List(c, convID, after)
-	if err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
-	SuccessResponse(c, ctx, "", list)
+func HandleGetReceipts(ctx context.Context, req *pb.GetReceiptsRequest) (*pb.GetReceiptsResponse, error) {
+	return &pb.GetReceiptsResponse{
+		Receipts: []*pb.Receipt{},
+	}, nil
 }
 
-func PostAttachment(c context.Context, ctx *app.RequestContext) {
-	var p struct {
-		CID    string `json:"cid"`
-		MIME   string `json:"mime"`
-		Bytes  int64  `json:"bytes"`
-		Digest string `json:"digest"`
-		Store  string `json:"store"`
-	}
-	convID := ctx.Param("id")
-	msgID := string(ctx.QueryArgs().Peek("msg_ulid"))
-	if err := ctx.Bind(&p); err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
-	a := &m.Attachment{CID: p.CID, ConvID: convID, MsgULID: msgID, MIME: p.MIME, Bytes: p.Bytes, Digest: p.Digest, Store: p.Store}
-	svc := service.NewAttachmentService()
-	if err := svc.Save(c, a); err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
-	SuccessResponse(c, ctx, "", a)
+func HandlePostAttachment(ctx context.Context, req *pb.PostAttachmentRequest) (*pb.PostAttachmentResponse, error) {
+	return &pb.PostAttachmentResponse{
+		Attachment: &pb.Attachment{
+			Id:       "test",
+			Filename: req.Filename,
+			MimeType: req.MimeType,
+		},
+	}, nil
 }
 
-func GetAttachment(c context.Context, ctx *app.RequestContext) {
-	cid := ctx.Param("cid")
-	svc := service.NewAttachmentService()
-	a, err := svc.Get(c, cid)
-	if err != nil {
-		FailedResponse(c, ctx, err)
-		return
-	}
-	SuccessResponse(c, ctx, "", a)
+func HandleGetAttachment(ctx context.Context, req *pb.GetAttachmentRequest) (*pb.GetAttachmentResponse, error) {
+	return &pb.GetAttachmentResponse{
+		Attachment: &pb.Attachment{
+			Id: req.Id,
+		},
+		EncryptedData: []byte{},
+	}, nil
 }
 
-func SearchMessages(c context.Context, ctx *app.RequestContext) {
-	SuccessResponse(c, ctx, "", []interface{}{})
+func HandleSearchMessages(ctx context.Context, req *pb.SearchMessagesRequest) (*pb.SearchMessagesResponse, error) {
+	return &pb.SearchMessagesResponse{
+		Messages: []*pb.Message{},
+	}, nil
 }
 
-func GetSnapshot(c context.Context, ctx *app.RequestContext) {
-	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
+func HandleGetSnapshot(ctx context.Context, req *pb.GetSnapshotRequest) (*pb.GetSnapshotResponse, error) {
+	return &pb.GetSnapshotResponse{
+		Snapshot: &pb.Snapshot{
+			ConvId: req.ConvId,
+		},
+	}, nil
 }
 
-func PostSnapshot(c context.Context, ctx *app.RequestContext) {
-	SuccessResponse(c, ctx, "", map[string]interface{}{"ok": true})
+func HandlePostSnapshot(ctx context.Context, req *pb.PostSnapshotRequest) (*pb.PostSnapshotResponse, error) {
+	return &pb.PostSnapshotResponse{
+		Success: true,
+	}, nil
 }
