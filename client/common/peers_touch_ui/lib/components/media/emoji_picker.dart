@@ -25,7 +25,7 @@ class EmojiPickerPanel extends StatelessWidget {
     return Container(
       height: 320,
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.background,
         border: Border(
           top: BorderSide(
             color: AppColors.border,
@@ -49,22 +49,22 @@ class EmojiPickerPanel extends StatelessWidget {
                   verticalSpacing: 8,
                   horizontalSpacing: 8,
                   gridPadding: const EdgeInsets.all(12),
-                  backgroundColor: AppColors.surface,
+                  backgroundColor: AppColors.background,
                 ),
                 categoryViewConfig: CategoryViewConfig(
                   iconColorSelected: AppColors.primary,
                   indicatorColor: AppColors.primary,
-                  backgroundColor: AppColors.surface,
-                  iconColor: AppColors.iconSecondary,
+                  backgroundColor: AppColors.background,
+                  iconColor: AppColors.textSecondary,
                   tabBarHeight: 48,
                 ),
                 bottomActionBarConfig: BottomActionBarConfig(
                   enabled: false,
                 ),
                 searchViewConfig: SearchViewConfig(
-                  backgroundColor: AppColors.surface,
+                  backgroundColor: AppColors.background,
                   buttonColor: AppColors.primary,
-                  buttonIconColor: AppColors.surface,
+                  buttonIconColor: AppColors.white,
                   hintText: '搜索表情',
                 ),
               ),
@@ -82,7 +82,7 @@ class EmojiPickerPanel extends StatelessWidget {
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.background,
         border: Border(
           top: BorderSide(
             color: AppColors.border,
@@ -140,7 +140,7 @@ class StickerPickerPanel extends StatelessWidget {
     return Container(
       height: 320,
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.background,
         border: Border(
           top: BorderSide(
             color: AppColors.border,
@@ -154,7 +154,7 @@ class StickerPickerPanel extends StatelessWidget {
           Icon(
             Icons.emoji_emotions_outlined,
             size: 64,
-            color: AppColors.iconSecondary,
+            color: AppColors.textSecondary,
           ),
           const SizedBox(height: 16),
           Text(
@@ -223,7 +223,7 @@ class _EmojiAndStickerPickerState extends State<EmojiAndStickerPicker>
     return Container(
       height: 376,
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.background,
         border: Border(
           top: BorderSide(
             color: AppColors.border,
