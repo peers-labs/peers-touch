@@ -1,0 +1,269 @@
+syntax = "proto3";
+
+package peers_touch.model.activitypub.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/activitypub;activitypub";
+
+// Actor Signup & Login
+message ActorSignupRequest {
+  string handle = 1;
+  string email = 2;
+  string password = 3;
+  string display_name = 4;
+}
+
+message ActorSignupResponse {
+  string actor_id = 1;
+  string handle = 2;
+  string token = 3;
+}
+
+message ActorLoginRequest {
+  string identifier = 1;  // handle or email
+  string password = 2;
+}
+
+message ActorLoginResponse {
+  string actor_id = 1;
+  string handle = 2;
+  string token = 3;
+}
+
+// Actor Profile
+message GetActorProfileRequest {
+  string actor_id = 1;
+}
+
+message ActorProfile {
+  string id = 1;
+  string handle = 2;
+  string display_name = 3;
+  string summary = 4;
+  string avatar_url = 5;
+  string header_url = 6;
+  int64 followers_count = 7;
+  int64 following_count = 8;
+  int64 posts_count = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message GetActorProfileResponse {
+  ActorProfile profile = 1;
+}
+
+message UpdateActorProfileRequest {
+  string display_name = 1;
+  string summary = 2;
+  string avatar_url = 3;
+  string header_url = 4;
+}
+
+message UpdateActorProfileResponse {
+  ActorProfile profile = 1;
+}
+
+message GetActorBasicInfoRequest {
+  string actor_id = 1;
+}
+
+message ActorBasicInfo {
+  string id = 1;
+  string handle = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+}
+
+message GetActorBasicInfoResponse {
+  ActorBasicInfo info = 1;
+}
+
+// Actor Lists
+message ListActorsRequest {
+  int32 limit = 1;
+  string cursor = 2;
+}
+
+message ListActorsResponse {
+  repeated ActorProfile actors = 1;
+  string next_cursor = 2;
+}
+
+message SearchActorsRequest {
+  string query = 1;
+  int32 limit = 2;
+}
+
+message SearchActorsResponse {
+  repeated ActorProfile actors = 1;
+}
+
+message GetUserActorRequest {
+  string username = 1;
+}
+
+message GetUserActorResponse {
+  ActorProfile actor = 1;
+}
+
+// ActivityPub Protocol - Inbox/Outbox
+message GetUserInboxRequest {
+  string username = 1;
+  int32 limit = 2;
+  string max_id = 3;
+}
+
+message Activity {
+  string id = 1;
+  string type = 2;
+  string actor = 3;
+  bytes object = 4;  // ActivityPub object (JSON)
+  google.protobuf.Timestamp published = 5;
+}
+
+message GetUserInboxResponse {
+  repeated Activity activities = 1;
+  string next_max_id = 2;
+}
+
+message PostUserInboxRequest {
+  string username = 1;
+  bytes activity = 2;  // ActivityPub activity (JSON)
+}
+
+message PostUserInboxResponse {
+  bool accepted = 1;
+}
+
+message GetUserOutboxRequest {
+  string username = 1;
+  int32 limit = 2;
+  string max_id = 3;
+}
+
+message GetUserOutboxResponse {
+  repeated Activity activities = 1;
+  string next_max_id = 2;
+}
+
+message PostUserOutboxRequest {
+  string username = 1;
+  bytes activity = 2;  // ActivityPub activity (JSON)
+}
+
+message PostUserOutboxResponse {
+  string activity_id = 1;
+}
+
+// Collections
+message GetUserFollowersRequest {
+  string username = 1;
+  int32 limit = 2;
+  string cursor = 3;
+}
+
+message GetUserFollowersResponse {
+  repeated string followers = 1;  // Actor URIs
+  string next_cursor = 2;
+}
+
+message GetUserFollowingRequest {
+  string username = 1;
+  int32 limit = 2;
+  string cursor = 3;
+}
+
+message GetUserFollowingResponse {
+  repeated string following = 1;  // Actor URIs
+  string next_cursor = 2;
+}
+
+message GetUserLikedRequest {
+  string username = 1;
+  int32 limit = 2;
+  string cursor = 3;
+}
+
+message GetUserLikedResponse {
+  repeated string liked = 1;  // Object URIs
+  string next_cursor = 2;
+}
+
+// Shared Inbox
+message GetSharedInboxRequest {
+  int32 limit = 1;
+  string max_id = 2;
+}
+
+message GetSharedInboxResponse {
+  repeated Activity activities = 1;
+  string next_max_id = 2;
+}
+
+message PostSharedInboxRequest {
+  bytes activity = 1;  // ActivityPub activity (JSON)
+}
+
+message PostSharedInboxResponse {
+  bool accepted = 1;
+}
+
+// Object Replies
+message GetObjectRepliesRequest {
+  string object_id = 1;
+  int32 limit = 2;
+  string cursor = 3;
+}
+
+message GetObjectRepliesResponse {
+  repeated Activity replies = 1;
+  string next_cursor = 2;
+}
+
+// Create Activity
+message CreateActivityRequest {
+  string type = 1;
+  bytes object = 2;  // ActivityPub object (JSON)
+}
+
+message CreateActivityResponse {
+  string activity_id = 1;
+}
+
+// NodeInfo
+message NodeInfoRequest {
+  // Empty
+}
+
+message NodeInfoResponse {
+  string version = 1;
+  map<string, string> software = 2;
+  map<string, int64> usage = 3;
+}
+
+// Events Pull (for EventsPull function)
+message EventsPullRequest {
+  int64 since_ts = 1;
+  int32 limit = 2;
+}
+
+message Event {
+  string id = 1;
+  string type = 2;
+  bytes data = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message EventsPullResponse {
+  repeated Event events = 1;
+}
+
+// Public Profile (HTML rendering - may keep native)
+message PublicProfileRequest {
+  string username = 1;
+}
+
+message PublicProfileResponse {
+  string html = 1;  // Rendered HTML
+}

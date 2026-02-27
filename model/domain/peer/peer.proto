@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package peers_touch.model.peer.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/peer;peer";
+
+message SetPeerAddrRequest {
+  repeated string addresses = 1;
+}
+
+message SetPeerAddrResponse {
+  bool success = 1;
+}
+
+message GetMyPeerAddrRequest {
+  // Empty request
+}
+
+message PeerAddrInfo {
+  string address = 1;
+  string protocol = 2;
+  google.protobuf.Timestamp last_seen = 3;
+}
+
+message GetMyPeerAddrResponse {
+  repeated PeerAddrInfo addresses = 1;
+}
+
+message TouchHiRequest {
+  string target_peer_id = 1;
+  string message = 2;
+}
+
+message TouchHiResponse {
+  bool success = 1;
+  string response_message = 2;
+}
