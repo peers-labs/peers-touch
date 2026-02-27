@@ -481,7 +481,9 @@ class AuthController extends GetxController {
               
               await _switchToUser(handle);
             }
-          } catch (_) {}
+          } catch (e) {
+            LoggingService.error('Error setting up session: $e');
+          }
           Get.offAllNamed('/shell');
         } else {
           error.value = 'Invalid login response';

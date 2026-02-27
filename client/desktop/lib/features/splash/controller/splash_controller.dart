@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:get/get.dart';
@@ -62,6 +63,15 @@ class SplashController extends GetxController {
     Get.offAllNamed(AppRoutes.login);
   }
 
+  void cancelLoading() {
+    if (!isLoading.value) return;
+    
+    LoggingService.info('Splash: User cancelled loading');
+    isLoading.value = false;
+    showButtons.value = true;
+    statusMessage.value = '已取消';
+  }
+
   Future<void> _checkAuthAndNavigate() async {
     try {
       statusMessage.value = '验证身份...';
@@ -112,13 +122,13 @@ class SplashController extends GetxController {
         await Future.delayed(const Duration(milliseconds: 300));
         Get.offAllNamed(AppRoutes.shell);
       } else {
-        LoggingService.warning('Splash: Token invalid, triggering logout');
-        if (Get.isRegistered<GlobalContext>()) {
-          Get.find<GlobalContext>().requestLogout(LogoutReason.tokenExpired);
-        } else {
-          await tokenProvider.clear();
-          Get.offAllNamed(AppRoutes.login);
-        }
+        LoggingService.warning('Splash: Token invalid, clearing session and navigating to login');
+        // Don't trigger logout event - let the HTTP interceptor handle it
+        // Just clear local session and navigate
+        await tokenProvider.clear();
+        statusMessage.value = '请重新登录';
+        await Future.delayed(const Duration(milliseconds: 300));
+        Get.offAllNamed(AppRoutes.login);
       }
     } catch (e) {
       // Distinguish network errors from other failures

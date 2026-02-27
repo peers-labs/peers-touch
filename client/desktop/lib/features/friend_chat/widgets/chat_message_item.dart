@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
-import 'package:peers_touch_base/widgets/avatar.dart';
-import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_ui/peers_touch_ui.dart';
+import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/features/friend_chat/widgets/message_bubble_factory.dart';
 
 class ChatMessageItem extends StatelessWidget {
   const ChatMessageItem({
@@ -156,14 +156,11 @@ class ChatMessageItem extends StatelessWidget {
   }
 
   Widget _buildMessageContent(BuildContext context, bool showOnRight) {
-    switch (message.type) {
-      case MessageType.MESSAGE_TYPE_IMAGE:
-        return _buildImageMessage(context, showOnRight);
-      case MessageType.MESSAGE_TYPE_FILE:
-        return _buildFileMessage(context, showOnRight);
-      default:
-        return _buildTextMessage(context, showOnRight);
-    }
+    return MessageBubbleFactory.createBubble(
+      message: message,
+      isMe: isMe,
+      onRetry: onResend,
+    );
   }
 
   Widget _buildTextMessage(BuildContext context, bool showOnRight) {
@@ -391,6 +388,9 @@ class ChatMessageItem extends StatelessWidget {
         icon = Icons.check;
         color = UIKit.textSecondary(context);
       case MessageStatus.MESSAGE_STATUS_DELIVERED:
+        icon = Icons.done_all;
+        color = UIKit.textSecondary(context);
+      case MessageStatus.MESSAGE_STATUS_READ:
         icon = Icons.done_all;
         color = Theme.of(context).colorScheme.primary;
       case MessageStatus.MESSAGE_STATUS_FAILED:

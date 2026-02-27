@@ -117,6 +117,7 @@ class EditProfileDialogController extends GetxController {
         }
         avatarUrl.value = res.remoteUrl;
         await profileController.updateProfile({'avatar': res.remoteUrl});
+        
         Get.snackbar(
           '成功',
           '头像已更新',
@@ -156,6 +157,7 @@ class EditProfileDialogController extends GetxController {
         }
         headerUrl.value = res.remoteUrl;
         await profileController.updateProfile({'header': res.remoteUrl});
+        
         Get.snackbar(
           '成功',
           '背景图已更新',
@@ -200,6 +202,7 @@ class EditProfileDialogController extends GetxController {
         '个人资料已更新',
         snackPosition: SnackPosition.BOTTOM,
       );
+      Get.back();
       return true;
     } catch (e) {
       LoggingService.error('Update profile failed: $e');

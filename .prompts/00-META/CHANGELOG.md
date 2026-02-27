@@ -4,6 +4,37 @@
 
 ---
 
+## [2.1.0] - 2026-02-22
+
+### 🚨 AI Workflow Enhancement
+
+**Added:**
+- **00-first-principles.md**: 🔴 Introduced rule hierarchy (L0/L1/L2/L3) with clear prioritization
+  - L0: Architecture Principles (FORBIDDEN to violate)
+  - L1: Mandatory Actions (MUST execute)
+  - L2: Best Practices (STRONGLY recommended)
+  - L3: Optimization Suggestions (OPTIONAL)
+- **AI Agent Workflow** section in 14-workflow.md:
+  - Task completion standard checklist
+  - Mandatory verification steps (Lint → Build → Test)
+  - Failure handling procedures with step-by-step guides
+  - Common mistakes to avoid with examples
+  - AI self-check checklist
+
+**Updated:**
+- **project_rules.md**: Now points to 00-first-principles.md as first mandatory read
+- **INDEX.md**: Added "ALWAYS READ FIRST" section with L0/L1 rules
+- Reading strategy now emphasizes mandatory self-testing
+
+**Impact:**
+- AI agents now have clear, non-negotiable workflow to follow
+- Quality gates are enforced at code completion time
+- Reduces bugs by requiring lint/build/test before reporting "done"
+
+**See**: [prompt-improvement-plan.md](../../.trae/documents/prompt-improvement-plan.md) for full analysis
+
+---
+
 ## [2.0.0] - 2025-12-31
 
 ### 🎉 Major Restructuring

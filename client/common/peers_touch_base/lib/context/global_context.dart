@@ -110,9 +110,17 @@ abstract class GlobalContext {
   /// Router should listen to this and navigate to login page
   Stream<LogoutReason> get onLogoutRequested;
 
+  /// Event: logout completed (fired when logout process finishes)
+  /// Components waiting for logout can listen to this event
+  Stream<void> get onLogoutCompleted;
+
   /// Request logout with specified reason
   /// This triggers onLogoutRequested event for unified handling
   void requestLogout(LogoutReason reason, {String? message});
+
+  /// Notify that logout process has completed
+  /// Should be called by the component handling logout (e.g., AppController)
+  void notifyLogoutCompleted();
 
   /// Get the message associated with the last logout request
   String? get lastLogoutMessage;

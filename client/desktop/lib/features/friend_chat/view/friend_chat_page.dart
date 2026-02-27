@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
-import 'package:peers_touch_base/widgets/avatar.dart';
-import 'package:peers_touch_base/widgets/avatar_resolver.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
 import 'package:peers_touch_desktop/features/friend_chat/controller/friend_chat_controller.dart';
 import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_input_bar.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/chat_message_item.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/group_avatar_mosaic.dart';
 import 'package:peers_touch_desktop/features/friend_chat/view/group_info_panel.dart';
 import 'package:peers_touch_desktop/features/group_chat/view/create_group_dialog.dart';
@@ -270,12 +271,13 @@ class FriendChatPage extends GetView<FriendChatController> {
                         final groupUlid = controller.currentGroup.value?.ulid ?? '';
                         final myUserId = controller.currentUserId;
                         return ListView.builder(
-                          key: ValueKey('group_messages_$groupUlid'),
+                          reverse: true,
                           controller: controller.groupMessageScrollController,
                           padding: EdgeInsets.all(UIKit.spaceMd(context)),
                           itemCount: topLevelMessages.length,
                           itemBuilder: (context, index) {
-                            final message = topLevelMessages[index];
+                            final reversedIndex = topLevelMessages.length - 1 - index;
+                            final message = topLevelMessages[reversedIndex];
                             final isMe = message.senderDid == myUserId;
                             final senderName = isMe 
                                 ? controller.currentUserName 
@@ -593,10 +595,12 @@ class FriendChatPage extends GetView<FriendChatController> {
               }
               // Avatar resolves senderName from AvatarResolver using message.senderId
               return ListView.builder(
+                reverse: true,
                 padding: EdgeInsets.all(UIKit.spaceMd(context)),
                 itemCount: messageList.length,
                 itemBuilder: (context, index) {
-                  final message = messageList[index];
+                  final reversedIndex = messageList.length - 1 - index;
+                  final message = messageList[reversedIndex];
                   final isMe = message.senderId == controller.currentUserId;
                   return ChatMessageItem(
                     message: message,
@@ -640,20 +644,40 @@ class FriendChatPage extends GetView<FriendChatController> {
                 content: replyMsg.content,
               );
             }
-            return FriendChatInputBar(
-              controller: controller.inputController,
-              onSend: () {
-                final text = controller.inputController.text;
-                controller.sendMessage(text);
-                controller.cancelReply();
-              },
-              isSending: controller.isSending.value,
-              showEmojiPicker: controller.showEmojiPicker.value,
-              onToggleEmojiPicker: controller.toggleEmojiPicker,
-              replyMessage: replyPreview,
-              onCancelReply: controller.cancelReply,
-              onAttachmentTap: controller.pickAttachment,
-              onAddCustomSticker: controller.addCustomSticker,
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FriendChatInputBar(
+                  controller: controller.inputController,
+                  onSend: () {
+                    final text = controller.inputController.text;
+                    controller.sendMessage(text);
+                    controller.cancelReply();
+                  },
+                  isSending: controller.isSending.value,
+                  showEmojiPicker: controller.showEmojiPicker.value,
+                  onToggleEmojiPicker: controller.toggleEmojiPicker,
+                  onEmojiSelected: controller.insertEmoji,
+                  replyMessage: replyPreview,
+                  onCancelReply: controller.cancelReply,
+                  onAttachmentTap: controller.pickAttachment,
+                  onAddCustomSticker: controller.addCustomSticker,
+                ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  child: Obx(() => controller.showEmojiPicker.value
+                      ? EmojiPickerPanel(
+                          onEmojiSelected: controller.insertEmoji,
+                          textController: controller.inputController,
+                          recentEmojis: controller.recentEmojis,
+                          favoriteEmojis: controller.favoriteEmojis,
+                          onAddFavorite: controller.addFavoriteEmoji,
+                          onRemoveFavorite: controller.removeFavoriteEmoji,
+                        )
+                      : const SizedBox.shrink()),
+                ),
+              ],
             );
           }),
         ],

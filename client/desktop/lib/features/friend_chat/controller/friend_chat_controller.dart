@@ -9,6 +9,7 @@ import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
 import 'package:peers_touch_base/model/domain/chat/friend_chat.pb.dart' as fc;
+import 'package:peers_touch_desktop/features/shared/extensions/chat_message_extensions.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/network/event/event_stream_service.dart';
@@ -24,7 +25,10 @@ import 'package:peers_touch_desktop/features/friend_chat/friend_chat_module.dart
 import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
 import 'package:peers_touch_desktop/core/services/avatar_resolver_desktop.dart';
-import 'package:peers_touch_base/widgets/avatar_resolver.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
+import 'package:peers_touch_desktop/features/friend_chat/services/chat_message_service.dart';
+import 'package:peers_touch_desktop/features/friend_chat/widgets/attachment_selector.dart';
+import 'package:peers_touch_desktop/core/services/emoji_picker_service.dart';
 
 class FriendItem {
   final String actorId;
@@ -52,6 +56,13 @@ class FriendChatController extends GetxController {
   final isLoading = false.obs;
   final error = Rx<String?>(null);
   final showEmojiPicker = false.obs;
+
+  final EmojiPickerService _emojiPickerService = EmojiPickerService();
+  final recentEmojis = <String>[].obs;
+  final favoriteEmojis = <String>[].obs;
+  
+  // Message services - use high-level service (facade pattern)
+  final _chatMessageService = ChatMessageService();
   
   // ScrollController for message list - auto scroll to bottom
   final ScrollController messageScrollController = ScrollController();
@@ -60,7 +71,6 @@ class FriendChatController extends GetxController {
   // Scroll position state for smart auto-scroll
   final isUserNearGroupBottom = true.obs;  // Track if user is near bottom of group messages
   final showScrollToLatest = false.obs;    // Show "scroll to latest" banner
-  static const _scrollThreshold = 150.0;   // Pixels from bottom to consider "at bottom"
   
   // Thread panel state (Slack-style right panel)
   final showThreadPanel = false.obs;
@@ -81,54 +91,47 @@ class FriendChatController extends GetxController {
   }
   
   /// Scroll message list to bottom
+  /// In reverse ListView, scrolling to 0 means scrolling to the bottom (newest messages)
   void scrollToBottom({bool animated = true}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (messageScrollController.hasClients) {
-        if (animated) {
-          messageScrollController.animateTo(
-            messageScrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-          );
-        } else {
-          messageScrollController.jumpTo(messageScrollController.position.maxScrollExtent);
-        }
+    if (messageScrollController.hasClients) {
+      if (animated) {
+        messageScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      } else {
+        messageScrollController.jumpTo(0);
       }
-    });
+    }
   }
   
   /// Scroll group message list to bottom (respects user scroll position)
-  /// Only scrolls if user is already near bottom, otherwise shows "scroll to latest" banner
+  /// In reverse ListView, scrolling to 0 means scrolling to the bottom (newest messages)
   void scrollGroupToBottom({bool animated = true, bool force = false}) {
-    // Use double postFrameCallback to ensure ListView has completed layout
-    // after messages are added - this prevents the "shake" effect
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (groupMessageScrollController.hasClients) {
-          // Only auto-scroll if user is near bottom OR force is true
-          if (force || isUserNearGroupBottom.value) {
-            if (animated) {
-              groupMessageScrollController.animateTo(
-                groupMessageScrollController.position.maxScrollExtent,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-              );
-            } else {
-              groupMessageScrollController.jumpTo(groupMessageScrollController.position.maxScrollExtent);
-            }
-            showScrollToLatest.value = false;
-          } else {
-            // User is viewing history, show banner instead
-            showScrollToLatest.value = true;
-          }
-        }
-      });
-    });
+    if (groupMessageScrollController.hasClients) {
+      if (animated) {
+        groupMessageScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      } else {
+        groupMessageScrollController.jumpTo(0);
+      }
+    }
   }
   
   /// User explicitly wants to scroll to latest (e.g. clicked "scroll to latest" button)
   void scrollGroupToLatest() {
-    scrollGroupToBottom(animated: true, force: true);
+    if (groupMessageScrollController.hasClients) {
+      // In reverse ListView, position 0 is the bottom (newest messages)
+      groupMessageScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
     showScrollToLatest.value = false;
     isUserNearGroupBottom.value = true;
   }
@@ -157,8 +160,122 @@ class FriendChatController extends GetxController {
     showEmojiPicker.value = !showEmojiPicker.value;
   }
   
-  /// Pick and send attachment (image or file)
+  void insertEmoji(String emoji) {
+    final text = inputController.text;
+    final selection = inputController.selection;
+    final newText = text.replaceRange(
+      selection.start,
+      selection.end,
+      emoji,
+    );
+    inputController.value = inputController.value.copyWith(
+      text: newText,
+      selection: TextSelection.collapsed(
+        offset: selection.start + emoji.length,
+      ),
+    );
+    
+    _addRecentEmoji(emoji);
+  }
+
+  Future<void> _addRecentEmoji(String emoji) async {
+    try {
+      await _emojiPickerService.addRecentEmoji(emoji);
+      recentEmojis.assignAll(await _emojiPickerService.getRecentEmojis());
+    } catch (e) {
+      LoggingService.error('Failed to add recent emoji: $e');
+    }
+  }
+
+  Future<void> addFavoriteEmoji(String emoji) async {
+    try {
+      await _emojiPickerService.addFavoriteEmoji(emoji);
+      favoriteEmojis.assignAll(await _emojiPickerService.getFavoriteEmojis());
+    } catch (e) {
+      LoggingService.error('Failed to add favorite emoji: $e');
+    }
+  }
+
+  Future<void> removeFavoriteEmoji(String emoji) async {
+    try {
+      await _emojiPickerService.removeFavoriteEmoji(emoji);
+      favoriteEmojis.assignAll(await _emojiPickerService.getFavoriteEmojis());
+    } catch (e) {
+      LoggingService.error('Failed to remove favorite emoji: $e');
+    }
+  }
+  
+  Future<void> sendSticker(String stickerUrl) async {
+    try {
+      LoggingService.info('FriendChatController: Sending sticker message');
+      
+      final session = currentSession.value;
+      final friend = currentFriend.value;
+      
+      if (session == null || friend == null) {
+        LoggingService.warning('FriendChatController: No active session or friend');
+        return;
+      }
+      
+      final myActorId = currentUserId;
+      if (myActorId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user actor ID is null');
+        error.value = 'User not logged in';
+        return;
+      }
+      
+      final sentMessage = await _chatMessageService.sendStickerMessage(
+        from: myActorId,
+        to: friend.actorId,
+        sessionUlid: session.id,
+        stickerUrl: stickerUrl,
+        stickerName: 'sticker',
+      );
+      
+      messages.insert(0, sentMessage);
+      scrollToBottom();
+      
+      LoggingService.info('FriendChatController: Sticker message sent successfully');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to send sticker: $e');
+      error.value = 'Failed to send sticker: $e';
+      Get.snackbar(
+        '发送失败',
+        '贴纸发送失败，请重试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    }
+  }
+  
+  /// Pick and send attachment (image or file) - show selector
   Future<void> pickAttachment() async {
+    await AttachmentSelector.show(
+      Get.context!,
+      onOptionSelected: (option) async {
+        switch (option) {
+          case AttachmentOption.IMAGE:
+            await pickImage();
+            break;
+          case AttachmentOption.FILE:
+            await pickFile();
+            break;
+          case AttachmentOption.LOCATION:
+          case AttachmentOption.AUDIO:
+          case AttachmentOption.VIDEO:
+          case AttachmentOption.CONTACT:
+            Get.snackbar(
+              '提示',
+              '${option.name} 功能开发中',
+              snackPosition: SnackPosition.BOTTOM,
+            );
+            break;
+        }
+      },
+    );
+  }
+  
+  /// Pick file specifically
+  Future<void> pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
@@ -170,22 +287,14 @@ class FriendChatController extends GetxController {
       final file = result.files.first;
       if (file.path == null) return;
       
-      // Determine file type and send accordingly
-      final extension = file.extension?.toLowerCase() ?? '';
-      final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].contains(extension);
-      
-      if (isImage) {
-        await _sendImageMessage(File(file.path!));
-      } else {
-        await _sendFileMessage(File(file.path!), file.name);
-      }
+      await _sendFileMessage(File(file.path!), file.name);
     } catch (e) {
-      LoggingService.error('Failed to pick attachment: $e');
-      error.value = 'Failed to pick attachment';
+      LoggingService.error('Failed to pick file: $e');
+      error.value = 'Failed to pick file';
     }
   }
   
-  /// Pick and send image specifically
+  /// Pick and send image specifically - show preview dialog
   Future<void> pickImage() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -207,42 +316,115 @@ class FriendChatController extends GetxController {
   
   /// Send image message
   Future<void> _sendImageMessage(File file) async {
-    // For now, just show a placeholder - actual implementation requires OSS upload
-    // TODO: Upload image to OSS and send image message
-    LoggingService.info('Image selected: ${file.path}');
-    
-    // For group chat
-    if (currentGroup.value != null) {
-      // TODO: Implement group image message
+    try {
+      LoggingService.info('FriendChatController: Sending image message');
+      
+      // For group chat
+      if (currentGroup.value != null) {
+        Get.snackbar(
+          '提示',
+          '群聊图片发送功能即将上线',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return;
+      }
+      
+      // For private chat
+      final session = currentSession.value;
+      final friend = currentFriend.value;
+      
+      if (session == null || friend == null) {
+        LoggingService.warning('FriendChatController: No active session or friend');
+        return;
+      }
+      
+      final myActorId = currentUserId;
+      if (myActorId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user actor ID is null');
+        error.value = 'User not logged in';
+        return;
+      }
+      
+      // Create optimistic message and add to list immediately
+      final tempMessage = await _chatMessageService.sendImageMessage(
+        from: myActorId,
+        to: friend.actorId,
+        sessionUlid: session.id,
+        imageFile: file,
+        onUpdate: (updated) {
+          _updateMessageInList(updated);
+        },
+      );
+      
+      // Add to messages list for immediate display
+      messages.insert(0, tempMessage);
+      scrollToBottom();
+      
+      LoggingService.info('FriendChatController: Image message sent successfully');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to send image: $e');
+      error.value = 'Failed to send image: $e';
       Get.snackbar(
-        '提示',
-        '图片发送功能即将上线',
+        '发送失败',
+        '图片发送失败，请重试',
         snackPosition: SnackPosition.BOTTOM,
       );
-      return;
     }
-    
-    // For private chat
-    if (currentSession.value != null) {
-      // TODO: Implement private chat image message
-      Get.snackbar(
-        '提示',
-        '图片发送功能即将上线',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
+  }
+  
+  void _updateMessageInList(ChatMessage updated) {
+    final index = messages.indexWhere((m) => m.id == updated.id);
+    if (index != -1) {
+      messages[index] = updated;
+      messages.refresh();
     }
   }
   
   /// Send file message
   Future<void> _sendFileMessage(File file, String fileName) async {
-    // TODO: Upload file to OSS and send file message
-    LoggingService.info('File selected: ${file.path}, name: $fileName');
-    Get.snackbar(
-      '提示',
-      '文件发送功能即将上线',
-      snackPosition: SnackPosition.BOTTOM,
-    );
+    try {
+      LoggingService.info('FriendChatController: Sending file message - $fileName');
+      
+      final session = currentSession.value;
+      final friend = currentFriend.value;
+      
+      if (session == null || friend == null) {
+        LoggingService.warning('FriendChatController: No active session or friend');
+        return;
+      }
+      
+      final myActorId = currentUserId;
+      if (myActorId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user actor ID is null');
+        error.value = 'User not logged in';
+        return;
+      }
+      
+      // Create optimistic message and add to list immediately
+      final tempMessage = await _chatMessageService.sendFileMessage(
+        from: myActorId,
+        to: friend.actorId,
+        sessionUlid: session.id,
+        file: file,
+        onUpdate: (updated) {
+          _updateMessageInList(updated);
+        },
+      );
+      
+      // Add to messages list for immediate display
+      messages.insert(0, tempMessage);
+      scrollToBottom();
+      
+      LoggingService.info('FriendChatController: File message sent successfully');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to send file: $e');
+      error.value = 'Failed to send file: $e';
+      Get.snackbar(
+        '发送失败',
+        '文件发送失败，请重试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    }
   }
   
   /// Add custom sticker (pick image as sticker)
@@ -409,6 +591,8 @@ class FriendChatController extends GetxController {
   void onInit() {
     super.onInit();
     
+    _initEmojiPickerService();
+    
     // Guard: verify auth state before making any API calls.
     // If there is no valid token, skip network-dependent initialization
     // to avoid a cascade of 401s that would trigger logout.
@@ -432,6 +616,17 @@ class FriendChatController extends GetxController {
     _initGroupScrollListener(); // Track scroll position for smart auto-scroll
   }
 
+  Future<void> _initEmojiPickerService() async {
+    try {
+      await _emojiPickerService.initialize();
+      recentEmojis.assignAll(await _emojiPickerService.getRecentEmojis());
+      favoriteEmojis.assignAll(await _emojiPickerService.getFavoriteEmojis());
+      LoggingService.info('EmojiPickerService initialized');
+    } catch (e) {
+      LoggingService.error('Failed to initialize EmojiPickerService: $e');
+    }
+  }
+
   /// Check whether a valid access token exists before issuing API calls.
   bool _hasValidToken() {
     if (!Get.isRegistered<GlobalContext>()) return false;
@@ -450,18 +645,18 @@ class FriendChatController extends GetxController {
     if (!groupMessageScrollController.hasClients) return;
     
     final position = groupMessageScrollController.position;
-    final maxScroll = position.maxScrollExtent;
-    final currentScroll = position.pixels;
     
-    // User is "near bottom" if within threshold of max scroll
-    final nearBottom = (maxScroll - currentScroll) <= _scrollThreshold;
+    // In reverse ListView, pixels value closer to 0 means closer to bottom (newest messages)
+    final isAtBottom = position.pixels < 100;
     
-    if (nearBottom != isUserNearGroupBottom.value) {
-      isUserNearGroupBottom.value = nearBottom;
+    if (isAtBottom != isUserNearGroupBottom.value) {
+      isUserNearGroupBottom.value = isAtBottom;
     }
     
-    // Hide "scroll to latest" when user scrolls to bottom
-    if (nearBottom && showScrollToLatest.value) {
+    // Show/hide "scroll to latest" banner based on position
+    if (!isAtBottom && !showScrollToLatest.value) {
+      showScrollToLatest.value = true;
+    } else if (isAtBottom && showScrollToLatest.value) {
       showScrollToLatest.value = false;
     }
   }
@@ -542,7 +737,6 @@ class FriendChatController extends GetxController {
       if (isCurrentChat) {
         // Trigger a refresh of messages for current chat
         _fetchNewMessages();
-        scrollToBottom();
       }
       
       // Update unread count in unified sessions
@@ -845,10 +1039,11 @@ class FriendChatController extends GetxController {
       await _loadGroupMembers(group.ulid);
       
       final loadedMessages = await _groupApi.getMessages(group.ulid);
-      groupMessages.assignAll(loadedMessages);
       
-      // Auto scroll to bottom after loading (force because it's initial load)
-      scrollGroupToBottom(animated: false, force: true);
+      // Ensure messages are sorted in chronological order (oldest first)
+      loadedMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
+      
+      groupMessages.assignAll(loadedMessages);
       
       LoggingService.info('Loaded ${loadedMessages.length} messages for group ${group.ulid}');
     } catch (e) {
@@ -962,8 +1157,6 @@ class FriendChatController extends GetxController {
       );
       groupMessages.add(newMessage);
       inputController.clear();
-      // Force scroll to bottom after sending (user's own message)
-      scrollGroupToBottom(force: true);
       LoggingService.info('Group message sent: ${newMessage.ulid}');
     } catch (e) {
       LoggingService.error('Failed to send group message: $e');
@@ -1271,7 +1464,6 @@ class FriendChatController extends GetxController {
         // Find new messages in server order and append them
         final newMessages = loadedMessages.where((m) => newMessageUlids.contains(m.ulid)).toList();
         groupMessages.addAll(newMessages);
-        scrollGroupToBottom();
         return;
       }
       
@@ -1286,7 +1478,6 @@ class FriendChatController extends GetxController {
       if (newMessageUlids.isNotEmpty) {
         final newMessages = loadedMessages.where((m) => newMessageUlids.contains(m.ulid)).toList();
         groupMessages.addAll(newMessages);
-        scrollGroupToBottom();
       }
     } catch (e) {
       // Silently ignore refresh errors
@@ -1593,6 +1784,16 @@ class FriendChatController extends GetxController {
         loadedMessages.sort((a, b) => a.sentAt.seconds.compareTo(b.sentAt.seconds));
         messages.assignAll(loadedMessages);
         _sessionMessages[session.id] = List<ChatMessage>.from(messages);
+        
+        final messagesToMarkRead = loadedMessages
+            .where((m) => m.senderId != currentUserId && m.status.value < 4)
+            .map((m) => m.id)
+            .toList();
+        if (messagesToMarkRead.isNotEmpty) {
+          _chatApi.ackMessages(messagesToMarkRead, status: 4).catchError((e) {
+            LoggingService.warning('Failed to mark messages as read: $e');
+          });
+        }
       }
     } catch (e) {
       LoggingService.warning('Failed to load messages from server: $e');
@@ -1725,7 +1926,7 @@ class FriendChatController extends GetxController {
           content: trimmedContent,
         );
 
-        if (response.deliveryStatus == 'delivered') {
+        if (response.relayStatus == 'delivered') {
           newMessage.status = MessageStatus.MESSAGE_STATUS_DELIVERED;
           connectionMode.value = ConnectionMode.stationRelay;
           connectionStats.value = connectionStats.value.copyWith(
@@ -1756,47 +1957,50 @@ class FriendChatController extends GetxController {
   /// Resend a failed message
   Future<void> resendMessage(ChatMessage message) async {
     if (message.status != MessageStatus.MESSAGE_STATUS_FAILED) return;
-    if (currentSession.value == null) return;
-
-    final session = currentSession.value!;
     
-    // Update message status to sending
-    message.status = MessageStatus.MESSAGE_STATUS_SENDING;
-    messages.refresh();
-
+    final session = currentSession.value;
+    final friend = currentFriend.value;
+    
+    if (session == null || friend == null) {
+      LoggingService.warning('FriendChatController: Cannot resend - no active session or friend');
+      return;
+    }
+    
     try {
-      final remotePeerId = connectionStats.value.remotePeerId;
-      final sessionUlid = session.id.replaceFirst('session_', '');
-
-      if (connectionMode.value == ConnectionMode.p2pDirect) {
-        _rtcClient!.send(message.content);
-        message.status = MessageStatus.MESSAGE_STATUS_SENT;
-        messages.refresh();
-        
-        _pendingMessages.add(message);
-        connectionStats.value = connectionStats.value.copyWith(
-          pendingSyncCount: _pendingMessages.length,
-        );
-      } else {
-        final response = await _chatApi.sendMessage(
-          sessionUlid: sessionUlid,
-          receiverDid: remotePeerId,
-          content: message.content,
-        );
-
-        if (response.deliveryStatus == 'delivered') {
-          message.status = MessageStatus.MESSAGE_STATUS_DELIVERED;
-        } else {
-          message.status = MessageStatus.MESSAGE_STATUS_SENT;
-        }
-        messages.refresh();
-      }
-      LoggingService.info('Message resent successfully: ${message.id}');
+      LoggingService.info('FriendChatController: Retrying failed message type=${message.type}');
+      
+      // Update message status to sending
+      final updatedMessage = message.copyWithMetadata(
+        status: MessageStatus.MESSAGE_STATUS_SENDING,
+      );
+      _updateMessageInList(updatedMessage);
+      
+      // Use ChatMessageService for retry (architecture: delegate to service layer)
+      final sentMessage = await _chatMessageService.retryFailedMessage(
+        message,
+        sessionUlid: session.id,
+        receiverDid: friend.actorId,
+      );
+      
+      // Update with sent message
+      _updateMessageInList(sentMessage);
+      
+      LoggingService.info('FriendChatController: Message resent successfully: ${message.id}');
     } catch (e) {
-      message.status = MessageStatus.MESSAGE_STATUS_FAILED;
-      messages.refresh();
+      LoggingService.error('FriendChatController: Message resend failed: $e');
+      
+      // Revert to failed status
+      final failedMessage = message.copyWithMetadata(
+        status: MessageStatus.MESSAGE_STATUS_FAILED,
+      );
+      _updateMessageInList(failedMessage);
+      
       error.value = 'Failed to resend message: $e';
-      LoggingService.error('Failed to resend message: $e');
+      Get.snackbar(
+        '重试失败',
+        '消息重发失败，请稍后再试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     }
   }
 
