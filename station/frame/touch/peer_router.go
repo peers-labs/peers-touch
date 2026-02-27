@@ -14,6 +14,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/peer"
+	peerhandler "github.com/peers-labs/peers-touch/station/frame/touch/peer/handler"
 )
 
 const (
@@ -31,20 +32,59 @@ var _ server.Routers = (*PeerRouters)(nil)
 func (pr *PeerRouters) Handlers() []server.Handler {
 	log.Infof(context.Background(), "Registering peer handlers")
 
-	handlerInfos := GetPeerHandlers()
-	handlers := make([]server.Handler, len(handlerInfos))
+	commonWrapper := CommonAccessControlWrapper(model.RouteNamePeer)
 
-	for i, info := range handlerInfos {
-		handlers[i] = server.NewHTTPHandler(
-			info.RouterURL.Name(),
-			info.RouterURL.SubPath(),
-			info.Method,
-			server.HertzHandlerFunc(info.Handler),
-			info.Wrappers...,
-		)
+	return []server.Handler{
+		server.NewTypedHandler(
+			RouterURLSetPeerAddr.Name(),
+			RouterURLSetPeerAddr.SubPath(),
+			server.POST,
+			peerhandler.HandleSetPeerAddr,
+			commonWrapper,
+		),
+		server.NewTypedHandler(
+			RouterURLGetMyPeerAddr.Name(),
+			RouterURLGetMyPeerAddr.SubPath(),
+			server.GET,
+			peerhandler.HandleGetMyPeerAddr,
+			commonWrapper,
+		),
+		server.NewTypedHandler(
+			RouterURLTouchHiTo.Name(),
+			RouterURLTouchHiTo.SubPath(),
+			server.POST,
+			peerhandler.HandleTouchHi,
+			commonWrapper,
+		),
+		server.NewHTTPHandler(
+			"peer-list-nodes",
+			"/nodes",
+			server.GET,
+			server.HertzHandlerFunc(ListNodesHandler),
+			commonWrapper,
+		),
+		server.NewHTTPHandler(
+			"peer-get-node",
+			"/nodes/:id",
+			server.GET,
+			server.HertzHandlerFunc(GetNodeHandler),
+			commonWrapper,
+		),
+		server.NewHTTPHandler(
+			"peer-register-node",
+			"/nodes",
+			server.POST,
+			server.HertzHandlerFunc(RegisterNodeHandler),
+			commonWrapper,
+		),
+		server.NewHTTPHandler(
+			"peer-deregister-node",
+			"/nodes/:id",
+			server.DELETE,
+			server.HertzHandlerFunc(DeregisterNodeHandler),
+			commonWrapper,
+		),
 	}
-
-	return handlers
 }
 
 func (mr *PeerRouters) Name() string {
@@ -54,79 +94,6 @@ func (mr *PeerRouters) Name() string {
 // NewPeerRouter creates PeerRouters
 func NewPeerRouter() *PeerRouters {
 	return &PeerRouters{}
-}
-
-// SetPeerAddrHandler handles the HTTP request to set a peer address.
-// It binds the incoming JSON payload to a PeerAddressParam struct,
-// validates the data, and calls the SetPeerAddr function to save it.
-func SetPeerAddrHandler(c context.Context, ctx *app.RequestContext) {
-	var param model.PeerAddressParam
-	// Bind the JSON payload to the PeerAddressParam struct
-	if err := ctx.Bind(&param); err != nil {
-		log.Warnf(c, "SetPeerAddr bound params failed: %v", err)
-		ctx.JSON(http.StatusBadRequest, err.Error())
-		return
-	}
-
-	// Validate the PeerAddressParam data
-	if err := param.Check(); err != nil {
-		log.Warnf(c, "SetPeerAddr checked params failed: %v", err)
-		FailedResponse(c, ctx, err)
-		return
-	}
-
-	// Call the SetPeerAddr function to save the peer address
-	if err := peer.SetPeerAddr(c, &param); err != nil {
-		if errors.Is(err, model.ErrPeerAddrExists) {
-			log.Warnf(c, "SetPeerAddr executed failed: %v", err)
-			ctx.JSON(http.StatusConflict, err.Error())
-		} else {
-			log.Errorf(c, "SetPeerAddr executed failed: %v", err)
-			ctx.JSON(http.StatusInternalServerError, err.Error())
-		}
-		return
-	}
-
-	// If everything is successful, return a success response
-	SuccessResponse(c, ctx, "Peer address saved successfully", nil)
-}
-
-func GetMyPeerAddrInfos(c context.Context, ctx *app.RequestContext) {
-	// Call the GetMyPeerInfos function to retrieve the peer address information
-	peerAddrInfos, err := peer.GetMyPeerInfos(c)
-	if err != nil {
-		log.Warnf(c, "GetMyPeerInfos executed failed: %v", err)
-		FailedResponse(c, ctx, err)
-		return
-	}
-	// If everything is successful, return the peer address information as a success response
-	SuccessResponse(c, ctx, "Peer address information retrieved successfully", peerAddrInfos)
-}
-
-// TouchHiToHandler initiates a connection to a peer address and establishes a stream
-func TouchHiToHandler(c context.Context, ctx *app.RequestContext) {
-	var param model.TouchHiToParam
-	if err := ctx.Bind(&param); err != nil {
-		log.Warnf(c, "TouchHiTo bound params failed: %v", err)
-		ctx.JSON(http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if err := param.Check(); err != nil {
-		log.Warnf(c, "TouchHiTo checked params failed: %v", err)
-		FailedResponse(c, ctx, err)
-		return
-	}
-
-	// Establish connection and get status
-	status, err := peer.TouchHiTo(c, &param)
-	if err != nil {
-		log.Errorf(c, "TouchHiTo connection failed: %v", err)
-		FailedResponse(c, ctx, err)
-		return
-	}
-
-	SuccessResponse(c, ctx, "Connection established successfully", status)
 }
 
 // Registry endpoint handlers - these implement registry functionality using ctx directly
