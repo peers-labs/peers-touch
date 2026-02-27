@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package peers_touch.model.oss.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/oss;oss";
+
+// File metadata
+message FileMeta {
+  string key = 1;
+  string filename = 2;
+  string mime_type = 3;
+  int64 size = 4;
+  string uploader_did = 5;
+  google.protobuf.Timestamp uploaded_at = 6;
+}
+
+// Get file metadata
+message GetFileMetaRequest {
+  string key = 1;
+}
+
+message GetFileMetaResponse {
+  FileMeta meta = 1;
+}
+
+// Upload response (upload itself remains native HTTP for streaming)
+message UploadFileResponse {
+  string key = 1;
+  string url = 2;
+  int64 size = 3;
+}
