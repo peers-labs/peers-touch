@@ -36,6 +36,7 @@ class DefaultGlobalContext implements GlobalContext {
   final _protocolCtrl = StreamController<String?>.broadcast();
   final _netCtrl = StreamController<List<String>>.broadcast();
   final _logoutCtrl = StreamController<LogoutReason>.broadcast();
+  final _logoutCompletedCtrl = StreamController<void>.broadcast();
 
   void _bindConnectivity() {
     if (connectivity == null) return;
@@ -76,6 +77,8 @@ class DefaultGlobalContext implements GlobalContext {
   Stream<String?> get onProtocolChange => _protocolCtrl.stream;
   @override
   Stream<List<String>> get onNetworkStatusChange => _netCtrl.stream;
+  @override
+  Stream<void> get onLogoutCompleted => _logoutCompletedCtrl.stream;
 
   Map<String, dynamic> _normalizeSession(Map<String, dynamic> raw) {
     final m = Map<String, dynamic>.from(raw);
@@ -537,6 +540,12 @@ class DefaultGlobalContext implements GlobalContext {
     _lastLogoutMessage = message ?? _defaultMessageForReason(reason);
     LoggingService.info('GlobalContext.requestLogout: reason=$reason, message=$_lastLogoutMessage');
     _logoutCtrl.add(reason);
+  }
+
+  @override
+  void notifyLogoutCompleted() {
+    LoggingService.info('GlobalContext.notifyLogoutCompleted: Logout process completed');
+    _logoutCompletedCtrl.add(null);
   }
 
   String _defaultMessageForReason(LogoutReason reason) {

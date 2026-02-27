@@ -99,7 +99,8 @@ enum MessageStatus {
   MESSAGE_STATUS_SENDING = 1;     // 发送中
   MESSAGE_STATUS_SENT = 2;        // 已发送
   MESSAGE_STATUS_DELIVERED = 3;   // 已送达
-  MESSAGE_STATUS_FAILED = 4;      // 发送失败
+  MESSAGE_STATUS_READ = 4;        // 已读
+  MESSAGE_STATUS_FAILED = 5;      // 发送失败
 }
 
 // 好友关系状态

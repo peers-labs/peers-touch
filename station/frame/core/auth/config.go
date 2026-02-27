@@ -16,7 +16,7 @@ var cfg Config
 func Init(c Config) {
 	cfg = c
 	if cfg.AccessTTL == 0 {
-		cfg.AccessTTL = 24 * time.Hour
+		cfg.AccessTTL = 7 * 24 * time.Hour
 	}
 }
 
@@ -28,7 +28,7 @@ func Get() Config {
 		cfg.PreviousSecret = os.Getenv("PEERS_AUTH_PREVIOUS_SECRET")
 	}
 	if cfg.AccessTTL == 0 {
-		cfg.AccessTTL = 24 * time.Hour
+		cfg.AccessTTL = 7 * 24 * time.Hour
 	}
 	if cfg.Secret == "" {
 		panic("core/auth: missing PEERS_AUTH_SECRET")

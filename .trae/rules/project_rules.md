@@ -9,14 +9,15 @@
 
 **ALWAYS READ THESE FIRST (in order):**
 
-1. **[.prompts/00-META/INDEX.md](../../.prompts/00-META/INDEX.md)** - Navigation guide
-2. **[.prompts/10-GLOBAL/10-project-identity.md](../../.prompts/10-GLOBAL/10-project-identity.md)** - What is Peers-Touch?
-3. **[.prompts/10-GLOBAL/12-domain-model.md](../../.prompts/10-GLOBAL/12-domain-model.md)** - Proto-based models
+1. 🔴 **[.prompts/10-GLOBAL/00-first-principles.md](../../.prompts/10-GLOBAL/00-first-principles.md)** - L0/L1 rules (NEVER violate)
+2. 🚨 **[.prompts/10-GLOBAL/14-workflow.md](../../.prompts/10-GLOBAL/14-workflow.md)** - Workflow (includes MANDATORY self-test steps)
+3. **[.prompts/10-GLOBAL/10-project-identity.md](../../.prompts/10-GLOBAL/10-project-identity.md)** - What is Peers-Touch?
+4. **[.prompts/10-GLOBAL/12-domain-model.md](../../.prompts/10-GLOBAL/12-domain-model.md)** - Proto-based models
 
 **Then read based on your task:**
 - **Desktop work**: [.prompts/20-CLIENT/21-DESKTOP/21.0-base.md](../../.prompts/20-CLIENT/21-DESKTOP/21.0-base.md)
 - **Mobile work**: [.prompts/20-CLIENT/22-MOBILE/22.0-base.md](../../.prompts/20-CLIENT/22-MOBILE/22.0-base.md)
-- **Station work**: [.prompts/30-STATION/30-station-base.md](../../.prompts/30-STATION/30-station-base.md)
+- **Station work**: [.prompts/30-STATION/30-station-base.md](../../.prompts/30-STATION/30-station-base.md) + [.prompts/30-STATION/35-lib-usage.md](../../.prompts/30-STATION/35-lib-usage.md)
 - **Storage/Directory work**: [.prompts/20-CLIENT/23-COMMON/storage-directory-standards.md](../../.prompts/20-CLIENT/23-COMMON/storage-directory-standards.md) 🚨 MANDATORY
 
 ---
@@ -198,17 +199,6 @@ Key terms:
 - **Prompt Version**: 2.0.0 (2025-12-31)
 - **Last Updated**: 2025-12-31
 - **Changelog**: [.prompts/00-META/CHANGELOG.md](../../.prompts/00-META/CHANGELOG.md)
-
----
-
-## ⚠️ Migration Notice
-
-**Old prompt locations** (deprecated):
-- ~~`client/desktop/PROMPTs/`~~ → `.prompts/20-CLIENT/21-DESKTOP/`
-- ~~`client/mobile/PROMPTs/`~~ → `.prompts/20-CLIENT/22-MOBILE/`
-- ~~`station/GO_FORMAT_SPEC.zh.md`~~ → `.prompts/30-STATION/31-go-standards.md`
-
-**All old files have been removed. Use the new `.prompts/` system.**
 
 ---
 
