@@ -1999,43 +1999,6 @@ func (x *GetStatsResponse) GetStatus() string {
 	return ""
 }
 
-// Common empty request for APIs that don't need parameters
-type EmptyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EmptyRequest) Reset() {
-	*x = EmptyRequest{}
-	mi := &file_domain_chat_friend_chat_proto_msgTypes[29]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EmptyRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EmptyRequest) ProtoMessage() {}
-
-func (x *EmptyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_friend_chat_proto_msgTypes[29]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EmptyRequest.ProtoReflect.Descriptor instead.
-func (*EmptyRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{29}
-}
-
 var File_domain_chat_friend_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_friend_chat_proto_rawDesc = "" +
@@ -2178,8 +2141,7 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x10GetStatsResponse\x12!\n" +
 	"\fonline_peers\x18\x01 \x01(\x05R\vonlinePeers\x12)\n" +
 	"\x10pending_messages\x18\x02 \x01(\x03R\x0fpendingMessages\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\"\x0e\n" +
-	"\fEmptyRequest*\xd1\x01\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status*\xd1\x01\n" +
 	"\x11FriendMessageType\x12#\n" +
 	"\x1fFRIEND_MESSAGE_TYPE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18FRIEND_MESSAGE_TYPE_TEXT\x10\x01\x12\x1d\n" +
@@ -2213,7 +2175,7 @@ func file_domain_chat_friend_chat_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_chat_friend_chat_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_domain_chat_friend_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_domain_chat_friend_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_domain_chat_friend_chat_proto_goTypes = []any{
 	(FriendMessageType)(0),          // 0: peers_touch.model.chat.v1.FriendMessageType
 	(FriendMessageStatus)(0),        // 1: peers_touch.model.chat.v1.FriendMessageStatus
@@ -2247,26 +2209,25 @@ var file_domain_chat_friend_chat_proto_goTypes = []any{
 	(*GetPendingResponse)(nil),      // 29: peers_touch.model.chat.v1.GetPendingResponse
 	(*GetStatsRequest)(nil),         // 30: peers_touch.model.chat.v1.GetStatsRequest
 	(*GetStatsResponse)(nil),        // 31: peers_touch.model.chat.v1.GetStatsResponse
-	(*EmptyRequest)(nil),            // 32: peers_touch.model.chat.v1.EmptyRequest
-	(*timestamppb.Timestamp)(nil),   // 33: google.protobuf.Timestamp
+	(*timestamppb.Timestamp)(nil),   // 32: google.protobuf.Timestamp
 }
 var file_domain_chat_friend_chat_proto_depIdxs = []int32{
-	33, // 0: peers_touch.model.chat.v1.FriendChatSession.last_message_at:type_name -> google.protobuf.Timestamp
-	33, // 1: peers_touch.model.chat.v1.FriendChatSession.created_at:type_name -> google.protobuf.Timestamp
-	33, // 2: peers_touch.model.chat.v1.FriendChatSession.updated_at:type_name -> google.protobuf.Timestamp
+	32, // 0: peers_touch.model.chat.v1.FriendChatSession.last_message_at:type_name -> google.protobuf.Timestamp
+	32, // 1: peers_touch.model.chat.v1.FriendChatSession.created_at:type_name -> google.protobuf.Timestamp
+	32, // 2: peers_touch.model.chat.v1.FriendChatSession.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 3: peers_touch.model.chat.v1.FriendChatMessage.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
 	5,  // 4: peers_touch.model.chat.v1.FriendChatMessage.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
 	1,  // 5: peers_touch.model.chat.v1.FriendChatMessage.status:type_name -> peers_touch.model.chat.v1.FriendMessageStatus
-	33, // 6: peers_touch.model.chat.v1.FriendChatMessage.sent_at:type_name -> google.protobuf.Timestamp
-	33, // 7: peers_touch.model.chat.v1.FriendChatMessage.delivered_at:type_name -> google.protobuf.Timestamp
-	33, // 8: peers_touch.model.chat.v1.FriendChatMessage.read_at:type_name -> google.protobuf.Timestamp
-	33, // 9: peers_touch.model.chat.v1.FriendChatMessage.created_at:type_name -> google.protobuf.Timestamp
-	33, // 10: peers_touch.model.chat.v1.FriendChatMessage.updated_at:type_name -> google.protobuf.Timestamp
+	32, // 6: peers_touch.model.chat.v1.FriendChatMessage.sent_at:type_name -> google.protobuf.Timestamp
+	32, // 7: peers_touch.model.chat.v1.FriendChatMessage.delivered_at:type_name -> google.protobuf.Timestamp
+	32, // 8: peers_touch.model.chat.v1.FriendChatMessage.read_at:type_name -> google.protobuf.Timestamp
+	32, // 9: peers_touch.model.chat.v1.FriendChatMessage.created_at:type_name -> google.protobuf.Timestamp
+	32, // 10: peers_touch.model.chat.v1.FriendChatMessage.updated_at:type_name -> google.protobuf.Timestamp
 	2,  // 11: peers_touch.model.chat.v1.OfflineMessage.status:type_name -> peers_touch.model.chat.v1.OfflineMessageStatus
-	33, // 12: peers_touch.model.chat.v1.OfflineMessage.expire_at:type_name -> google.protobuf.Timestamp
-	33, // 13: peers_touch.model.chat.v1.OfflineMessage.delivered_at:type_name -> google.protobuf.Timestamp
-	33, // 14: peers_touch.model.chat.v1.OfflineMessage.created_at:type_name -> google.protobuf.Timestamp
-	33, // 15: peers_touch.model.chat.v1.OfflineMessage.updated_at:type_name -> google.protobuf.Timestamp
+	32, // 12: peers_touch.model.chat.v1.OfflineMessage.expire_at:type_name -> google.protobuf.Timestamp
+	32, // 13: peers_touch.model.chat.v1.OfflineMessage.delivered_at:type_name -> google.protobuf.Timestamp
+	32, // 14: peers_touch.model.chat.v1.OfflineMessage.created_at:type_name -> google.protobuf.Timestamp
+	32, // 15: peers_touch.model.chat.v1.OfflineMessage.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 16: peers_touch.model.chat.v1.SendMessageRequest.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
 	5,  // 17: peers_touch.model.chat.v1.SendMessageRequest.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
 	4,  // 18: peers_touch.model.chat.v1.SendMessageResponse.message:type_name -> peers_touch.model.chat.v1.FriendChatMessage
@@ -2274,9 +2235,9 @@ var file_domain_chat_friend_chat_proto_depIdxs = []int32{
 	3,  // 20: peers_touch.model.chat.v1.CreateSessionResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
 	3,  // 21: peers_touch.model.chat.v1.GetSessionsResponse.sessions:type_name -> peers_touch.model.chat.v1.FriendChatSession
 	6,  // 22: peers_touch.model.chat.v1.RelayMessageRequest.envelope:type_name -> peers_touch.model.chat.v1.MessageEnvelope
-	33, // 23: peers_touch.model.chat.v1.RelayMessageResponse.delivered_at:type_name -> google.protobuf.Timestamp
+	32, // 23: peers_touch.model.chat.v1.RelayMessageResponse.delivered_at:type_name -> google.protobuf.Timestamp
 	0,  // 24: peers_touch.model.chat.v1.SyncMessageItem.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
-	33, // 25: peers_touch.model.chat.v1.SyncMessageItem.sent_at:type_name -> google.protobuf.Timestamp
+	32, // 25: peers_touch.model.chat.v1.SyncMessageItem.sent_at:type_name -> google.protobuf.Timestamp
 	20, // 26: peers_touch.model.chat.v1.SyncMessagesRequest.messages:type_name -> peers_touch.model.chat.v1.SyncMessageItem
 	28, // 27: peers_touch.model.chat.v1.GetPendingResponse.messages:type_name -> peers_touch.model.chat.v1.PendingMessageInfo
 	28, // [28:28] is the sub-list for method output_type
@@ -2297,7 +2258,7 @@ func file_domain_chat_friend_chat_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_friend_chat_proto_rawDesc), len(file_domain_chat_friend_chat_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   30,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -4,21 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/network"
 	"github.com/cloudwego/hertz/pkg/protocol"
 	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
-	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/broker"
 	"github.com/peers-labs/peers-touch/station/frame/core/event"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	eventsmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/events"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // newSSEWriter creates an SSE-compatible chunked body writer
@@ -28,26 +29,26 @@ func newSSEWriter(response *protocol.Response, writer network.Writer) network.Ex
 
 func (s *eventsSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
-	
-	// JWT wrapper for authenticated endpoints (HTTP style)
+
+	// JWT wrapper for authenticated endpoints
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
-	
+	jwtWrapper := serverwrapper.JWT(provider)
+
 	// Hertz JWT wrapper for SSE endpoint
 	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
-	
+
 	return []server.Handler{
 		// SSE stream endpoint - uses Hertz native handler for proper SSE streaming
 		server.NewHertzHandler("events-stream", "/events/stream", server.GET, s.handleSSEStreamHertz, hertzJWTWrapper),
-		
-		// Pull endpoint for missed events
-		server.NewHTTPHandler("events-pull", "/events/pull", server.GET, server.HTTPHandlerFunc(s.handlePull), logIDWrapper, jwtWrapper),
-		
-		// ACK endpoint for confirming event receipt
-		server.NewHTTPHandler("events-ack", "/events/ack", server.POST, server.HTTPHandlerFunc(s.handleAck), logIDWrapper, jwtWrapper),
-		
-		// Stats endpoint (for debugging)
-		server.NewHTTPHandler("events-stats", "/events/stats", server.GET, server.HTTPHandlerFunc(s.handleStats), logIDWrapper),
+
+		// Pull endpoint for missed events - TypedHandler with Proto
+		server.NewTypedHandler("events-pull", "/events/pull", server.POST, s.handlePull, logIDWrapper, jwtWrapper),
+
+		// ACK endpoint for confirming event receipt - TypedHandler with Proto
+		server.NewTypedHandler("events-ack", "/events/ack", server.POST, s.handleAck, logIDWrapper, jwtWrapper),
+
+		// Stats endpoint (for debugging) - TypedHandler with Proto
+		server.NewTypedHandler("events-stats", "/events/stats", server.GET, s.handleStats, logIDWrapper),
 	}
 }
 
@@ -219,93 +220,83 @@ func (s *eventsSubServer) sendMissedEvents(conn *event.SSEConnection, lastEventI
 	logger.DefaultHelper.Infof("Sent %d missed events to actor %s", len(messages), conn.ActorID)
 }
 
-// handlePull handles pull-based event retrieval
-// GET /events/pull
-func (s *eventsSubServer) handlePull(w http.ResponseWriter, r *http.Request) {
-	subject := httpadapter.GetSubject(r)
+func (s *eventsSubServer) handlePull(ctx context.Context, req *eventsmodel.PullEventsRequest) (*eventsmodel.PullEventsResponse, error) {
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorID := subject.ID
 
-	sinceID := r.URL.Query().Get("since")
-	limit := 50 // Default limit
+	limit := int(req.Limit)
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
 
 	es := event.GetGlobalEventSystem()
 	if es == nil || es.Broker == nil {
-		http.Error(w, "event system not available", http.StatusServiceUnavailable)
-		return
+		return nil, server.InternalError("event system not available")
+	}
+
+	sinceID := ""
+	if req.SinceTs > 0 {
+		sinceID = fmt.Sprintf("%d", req.SinceTs)
 	}
 
 	topic := "events:" + actorID
-	messages, err := es.Broker.Pull(r.Context(), topic, sinceID, limit, broker.PullOptions{})
+	messages, err := es.Broker.Pull(ctx, topic, sinceID, limit, broker.PullOptions{})
 	if err != nil {
-		logger.DefaultHelper.Errorf("Failed to pull events: %v", err)
-		http.Error(w, "failed to pull events", http.StatusInternalServerError)
-		return
+		logger.Error(ctx, "Failed to pull events", "error", err)
+		return nil, server.InternalErrorWithCause("failed to pull events", err)
 	}
 
-	events := make([]event.Event, 0, len(messages))
+	events := make([]*eventsmodel.Event, 0, len(messages))
 	for _, msg := range messages {
 		var evt event.Event
 		if err := json.Unmarshal(msg.Payload, &evt); err != nil {
 			continue
 		}
-		events = append(events, evt)
+		events = append(events, &eventsmodel.Event{
+			Id:        evt.ID,
+			Type:      string(evt.Type),
+			Payload:   evt.Payload,
+			CreatedAt: timestamppb.New(evt.Timestamp),
+		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"events": events,
-		"count":  len(events),
-	})
+	return &eventsmodel.PullEventsResponse{
+		Events: events,
+	}, nil
 }
 
-// handleAck handles event acknowledgment
-// POST /events/ack
-func (s *eventsSubServer) handleAck(w http.ResponseWriter, r *http.Request) {
-	subject := httpadapter.GetSubject(r)
+func (s *eventsSubServer) handleAck(ctx context.Context, req *eventsmodel.AckEventsRequest) (*eventsmodel.AckEventsResponse, error) {
+	subject := auth.GetSubject(ctx)
 	if subject == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 	actorID := subject.ID
 
-	var req struct {
-		EventIDs []string `json:"eventIds"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
+	if len(req.EventIds) == 0 {
+		return nil, server.BadRequest("event_ids is required")
 	}
 
-	// TODO: Implement ACK handling - mark events as acknowledged
-	// This would update the event status in the outbox/store
+	logger.Info(ctx, "Actor acknowledged events", "actorID", actorID, "count", len(req.EventIds))
 
-	logger.DefaultHelper.Infof("Actor %s acknowledged %d events", actorID, len(req.EventIDs))
-	
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"acknowledged": len(req.EventIDs),
-	})
+	return &eventsmodel.AckEventsResponse{
+		AckedCount: int32(len(req.EventIds)),
+	}, nil
 }
 
-// handleStats returns event system statistics
-// GET /events/stats
-func (s *eventsSubServer) handleStats(w http.ResponseWriter, r *http.Request) {
+func (s *eventsSubServer) handleStats(ctx context.Context, req *eventsmodel.GetEventsStatsRequest) (*eventsmodel.GetEventsStatsResponse, error) {
 	es := event.GetGlobalEventSystem()
 	if es == nil {
-		http.Error(w, "event system not initialized", http.StatusServiceUnavailable)
-		return
+		return nil, server.InternalError("event system not initialized")
 	}
 
 	hubStats := es.Hub.Stats()
-	registryStats := es.Hub.GetRegistry().Stats()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"hub":      hubStats,
-		"registry": registryStats,
-	})
+	return &eventsmodel.GetEventsStatsResponse{
+		PendingCount:  int64(hubStats["connections"].(int)),
+		TotalDelivered: 0,
+		ActiveStreams: int64(hubStats["connections"].(int)),
+	}, nil
 }

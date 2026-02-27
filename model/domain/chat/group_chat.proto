@@ -349,3 +349,52 @@ message DeleteGroupMessageRequest {
 message DeleteGroupMessageResponse {
   bool success = 1;
 }
+
+// 获取离线消息
+message GetOfflineMessagesRequest {
+  int32 limit = 1;
+}
+
+message GetOfflineMessagesResponse {
+  repeated GroupOfflineMessage messages = 1;
+}
+
+// 确认离线消息
+message AckOfflineMessagesRequest {
+  repeated string ulids = 1;
+}
+
+message AckOfflineMessagesResponse {
+  bool success = 1;
+}
+
+// 获取未读数
+message GetUnreadCountRequest {
+  string group_ulid = 1;
+}
+
+message GetUnreadCountResponse {
+  int64 unread_count = 1;
+}
+
+// 标记群消息已读
+message MarkGroupReadRequest {
+  string group_ulid = 1;
+  string up_to_ulid = 2;  // 标记到这条消息为止
+}
+
+message MarkGroupReadResponse {
+  bool success = 1;
+}
+
+// 统计信息
+message GetGroupStatsRequest {
+  // Empty request
+}
+
+message GetGroupStatsResponse {
+  int64 total_groups = 1;
+  int64 total_members = 2;
+  int64 total_messages = 3;
+  int64 active_groups = 4;
+}
