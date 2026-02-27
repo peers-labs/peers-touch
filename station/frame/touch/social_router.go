@@ -31,13 +31,7 @@ func (sr *SocialRouters) Handlers() []server.Handler {
 	handlers := make([]server.Handler, len(handlerInfos))
 
 	for i, info := range handlerInfos {
-		handlers[i] = server.NewHTTPHandler(
-			info.RouterURL.Name(),
-			info.RouterURL.SubPath(),
-			info.Method,
-			server.HertzHandlerFunc(info.Handler),
-			info.Wrappers...,
-		)
+		handlers[i] = info.Handler
 	}
 
 	return handlers

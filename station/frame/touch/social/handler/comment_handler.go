@@ -2,93 +2,89 @@ package handler
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 
-	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/social/service"
-	"github.com/peers-labs/peers-touch/station/frame/touch/util"
 )
 
-func GetPostComments(c context.Context, ctx *app.RequestContext) {
-	postIDStr := ctx.Param("id")
-	logger.Debug(c, "GetPostComments: received postId param", "postIDStr", postIDStr)
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+func HandleGetPostComments(ctx context.Context, req *model.GetCommentsRequest) (*model.GetCommentsResponse, error) {
+	if req.PostId == "" {
+		return nil, server.BadRequest("post_id is required")
+	}
+
+	postID, err := strconv.ParseUint(req.PostId, 10, 64)
 	if err != nil {
-		logger.Error(c, "GetPostComments: failed to parse postId", "postIDStr", postIDStr, "error", err)
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "invalid post ID"))
-		return
+		return nil, server.BadRequest("invalid post_id")
 	}
 
-	limit := 20
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			limit = l
-		}
+	limit := int(req.Limit)
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
 	}
 
-	comments, err := service.GetPostComments(c, postID, limit)
+	comments, err := service.GetPostComments(ctx, postID, limit)
 	if err != nil {
-		logger.Error(c, "failed to get comments", "postID", postID, "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_GET_COMMENTS_FAILED, err.Error()))
-		return
+		logger.Error(ctx, "failed to get comments", "postID", req.PostId, "error", err)
+		return nil, server.InternalErrorWithCause("failed to get comments", err)
 	}
 
-	util.RspBack(c, ctx, http.StatusOK, comments)
+	return comments, nil
 }
 
-func CreateComment(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleCreateComment(ctx context.Context, req *model.CreateCommentRequest) (*model.CreateCommentResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	postIDStr := ctx.Param("id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	if req.PostId == "" {
+		return nil, server.BadRequest("post_id is required")
+	}
+
+	postID, err := strconv.ParseUint(req.PostId, 10, 64)
 	if err != nil {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "invalid post ID"))
-		return
+		return nil, server.BadRequest("invalid post_id")
 	}
 
-	var req model.CreateCommentRequest
-	if err := ctx.BindJSON(&req); err != nil {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST_BODY, err.Error()))
-		return
+	if req.Content == "" {
+		return nil, server.BadRequest("content is required")
 	}
 
-	comment, err := service.CreateComment(c, &req, postID, userID)
+	comment, err := service.CreateComment(ctx, req, postID, userID)
 	if err != nil {
-		logger.Error(c, "failed to create comment", "postID", postID, "userID", userID, "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_CREATE_COMMENT_FAILED, err.Error()))
-		return
+		logger.Error(ctx, "failed to create comment", "postID", req.PostId, "userID", userID, "error", err)
+		return nil, server.InternalErrorWithCause("failed to create comment", err)
 	}
 
-	util.RspBack(c, ctx, http.StatusOK, &model.CreateCommentResponse{Comment: comment})
+	return &model.CreateCommentResponse{Comment: comment}, nil
 }
 
-func DeleteComment(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleDeleteComment(ctx context.Context, req *model.DeleteCommentRequest) (*model.DeleteCommentResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	commentIDStr := ctx.Param("commentId")
-	commentID, err := strconv.ParseUint(commentIDStr, 10, 64)
+	if req.CommentId == "" {
+		return nil, server.BadRequest("comment_id is required")
+	}
+
+	commentID, err := strconv.ParseUint(req.CommentId, 10, 64)
 	if err != nil {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_INVALID_REQUEST, "invalid comment ID"))
-		return
+		return nil, server.BadRequest("invalid comment_id")
 	}
 
-	err = service.DeleteComment(c, commentID, userID)
+	err = service.DeleteComment(ctx, commentID, userID)
 	if err != nil {
-		logger.Error(c, "failed to delete comment", "commentID", commentID, "userID", userID, "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_DELETE_COMMENT_FAILED, err.Error()))
-		return
+		logger.Error(ctx, "failed to delete comment", "commentID", req.CommentId, "userID", userID, "error", err)
+		return nil, server.InternalErrorWithCause("failed to delete comment", err)
 	}
 
-	util.RspBack(c, ctx, http.StatusOK, &model.DeleteCommentResponse{Success: true})
+	return &model.DeleteCommentResponse{Success: true}, nil
 }
