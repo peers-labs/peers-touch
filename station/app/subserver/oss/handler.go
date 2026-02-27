@@ -1,6 +1,7 @@
 package oss
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,7 +11,10 @@ import (
 	"time"
 
 	authhttp "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	ossmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/oss"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type ossURL struct{ name, path string }
@@ -30,7 +34,7 @@ func (s *ossSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHTTPHandler("oss-upload", base+"/upload", server.POST, server.HTTPHandlerFunc(s.handleUpload), uploadWrappers...),
 		server.NewHTTPHandler("oss-file-get", base+"/file", server.GET, server.HTTPHandlerFunc(s.handleFileGet)),
-		server.NewHTTPHandler("oss-meta", base+"/meta", server.GET, server.HTTPHandlerFunc(s.handleMetaGet)),
+		server.NewTypedHandler("oss-meta", base+"/meta", server.POST, s.handleMetaGet, serverwrapper.LogID()),
 	}
 }
 
@@ -167,18 +171,24 @@ func getMimeTypeByExtension(filename string) string {
 	}
 }
 
-func (s *ossSubServer) handleMetaGet(w http.ResponseWriter, r *http.Request) {
-	key := r.URL.Query().Get("key")
-	if key == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		return
+func (s *ossSubServer) handleMetaGet(ctx context.Context, req *ossmodel.GetFileMetaRequest) (*ossmodel.GetFileMetaResponse, error) {
+	if req.Key == "" {
+		return nil, server.BadRequest("key is required")
 	}
 
-	meta, err := s.fileService.GetFileMeta(r.Context(), key)
+	meta, err := s.fileService.GetFileMeta(ctx, req.Key)
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		return
+		return nil, server.NotFound("file not found")
 	}
 
-	_ = json.NewEncoder(w).Encode(meta)
+	return &ossmodel.GetFileMetaResponse{
+		Meta: &ossmodel.FileMeta{
+			Key:         meta.Key,
+			Filename:    meta.Name,
+			MimeType:    meta.Mime,
+			Size:        meta.Size,
+			UploaderDid: "",
+			UploadedAt:  timestamppb.New(meta.CreatedAt),
+		},
+	}, nil
 }

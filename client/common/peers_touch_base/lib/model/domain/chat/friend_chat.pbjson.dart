@@ -763,12 +763,3 @@ final $typed_data.Uint8List getStatsResponseDescriptor = $convert.base64Decode(
     'ChBHZXRTdGF0c1Jlc3BvbnNlEiEKDG9ubGluZV9wZWVycxgBIAEoBVILb25saW5lUGVlcnMSKQ'
     'oQcGVuZGluZ19tZXNzYWdlcxgCIAEoA1IPcGVuZGluZ01lc3NhZ2VzEhYKBnN0YXR1cxgDIAEo'
     'CVIGc3RhdHVz');
-
-@$core.Deprecated('Use emptyRequestDescriptor instead')
-const EmptyRequest$json = {
-  '1': 'EmptyRequest',
-};
-
-/// Descriptor for `EmptyRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List emptyRequestDescriptor =
-    $convert.base64Decode('CgxFbXB0eVJlcXVlc3Q=');
