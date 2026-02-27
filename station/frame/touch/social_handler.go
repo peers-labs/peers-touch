@@ -1,9 +1,6 @@
 package touch
 
 import (
-	"context"
-
-	"github.com/cloudwego/hertz/pkg/app"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -12,10 +9,7 @@ import (
 )
 
 type SocialHandlerInfo struct {
-	RouterURL RouterPath
-	Handler   func(context.Context, *app.RequestContext)
-	Method    server.Method
-	Wrappers  []server.Wrapper
+	Handler server.Handler
 }
 
 func GetSocialHandlers() []SocialHandlerInfo {
@@ -24,119 +18,24 @@ func GetSocialHandlers() []SocialHandlerInfo {
 	jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 	return []SocialHandlerInfo{
-		{
-			RouterURL: RouterURLSocialPosts,
-			Handler:   handler.CreatePost,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialPost,
-			Handler:   handler.GetPost,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialPost,
-			Handler:   handler.UpdatePost,
-			Method:    server.PUT,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialPost,
-			Handler:   handler.DeletePost,
-			Method:    server.DELETE,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialPostLike,
-			Handler:   handler.LikePost,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialPostUnlike,
-			Handler:   handler.UnlikePost,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialPostLikers,
-			Handler:   handler.GetPostLikers,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialPostRepost,
-			Handler:   handler.RepostPost,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialTimeline,
-			Handler:   handler.GetTimeline,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialUserPosts,
-			Handler:   handler.GetUserPosts,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialPostComments,
-			Handler:   handler.GetPostComments,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialPostComments,
-			Handler:   handler.CreateComment,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialComment,
-			Handler:   handler.DeleteComment,
-			Method:    server.DELETE,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialFollow,
-			Handler:   handler.Follow,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialUnfollow,
-			Handler:   handler.Unfollow,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialRelationship,
-			Handler:   handler.GetRelationship,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialRelationship,
-			Handler:   handler.GetRelationships,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialFollowers,
-			Handler:   handler.GetFollowers,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLSocialFollowing,
-			Handler:   handler.GetFollowing,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{commonWrapper, jwtWrapper},
-		},
+		{Handler: server.NewTypedHandler("social-create-post", string(RouterURLSocialPosts), server.POST, handler.HandleCreatePost, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-get-post", string(RouterURLSocialPost), server.POST, handler.HandleGetPost, commonWrapper)},
+		{Handler: server.NewTypedHandler("social-update-post", string(RouterURLSocialPost), server.POST, handler.HandleUpdatePost, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-delete-post", string(RouterURLSocialPost), server.POST, handler.HandleDeletePost, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-like-post", string(RouterURLSocialPostLike), server.POST, handler.HandleLikePost, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-unlike-post", string(RouterURLSocialPostUnlike), server.POST, handler.HandleUnlikePost, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-get-post-likers", string(RouterURLSocialPostLikers), server.POST, handler.HandleGetPostLikers, commonWrapper)},
+		{Handler: server.NewTypedHandler("social-repost-post", string(RouterURLSocialPostRepost), server.POST, handler.HandleRepostPost, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-get-timeline", string(RouterURLSocialTimeline), server.POST, handler.HandleGetTimeline, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-get-user-posts", string(RouterURLSocialUserPosts), server.POST, handler.HandleGetUserPosts, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-get-post-comments", string(RouterURLSocialPostComments), server.POST, handler.HandleGetPostComments, commonWrapper)},
+		{Handler: server.NewTypedHandler("social-create-comment", string(RouterURLSocialPostComments), server.POST, handler.HandleCreateComment, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-delete-comment", string(RouterURLSocialComment), server.POST, handler.HandleDeleteComment, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-follow", string(RouterURLSocialFollow), server.POST, handler.HandleFollow, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-unfollow", string(RouterURLSocialUnfollow), server.POST, handler.HandleUnfollow, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-get-relationship", string(RouterURLSocialRelationship), server.POST, handler.HandleGetRelationship, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-get-relationships", string(RouterURLSocialRelationship), server.POST, handler.HandleGetRelationships, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-get-followers", string(RouterURLSocialFollowers), server.POST, handler.HandleGetFollowers, commonWrapper, jwtWrapper)},
+		{Handler: server.NewTypedHandler("social-get-following", string(RouterURLSocialFollowing), server.POST, handler.HandleGetFollowing, commonWrapper, jwtWrapper)},
 	}
 }
