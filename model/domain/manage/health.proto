@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package peers_touch.model.manage.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/manage;manage";
+
+message HealthRequest {
+  // Empty request
+}
+
+message HealthResponse {
+  string status = 1;
+  string message = 2;
+}

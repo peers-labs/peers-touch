@@ -2,6 +2,7 @@ package touch
 
 import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/manage/handler"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
@@ -18,20 +19,17 @@ var _ server.Routers = (*ManageRouters)(nil)
 
 // Routers registers all management-related handlers
 func (mr *ManageRouters) Handlers() []server.Handler {
-	handlerInfos := GetManageHandlers()
-	handlers := make([]server.Handler, len(handlerInfos))
+	commonWrapper := CommonAccessControlWrapper(model.RouteNameManagement)
 
-	for i, info := range handlerInfos {
-		handlers[i] = server.NewHTTPHandler(
-			info.RouterURL.Name(),
-			info.RouterURL.SubPath(),
-			info.Method,
-			server.HertzHandlerFunc(info.Handler),
-			info.Wrappers...,
-		)
+	return []server.Handler{
+		server.NewTypedHandler(
+			ManageRouterURLHealth.Name(),
+			ManageRouterURLHealth.SubPath(),
+			server.GET,
+			handler.HandleHealth,
+			commonWrapper,
+		),
 	}
-
-	return handlers
 }
 
 func (mr *ManageRouters) Name() string {
