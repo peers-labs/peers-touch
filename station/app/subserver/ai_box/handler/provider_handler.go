@@ -140,11 +140,17 @@ func (h *ProviderHandlers) HandleListProviders(ctx context.Context, req *model.L
 		return nil, err
 	}
 
+	providers := data["items"].([]interface{})
+	protoProviders := make([]*model.Provider, len(providers))
+	for i, p := range providers {
+		protoProviders[i] = p.(*model.Provider)
+	}
+
 	return &model.ListProvidersResponse{
-		Providers:  data.Providers,
-		Total:      data.Total,
-		PageNumber: data.PageNumber,
-		PageSize:   data.PageSize,
+		Providers:  protoProviders,
+		Total:      data["total"].(int64),
+		PageNumber: pageNumber,
+		PageSize:   pageSize,
 	}, nil
 }
 
