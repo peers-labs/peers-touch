@@ -37,3 +37,64 @@ message TouchHiResponse {
   bool success = 1;
   string response_message = 2;
 }
+
+message Node {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  repeated string addresses = 4;
+  repeated string capabilities = 5;
+  map<string, string> metadata = 6;
+  string status = 7;
+  string public_key = 8;
+  int32 port = 9;
+  google.protobuf.Timestamp last_seen_at = 10;
+  google.protobuf.Timestamp heartbeat_at = 11;
+  google.protobuf.Timestamp registered_at = 12;
+}
+
+message ListNodesRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  repeated string status = 3;
+  repeated string capabilities = 4;
+  bool online_only = 5;
+}
+
+message ListNodesResponse {
+  repeated Node nodes = 1;
+  int64 total = 2;
+  int32 page = 3;
+  int32 size = 4;
+}
+
+message GetNodeRequest {
+  string node_id = 1;
+}
+
+message GetNodeResponse {
+  Node node = 1;
+}
+
+message RegisterNodeRequest {
+  string name = 1;
+  string version = 2;
+  repeated string capabilities = 3;
+  map<string, string> metadata = 4;
+  string public_key = 5;
+  repeated string addresses = 6;
+  int32 port = 7;
+}
+
+message RegisterNodeResponse {
+  Node node = 1;
+}
+
+message DeregisterNodeRequest {
+  string node_id = 1;
+}
+
+message DeregisterNodeResponse {
+  bool success = 1;
+  string node_id = 2;
+}
