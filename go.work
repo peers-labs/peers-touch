@@ -2,6 +2,6 @@ go 1.24.6
 
 use (
 	./station
-	./station/frame
 	./station/app
+	./station/frame
 )
