@@ -354,6 +354,602 @@ func (x *TouchHiResponse) GetResponseMessage() string {
 	return ""
 }
 
+type Node struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	Addresses     []string               `protobuf:"bytes,4,rep,name=addresses,proto3" json:"addresses,omitempty"`
+	Capabilities  []string               `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,6,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Status        string                 `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`
+	PublicKey     string                 `protobuf:"bytes,8,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	Port          int32                  `protobuf:"varint,9,opt,name=port,proto3" json:"port,omitempty"`
+	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
+	HeartbeatAt   *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=heartbeat_at,json=heartbeatAt,proto3" json:"heartbeat_at,omitempty"`
+	RegisteredAt  *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=registered_at,json=registeredAt,proto3" json:"registered_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Node) Reset() {
+	*x = Node{}
+	mi := &file_domain_peer_peer_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Node) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Node) ProtoMessage() {}
+
+func (x *Node) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_peer_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Node.ProtoReflect.Descriptor instead.
+func (*Node) Descriptor() ([]byte, []int) {
+	return file_domain_peer_peer_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Node) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Node) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Node) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *Node) GetAddresses() []string {
+	if x != nil {
+		return x.Addresses
+	}
+	return nil
+}
+
+func (x *Node) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *Node) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *Node) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *Node) GetPublicKey() string {
+	if x != nil {
+		return x.PublicKey
+	}
+	return ""
+}
+
+func (x *Node) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *Node) GetLastSeenAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSeenAt
+	}
+	return nil
+}
+
+func (x *Node) GetHeartbeatAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.HeartbeatAt
+	}
+	return nil
+}
+
+func (x *Node) GetRegisteredAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RegisteredAt
+	}
+	return nil
+}
+
+type ListNodesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset        int32                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	Status        []string               `protobuf:"bytes,3,rep,name=status,proto3" json:"status,omitempty"`
+	Capabilities  []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	OnlineOnly    bool                   `protobuf:"varint,5,opt,name=online_only,json=onlineOnly,proto3" json:"online_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodesRequest) Reset() {
+	*x = ListNodesRequest{}
+	mi := &file_domain_peer_peer_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodesRequest) ProtoMessage() {}
+
+func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_peer_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodesRequest.ProtoReflect.Descriptor instead.
+func (*ListNodesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_peer_peer_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListNodesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListNodesRequest) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *ListNodesRequest) GetStatus() []string {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *ListNodesRequest) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *ListNodesRequest) GetOnlineOnly() bool {
+	if x != nil {
+		return x.OnlineOnly
+	}
+	return false
+}
+
+type ListNodesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nodes         []*Node                `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	Total         int64                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	Page          int32                  `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
+	Size          int32                  `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodesResponse) Reset() {
+	*x = ListNodesResponse{}
+	mi := &file_domain_peer_peer_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodesResponse) ProtoMessage() {}
+
+func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_peer_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodesResponse.ProtoReflect.Descriptor instead.
+func (*ListNodesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_peer_peer_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListNodesResponse) GetNodes() []*Node {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+func (x *ListNodesResponse) GetTotal() int64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *ListNodesResponse) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *ListNodesResponse) GetSize() int32 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+type GetNodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNodeRequest) Reset() {
+	*x = GetNodeRequest{}
+	mi := &file_domain_peer_peer_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNodeRequest) ProtoMessage() {}
+
+func (x *GetNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_peer_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNodeRequest.ProtoReflect.Descriptor instead.
+func (*GetNodeRequest) Descriptor() ([]byte, []int) {
+	return file_domain_peer_peer_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type GetNodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Node          *Node                  `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNodeResponse) Reset() {
+	*x = GetNodeResponse{}
+	mi := &file_domain_peer_peer_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNodeResponse) ProtoMessage() {}
+
+func (x *GetNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_peer_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNodeResponse.ProtoReflect.Descriptor instead.
+func (*GetNodeResponse) Descriptor() ([]byte, []int) {
+	return file_domain_peer_peer_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetNodeResponse) GetNode() *Node {
+	if x != nil {
+		return x.Node
+	}
+	return nil
+}
+
+type RegisterNodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Capabilities  []string               `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	PublicKey     string                 `protobuf:"bytes,5,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	Addresses     []string               `protobuf:"bytes,6,rep,name=addresses,proto3" json:"addresses,omitempty"`
+	Port          int32                  `protobuf:"varint,7,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterNodeRequest) Reset() {
+	*x = RegisterNodeRequest{}
+	mi := &file_domain_peer_peer_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterNodeRequest) ProtoMessage() {}
+
+func (x *RegisterNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_peer_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterNodeRequest.ProtoReflect.Descriptor instead.
+func (*RegisterNodeRequest) Descriptor() ([]byte, []int) {
+	return file_domain_peer_peer_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RegisterNodeRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RegisterNodeRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *RegisterNodeRequest) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *RegisterNodeRequest) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *RegisterNodeRequest) GetPublicKey() string {
+	if x != nil {
+		return x.PublicKey
+	}
+	return ""
+}
+
+func (x *RegisterNodeRequest) GetAddresses() []string {
+	if x != nil {
+		return x.Addresses
+	}
+	return nil
+}
+
+func (x *RegisterNodeRequest) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+type RegisterNodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Node          *Node                  `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterNodeResponse) Reset() {
+	*x = RegisterNodeResponse{}
+	mi := &file_domain_peer_peer_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterNodeResponse) ProtoMessage() {}
+
+func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_peer_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterNodeResponse.ProtoReflect.Descriptor instead.
+func (*RegisterNodeResponse) Descriptor() ([]byte, []int) {
+	return file_domain_peer_peer_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *RegisterNodeResponse) GetNode() *Node {
+	if x != nil {
+		return x.Node
+	}
+	return nil
+}
+
+type DeregisterNodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeregisterNodeRequest) Reset() {
+	*x = DeregisterNodeRequest{}
+	mi := &file_domain_peer_peer_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeregisterNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeregisterNodeRequest) ProtoMessage() {}
+
+func (x *DeregisterNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_peer_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeregisterNodeRequest.ProtoReflect.Descriptor instead.
+func (*DeregisterNodeRequest) Descriptor() ([]byte, []int) {
+	return file_domain_peer_peer_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *DeregisterNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type DeregisterNodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeregisterNodeResponse) Reset() {
+	*x = DeregisterNodeResponse{}
+	mi := &file_domain_peer_peer_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeregisterNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeregisterNodeResponse) ProtoMessage() {}
+
+func (x *DeregisterNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_peer_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeregisterNodeResponse.ProtoReflect.Descriptor instead.
+func (*DeregisterNodeResponse) Descriptor() ([]byte, []int) {
+	return file_domain_peer_peer_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *DeregisterNodeResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DeregisterNodeResponse) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
 var File_domain_peer_peer_proto protoreflect.FileDescriptor
 
 const file_domain_peer_peer_proto_rawDesc = "" +
@@ -375,7 +971,61 @@ const file_domain_peer_peer_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"V\n" +
 	"\x0fTouchHiResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12)\n" +
-	"\x10response_message\x18\x02 \x01(\tR\x0fresponseMessageBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/peer;peerb\x06proto3"
+	"\x10response_message\x18\x02 \x01(\tR\x0fresponseMessage\"\x97\x04\n" +
+	"\x04Node\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12\x1c\n" +
+	"\taddresses\x18\x04 \x03(\tR\taddresses\x12\"\n" +
+	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\x12I\n" +
+	"\bmetadata\x18\x06 \x03(\v2-.peers_touch.model.peer.v1.Node.MetadataEntryR\bmetadata\x12\x16\n" +
+	"\x06status\x18\a \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\b \x01(\tR\tpublicKey\x12\x12\n" +
+	"\x04port\x18\t \x01(\x05R\x04port\x12<\n" +
+	"\flast_seen_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"lastSeenAt\x12=\n" +
+	"\fheartbeat_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\vheartbeatAt\x12?\n" +
+	"\rregistered_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\fregisteredAt\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9d\x01\n" +
+	"\x10ListNodesRequest\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06offset\x18\x02 \x01(\x05R\x06offset\x12\x16\n" +
+	"\x06status\x18\x03 \x03(\tR\x06status\x12\"\n" +
+	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x12\x1f\n" +
+	"\vonline_only\x18\x05 \x01(\bR\n" +
+	"onlineOnly\"\x88\x01\n" +
+	"\x11ListNodesResponse\x125\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x1f.peers_touch.model.peer.v1.NodeR\x05nodes\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x03R\x05total\x12\x12\n" +
+	"\x04page\x18\x03 \x01(\x05R\x04page\x12\x12\n" +
+	"\x04size\x18\x04 \x01(\x05R\x04size\")\n" +
+	"\x0eGetNodeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"F\n" +
+	"\x0fGetNodeResponse\x123\n" +
+	"\x04node\x18\x01 \x01(\v2\x1f.peers_touch.model.peer.v1.NodeR\x04node\"\xcf\x02\n" +
+	"\x13RegisterNodeRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\"\n" +
+	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\x12X\n" +
+	"\bmetadata\x18\x04 \x03(\v2<.peers_touch.model.peer.v1.RegisterNodeRequest.MetadataEntryR\bmetadata\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x05 \x01(\tR\tpublicKey\x12\x1c\n" +
+	"\taddresses\x18\x06 \x03(\tR\taddresses\x12\x12\n" +
+	"\x04port\x18\a \x01(\x05R\x04port\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"K\n" +
+	"\x14RegisterNodeResponse\x123\n" +
+	"\x04node\x18\x01 \x01(\v2\x1f.peers_touch.model.peer.v1.NodeR\x04node\"0\n" +
+	"\x15DeregisterNodeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"K\n" +
+	"\x16DeregisterNodeResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeIdBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/peer;peerb\x06proto3"
 
 var (
 	file_domain_peer_peer_proto_rawDescOnce sync.Once
@@ -389,25 +1039,44 @@ func file_domain_peer_peer_proto_rawDescGZIP() []byte {
 	return file_domain_peer_peer_proto_rawDescData
 }
 
-var file_domain_peer_peer_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_domain_peer_peer_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_domain_peer_peer_proto_goTypes = []any{
-	(*SetPeerAddrRequest)(nil),    // 0: peers_touch.model.peer.v1.SetPeerAddrRequest
-	(*SetPeerAddrResponse)(nil),   // 1: peers_touch.model.peer.v1.SetPeerAddrResponse
-	(*GetMyPeerAddrRequest)(nil),  // 2: peers_touch.model.peer.v1.GetMyPeerAddrRequest
-	(*PeerAddrInfo)(nil),          // 3: peers_touch.model.peer.v1.PeerAddrInfo
-	(*GetMyPeerAddrResponse)(nil), // 4: peers_touch.model.peer.v1.GetMyPeerAddrResponse
-	(*TouchHiRequest)(nil),        // 5: peers_touch.model.peer.v1.TouchHiRequest
-	(*TouchHiResponse)(nil),       // 6: peers_touch.model.peer.v1.TouchHiResponse
-	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
+	(*SetPeerAddrRequest)(nil),     // 0: peers_touch.model.peer.v1.SetPeerAddrRequest
+	(*SetPeerAddrResponse)(nil),    // 1: peers_touch.model.peer.v1.SetPeerAddrResponse
+	(*GetMyPeerAddrRequest)(nil),   // 2: peers_touch.model.peer.v1.GetMyPeerAddrRequest
+	(*PeerAddrInfo)(nil),           // 3: peers_touch.model.peer.v1.PeerAddrInfo
+	(*GetMyPeerAddrResponse)(nil),  // 4: peers_touch.model.peer.v1.GetMyPeerAddrResponse
+	(*TouchHiRequest)(nil),         // 5: peers_touch.model.peer.v1.TouchHiRequest
+	(*TouchHiResponse)(nil),        // 6: peers_touch.model.peer.v1.TouchHiResponse
+	(*Node)(nil),                   // 7: peers_touch.model.peer.v1.Node
+	(*ListNodesRequest)(nil),       // 8: peers_touch.model.peer.v1.ListNodesRequest
+	(*ListNodesResponse)(nil),      // 9: peers_touch.model.peer.v1.ListNodesResponse
+	(*GetNodeRequest)(nil),         // 10: peers_touch.model.peer.v1.GetNodeRequest
+	(*GetNodeResponse)(nil),        // 11: peers_touch.model.peer.v1.GetNodeResponse
+	(*RegisterNodeRequest)(nil),    // 12: peers_touch.model.peer.v1.RegisterNodeRequest
+	(*RegisterNodeResponse)(nil),   // 13: peers_touch.model.peer.v1.RegisterNodeResponse
+	(*DeregisterNodeRequest)(nil),  // 14: peers_touch.model.peer.v1.DeregisterNodeRequest
+	(*DeregisterNodeResponse)(nil), // 15: peers_touch.model.peer.v1.DeregisterNodeResponse
+	nil,                            // 16: peers_touch.model.peer.v1.Node.MetadataEntry
+	nil,                            // 17: peers_touch.model.peer.v1.RegisterNodeRequest.MetadataEntry
+	(*timestamppb.Timestamp)(nil),  // 18: google.protobuf.Timestamp
 }
 var file_domain_peer_peer_proto_depIdxs = []int32{
-	7, // 0: peers_touch.model.peer.v1.PeerAddrInfo.last_seen:type_name -> google.protobuf.Timestamp
-	3, // 1: peers_touch.model.peer.v1.GetMyPeerAddrResponse.addresses:type_name -> peers_touch.model.peer.v1.PeerAddrInfo
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	18, // 0: peers_touch.model.peer.v1.PeerAddrInfo.last_seen:type_name -> google.protobuf.Timestamp
+	3,  // 1: peers_touch.model.peer.v1.GetMyPeerAddrResponse.addresses:type_name -> peers_touch.model.peer.v1.PeerAddrInfo
+	16, // 2: peers_touch.model.peer.v1.Node.metadata:type_name -> peers_touch.model.peer.v1.Node.MetadataEntry
+	18, // 3: peers_touch.model.peer.v1.Node.last_seen_at:type_name -> google.protobuf.Timestamp
+	18, // 4: peers_touch.model.peer.v1.Node.heartbeat_at:type_name -> google.protobuf.Timestamp
+	18, // 5: peers_touch.model.peer.v1.Node.registered_at:type_name -> google.protobuf.Timestamp
+	7,  // 6: peers_touch.model.peer.v1.ListNodesResponse.nodes:type_name -> peers_touch.model.peer.v1.Node
+	7,  // 7: peers_touch.model.peer.v1.GetNodeResponse.node:type_name -> peers_touch.model.peer.v1.Node
+	17, // 8: peers_touch.model.peer.v1.RegisterNodeRequest.metadata:type_name -> peers_touch.model.peer.v1.RegisterNodeRequest.MetadataEntry
+	7,  // 9: peers_touch.model.peer.v1.RegisterNodeResponse.node:type_name -> peers_touch.model.peer.v1.Node
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_domain_peer_peer_proto_init() }
@@ -421,7 +1090,7 @@ func file_domain_peer_peer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_peer_peer_proto_rawDesc), len(file_domain_peer_peer_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

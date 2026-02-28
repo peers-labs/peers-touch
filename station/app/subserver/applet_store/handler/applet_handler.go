@@ -40,10 +40,10 @@ func (h *AppletHandlers) HandleListApplets(ctx context.Context, req *model.ListA
 			Id:            app.ID,
 			Name:          app.Name,
 			Description:   app.Description,
-			IconUrl:       app.IconURL,
+			IconUrl:       app.Icon,
 			DeveloperId:   app.DeveloperID,
 			DownloadCount: app.DownloadCount,
-			LatestVersion: app.LatestVersion,
+			LatestVersion: app.LatestVersionURL,
 			UpdatedAt:     app.UpdatedAt.Unix(),
 		})
 	}
@@ -73,10 +73,10 @@ func (h *AppletHandlers) HandleGetAppletDetails(ctx context.Context, req *model.
 			Id:            applet.ID,
 			Name:          applet.Name,
 			Description:   applet.Description,
-			IconUrl:       applet.IconURL,
+			IconUrl:       applet.Icon,
 			DeveloperId:   applet.DeveloperID,
 			DownloadCount: applet.DownloadCount,
-			LatestVersion: applet.LatestVersion,
+			LatestVersion: applet.LatestVersionURL,
 			UpdatedAt:     applet.UpdatedAt.Unix(),
 		}
 	}
