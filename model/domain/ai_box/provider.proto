@@ -62,6 +62,71 @@ message ProviderInfo {
   string logo = 4;
   string source_type = 5;
   bool enabled = 6;
-  // 提供给客户端用于动态生成配置表单的JSON Schema
   string schema_json = 7;
+}
+
+message CreateProviderRequest {
+  string name = 1;
+  string description = 2;
+  string logo = 3;
+  string key_vaults = 4;
+  string settings_json = 5;
+  string config_json = 6;
+}
+
+message CreateProviderResponse {
+  Provider provider = 1;
+}
+
+message UpdateProviderRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional string logo = 4;
+  optional bool enabled = 5;
+  optional string key_vaults = 6;
+  optional string settings_json = 7;
+  optional string config_json = 8;
+}
+
+message UpdateProviderResponse {
+  Provider provider = 1;
+}
+
+message DeleteProviderRequest {
+  string id = 1;
+}
+
+message DeleteProviderResponse {
+  bool success = 1;
+}
+
+message GetProviderRequest {
+  string id = 1;
+}
+
+message GetProviderResponse {
+  Provider provider = 1;
+}
+
+message ListProvidersRequest {
+  int32 page_number = 1;
+  int32 page_size = 2;
+  bool enabled_only = 3;
+}
+
+message ListProvidersResponse {
+  repeated Provider providers = 1;
+  int64 total = 2;
+  int32 page_number = 3;
+  int32 page_size = 4;
+}
+
+message TestProviderRequest {
+  string id = 1;
+}
+
+message TestProviderResponse {
+  bool ok = 1;
+  string message = 2;
 }
