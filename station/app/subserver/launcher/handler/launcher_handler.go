@@ -25,36 +25,7 @@ func (h *LauncherHandlers) HandleGetFeed(ctx context.Context, req *model.GetFeed
 		limit = 20
 	}
 
-	feed, err := service.GetPersonalizedFeed(ctx, userID, limit)
-	if err != nil {
-		logger.Error(ctx, "Failed to get personalized feed", "error", err)
-		return nil, err
-	}
-
-	protoItems := make([]*model.FeedItem, 0, len(feed.Items))
-	for _, item := range feed.Items {
-		metadata := make(map[string]string)
-		for k, v := range item.Metadata {
-			if str, ok := v.(string); ok {
-				metadata[k] = str
-			}
-		}
-
-		protoItems = append(protoItems, &model.FeedItem{
-			Id:        item.ID,
-			Type:      string(item.Type),
-			Title:     item.Title,
-			Subtitle:  item.Subtitle,
-			ImageUrl:  item.ImageURL,
-			Timestamp: item.Timestamp.Unix(),
-			Source:    string(item.Source),
-			Metadata:  metadata,
-		})
-	}
-
-	return &model.GetFeedResponse{
-		Items: protoItems,
-	}, nil
+	return service.GetPersonalizedFeed(ctx, userID, limit)
 }
 
 func (h *LauncherHandlers) HandleSearch(ctx context.Context, req *model.SearchRequest) (*model.SearchResponse, error) {
@@ -68,36 +39,7 @@ func (h *LauncherHandlers) HandleSearch(ctx context.Context, req *model.SearchRe
 		limit = 10
 	}
 
-	results, err := service.SearchContent(ctx, req.Query, limit)
-	if err != nil {
-		logger.Error(ctx, "Failed to search content", "error", err)
-		return nil, err
-	}
-
-	protoResults := make([]*model.SearchResult, 0, len(results.Results))
-	for _, result := range results.Results {
-		metadata := make(map[string]string)
-		for k, v := range result.Metadata {
-			if str, ok := v.(string); ok {
-				metadata[k] = str
-			}
-		}
-
-		protoResults = append(protoResults, &model.SearchResult{
-			Id:        result.ID,
-			Type:      string(result.Type),
-			Title:     result.Title,
-			Subtitle:  result.Subtitle,
-			ImageUrl:  result.ImageURL,
-			ActionUrl: result.ActionURL,
-			Metadata:  metadata,
-		})
-	}
-
-	return &model.SearchResponse{
-		Results: protoResults,
-		Total:   int32(results.Total),
-	}, nil
+	return service.SearchContent(ctx, req.Query, limit)
 }
 
 type searchError struct {
