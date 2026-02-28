@@ -20,11 +20,11 @@ func (sr *SessionRouters) Handlers() []server.Handler {
 	jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 	return []server.Handler{
-		server.NewHTTPHandler(
+		server.NewTypedHandler(
 			RouterURLSessionVerify.Name(),
 			RouterURLSessionVerify.SubPath(),
 			server.GET,
-			server.HertzHandlerFunc(handler.VerifySession),
+			handler.HandleVerifySession,
 			jwtWrapper,
 		),
 	}
