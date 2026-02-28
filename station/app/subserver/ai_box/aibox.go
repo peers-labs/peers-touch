@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/ai_box/handler"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -98,15 +99,57 @@ func (s *aiBoxSubServer) Address() server.SubserverAddress {
 func (s *aiBoxSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	jwtWrapper := s.jwtWrapper
+	providerHandlers := handler.NewProviderHandlers()
 
 	return []server.Handler{
-		// Provider management
-		server.NewHTTPHandler("aibox-provider-create", "/ai-box/provider/new", server.POST, server.HTTPHandlerFunc(s.handleNewProvider), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("aibox-provider-update", "/ai-box/provider/update", server.POST, server.HTTPHandlerFunc(s.handleUpdateProvider), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("aibox-provider-delete", "/ai-box/provider/delete", server.POST, server.HTTPHandlerFunc(s.handleDeleteProvider), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("aibox-provider-get", "/ai-box/provider/get", server.GET, server.HTTPHandlerFunc(s.handleGetProvider), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("aibox-provider-list", "/ai-box/providers", server.GET, server.HTTPHandlerFunc(s.handleListProviders), logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("aibox-provider-test", "/ai-box/provider/test", server.POST, server.HTTPHandlerFunc(s.handleTestProvider), logIDWrapper, jwtWrapper),
+		server.NewTypedHandler(
+			"aibox-provider-create",
+			"/ai-box/provider/new",
+			server.POST,
+			providerHandlers.HandleCreateProvider,
+			logIDWrapper,
+			jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"aibox-provider-update",
+			"/ai-box/provider/update",
+			server.POST,
+			providerHandlers.HandleUpdateProvider,
+			logIDWrapper,
+			jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"aibox-provider-delete",
+			"/ai-box/provider/delete",
+			server.POST,
+			providerHandlers.HandleDeleteProvider,
+			logIDWrapper,
+			jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"aibox-provider-get",
+			"/ai-box/provider/get",
+			server.GET,
+			providerHandlers.HandleGetProvider,
+			logIDWrapper,
+			jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"aibox-provider-list",
+			"/ai-box/providers",
+			server.GET,
+			providerHandlers.HandleListProviders,
+			logIDWrapper,
+			jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"aibox-provider-test",
+			"/ai-box/provider/test",
+			server.POST,
+			providerHandlers.HandleTestProvider,
+			logIDWrapper,
+			jwtWrapper,
+		),
 	}
 }
 
