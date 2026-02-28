@@ -3,6 +3,7 @@ package launcher
 import (
 	"context"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/launcher/handler"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
@@ -62,10 +63,23 @@ func (s *launcherSubServer) Type() server.SubserverType {
 
 func (s *launcherSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
+	handlers := handler.NewLauncherHandlers()
 
 	return []server.Handler{
-		server.NewHTTPHandler("launcher-feed", "/launcher/feed", server.GET, server.HTTPHandlerFunc(s.handleGetFeed), logIDWrapper),
-		server.NewHTTPHandler("launcher-search", "/launcher/search", server.GET, server.HTTPHandlerFunc(s.handleSearch), logIDWrapper),
+		server.NewTypedHandler(
+			"launcher-feed",
+			"/launcher/feed",
+			server.GET,
+			handlers.HandleGetFeed,
+			logIDWrapper,
+		),
+		server.NewTypedHandler(
+			"launcher-search",
+			"/launcher/search",
+			server.GET,
+			handlers.HandleSearch,
+			logIDWrapper,
+		),
 	}
 }
 
