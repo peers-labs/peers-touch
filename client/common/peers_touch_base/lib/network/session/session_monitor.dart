@@ -1,7 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
+import 'package:peers_touch_base/model/domain/actor/session_api.pb.dart';
+import 'package:peers_touch_base/network/dio/http_service.dart';
+import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/network/token_provider.dart';
 
 /// Monitors session validity and handles kick detection
@@ -50,12 +51,12 @@ class SessionMonitor {
     try {
       final sessionId = await tokenProvider.readSessionId();
       if (sessionId == null || sessionId.isEmpty) {
-        return true; // No session to check
+        return true;
       }
       
       final accessToken = await tokenProvider.readAccessToken();
       if (accessToken == null || accessToken.isEmpty) {
-        return true; // No token
+        return true;
       }
       
       final baseUrl = baseUrlProvider();
@@ -63,42 +64,23 @@ class SessionMonitor {
         return true;
       }
       
-      final uri = Uri.parse(
-        baseUrl.endsWith('/')
-            ? '${baseUrl}api/v1/session/verify'
-            : '$baseUrl/api/v1/session/verify',
+      final httpService = HttpServiceLocator().httpService;
+      final request = VerifySessionRequest();
+      
+      final response = await httpService.post<VerifySessionResponse>(
+        '/api/v1/session/verify',
+        data: request,
+        fromJson: (bytes) => VerifySessionResponse.fromBuffer(bytes),
       );
       
-      final client = HttpClient();
-      final request = await client.getUrl(uri);
-      request.headers.set('Authorization', 'Bearer $accessToken');
-      request.headers.set('X-Session-ID', sessionId);
-      
-      final response = await request.close();
-      final body = await response.transform(const Utf8Decoder()).join();
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(body);
-        if (data is Map) {
-          final valid = data['valid'] == true;
-          final reason = data['reason']?.toString() ?? '';
-          
-          if (!valid && reason == 'kicked') {
-            onKicked(reason);
-            stop();
-            return false;
-          }
-        }
-      } else if (response.statusCode == 401) {
-        // Token is invalid, might be kicked
-        onKicked('unauthorized');
+      if (!response.valid) {
+        onKicked('kicked');
         stop();
         return false;
       }
       
       return true;
     } catch (e) {
-      // Network error, don't trigger kick
       return true;
     }
   }
