@@ -336,15 +336,14 @@ func (x *ProviderView) GetDisplayStatus() string {
 // 用于客户端-服务端通信，隐藏了敏感信息和内部状态。
 // =================================================
 type ProviderInfo struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Logo        string                 `protobuf:"bytes,4,opt,name=logo,proto3" json:"logo,omitempty"`
-	SourceType  string                 `protobuf:"bytes,5,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"`
-	Enabled     bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	// 提供给客户端用于动态生成配置表单的JSON Schema
-	SchemaJson    string `protobuf:"bytes,7,opt,name=schema_json,json=schemaJson,proto3" json:"schema_json,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Logo          string                 `protobuf:"bytes,4,opt,name=logo,proto3" json:"logo,omitempty"`
+	SourceType    string                 `protobuf:"bytes,5,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"`
+	Enabled       bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	SchemaJson    string                 `protobuf:"bytes,7,opt,name=schema_json,json=schemaJson,proto3" json:"schema_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -428,6 +427,678 @@ func (x *ProviderInfo) GetSchemaJson() string {
 	return ""
 }
 
+type CreateProviderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Logo          string                 `protobuf:"bytes,3,opt,name=logo,proto3" json:"logo,omitempty"`
+	KeyVaults     string                 `protobuf:"bytes,4,opt,name=key_vaults,json=keyVaults,proto3" json:"key_vaults,omitempty"`
+	SettingsJson  string                 `protobuf:"bytes,5,opt,name=settings_json,json=settingsJson,proto3" json:"settings_json,omitempty"`
+	ConfigJson    string                 `protobuf:"bytes,6,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateProviderRequest) Reset() {
+	*x = CreateProviderRequest{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateProviderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateProviderRequest) ProtoMessage() {}
+
+func (x *CreateProviderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateProviderRequest.ProtoReflect.Descriptor instead.
+func (*CreateProviderRequest) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CreateProviderRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateProviderRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *CreateProviderRequest) GetLogo() string {
+	if x != nil {
+		return x.Logo
+	}
+	return ""
+}
+
+func (x *CreateProviderRequest) GetKeyVaults() string {
+	if x != nil {
+		return x.KeyVaults
+	}
+	return ""
+}
+
+func (x *CreateProviderRequest) GetSettingsJson() string {
+	if x != nil {
+		return x.SettingsJson
+	}
+	return ""
+}
+
+func (x *CreateProviderRequest) GetConfigJson() string {
+	if x != nil {
+		return x.ConfigJson
+	}
+	return ""
+}
+
+type CreateProviderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      *Provider              `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateProviderResponse) Reset() {
+	*x = CreateProviderResponse{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateProviderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateProviderResponse) ProtoMessage() {}
+
+func (x *CreateProviderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateProviderResponse.ProtoReflect.Descriptor instead.
+func (*CreateProviderResponse) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CreateProviderResponse) GetProvider() *Provider {
+	if x != nil {
+		return x.Provider
+	}
+	return nil
+}
+
+type UpdateProviderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Description   *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	Logo          *string                `protobuf:"bytes,4,opt,name=logo,proto3,oneof" json:"logo,omitempty"`
+	Enabled       *bool                  `protobuf:"varint,5,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
+	KeyVaults     *string                `protobuf:"bytes,6,opt,name=key_vaults,json=keyVaults,proto3,oneof" json:"key_vaults,omitempty"`
+	SettingsJson  *string                `protobuf:"bytes,7,opt,name=settings_json,json=settingsJson,proto3,oneof" json:"settings_json,omitempty"`
+	ConfigJson    *string                `protobuf:"bytes,8,opt,name=config_json,json=configJson,proto3,oneof" json:"config_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateProviderRequest) Reset() {
+	*x = UpdateProviderRequest{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProviderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProviderRequest) ProtoMessage() {}
+
+func (x *UpdateProviderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProviderRequest.ProtoReflect.Descriptor instead.
+func (*UpdateProviderRequest) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *UpdateProviderRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateProviderRequest) GetName() string {
+	if x != nil && x.Name != nil {
+		return *x.Name
+	}
+	return ""
+}
+
+func (x *UpdateProviderRequest) GetDescription() string {
+	if x != nil && x.Description != nil {
+		return *x.Description
+	}
+	return ""
+}
+
+func (x *UpdateProviderRequest) GetLogo() string {
+	if x != nil && x.Logo != nil {
+		return *x.Logo
+	}
+	return ""
+}
+
+func (x *UpdateProviderRequest) GetEnabled() bool {
+	if x != nil && x.Enabled != nil {
+		return *x.Enabled
+	}
+	return false
+}
+
+func (x *UpdateProviderRequest) GetKeyVaults() string {
+	if x != nil && x.KeyVaults != nil {
+		return *x.KeyVaults
+	}
+	return ""
+}
+
+func (x *UpdateProviderRequest) GetSettingsJson() string {
+	if x != nil && x.SettingsJson != nil {
+		return *x.SettingsJson
+	}
+	return ""
+}
+
+func (x *UpdateProviderRequest) GetConfigJson() string {
+	if x != nil && x.ConfigJson != nil {
+		return *x.ConfigJson
+	}
+	return ""
+}
+
+type UpdateProviderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      *Provider              `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateProviderResponse) Reset() {
+	*x = UpdateProviderResponse{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProviderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProviderResponse) ProtoMessage() {}
+
+func (x *UpdateProviderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProviderResponse.ProtoReflect.Descriptor instead.
+func (*UpdateProviderResponse) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *UpdateProviderResponse) GetProvider() *Provider {
+	if x != nil {
+		return x.Provider
+	}
+	return nil
+}
+
+type DeleteProviderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteProviderRequest) Reset() {
+	*x = DeleteProviderRequest{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteProviderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteProviderRequest) ProtoMessage() {}
+
+func (x *DeleteProviderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteProviderRequest.ProtoReflect.Descriptor instead.
+func (*DeleteProviderRequest) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *DeleteProviderRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeleteProviderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteProviderResponse) Reset() {
+	*x = DeleteProviderResponse{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteProviderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteProviderResponse) ProtoMessage() {}
+
+func (x *DeleteProviderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteProviderResponse.ProtoReflect.Descriptor instead.
+func (*DeleteProviderResponse) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DeleteProviderResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+type GetProviderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProviderRequest) Reset() {
+	*x = GetProviderRequest{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProviderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProviderRequest) ProtoMessage() {}
+
+func (x *GetProviderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProviderRequest.ProtoReflect.Descriptor instead.
+func (*GetProviderRequest) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetProviderRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type GetProviderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      *Provider              `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProviderResponse) Reset() {
+	*x = GetProviderResponse{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProviderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProviderResponse) ProtoMessage() {}
+
+func (x *GetProviderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProviderResponse.ProtoReflect.Descriptor instead.
+func (*GetProviderResponse) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetProviderResponse) GetProvider() *Provider {
+	if x != nil {
+		return x.Provider
+	}
+	return nil
+}
+
+type ListProvidersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PageNumber    int32                  `protobuf:"varint,1,opt,name=page_number,json=pageNumber,proto3" json:"page_number,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	EnabledOnly   bool                   `protobuf:"varint,3,opt,name=enabled_only,json=enabledOnly,proto3" json:"enabled_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProvidersRequest) Reset() {
+	*x = ListProvidersRequest{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProvidersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProvidersRequest) ProtoMessage() {}
+
+func (x *ListProvidersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProvidersRequest.ProtoReflect.Descriptor instead.
+func (*ListProvidersRequest) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListProvidersRequest) GetPageNumber() int32 {
+	if x != nil {
+		return x.PageNumber
+	}
+	return 0
+}
+
+func (x *ListProvidersRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListProvidersRequest) GetEnabledOnly() bool {
+	if x != nil {
+		return x.EnabledOnly
+	}
+	return false
+}
+
+type ListProvidersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Providers     []*Provider            `protobuf:"bytes,1,rep,name=providers,proto3" json:"providers,omitempty"`
+	Total         int64                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	PageNumber    int32                  `protobuf:"varint,3,opt,name=page_number,json=pageNumber,proto3" json:"page_number,omitempty"`
+	PageSize      int32                  `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProvidersResponse) Reset() {
+	*x = ListProvidersResponse{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProvidersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProvidersResponse) ProtoMessage() {}
+
+func (x *ListProvidersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProvidersResponse.ProtoReflect.Descriptor instead.
+func (*ListProvidersResponse) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListProvidersResponse) GetProviders() []*Provider {
+	if x != nil {
+		return x.Providers
+	}
+	return nil
+}
+
+func (x *ListProvidersResponse) GetTotal() int64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *ListProvidersResponse) GetPageNumber() int32 {
+	if x != nil {
+		return x.PageNumber
+	}
+	return 0
+}
+
+func (x *ListProvidersResponse) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type TestProviderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestProviderRequest) Reset() {
+	*x = TestProviderRequest{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestProviderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestProviderRequest) ProtoMessage() {}
+
+func (x *TestProviderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestProviderRequest.ProtoReflect.Descriptor instead.
+func (*TestProviderRequest) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *TestProviderRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type TestProviderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestProviderResponse) Reset() {
+	*x = TestProviderResponse{}
+	mi := &file_domain_ai_box_provider_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestProviderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestProviderResponse) ProtoMessage() {}
+
+func (x *TestProviderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_ai_box_provider_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestProviderResponse.ProtoReflect.Descriptor instead.
+func (*TestProviderResponse) Descriptor() ([]byte, []int) {
+	return file_domain_ai_box_provider_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *TestProviderResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *TestProviderResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_domain_ai_box_provider_proto protoreflect.FileDescriptor
 
 const file_domain_ai_box_provider_proto_rawDesc = "" +
@@ -475,7 +1146,63 @@ const file_domain_ai_box_provider_proto_rawDesc = "" +
 	"sourceType\x12\x18\n" +
 	"\aenabled\x18\x06 \x01(\bR\aenabled\x12\x1f\n" +
 	"\vschema_json\x18\a \x01(\tR\n" +
-	"schemaJson*A\n" +
+	"schemaJson\"\xc6\x01\n" +
+	"\x15CreateProviderRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
+	"\x04logo\x18\x03 \x01(\tR\x04logo\x12\x1d\n" +
+	"\n" +
+	"key_vaults\x18\x04 \x01(\tR\tkeyVaults\x12#\n" +
+	"\rsettings_json\x18\x05 \x01(\tR\fsettingsJson\x12\x1f\n" +
+	"\vconfig_json\x18\x06 \x01(\tR\n" +
+	"configJson\"[\n" +
+	"\x16CreateProviderResponse\x12A\n" +
+	"\bprovider\x18\x01 \x01(\v2%.peers_touch.model.ai_box.v1.ProviderR\bprovider\"\xf2\x02\n" +
+	"\x15UpdateProviderRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12%\n" +
+	"\vdescription\x18\x03 \x01(\tH\x01R\vdescription\x88\x01\x01\x12\x17\n" +
+	"\x04logo\x18\x04 \x01(\tH\x02R\x04logo\x88\x01\x01\x12\x1d\n" +
+	"\aenabled\x18\x05 \x01(\bH\x03R\aenabled\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"key_vaults\x18\x06 \x01(\tH\x04R\tkeyVaults\x88\x01\x01\x12(\n" +
+	"\rsettings_json\x18\a \x01(\tH\x05R\fsettingsJson\x88\x01\x01\x12$\n" +
+	"\vconfig_json\x18\b \x01(\tH\x06R\n" +
+	"configJson\x88\x01\x01B\a\n" +
+	"\x05_nameB\x0e\n" +
+	"\f_descriptionB\a\n" +
+	"\x05_logoB\n" +
+	"\n" +
+	"\b_enabledB\r\n" +
+	"\v_key_vaultsB\x10\n" +
+	"\x0e_settings_jsonB\x0e\n" +
+	"\f_config_json\"[\n" +
+	"\x16UpdateProviderResponse\x12A\n" +
+	"\bprovider\x18\x01 \x01(\v2%.peers_touch.model.ai_box.v1.ProviderR\bprovider\"'\n" +
+	"\x15DeleteProviderRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"2\n" +
+	"\x16DeleteProviderResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"$\n" +
+	"\x12GetProviderRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"X\n" +
+	"\x13GetProviderResponse\x12A\n" +
+	"\bprovider\x18\x01 \x01(\v2%.peers_touch.model.ai_box.v1.ProviderR\bprovider\"w\n" +
+	"\x14ListProvidersRequest\x12\x1f\n" +
+	"\vpage_number\x18\x01 \x01(\x05R\n" +
+	"pageNumber\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12!\n" +
+	"\fenabled_only\x18\x03 \x01(\bR\venabledOnly\"\xb0\x01\n" +
+	"\x15ListProvidersResponse\x12C\n" +
+	"\tproviders\x18\x01 \x03(\v2%.peers_touch.model.ai_box.v1.ProviderR\tproviders\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x03R\x05total\x12\x1f\n" +
+	"\vpage_number\x18\x03 \x01(\x05R\n" +
+	"pageNumber\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\"%\n" +
+	"\x13TestProviderRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"@\n" +
+	"\x14TestProviderResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage*A\n" +
 	"\fProviderType\x12\n" +
 	"\n" +
 	"\x06openai\x10\x00\x12\n" +
@@ -497,23 +1224,39 @@ func file_domain_ai_box_provider_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_ai_box_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_ai_box_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_domain_ai_box_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_domain_ai_box_provider_proto_goTypes = []any{
-	(ProviderType)(0),             // 0: peers_touch.model.ai_box.v1.ProviderType
-	(*Provider)(nil),              // 1: peers_touch.model.ai_box.v1.Provider
-	(*ProviderView)(nil),          // 2: peers_touch.model.ai_box.v1.ProviderView
-	(*ProviderInfo)(nil),          // 3: peers_touch.model.ai_box.v1.ProviderInfo
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(ProviderType)(0),              // 0: peers_touch.model.ai_box.v1.ProviderType
+	(*Provider)(nil),               // 1: peers_touch.model.ai_box.v1.Provider
+	(*ProviderView)(nil),           // 2: peers_touch.model.ai_box.v1.ProviderView
+	(*ProviderInfo)(nil),           // 3: peers_touch.model.ai_box.v1.ProviderInfo
+	(*CreateProviderRequest)(nil),  // 4: peers_touch.model.ai_box.v1.CreateProviderRequest
+	(*CreateProviderResponse)(nil), // 5: peers_touch.model.ai_box.v1.CreateProviderResponse
+	(*UpdateProviderRequest)(nil),  // 6: peers_touch.model.ai_box.v1.UpdateProviderRequest
+	(*UpdateProviderResponse)(nil), // 7: peers_touch.model.ai_box.v1.UpdateProviderResponse
+	(*DeleteProviderRequest)(nil),  // 8: peers_touch.model.ai_box.v1.DeleteProviderRequest
+	(*DeleteProviderResponse)(nil), // 9: peers_touch.model.ai_box.v1.DeleteProviderResponse
+	(*GetProviderRequest)(nil),     // 10: peers_touch.model.ai_box.v1.GetProviderRequest
+	(*GetProviderResponse)(nil),    // 11: peers_touch.model.ai_box.v1.GetProviderResponse
+	(*ListProvidersRequest)(nil),   // 12: peers_touch.model.ai_box.v1.ListProvidersRequest
+	(*ListProvidersResponse)(nil),  // 13: peers_touch.model.ai_box.v1.ListProvidersResponse
+	(*TestProviderRequest)(nil),    // 14: peers_touch.model.ai_box.v1.TestProviderRequest
+	(*TestProviderResponse)(nil),   // 15: peers_touch.model.ai_box.v1.TestProviderResponse
+	(*timestamppb.Timestamp)(nil),  // 16: google.protobuf.Timestamp
 }
 var file_domain_ai_box_provider_proto_depIdxs = []int32{
-	4, // 0: peers_touch.model.ai_box.v1.Provider.accessed_at:type_name -> google.protobuf.Timestamp
-	4, // 1: peers_touch.model.ai_box.v1.Provider.created_at:type_name -> google.protobuf.Timestamp
-	4, // 2: peers_touch.model.ai_box.v1.Provider.updated_at:type_name -> google.protobuf.Timestamp
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	16, // 0: peers_touch.model.ai_box.v1.Provider.accessed_at:type_name -> google.protobuf.Timestamp
+	16, // 1: peers_touch.model.ai_box.v1.Provider.created_at:type_name -> google.protobuf.Timestamp
+	16, // 2: peers_touch.model.ai_box.v1.Provider.updated_at:type_name -> google.protobuf.Timestamp
+	1,  // 3: peers_touch.model.ai_box.v1.CreateProviderResponse.provider:type_name -> peers_touch.model.ai_box.v1.Provider
+	1,  // 4: peers_touch.model.ai_box.v1.UpdateProviderResponse.provider:type_name -> peers_touch.model.ai_box.v1.Provider
+	1,  // 5: peers_touch.model.ai_box.v1.GetProviderResponse.provider:type_name -> peers_touch.model.ai_box.v1.Provider
+	1,  // 6: peers_touch.model.ai_box.v1.ListProvidersResponse.providers:type_name -> peers_touch.model.ai_box.v1.Provider
+	7,  // [7:7] is the sub-list for method output_type
+	7,  // [7:7] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_domain_ai_box_provider_proto_init() }
@@ -521,13 +1264,14 @@ func file_domain_ai_box_provider_proto_init() {
 	if File_domain_ai_box_provider_proto != nil {
 		return
 	}
+	file_domain_ai_box_provider_proto_msgTypes[5].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_ai_box_provider_proto_rawDesc), len(file_domain_ai_box_provider_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   3,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
