@@ -2,6 +2,24 @@
 
 Peers-Touch 专注于构建去中心化社交网络与 AI 服务框架。在 PT（Peers-Touch）网络中，用户可创建独立账号、发布内容、与他人互动，而所有数据流转不经过中心化服务器；更能通过低代码工具像搭积木一样构建个性化移动应用，直接部署到自己的设备，并无缝集成自定义 AI 能力。核心价值在于：在不牺牲现代互联网便利性的前提下，让用户彻底掌控自己的社交数据与 AI 交互隐私，拒绝大厂对个人数据的强制分析与滥用。
 
+## Monorepo 领域划分
+
+- `station`：后端领域（Go）
+- `desktop`：桌面端领域（Tauri + TypeScript + CSS）
+- `mobile`：移动端领域根目录，当前 Flutter 主实现位于 `client/mobile`
+- `model`：跨端共享协议与模型
+- `tooling`：统一任务编排与工程工具
+
+## 统一命令入口
+
+```powershell
+make list
+make station-test
+make desktop-build
+make desktop-tauri-dev
+make mobile-lint
+```
+
 ## 为什么需要这个项目
 
 我们生活在一个被大型科技公司主导的世界中，个人信息往往成为强制提交的内容。比如我们的社交平台浏览记录、聊天记录、兴趣数据等，都会被用于 AI 数据分析，进而吸引我们持续投入时间，或者向我们推送广告。
