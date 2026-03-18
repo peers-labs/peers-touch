@@ -1,4 +1,4 @@
-.PHONY: fmt import vet check format style lint test test-docker test-api test-unit clean-test
+.PHONY: fmt import vet check format style lint test test-docker test-api test-unit clean-test list doctor domain-lint domain-test domain-build station-lint station-test station-build desktop-lint desktop-test desktop-build desktop-dev desktop-tauri-dev desktop-tauri-build mobile-lint mobile-test mobile-build
 
 fmt:
 	go fmt ./...
@@ -57,3 +57,60 @@ clean-test:
 	cd qa/station && docker-compose -f docker-compose.test.yml down -v
 	rm -f station/app/coverage.out station/app/coverage.html
 	@echo "✅ 清理完成"
+
+list:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 list
+
+doctor:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 doctor
+
+domain-lint:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 lint station
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 lint desktop
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 lint mobile
+
+domain-test:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 test station
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 test desktop
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 test mobile
+
+domain-build:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 build station
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 build desktop
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 build mobile
+
+station-lint:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 lint station
+
+station-test:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 test station
+
+station-build:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 build station
+
+desktop-lint:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 lint desktop
+
+desktop-test:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 test desktop
+
+desktop-build:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 build desktop
+
+desktop-dev:
+	cd desktop && npm run dev
+
+desktop-tauri-dev:
+	cd desktop && npm run tauri:dev
+
+desktop-tauri-build:
+	cd desktop && npm run tauri:build
+
+mobile-lint:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 lint mobile
+
+mobile-test:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 test mobile
+
+mobile-build:
+	powershell -ExecutionPolicy Bypass -File tooling/scripts/pt.ps1 build mobile

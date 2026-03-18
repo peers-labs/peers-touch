@@ -40,3 +40,6 @@ logs/
 
 dart_libp2pstation/bin/
 station/app/peers-touch-app
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
