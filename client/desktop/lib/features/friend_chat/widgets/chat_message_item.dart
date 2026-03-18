@@ -1,57 +1,149 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
-import 'package:peers_touch_base/widgets/avatar.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_desktop/features/friend_chat/widgets/message_bubble_factory.dart';
 
 class ChatMessageItem extends StatelessWidget {
   const ChatMessageItem({
     super.key,
     required this.message,
     required this.isMe,
-    required this.senderName,
+    this.senderName,
     this.senderAvatarUrl,
     this.showAvatarOnRight = true,
+    this.onReply,
+    this.onCopy,
+    this.onForward,
+    this.onDelete,
+    this.onRecall,
+    this.onQuote,
+    this.onResend,
+    this.replyMessage,
+    this.onReplyTap,
   });
 
   final ChatMessage message;
   final bool isMe;
-  final String senderName;
+  /// Optional sender name for fallback avatar letter.
+  /// If null, Avatar will resolve from AvatarResolver using message.senderId.
+  final String? senderName;
   final String? senderAvatarUrl;
   final bool showAvatarOnRight;
+  
+  // 操作回调
+  final VoidCallback? onReply;
+  final VoidCallback? onCopy;
+  final VoidCallback? onForward;
+  final VoidCallback? onDelete;
+  final VoidCallback? onRecall;
+  final VoidCallback? onQuote;
+  final VoidCallback? onResend;
+  
+  // 回复消息预览
+  final ReplyMessage? replyMessage;
+  final VoidCallback? onReplyTap;
+
+  /// 检查消息是否可撤回（2分钟内）
+  bool get canRecall {
+    if (!isMe) return false;
+    if (!message.hasSentAt()) return false;
+    final sentAt = message.sentAt.toDateTime();
+    final diff = DateTime.now().difference(sentAt);
+    return diff.inMinutes <= 2;
+  }
 
   @override
   Widget build(BuildContext context) {
     final showOnRight = isMe && showAvatarOnRight;
+
+    // 已删除的消息
+    if (message.isDeleted) {
+      return _buildDeletedMessage(context, showOnRight);
+    }
     
+    return MessageContextMenu(
+      onReply: onReply,
+      onCopy: message.type == MessageType.MESSAGE_TYPE_TEXT
+          ? () => _copyToClipboard(message.content)
+          : onCopy,
+      onForward: onForward,
+      onDelete: onDelete,
+      onRecall: onRecall,
+      onQuote: onQuote,
+      canRecall: canRecall,
+      canDelete: isMe,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: UIKit.spaceXs(context)),
+        child: Row(
+          mainAxisAlignment: showOnRight ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!showOnRight) ...[
+              _buildAvatar(context),
+              SizedBox(width: UIKit.spaceSm(context)),
+            ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment:
+                    showOnRight ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  // 如果是回复消息，显示引用块
+                  if (replyMessage != null)
+                    ReplyQuoteBlock(
+                      replyMessage: replyMessage!,
+                      onTap: onReplyTap,
+                      isIncoming: !showOnRight,
+                    ),
+                  _buildMessageContent(context, showOnRight),
+                  SizedBox(height: UIKit.spaceXs(context)),
+                  _buildTimestamp(context, showOnRight),
+                ],
+              ),
+            ),
+            if (showOnRight) ...[
+              SizedBox(width: UIKit.spaceSm(context)),
+              _buildAvatar(context),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeletedMessage(BuildContext context, bool showOnRight) {
+    final theme = Theme.of(context);
     return Padding(
       padding: EdgeInsets.symmetric(vertical: UIKit.spaceXs(context)),
       child: Row(
         mainAxisAlignment: showOnRight ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!showOnRight) ...[
-            _buildAvatar(context),
-            SizedBox(width: UIKit.spaceSm(context)),
-          ],
-          Flexible(
-            child: Column(
-              crossAxisAlignment:
-                  showOnRight ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                _buildMessageContent(context, showOnRight),
-                SizedBox(height: UIKit.spaceXs(context)),
-                _buildTimestamp(context, showOnRight),
-              ],
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: UIKit.spaceMd(context),
+              vertical: UIKit.spaceSm(context),
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(UIKit.radiusMd(context)),
+            ),
+            child: Text(
+              '消息已撤回',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ),
-          if (showOnRight) ...[
-            SizedBox(width: UIKit.spaceSm(context)),
-            _buildAvatar(context),
-          ],
         ],
       ),
     );
+  }
+
+  void _copyToClipboard(String text) {
+    Clipboard.setData(ClipboardData(text: text));
   }
 
   Widget _buildAvatar(BuildContext context) {
@@ -64,14 +156,11 @@ class ChatMessageItem extends StatelessWidget {
   }
 
   Widget _buildMessageContent(BuildContext context, bool showOnRight) {
-    switch (message.type) {
-      case MessageType.MESSAGE_TYPE_IMAGE:
-        return _buildImageMessage(context, showOnRight);
-      case MessageType.MESSAGE_TYPE_FILE:
-        return _buildFileMessage(context, showOnRight);
-      default:
-        return _buildTextMessage(context, showOnRight);
-    }
+    return MessageBubbleFactory.createBubble(
+      message: message,
+      isMe: isMe,
+      onRetry: onResend,
+    );
   }
 
   Widget _buildTextMessage(BuildContext context, bool showOnRight) {
@@ -300,10 +389,32 @@ class ChatMessageItem extends StatelessWidget {
         color = UIKit.textSecondary(context);
       case MessageStatus.MESSAGE_STATUS_DELIVERED:
         icon = Icons.done_all;
+        color = UIKit.textSecondary(context);
+      case MessageStatus.MESSAGE_STATUS_READ:
+        icon = Icons.done_all;
         color = Theme.of(context).colorScheme.primary;
       case MessageStatus.MESSAGE_STATUS_FAILED:
-        icon = Icons.error_outline;
-        color = UIKit.errorColor(context);
+        // Show resend button for failed messages
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 14, color: UIKit.errorColor(context)),
+            if (onResend != null) ...[
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: onResend,
+                child: Text(
+                  '重发',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
       default:
         icon = Icons.check;
         color = UIKit.textSecondary(context);

@@ -36,6 +36,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   get: ^4.7.3
   path_provider: ^2.1.5
+  file_picker: any
 
   collection: any
   dart_udx: any

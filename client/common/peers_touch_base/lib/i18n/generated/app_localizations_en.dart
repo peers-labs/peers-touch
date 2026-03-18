@@ -705,6 +705,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pressCtrlEnterToSend => 'Press Ctrl+Enter to send';
 
   @override
+  String get connectionStatusOnline => 'Online';
+
+  @override
   String get connectionStatusOnlineP2P => 'Online (P2P)';
 
   @override
@@ -715,4 +718,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionStatusConnecting => 'Connecting...';
+
+  @override
+  String get scrollToLatest => 'Back to latest';
 }

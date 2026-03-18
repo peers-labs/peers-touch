@@ -5,74 +5,49 @@ import (
 	"net/http"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store/service"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
-
-type appletURL struct{ name, path string }
-
-func (u appletURL) SubPath() string { return u.path }
-func (u appletURL) Name() string    { return u.name }
 
 type AppletHandler struct {
 	pathBase string
 	service  *service.StoreService
+	handlers *AppletHandlers
 }
 
 func NewAppletHandler(pathBase string, svc *service.StoreService) *AppletHandler {
 	return &AppletHandler{
 		pathBase: pathBase,
 		service:  svc,
+		handlers: NewAppletHandlers(svc),
 	}
 }
 
 func (h *AppletHandler) Handlers() []server.Handler {
-	// Base path is usually /api/v1/applets
 	base := h.pathBase
+	logIDWrapper := serverwrapper.LogID()
 
 	return []server.Handler{
-		server.NewHandler(appletURL{name: "list-applets", path: base}, http.HandlerFunc(h.handleList), server.WithMethod(server.GET)),
-		server.NewHandler(appletURL{name: "get-applet", path: base + "/details"}, http.HandlerFunc(h.handleGetDetails), server.WithMethod(server.GET)),
-		server.NewHandler(appletURL{name: "publish-applet", path: base + "/publish"}, http.HandlerFunc(h.handlePublish), server.WithMethod(server.POST)),
-		// Serve bundle files directly
-		server.NewHandler(appletURL{name: "get-bundle", path: base + "/bundle"}, http.HandlerFunc(h.handleGetBundle), server.WithMethod(server.GET)),
+		server.NewTypedHandler(
+			"list-applets",
+			base,
+			server.GET,
+			h.handlers.HandleListApplets,
+			logIDWrapper,
+		),
+		server.NewTypedHandler(
+			"get-applet",
+			base+"/details",
+			server.GET,
+			h.handlers.HandleGetAppletDetails,
+			logIDWrapper,
+		),
+		server.NewHTTPHandler("publish-applet", base+"/publish", server.POST, server.HTTPHandlerFunc(h.handlePublish), logIDWrapper),
+		server.NewHTTPHandler("get-bundle", base+"/bundle", server.GET, server.HTTPHandlerFunc(h.handleGetBundle), logIDWrapper),
 	}
 }
 
-func (h *AppletHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	// limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	// offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
-	applets, err := h.service.GenerateMockApplets()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(applets)
-}
-
-func (h *AppletHandler) handleGetDetails(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
-	if id == "" {
-		http.Error(w, "missing id", http.StatusBadRequest)
-		return
-	}
-
-	applet, version, err := h.service.GetAppletDetails(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	response := map[string]any{
-		"applet":         applet,
-		"latest_version": version,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
 
 func (h *AppletHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// Simple implementation for demo

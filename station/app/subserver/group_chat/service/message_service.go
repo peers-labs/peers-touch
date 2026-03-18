@@ -14,12 +14,15 @@ type MessageService interface {
 	SendMessage(ctx context.Context, groupULID, senderDID string, msgType int, content, replyToULID string, mentionedDIDs []string, mentionAll bool) (*model.GroupMessage, error)
 	GetMessages(ctx context.Context, groupULID, beforeULID string, limit int) ([]model.GroupMessage, bool, error)
 	GetMessage(ctx context.Context, messageULID string) (*model.GroupMessage, error)
-	RecallMessage(ctx context.Context, messageULID, actorDID string) error
+	RecallMessage(ctx context.Context, messageULID string) error
+	DeleteMessage(ctx context.Context, messageULID string) error
+	SearchMessages(ctx context.Context, groupULID, query string, limit int) ([]model.GroupMessage, bool, error)
 
 	// Offline message management
 	CreateOfflineMessages(ctx context.Context, groupULID, messageULID string, receiverDIDs []string) error
 	GetOfflineMessages(ctx context.Context, receiverDID string, limit int) ([]model.GroupOfflineMessage, error)
 	MarkOfflineMessageDelivered(ctx context.Context, offlineMessageULID string) error
+	MarkGroupOfflineMessagesDelivered(ctx context.Context, receiverDID, groupULID string) (int64, error)
 	GetUndeliveredCount(ctx context.Context, receiverDID, groupULID string) (int64, error)
 }
 
@@ -130,16 +133,52 @@ func (s *messageService) GetMessage(ctx context.Context, messageULID string) (*m
 	return &msg, nil
 }
 
-func (s *messageService) RecallMessage(ctx context.Context, messageULID, actorDID string) error {
+func (s *messageService) RecallMessage(ctx context.Context, messageULID string) error {
 	rds, err := s.getDB(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Only sender can recall their own message
 	return rds.Model(&model.GroupMessage{}).
-		Where("ul_id = ? AND sender_did = ?", messageULID, actorDID).
+		Where("ul_id = ?", messageULID).
 		Update("deleted", true).Error
+}
+
+func (s *messageService) DeleteMessage(ctx context.Context, messageULID string) error {
+	rds, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Hard delete the message
+	return rds.Where("ul_id = ?", messageULID).Delete(&model.GroupMessage{}).Error
+}
+
+func (s *messageService) SearchMessages(ctx context.Context, groupULID, query string, limit int) ([]model.GroupMessage, bool, error) {
+	rds, err := s.getDB(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var messages []model.GroupMessage
+	searchPattern := "%" + query + "%"
+	if err := rds.Where("group_ul_id = ? AND content LIKE ? AND deleted = ?", groupULID, searchPattern, false).
+		Order("sent_at DESC").
+		Limit(limit + 1).
+		Find(&messages).Error; err != nil {
+		return nil, false, err
+	}
+
+	hasMore := len(messages) > limit
+	if hasMore {
+		messages = messages[:limit]
+	}
+
+	return messages, hasMore, nil
 }
 
 // CreateOfflineMessages creates offline message records for receivers
@@ -212,6 +251,28 @@ func (s *messageService) MarkOfflineMessageDelivered(ctx context.Context, offlin
 			"status":       model.OfflineStatusDelivered,
 			"delivered_at": time.Now(),
 		}).Error
+}
+
+// MarkGroupOfflineMessagesDelivered marks all offline messages for a user in a group as delivered
+func (s *messageService) MarkGroupOfflineMessagesDelivered(ctx context.Context, receiverDID, groupULID string) (int64, error) {
+	rds, err := s.getDB(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	result := rds.Model(&model.GroupOfflineMessage{}).
+		Where("receiver_did = ? AND group_ul_id = ? AND status = ? AND expire_at > ?",
+			receiverDID, groupULID, model.OfflineStatusPending, time.Now()).
+		Updates(map[string]interface{}{
+			"status":       model.OfflineStatusDelivered,
+			"delivered_at": time.Now(),
+		})
+
+	if result.Error != nil {
+		return 0, result.Error
+	}
+
+	return result.RowsAffected, nil
 }
 
 // GetUndeliveredCount returns the count of undelivered messages for a receiver in a group

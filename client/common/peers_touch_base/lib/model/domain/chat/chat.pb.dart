@@ -35,6 +35,10 @@ class ChatSession extends $pb.GeneratedMessage {
     $core.bool? isPinned,
     $fixnum.Int64? unreadCount,
     $core.Iterable<$core.MapEntry<$core.String, $core.String>>? metadata,
+    $core.bool? isMuted,
+    MessageType? lastMessageType,
+    $core.String? targetId,
+    $core.String? avatarUrl,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -47,6 +51,10 @@ class ChatSession extends $pb.GeneratedMessage {
     if (isPinned != null) result.isPinned = isPinned;
     if (unreadCount != null) result.unreadCount = unreadCount;
     if (metadata != null) result.metadata.addEntries(metadata);
+    if (isMuted != null) result.isMuted = isMuted;
+    if (lastMessageType != null) result.lastMessageType = lastMessageType;
+    if (targetId != null) result.targetId = targetId;
+    if (avatarUrl != null) result.avatarUrl = avatarUrl;
     return result;
   }
 
@@ -79,6 +87,11 @@ class ChatSession extends $pb.GeneratedMessage {
         keyFieldType: $pb.PbFieldType.OS,
         valueFieldType: $pb.PbFieldType.OS,
         packageName: const $pb.PackageName('peers_touch.model.chat.v1'))
+    ..aOB(10, _omitFieldNames ? '' : 'isMuted')
+    ..aE<MessageType>(11, _omitFieldNames ? '' : 'lastMessageType',
+        enumValues: MessageType.values)
+    ..aOS(12, _omitFieldNames ? '' : 'targetId')
+    ..aOS(13, _omitFieldNames ? '' : 'avatarUrl')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -170,6 +183,42 @@ class ChatSession extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(9)
   $pb.PbMap<$core.String, $core.String> get metadata => $_getMap(8);
+
+  @$pb.TagNumber(10)
+  $core.bool get isMuted => $_getBF(9);
+  @$pb.TagNumber(10)
+  set isMuted($core.bool value) => $_setBool(9, value);
+  @$pb.TagNumber(10)
+  $core.bool hasIsMuted() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearIsMuted() => $_clearField(10);
+
+  @$pb.TagNumber(11)
+  MessageType get lastMessageType => $_getN(10);
+  @$pb.TagNumber(11)
+  set lastMessageType(MessageType value) => $_setField(11, value);
+  @$pb.TagNumber(11)
+  $core.bool hasLastMessageType() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearLastMessageType() => $_clearField(11);
+
+  @$pb.TagNumber(12)
+  $core.String get targetId => $_getSZ(11);
+  @$pb.TagNumber(12)
+  set targetId($core.String value) => $_setString(11, value);
+  @$pb.TagNumber(12)
+  $core.bool hasTargetId() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearTargetId() => $_clearField(12);
+
+  @$pb.TagNumber(13)
+  $core.String get avatarUrl => $_getSZ(12);
+  @$pb.TagNumber(13)
+  set avatarUrl($core.String value) => $_setString(12, value);
+  @$pb.TagNumber(13)
+  $core.bool hasAvatarUrl() => $_has(12);
+  @$pb.TagNumber(13)
+  void clearAvatarUrl() => $_clearField(13);
 }
 
 /// 聊天消息
@@ -185,6 +234,11 @@ class ChatMessage extends $pb.GeneratedMessage {
     $core.String? encryptedContent,
     $core.Iterable<MessageAttachment>? attachments,
     $core.Iterable<$core.MapEntry<$core.String, $core.String>>? metadata,
+    $core.String? replyToId,
+    $core.Iterable<$core.String>? mentionedIds,
+    $core.bool? mentionAll,
+    $core.bool? isDeleted,
+    $0.Timestamp? deletedAt,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -197,6 +251,11 @@ class ChatMessage extends $pb.GeneratedMessage {
     if (encryptedContent != null) result.encryptedContent = encryptedContent;
     if (attachments != null) result.attachments.addAll(attachments);
     if (metadata != null) result.metadata.addEntries(metadata);
+    if (replyToId != null) result.replyToId = replyToId;
+    if (mentionedIds != null) result.mentionedIds.addAll(mentionedIds);
+    if (mentionAll != null) result.mentionAll = mentionAll;
+    if (isDeleted != null) result.isDeleted = isDeleted;
+    if (deletedAt != null) result.deletedAt = deletedAt;
     return result;
   }
 
@@ -232,6 +291,12 @@ class ChatMessage extends $pb.GeneratedMessage {
         keyFieldType: $pb.PbFieldType.OS,
         valueFieldType: $pb.PbFieldType.OS,
         packageName: const $pb.PackageName('peers_touch.model.chat.v1'))
+    ..aOS(11, _omitFieldNames ? '' : 'replyToId')
+    ..pPS(12, _omitFieldNames ? '' : 'mentionedIds')
+    ..aOB(13, _omitFieldNames ? '' : 'mentionAll')
+    ..aOB(14, _omitFieldNames ? '' : 'isDeleted')
+    ..aOM<$0.Timestamp>(15, _omitFieldNames ? '' : 'deletedAt',
+        subBuilder: $0.Timestamp.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -332,6 +397,47 @@ class ChatMessage extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(10)
   $pb.PbMap<$core.String, $core.String> get metadata => $_getMap(9);
+
+  @$pb.TagNumber(11)
+  $core.String get replyToId => $_getSZ(10);
+  @$pb.TagNumber(11)
+  set replyToId($core.String value) => $_setString(10, value);
+  @$pb.TagNumber(11)
+  $core.bool hasReplyToId() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearReplyToId() => $_clearField(11);
+
+  @$pb.TagNumber(12)
+  $pb.PbList<$core.String> get mentionedIds => $_getList(11);
+
+  @$pb.TagNumber(13)
+  $core.bool get mentionAll => $_getBF(12);
+  @$pb.TagNumber(13)
+  set mentionAll($core.bool value) => $_setBool(12, value);
+  @$pb.TagNumber(13)
+  $core.bool hasMentionAll() => $_has(12);
+  @$pb.TagNumber(13)
+  void clearMentionAll() => $_clearField(13);
+
+  @$pb.TagNumber(14)
+  $core.bool get isDeleted => $_getBF(13);
+  @$pb.TagNumber(14)
+  set isDeleted($core.bool value) => $_setBool(13, value);
+  @$pb.TagNumber(14)
+  $core.bool hasIsDeleted() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearIsDeleted() => $_clearField(14);
+
+  @$pb.TagNumber(15)
+  $0.Timestamp get deletedAt => $_getN(14);
+  @$pb.TagNumber(15)
+  set deletedAt($0.Timestamp value) => $_setField(15, value);
+  @$pb.TagNumber(15)
+  $core.bool hasDeletedAt() => $_has(14);
+  @$pb.TagNumber(15)
+  void clearDeletedAt() => $_clearField(15);
+  @$pb.TagNumber(15)
+  $0.Timestamp ensureDeletedAt() => $_ensure(14);
 }
 
 /// 消息附件

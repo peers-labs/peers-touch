@@ -37,7 +37,7 @@ class GlobalUsersStorage {
     String? avatarUrl,
     String? serverUrl,
   }) async {
-    await _db.into(_db.globalUserItems).insertOnConflictUpdate(
+    await _withRetry(() => _db.into(_db.globalUserItems).insertOnConflictUpdate(
           GlobalUserItemsCompanion.insert(
             handle: handle,
             email: Value(email),
@@ -45,13 +45,13 @@ class GlobalUsersStorage {
             serverUrl: Value(serverUrl),
             lastLoginAt: DateTime.now(),
           ),
-        );
+        ));
   }
 
   Future<List<GlobalUserItem>> getAllUsers() async {
-    return (_db.select(_db.globalUserItems)
+    return _withRetry(() => (_db.select(_db.globalUserItems)
           ..orderBy([(t) => OrderingTerm.desc(t.lastLoginAt)]))
-        .get();
+        .get());
   }
 
   Future<GlobalUserItem?> getLastLoginUser() async {
@@ -60,18 +60,35 @@ class GlobalUsersStorage {
   }
 
   Future<GlobalUserItem?> getUser(String handle) async {
-    return (_db.select(_db.globalUserItems)
+    return _withRetry(() => (_db.select(_db.globalUserItems)
           ..where((t) => t.handle.equals(handle)))
-        .getSingleOrNull();
+        .getSingleOrNull());
   }
 
   Future<void> deleteUser(String handle) async {
-    await (_db.delete(_db.globalUserItems)
+    await _withRetry(() => (_db.delete(_db.globalUserItems)
           ..where((t) => t.handle.equals(handle)))
-        .go();
+        .go());
   }
 
   Future<void> clearAll() async {
-    await _db.delete(_db.globalUserItems).go();
+    await _withRetry(() => _db.delete(_db.globalUserItems).go());
+  }
+  
+  /// Execute with retry on database lock
+  Future<T> _withRetry<T>(Future<T> Function() operation, {int maxRetries = 3}) async {
+    int attempts = 0;
+    while (true) {
+      try {
+        return await operation();
+      } catch (e) {
+        attempts++;
+        if (attempts >= maxRetries || !e.toString().contains('database is locked')) {
+          rethrow;
+        }
+        // Wait with exponential backoff
+        await Future.delayed(Duration(milliseconds: 100 * attempts));
+      }
+    }
   }
 }

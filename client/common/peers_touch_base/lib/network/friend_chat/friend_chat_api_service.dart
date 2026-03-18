@@ -1,3 +1,4 @@
+import 'package:peers_touch_base/model/domain/chat/friend_chat.pb.dart' as fc;
 import 'package:peers_touch_base/network/dio/http_service.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 
@@ -185,32 +186,41 @@ class FriendChatApiService {
     return GetSessionsResponse.fromJson(response.data ?? {});
   }
 
-  Future<SendMessageResponse> sendMessage({
+  Future<fc.SendMessageResponse> sendMessage({
     required String sessionUlid,
     required String receiverDid,
     required String content,
-    int type = 1,
+    fc.FriendMessageType type = fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT,
     String? replyToUlid,
   }) async {
-    final response = await _httpService.postResponse<Map<String, dynamic>>(
-      '/friend-chat/message/send',
-      data: {
-        'session_ulid': sessionUlid,
-        'receiver_did': receiverDid,
-        'type': type,
-        'content': content,
-        if (replyToUlid != null) 'reply_to_ulid': replyToUlid,
-      },
+    final request = fc.SendMessageRequest(
+      sessionUlid: sessionUlid,
+      receiverDid: receiverDid,
+      type: type,
+      content: content,
+      replyToUlid: replyToUlid ?? '',
     );
-    return SendMessageResponse.fromJson(response.data ?? {});
+
+    final proto = await _httpService.post<fc.SendMessageResponse>(
+      '/friend-chat/message/send',
+      data: request,
+      fromJson: fc.SendMessageResponse.fromBuffer,
+    );
+    
+    return proto;
   }
 
-  Future<SyncMessagesResponse> syncMessages(List<Map<String, dynamic>> messages) async {
-    final response = await _httpService.postResponse<Map<String, dynamic>>(
+  /// Sync messages to server (Proto). Request/response use application/protobuf.
+  Future<SyncMessagesResponse> syncMessages(fc.SyncMessagesRequest request) async {
+    final proto = await _httpService.post<fc.SyncMessagesResponse>(
       '/friend-chat/message/sync',
-      data: {'messages': messages},
+      data: request,
+      fromJson: fc.SyncMessagesResponse.fromBuffer,
     );
-    return SyncMessagesResponse.fromJson(response.data ?? {});
+    return SyncMessagesResponse(
+      synced: proto.synced,
+      failed: List<String>.from(proto.failed),
+    );
   }
 
   Future<GetMessagesResponse> getMessages(
@@ -229,7 +239,7 @@ class FriendChatApiService {
     return GetMessagesResponse.fromJson(response.data ?? {});
   }
 
-  Future<void> ackMessages(List<String> ulids, {int status = 2}) async {
+  Future<void> ackMessages(List<String> ulids, {int status = 4}) async {
     await _httpService.postResponse(
       '/friend-chat/message/ack',
       data: {

@@ -51,6 +51,12 @@ class MessageType extends $pb.ProtobufEnum {
       MessageType._(4, _omitEnumNames ? '' : 'MESSAGE_TYPE_LOCATION');
   static const MessageType MESSAGE_TYPE_SYSTEM =
       MessageType._(5, _omitEnumNames ? '' : 'MESSAGE_TYPE_SYSTEM');
+  static const MessageType MESSAGE_TYPE_STICKER =
+      MessageType._(6, _omitEnumNames ? '' : 'MESSAGE_TYPE_STICKER');
+  static const MessageType MESSAGE_TYPE_AUDIO =
+      MessageType._(7, _omitEnumNames ? '' : 'MESSAGE_TYPE_AUDIO');
+  static const MessageType MESSAGE_TYPE_VIDEO =
+      MessageType._(8, _omitEnumNames ? '' : 'MESSAGE_TYPE_VIDEO');
 
   static const $core.List<MessageType> values = <MessageType>[
     MESSAGE_TYPE_UNSPECIFIED,
@@ -59,10 +65,13 @@ class MessageType extends $pb.ProtobufEnum {
     MESSAGE_TYPE_FILE,
     MESSAGE_TYPE_LOCATION,
     MESSAGE_TYPE_SYSTEM,
+    MESSAGE_TYPE_STICKER,
+    MESSAGE_TYPE_AUDIO,
+    MESSAGE_TYPE_VIDEO,
   ];
 
   static final $core.List<MessageType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 5);
+      $pb.ProtobufEnum.$_initByValueList(values, 8);
   static MessageType? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
@@ -79,19 +88,22 @@ class MessageStatus extends $pb.ProtobufEnum {
       MessageStatus._(2, _omitEnumNames ? '' : 'MESSAGE_STATUS_SENT');
   static const MessageStatus MESSAGE_STATUS_DELIVERED =
       MessageStatus._(3, _omitEnumNames ? '' : 'MESSAGE_STATUS_DELIVERED');
+  static const MessageStatus MESSAGE_STATUS_READ =
+      MessageStatus._(4, _omitEnumNames ? '' : 'MESSAGE_STATUS_READ');
   static const MessageStatus MESSAGE_STATUS_FAILED =
-      MessageStatus._(4, _omitEnumNames ? '' : 'MESSAGE_STATUS_FAILED');
+      MessageStatus._(5, _omitEnumNames ? '' : 'MESSAGE_STATUS_FAILED');
 
   static const $core.List<MessageStatus> values = <MessageStatus>[
     MESSAGE_STATUS_UNSPECIFIED,
     MESSAGE_STATUS_SENDING,
     MESSAGE_STATUS_SENT,
     MESSAGE_STATUS_DELIVERED,
+    MESSAGE_STATUS_READ,
     MESSAGE_STATUS_FAILED,
   ];
 
   static final $core.List<MessageStatus?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 4);
+      $pb.ProtobufEnum.$_initByValueList(values, 5);
   static MessageStatus? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
