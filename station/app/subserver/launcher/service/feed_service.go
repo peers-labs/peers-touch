@@ -8,81 +8,81 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
-func GetPersonalizedFeed(ctx context.Context, userID string, limit int) (*model.FeedResponse, error) {
+func GetPersonalizedFeed(ctx context.Context, userID string, limit int) (*model.GetFeedResponse, error) {
 	logger.Infof(ctx, "fetching personalized feed for user: %s, limit: %d", userID, limit)
 
-	items := []model.FeedItem{
+	items := []*model.FeedItem{
 		{
-			ID:        "chat_001",
-			Type:      model.FeedItemTypeRecentActivity,
+			Id:        "chat_001",
+			Type:      "recentActivity",
 			Title:     "Recent Chat with Alice",
 			Subtitle:  "Hey, are you free for a call later?",
-			Timestamp: time.Now().Add(-10 * time.Minute),
-			Source:    model.ContentSourceStationFeed,
+			Timestamp: time.Now().Add(-10 * time.Minute).Unix(),
+			Source:    "stationFeed",
 		},
 		{
-			ID:        "chat_002",
-			Type:      model.FeedItemTypeRecentActivity,
+			Id:        "chat_002",
+			Type:      "recentActivity",
 			Title:     "Team Discussion",
 			Subtitle:  "Bob: The new feature is ready for review",
-			Timestamp: time.Now().Add(-30 * time.Minute),
-			Source:    model.ContentSourceStationFeed,
+			Timestamp: time.Now().Add(-30 * time.Minute).Unix(),
+			Source:    "stationFeed",
 		},
 		{
-			ID:        "activity_001",
-			Type:      model.FeedItemTypeRecentActivity,
+			Id:        "activity_001",
+			Type:      "recentActivity",
 			Title:     "Alice liked your post",
 			Subtitle:  "Your post about decentralized social networks",
-			Timestamp: time.Now().Add(-1 * time.Hour),
-			Source:    model.ContentSourceStationFeed,
+			Timestamp: time.Now().Add(-1 * time.Hour).Unix(),
+			Source:    "stationFeed",
 		},
 		{
-			ID:        "activity_002",
-			Type:      model.FeedItemTypeRecentActivity,
+			Id:        "activity_002",
+			Type:      "recentActivity",
 			Title:     "Bob shared your article",
 			Subtitle:  "Getting started with Peers-Touch",
-			Timestamp: time.Now().Add(-2 * time.Hour),
-			Source:    model.ContentSourceStationFeed,
+			Timestamp: time.Now().Add(-2 * time.Hour).Unix(),
+			Source:    "stationFeed",
 		},
 		{
-			ID:        "activity_003",
-			Type:      model.FeedItemTypeRecentActivity,
+			Id:        "activity_003",
+			Type:      "recentActivity",
 			Title:     "New follower: Charlie",
 			Subtitle:  "Charlie started following you",
-			Timestamp: time.Now().Add(-3 * time.Hour),
-			Source:    model.ContentSourceStationFeed,
+			Timestamp: time.Now().Add(-3 * time.Hour).Unix(),
+			Source:    "stationFeed",
 		},
 		{
-			ID:        "app_001",
-			Type:      model.FeedItemTypeRecommendation,
+			Id:        "app_001",
+			Type:      "recommendation",
 			Title:     "Weather Widget",
 			Subtitle:  "Check weather in your area - 4.5★",
-			Timestamp: time.Now().Add(-4 * time.Hour),
-			Source:    model.ContentSourceStationFeed,
+			Timestamp: time.Now().Add(-4 * time.Hour).Unix(),
+			Source:    "stationFeed",
 		},
 		{
-			ID:        "app_002",
-			Type:      model.FeedItemTypeRecommendation,
+			Id:        "app_002",
+			Type:      "recommendation",
 			Title:     "Task Manager",
 			Subtitle:  "Organize your daily tasks - 4.8★",
-			Timestamp: time.Now().Add(-5 * time.Hour),
-			Source:    model.ContentSourceStationFeed,
+			Timestamp: time.Now().Add(-5 * time.Hour).Unix(),
+			Source:    "stationFeed",
 		},
 		{
-			ID:        "plugin_001",
-			Type:      model.FeedItemTypePluginContent,
+			Id:        "plugin_001",
+			Type:      "pluginContent",
 			Title:     "AI Programming Assistant",
 			Subtitle:  "New features for developers",
-			Timestamp: time.Now().Add(-6 * time.Hour),
-			Source:    model.ContentSourceStationFeed,
+			Timestamp: time.Now().Add(-6 * time.Hour).Unix(),
+			Source:    "stationFeed",
 		},
 		{
-			ID:        "recommend_001",
-			Type:      model.FeedItemTypeRecommendation,
+			Id:        "recommend_001",
+			Type:      "recommendation",
 			Title:     "Welcome to Peers-Touch",
 			Subtitle:  "Get started with your decentralized social network",
-			Timestamp: time.Now().Add(-24 * time.Hour),
-			Source:    model.ContentSourceStationFeed,
+			Timestamp: time.Now().Add(-24 * time.Hour).Unix(),
+			Source:    "stationFeed",
 		},
 	}
 
@@ -90,7 +90,7 @@ func GetPersonalizedFeed(ctx context.Context, userID string, limit int) (*model.
 		items = items[:limit]
 	}
 
-	return &model.FeedResponse{
+	return &model.GetFeedResponse{
 		Items: items,
 	}, nil
 }

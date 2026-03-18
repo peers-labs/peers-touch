@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
-import 'package:peers_touch_base/storage/file_storage_manager.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
 import 'package:peers_touch_desktop/features/settings/model/setting_item.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Setting registry interface
 abstract class SettingRegistry {

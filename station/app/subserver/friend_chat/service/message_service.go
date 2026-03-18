@@ -176,7 +176,7 @@ func (s *messageService) MarkAsDelivered(ctx context.Context, msgULIDs []string)
 	return db.Model(&fcmodel.FriendChatMessage{}).
 		Where("ulid IN ? AND delivered_at IS NULL", msgULIDs).
 		Updates(map[string]interface{}{
-			"status":       2,
+			"status":       3,
 			"delivered_at": now,
 			"updated_at":   now,
 		}).Error
@@ -196,7 +196,7 @@ func (s *messageService) MarkAsRead(ctx context.Context, msgULIDs []string) erro
 	return db.Model(&fcmodel.FriendChatMessage{}).
 		Where("ulid IN ? AND read_at IS NULL", msgULIDs).
 		Updates(map[string]interface{}{
-			"status":     3,
+			"status":     4,
 			"read_at":    now,
 			"updated_at": now,
 		}).Error

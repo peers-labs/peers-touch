@@ -1,10 +1,70 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:peers_touch_base/logger/logging_service.dart';
 import 'package:peers_touch_base/network/ice/ice_service.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 
 typedef PeerConnectionFactory = Future<RTCPeerConnection> Function(Map<String, dynamic> configuration, [Map<String, dynamic> constraints]);
+
+/// File transfer progress information
+class FileTransferProgress {
+  final String fileId;
+  final String fileName;
+  final int totalBytes;
+  final int transferredBytes;
+  final bool isComplete;
+  final bool isReceiving;
+  final String? error;
+  
+  FileTransferProgress({
+    required this.fileId,
+    required this.fileName,
+    required this.totalBytes,
+    required this.transferredBytes,
+    required this.isComplete,
+    required this.isReceiving,
+    this.error,
+  });
+  
+  double get progress => totalBytes > 0 ? transferredBytes / totalBytes : 0;
+}
+
+/// Completed file transfer result
+class FileTransferResult {
+  final String fileId;
+  final String fileName;
+  final String mimeType;
+  final Uint8List data;
+  
+  FileTransferResult({
+    required this.fileId,
+    required this.fileName,
+    required this.mimeType,
+    required this.data,
+  });
+}
+
+/// Internal class for tracking incoming file transfers
+class _IncomingFileTransfer {
+  final String fileId;
+  final String fileName;
+  final String mimeType;
+  final int totalBytes;
+  final int totalChunks;
+  final List<Uint8List> chunks = [];
+  int receivedChunks = 0;
+  int receivedBytes = 0;
+  
+  _IncomingFileTransfer({
+    required this.fileId,
+    required this.fileName,
+    required this.mimeType,
+    required this.totalBytes,
+    required this.totalChunks,
+  });
+}
 
 class RTCClient {
 
@@ -104,13 +164,84 @@ class RTCClient {
   void _setupDataChannel() {
     if (_dc == null) return;
     _dc!.onMessage = (msg) {
-       _msgController.add(msg.text); 
-       LoggingService.debug('[RTCClient][$peerId] recv=${msg.text}');
+      if (msg.isBinary) {
+        // Binary message - could be file chunk
+        _handleBinaryMessage(msg.binary);
+      } else {
+        // Text message - check if it's a control message or plain text
+        _handleTextMessage(msg.text);
+      }
     };
     _dc!.onDataChannelState = (state) {
       _dataChannelStateController.add(state);
       LoggingService.debug('[RTCClient][$peerId] dataChannelState=$state');
     };
+  }
+  
+  void _handleTextMessage(String text) {
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is Map<String, dynamic> && decoded.containsKey('type')) {
+        // Control message (file transfer, etc.)
+        _handleControlMessage(decoded);
+      } else {
+        // Regular chat message
+        _msgController.add(text);
+        LoggingService.debug('[RTCClient][$peerId] recv=$text');
+      }
+    } catch (_) {
+      // Plain text message
+      _msgController.add(text);
+      LoggingService.debug('[RTCClient][$peerId] recv=$text');
+    }
+  }
+  
+  void _handleControlMessage(Map<String, dynamic> msg) {
+    final type = msg['type'] as String?;
+    switch (type) {
+      case 'file_init':
+        _handleFileInit(msg);
+        break;
+      case 'file_chunk':
+        _handleFileChunk(msg);
+        break;
+      case 'file_complete':
+        _handleFileComplete(msg);
+        break;
+      case 'file_ack':
+        _handleFileAck(msg);
+        break;
+      default:
+        LoggingService.debug('[RTCClient][$peerId] Unknown control message: $type');
+    }
+  }
+  
+  void _handleBinaryMessage(Uint8List data) {
+    // Binary data is a file chunk with fileId prefix
+    if (data.length < 36) return; // UUID is 36 chars
+    
+    try {
+      final fileId = String.fromCharCodes(data.sublist(0, 36));
+      final chunkData = data.sublist(36);
+      
+      final transfer = _incomingTransfers[fileId];
+      if (transfer != null) {
+        transfer.chunks.add(chunkData);
+        transfer.receivedChunks++;
+        _fileProgressController.add(FileTransferProgress(
+          fileId: fileId,
+          fileName: transfer.fileName,
+          totalBytes: transfer.totalBytes,
+          transferredBytes: transfer.receivedBytes + chunkData.length,
+          isComplete: false,
+          isReceiving: true,
+        ));
+        transfer.receivedBytes += chunkData.length;
+        LoggingService.debug('[RTCClient][$peerId] Received chunk ${transfer.receivedChunks}/${transfer.totalChunks} for $fileId');
+      }
+    } catch (e) {
+      LoggingService.error('[RTCClient][$peerId] Error handling binary message: $e');
+    }
   }
 
   Future<void> createChannel() async {
@@ -126,11 +257,205 @@ class RTCClient {
   Stream<RTCPeerConnectionState> get onConnectionState => _connectionStateController.stream;
   final _dataChannelStateController = StreamController<RTCDataChannelState>.broadcast();
   Stream<RTCDataChannelState> get onDataChannelState => _dataChannelStateController.stream;
+  
+  // File transfer streams
+  final _fileProgressController = StreamController<FileTransferProgress>.broadcast();
+  Stream<FileTransferProgress> get onFileProgress => _fileProgressController.stream;
+  final _fileReceivedController = StreamController<FileTransferResult>.broadcast();
+  Stream<FileTransferResult> get onFileReceived => _fileReceivedController.stream;
+  
+  // Track incoming file transfers
+  final Map<String, _IncomingFileTransfer> _incomingTransfers = {};
+  
+  // Chunk size for file transfer (64KB - safe for SCTP)
+  static const int _chunkSize = 64 * 1024;
 
   Future<void> send(String text) async {
     if (_dc != null) {
       await _dc!.send(RTCDataChannelMessage(text));
     }
+  }
+  
+  /// Send binary data
+  Future<void> sendBinary(Uint8List data) async {
+    if (_dc != null) {
+      await _dc!.send(RTCDataChannelMessage.fromBinary(data));
+    }
+  }
+  
+  /// Send a file over P2P DataChannel
+  /// Returns the fileId for tracking
+  Future<String> sendFile({
+    required String fileName,
+    required String mimeType,
+    required Uint8List data,
+  }) async {
+    if (_dc == null || _dc!.state != RTCDataChannelState.RTCDataChannelOpen) {
+      throw Exception('DataChannel not open');
+    }
+    
+    // Generate unique file ID
+    final fileId = _generateFileId();
+    final totalChunks = (data.length / _chunkSize).ceil();
+    
+    LoggingService.info('[RTCClient][$peerId] Sending file: $fileName (${data.length} bytes, $totalChunks chunks)');
+    
+    // Send file init message
+    final initMsg = jsonEncode({
+      'type': 'file_init',
+      'fileId': fileId,
+      'fileName': fileName,
+      'mimeType': mimeType,
+      'totalBytes': data.length,
+      'totalChunks': totalChunks,
+    });
+    await send(initMsg);
+    
+    // Send chunks
+    for (var i = 0; i < totalChunks; i++) {
+      final start = i * _chunkSize;
+      final end = (start + _chunkSize > data.length) ? data.length : start + _chunkSize;
+      final chunkData = data.sublist(start, end);
+      
+      // Prepend fileId to chunk data
+      final fileIdBytes = Uint8List.fromList(fileId.codeUnits);
+      final chunk = Uint8List(36 + chunkData.length);
+      chunk.setRange(0, 36, fileIdBytes);
+      chunk.setRange(36, chunk.length, chunkData);
+      
+      await sendBinary(chunk);
+      
+      // Report progress
+      _fileProgressController.add(FileTransferProgress(
+        fileId: fileId,
+        fileName: fileName,
+        totalBytes: data.length,
+        transferredBytes: end,
+        isComplete: false,
+        isReceiving: false,
+      ));
+      
+      // Small delay to avoid overwhelming the channel
+      if (i % 10 == 0) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+    }
+    
+    // Send complete message
+    final completeMsg = jsonEncode({
+      'type': 'file_complete',
+      'fileId': fileId,
+    });
+    await send(completeMsg);
+    
+    // Report complete
+    _fileProgressController.add(FileTransferProgress(
+      fileId: fileId,
+      fileName: fileName,
+      totalBytes: data.length,
+      transferredBytes: data.length,
+      isComplete: true,
+      isReceiving: false,
+    ));
+    
+    LoggingService.info('[RTCClient][$peerId] File sent: $fileName');
+    return fileId;
+  }
+  
+  String _generateFileId() {
+    // Simple UUID-like ID
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final random = (now * 1000).toRadixString(36);
+    return random.padRight(36, '0').substring(0, 36);
+  }
+  
+  void _handleFileInit(Map<String, dynamic> msg) {
+    final fileId = msg['fileId'] as String;
+    final fileName = msg['fileName'] as String;
+    final mimeType = msg['mimeType'] as String;
+    final totalBytes = msg['totalBytes'] as int;
+    final totalChunks = msg['totalChunks'] as int;
+    
+    LoggingService.info('[RTCClient][$peerId] Receiving file: $fileName ($totalBytes bytes, $totalChunks chunks)');
+    
+    _incomingTransfers[fileId] = _IncomingFileTransfer(
+      fileId: fileId,
+      fileName: fileName,
+      mimeType: mimeType,
+      totalBytes: totalBytes,
+      totalChunks: totalChunks,
+    );
+    
+    // Report progress start
+    _fileProgressController.add(FileTransferProgress(
+      fileId: fileId,
+      fileName: fileName,
+      totalBytes: totalBytes,
+      transferredBytes: 0,
+      isComplete: false,
+      isReceiving: true,
+    ));
+  }
+  
+  void _handleFileChunk(Map<String, dynamic> msg) {
+    // Chunks are handled in _handleBinaryMessage
+  }
+  
+  void _handleFileComplete(Map<String, dynamic> msg) {
+    final fileId = msg['fileId'] as String;
+    final transfer = _incomingTransfers[fileId];
+    
+    if (transfer == null) {
+      LoggingService.warning('[RTCClient][$peerId] Unknown file complete: $fileId');
+      return;
+    }
+    
+    // Combine chunks into complete file
+    final totalLength = transfer.chunks.fold<int>(0, (sum, chunk) => sum + chunk.length);
+    final data = Uint8List(totalLength);
+    var offset = 0;
+    for (final chunk in transfer.chunks) {
+      data.setRange(offset, offset + chunk.length, chunk);
+      offset += chunk.length;
+    }
+    
+    // Emit file received event
+    _fileReceivedController.add(FileTransferResult(
+      fileId: fileId,
+      fileName: transfer.fileName,
+      mimeType: transfer.mimeType,
+      data: data,
+    ));
+    
+    // Report complete
+    _fileProgressController.add(FileTransferProgress(
+      fileId: fileId,
+      fileName: transfer.fileName,
+      totalBytes: transfer.totalBytes,
+      transferredBytes: transfer.totalBytes,
+      isComplete: true,
+      isReceiving: true,
+    ));
+    
+    // Send ACK
+    final ackMsg = jsonEncode({
+      'type': 'file_ack',
+      'fileId': fileId,
+      'success': true,
+    });
+    send(ackMsg);
+    
+    // Cleanup
+    _incomingTransfers.remove(fileId);
+    
+    LoggingService.info('[RTCClient][$peerId] File received: ${transfer.fileName}');
+  }
+  
+  void _handleFileAck(Map<String, dynamic> msg) {
+    final fileId = msg['fileId'] as String;
+    final success = msg['success'] as bool? ?? false;
+    
+    LoggingService.info('[RTCClient][$peerId] File ACK received: $fileId, success=$success');
   }
   Future<RTCPeerConnectionState?> getConnectionState() async {
     return _pc?.getConnectionState();

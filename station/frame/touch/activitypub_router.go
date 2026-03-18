@@ -54,6 +54,9 @@ const (
 	RouterURLActorList RouterPath = "/list"
 	// RouterURLActorSearch Actor search: search local actors by query (fuzzy match)
 	RouterURLActorSearch RouterPath = "/search"
+	// RouterURLActorBasicInfo Public basic info by actor ID (no auth required)
+	// Returns: displayName, avatarUrl, coverUrl (non-sensitive public info)
+	RouterURLActorBasicInfo RouterPath = "/actors/:id/basic-info"
 
 	ActivityRouterURLCreate RouterPath = "/:actor/activity"
 )

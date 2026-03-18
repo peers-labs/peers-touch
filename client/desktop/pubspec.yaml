@@ -58,6 +58,10 @@ dependencies:
   extended_image: ^10.0.1
   path_provider: ^2.1.5
   image: ^4.3.0
+  flutter_image_compress: ^2.0.0
+  mime: ^1.0.0
+  permission_handler: ^11.0.0
+  emoji_picker_flutter: ^2.0.0
   webview_flutter: ^4.10.0
   webview_flutter_wkwebview: ^3.16.2
 dev_dependencies:
