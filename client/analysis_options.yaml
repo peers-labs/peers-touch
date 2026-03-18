@@ -17,6 +17,8 @@ analyzer:
     - '**/example/**'
   errors:
     invalid_annotation_target: ignore
+    unused_import: error
+    unused_local_variable: warning
 
 linter:
   rules:

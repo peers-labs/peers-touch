@@ -89,21 +89,29 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 		s.Options().Apply(o)
 	}
 
-	// Register handlers from stored httpHandlers
-	for _, h := range s.httpHandlers {
+	// Collect all handlers: explicitly added + from Options (subservers)
+	allHandlers := make([]server.Handler, 0, len(s.httpHandlers)+len(s.Options().Handlers))
+	allHandlers = append(allHandlers, s.httpHandlers...)
+	allHandlers = append(allHandlers, s.Options().Handlers...)
+
+	// Register all HTTP handlers
+	for _, h := range allHandlers {
 		handler := h.Handler()
 		for _, wrapper := range h.Wrappers() {
 			handler = wrapper(handler)
 		}
 
-		s.httpRouter.HandleFunc(h.Path(), func(w http.ResponseWriter, r *http.Request) {
-			if h.Method() != server.ANY && string(h.Method()) != r.Method {
+		// Capture handler in closure to avoid loop variable issue
+		handlerCopy := h
+		wrappedHandler := handler
+		s.httpRouter.HandleFunc(handlerCopy.Path(), func(w http.ResponseWriter, r *http.Request) {
+			if handlerCopy.Method() != server.ANY && string(handlerCopy.Method()) != r.Method {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
 			req := &request{r: r}
 			resp := &response{w: w}
-			_ = handler(r.Context(), req, resp)
+			_ = wrappedHandler(r.Context(), req, resp)
 		})
 	}
 

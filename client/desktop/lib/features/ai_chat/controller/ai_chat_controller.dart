@@ -55,6 +55,10 @@ class AIChatController extends GetxController {
   late final TextEditingController inputController = TextEditingController()..addListener(() {
     inputText.value = inputController.text;
   });
+  // 消息列表滚动控制器
+  final ScrollController messageScrollController = ScrollController();
+  // 是否显示 token 计数
+  final showTokens = false.obs;
   final Map<String, List<ChatMessage>> _sessionStore = {}; // 每会话的消息存储
   // 会话到已保存主题的映射
   Map<String, String> _sessionTopicMap = {};
@@ -81,6 +85,7 @@ class AIChatController extends GetxController {
 
     _initModels();
     _loadPersistedState();
+    _loadShowTokensSetting();
   }
 
   void _updateServiceFromProvider(Provider? provider) {
@@ -102,7 +107,33 @@ class AIChatController extends GetxController {
   @override
   void onClose() {
     inputController.dispose();
+    messageScrollController.dispose();
     super.onClose();
+  }
+  
+  /// Scroll message list to bottom
+  void scrollToBottom({bool animated = true}) {
+    if (!messageScrollController.hasClients) return;
+    final max = messageScrollController.position.maxScrollExtent;
+    if (animated) {
+      messageScrollController.animateTo(
+        max,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } else {
+      messageScrollController.jumpTo(max);
+    }
+  }
+  
+  /// Load showTokens setting from storage
+  Future<void> _loadShowTokensSetting() async {
+    try {
+      final show = await storage.get<bool>(AIConstants.showTokens);
+      if (show != null) {
+        showTokens.value = show;
+      }
+    } catch (_) {}
   }
 
   void clearError() => error.value = null;

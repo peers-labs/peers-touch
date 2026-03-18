@@ -96,11 +96,12 @@ enum OfflineMessageStatus {
 }
 
 message SendMessageRequest {
-  string receiver_did = 1;
-  FriendMessageType type = 2;
-  string content = 3;
-  repeated FriendMessageAttachment attachments = 4;
-  string reply_to_ulid = 5;
+  string session_ulid = 1;
+  string receiver_did = 2;
+  FriendMessageType type = 3;
+  string content = 4;
+  repeated FriendMessageAttachment attachments = 5;
+  string reply_to_ulid = 6;
 }
 
 message SendMessageResponse {
@@ -117,6 +118,15 @@ message GetMessagesRequest {
 message GetMessagesResponse {
   repeated FriendChatMessage messages = 1;
   bool has_more = 2;
+}
+
+message CreateSessionRequest {
+  string participant_did = 1;
+}
+
+message CreateSessionResponse {
+  FriendChatSession session = 1;
+  bool created = 2;
 }
 
 message GetSessionsRequest {
@@ -146,4 +156,70 @@ message RelayMessageResponse {
   string status = 1;
   google.protobuf.Timestamp delivered_at = 2;
   string forwarded_to = 3;
+}
+
+// SyncMessages: batch sync pending messages to server (POST /friend-chat/message/sync).
+message SyncMessageItem {
+  string ulid = 1;
+  string session_ulid = 2;
+  string receiver_did = 3;
+  FriendMessageType type = 4;
+  string content = 5;
+  google.protobuf.Timestamp sent_at = 6;
+}
+
+message SyncMessagesRequest {
+  repeated SyncMessageItem messages = 1;
+}
+
+message SyncMessagesResponse {
+  int32 synced = 1;
+  repeated string failed = 2;
+}
+
+// MessageAck: acknowledge message delivery/read status
+message MessageAckRequest {
+  repeated string ulids = 1;
+  int32 status = 2;
+}
+
+message MessageAckResponse {
+  // Empty success response
+}
+
+// Online/Offline status
+message OnlineRequest {
+  string did = 1;
+}
+
+message OnlineResponse {
+  string status = 1;
+}
+
+// Pending offline messages
+message GetPendingRequest {
+  int32 limit = 1;
+}
+
+message PendingMessageInfo {
+  string ulid = 1;
+  string sender_did = 2;
+  string session_ulid = 3;
+  bytes encrypted_payload = 4;
+  int64 created_at = 5;
+}
+
+message GetPendingResponse {
+  repeated PendingMessageInfo messages = 1;
+}
+
+// Stats
+message GetStatsRequest {
+  // Empty request
+}
+
+message GetStatsResponse {
+  int32 online_peers = 1;
+  int64 pending_messages = 2;
+  string status = 3;
 }

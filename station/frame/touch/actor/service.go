@@ -70,6 +70,52 @@ func GetActorByEmail(ctx context.Context, email string) (*db.Actor, error) {
 	return &actor, nil
 }
 
+// GetActorByPTID retrieves an actor by their PTID (Peers-Touch ID / DID)
+func GetActorByPTID(ctx context.Context, ptid string) (*db.Actor, error) {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get database connection: %v", err)
+		return nil, fmt.Errorf("database connection failed: %w", err)
+	}
+
+	var actor db.Actor
+	if err := rds.Where("ptid = ?", ptid).First(&actor).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil // Return nil without error for not found
+		}
+		logger.Errorf(ctx, "Failed to query actor by PTID: %v", err)
+		return nil, fmt.Errorf("query actor failed: %w", err)
+	}
+
+	return &actor, nil
+}
+
+// GetActorsByPTIDs retrieves multiple actors by their PTIDs
+func GetActorsByPTIDs(ctx context.Context, ptids []string) (map[string]*db.Actor, error) {
+	if len(ptids) == 0 {
+		return make(map[string]*db.Actor), nil
+	}
+
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get database connection: %v", err)
+		return nil, fmt.Errorf("database connection failed: %w", err)
+	}
+
+	var actors []*db.Actor
+	if err := rds.Where("ptid IN ?", ptids).Find(&actors).Error; err != nil {
+		logger.Errorf(ctx, "Failed to query actors by PTIDs: %v", err)
+		return nil, fmt.Errorf("query actors failed: %w", err)
+	}
+
+	result := make(map[string]*db.Actor)
+	for _, a := range actors {
+		result[a.PTID] = a
+	}
+
+	return result, nil
+}
+
 func ListActors(ctx context.Context, excludeActorID uint64) ([]*db.Actor, error) {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {

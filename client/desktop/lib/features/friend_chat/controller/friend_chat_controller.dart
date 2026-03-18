@@ -1,20 +1,34 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:get/get.dart';
 import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/model/domain/chat/chat.pb.dart';
+import 'package:peers_touch_base/model/domain/chat/friend_chat.pb.dart' as fc;
+import 'package:peers_touch_desktop/features/shared/extensions/chat_message_extensions.dart';
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
+import 'package:peers_touch_base/network/event/event_stream_service.dart';
 import 'package:peers_touch_base/network/friend_chat/friend_chat_api_service.dart';
+import 'package:peers_touch_base/network/group_chat/group_chat_api_service.dart';
 import 'package:peers_touch_base/network/ice/ice_service.dart';
 import 'package:peers_touch_base/network/rtc/rtc_client.dart';
 import 'package:peers_touch_base/network/rtc/rtc_signaling.dart';
 import 'package:peers_touch_base/network/social/social_api_service.dart';
+import 'package:peers_touch_base/storage/chat/chat_cache_service.dart';
 import 'package:peers_touch_desktop/core/services/logging_service.dart';
+import 'package:peers_touch_desktop/features/friend_chat/friend_chat_module.dart';
+import 'package:peers_touch_desktop/features/friend_chat/model/unified_session.dart';
 import 'package:peers_touch_desktop/features/friend_chat/widgets/connection_debug_panel.dart';
+import 'package:peers_touch_desktop/core/services/avatar_resolver_desktop.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
+import 'package:peers_touch_desktop/features/friend_chat/services/chat_message_service.dart';
+import 'package:peers_touch_desktop/features/friend_chat/widgets/attachment_selector.dart';
+import 'package:peers_touch_desktop/core/services/emoji_picker_service.dart';
 
 class FriendItem {
   final String actorId;
@@ -41,6 +55,476 @@ class FriendChatController extends GetxController {
   final isSending = false.obs;
   final isLoading = false.obs;
   final error = Rx<String?>(null);
+  final showEmojiPicker = false.obs;
+
+  final EmojiPickerService _emojiPickerService = EmojiPickerService();
+  final recentEmojis = <String>[].obs;
+  final favoriteEmojis = <String>[].obs;
+  
+  // Message services - use high-level service (facade pattern)
+  final _chatMessageService = ChatMessageService();
+  
+  // ScrollController for message list - auto scroll to bottom
+  final ScrollController messageScrollController = ScrollController();
+  final ScrollController groupMessageScrollController = ScrollController();
+  
+  // Scroll position state for smart auto-scroll
+  final isUserNearGroupBottom = true.obs;  // Track if user is near bottom of group messages
+  final showScrollToLatest = false.obs;    // Show "scroll to latest" banner
+  
+  // Thread panel state (Slack-style right panel)
+  final showThreadPanel = false.obs;
+  final threadParentMessage = Rx<GroupMessageInfo?>(null);
+  final threadReplies = <GroupMessageInfo>[].obs;
+  final threadInputController = TextEditingController();
+  
+  // Group info panel state (WeChat-style right panel)
+  final showGroupInfoPanel = false.obs;
+  
+  /// Update the total unread count (updates the shared module-level RxInt for navigation badge)
+  void _updateTotalUnreadCount() {
+    int total = 0;
+    for (final session in unifiedSessions) {
+      total += session.unreadCount;
+    }
+    FriendChatModule.totalUnreadCountRx.value = total;
+  }
+  
+  /// Scroll message list to bottom
+  /// In reverse ListView, scrolling to 0 means scrolling to the bottom (newest messages)
+  void scrollToBottom({bool animated = true}) {
+    if (messageScrollController.hasClients) {
+      if (animated) {
+        messageScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      } else {
+        messageScrollController.jumpTo(0);
+      }
+    }
+  }
+  
+  /// Scroll group message list to bottom (respects user scroll position)
+  /// In reverse ListView, scrolling to 0 means scrolling to the bottom (newest messages)
+  void scrollGroupToBottom({bool animated = true, bool force = false}) {
+    if (groupMessageScrollController.hasClients) {
+      if (animated) {
+        groupMessageScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      } else {
+        groupMessageScrollController.jumpTo(0);
+      }
+    }
+  }
+  
+  /// User explicitly wants to scroll to latest (e.g. clicked "scroll to latest" button)
+  void scrollGroupToLatest() {
+    if (groupMessageScrollController.hasClients) {
+      // In reverse ListView, position 0 is the bottom (newest messages)
+      groupMessageScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+    showScrollToLatest.value = false;
+    isUserNearGroupBottom.value = true;
+  }
+  
+  /// Toggle group info panel
+  void toggleGroupInfoPanel() {
+    if (showGroupInfoPanel.value) {
+      showGroupInfoPanel.value = false;
+    } else {
+      // Close thread panel first
+      showThreadPanel.value = false;
+      showGroupInfoPanel.value = true;
+    }
+  }
+  
+  /// Close group info panel
+  void closeGroupInfoPanel() {
+    showGroupInfoPanel.value = false;
+  }
+  
+  // Reply state for friend chat
+  final replyingToMessage = Rx<ChatMessage?>(null);
+  
+  /// Toggle emoji picker visibility
+  void toggleEmojiPicker() {
+    showEmojiPicker.value = !showEmojiPicker.value;
+  }
+  
+  void insertEmoji(String emoji) {
+    final text = inputController.text;
+    final selection = inputController.selection;
+    final newText = text.replaceRange(
+      selection.start,
+      selection.end,
+      emoji,
+    );
+    inputController.value = inputController.value.copyWith(
+      text: newText,
+      selection: TextSelection.collapsed(
+        offset: selection.start + emoji.length,
+      ),
+    );
+    
+    _addRecentEmoji(emoji);
+  }
+
+  Future<void> _addRecentEmoji(String emoji) async {
+    try {
+      await _emojiPickerService.addRecentEmoji(emoji);
+      recentEmojis.assignAll(await _emojiPickerService.getRecentEmojis());
+    } catch (e) {
+      LoggingService.error('Failed to add recent emoji: $e');
+    }
+  }
+
+  Future<void> addFavoriteEmoji(String emoji) async {
+    try {
+      await _emojiPickerService.addFavoriteEmoji(emoji);
+      favoriteEmojis.assignAll(await _emojiPickerService.getFavoriteEmojis());
+    } catch (e) {
+      LoggingService.error('Failed to add favorite emoji: $e');
+    }
+  }
+
+  Future<void> removeFavoriteEmoji(String emoji) async {
+    try {
+      await _emojiPickerService.removeFavoriteEmoji(emoji);
+      favoriteEmojis.assignAll(await _emojiPickerService.getFavoriteEmojis());
+    } catch (e) {
+      LoggingService.error('Failed to remove favorite emoji: $e');
+    }
+  }
+  
+  Future<void> sendSticker(String stickerUrl) async {
+    try {
+      LoggingService.info('FriendChatController: Sending sticker message');
+      
+      final session = currentSession.value;
+      final friend = currentFriend.value;
+      
+      if (session == null || friend == null) {
+        LoggingService.warning('FriendChatController: No active session or friend');
+        return;
+      }
+      
+      final myActorId = currentUserId;
+      if (myActorId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user actor ID is null');
+        error.value = 'User not logged in';
+        return;
+      }
+      
+      final sentMessage = await _chatMessageService.sendStickerMessage(
+        from: myActorId,
+        to: friend.actorId,
+        sessionUlid: session.id,
+        stickerUrl: stickerUrl,
+        stickerName: 'sticker',
+      );
+      
+      messages.insert(0, sentMessage);
+      scrollToBottom();
+      
+      LoggingService.info('FriendChatController: Sticker message sent successfully');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to send sticker: $e');
+      error.value = 'Failed to send sticker: $e';
+      Get.snackbar(
+        '发送失败',
+        '贴纸发送失败，请重试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    }
+  }
+  
+  /// Pick and send attachment (image or file) - show selector
+  Future<void> pickAttachment() async {
+    await AttachmentSelector.show(
+      Get.context!,
+      onOptionSelected: (option) async {
+        switch (option) {
+          case AttachmentOption.IMAGE:
+            await pickImage();
+            break;
+          case AttachmentOption.FILE:
+            await pickFile();
+            break;
+          case AttachmentOption.LOCATION:
+          case AttachmentOption.AUDIO:
+          case AttachmentOption.VIDEO:
+          case AttachmentOption.CONTACT:
+            Get.snackbar(
+              '提示',
+              '${option.name} 功能开发中',
+              snackPosition: SnackPosition.BOTTOM,
+            );
+            break;
+        }
+      },
+    );
+  }
+  
+  /// Pick file specifically
+  Future<void> pickFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+      );
+      
+      if (result == null || result.files.isEmpty) return;
+      
+      final file = result.files.first;
+      if (file.path == null) return;
+      
+      await _sendFileMessage(File(file.path!), file.name);
+    } catch (e) {
+      LoggingService.error('Failed to pick file: $e');
+      error.value = 'Failed to pick file';
+    }
+  }
+  
+  /// Pick and send image specifically - show preview dialog
+  Future<void> pickImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      
+      if (result == null || result.files.isEmpty) return;
+      
+      final file = result.files.first;
+      if (file.path == null) return;
+      
+      await _sendImageMessage(File(file.path!));
+    } catch (e) {
+      LoggingService.error('Failed to pick image: $e');
+      error.value = 'Failed to pick image';
+    }
+  }
+  
+  /// Send image message
+  Future<void> _sendImageMessage(File file) async {
+    try {
+      LoggingService.info('FriendChatController: Sending image message');
+      
+      // For group chat
+      if (currentGroup.value != null) {
+        Get.snackbar(
+          '提示',
+          '群聊图片发送功能即将上线',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return;
+      }
+      
+      // For private chat
+      final session = currentSession.value;
+      final friend = currentFriend.value;
+      
+      if (session == null || friend == null) {
+        LoggingService.warning('FriendChatController: No active session or friend');
+        return;
+      }
+      
+      final myActorId = currentUserId;
+      if (myActorId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user actor ID is null');
+        error.value = 'User not logged in';
+        return;
+      }
+      
+      // Create optimistic message and add to list immediately
+      final tempMessage = await _chatMessageService.sendImageMessage(
+        from: myActorId,
+        to: friend.actorId,
+        sessionUlid: session.id,
+        imageFile: file,
+        onUpdate: (updated) {
+          _updateMessageInList(updated);
+        },
+      );
+      
+      // Add to messages list for immediate display
+      messages.insert(0, tempMessage);
+      scrollToBottom();
+      
+      LoggingService.info('FriendChatController: Image message sent successfully');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to send image: $e');
+      error.value = 'Failed to send image: $e';
+      Get.snackbar(
+        '发送失败',
+        '图片发送失败，请重试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    }
+  }
+  
+  void _updateMessageInList(ChatMessage updated) {
+    final index = messages.indexWhere((m) => m.id == updated.id);
+    if (index != -1) {
+      messages[index] = updated;
+      messages.refresh();
+    }
+  }
+  
+  /// Send file message
+  Future<void> _sendFileMessage(File file, String fileName) async {
+    try {
+      LoggingService.info('FriendChatController: Sending file message - $fileName');
+      
+      final session = currentSession.value;
+      final friend = currentFriend.value;
+      
+      if (session == null || friend == null) {
+        LoggingService.warning('FriendChatController: No active session or friend');
+        return;
+      }
+      
+      final myActorId = currentUserId;
+      if (myActorId.isEmpty) {
+        LoggingService.error('FriendChatController: Current user actor ID is null');
+        error.value = 'User not logged in';
+        return;
+      }
+      
+      // Create optimistic message and add to list immediately
+      final tempMessage = await _chatMessageService.sendFileMessage(
+        from: myActorId,
+        to: friend.actorId,
+        sessionUlid: session.id,
+        file: file,
+        onUpdate: (updated) {
+          _updateMessageInList(updated);
+        },
+      );
+      
+      // Add to messages list for immediate display
+      messages.insert(0, tempMessage);
+      scrollToBottom();
+      
+      LoggingService.info('FriendChatController: File message sent successfully');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Failed to send file: $e');
+      error.value = 'Failed to send file: $e';
+      Get.snackbar(
+        '发送失败',
+        '文件发送失败，请重试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    }
+  }
+  
+  /// Add custom sticker (pick image as sticker)
+  Future<void> addCustomSticker() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      
+      if (result == null || result.files.isEmpty) return;
+      
+      final file = result.files.first;
+      if (file.path == null) return;
+      
+      // TODO: Upload image as custom sticker and save to user's sticker collection
+      LoggingService.info('Custom sticker image selected: ${file.path}');
+      Get.snackbar(
+        '提示',
+        '自定义表情包功能即将上线',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } catch (e) {
+      LoggingService.error('Failed to add custom sticker: $e');
+    }
+  }
+  
+  /// Start replying to a message (friend chat)
+  void startReply(ChatMessage message) {
+    replyingToMessage.value = message;
+  }
+  
+  /// Cancel reply (friend chat)
+  void cancelReply() {
+    replyingToMessage.value = null;
+  }
+  
+  /// Open thread panel for a group message (Slack-style)
+  void openThread(GroupMessageInfo message) {
+    threadParentMessage.value = message;
+    threadReplies.clear();
+    showThreadPanel.value = true;
+    // TODO: Load replies from server based on message.ulid
+    _loadThreadReplies(message.ulid);
+  }
+  
+  /// Close thread panel
+  void closeThread() {
+    showThreadPanel.value = false;
+    threadParentMessage.value = null;
+    threadReplies.clear();
+  }
+  
+  /// Load replies for a thread
+  Future<void> _loadThreadReplies(String parentUlid) async {
+    // TODO: Implement API call to get replies
+    // For now, filter local messages that reply to this message
+    final replies = groupMessages.where((m) => m.replyToUlid == parentUlid).toList();
+    threadReplies.assignAll(replies);
+  }
+  
+  /// Send reply in thread
+  Future<void> sendThreadReply(String content) async {
+    final parent = threadParentMessage.value;
+    if (parent == null || content.trim().isEmpty) return;
+    
+    final group = currentGroup.value;
+    if (group == null) return;
+    
+    isSending.value = true;
+    try {
+      final newMessage = await _groupApi.sendMessage(
+        groupUlid: group.ulid,
+        content: content.trim(),
+        type: 1,
+        replyToUlid: parent.ulid,
+      );
+      // Add to thread replies
+      threadReplies.add(newMessage);
+      // Also add to main message list
+      groupMessages.add(newMessage);
+      threadInputController.clear();
+    } catch (e) {
+      LoggingService.error('Failed to send thread reply: $e');
+      error.value = 'Failed to send reply';
+    } finally {
+      isSending.value = false;
+    }
+  }
+
+  // Unified session list (individuals + groups, sorted by last message time)
+  final unifiedSessions = <UnifiedSession>[].obs;
+  final currentUnifiedSession = Rx<UnifiedSession?>(null);
+  final groups = <GroupInfo>[].obs;
+  final currentGroup = Rx<GroupInfo?>(null);
+  final groupMessages = <GroupMessageInfo>[].obs;
+  final _groupApi = GroupChatApiService();
+  
+  // Group members cache: groupUlid -> Map<actorDid, GroupMemberInfo>
+  final Map<String, Map<String, GroupMemberInfo>> _groupMembersCache = {};
 
   final connectionStats = const ConnectionStats().obs;
   final connectionMode = ConnectionMode.disconnected.obs;
@@ -53,7 +537,9 @@ class FriendChatController extends GetxController {
   Timer? _syncTimer;
 
   static const _syncMessageThreshold = 10;
-  static const _syncTimeInterval = Duration(seconds: 10);
+  /// Message sync interval - reduced from 10s to 3s for better real-time experience
+  /// TODO: Replace with WebSocket/SSE for true real-time messaging
+  static const _syncTimeInterval = Duration(seconds: 3);
 
   RTCClient? _rtcClient;
   StreamSubscription<webrtc.RTCPeerConnectionState>? _connectionStateSub;
@@ -64,7 +550,7 @@ class FriendChatController extends GetxController {
   Timer? _heartbeatTimer;
   Timer? _peerMonitorTimer;
   RTCSignalingService? _signalingService;
-  final _onlinePeers = <String>{};  // Cache of known online peers
+  final _onlinePeers = <String>{}.obs;  // Cache of known online peers (reactive)
   bool _isConnecting = false;  // Prevent concurrent connection attempts
 
   /// Get current user's DID for P2P signaling
@@ -98,14 +584,591 @@ class FriendChatController extends GetxController {
 
 
 
+  // SSE event subscription
+  StreamSubscription<ServerEvent>? _sseSubscription;
+  
   @override
   void onInit() {
     super.onInit();
+    
+    _initEmojiPickerService();
+    
+    // Guard: verify auth state before making any API calls.
+    // If there is no valid token, skip network-dependent initialization
+    // to avoid a cascade of 401s that would trigger logout.
+    if (!_hasValidToken()) {
+      LoggingService.warning(
+        'FriendChatController.onInit: No valid token found, '
+        'skipping network initialization',
+      );
+      _initCacheService();
+      _initGroupScrollListener();
+      return;
+    }
+    
+    _initCacheService();
     _startSyncTimer();
     _markOnline();
-    _loadFriends();
+    _loadAllSessions(); // Load both individual and group chats
     _loadPendingMessages();
     _initSignalingWithHeartbeat(); // Register and start heartbeat
+    _initEventStream(); // Initialize SSE for real-time push
+    _initGroupScrollListener(); // Track scroll position for smart auto-scroll
+  }
+
+  Future<void> _initEmojiPickerService() async {
+    try {
+      await _emojiPickerService.initialize();
+      recentEmojis.assignAll(await _emojiPickerService.getRecentEmojis());
+      favoriteEmojis.assignAll(await _emojiPickerService.getFavoriteEmojis());
+      LoggingService.info('EmojiPickerService initialized');
+    } catch (e) {
+      LoggingService.error('Failed to initialize EmojiPickerService: $e');
+    }
+  }
+
+  /// Check whether a valid access token exists before issuing API calls.
+  bool _hasValidToken() {
+    if (!Get.isRegistered<GlobalContext>()) return false;
+    final gc = Get.find<GlobalContext>();
+    final token = gc.currentSession?['accessToken']?.toString();
+    return token != null && token.isNotEmpty;
+  }
+  
+  /// Initialize scroll listener for group messages to track user's scroll position
+  void _initGroupScrollListener() {
+    groupMessageScrollController.addListener(_onGroupScroll);
+  }
+  
+  /// Handle group message scroll events
+  void _onGroupScroll() {
+    if (!groupMessageScrollController.hasClients) return;
+    
+    final position = groupMessageScrollController.position;
+    
+    // In reverse ListView, pixels value closer to 0 means closer to bottom (newest messages)
+    final isAtBottom = position.pixels < 100;
+    
+    if (isAtBottom != isUserNearGroupBottom.value) {
+      isUserNearGroupBottom.value = isAtBottom;
+    }
+    
+    // Show/hide "scroll to latest" banner based on position
+    if (!isAtBottom && !showScrollToLatest.value) {
+      showScrollToLatest.value = true;
+    } else if (isAtBottom && showScrollToLatest.value) {
+      showScrollToLatest.value = false;
+    }
+  }
+  
+  /// Initialize SSE event stream for real-time message push
+  void _initEventStream() {
+    try {
+      final baseUrl = HttpServiceLocator().baseUrl;
+      if (baseUrl.isEmpty) {
+        LoggingService.warning('[FriendChatController] No baseUrl, skipping SSE init');
+        return;
+      }
+      
+      // Connect to SSE stream
+      EventStreamService.instance.connect(baseUrl);
+      
+      // Subscribe to events
+      _sseSubscription = EventStreamService.instance.events.listen(
+        _handleServerEvent,
+        onError: (e) => LoggingService.error('[FriendChatController] SSE error: $e'),
+      );
+      
+      LoggingService.info('[FriendChatController] SSE event stream initialized');
+    } catch (e) {
+      LoggingService.warning('[FriendChatController] SSE init failed: $e');
+    }
+  }
+  
+  /// Handle incoming server events
+  void _handleServerEvent(ServerEvent event) {
+    LoggingService.debug('[FriendChatController] Received event: ${event.type}');
+    
+    switch (event.type) {
+      case EventType.chatMessageAppended:
+        _handleNewMessageEvent(event);
+        break;
+      case EventType.chatMessageRead:
+        _handleMessageReadEvent(event);
+        break;
+      case EventType.chatMessageDelivered:
+        _handleMessageDeliveredEvent(event);
+        break;
+      default:
+        LoggingService.debug('[FriendChatController] Unhandled event type: ${event.type}');
+    }
+  }
+  
+  /// Handle new message event from SSE
+  void _handleNewMessageEvent(ServerEvent event) {
+    final payload = event.chatMessagePayload;
+    if (payload == null) return;
+    
+    LoggingService.info('[FriendChatController] New message via SSE: ${payload.messageId} from ${payload.senderId}');
+    
+    // Check if it's a group message or individual message
+    if (payload.msgType == 'group') {
+      // Group message: refresh group messages if this group is selected
+      if (currentGroup.value?.ulid == payload.convId) {
+        // Use smart refresh instead of re-selecting the group to avoid UI flickering
+        _refreshCurrentGroupMessages();
+      }
+      
+      // Update unread count in unified sessions
+      final index = unifiedSessions.indexWhere((s) => s.id == payload.convId);
+      if (index >= 0 && unifiedSessions[index].id != currentGroup.value?.ulid) {
+        final session = unifiedSessions[index];
+        unifiedSessions[index] = session.copyWith(
+          unreadCount: session.unreadCount + 1,
+          lastMessage: payload.content ?? '',
+          lastMessageTime: DateTime.fromMillisecondsSinceEpoch(payload.timestamp),
+        );
+        _updateTotalUnreadCount();
+      }
+    } else {
+      // Individual message: add to messages list if this friend is selected
+      final isCurrentChat = currentFriend.value?.actorId == payload.senderId;
+      
+      if (isCurrentChat) {
+        // Trigger a refresh of messages for current chat
+        _fetchNewMessages();
+      }
+      
+      // Update unread count in unified sessions
+      final index = unifiedSessions.indexWhere((s) => s.id == payload.senderId);
+      if (index >= 0 && !isCurrentChat) {
+        final session = unifiedSessions[index];
+        unifiedSessions[index] = session.copyWith(
+          unreadCount: session.unreadCount + 1,
+          lastMessage: payload.content ?? '',
+          lastMessageTime: DateTime.fromMillisecondsSinceEpoch(payload.timestamp),
+        );
+        _updateTotalUnreadCount();
+      }
+    }
+  }
+  
+  /// Handle message read event from SSE
+  void _handleMessageReadEvent(ServerEvent event) {
+    // Update message status to read
+    final msgId = event.payload['messageId'] as String?;
+    if (msgId == null) return;
+    
+    LoggingService.debug('[FriendChatController] Message $msgId marked as read');
+  }
+  
+  /// Handle message delivered event from SSE
+  void _handleMessageDeliveredEvent(ServerEvent event) {
+    final msgId = event.payload['messageId'] as String?;
+    if (msgId == null) return;
+    
+    LoggingService.debug('[FriendChatController] Message $msgId delivered');
+  }
+  
+  /// Fetch new messages for current chat
+  Future<void> _fetchNewMessages() async {
+    if (currentFriend.value == null) return;
+    
+    try {
+      final fetchedMessages = await _chatApi.getMessages(currentFriend.value!.actorId, limit: 20);
+      // Note: The actual message loading is handled by selectFriend/loadMessages
+      // This is just a refresh trigger
+      LoggingService.debug('[FriendChatController] Refreshed messages');
+    } catch (e) {
+      LoggingService.error('[FriendChatController] Failed to fetch new messages: $e');
+    }
+  }
+
+  /// 初始化本地缓存服务
+  Future<void> _initCacheService() async {
+    if (currentUserId.isEmpty) return;
+    try {
+      await ChatCacheService.instance.initialize(currentUserId);
+      LoggingService.info('ChatCacheService initialized for user: $currentUserId');
+    } catch (e) {
+      LoggingService.error('Failed to init ChatCacheService: $e');
+    }
+  }
+
+  /// Load both friends and groups, then merge into unified list
+  Future<void> _loadAllSessions() async {
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      // Load friends and groups in parallel
+      await Future.wait([
+        _loadFriendsInternal(),
+        _loadGroupsInternal(),
+      ]);
+
+      // Merge into unified session list
+      _mergeUnifiedSessions();
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> _loadFriendsInternal() async {
+    try {
+      if (currentUserId.isEmpty) return;
+
+      final socialApi = SocialApiService();
+      final response = await socialApi.getFollowing();
+      final followingList = response.following;
+
+      final friendList = followingList.map((f) => FriendItem(
+        actorId: f.actorId,
+        username: f.username,
+        displayName: f.displayName,
+        avatarUrl: f.avatarUrl,
+      )).toList();
+
+      friends.assignAll(friendList);
+      
+      // Register friends to AvatarResolver for global avatar resolution
+      _registerFriendsToAvatarResolver(friendList);
+      
+      LoggingService.info('Loaded ${friendList.length} friends');
+    } catch (e) {
+      LoggingService.error('Failed to load friends: $e');
+    }
+  }
+
+  /// Register friends to AvatarResolver for global avatar resolution
+  void _registerFriendsToAvatarResolver(List<FriendItem> friendList) {
+    if (!Get.isRegistered<AvatarResolver>()) return;
+    
+    final resolver = Get.find<AvatarResolver>();
+    if (resolver is AvatarResolverDesktop) {
+      for (final friend in friendList) {
+        resolver.registerActor(
+          actorId: friend.actorId,
+          avatarUrl: friend.avatarUrl,
+          displayName: friend.displayName,
+          username: friend.username,
+        );
+      }
+      LoggingService.debug('Registered ${friendList.length} friends to AvatarResolver');
+    }
+  }
+
+  Future<void> _loadGroupsInternal() async {
+    try {
+      if (currentUserId.isEmpty) return;
+
+      final groupList = await _groupApi.listGroups();
+      groups.assignAll(groupList);
+      LoggingService.info('Loaded ${groupList.length} groups');
+    } catch (e) {
+      LoggingService.error('Failed to load groups: $e');
+    }
+  }
+
+  void _mergeUnifiedSessions() {
+    _mergeUnifiedSessionsAsync();
+  }
+
+  Future<void> _mergeUnifiedSessionsAsync() async {
+    final unified = <UnifiedSession>[];
+    final cache = ChatCacheService.instance;
+
+    // 尝试从缓存获取会话信息
+    Map<String, dynamic> cachedSessionInfo = {};
+    try {
+      final cachedSessions = await cache.getSessions();
+      for (final s in cachedSessions) {
+        cachedSessionInfo[s.targetId] = {
+          'lastMessage': s.lastMessageSnippet,
+          'lastMessageAt': s.lastMessageAt != null 
+              ? DateTime.fromMillisecondsSinceEpoch(s.lastMessageAt!)
+              : null,
+          'lastMessageType': s.lastMessageType,
+          'unreadCount': s.unreadCount,
+          'isPinned': s.isPinned,
+          'isMuted': s.isMuted,
+        };
+      }
+    } catch (e) {
+      LoggingService.warning('Failed to load cached sessions: $e');
+    }
+
+    // Add individual chats from friends
+    for (final friend in friends) {
+      final cached = cachedSessionInfo[friend.actorId];
+      unified.add(UnifiedSession(
+        id: friend.actorId,
+        type: UnifiedSessionType.individual,
+        name: friend.name,
+        subtitle: '@${friend.username}',
+        avatarUrl: friend.avatarUrl,
+        lastMessage: cached?['lastMessage'],
+        lastMessageTime: cached?['lastMessageAt'],
+        lastMessageType: cached?['lastMessageType'] != null 
+            ? MessageType.valueOf(cached['lastMessageType'])
+            : null,
+        unreadCount: cached?['unreadCount'] ?? 0,
+        isPinned: cached?['isPinned'] ?? false,
+        isMuted: cached?['isMuted'] ?? false,
+        originalData: friend,
+      ));
+    }
+
+    // Add group chats with unread counts from server
+    for (final group in groups) {
+      final cached = cachedSessionInfo[group.ulid];
+      
+      // Try to get unread count from server
+      int unreadCount = cached?['unreadCount'] ?? 0;
+      try {
+        unreadCount = await _groupApi.getUnreadCount(groupUlid: group.ulid);
+      } catch (_) {
+        // Use cached value if API fails
+      }
+      
+      unified.add(UnifiedSession(
+        id: group.ulid,
+        type: UnifiedSessionType.group,
+        name: group.name,
+        subtitle: '${group.memberCount} 人',
+        avatarUrl: group.avatarCid,
+        lastMessage: cached?['lastMessage'],
+        lastMessageTime: cached?['lastMessageAt'] ?? 
+            (group.updatedAt > 0
+                ? DateTime.fromMillisecondsSinceEpoch(group.updatedAt * 1000)
+                : null),
+        lastMessageType: cached?['lastMessageType'] != null 
+            ? MessageType.valueOf(cached['lastMessageType'])
+            : null,
+        unreadCount: unreadCount,
+        isPinned: cached?['isPinned'] ?? false,
+        isMuted: cached?['isMuted'] ?? false,
+        originalData: group,
+      ));
+    }
+
+    // Sort by last message time (most recent first), pinned items at top
+    unified.sort(UnifiedSession.compareByTime);
+    unifiedSessions.assignAll(unified);
+    _updateTotalUnreadCount();
+  }
+
+  /// Select a unified session (individual or group)
+  Future<void> selectUnifiedSession(UnifiedSession session) async {
+    currentUnifiedSession.value = session;
+
+    if (session.isIndividual) {
+      final friend = session.originalData as FriendItem;
+      currentGroup.value = null;
+      groupMessages.clear();
+      await selectFriend(friend);
+    } else {
+      final group = session.originalData as GroupInfo;
+      currentFriend.value = null;
+      currentSession.value = null;
+      messages.clear();
+      await _selectGroup(group);
+    }
+    
+    // Clear unread count (persists to local DB and syncs to server)
+    if (session.unreadCount > 0) {
+      await _clearUnreadCount(session.id, isGroup: session.isGroup);
+    }
+  }
+  
+  /// Clear unread count for a session (updates memory, local DB, and server)
+  /// Respects user's privacy setting: send_read_receipts
+  Future<void> _clearUnreadCount(String sessionId, {bool isGroup = false}) async {
+    // 1. Update memory state
+    final index = unifiedSessions.indexWhere((s) => s.id == sessionId);
+    if (index >= 0) {
+      final session = unifiedSessions[index];
+      unifiedSessions[index] = session.copyWith(unreadCount: 0);
+      _updateTotalUnreadCount();
+    }
+    
+    // 2. Persist to local database (always do this)
+    try {
+      await ChatCacheService.instance.clearUnreadCount(sessionId);
+      LoggingService.info('Cleared unread count in local DB for session: $sessionId');
+    } catch (e) {
+      LoggingService.warning('Failed to clear unread count in local DB: $e');
+    }
+    
+    // 3. Check user's privacy setting before sending read receipts
+    bool shouldSendReadReceipts = true;
+    if (Get.isRegistered<GlobalContext>()) {
+      final gc = Get.find<GlobalContext>();
+      final flags = gc.preferences['feature_flags'];
+      if (flags is Map && flags['send_read_receipts'] == false) {
+        shouldSendReadReceipts = false;
+        LoggingService.info('Read receipts disabled by user setting');
+      }
+    }
+    
+    // 4. Sync to server
+    if (isGroup) {
+      // Mark group messages as read on server
+      try {
+        final markedCount = await _groupApi.markGroupAsRead(sessionId);
+        LoggingService.info('Marked $markedCount messages as read for group: $sessionId');
+      } catch (e) {
+        LoggingService.warning('Failed to mark group as read on server: $e');
+      }
+    } else if (shouldSendReadReceipts) {
+      // For individual chats - read receipts are optional based on privacy setting
+      LoggingService.debug('Would sync read status to server for session: $sessionId');
+    }
+  }
+
+  Future<void> _selectGroup(GroupInfo group) async {
+    currentGroup.value = group;
+    groupMessages.clear();
+    
+    // Reset scroll state when switching groups
+    isUserNearGroupBottom.value = true;
+    showScrollToLatest.value = false;
+    
+    try {
+      // Load members first for name resolution
+      await _loadGroupMembers(group.ulid);
+      
+      final loadedMessages = await _groupApi.getMessages(group.ulid);
+      
+      // Ensure messages are sorted in chronological order (oldest first)
+      loadedMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
+      
+      groupMessages.assignAll(loadedMessages);
+      
+      LoggingService.info('Loaded ${loadedMessages.length} messages for group ${group.ulid}');
+    } catch (e) {
+      LoggingService.error('Failed to load group messages: $e');
+      error.value = 'Failed to load messages';
+    }
+  }
+  
+  /// Load and cache group members
+  Future<void> _loadGroupMembers(String groupUlid) async {
+    if (_groupMembersCache.containsKey(groupUlid)) {
+      return; // Already cached
+    }
+    
+    try {
+      final members = await _groupApi.getMembers(groupUlid);
+      final memberMap = <String, GroupMemberInfo>{};
+      for (final member in members) {
+        memberMap[member.actorDid] = member;
+      }
+      _groupMembersCache[groupUlid] = memberMap;
+      
+      // Register group members to AvatarResolver for global avatar resolution
+      _registerGroupMembersToAvatarResolver(members);
+      
+      LoggingService.info('Cached ${members.length} members for group $groupUlid');
+    } catch (e) {
+      LoggingService.error('Failed to load group members: $e');
+    }
+  }
+  
+  /// Register group members to AvatarResolver for global avatar resolution
+  void _registerGroupMembersToAvatarResolver(List<GroupMemberInfo> members) {
+    if (!Get.isRegistered<AvatarResolver>()) return;
+    
+    final resolver = Get.find<AvatarResolver>();
+    if (resolver is AvatarResolverDesktop) {
+      for (final member in members) {
+        resolver.registerActor(
+          actorId: member.actorDid,
+          avatarUrl: member.avatarUrl,
+          displayName: member.displayName.isNotEmpty ? member.displayName : member.nickname,
+          username: member.username,
+        );
+      }
+      LoggingService.debug('Registered ${members.length} group members to AvatarResolver');
+    }
+  }
+  
+  /// Get member display name for a group
+  String getMemberDisplayName(String groupUlid, String actorDid) {
+    // 1. Check group member nickname
+    final members = _groupMembersCache[groupUlid];
+    if (members != null) {
+      final member = members[actorDid];
+      if (member != null && member.nickname.isNotEmpty) {
+        return member.nickname;
+      }
+    }
+    
+    // 2. Check friends list for display name
+    final friend = friends.firstWhereOrNull((f) => f.actorId == actorDid);
+    if (friend != null && friend.name.isNotEmpty) {
+      return friend.name;
+    }
+    
+    // 3. Fallback to truncated ID
+    return _truncateActorId(actorDid);
+  }
+  
+  String _truncateActorId(String actorId) {
+    if (actorId.length > 10) {
+      return '${actorId.substring(0, 4)}...${actorId.substring(actorId.length - 4)}';
+    }
+    return actorId;
+  }
+  
+  /// Get member avatar URL for a group
+  String? getMemberAvatarUrl(String groupUlid, String actorDid) {
+    // 1. Check group member cache for avatar
+    final members = _groupMembersCache[groupUlid];
+    if (members != null) {
+      final member = members[actorDid];
+      if (member != null && member.avatarUrl.isNotEmpty) {
+        return member.avatarUrl;
+      }
+    }
+    
+    // 2. Check friends list for avatar
+    final friend = friends.firstWhereOrNull((f) => f.actorId == actorDid);
+    if (friend != null && friend.avatarUrl != null && friend.avatarUrl!.isNotEmpty) {
+      return friend.avatarUrl;
+    }
+    
+    return null;
+  }
+
+  /// Send message to current group
+  Future<void> sendGroupMessage(String content) async {
+    final group = currentGroup.value;
+    if (group == null || content.trim().isEmpty) return;
+
+    isSending.value = true;
+    error.value = null;
+
+    try {
+      final newMessage = await _groupApi.sendMessage(
+        groupUlid: group.ulid,
+        content: content.trim(),
+        type: 1, // TEXT
+      );
+      groupMessages.add(newMessage);
+      inputController.clear();
+      LoggingService.info('Group message sent: ${newMessage.ulid}');
+    } catch (e) {
+      LoggingService.error('Failed to send group message: $e');
+      error.value = 'Failed to send message';
+    } finally {
+      isSending.value = false;
+    }
+  }
+
+  /// Refresh all sessions
+  Future<void> refreshAllSessions() async {
+    await _loadAllSessions();
   }
 
   /// Initialize signaling service with heartbeat for persistent presence
@@ -165,9 +1228,17 @@ class FriendChatController extends GetxController {
         }
       }
       
+      // Check if online status changed
+      final statusChanged = !_setEquals(_onlinePeers, newOnlinePeers);
+      
       // Update online peers cache
       _onlinePeers.clear();
       _onlinePeers.addAll(newOnlinePeers);
+      
+      // Update unified sessions online status if changed
+      if (statusChanged) {
+        _updateSessionsOnlineStatus();
+      }
       
       // Check for incoming offers if we have a selected friend
       await _checkIncomingOffers();
@@ -176,6 +1247,37 @@ class FriendChatController extends GetxController {
       // Silently ignore monitoring errors
     }
   }
+  
+  /// Helper to compare two sets
+  bool _setEquals<T>(Set<T> a, Set<T> b) {
+    if (a.length != b.length) return false;
+    return a.every((e) => b.contains(e));
+  }
+  
+  /// Update online status in unified sessions
+  void _updateSessionsOnlineStatus() {
+    bool hasChanges = false;
+    for (int i = 0; i < unifiedSessions.length; i++) {
+      final session = unifiedSessions[i];
+      // Only update individual sessions
+      if (session.isIndividual) {
+        final isOnline = _onlinePeers.contains(session.id);
+        if (session.isOnline != isOnline) {
+          unifiedSessions[i] = session.copyWith(isOnline: isOnline);
+          hasChanges = true;
+        }
+      }
+    }
+    if (hasChanges) {
+      unifiedSessions.refresh();
+    }
+  }
+  
+  /// Check if a peer is online (public getter for UI)
+  bool isPeerOnline(String peerId) => _onlinePeers.contains(peerId);
+  
+  /// Get online peers count (triggers reactive update in UI)
+  int get onlinePeersCount => _onlinePeers.length;
 
   /// Called when a peer comes online
   void _onPeerOnline(String peerId) {
@@ -260,6 +1362,9 @@ class FriendChatController extends GetxController {
     _connectionStateSub?.cancel();
     _dataChannelStateSub?.cancel();
     _messageSub?.cancel();
+    _sseSubscription?.cancel();
+    EventStreamService.instance.disconnect();
+    groupMessageScrollController.removeListener(_onGroupScroll);
     super.onClose();
   }
 
@@ -268,7 +1373,149 @@ class FriendChatController extends GetxController {
       if (_pendingMessages.isNotEmpty) {
         _syncPendingMessages();
       }
+      // Refresh current group messages
+      _refreshCurrentGroupMessages();
+      // Poll all sessions for new unread (every 2 intervals = 6 seconds)
+      _pollCounter++;
+      if (_pollCounter >= 2) {
+        _pollCounter = 0;
+        _pollAllSessionsForNewMessages();
+      }
+      // Check session validity (every 30 seconds via counter)
+      _sessionCheckCounter++;
+      if (_sessionCheckCounter >= 10) { // Check every ~30 seconds (10 * 3s)
+        _sessionCheckCounter = 0;
+        _checkSessionValidity();
+      }
     });
+  }
+  
+  int _pollCounter = 0;
+  
+  int _sessionCheckCounter = 0;
+  
+  /// Check if current session is still valid (not kicked).
+  /// Uses HttpServiceLocator to stay consistent with global auth interceptor.
+  Future<void> _checkSessionValidity() async {
+    try {
+      final gc = Get.find<GlobalContext>();
+      final sessionId = gc.currentSession?['sessionId']?.toString();
+      if (sessionId == null || sessionId.isEmpty) return;
+
+      // Use the shared HttpServiceLocator — tokens and session headers
+      // are attached automatically by AuthInterceptor.
+      final client = HttpServiceLocator().httpService;
+      final response = await client.getResponse<dynamic>('/api/v1/session/verify');
+
+      if (response.statusCode == 200 && response.data is Map) {
+        final data = response.data as Map;
+        final valid = data['valid'] == true;
+        final reason = data['reason']?.toString() ?? '';
+
+        if (!valid && reason == 'kicked') {
+          LoggingService.warning('Session kicked by another login');
+          _handleSessionKicked();
+        }
+      }
+    } catch (e) {
+      // Network error - don't trigger logout
+      LoggingService.error('Session check failed: $e');
+    }
+  }
+
+  /// Handle session kicked — use the unified logout mechanism via
+  /// GlobalContext.requestLogout() so that token cleanup, session clearing,
+  /// navigation, and snackbar are all handled in one place (main.dart listener).
+  void _handleSessionKicked() {
+    if (Get.isRegistered<GlobalContext>()) {
+      Get.find<GlobalContext>().requestLogout(
+        LogoutReason.forcedByServer,
+        message: '您的账号在另一个设备上登录，当前设备已被登出',
+      );
+    }
+  }
+  
+  /// Refresh messages for current group (polling for new messages)
+  /// Uses smart comparison to avoid unnecessary UI updates
+  Future<void> _refreshCurrentGroupMessages() async {
+    final group = currentGroup.value;
+    if (group == null) return;
+    
+    try {
+      final loadedMessages = await _groupApi.getMessages(group.ulid);
+      
+      // Build sets for comparison
+      final currentUlids = groupMessages.map((m) => m.ulid).toSet();
+      final serverUlids = loadedMessages.map((m) => m.ulid).toSet();
+      
+      // Check if server has new messages we don't have locally
+      final newMessageUlids = serverUlids.difference(currentUlids);
+      
+      // Check if we have messages locally that server doesn't have (should not happen normally)
+      final removedMessageUlids = currentUlids.difference(serverUlids);
+      
+      // No changes at all
+      if (newMessageUlids.isEmpty && removedMessageUlids.isEmpty) {
+        return;
+      }
+      
+      // Only new messages added (most common case for real-time chat)
+      if (newMessageUlids.isNotEmpty && removedMessageUlids.isEmpty) {
+        // Find new messages in server order and append them
+        final newMessages = loadedMessages.where((m) => newMessageUlids.contains(m.ulid)).toList();
+        groupMessages.addAll(newMessages);
+        return;
+      }
+      
+      // Messages were deleted or some complex change - need full refresh
+      // But do it carefully to minimize UI impact
+      if (removedMessageUlids.isNotEmpty) {
+        // Remove deleted messages from local list
+        groupMessages.removeWhere((m) => removedMessageUlids.contains(m.ulid));
+      }
+      
+      // Add any new messages
+      if (newMessageUlids.isNotEmpty) {
+        final newMessages = loadedMessages.where((m) => newMessageUlids.contains(m.ulid)).toList();
+        groupMessages.addAll(newMessages);
+      }
+    } catch (e) {
+      // Silently ignore refresh errors
+    }
+  }
+  
+  /// Poll all sessions for new unread messages (called periodically)
+  Future<void> _pollAllSessionsForNewMessages() async {
+    try {
+      bool hasChanges = false;
+      
+      // Check all group sessions for new unread counts
+      for (int i = 0; i < unifiedSessions.length; i++) {
+        final session = unifiedSessions[i];
+        if (!session.isGroup) continue;
+        
+        // Skip current group (already handled by _refreshCurrentGroupMessages)
+        if (session.id == currentGroup.value?.ulid) continue;
+        
+        try {
+          final serverUnread = await _groupApi.getUnreadCount(groupUlid: session.id);
+          if (serverUnread != session.unreadCount) {
+            unifiedSessions[i] = session.copyWith(unreadCount: serverUnread);
+            hasChanges = true;
+            LoggingService.debug('[Poll] Group ${session.name} unread: $serverUnread');
+          }
+        } catch (e) {
+          // Skip this session on error
+        }
+      }
+      
+      // Update total unread count if there were changes
+      if (hasChanges) {
+        _updateTotalUnreadCount();
+      }
+    } catch (e) {
+      LoggingService.error('[Poll] Failed to poll sessions: $e');
+    }
   }
 
   Future<void> _markOnline() async {
@@ -291,40 +1538,7 @@ class FriendChatController extends GetxController {
     }
   }
 
-  Future<void> _loadFriends() async {
-    LoggingService.info('FriendChatController: Loading friends list');
-    isLoading.value = true;
-    error.value = null;
-
-    try {
-      if (currentUserId.isEmpty) {
-        LoggingService.error('FriendChatController: Current user ID is empty');
-        error.value = 'User not logged in';
-        return;
-      }
-
-      final socialApi = SocialApiService();
-      final response = await socialApi.getFollowing();
-      final followingList = response.following;
-      
-      LoggingService.info('FriendChatController: Loaded ${followingList.length} friends');
-
-      final friendList = followingList.map((f) => FriendItem(
-        actorId: f.actorId,
-        username: f.username,
-        displayName: f.displayName,
-        avatarUrl: f.avatarUrl,
-      )).toList();
-
-      friends.assignAll(friendList);
-    } catch (e, stackTrace) {
-      LoggingService.error('FriendChatController: Failed to load friends: $e');
-      LoggingService.debug('Stack trace: $stackTrace');
-      error.value = 'Failed to load friends: $e';
-    } finally {
-      isLoading.value = false;
-    }
-  }
+  // Note: _loadFriends replaced by _loadFriendsInternal for unified loading
 
   Future<void> _loadPendingMessages() async {
     if (currentUserId.isEmpty) return;
@@ -382,18 +1596,23 @@ class FriendChatController extends GetxController {
     );
 
     try {
-      final messagesData = toSync.map((msg) {
-        return {
-          'ulid': msg.id,
-          'session_ulid': msg.sessionId.replaceFirst('session_', ''),
-          'receiver_did': connectionStats.value.remotePeerId,
-          'type': msg.type.value,
-          'content': msg.content,
-          'sent_at': msg.sentAt.seconds,
-        };
-      }).toList();
-
-      final response = await _chatApi.syncMessages(messagesData);
+      final request = fc.SyncMessagesRequest(
+        messages: toSync.map((msg) {
+          final ft = fc.FriendMessageType.values.firstWhere(
+            (e) => e.value == msg.type.value,
+            orElse: () => fc.FriendMessageType.FRIEND_MESSAGE_TYPE_TEXT,
+          );
+          return fc.SyncMessageItem(
+            ulid: msg.id,
+            sessionUlid: msg.sessionId.replaceFirst('session_', ''),
+            receiverDid: connectionStats.value.remotePeerId,
+            type: ft,
+            content: msg.content,
+            sentAt: msg.sentAt,
+          );
+        }).toList(),
+      );
+      final response = await _chatApi.syncMessages(request);
       LoggingService.info('Synced ${response.synced} messages to server');
 
       connectionStats.value = connectionStats.value.copyWith(
@@ -482,7 +1701,7 @@ class FriendChatController extends GetxController {
   }
 
   Future<void> refreshSessions() async {
-    await _loadFriends();
+    await _loadAllSessions();
   }
 
   Future<void> selectFriend(FriendItem friend) async {
@@ -565,6 +1784,16 @@ class FriendChatController extends GetxController {
         loadedMessages.sort((a, b) => a.sentAt.seconds.compareTo(b.sentAt.seconds));
         messages.assignAll(loadedMessages);
         _sessionMessages[session.id] = List<ChatMessage>.from(messages);
+        
+        final messagesToMarkRead = loadedMessages
+            .where((m) => m.senderId != currentUserId && m.status.value < 4)
+            .map((m) => m.id)
+            .toList();
+        if (messagesToMarkRead.isNotEmpty) {
+          _chatApi.ackMessages(messagesToMarkRead, status: 4).catchError((e) {
+            LoggingService.warning('Failed to mark messages as read: $e');
+          });
+        }
       }
     } catch (e) {
       LoggingService.warning('Failed to load messages from server: $e');
@@ -697,7 +1926,7 @@ class FriendChatController extends GetxController {
           content: trimmedContent,
         );
 
-        if (response.deliveryStatus == 'delivered') {
+        if (response.relayStatus == 'delivered') {
           newMessage.status = MessageStatus.MESSAGE_STATUS_DELIVERED;
           connectionMode.value = ConnectionMode.stationRelay;
           connectionStats.value = connectionStats.value.copyWith(
@@ -709,10 +1938,69 @@ class FriendChatController extends GetxController {
         messages.refresh();
       }
     } catch (e) {
+      // Mark the message as failed
+      if (messages.isNotEmpty) {
+        final lastMsg = messages.last;
+        if (lastMsg.senderId == currentUserId &&
+            lastMsg.status == MessageStatus.MESSAGE_STATUS_SENDING) {
+          lastMsg.status = MessageStatus.MESSAGE_STATUS_FAILED;
+          messages.refresh();
+        }
+      }
       error.value = 'Failed to send message: $e';
       LoggingService.error('Failed to send message: $e');
     } finally {
       isSending.value = false;
+    }
+  }
+
+  /// Resend a failed message
+  Future<void> resendMessage(ChatMessage message) async {
+    if (message.status != MessageStatus.MESSAGE_STATUS_FAILED) return;
+    
+    final session = currentSession.value;
+    final friend = currentFriend.value;
+    
+    if (session == null || friend == null) {
+      LoggingService.warning('FriendChatController: Cannot resend - no active session or friend');
+      return;
+    }
+    
+    try {
+      LoggingService.info('FriendChatController: Retrying failed message type=${message.type}');
+      
+      // Update message status to sending
+      final updatedMessage = message.copyWithMetadata(
+        status: MessageStatus.MESSAGE_STATUS_SENDING,
+      );
+      _updateMessageInList(updatedMessage);
+      
+      // Use ChatMessageService for retry (architecture: delegate to service layer)
+      final sentMessage = await _chatMessageService.retryFailedMessage(
+        message,
+        sessionUlid: session.id,
+        receiverDid: friend.actorId,
+      );
+      
+      // Update with sent message
+      _updateMessageInList(sentMessage);
+      
+      LoggingService.info('FriendChatController: Message resent successfully: ${message.id}');
+    } catch (e) {
+      LoggingService.error('FriendChatController: Message resend failed: $e');
+      
+      // Revert to failed status
+      final failedMessage = message.copyWithMetadata(
+        status: MessageStatus.MESSAGE_STATUS_FAILED,
+      );
+      _updateMessageInList(failedMessage);
+      
+      error.value = 'Failed to resend message: $e';
+      Get.snackbar(
+        '重试失败',
+        '消息重发失败，请稍后再试',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     }
   }
 

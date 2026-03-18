@@ -31,13 +31,21 @@ class DriftConnectionManager {
 
     final newConnection = LazyDatabase(() async {
       final subDir = userHandle != null ? 'users/$userHandle' : null;
-      final dir = await _storageManager.getDirectory(
+      final dir = await _storageManager.getPlatformDirectory(
         StorageLocation.support,
-        StorageNamespace.peersTouchDesktop,
         subDir: subDir,
       );
       final file = File(p.join(dir.path, dbName));
-      return NativeDatabase(file);
+      // Use WAL mode for better concurrency (supports multiple readers)
+      return NativeDatabase(
+        file,
+        setup: (db) {
+          // Enable WAL mode for better multi-process support
+          db.execute('PRAGMA journal_mode=WAL;');
+          // Reduce lock timeout to fail fast instead of blocking
+          db.execute('PRAGMA busy_timeout=5000;');
+        },
+      );
     });
 
     _connections[key] = newConnection;
@@ -51,13 +59,19 @@ class DriftConnectionManager {
     }
 
     final newConnection = LazyDatabase(() async {
-      final dir = await _storageManager.getDirectory(
+      final dir = await _storageManager.getPlatformDirectory(
         StorageLocation.support,
-        StorageNamespace.peersTouchDesktop,
         subDir: 'global',
       );
       final file = File(p.join(dir.path, dbName));
-      return NativeDatabase(file);
+      // Use WAL mode for better concurrency (supports multiple readers)
+      return NativeDatabase(
+        file,
+        setup: (db) {
+          db.execute('PRAGMA journal_mode=WAL;');
+          db.execute('PRAGMA busy_timeout=5000;');
+        },
+      );
     });
 
     _connections[globalKey] = newConnection;

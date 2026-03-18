@@ -10,6 +10,7 @@ Thumbs.db
 
 # IDE files
 .vscode/
+.cursor/
 .idea/
 *.swp
 *.swo
@@ -43,3 +44,4 @@ station/app/peers-touch-app
 desktop/node_modules/
 desktop/dist/
 desktop/src-tauri/target/
+station/app/peers-touch-station

@@ -2796,6 +2796,1308 @@ class GroupOfflineMessage extends $pb.GeneratedMessage {
   $0.Timestamp ensureCreatedAt() => $_ensure(7);
 }
 
+/// 更新我的群昵称
+class UpdateMyNicknameRequest extends $pb.GeneratedMessage {
+  factory UpdateMyNicknameRequest({
+    $core.String? groupUlid,
+    $core.String? nickname,
+  }) {
+    final result = create();
+    if (groupUlid != null) result.groupUlid = groupUlid;
+    if (nickname != null) result.nickname = nickname;
+    return result;
+  }
+
+  UpdateMyNicknameRequest._();
+
+  factory UpdateMyNicknameRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory UpdateMyNicknameRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'UpdateMyNicknameRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'groupUlid')
+    ..aOS(2, _omitFieldNames ? '' : 'nickname')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateMyNicknameRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateMyNicknameRequest copyWith(
+          void Function(UpdateMyNicknameRequest) updates) =>
+      super.copyWith((message) => updates(message as UpdateMyNicknameRequest))
+          as UpdateMyNicknameRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static UpdateMyNicknameRequest create() => UpdateMyNicknameRequest._();
+  @$core.override
+  UpdateMyNicknameRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static UpdateMyNicknameRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<UpdateMyNicknameRequest>(create);
+  static UpdateMyNicknameRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get groupUlid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set groupUlid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasGroupUlid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearGroupUlid() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get nickname => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set nickname($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasNickname() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearNickname() => $_clearField(2);
+}
+
+class UpdateMyNicknameResponse extends $pb.GeneratedMessage {
+  factory UpdateMyNicknameResponse({
+    GroupMember? member,
+  }) {
+    final result = create();
+    if (member != null) result.member = member;
+    return result;
+  }
+
+  UpdateMyNicknameResponse._();
+
+  factory UpdateMyNicknameResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory UpdateMyNicknameResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'UpdateMyNicknameResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOM<GroupMember>(1, _omitFieldNames ? '' : 'member',
+        subBuilder: GroupMember.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateMyNicknameResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateMyNicknameResponse copyWith(
+          void Function(UpdateMyNicknameResponse) updates) =>
+      super.copyWith((message) => updates(message as UpdateMyNicknameResponse))
+          as UpdateMyNicknameResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static UpdateMyNicknameResponse create() => UpdateMyNicknameResponse._();
+  @$core.override
+  UpdateMyNicknameResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static UpdateMyNicknameResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<UpdateMyNicknameResponse>(create);
+  static UpdateMyNicknameResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  GroupMember get member => $_getN(0);
+  @$pb.TagNumber(1)
+  set member(GroupMember value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasMember() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearMember() => $_clearField(1);
+  @$pb.TagNumber(1)
+  GroupMember ensureMember() => $_ensure(0);
+}
+
+/// 搜索群消息
+class SearchGroupMessagesRequest extends $pb.GeneratedMessage {
+  factory SearchGroupMessagesRequest({
+    $core.String? groupUlid,
+    $core.String? query,
+    $core.int? limit,
+    $core.String? beforeUlid,
+  }) {
+    final result = create();
+    if (groupUlid != null) result.groupUlid = groupUlid;
+    if (query != null) result.query = query;
+    if (limit != null) result.limit = limit;
+    if (beforeUlid != null) result.beforeUlid = beforeUlid;
+    return result;
+  }
+
+  SearchGroupMessagesRequest._();
+
+  factory SearchGroupMessagesRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SearchGroupMessagesRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SearchGroupMessagesRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'groupUlid')
+    ..aOS(2, _omitFieldNames ? '' : 'query')
+    ..aI(3, _omitFieldNames ? '' : 'limit')
+    ..aOS(4, _omitFieldNames ? '' : 'beforeUlid')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchGroupMessagesRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchGroupMessagesRequest copyWith(
+          void Function(SearchGroupMessagesRequest) updates) =>
+      super.copyWith(
+              (message) => updates(message as SearchGroupMessagesRequest))
+          as SearchGroupMessagesRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SearchGroupMessagesRequest create() => SearchGroupMessagesRequest._();
+  @$core.override
+  SearchGroupMessagesRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SearchGroupMessagesRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SearchGroupMessagesRequest>(create);
+  static SearchGroupMessagesRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get groupUlid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set groupUlid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasGroupUlid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearGroupUlid() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get query => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set query($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasQuery() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearQuery() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get limit => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set limit($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasLimit() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearLimit() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get beforeUlid => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set beforeUlid($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasBeforeUlid() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearBeforeUlid() => $_clearField(4);
+}
+
+class SearchGroupMessagesResponse extends $pb.GeneratedMessage {
+  factory SearchGroupMessagesResponse({
+    $core.Iterable<GroupMessage>? messages,
+    $core.bool? hasMore,
+  }) {
+    final result = create();
+    if (messages != null) result.messages.addAll(messages);
+    if (hasMore != null) result.hasMore = hasMore;
+    return result;
+  }
+
+  SearchGroupMessagesResponse._();
+
+  factory SearchGroupMessagesResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SearchGroupMessagesResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SearchGroupMessagesResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..pPM<GroupMessage>(1, _omitFieldNames ? '' : 'messages',
+        subBuilder: GroupMessage.create)
+    ..aOB(2, _omitFieldNames ? '' : 'hasMore')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchGroupMessagesResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchGroupMessagesResponse copyWith(
+          void Function(SearchGroupMessagesResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as SearchGroupMessagesResponse))
+          as SearchGroupMessagesResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SearchGroupMessagesResponse create() =>
+      SearchGroupMessagesResponse._();
+  @$core.override
+  SearchGroupMessagesResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SearchGroupMessagesResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SearchGroupMessagesResponse>(create);
+  static SearchGroupMessagesResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<GroupMessage> get messages => $_getList(0);
+
+  @$pb.TagNumber(2)
+  $core.bool get hasMore => $_getBF(1);
+  @$pb.TagNumber(2)
+  set hasMore($core.bool value) => $_setBool(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasHasMore() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearHasMore() => $_clearField(2);
+}
+
+/// 获取群设置（用户个人设置）
+class GetGroupSettingsRequest extends $pb.GeneratedMessage {
+  factory GetGroupSettingsRequest({
+    $core.String? groupUlid,
+  }) {
+    final result = create();
+    if (groupUlid != null) result.groupUlid = groupUlid;
+    return result;
+  }
+
+  GetGroupSettingsRequest._();
+
+  factory GetGroupSettingsRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetGroupSettingsRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetGroupSettingsRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'groupUlid')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetGroupSettingsRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetGroupSettingsRequest copyWith(
+          void Function(GetGroupSettingsRequest) updates) =>
+      super.copyWith((message) => updates(message as GetGroupSettingsRequest))
+          as GetGroupSettingsRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetGroupSettingsRequest create() => GetGroupSettingsRequest._();
+  @$core.override
+  GetGroupSettingsRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetGroupSettingsRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetGroupSettingsRequest>(create);
+  static GetGroupSettingsRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get groupUlid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set groupUlid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasGroupUlid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearGroupUlid() => $_clearField(1);
+}
+
+class GetGroupSettingsResponse extends $pb.GeneratedMessage {
+  factory GetGroupSettingsResponse({
+    $core.bool? isMuted,
+    $core.bool? isPinned,
+    $core.String? myNickname,
+    $core.bool? showMemberNickname,
+  }) {
+    final result = create();
+    if (isMuted != null) result.isMuted = isMuted;
+    if (isPinned != null) result.isPinned = isPinned;
+    if (myNickname != null) result.myNickname = myNickname;
+    if (showMemberNickname != null)
+      result.showMemberNickname = showMemberNickname;
+    return result;
+  }
+
+  GetGroupSettingsResponse._();
+
+  factory GetGroupSettingsResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetGroupSettingsResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetGroupSettingsResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'isMuted')
+    ..aOB(2, _omitFieldNames ? '' : 'isPinned')
+    ..aOS(3, _omitFieldNames ? '' : 'myNickname')
+    ..aOB(4, _omitFieldNames ? '' : 'showMemberNickname')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetGroupSettingsResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetGroupSettingsResponse copyWith(
+          void Function(GetGroupSettingsResponse) updates) =>
+      super.copyWith((message) => updates(message as GetGroupSettingsResponse))
+          as GetGroupSettingsResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetGroupSettingsResponse create() => GetGroupSettingsResponse._();
+  @$core.override
+  GetGroupSettingsResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetGroupSettingsResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetGroupSettingsResponse>(create);
+  static GetGroupSettingsResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get isMuted => $_getBF(0);
+  @$pb.TagNumber(1)
+  set isMuted($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasIsMuted() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearIsMuted() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.bool get isPinned => $_getBF(1);
+  @$pb.TagNumber(2)
+  set isPinned($core.bool value) => $_setBool(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasIsPinned() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearIsPinned() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get myNickname => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set myNickname($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasMyNickname() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearMyNickname() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.bool get showMemberNickname => $_getBF(3);
+  @$pb.TagNumber(4)
+  set showMemberNickname($core.bool value) => $_setBool(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasShowMemberNickname() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearShowMemberNickname() => $_clearField(4);
+}
+
+/// 更新群设置（用户个人设置）
+class UpdateGroupSettingsRequest extends $pb.GeneratedMessage {
+  factory UpdateGroupSettingsRequest({
+    $core.String? groupUlid,
+    $core.bool? isMuted,
+    $core.bool? isPinned,
+    $core.bool? showMemberNickname,
+  }) {
+    final result = create();
+    if (groupUlid != null) result.groupUlid = groupUlid;
+    if (isMuted != null) result.isMuted = isMuted;
+    if (isPinned != null) result.isPinned = isPinned;
+    if (showMemberNickname != null)
+      result.showMemberNickname = showMemberNickname;
+    return result;
+  }
+
+  UpdateGroupSettingsRequest._();
+
+  factory UpdateGroupSettingsRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory UpdateGroupSettingsRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'UpdateGroupSettingsRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'groupUlid')
+    ..aOB(2, _omitFieldNames ? '' : 'isMuted')
+    ..aOB(3, _omitFieldNames ? '' : 'isPinned')
+    ..aOB(4, _omitFieldNames ? '' : 'showMemberNickname')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateGroupSettingsRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateGroupSettingsRequest copyWith(
+          void Function(UpdateGroupSettingsRequest) updates) =>
+      super.copyWith(
+              (message) => updates(message as UpdateGroupSettingsRequest))
+          as UpdateGroupSettingsRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static UpdateGroupSettingsRequest create() => UpdateGroupSettingsRequest._();
+  @$core.override
+  UpdateGroupSettingsRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static UpdateGroupSettingsRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<UpdateGroupSettingsRequest>(create);
+  static UpdateGroupSettingsRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get groupUlid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set groupUlid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasGroupUlid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearGroupUlid() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.bool get isMuted => $_getBF(1);
+  @$pb.TagNumber(2)
+  set isMuted($core.bool value) => $_setBool(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasIsMuted() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearIsMuted() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.bool get isPinned => $_getBF(2);
+  @$pb.TagNumber(3)
+  set isPinned($core.bool value) => $_setBool(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasIsPinned() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearIsPinned() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.bool get showMemberNickname => $_getBF(3);
+  @$pb.TagNumber(4)
+  set showMemberNickname($core.bool value) => $_setBool(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasShowMemberNickname() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearShowMemberNickname() => $_clearField(4);
+}
+
+class UpdateGroupSettingsResponse extends $pb.GeneratedMessage {
+  factory UpdateGroupSettingsResponse({
+    $core.bool? success,
+  }) {
+    final result = create();
+    if (success != null) result.success = success;
+    return result;
+  }
+
+  UpdateGroupSettingsResponse._();
+
+  factory UpdateGroupSettingsResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory UpdateGroupSettingsResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'UpdateGroupSettingsResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'success')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateGroupSettingsResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  UpdateGroupSettingsResponse copyWith(
+          void Function(UpdateGroupSettingsResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as UpdateGroupSettingsResponse))
+          as UpdateGroupSettingsResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static UpdateGroupSettingsResponse create() =>
+      UpdateGroupSettingsResponse._();
+  @$core.override
+  UpdateGroupSettingsResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static UpdateGroupSettingsResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<UpdateGroupSettingsResponse>(create);
+  static UpdateGroupSettingsResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get success => $_getBF(0);
+  @$pb.TagNumber(1)
+  set success($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSuccess() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSuccess() => $_clearField(1);
+}
+
+/// 删除消息
+class DeleteGroupMessageRequest extends $pb.GeneratedMessage {
+  factory DeleteGroupMessageRequest({
+    $core.String? groupUlid,
+    $core.String? messageUlid,
+  }) {
+    final result = create();
+    if (groupUlid != null) result.groupUlid = groupUlid;
+    if (messageUlid != null) result.messageUlid = messageUlid;
+    return result;
+  }
+
+  DeleteGroupMessageRequest._();
+
+  factory DeleteGroupMessageRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory DeleteGroupMessageRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'DeleteGroupMessageRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'groupUlid')
+    ..aOS(2, _omitFieldNames ? '' : 'messageUlid')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeleteGroupMessageRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeleteGroupMessageRequest copyWith(
+          void Function(DeleteGroupMessageRequest) updates) =>
+      super.copyWith((message) => updates(message as DeleteGroupMessageRequest))
+          as DeleteGroupMessageRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static DeleteGroupMessageRequest create() => DeleteGroupMessageRequest._();
+  @$core.override
+  DeleteGroupMessageRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static DeleteGroupMessageRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<DeleteGroupMessageRequest>(create);
+  static DeleteGroupMessageRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get groupUlid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set groupUlid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasGroupUlid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearGroupUlid() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get messageUlid => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set messageUlid($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasMessageUlid() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearMessageUlid() => $_clearField(2);
+}
+
+class DeleteGroupMessageResponse extends $pb.GeneratedMessage {
+  factory DeleteGroupMessageResponse({
+    $core.bool? success,
+  }) {
+    final result = create();
+    if (success != null) result.success = success;
+    return result;
+  }
+
+  DeleteGroupMessageResponse._();
+
+  factory DeleteGroupMessageResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory DeleteGroupMessageResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'DeleteGroupMessageResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'success')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeleteGroupMessageResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeleteGroupMessageResponse copyWith(
+          void Function(DeleteGroupMessageResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as DeleteGroupMessageResponse))
+          as DeleteGroupMessageResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static DeleteGroupMessageResponse create() => DeleteGroupMessageResponse._();
+  @$core.override
+  DeleteGroupMessageResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static DeleteGroupMessageResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<DeleteGroupMessageResponse>(create);
+  static DeleteGroupMessageResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get success => $_getBF(0);
+  @$pb.TagNumber(1)
+  set success($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSuccess() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSuccess() => $_clearField(1);
+}
+
+/// 获取离线消息
+class GetOfflineMessagesRequest extends $pb.GeneratedMessage {
+  factory GetOfflineMessagesRequest({
+    $core.int? limit,
+  }) {
+    final result = create();
+    if (limit != null) result.limit = limit;
+    return result;
+  }
+
+  GetOfflineMessagesRequest._();
+
+  factory GetOfflineMessagesRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetOfflineMessagesRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetOfflineMessagesRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'limit')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetOfflineMessagesRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetOfflineMessagesRequest copyWith(
+          void Function(GetOfflineMessagesRequest) updates) =>
+      super.copyWith((message) => updates(message as GetOfflineMessagesRequest))
+          as GetOfflineMessagesRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetOfflineMessagesRequest create() => GetOfflineMessagesRequest._();
+  @$core.override
+  GetOfflineMessagesRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetOfflineMessagesRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetOfflineMessagesRequest>(create);
+  static GetOfflineMessagesRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get limit => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set limit($core.int value) => $_setSignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasLimit() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearLimit() => $_clearField(1);
+}
+
+class GetOfflineMessagesResponse extends $pb.GeneratedMessage {
+  factory GetOfflineMessagesResponse({
+    $core.Iterable<GroupOfflineMessage>? messages,
+  }) {
+    final result = create();
+    if (messages != null) result.messages.addAll(messages);
+    return result;
+  }
+
+  GetOfflineMessagesResponse._();
+
+  factory GetOfflineMessagesResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetOfflineMessagesResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetOfflineMessagesResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..pPM<GroupOfflineMessage>(1, _omitFieldNames ? '' : 'messages',
+        subBuilder: GroupOfflineMessage.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetOfflineMessagesResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetOfflineMessagesResponse copyWith(
+          void Function(GetOfflineMessagesResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as GetOfflineMessagesResponse))
+          as GetOfflineMessagesResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetOfflineMessagesResponse create() => GetOfflineMessagesResponse._();
+  @$core.override
+  GetOfflineMessagesResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetOfflineMessagesResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetOfflineMessagesResponse>(create);
+  static GetOfflineMessagesResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<GroupOfflineMessage> get messages => $_getList(0);
+}
+
+/// 确认离线消息
+class AckOfflineMessagesRequest extends $pb.GeneratedMessage {
+  factory AckOfflineMessagesRequest({
+    $core.Iterable<$core.String>? ulids,
+  }) {
+    final result = create();
+    if (ulids != null) result.ulids.addAll(ulids);
+    return result;
+  }
+
+  AckOfflineMessagesRequest._();
+
+  factory AckOfflineMessagesRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory AckOfflineMessagesRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'AckOfflineMessagesRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..pPS(1, _omitFieldNames ? '' : 'ulids')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AckOfflineMessagesRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AckOfflineMessagesRequest copyWith(
+          void Function(AckOfflineMessagesRequest) updates) =>
+      super.copyWith((message) => updates(message as AckOfflineMessagesRequest))
+          as AckOfflineMessagesRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static AckOfflineMessagesRequest create() => AckOfflineMessagesRequest._();
+  @$core.override
+  AckOfflineMessagesRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static AckOfflineMessagesRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<AckOfflineMessagesRequest>(create);
+  static AckOfflineMessagesRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<$core.String> get ulids => $_getList(0);
+}
+
+class AckOfflineMessagesResponse extends $pb.GeneratedMessage {
+  factory AckOfflineMessagesResponse({
+    $core.bool? success,
+  }) {
+    final result = create();
+    if (success != null) result.success = success;
+    return result;
+  }
+
+  AckOfflineMessagesResponse._();
+
+  factory AckOfflineMessagesResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory AckOfflineMessagesResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'AckOfflineMessagesResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'success')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AckOfflineMessagesResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AckOfflineMessagesResponse copyWith(
+          void Function(AckOfflineMessagesResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as AckOfflineMessagesResponse))
+          as AckOfflineMessagesResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static AckOfflineMessagesResponse create() => AckOfflineMessagesResponse._();
+  @$core.override
+  AckOfflineMessagesResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static AckOfflineMessagesResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<AckOfflineMessagesResponse>(create);
+  static AckOfflineMessagesResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get success => $_getBF(0);
+  @$pb.TagNumber(1)
+  set success($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSuccess() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSuccess() => $_clearField(1);
+}
+
+/// 获取未读数
+class GetUnreadCountRequest extends $pb.GeneratedMessage {
+  factory GetUnreadCountRequest({
+    $core.String? groupUlid,
+  }) {
+    final result = create();
+    if (groupUlid != null) result.groupUlid = groupUlid;
+    return result;
+  }
+
+  GetUnreadCountRequest._();
+
+  factory GetUnreadCountRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetUnreadCountRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetUnreadCountRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'groupUlid')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetUnreadCountRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetUnreadCountRequest copyWith(
+          void Function(GetUnreadCountRequest) updates) =>
+      super.copyWith((message) => updates(message as GetUnreadCountRequest))
+          as GetUnreadCountRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetUnreadCountRequest create() => GetUnreadCountRequest._();
+  @$core.override
+  GetUnreadCountRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetUnreadCountRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetUnreadCountRequest>(create);
+  static GetUnreadCountRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get groupUlid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set groupUlid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasGroupUlid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearGroupUlid() => $_clearField(1);
+}
+
+class GetUnreadCountResponse extends $pb.GeneratedMessage {
+  factory GetUnreadCountResponse({
+    $fixnum.Int64? unreadCount,
+  }) {
+    final result = create();
+    if (unreadCount != null) result.unreadCount = unreadCount;
+    return result;
+  }
+
+  GetUnreadCountResponse._();
+
+  factory GetUnreadCountResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetUnreadCountResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetUnreadCountResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aInt64(1, _omitFieldNames ? '' : 'unreadCount')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetUnreadCountResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetUnreadCountResponse copyWith(
+          void Function(GetUnreadCountResponse) updates) =>
+      super.copyWith((message) => updates(message as GetUnreadCountResponse))
+          as GetUnreadCountResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetUnreadCountResponse create() => GetUnreadCountResponse._();
+  @$core.override
+  GetUnreadCountResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetUnreadCountResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetUnreadCountResponse>(create);
+  static GetUnreadCountResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get unreadCount => $_getI64(0);
+  @$pb.TagNumber(1)
+  set unreadCount($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasUnreadCount() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearUnreadCount() => $_clearField(1);
+}
+
+/// 标记群消息已读
+class MarkGroupReadRequest extends $pb.GeneratedMessage {
+  factory MarkGroupReadRequest({
+    $core.String? groupUlid,
+    $core.String? upToUlid,
+  }) {
+    final result = create();
+    if (groupUlid != null) result.groupUlid = groupUlid;
+    if (upToUlid != null) result.upToUlid = upToUlid;
+    return result;
+  }
+
+  MarkGroupReadRequest._();
+
+  factory MarkGroupReadRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory MarkGroupReadRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'MarkGroupReadRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'groupUlid')
+    ..aOS(2, _omitFieldNames ? '' : 'upToUlid')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MarkGroupReadRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MarkGroupReadRequest copyWith(void Function(MarkGroupReadRequest) updates) =>
+      super.copyWith((message) => updates(message as MarkGroupReadRequest))
+          as MarkGroupReadRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static MarkGroupReadRequest create() => MarkGroupReadRequest._();
+  @$core.override
+  MarkGroupReadRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static MarkGroupReadRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<MarkGroupReadRequest>(create);
+  static MarkGroupReadRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get groupUlid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set groupUlid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasGroupUlid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearGroupUlid() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get upToUlid => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set upToUlid($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasUpToUlid() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearUpToUlid() => $_clearField(2);
+}
+
+class MarkGroupReadResponse extends $pb.GeneratedMessage {
+  factory MarkGroupReadResponse({
+    $core.bool? success,
+  }) {
+    final result = create();
+    if (success != null) result.success = success;
+    return result;
+  }
+
+  MarkGroupReadResponse._();
+
+  factory MarkGroupReadResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory MarkGroupReadResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'MarkGroupReadResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'success')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MarkGroupReadResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MarkGroupReadResponse copyWith(
+          void Function(MarkGroupReadResponse) updates) =>
+      super.copyWith((message) => updates(message as MarkGroupReadResponse))
+          as MarkGroupReadResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static MarkGroupReadResponse create() => MarkGroupReadResponse._();
+  @$core.override
+  MarkGroupReadResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static MarkGroupReadResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<MarkGroupReadResponse>(create);
+  static MarkGroupReadResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get success => $_getBF(0);
+  @$pb.TagNumber(1)
+  set success($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSuccess() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSuccess() => $_clearField(1);
+}
+
+/// 统计信息
+class GetGroupStatsRequest extends $pb.GeneratedMessage {
+  factory GetGroupStatsRequest() => create();
+
+  GetGroupStatsRequest._();
+
+  factory GetGroupStatsRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetGroupStatsRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetGroupStatsRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetGroupStatsRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetGroupStatsRequest copyWith(void Function(GetGroupStatsRequest) updates) =>
+      super.copyWith((message) => updates(message as GetGroupStatsRequest))
+          as GetGroupStatsRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetGroupStatsRequest create() => GetGroupStatsRequest._();
+  @$core.override
+  GetGroupStatsRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetGroupStatsRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetGroupStatsRequest>(create);
+  static GetGroupStatsRequest? _defaultInstance;
+}
+
+class GetGroupStatsResponse extends $pb.GeneratedMessage {
+  factory GetGroupStatsResponse({
+    $fixnum.Int64? totalGroups,
+    $fixnum.Int64? totalMembers,
+    $fixnum.Int64? totalMessages,
+    $fixnum.Int64? activeGroups,
+  }) {
+    final result = create();
+    if (totalGroups != null) result.totalGroups = totalGroups;
+    if (totalMembers != null) result.totalMembers = totalMembers;
+    if (totalMessages != null) result.totalMessages = totalMessages;
+    if (activeGroups != null) result.activeGroups = activeGroups;
+    return result;
+  }
+
+  GetGroupStatsResponse._();
+
+  factory GetGroupStatsResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetGroupStatsResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetGroupStatsResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aInt64(1, _omitFieldNames ? '' : 'totalGroups')
+    ..aInt64(2, _omitFieldNames ? '' : 'totalMembers')
+    ..aInt64(3, _omitFieldNames ? '' : 'totalMessages')
+    ..aInt64(4, _omitFieldNames ? '' : 'activeGroups')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetGroupStatsResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetGroupStatsResponse copyWith(
+          void Function(GetGroupStatsResponse) updates) =>
+      super.copyWith((message) => updates(message as GetGroupStatsResponse))
+          as GetGroupStatsResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetGroupStatsResponse create() => GetGroupStatsResponse._();
+  @$core.override
+  GetGroupStatsResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetGroupStatsResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetGroupStatsResponse>(create);
+  static GetGroupStatsResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get totalGroups => $_getI64(0);
+  @$pb.TagNumber(1)
+  set totalGroups($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasTotalGroups() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearTotalGroups() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $fixnum.Int64 get totalMembers => $_getI64(1);
+  @$pb.TagNumber(2)
+  set totalMembers($fixnum.Int64 value) => $_setInt64(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasTotalMembers() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearTotalMembers() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $fixnum.Int64 get totalMessages => $_getI64(2);
+  @$pb.TagNumber(3)
+  set totalMessages($fixnum.Int64 value) => $_setInt64(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasTotalMessages() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearTotalMessages() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $fixnum.Int64 get activeGroups => $_getI64(3);
+  @$pb.TagNumber(4)
+  set activeGroups($fixnum.Int64 value) => $_setInt64(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasActiveGroups() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearActiveGroups() => $_clearField(4);
+}
+
 const $core.bool _omitFieldNames =
     $core.bool.fromEnvironment('protobuf.omit_field_names');
 const $core.bool _omitMessageNames =

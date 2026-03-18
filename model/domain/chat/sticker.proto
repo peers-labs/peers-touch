@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// ==================== 贴纸包模型 ====================
+
+// 贴纸包
+message StickerPack {
+  string ulid = 1;                            // 贴纸包唯一ID
+  string name = 2;                            // 贴纸包名称
+  string author = 3;                          // 作者
+  string description = 4;                     // 描述
+  string cover_url = 5;                       // 封面图URL
+  repeated Sticker stickers = 6;              // 贴纸列表
+  bool is_official = 7;                       // 是否官方包
+  bool is_animated = 8;                       // 是否动态贴纸
+  int32 sticker_count = 9;                    // 贴纸数量
+  int32 download_count = 10;                  // 下载次数
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+// 单个贴纸
+message Sticker {
+  string ulid = 1;                            // 贴纸唯一ID
+  string pack_ulid = 2;                       // 所属贴纸包ID
+  string emoji = 3;                           // 对应的emoji（用于搜索和联想）
+  string url = 4;                             // 贴纸图片URL
+  string thumbnail_url = 5;                   // 缩略图URL
+  int32 width = 6;                            // 宽度
+  int32 height = 7;                           // 高度
+  string file_type = 8;                       // 文件类型 (png, gif, webp, lottie)
+  int64 file_size = 9;                        // 文件大小
+}
+
+// 用户贴纸收藏
+message UserStickerCollection {
+  string actor_did = 1;
+  repeated string collected_pack_ulids = 2;   // 收藏的贴纸包ID列表
+  repeated RecentSticker recent_stickers = 3; // 最近使用的贴纸
+}
+
+// 最近使用的贴纸
+message RecentSticker {
+  string sticker_ulid = 1;
+  google.protobuf.Timestamp used_at = 2;
+  int32 use_count = 3;
+}
+
+// ==================== API 请求/响应 ====================
+
+// 获取官方贴纸包列表
+message ListOfficialStickerPacksRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  string keyword = 3;                         // 搜索关键词
+}
+
+message ListOfficialStickerPacksResponse {
+  repeated StickerPack packs = 1;
+  int32 total = 2;
+}
+
+// 获取贴纸包详情
+message GetStickerPackRequest {
+  string pack_ulid = 1;
+}
+
+message GetStickerPackResponse {
+  StickerPack pack = 1;
+  bool is_collected = 2;                      // 当前用户是否已收藏
+}
+
+// 收藏贴纸包
+message CollectStickerPackRequest {
+  string pack_ulid = 1;
+}
+
+message CollectStickerPackResponse {
+  bool success = 1;
+}
+
+// 取消收藏贴纸包
+message UncollectStickerPackRequest {
+  string pack_ulid = 1;
+}
+
+message UncollectStickerPackResponse {
+  bool success = 1;
+}
+
+// 获取我的贴纸包
+message GetMyStickerPacksRequest {
+  bool include_recent = 1;                    // 是否包含最近使用
+}
+
+message GetMyStickerPacksResponse {
+  repeated StickerPack packs = 1;
+  repeated RecentSticker recent_stickers = 2;
+}
+
+// 记录贴纸使用
+message RecordStickerUsageRequest {
+  string sticker_ulid = 1;
+}
+
+message RecordStickerUsageResponse {
+  bool success = 1;
+}
+
+// 搜索贴纸（通过emoji或关键词）
+message SearchStickersRequest {
+  string query = 1;                           // 搜索词（emoji或文字）
+  int32 limit = 2;
+}
+
+message SearchStickersResponse {
+  repeated Sticker stickers = 1;
+}
+
+// 上传自定义贴纸包（预留）
+message CreateStickerPackRequest {
+  string name = 1;
+  string description = 2;
+  repeated CreateStickerItem stickers = 3;
+}
+
+message CreateStickerItem {
+  string emoji = 1;
+  bytes image_data = 2;                       // 图片二进制数据
+  string file_type = 3;
+}
+
+message CreateStickerPackResponse {
+  StickerPack pack = 1;
+}

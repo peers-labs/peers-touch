@@ -682,6 +682,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pressCtrlEnterToSend => '按 Ctrl+Enter 发送';
 
   @override
+  String get connectionStatusOnline => '在线';
+
+  @override
   String get connectionStatusOnlineP2P => '在线 (P2P)';
 
   @override
@@ -692,4 +695,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get connectionStatusConnecting => '连接中...';
+
+  @override
+  String get scrollToLatest => '回到最新消息';
 }

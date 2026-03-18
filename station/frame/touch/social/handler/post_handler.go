@@ -2,22 +2,18 @@ package handler
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 
-	"github.com/cloudwego/hertz/pkg/app"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/social/service"
-	"github.com/peers-labs/peers-touch/station/frame/touch/util"
 )
 
-const SubjectContextKey = "auth_subject"
-
 func getUserID(c context.Context) (uint64, bool) {
-	if subject, ok := c.Value(SubjectContextKey).(*coreauth.Subject); ok {
+	if subject := coreauth.GetSubject(c); subject != nil {
 		userID, err := strconv.ParseUint(subject.ID, 10, 64)
 		if err != nil {
 			return 0, false
@@ -27,227 +23,172 @@ func getUserID(c context.Context) (uint64, bool) {
 	return 0, false
 }
 
-func CreatePost(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleCreatePost(ctx context.Context, req *model.CreatePostRequest) (*model.CreatePostResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	req, err := util.ReqBind(c, ctx, &model.CreatePostRequest{})
+	post, err := service.CreatePost(ctx, req, userID)
 	if err != nil {
-		return
+		logger.Error(ctx, "failed to create post", "error", err)
+		return nil, server.InternalErrorWithCause("failed to create post", err)
 	}
 
-	post, err := service.CreatePost(c, req, userID)
-	if err != nil {
-		logger.Error(c, "failed to create post", "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_CREATE_POST_FAILED, err.Error()))
-		return
-	}
-
-	util.RspBack(c, ctx, http.StatusOK, post)
+	return &model.CreatePostResponse{Post: post}, nil
 }
 
-func GetPost(c context.Context, ctx *app.RequestContext) {
-	postID := ctx.Param("id")
-	if postID == "" {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
-		return
+func HandleGetPost(ctx context.Context, req *model.GetPostRequest) (*model.GetPostResponse, error) {
+	if req.PostId == "" {
+		return nil, server.BadRequest("post_id is required")
 	}
 
 	var viewerID uint64
-	if userID, exists := getUserID(c); exists {
+	if userID, exists := getUserID(ctx); exists {
 		viewerID = userID
 	}
 
-	post, err := service.GetPost(c, postID, viewerID)
+	post, err := service.GetPost(ctx, req.PostId, viewerID)
 	if err != nil {
-		logger.Error(c, "failed to get post", "error", err)
-		util.RspError(c, ctx, http.StatusNotFound, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_GET_POST_FAILED, err.Error()))
-		return
+		logger.Error(ctx, "failed to get post", "error", err)
+		return nil, server.NotFound("post not found")
 	}
 
-	util.RspBack(c, ctx, http.StatusOK, post)
+	return &model.GetPostResponse{Post: post}, nil
 }
 
-func UpdatePost(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleUpdatePost(ctx context.Context, req *model.UpdatePostRequest) (*model.UpdatePostResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	req, err := util.ReqBind(c, ctx, &model.UpdatePostRequest{})
+	post, err := service.UpdatePost(ctx, req, userID)
 	if err != nil {
-		return
+		logger.Error(ctx, "failed to update post", "error", err)
+		return nil, server.InternalErrorWithCause("failed to update post", err)
 	}
 
-	post, err := service.UpdatePost(c, req, userID)
-	if err != nil {
-		logger.Error(c, "failed to update post", "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UPDATE_POST_FAILED, err.Error()))
-		return
-	}
-
-	util.RspBack(c, ctx, http.StatusOK, post)
+	return &model.UpdatePostResponse{Post: post}, nil
 }
 
-func DeletePost(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleDeletePost(ctx context.Context, req *model.DeletePostRequest) (*model.DeletePostResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	postID := ctx.Param("id")
-	if postID == "" {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
-		return
+	if req.PostId == "" {
+		return nil, server.BadRequest("post_id is required")
 	}
 
-	err := service.DeletePost(c, postID, userID)
+	err := service.DeletePost(ctx, req.PostId, userID)
 	if err != nil {
-		logger.Error(c, "failed to delete post", "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_DELETE_POST_FAILED, err.Error()))
-		return
+		logger.Error(ctx, "failed to delete post", "error", err)
+		return nil, server.InternalErrorWithCause("failed to delete post", err)
 	}
 
-	ctx.JSON(http.StatusOK, map[string]bool{"success": true})
+	return &model.DeletePostResponse{Success: true}, nil
 }
 
-func LikePost(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleLikePost(ctx context.Context, req *model.LikePostRequest) (*model.LikePostResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	postID := ctx.Param("id")
-	if postID == "" {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
-		return
+	if req.PostId == "" {
+		return nil, server.BadRequest("post_id is required")
 	}
 
-	resp, err := service.LikePost(c, postID, userID)
+	resp, err := service.LikePost(ctx, req.PostId, userID)
 	if err != nil {
-		logger.Error(c, "failed to like post", "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_LIKE_POST_FAILED, err.Error()))
-		return
+		logger.Error(ctx, "failed to like post", "error", err)
+		return nil, server.InternalErrorWithCause("failed to like post", err)
 	}
 
-	util.RspBack(c, ctx, http.StatusOK, resp)
+	return resp, nil
 }
 
-func UnlikePost(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleUnlikePost(ctx context.Context, req *model.UnlikePostRequest) (*model.UnlikePostResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	postID := ctx.Param("id")
-	if postID == "" {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
-		return
+	if req.PostId == "" {
+		return nil, server.BadRequest("post_id is required")
 	}
 
-	resp, err := service.UnlikePost(c, postID, userID)
+	resp, err := service.UnlikePost(ctx, req.PostId, userID)
 	if err != nil {
-		logger.Error(c, "failed to unlike post", "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNLIKE_POST_FAILED, err.Error()))
-		return
+		logger.Error(ctx, "failed to unlike post", "error", err)
+		return nil, server.InternalErrorWithCause("failed to unlike post", err)
 	}
 
-	util.RspBack(c, ctx, http.StatusOK, resp)
+	return resp, nil
 }
 
-func GetPostLikers(c context.Context, ctx *app.RequestContext) {
-	req, err := util.ReqBind(c, ctx, &model.GetPostLikersRequest{})
+func HandleGetPostLikers(ctx context.Context, req *model.GetPostLikersRequest) (*model.GetPostLikersResponse, error) {
+	resp, err := service.GetPostLikers(ctx, req)
 	if err != nil {
-		return
+		logger.Error(ctx, "failed to get post likers", "error", err)
+		return nil, server.InternalErrorWithCause("failed to get post likers", err)
 	}
 
-	resp, err := service.GetPostLikers(c, req)
-	if err != nil {
-		logger.Error(c, "failed to get post likers", "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_GET_LIKERS_FAILED, err.Error()))
-		return
-	}
-
-	util.RspBack(c, ctx, http.StatusOK, resp)
+	return resp, nil
 }
 
-func RepostPost(c context.Context, ctx *app.RequestContext) {
-	userID, exists := getUserID(c)
+func HandleRepostPost(ctx context.Context, req *model.RepostRequest) (*model.RepostResponse, error) {
+	userID, exists := getUserID(ctx)
 	if !exists {
-		util.RspError(c, ctx, http.StatusUnauthorized, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_UNAUTHORIZED))
-		return
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	postID := ctx.Param("id")
-	if postID == "" {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_POST_ID_REQUIRED))
-		return
+	if req.PostId == "" {
+		return nil, server.BadRequest("post_id is required")
 	}
 
-	req, err := util.ReqBind(c, ctx, &model.RepostRequest{})
+	resp, err := service.RepostPost(ctx, req, userID)
 	if err != nil {
-		logger.Error(c, "failed to bind request", "error", err)
-	}
-	req.PostId = postID
-
-	resp, err := service.RepostPost(c, req, userID)
-	if err != nil {
-		logger.Error(c, "failed to repost", "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_REPOST_FAILED, err.Error()))
-		return
+		logger.Error(ctx, "failed to repost", "error", err)
+		return nil, server.InternalErrorWithCause("failed to repost", err)
 	}
 
-	util.RspBack(c, ctx, http.StatusOK, resp)
+	return resp, nil
 }
 
-func GetUserPosts(c context.Context, ctx *app.RequestContext) {
-	userID := ctx.Param("userId")
-	if userID == "" {
-		util.RspError(c, ctx, http.StatusBadRequest, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_USER_ID_REQUIRED))
-		return
-	}
-
-	req, err := util.ReqBind(c, ctx, &model.ListPostsRequest{})
-	if err != nil {
-		return
-	}
-
+func HandleGetUserPosts(ctx context.Context, req *model.ListPostsRequest) (*model.ListPostsResponse, error) {
 	if req.Filter == nil {
 		req.Filter = &model.PostFilter{}
 	}
 
-	authorID := userID
-	if _, err := strconv.ParseUint(userID, 10, 64); err != nil {
-		actorInfo, err := actor.GetActorByUsername(c, userID)
-		if err != nil {
-			logger.Warn(c, "failed to resolve username to actor ID", "username", userID, "error", err)
-			util.RspError(c, ctx, http.StatusNotFound, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_USER_ID_REQUIRED, "user not found"))
-			return
-		}
-		authorID = strconv.FormatUint(actorInfo.ID, 10)
-		logger.Debug(c, "resolved username to actor ID", "username", userID, "actorID", authorID)
+	authorID := req.Filter.AuthorId
+	if authorID == "" {
+		return nil, server.BadRequest("author_id is required")
 	}
 
-	req.Filter.AuthorId = authorID
+	if _, err := strconv.ParseUint(authorID, 10, 64); err != nil {
+		actorInfo, err := actor.GetActorByUsername(ctx, authorID)
+		if err != nil {
+			logger.Warn(ctx, "failed to resolve username to actor ID", "username", authorID, "error", err)
+			return nil, server.NotFound("user not found")
+		}
+		authorID = strconv.FormatUint(actorInfo.ID, 10)
+		req.Filter.AuthorId = authorID
+		logger.Debug(ctx, "resolved username to actor ID", "username", authorID, "actorID", authorID)
+	}
 
 	var viewerID uint64
-	if vID, exists := getUserID(c); exists {
+	if vID, exists := getUserID(ctx); exists {
 		viewerID = vID
 	}
 
-	resp, err := service.ListPosts(c, req, viewerID)
+	resp, err := service.ListPosts(ctx, req, viewerID)
 	if err != nil {
-		logger.Error(c, "failed to get user posts", "error", err)
-		util.RspError(c, ctx, http.StatusInternalServerError, model.NewErrorResponse(model.ErrorCode_ERROR_CODE_LIST_POSTS_FAILED, err.Error()))
-		return
+		logger.Error(ctx, "failed to get user posts", "error", err)
+		return nil, server.InternalErrorWithCause("failed to get user posts", err)
 	}
 
-	util.RspBack(c, ctx, http.StatusOK, resp)
+	return resp, nil
 }

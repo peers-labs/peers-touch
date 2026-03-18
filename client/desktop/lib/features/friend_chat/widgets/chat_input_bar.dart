@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
+import 'package:peers_touch_ui/peers_touch_ui.dart';
 
+/// Chat input bar for friend chat.
+/// StatelessWidget per project convention (ADR-002).
 class FriendChatInputBar extends StatelessWidget {
   const FriendChatInputBar({
     super.key,
@@ -10,6 +13,13 @@ class FriendChatInputBar extends StatelessWidget {
     this.isSending = false,
     this.onAttachmentTap,
     this.onEmojiTap,
+    this.replyMessage,
+    this.onCancelReply,
+    this.showEmojiPicker = false,
+    this.onEmojiSelected,
+    this.onToggleEmojiPicker,
+    this.onAddCustomSticker,
+    this.onFavoriteSticker,
   });
 
   final TextEditingController controller;
@@ -17,52 +27,89 @@ class FriendChatInputBar extends StatelessWidget {
   final bool isSending;
   final VoidCallback? onAttachmentTap;
   final VoidCallback? onEmojiTap;
+  final ReplyMessage? replyMessage;
+  final VoidCallback? onCancelReply;
+  final bool showEmojiPicker;
+  final void Function(String emoji)? onEmojiSelected;
+  final VoidCallback? onToggleEmojiPicker;
+  /// 添加自定义表情包回调（点击+号）
+  final VoidCallback? onAddCustomSticker;
+  /// 收藏表情回调
+  final VoidCallback? onFavoriteSticker;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(UIKit.spaceMd(context)),
-      decoration: BoxDecoration(
-        color: UIKit.chatAreaBg(context),
-        border: Border(
-          top: BorderSide(
-            color: UIKit.dividerColor(context),
-            width: UIKit.dividerThickness,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 回复预览
+        if (replyMessage != null)
+          ReplyPreview(
+            replyMessage: replyMessage!,
+            onClose: onCancelReply ?? () {},
           ),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline),
-              onPressed: onAttachmentTap,
-              color: UIKit.textSecondary(context),
-            ),
-            IconButton(
-              icon: const Icon(Icons.emoji_emotions_outlined),
-              onPressed: onEmojiTap,
-              color: UIKit.textSecondary(context),
-            ),
-            SizedBox(width: UIKit.spaceSm(context)),
-            Expanded(
-              child: _InputField(
-                controller: controller,
-                onSend: onSend,
-                isSending: isSending,
+
+        // 输入栏
+        Container(
+          padding: EdgeInsets.all(UIKit.spaceMd(context)),
+          decoration: BoxDecoration(
+            color: UIKit.chatAreaBg(context),
+            border: Border(
+              top: BorderSide(
+                color: UIKit.dividerColor(context),
+                width: UIKit.dividerThickness,
               ),
             ),
-            SizedBox(width: UIKit.spaceSm(context)),
-            _SendButton(
-              onSend: onSend,
-              isSending: isSending,
-              hasText: controller.text.isNotEmpty,
+          ),
+          child: SafeArea(
+            top: false,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  onPressed: onAttachmentTap,
+                  color: UIKit.textSecondary(context),
+                ),
+                IconButton(
+                  icon: Icon(
+                    showEmojiPicker 
+                        ? Icons.keyboard 
+                        : Icons.emoji_emotions_outlined,
+                  ),
+                  onPressed: onToggleEmojiPicker ?? onEmojiTap,
+                  color: showEmojiPicker 
+                      ? Theme.of(context).colorScheme.primary
+                      : UIKit.textSecondary(context),
+                ),
+                SizedBox(width: UIKit.spaceSm(context)),
+                Expanded(
+                  child: _InputField(
+                    controller: controller,
+                    onSend: onSend,
+                    isSending: isSending,
+                  ),
+                ),
+                SizedBox(width: UIKit.spaceSm(context)),
+                _SendButton(
+                  onSend: onSend,
+                  isSending: isSending,
+                  hasText: controller.text.isNotEmpty,
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+
+        // 表情选择器（暂时移除，需要重新实现）
+        // if (showEmojiPicker)
+        //   SimpleEmojiPicker(
+        //     onEmojiSelected: (emoji) {},
+        //     onBackspacePressed: () {},
+        //     onAddCustomSticker: onAddCustomSticker,
+        //     onFavoriteSticker: onFavoriteSticker,
+        //   ),
+      ],
     );
   }
 }
@@ -78,18 +125,41 @@ class _InputField extends StatelessWidget {
   final VoidCallback onSend;
   final bool isSending;
 
+  /// 检查输入法是否正在输入（composing 状态）
+  bool get _isComposing {
+    final composing = controller.value.composing;
+    return composing.isValid && !composing.isCollapsed;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return KeyboardListener(
-      focusNode: FocusNode(),
-      onKeyEvent: (event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.enter &&
-            !HardwareKeyboard.instance.isShiftPressed) {
+    return Focus(
+      onKeyEvent: (node, event) {
+        // 只处理按键按下事件
+        if (event is! KeyDownEvent) {
+          return KeyEventResult.ignored;
+        }
+        
+        // Enter 键处理
+        if (event.logicalKey == LogicalKeyboardKey.enter) {
+          // 如果正在使用输入法输入，让输入法处理回车（上屏）
+          if (_isComposing) {
+            return KeyEventResult.ignored;
+          }
+          
+          // Shift+Enter 换行
+          if (HardwareKeyboard.instance.isShiftPressed) {
+            return KeyEventResult.ignored;
+          }
+          
+          // 普通回车发送消息
           if (!isSending && controller.text.trim().isNotEmpty) {
             onSend();
+            return KeyEventResult.handled;
           }
         }
+        
+        return KeyEventResult.ignored;
       },
       child: TextField(
         controller: controller,

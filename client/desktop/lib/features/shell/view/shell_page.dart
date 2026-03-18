@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:peers_touch_base/applet/models/applet_manifest.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/i18n/generated/app_localizations.dart';
 import 'package:peers_touch_desktop/app/theme/theme_tokens.dart';
 import 'package:peers_touch_desktop/app/theme/ui_kit.dart';
@@ -199,9 +200,11 @@ class ShellPage extends StatelessWidget {
         itemCount: headItems.length,
         itemBuilder: (context, index) {
           final item = headItems[index];
-          final isSelected = controller.currentMenuItem.value?.id == item.id;
-          
-          return _buildMenuIcon(context, item, isSelected, controller, theme);
+          // Use Obx for menu selection state
+          return Obx(() {
+            final isSelected = controller.currentMenuItem.value?.id == item.id;
+            return _buildMenuIcon(context, item, isSelected, controller, theme);
+          });
         },
       ),
     );
@@ -266,8 +269,56 @@ class ShellPage extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => controller.selectMenuItem(item),
-          child: Center(
-            child: Icon(item.icon, color: tokens.textPrimary, size: 22),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Center(
+                child: Icon(item.icon, color: tokens.textPrimary, size: 22),
+              ),
+              // Badge - use Obx for reactive updates
+              if (item.badgeCountRx != null)
+                Obx(() {
+                  final badgeCount = item.badgeCountRx!.value;
+                  if (badgeCount <= 0) return const SizedBox.shrink();
+                  
+                  // Check badge style setting
+                  final showDotOnly = _getBadgeStyle() == 'dot';
+                  
+                  return Positioned(
+                    right: showDotOnly ? 2 : -2,
+                    top: showDotOnly ? 2 : -2,
+                    child: showDotOnly 
+                      ? Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        )
+                      : Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 14,
+                          ),
+                          child: Text(
+                            badgeCount > 99 ? '99+' : badgeCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                  );
+                }),
+            ],
           ),
         ),
       ),
@@ -596,5 +647,16 @@ class ShellPage extends StatelessWidget {
     if (event.position.dx < panelLeft) {
       controller.collapseRightPanel();
     }
+  }
+  
+  /// Get badge style from user preferences
+  String _getBadgeStyle() {
+    if (!Get.isRegistered<GlobalContext>()) return 'number';
+    final gc = Get.find<GlobalContext>();
+    final flags = gc.preferences['feature_flags'];
+    if (flags is Map && flags['unread_badge_style'] is String) {
+      return flags['unread_badge_style'] as String;
+    }
+    return 'number'; // default to number
   }
 }

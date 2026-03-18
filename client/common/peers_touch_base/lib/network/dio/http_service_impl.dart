@@ -165,6 +165,10 @@ class HttpServiceImpl implements IHttpService {
     return await _dio.get<T>(
       path,
       queryParameters: queryParameters,
+      options: Options(
+        headers: {'Accept': 'application/json'},
+        responseType: ResponseType.json,
+      ),
     );
   }
 
@@ -178,6 +182,13 @@ class HttpServiceImpl implements IHttpService {
       path,
       data: data,
       queryParameters: queryParameters,
+      options: Options(
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        responseType: ResponseType.json,
+      ),
     );
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 
 /// 一级菜单项定义
 class PrimaryMenuItem { // 二级页是否显示功能标题（默认不显示）
@@ -11,6 +12,7 @@ class PrimaryMenuItem { // 二级页是否显示功能标题（默认不显示�
     required this.order,
     required this.contentBuilder,
     this.toDIsplayPageTitle = false,
+    this.badgeCountRx,
   });
   final String id;
   final String label;
@@ -19,6 +21,10 @@ class PrimaryMenuItem { // 二级页是否显示功能标题（默认不显示�
   final int order; // 区域内的排序权重
   final WidgetBuilder contentBuilder; // 完整的模块内容页面构建器
   final bool toDIsplayPageTitle;
+  
+  /// Optional reactive badge count for this menu item (use GetX RxInt)
+  /// Returns null for no badge support, use .value to get current count
+  final RxInt? badgeCountRx;
 }
 
 /// 一级菜单管理器 - 负责管理头像块、头部区域、尾部区域

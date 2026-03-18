@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:get/get.dart';
+import 'package:peers_touch_base/context/global_context.dart';
 import 'package:peers_touch_base/network/dio/http_service_locator.dart';
 import 'package:peers_touch_base/storage/file_storage_manager.dart';
 import 'package:peers_touch_base/storage/local_storage.dart';
@@ -105,7 +107,11 @@ class RemoteImageCacheService {
       final req = await client.getUrl(uri);
       req.headers.set('Accept', 'image/*');
 
-      final token = await LocalStorage().get<String>('auth_token');
+      // Get token through GlobalContext (single source of truth)
+      String? token;
+      if (Get.isRegistered<GlobalContext>()) {
+        token = Get.find<GlobalContext>().currentSession?['accessToken']?.toString();
+      }
       if (token != null && token.trim().isNotEmpty) {
         req.headers.set('Authorization', 'Bearer ${token.trim()}');
       }

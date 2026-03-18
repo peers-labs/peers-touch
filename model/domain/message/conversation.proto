@@ -1,0 +1,222 @@
+syntax = "proto3";
+
+package peers_touch.model.message.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/message;message";
+
+// Conversation management
+message CreateConvRequest {
+  string conv_id = 1;
+  string type = 2;
+  string title = 3;
+  string avatar_cid = 4;
+  string policy = 5;
+}
+
+message Conversation {
+  uint64 pk = 1;
+  string conv_id = 2;
+  string type = 3;
+  string title = 4;
+  string avatar_cid = 5;
+  string policy = 6;
+  uint32 epoch = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message CreateConvResponse {
+  Conversation conv = 1;
+}
+
+message GetConvRequest {
+  string id = 1;
+}
+
+message GetConvResponse {
+  Conversation conv = 1;
+}
+
+message GetConvStateRequest {
+  string id = 1;
+}
+
+message GetConvStateResponse {
+  uint32 epoch = 1;
+}
+
+// Members
+message UpdateMembersRequest {
+  uint64 conv_pk = 1;
+  repeated string add = 2;
+  repeated string remove = 3;
+  string role = 4;
+}
+
+message UpdateMembersResponse {
+  bool success = 1;
+}
+
+message GetMembersRequest {
+  string conv_id = 1;
+}
+
+message ConvMember {
+  string did = 1;
+  string role = 2;
+  google.protobuf.Timestamp joined_at = 3;
+}
+
+message GetMembersResponse {
+  repeated ConvMember members = 1;
+}
+
+// Key rotation
+message KeyRotateRequest {
+  string conv_id = 1;
+  uint32 epoch = 2;
+  repeated KeyPackage packages = 3;
+}
+
+message KeyPackage {
+  string did = 1;
+  bytes package = 2;
+}
+
+message KeyRotateResponse {
+  bool success = 1;
+}
+
+// Messages
+message AppendMessageRequest {
+  string conv_id = 1;
+  bytes encrypted_content = 2;
+  string timestamp = 3;
+}
+
+message Message {
+  uint64 id = 1;
+  string conv_id = 2;
+  string sender_did = 3;
+  bytes encrypted_content = 4;
+  uint32 epoch = 5;
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+message AppendMessageResponse {
+  Message message = 1;
+}
+
+message ListMessagesRequest {
+  string conv_id = 1;
+  uint64 before_id = 2;
+  int32 limit = 3;
+}
+
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  bool has_more = 2;
+}
+
+message StreamMessagesRequest {
+  string conv_id = 1;
+  uint64 since_id = 2;
+}
+
+message StreamMessagesResponse {
+  repeated Message messages = 1;
+}
+
+// Receipts
+message PostReceiptRequest {
+  string conv_id = 1;
+  uint64 message_id = 2;
+  string type = 3;
+}
+
+message PostReceiptResponse {
+  bool success = 1;
+}
+
+message GetReceiptsRequest {
+  string conv_id = 1;
+  uint64 message_id = 2;
+}
+
+message Receipt {
+  string did = 1;
+  string type = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+message GetReceiptsResponse {
+  repeated Receipt receipts = 1;
+}
+
+// Attachments
+message PostAttachmentRequest {
+  string conv_id = 1;
+  string filename = 2;
+  string mime_type = 3;
+  bytes encrypted_data = 4;
+}
+
+message Attachment {
+  string id = 1;
+  string filename = 2;
+  string mime_type = 3;
+  int64 size = 4;
+  google.protobuf.Timestamp uploaded_at = 5;
+}
+
+message PostAttachmentResponse {
+  Attachment attachment = 1;
+}
+
+message GetAttachmentRequest {
+  string id = 1;
+}
+
+message GetAttachmentResponse {
+  Attachment attachment = 1;
+  bytes encrypted_data = 2;
+}
+
+// Search
+message SearchMessagesRequest {
+  string conv_id = 1;
+  string query = 2;
+  int32 limit = 3;
+}
+
+message SearchMessagesResponse {
+  repeated Message messages = 1;
+}
+
+// Snapshot
+message GetSnapshotRequest {
+  string conv_id = 1;
+}
+
+message Snapshot {
+  string conv_id = 1;
+  uint32 epoch = 2;
+  bytes state_data = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message GetSnapshotResponse {
+  Snapshot snapshot = 1;
+}
+
+message PostSnapshotRequest {
+  string conv_id = 1;
+  uint32 epoch = 2;
+  bytes state_data = 3;
+}
+
+message PostSnapshotResponse {
+  bool success = 1;
+}

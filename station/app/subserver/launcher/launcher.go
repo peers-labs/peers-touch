@@ -2,25 +2,17 @@ package launcher
 
 import (
 	"context"
-	"net/http"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/launcher/handler"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 var (
 	_ server.Subserver = (*launcherSubServer)(nil)
 )
-
-type launcherURL struct {
-	name string
-	path string
-}
-
-func (u launcherURL) Name() string    { return u.name }
-func (u launcherURL) Path() string    { return u.path }
-func (u launcherURL) SubPath() string { return u.path }
 
 type launcherSubServer struct {
 	opts   *launcherOptions
@@ -70,16 +62,23 @@ func (s *launcherSubServer) Type() server.SubserverType {
 }
 
 func (s *launcherSubServer) Handlers() []server.Handler {
+	logIDWrapper := serverwrapper.LogID()
+	handlers := handler.NewLauncherHandlers()
+
 	return []server.Handler{
-		server.NewHandler(
-			launcherURL{name: "launcher-feed", path: "/launcher/feed"},
-			http.HandlerFunc(s.handleGetFeed),
-			server.WithMethod(server.GET),
+		server.NewTypedHandler(
+			"launcher-feed",
+			"/launcher/feed",
+			server.GET,
+			handlers.HandleGetFeed,
+			logIDWrapper,
 		),
-		server.NewHandler(
-			launcherURL{name: "launcher-search", path: "/launcher/search"},
-			http.HandlerFunc(s.handleSearch),
-			server.WithMethod(server.GET),
+		server.NewTypedHandler(
+			"launcher-search",
+			"/launcher/search",
+			server.GET,
+			handlers.HandleSearch,
+			logIDWrapper,
 		),
 	}
 }
