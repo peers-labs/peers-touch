@@ -1,0 +1,24 @@
+{
+  "domains": {
+    "station": {
+      "path": "station/app",
+      "stack": "go"
+    },
+    "desktop": {
+      "path": "desktop",
+      "stack": "tauri+typescript"
+    },
+    "mobile": {
+      "path": "client/mobile",
+      "stack": "flutter"
+    }
+  },
+  "tasks": [
+    "list",
+    "doctor",
+    "lint",
+    "test",
+    "build",
+    "gen"
+  ]
+}
