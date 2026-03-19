@@ -1,4 +1,4 @@
-.PHONY: fmt import vet check format style lint test test-docker test-api test-unit clean-test list doctor domain-lint domain-test domain-build station-lint station-test station-build desktop-lint desktop-test desktop-build desktop-dev desktop-tauri-dev desktop-tauri-build mobile-lint mobile-test mobile-build
+.PHONY: fmt import vet check format style lint mono-check mono-lint mono-test mono-build model-gen model-lint test test-docker test-api test-unit clean-test list doctor domain-lint domain-test domain-build station-lint station-test station-build desktop-lint desktop-test desktop-build desktop-dev desktop-tauri-dev desktop-tauri-build mobile-lint mobile-test mobile-build
 
 fmt:
 	go fmt ./...
@@ -22,6 +22,24 @@ format: fmt import
 lint:
 	@command -v golangci-lint >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	golangci-lint run
+
+mono-check:
+	pnpm -r --if-present run check
+
+mono-lint:
+	pnpm -r --if-present run lint
+
+mono-test:
+	pnpm -r --if-present run test
+
+mono-build:
+	pnpm -r --if-present run build
+
+model-gen:
+	cd packages/model && buf generate
+
+model-lint:
+	cd packages/model && buf lint
 
 # 测试相关命令
 test: test-docker

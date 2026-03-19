@@ -1,0 +1,11 @@
+name: peers_touch_mono
+packages:
+  - client/common/**
+  - apps/mobile/flutter
+  - packages/sdk/dart
+
+scripts:
+  analyze:
+    run: flutter analyze
+  test:
+    run: flutter test

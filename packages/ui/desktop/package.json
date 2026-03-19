@@ -1,0 +1,16 @@
+{
+  "name": "@peers-touch/ui-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

@@ -19,7 +19,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-DESKTOP_DIR="$PROJECT_ROOT/client/desktop"
+DESKTOP_DIR="$PROJECT_ROOT/apps/desktop"
 
 # 默认实例标识（用于数据隔离）
 USER_A="${PEERS_USER_A:-a}"
@@ -185,6 +185,10 @@ print_help() {
 
 # 主函数
 main() {
+    if [ -f "$DESKTOP_DIR/package.json" ]; then
+        log_error "当前脚本仅支持 Flutter Desktop 双实例，Tauri 双实例请使用独立窗口脚本。"
+        exit 1
+    fi
     kill_existing_desktops
     
     case "$1" in
