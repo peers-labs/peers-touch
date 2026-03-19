@@ -1,0 +1,13 @@
+{
+  "name": "peers-touch-monorepo",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "mono:check": "pnpm -r --if-present run check",
+    "mono:lint": "pnpm -r --if-present run lint",
+    "mono:test": "pnpm -r --if-present run test",
+    "mono:build": "pnpm -r --if-present run build",
+    "desktop:dev": "pnpm --filter @peers-touch/app-desktop run dev",
+    "desktop:build": "pnpm --filter @peers-touch/app-desktop run build"
+  }
+}

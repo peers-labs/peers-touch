@@ -1,0 +1,10 @@
+version: v2
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    out: ../sdk/go/gen
+  - remote: buf.build/protocolbuffers/dart
+    out: ../sdk/dart/lib/src/gen
+  - remote: buf.build/connectrpc/es
+    out: ../sdk/ts/src/gen
+    opt:
+      - target=ts
