@@ -1,4 +1,3 @@
-
 import 'package:peers_touch_base/storage/local_storage.dart';
 
 class EmojiPickerService {
@@ -8,42 +7,45 @@ class EmojiPickerService {
 
   final LocalStorage _storage = LocalStorage();
 
-  Future&lt;List&lt;String&gt;&gt; getRecentEmojis() async {
-    final List&lt;dynamic&gt;? stored = await _storage.get&lt;List&lt;dynamic&gt;&gt;(_keyRecentEmojis);
-    return stored?.map((e) =&gt; e as String).toList() ?? [];
+  Future<void> initialize() async {
   }
 
-  Future&lt;void&gt; addRecentEmoji(String emoji) async {
-    final List&lt;String&gt; current = await getRecentEmojis();
-    current.removeWhere((e) =&gt; e == emoji);
+  Future<List<String>> getRecentEmojis() async {
+    final List<dynamic>? stored = await _storage.get<List<dynamic>>(_keyRecentEmojis);
+    return stored?.map((e) => e as String).toList() ?? [];
+  }
+
+  Future<void> addRecentEmoji(String emoji) async {
+    final List<String> current = await getRecentEmojis();
+    current.removeWhere((e) => e == emoji);
     current.insert(0, emoji);
-    if (current.length &gt; _maxRecentEmojis) {
+    if (current.length > _maxRecentEmojis) {
       current.removeLast();
     }
-    await _storage.set&lt;List&lt;String&gt;&gt;(_keyRecentEmojis, current);
+    await _storage.set<List<String>>(_keyRecentEmojis, current);
   }
 
-  Future&lt;List&lt;String&gt;&gt; getFavoriteEmojis() async {
-    final List&lt;dynamic&gt;? stored = await _storage.get&lt;List&lt;dynamic&gt;&gt;(_keyFavoriteEmojis);
-    return stored?.map((e) =&gt; e as String).toList() ?? [];
+  Future<List<String>> getFavoriteEmojis() async {
+    final List<dynamic>? stored = await _storage.get<List<dynamic>>(_keyFavoriteEmojis);
+    return stored?.map((e) => e as String).toList() ?? [];
   }
 
-  Future&lt;void&gt; addFavoriteEmoji(String emoji) async {
-    final List&lt;String&gt; current = await getFavoriteEmojis();
+  Future<void> addFavoriteEmoji(String emoji) async {
+    final List<String> current = await getFavoriteEmojis();
     if (!current.contains(emoji)) {
       current.add(emoji);
-      await _storage.set&lt;List&lt;String&gt;&gt;(_keyFavoriteEmojis, current);
+      await _storage.set<List<String>>(_keyFavoriteEmojis, current);
     }
   }
 
-  Future&lt;void&gt; removeFavoriteEmoji(String emoji) async {
-    final List&lt;String&gt; current = await getFavoriteEmojis();
-    current.removeWhere((e) =&gt; e == emoji);
-    await _storage.set&lt;List&lt;String&gt;&gt;(_keyFavoriteEmojis, current);
+  Future<void> removeFavoriteEmoji(String emoji) async {
+    final List<String> current = await getFavoriteEmojis();
+    current.removeWhere((e) => e == emoji);
+    await _storage.set<List<String>>(_keyFavoriteEmojis, current);
   }
 
-  Future&lt;bool&gt; isFavoriteEmoji(String emoji) async {
-    final List&lt;String&gt; current = await getFavoriteEmojis();
+  Future<bool> isFavoriteEmoji(String emoji) async {
+    final List<String> current = await getFavoriteEmojis();
     return current.contains(emoji);
   }
 }

@@ -1,0 +1,17 @@
+{
+  "name": "@peers-touch/sdk-ts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "gen": "buf generate ../../model"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
