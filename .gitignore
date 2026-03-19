@@ -12,6 +12,7 @@ Thumbs.db
 .vscode/
 .cursor/
 .idea/
+.trae/rules/image/
 *.swp
 *.swo
 *~
@@ -38,6 +39,8 @@ logs/
 
 # Dart tool
 **/.dart_tool
+**/node_modules
+pnpm-lock.yaml
 
 dart_libp2pstation/bin/
 station/app/peers-touch-app
@@ -45,3 +48,7 @@ desktop/node_modules/
 desktop/dist/
 desktop/src-tauri/target/
 station/app/peers-touch-station
+apps/station/app/peers-touch-app
+apps/station/app/peers-touch-station
+apps/station/app/app
+external

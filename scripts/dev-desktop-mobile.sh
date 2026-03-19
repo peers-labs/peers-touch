@@ -11,8 +11,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DESKTOP_DIR="$PROJECT_ROOT/client/desktop"
-MOBILE_DIR="$PROJECT_ROOT/client/mobile"
+DESKTOP_DIR="$PROJECT_ROOT/apps/desktop"
+MOBILE_DIR="$PROJECT_ROOT/apps/mobile/flutter"
 PID_FILE_DESKTOP="/tmp/peers-touch-desktop.pid"
 PID_FILE_MOBILE="/tmp/peers-touch-mobile.pid"
 
@@ -91,8 +91,6 @@ main() {
     # 列出可用设备
     list_devices
 
-    # 获取设备
-    MACOS_DEVICE=$(flutter devices | grep -i "macos" | head -1 | awk '{print $1}' || echo "macos")
     IOS_DEVICE=$(flutter devices | grep -i "iphone\|ios\|simulator" | head -1 | awk '{print $1}' || echo "")
 
     if [ -z "$IOS_DEVICE" ]; then
@@ -109,8 +107,16 @@ main() {
     # 启动 Desktop
     log_blue "启动 Desktop..."
     cd "$DESKTOP_DIR"
-    flutter pub get
-    flutter run -d macos &
+    if [ -f "$DESKTOP_DIR/package.json" ]; then
+        if command -v pnpm >/dev/null 2>&1; then
+            pnpm dev &
+        else
+            npm run dev &
+        fi
+    else
+        flutter pub get
+        flutter run -d macos &
+    fi
     DESKTOP_PID=$!
     echo $DESKTOP_PID > "$PID_FILE_DESKTOP"
     log_blue "Desktop 已启动 (PID: $DESKTOP_PID)"

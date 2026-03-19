@@ -61,9 +61,11 @@
 - **进程管理**: 使用 `/tmp/peers-touch-*.pid` 文件跟踪进程
 - **退出**: 按 `Ctrl+C` 可优雅地停止所有相关进程
 - **iOS 模拟器**: `dev-desktop-mobile.sh` 会自动启动 iOS 模拟器 (如果未运行)
+- **目录约定**: 脚本只使用 `apps/*` 目录结构
 
 ## 依赖
 
 - Go (用于编译 Station)
-- Flutter (用于运行客户端)
+- pnpm / npm (用于运行 Desktop Tauri + TypeScript)
+- Flutter (用于运行 Mobile)
 - Xcode (用于 iOS 模拟器)

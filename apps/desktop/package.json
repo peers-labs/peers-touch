@@ -1,0 +1,21 @@
+{
+  "name": "@peers-touch/app-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "lint": "echo \"desktop lint pending\"",
+    "test": "echo \"desktop test pending\""
+  },
+  "dependencies": {
+    "@peers-touch/sdk-ts": "workspace:*",
+    "@peers-touch/ui-desktop": "workspace:*"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
+    "typescript": "^5.6.3"
+  }
+}

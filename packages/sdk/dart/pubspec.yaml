@@ -1,0 +1,7 @@
+name: peers_touch_sdk_dart
+description: peers touch dart sdk
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'

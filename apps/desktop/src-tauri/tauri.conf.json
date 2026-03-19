@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Peers Touch Desktop",
+  "version": "0.1.0",
+  "identifier": "com.peers.touch.desktop",
+  "build": {
+    "frontendDist": "../"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Peers Touch Desktop",
+        "width": 1200,
+        "height": 800
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  }
+}

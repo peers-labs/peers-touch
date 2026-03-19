@@ -11,7 +11,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-STATION_DIR="$PROJECT_ROOT/station/app"
+STATION_DIR="$PROJECT_ROOT/apps/station/app"
 PID_FILE="/tmp/peers-touch-station.pid"
 REQUIRED_GO_MAJOR=1
 REQUIRED_GO_MINOR=23

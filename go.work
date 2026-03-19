@@ -1,7 +1,8 @@
 go 1.24.6
 
 use (
+	./apps/station/app
+	./apps/station/frame
+	./packages/sdk/go
 	./station
-	./station/app
-	./station/frame
 )
