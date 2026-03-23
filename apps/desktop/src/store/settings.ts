@@ -21,6 +21,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     try {
       const agents = await api.listAgents();
       set({ agents });
+      const rustResult = await api.settingsGet({ key: 'settings.currentAgent' });
+      if (rustResult.ok) {
+        const value = (rustResult.data as { value?: string } | undefined)?.value;
+        if (value) {
+          set({ currentAgent: value });
+        }
+      }
     } catch (e) {
       console.error('Failed to load agents:', e);
     }
@@ -37,6 +44,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
   setCurrentAgent: (name: string) => {
     set({ currentAgent: name });
+    api.settingsSet({ key: 'settings.currentAgent', value: name }).catch(() => {});
   },
 
   updateAgent: async (name: string, data: Partial<Agent>) => {
