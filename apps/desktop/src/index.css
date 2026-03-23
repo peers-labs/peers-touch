@@ -1,0 +1,62 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.1);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,0,0,0.2);
+}
+
+.settings-tabs .ant-tabs-content {
+  height: 100%;
+}
+.settings-tabs .ant-tabs-content-holder {
+  overflow: hidden;
+}
+.settings-tabs .ant-tabs-tabpane {
+  height: 100%;
+}
+
+@keyframes search-highlight {
+  0% { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.6); }
+  25% { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2); }
+  50% { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.6); }
+  75% { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2); }
+  100% { box-shadow: none; }
+}
+
+.search-highlight-flash {
+  animation: search-highlight 2s ease-out;
+  border-color: #667eea !important;
+}
+
+.applet-card {
+  container-type: inline-size;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}

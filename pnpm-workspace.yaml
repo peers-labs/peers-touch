@@ -3,3 +3,5 @@ packages:
   - packages/model
   - packages/sdk/ts
   - packages/ui/desktop
+  - packages/applet-sdk
+  - packages/applets/*

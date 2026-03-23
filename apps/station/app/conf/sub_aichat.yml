@@ -1,0 +1,7 @@
+peers:
+  node:
+    server:
+      subserver:
+        ai-chat:
+          enabled: true
+          db-name: ai_chat
