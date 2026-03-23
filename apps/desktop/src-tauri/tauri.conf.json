@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.peers.touch.desktop",
   "build": {
-    "frontendDist": "../"
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
   },
   "app": {
     "windows": [

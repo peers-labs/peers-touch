@@ -4,5 +4,4 @@ use (
 	./apps/station/app
 	./apps/station/frame
 	./packages/sdk/go
-	./station
 )

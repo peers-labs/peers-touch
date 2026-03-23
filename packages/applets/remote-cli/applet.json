@@ -1,0 +1,17 @@
+{
+  "id": "remote-cli",
+  "name": "Remote CLI",
+  "version": "1.0.0",
+  "description": "Remote terminal and SSH client",
+  "author": "Peers Touch",
+  "icon": "assets/icon.png",
+  "main": "index.html",
+  "permissions": [
+    "storage",
+    "network",
+    "system",
+    "notification"
+  ],
+  "minPlatformVersion": "0.1.0",
+  "targetPlatforms": ["desktop", "mobile"]
+}

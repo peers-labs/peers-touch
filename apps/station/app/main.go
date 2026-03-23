@@ -19,6 +19,7 @@ import (
 	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
 	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
+	_ "github.com/peers-labs/peers-touch/station/app/subserver/ai_chat"
 	touchactivitypub "github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 
@@ -48,8 +49,6 @@ func main() {
 		node.WithPrivateKey("private.pem"),
 		node.Name("peers-touch-station"),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("/debug")),
-		// Use the new router pattern for station endpoints
-		// server.WithSubServer("ai-box", aibox.NewAIBoxSubServer),
 		server.WithSubServer("friend_chat", friendchat.NewFriendChatSubServer),
 		server.WithSubServer("group_chat", groupchat.NewGroupChatSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),

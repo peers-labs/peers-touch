@@ -7,7 +7,7 @@ type serverOptionsKey struct{}
 var optionWrapper = option.NewWrapper[Options](serverOptionsKey{}, func(options *option.Options) *Options {
 	return &Options{
 		Options: options,
-		DBName:  "ai_box",
+		DBName:  "ai_chat",
 	}
 })
 

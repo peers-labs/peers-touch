@@ -41,6 +41,8 @@ logs/
 **/.dart_tool
 **/node_modules
 pnpm-lock.yaml
+**/package-lock.json
+.trae/rules/*.old*
 
 dart_libp2pstation/bin/
 station/app/peers-touch-app

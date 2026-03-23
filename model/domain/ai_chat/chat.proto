@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package peers_touch.model.ai_chat.v1;
+
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_chat/model;model";
+
+message ChatSession {
+  string id = 1;
+  string user_id = 2;
+  string agent_id = 3;
+  string title = 4;
+  string description = 5;
+  string avatar = 6;
+  string model_name = 7;
+  string provider_id = 8;
+  bool pinned = 9;
+  string group = 10;
+  string config_json = 11;
+  map<string, string> meta = 12;
+  int64 created_at = 13;
+  int64 updated_at = 14;
+}
+
+message ChatTopic {
+  string id = 1;
+  string session_id = 2;
+  string title = 3;
+  string description = 4;
+  int32 message_count = 5;
+  string first_message_id = 6;
+  string last_message_id = 7;
+  int64 created_at = 8;
+  int64 updated_at = 9;
+}
+
+message MessageAttachment {
+  string id = 1;
+  string message_id = 2;
+  string name = 3;
+  int64 size = 4;
+  string type = 5;
+  string url = 6;
+  string metadata_json = 7;
+  int64 created_at = 8;
+}
+
+enum ChatRole {
+  CHAT_ROLE_UNSPECIFIED = 0;
+  CHAT_ROLE_SYSTEM = 1;
+  CHAT_ROLE_USER = 2;
+  CHAT_ROLE_ASSISTANT = 3;
+  CHAT_ROLE_TOOL = 4;
+}
+
+message ToolCall {
+  string id = 1;
+  string type = 2;
+  google.protobuf.Struct function = 3;
+}
+
+message ChatMessage {
+  string id = 1;
+  string session_id = 2;
+  string topic_id = 3;
+  string model_name = 4;
+  ChatRole role = 5;
+  string content = 6;
+  string reasoning_json = 7;
+  repeated MessageAttachment attachments = 8;
+  string metadata_json = 9;
+  string plugin_json = 10;
+  string tool_calls_json = 11;
+  string error_json = 12;
+  int64 created_at = 13;
+  int64 updated_at = 14;
+}
+
+message ChatCompletionRequest {
+  string session_id = 1;
+  string topic_id = 2;
+  string model = 3;
+  repeated ChatMessage messages = 4;
+  optional bool stream = 5;
+  optional double temperature = 6;
+  optional int32 max_tokens = 7;
+  optional double top_p = 8;
+  optional string user = 9;
+}
+
+message ChatChoice {
+  int32 index = 1;
+  ChatMessage message = 2;
+  optional string finish_reason = 3;
+}
+
+message Usage {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens = 3;
+}
+
+message ChatCompletionResponse {
+  string id = 1;
+  string object = 2;
+  int64 created = 3;
+  string model = 4;
+  repeated ChatChoice choices = 5;
+  Usage usage = 6;
+}

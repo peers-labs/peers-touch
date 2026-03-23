@@ -43,6 +43,9 @@ func GetRDS(ctx context.Context, opts ...RDSDMLOption) (*gorm.DB, error) {
 
 // GetStore returns the injected Store.
 func GetStore(ctx context.Context, opts ...GetOption) (Store, error) {
+	if store == nil {
+		return nil, ErrStoreNotDefined
+	}
 	return store, nil
 }
 

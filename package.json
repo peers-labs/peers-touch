@@ -8,6 +8,8 @@
     "mono:test": "pnpm -r --if-present run test",
     "mono:build": "pnpm -r --if-present run build",
     "desktop:dev": "pnpm --filter @peers-touch/app-desktop run dev",
-    "desktop:build": "pnpm --filter @peers-touch/app-desktop run build"
+    "desktop:build": "pnpm --filter @peers-touch/app-desktop run build",
+    "applets:build": "pnpm --filter @peers-touch/applets run build",
+    "applets:dev": "pnpm --filter @peers-touch/applets run dev"
   }
 }

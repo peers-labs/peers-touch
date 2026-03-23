@@ -15,7 +15,7 @@ check:
 	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "$$out" && exit 1; fi
 
 style:
-	bash tools/check-go-style.sh
+	bash tooling/scripts/check-go-style.sh
 
 format: fmt import
 
