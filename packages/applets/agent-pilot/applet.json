@@ -1,0 +1,16 @@
+{
+  "id": "agent-pilot",
+  "name": "Agent Pilot",
+  "version": "1.0.0",
+  "description": "AI project management Kanban board",
+  "author": "Peers Touch",
+  "icon": "assets/icon.png",
+  "main": "index.html",
+  "permissions": [
+    "storage",
+    "network",
+    "notification"
+  ],
+  "minPlatformVersion": "0.1.0",
+  "targetPlatforms": ["desktop", "mobile"]
+}

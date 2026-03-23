@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package peers_touch.model.ai_chat.v1;
+
+import "domain/ai_chat/chat.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/ai_chat/model;model";
+
+message CreateSessionRequest {
+  string title = 1;
+  string description = 2;
+  string provider_id = 3;
+  string model_name = 4;
+  map<string, string> meta = 5;
+  string config_json = 6;
+}
+
+message CreateSessionResponse {
+  ChatSession session = 1;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+}
+
+message GetSessionResponse {
+  ChatSession session = 1;
+}
+
+message UpdateSessionRequest {
+  string session_id = 1;
+  optional string title = 2;
+  optional string description = 3;
+  optional bool pinned = 4;
+  optional string model_name = 5;
+  optional string provider_id = 6;
+  optional string config_json = 7;
+}
+
+message UpdateSessionResponse {
+  ChatSession session = 1;
+}
+
+message DeleteSessionRequest {
+  string session_id = 1;
+}
+
+message DeleteSessionResponse {
+  bool success = 1;
+}
+
+message ListSessionsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+message ListSessionsResponse {
+  repeated ChatSession sessions = 1;
+  string next_page_token = 2;
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@peers-touch/applets",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node dev-sync.js",
+    "build:agent-pilot": "cd agent-pilot && pnpm build",
+    "build:remote-cli": "cd remote-cli && pnpm build",
+    "build:web-search": "cd web-search && pnpm build",
+    "dev:agent-pilot": "cd agent-pilot && pnpm dev",
+    "dev:remote-cli": "cd remote-cli && pnpm dev",
+    "dev:web-search": "cd web-search && pnpm dev"
+  },
+  "devDependencies": {
+    "chokidar": "^3.6.0",
+    "execa": "^8.0.1",
+    "fs-extra": "^11.3.4"
+  }
+}
