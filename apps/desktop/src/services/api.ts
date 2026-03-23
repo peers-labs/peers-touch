@@ -1,4 +1,46 @@
+import { invoke } from '@tauri-apps/api/core';
+
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
+export type RustErrorCode =
+  | 'NOT_IMPLEMENTED'
+  | 'INVALID_ARGUMENT'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'INTERNAL_ERROR';
+
+export interface RustCommandError {
+  code: RustErrorCode;
+  message: string;
+  details?: Record<string, any>;
+}
+
+export interface RustCommandResult<T = Record<string, any>> {
+  ok: boolean;
+  data?: T;
+  error?: RustCommandError;
+}
+
+async function invokeRustCommand<TInput, TData>(
+  command: string,
+  input?: TInput,
+): Promise<RustCommandResult<TData>> {
+  try {
+    const payload = input === undefined ? undefined : { input };
+    const result = await invoke<RustCommandResult<TData>>(command, payload);
+    return result;
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -10,6 +52,34 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(err.error || res.statusText);
   }
   return res.json();
+}
+
+export class AuthCommandException extends Error {
+  code: RustErrorCode;
+  details?: Record<string, any>;
+
+  constructor(error: RustCommandError) {
+    super(error.message);
+    this.code = error.code;
+    this.details = error.details;
+    this.name = 'AuthCommandException';
+  }
+}
+
+async function invokeAuthCommand<TInput>(
+  command: string,
+  input?: TInput,
+): Promise<TauriStubPayload> {
+  const response = await invokeRustCommand<TInput, TauriStubPayload>(command, input);
+  if (!response.ok || !response.data) {
+    throw new AuthCommandException(
+      response.error ?? {
+        code: 'INTERNAL_ERROR',
+        message: 'auth command failed',
+      },
+    );
+  }
+  return response.data;
 }
 
 export interface Session {
@@ -892,7 +962,151 @@ export interface ImportResult {
   total: number;
 }
 
+export interface TauriStubPayload {
+  command: string;
+  status: string;
+}
+
+export interface AuthLoginInput {
+  account: string;
+  password: string;
+  base_url?: string;
+}
+
+export interface AuthValidateTokenInput {
+  token?: string;
+}
+
+export interface SettingsGetInput {
+  key: string;
+}
+
+export interface SettingsSetInput {
+  key: string;
+  value: any;
+}
+
+export interface ChatListMessagesInput {
+  conversation_id: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface ChatSendMessageInput {
+  conversation_id: string;
+  content: string;
+  client_message_id?: string;
+}
+
+export interface ChatMarkReadInput {
+  conversation_id: string;
+  message_id: string;
+}
+
+export interface TimelineListInput {
+  cursor?: string;
+  limit?: number;
+}
+
+export interface TimelineActionInput {
+  post_id: string;
+  content?: string;
+}
+
+export interface ProfileUpdateInput {
+  display_name?: string;
+  bio?: string;
+  location?: string;
+}
+
+export interface ProfilePrivacyInput {
+  visibility: string;
+  allow_direct_message: boolean;
+}
+
+export interface FileUploadInput {
+  file_path: string;
+}
+
+export interface AdminNetworkProbeInput {
+  target: string;
+}
+
+export interface AdminExecuteActionInput {
+  action: string;
+  payload?: Record<string, any>;
+}
+
 export const api = {
+  authLogin: (input: AuthLoginInput) =>
+    invokeAuthCommand<AuthLoginInput>('auth_login', input),
+
+  authLogout: () =>
+    invokeAuthCommand<void>('auth_logout'),
+
+  authRestoreSession: () =>
+    invokeAuthCommand<void>('auth_restore_session'),
+
+  authValidateToken: (input: AuthValidateTokenInput) =>
+    invokeAuthCommand<AuthValidateTokenInput>('auth_validate_token', input),
+
+  settingsGet: (input: SettingsGetInput) =>
+    invokeRustCommand<SettingsGetInput, TauriStubPayload>('settings_get', input),
+
+  settingsSet: (input: SettingsSetInput) =>
+    invokeRustCommand<SettingsSetInput, TauriStubPayload>('settings_set', input),
+
+  settingsReset: () =>
+    invokeRustCommand<void, TauriStubPayload>('settings_reset'),
+
+  chatListConversations: () =>
+    invokeRustCommand<void, TauriStubPayload>('chat_list_conversations'),
+
+  chatListMessages: (input: ChatListMessagesInput) =>
+    invokeRustCommand<ChatListMessagesInput, TauriStubPayload>('chat_list_messages', input),
+
+  chatSendMessage: (input: ChatSendMessageInput) =>
+    invokeRustCommand<ChatSendMessageInput, TauriStubPayload>('chat_send_message', input),
+
+  chatMarkRead: (input: ChatMarkReadInput) =>
+    invokeRustCommand<ChatMarkReadInput, TauriStubPayload>('chat_mark_read', input),
+
+  timelineList: (input: TimelineListInput) =>
+    invokeRustCommand<TimelineListInput, TauriStubPayload>('timeline_list', input),
+
+  timelineLike: (input: TimelineActionInput) =>
+    invokeRustCommand<TimelineActionInput, TauriStubPayload>('timeline_like', input),
+
+  timelineComment: (input: TimelineActionInput) =>
+    invokeRustCommand<TimelineActionInput, TauriStubPayload>('timeline_comment', input),
+
+  timelineRepost: (input: TimelineActionInput) =>
+    invokeRustCommand<TimelineActionInput, TauriStubPayload>('timeline_repost', input),
+
+  profileGet: () =>
+    invokeRustCommand<void, TauriStubPayload>('profile_get'),
+
+  profileUpdate: (input: ProfileUpdateInput) =>
+    invokeRustCommand<ProfileUpdateInput, TauriStubPayload>('profile_update', input),
+
+  profileUploadAvatar: (input: FileUploadInput) =>
+    invokeRustCommand<FileUploadInput, TauriStubPayload>('profile_upload_avatar', input),
+
+  profileUploadHeader: (input: FileUploadInput) =>
+    invokeRustCommand<FileUploadInput, TauriStubPayload>('profile_upload_header', input),
+
+  profileUpdatePrivacy: (input: ProfilePrivacyInput) =>
+    invokeRustCommand<ProfilePrivacyInput, TauriStubPayload>('profile_update_privacy', input),
+
+  adminHealth: () =>
+    invokeRustCommand<void, TauriStubPayload>('admin_health'),
+
+  adminNetworkProbe: (input: AdminNetworkProbeInput) =>
+    invokeRustCommand<AdminNetworkProbeInput, TauriStubPayload>('admin_network_probe', input),
+
+  adminExecuteAction: (input: AdminExecuteActionInput) =>
+    invokeRustCommand<AdminExecuteActionInput, TauriStubPayload>('admin_execute_action', input),
+
   health: () => request<{ status: string }>('/health'),
 
   listSessions: () =>

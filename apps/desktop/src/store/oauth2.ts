@@ -1,16 +1,41 @@
 import { create } from 'zustand';
-import { api, type OAuth2ProviderSummary, type OAuth2Connection } from '../services/api';
+import { AuthCommandException, api, type OAuth2ProviderSummary, type OAuth2Connection } from '../services/api';
 
 let loadAllPromise: Promise<void> | null = null;
+const AUTH_TOKEN_STORAGE_KEY = 'pt.desktop.auth.token';
+
+function readStoredToken(): string | null {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+      return;
+    }
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  } catch {}
+}
 
 interface OAuth2Store {
   providers: OAuth2ProviderSummary[];
   connections: OAuth2Connection[];
   loading: boolean;
+  authenticated: boolean;
+  authErrorCode: string | null;
 
   loadProviders: () => Promise<void>;
   loadConnections: () => Promise<void>;
   loadAll: () => Promise<void>;
+  loginWithPassword: (account: string, password: string, baseUrl?: string) => Promise<void>;
+  restoreSession: () => Promise<void>;
+  validateSessionToken: (token?: string) => Promise<void>;
+  logoutSession: () => Promise<void>;
   startAuth: (id: string, environment?: string) => Promise<void>;
   disconnect: (id: string) => Promise<void>;
   refreshToken: (id: string) => Promise<void>;
@@ -21,6 +46,8 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
   providers: [],
   connections: [],
   loading: false,
+  authenticated: false,
+  authErrorCode: null,
 
   loadProviders: async () => {
     try {
@@ -53,6 +80,56 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
       }
     })();
     return loadAllPromise;
+  },
+
+  loginWithPassword: async (account, password, baseUrl) => {
+    await api.authLogin({ account, password, base_url: baseUrl });
+    writeStoredToken(null);
+    set({ authenticated: true, authErrorCode: null });
+  },
+
+  restoreSession: async () => {
+    const token = readStoredToken();
+    try {
+      if (token) {
+        await api.authValidateToken({ token });
+      } else {
+        await api.authRestoreSession();
+      }
+      set({ authenticated: true, authErrorCode: null });
+      return;
+    } catch (error) {
+      if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {
+        writeStoredToken(null);
+        set({ authenticated: false, authErrorCode: error.code });
+        return;
+      }
+      throw error;
+    }
+  },
+
+  validateSessionToken: async (token) => {
+    try {
+      await api.authValidateToken({ token });
+      if (token) {
+        writeStoredToken(token);
+      }
+      set({ authenticated: true, authErrorCode: null });
+      return;
+    } catch (error) {
+      if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {
+        writeStoredToken(null);
+        set({ authenticated: false, authErrorCode: error.code });
+        return;
+      }
+      throw error;
+    }
+  },
+
+  logoutSession: async () => {
+    await api.authLogout();
+    writeStoredToken(null);
+    set({ authenticated: false, authErrorCode: null });
   },
 
   startAuth: async (id, environment) => {

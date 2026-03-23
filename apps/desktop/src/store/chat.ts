@@ -126,6 +126,10 @@ function tempId() {
   return `temp-${Date.now()}-${messageCounter++}`;
 }
 
+function shouldFallbackToHttp(code?: string): boolean {
+  return !code || code === 'NOT_IMPLEMENTED' || code === 'INTERNAL_ERROR';
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   currentSessionKey: 'main',
@@ -150,6 +154,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadSessions: async () => {
     try {
+      const rustResult = await api.chatListConversations();
+      if (!rustResult.ok && !shouldFallbackToHttp(rustResult.error?.code)) {
+        throw new Error(rustResult.error?.message || 'chat_list_conversations failed');
+      }
       const sessions = await api.listSessions();
       set({ sessions });
       const { currentSessionKey, selectedModel, defaultModel } = get();
@@ -207,6 +215,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       selectedModel: nextModel,
     });
     try {
+      const rustResult = await api.chatListMessages({ conversation_id: key });
+      if (!rustResult.ok && !shouldFallbackToHttp(rustResult.error?.code)) {
+        throw new Error(rustResult.error?.message || 'chat_list_messages failed');
+      }
       const msgs = await api.getMessages(key);
       const raw: ChatMessage[] = msgs.map((m: Message) => {
         const msg: ChatMessage = {
