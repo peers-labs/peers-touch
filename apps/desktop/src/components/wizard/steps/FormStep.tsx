@@ -5,7 +5,7 @@ import { ClipboardList } from 'lucide-react';
 
 const { Text } = Typography;
 import * as Icons from 'lucide-react';
-import type { WizardStep } from '../../../services/api';
+import type { WizardStep } from '../../../services/desktop_api';
 
 interface Props {
   step: WizardStep;

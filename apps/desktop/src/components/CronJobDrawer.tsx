@@ -17,8 +17,8 @@ import {
 import { Flexbox } from 'react-layout-kit';
 import { Sparkles, Terminal, Bot, ChevronDown } from 'lucide-react';
 import { ModelSelect } from './ModelSelect';
-import type { ModelRef } from '../services/api';
-import { api, type CronJob, type CronJobCreate, type Agent, type Channel, type AvailableModel, type ChatTarget } from '../services/api';
+import type { ModelRef } from '../services/desktop_api';
+import { api, type CronJob, type CronJobCreate, type Agent, type Channel, type AvailableModel, type ChatTarget } from '../services/desktop_api';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -487,7 +487,7 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
       title={editingJob ? 'Edit Job' : 'New Job'}
       open={open}
       onClose={onClose}
-      width={520}
+      size="default"
       extra={
         <Button type="primary" loading={saving} onClick={handleSubmit}>
           {editingJob ? 'Save' : 'Add job'}

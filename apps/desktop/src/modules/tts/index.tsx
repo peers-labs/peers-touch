@@ -3,7 +3,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Form, Select, Slider, Switch, Typography, theme } from 'antd';
 import { Volume2 } from 'lucide-react';
 import { registerModule } from '../registry';
-import { api, type TTSVoice, type UserPreferences } from '../../services/api';
+import { api, type TTSVoice, type UserPreferences } from '../../services/desktop_api';
 
 const { Title, Text } = Typography;
 

@@ -1,7 +1,7 @@
 /**
  * Agent Pilot API — wraps api.appletAction('agent-pilot', action, params).
  */
-import { api } from '../../services/api';
+import { api } from '../../services/desktop_api';
 import type { Attachment, Issue, IssueComment, IssueRelationship, Project, ProjectStatus, Repo, Tag, Workspace } from './types';
 
 const ID = 'agent-pilot';

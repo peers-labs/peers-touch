@@ -1,5 +1,9 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{ChatListMessagesInput, ChatMarkReadInput, ChatSendMessageInput, StubPayload};
+use crate::interface::contracts::{
+    ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput, ChatMessageInput,
+    ChatRenameConversationInput, ChatSendMessageInput, ChatSetConversationModelInput, ChatUpdateMessageInput,
+    StubPayload,
+};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -36,6 +40,8 @@ impl ChatStore {
             conversation_id.clone(),
             Conversation {
                 id: conversation_id,
+                title: "General".to_string(),
+                model: None,
                 unread_count: 1,
                 last_message_id: Some(first_message_id),
                 last_timestamp_ms: timestamp,
@@ -52,6 +58,8 @@ impl ChatStore {
             .entry(conversation_id.to_string())
             .or_insert_with(|| Conversation {
                 id: conversation_id.to_string(),
+                title: "New Chat".to_string(),
+                model: None,
                 unread_count: 0,
                 last_message_id: None,
                 last_timestamp_ms: timestamp_ms,
@@ -94,7 +102,10 @@ pub fn chat_list_conversations() -> AppResult<StubPayload> {
         .map(|conversation| {
             json!({
                 "id": conversation.id,
+                "title": conversation.title,
+                "modelName": conversation.model,
                 "unreadCount": conversation.unread_count,
+                "messageCount": guard.messages.get(&conversation.id).map(|list| list.len()).unwrap_or(0),
                 "lastMessageId": conversation.last_message_id,
                 "lastTimestampMs": conversation.last_timestamp_ms
             })
@@ -144,12 +155,18 @@ pub fn chat_list_messages(input: ChatListMessagesInput) -> AppResult<StubPayload
             };
             json!({
                 "id": message.id,
+                "role": if message.read { "CHAT_ROLE_ASSISTANT" } else { "CHAT_ROLE_USER" },
                 "conversationId": message.conversation_id,
                 "content": message.content,
                 "read": message.read,
+                "modelName": guard
+                    .conversations
+                    .get(&conversation_id)
+                    .and_then(|conversation| conversation.model.clone())
+                    .unwrap_or_default(),
                 "via": via,
                 "retryCount": message.retry_count,
-                "timestampMs": message.timestamp_ms
+                "createdAt": message.timestamp_ms
             })
         })
         .collect::<Vec<_>>();
@@ -277,6 +294,243 @@ pub fn chat_mark_read(input: ChatMarkReadInput) -> AppResult<StubPayload> {
             "conversationId": conversation_id,
             "messageId": message_id,
             "unreadCount": unread_count
+        }),
+    )
+}
+
+pub fn chat_delete_conversation(input: ChatConversationInput) -> AppResult<StubPayload> {
+    let conversation_id = match domain_chat::normalize_conversation_id(&input.conversation_id) {
+        Ok(value) => value,
+        Err(message) => return invalid_argument(message),
+    };
+    let mut guard = match chat_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error("failed to access chat store"),
+    };
+    guard.conversations.remove(&conversation_id);
+    guard.messages.remove(&conversation_id);
+    success_payload(
+        "chat_delete_conversation",
+        json!({ "ok": true, "conversationId": conversation_id }),
+    )
+}
+
+pub fn chat_rename_conversation(input: ChatRenameConversationInput) -> AppResult<StubPayload> {
+    let conversation_id = match domain_chat::normalize_conversation_id(&input.conversation_id) {
+        Ok(value) => value,
+        Err(message) => return invalid_argument(message),
+    };
+    let title = input.title.trim().to_string();
+    if title.is_empty() {
+        return invalid_argument("title is required".to_string());
+    }
+    let mut guard = match chat_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error("failed to access chat store"),
+    };
+    let now = domain_chat::now_ms();
+    let conversation = guard.ensure_conversation(&conversation_id, now);
+    conversation.title = title.clone();
+    conversation.last_timestamp_ms = now;
+    success_payload(
+        "chat_rename_conversation",
+        json!({ "ok": true, "conversationId": conversation_id, "title": title }),
+    )
+}
+
+pub fn chat_duplicate_conversation(input: ChatConversationInput) -> AppResult<StubPayload> {
+    let source_id = match domain_chat::normalize_conversation_id(&input.conversation_id) {
+        Ok(value) => value,
+        Err(message) => return invalid_argument(message),
+    };
+    let mut guard = match chat_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error("failed to access chat store"),
+    };
+    let source_conversation = match guard.conversations.get(&source_id).cloned() {
+        Some(conversation) => conversation,
+        None => return AppResult::fail(ErrorCode::NotFound, "conversation not found", None),
+    };
+    let now = domain_chat::now_ms();
+    let duplicated_id = format!("{}-copy-{}", source_id, now);
+    let mut duplicated_conversation = source_conversation.clone();
+    duplicated_conversation.id = duplicated_id.clone();
+    duplicated_conversation.title = format!("{} Copy", source_conversation.title);
+    duplicated_conversation.last_timestamp_ms = now;
+    guard
+        .conversations
+        .insert(duplicated_id.clone(), duplicated_conversation);
+    let duplicated_messages = guard
+        .messages
+        .get(&source_id)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|mut message| {
+            message.id = domain_chat::next_message_id(Some(&format!("{}-copy", message.id)));
+            message.conversation_id = duplicated_id.clone();
+            message
+        })
+        .collect::<Vec<_>>();
+    guard.messages.insert(duplicated_id.clone(), duplicated_messages);
+    success_payload(
+        "chat_duplicate_conversation",
+        json!({ "ok": true, "conversationId": duplicated_id }),
+    )
+}
+
+pub fn chat_smart_rename_conversation(input: ChatConversationInput) -> AppResult<StubPayload> {
+    let conversation_id = match domain_chat::normalize_conversation_id(&input.conversation_id) {
+        Ok(value) => value,
+        Err(message) => return invalid_argument(message),
+    };
+    let mut guard = match chat_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error("failed to access chat store"),
+    };
+    let now = domain_chat::now_ms();
+    let title = if let Some(messages) = guard.messages.get(&conversation_id) {
+        if let Some(last_message) = messages.last() {
+            let content = last_message.content.trim();
+            if content.is_empty() {
+                format!("Topic {}", now)
+            } else {
+                content.chars().take(28).collect::<String>()
+            }
+        } else {
+            format!("Topic {}", now)
+        }
+    } else {
+        format!("Topic {}", now)
+    };
+    let conversation = guard.ensure_conversation(&conversation_id, now);
+    conversation.title = title.clone();
+    conversation.last_timestamp_ms = now;
+    success_payload(
+        "chat_smart_rename_conversation",
+        json!({ "ok": true, "conversationId": conversation_id, "title": title }),
+    )
+}
+
+pub fn chat_set_conversation_model(input: ChatSetConversationModelInput) -> AppResult<StubPayload> {
+    let conversation_id = match domain_chat::normalize_conversation_id(&input.conversation_id) {
+        Ok(value) => value,
+        Err(message) => return invalid_argument(message),
+    };
+    let model = input.model.trim().to_string();
+    let mut guard = match chat_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error("failed to access chat store"),
+    };
+    let now = domain_chat::now_ms();
+    let conversation = guard.ensure_conversation(&conversation_id, now);
+    conversation.model = if model.is_empty() { None } else { Some(model.clone()) };
+    conversation.last_timestamp_ms = now;
+    success_payload(
+        "chat_set_conversation_model",
+        json!({ "ok": true, "conversationId": conversation_id, "model": model }),
+    )
+}
+
+pub fn chat_delete_message(input: ChatMessageInput) -> AppResult<StubPayload> {
+    let message_id = input.message_id.trim().to_string();
+    if message_id.is_empty() {
+        return invalid_argument("message_id is required".to_string());
+    }
+    let mut guard = match chat_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error("failed to access chat store"),
+    };
+    let target = guard.messages.iter().find_map(|(conversation_id, messages)| {
+        messages
+            .iter()
+            .position(|message| message.id == message_id)
+            .map(|index| (conversation_id.clone(), index))
+    });
+    if let Some((conversation_id, index)) = target {
+        if let Some(messages) = guard.messages.get_mut(&conversation_id) {
+            messages.remove(index);
+            let unread_count = messages.iter().filter(|item| !item.read).count() as u32;
+            let last_message_id = messages.last().map(|item| item.id.clone());
+            if let Some(conversation) = guard.conversations.get_mut(&conversation_id) {
+                conversation.unread_count = unread_count;
+                conversation.last_message_id = last_message_id;
+                conversation.last_timestamp_ms = domain_chat::now_ms();
+            }
+        }
+        return success_payload(
+            "chat_delete_message",
+            json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
+        );
+    }
+    AppResult::fail(ErrorCode::NotFound, "message not found", None)
+}
+
+pub fn chat_update_message(input: ChatUpdateMessageInput) -> AppResult<StubPayload> {
+    let message_id = input.message_id.trim().to_string();
+    if message_id.is_empty() {
+        return invalid_argument("message_id is required".to_string());
+    }
+    let content = match domain_chat::normalize_content(&input.content) {
+        Ok(content) => content,
+        Err(message) => return invalid_argument(message),
+    };
+    let mut guard = match chat_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error("failed to access chat store"),
+    };
+    let target = guard.messages.iter().find_map(|(conversation_id, messages)| {
+        messages
+            .iter()
+            .position(|message| message.id == message_id)
+            .map(|index| (conversation_id.clone(), index))
+    });
+    if let Some((conversation_id, index)) = target {
+        let timestamp_ms = domain_chat::now_ms();
+        if let Some(messages) = guard.messages.get_mut(&conversation_id) {
+            if let Some(message) = messages.get_mut(index) {
+                message.content = content.clone();
+                message.timestamp_ms = timestamp_ms;
+            }
+        }
+        if let Some(conversation) = guard.conversations.get_mut(&conversation_id) {
+            conversation.last_message_id = Some(message_id.clone());
+            conversation.last_timestamp_ms = timestamp_ms;
+        }
+        return success_payload(
+            "chat_update_message",
+            json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
+        );
+    }
+    AppResult::fail(ErrorCode::NotFound, "message not found", None)
+}
+
+pub fn chat_stop(input: ChatConversationInput) -> AppResult<StubPayload> {
+    let conversation_id = match domain_chat::normalize_conversation_id(&input.conversation_id) {
+        Ok(value) => value,
+        Err(message) => return invalid_argument(message),
+    };
+    success_payload(
+        "chat_stop",
+        json!({ "ok": true, "conversationId": conversation_id, "stopped": true }),
+    )
+}
+
+pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload> {
+    let session_id = input.session_id.trim().to_string();
+    if session_id.is_empty() {
+        return invalid_argument("session_id is required".to_string());
+    }
+    let content = match domain_chat::normalize_content(&input.message) {
+        Ok(content) => content,
+        Err(message) => return invalid_argument(message),
+    };
+    let model = input.model.unwrap_or_default();
+    success_payload(
+        "chat_completion_once",
+        json!({
+            "text": format!("Echo: {}", content),
+            "model": model
         }),
     )
 }

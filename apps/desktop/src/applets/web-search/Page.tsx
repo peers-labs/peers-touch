@@ -11,8 +11,8 @@ import {
   ExternalLink,
   Pin,
 } from 'lucide-react';
-import { api } from '../../services/api';
-import type { SearchResultItem } from '../../services/api';
+import { api } from '../../services/desktop_api';
+import type { SearchResultItem } from '../../services/desktop_api';
 import { MessageComposer } from '../../components/MessageComposer';
 
 const { Title, Text } = Typography;

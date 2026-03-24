@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, type ProviderListItem, type ProviderDetail } from '../services/api';
+import { api, type ProviderListItem, type ProviderDetail } from '../services/desktop_api';
 
 interface ProviderState {
   providers: ProviderListItem[];
