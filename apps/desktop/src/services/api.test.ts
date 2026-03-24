@@ -1,49 +1,49 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { api } from './api'
+import { invoke } from '@tauri-apps/api/core'
+import { api } from './desktop_api'
 
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
-
-function mockOk(data: unknown) {
-  mockFetch.mockResolvedValueOnce({
-    ok: true,
-    json: () => Promise.resolve(data),
-  })
-}
-
-function mockError(status: number, body: { error: string }) {
-  mockFetch.mockResolvedValueOnce({
-    ok: false,
-    status,
-    statusText: 'Error',
-    json: () => Promise.resolve(body),
-  })
-}
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}))
 
 beforeEach(() => {
   mockFetch.mockReset()
+  vi.mocked(invoke).mockReset()
 })
 
 describe('api.health', () => {
   it('returns status on success', async () => {
-    mockOk({ status: 'ok' })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'system_health',
+        status: JSON.stringify({ status: 'ok' }),
+      },
+    })
     const result = await api.health()
     expect(result).toEqual({ status: 'ok' })
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/health'),
-      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } })
-    )
+    expect(invoke).toHaveBeenCalledWith('system_health', undefined)
   })
 
   it('throws on HTTP error', async () => {
-    mockError(500, { error: 'db down' })
+    vi.mocked(invoke).mockRejectedValue(new Error('db down'))
     await expect(api.health()).rejects.toThrow('db down')
   })
 })
 
 describe('api.listSessions', () => {
   it('returns sessions array', async () => {
-    mockOk({ sessions: [{ id: '1', key: 'chat:main' }] })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'chat_list_conversations',
+        status: JSON.stringify({
+          conversations: [{ id: 'chat:main' }],
+        }),
+      },
+    })
     const sessions = await api.listSessions()
     expect(sessions).toHaveLength(1)
     expect(sessions[0].key).toBe('chat:main')
@@ -52,7 +52,13 @@ describe('api.listSessions', () => {
 
 describe('api.getPreferences', () => {
   it('returns preferences', async () => {
-    mockOk({ pinned_applets: ['web-search'], wide_screen: true })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'preferences_get',
+        status: JSON.stringify({ pinned_applets: ['web-search'], wide_screen: true }),
+      },
+    })
     const prefs = await api.getPreferences()
     expect(prefs.pinned_applets).toEqual(['web-search'])
     expect(prefs.wide_screen).toBe(true)
@@ -61,24 +67,32 @@ describe('api.getPreferences', () => {
 
 describe('api.setPreferences', () => {
   it('sends PUT with body', async () => {
-    mockOk({ ok: true })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'preferences_set',
+        status: JSON.stringify({ ok: true }),
+      },
+    })
     await api.setPreferences({ wide_screen: true })
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/preferences'),
-      expect.objectContaining({
-        method: 'PUT',
-        body: JSON.stringify({ wide_screen: true }),
-      })
-    )
+    expect(invoke).toHaveBeenCalledWith('preferences_set', {
+      input: { prefs: { wide_screen: true } },
+    })
   })
 })
 
 describe('api.listApplets', () => {
   it('returns applets array', async () => {
-    mockOk({
-      applets: [
-        { manifest: { id: 'web-search', name: 'Web Search' }, status: 'active' },
-      ],
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'applets_list',
+        status: JSON.stringify({
+          applets: [
+            { manifest: { id: 'web-search', name: 'Web Search' }, status: 'active' },
+          ],
+        }),
+      },
     })
     const applets = await api.listApplets()
     expect(applets).toHaveLength(1)
@@ -88,80 +102,105 @@ describe('api.listApplets', () => {
 
 describe('api.appletAction', () => {
   it('sends POST with params', async () => {
-    mockOk({ sites: [] })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'applets_action',
+        status: JSON.stringify({ sites: [] }),
+      },
+    })
     await api.appletAction('web-search', 'list-sites', { query: 'test' })
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/applets/web-search/action/list-sites'),
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ query: 'test' }),
-      })
-    )
+    expect(invoke).toHaveBeenCalledWith('applets_action', {
+      input: { id: 'web-search', action: 'list-sites', params: { query: 'test' } },
+    })
   })
 
   it('sends POST without body when no params', async () => {
-    mockOk({ result: 'ok' })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'applets_action',
+        status: JSON.stringify({ result: 'ok' }),
+      },
+    })
     await api.appletAction('web-search', 'list-sites')
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/applets/web-search/action/list-sites'),
-      expect.objectContaining({
-        method: 'POST',
-        body: undefined,
-      })
-    )
+    expect(invoke).toHaveBeenCalledWith('applets_action', {
+      input: { id: 'web-search', action: 'list-sites', params: undefined },
+    })
   })
 })
 
 describe('api.listSkills', () => {
   it('returns skills and builtin', async () => {
-    mockOk({ skills: [], builtin: [{ identifier: 'go-testing', name: 'Go Testing' }] })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'skills_list',
+        status: JSON.stringify({
+          skills: [],
+          builtin: [{ identifier: 'go-testing', name: 'Go Testing' }],
+        }),
+      },
+    })
     const result = await api.listSkills()
     expect(result.builtin).toHaveLength(1)
   })
 
   it('passes source query param', async () => {
-    mockOk({ skills: [], builtin: [] })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'skills_list',
+        status: JSON.stringify({ skills: [], builtin: [] }),
+      },
+    })
     await api.listSkills('user')
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/skills?source=user'),
-      expect.anything()
-    )
+    expect(invoke).toHaveBeenCalledWith('skills_list', {
+      input: { source: 'user' },
+    })
   })
 })
 
 describe('api.deleteSession', () => {
-  it('sends DELETE request', async () => {
-    mockOk(undefined)
+  it('sends delete session request', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'chat_delete_conversation',
+        status: JSON.stringify({ ok: true }),
+      },
+    })
     await api.deleteSession('chat:main')
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/sessions/chat:main'),
-      expect.objectContaining({ method: 'DELETE' })
-    )
+    expect(invoke).toHaveBeenCalledWith('chat_delete_conversation', {
+      input: { conversation_id: 'chat:main' },
+    })
   })
 })
 
 describe('api.updateProvider', () => {
-  it('sends PUT with provider data', async () => {
-    mockOk({ ok: true })
+  it('sends provider update request', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'provider_update',
+        status: JSON.stringify({ provider: { id: 'openai' } }),
+      },
+    })
     await api.updateProvider('openai', { api_key: 'sk-test', base_url: '', enabled: true })
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/providers/openai'),
-      expect.objectContaining({
-        method: 'PUT',
-        body: JSON.stringify({ api_key: 'sk-test', base_url: '', enabled: true }),
-      })
-    )
+    expect(invoke).toHaveBeenCalledWith('provider_update', {
+      input: {
+          id: 'openai',
+          enabled: true,
+          key_vaults: '{"api_key":"sk-test"}',
+          config_json: '{"base_url":""}',
+      },
+    })
   })
 })
 
 describe('error handling', () => {
   it('falls back to statusText when JSON parse fails', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 503,
-      statusText: 'Service Unavailable',
-      json: () => Promise.reject(new Error('not json')),
-    })
+    vi.mocked(invoke).mockRejectedValue(new Error('Service Unavailable'))
     await expect(api.health()).rejects.toThrow('Service Unavailable')
   })
 })

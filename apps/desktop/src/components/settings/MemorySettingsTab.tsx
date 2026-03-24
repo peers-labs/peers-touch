@@ -29,7 +29,7 @@ import {
   api,
   type ConfigFieldMeta,
   type EmbeddingModelInfo,
-} from '../../services/api';
+} from '../../services/desktop_api';
 
 const { Text } = Typography;
 

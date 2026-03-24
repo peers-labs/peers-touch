@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AuthCommandException, api, type OAuth2ProviderSummary, type OAuth2Connection } from '../services/api';
+import { AuthCommandException, api, type OAuth2ProviderSummary, type OAuth2Connection } from '../services/desktop_api';
 
 let loadAllPromise: Promise<void> | null = null;
 const AUTH_TOKEN_STORAGE_KEY = 'pt.desktop.auth.token';

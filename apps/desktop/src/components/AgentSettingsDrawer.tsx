@@ -10,7 +10,7 @@ import {
   message,
 } from 'antd';
 import { Flexbox } from 'react-layout-kit';
-import { api, type Agent, type AgentCreate } from '../services/api';
+import { api, type Agent, type AgentCreate } from '../services/desktop_api';
 import { useChatStore } from '../store/chat';
 
 const { TextArea } = Input;
@@ -113,7 +113,7 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
       title={editingAgent ? 'Agent Profile' : 'Create Agent'}
       open={open}
       onClose={onClose}
-      width={480}
+      size="default"
       extra={
         <Button type="primary" loading={saving} onClick={handleSubmit}>
           {editingAgent ? 'Save' : 'Create'}

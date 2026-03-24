@@ -26,7 +26,7 @@ import {
   SquareCode,
   ArrowLeft,
 } from 'lucide-react';
-import { api, type NotebookDocumentWithTopic } from '../services/api';
+import { api, type NotebookDocumentWithTopic } from '../services/desktop_api';
 import { useChatStore } from '../store/chat';
 import { BuilderPanel } from '../components/BuilderPanel';
 

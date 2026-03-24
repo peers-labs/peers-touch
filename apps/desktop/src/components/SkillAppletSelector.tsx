@@ -8,7 +8,7 @@ import {
   Settings2,
   ChevronRight,
 } from 'lucide-react';
-import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/api';
+import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/desktop_api';
 import { useChatStore } from '../store/chat';
 
 function SelectorRow({

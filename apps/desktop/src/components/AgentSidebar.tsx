@@ -21,8 +21,8 @@ import {
 import { theme, Dropdown, Modal, Input, Popover, message as antMessage } from 'antd';
 import type { MenuProps } from 'antd';
 import { useChatStore } from '../store/chat';
-import type { Agent, Session } from '../services/api';
-import { api } from '../services/api';
+import type { Agent, Session } from '../services/desktop_api';
+import { api } from '../services/desktop_api';
 
 interface AgentSidebarProps {
   onEditAgent: (agent: Agent) => void;
