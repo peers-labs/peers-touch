@@ -1,6 +1,7 @@
 go 1.24.6
 
 use (
+	./apps/oauth2-client
 	./apps/station/app
 	./apps/station/frame
 	./packages/sdk/go

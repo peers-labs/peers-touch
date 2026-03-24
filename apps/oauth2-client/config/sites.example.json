@@ -1,0 +1,20 @@
+{
+  "sites": [
+    {
+      "site_id": "main",
+      "success_url": "https://your-app.example.com",
+      "error_url": "https://your-app.example.com",
+      "providers": {
+        "github": {
+          "enabled": true
+        },
+        "google": {
+          "enabled": true
+        },
+        "weixin": {
+          "enabled": false
+        }
+      }
+    }
+  ]
+}

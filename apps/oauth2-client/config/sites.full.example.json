@@ -1,0 +1,32 @@
+{
+  "sites": [
+    {
+      "site_id": "main",
+      "success_url": "https://your-app.example.com/oauth/done",
+      "error_url": "https://your-app.example.com/oauth/error",
+      "providers": {
+        "github": {
+          "enabled": true,
+          "scope": "read:user user:email",
+          "client_id": "github_client_id",
+          "client_secret": "github_client_secret",
+          "redirect_uri": "https://your-deploy.vercel.app/api/oauth/callback?provider=github"
+        },
+        "google": {
+          "enabled": true,
+          "scope": "openid profile email",
+          "client_id": "google_client_id",
+          "client_secret": "google_client_secret",
+          "redirect_uri": "https://your-deploy.vercel.app/api/oauth/callback?provider=google"
+        },
+        "weixin": {
+          "enabled": false,
+          "scope": "snsapi_login",
+          "client_id": "weixin_appid",
+          "client_secret": "weixin_appsecret",
+          "redirect_uri": "https://your-deploy.vercel.app/api/oauth/callback?provider=weixin"
+        }
+      }
+    }
+  ]
+}
