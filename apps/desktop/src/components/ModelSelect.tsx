@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Select, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { ProviderIcon } from './settings/ProviderIcon';
-import type { AvailableModel } from '../services/api';
+import type { AvailableModel } from '../services/desktop_api';
 
 interface ModelSelectProps {
   models: AvailableModel[];

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal, Radio, Button, Typography, Spin, Result, theme, Space, Alert } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { LogIn, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
-import type { OAuth2ProviderSummary } from '../../services/api';
+import type { OAuth2ProviderSummary } from '../../services/desktop_api';
 import { useOAuth2Store } from '../../store/oauth2';
 import { PlatformLogo } from '../common/PlatformLogo';
 

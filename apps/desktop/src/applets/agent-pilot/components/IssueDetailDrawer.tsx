@@ -67,7 +67,7 @@ export function IssueDetailDrawer({ open, issue, tags = [], onClose, onRefresh, 
     <Drawer
       title={issue ? `${issue.simple_id} ${issue.title}` : ''}
       placement="right"
-      width={420}
+      size="default"
       open={open}
       onClose={onClose}
       extra={

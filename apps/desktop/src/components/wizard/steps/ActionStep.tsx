@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Progress, Typography, theme } from 'antd';
 import { Loader, CheckCircle, XCircle } from 'lucide-react';
-import type { WizardStep, WizardAPI } from '../../../services/api';
+import { api } from '../../../services/desktop_api';
+import type { WizardStep, WizardAPI } from '../../../services/desktop_api';
 
 const { Text } = Typography;
 
@@ -40,19 +41,11 @@ async function executeAPI(apiDef: WizardAPI, ctx: Record<string, any>): Promise<
   if (!match) throw new Error(`Invalid API format: ${apiStr}`);
 
   const [, method, path] = match;
-  const BASE_URL = import.meta.env.VITE_API_URL || '/api';
-  const url = path.startsWith('/api') ? path.replace(/^\/api/, BASE_URL) : `${BASE_URL}${path}`;
-
-  const res = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `API call failed: ${res.status}`);
-  }
+  await api.executeWizardApi(
+    method as 'GET' | 'POST' | 'PUT' | 'DELETE',
+    path,
+    body === undefined ? undefined : body,
+  );
 }
 
 export function ActionStep({ step, wizardContext, onNext, onBack }: Props) {

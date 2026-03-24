@@ -2,7 +2,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, theme } from 'antd';
 import { Sparkles } from 'lucide-react';
 import * as Icons from 'lucide-react';
-import type { WizardStep } from '../../../services/api';
+import type { WizardStep } from '../../../services/desktop_api';
 
 interface Props {
   step: WizardStep;

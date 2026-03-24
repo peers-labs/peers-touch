@@ -4,8 +4,8 @@ import { ActionIcon, SearchBar } from '@lobehub/ui';
 import { Plus, Pin, Trash2, MessageSquare, ChevronRight, Settings2 } from 'lucide-react';
 import { theme, Popconfirm } from 'antd';
 import { useChatStore } from '../store/chat';
-import type { Agent, Session } from '../services/api';
-import { api } from '../services/api';
+import type { Agent, Session } from '../services/desktop_api';
+import { api } from '../services/desktop_api';
 
 interface AgentListProps {
   onCreateAgent: () => void;

@@ -15,7 +15,7 @@ import {
   theme,
 } from 'antd';
 import { Plus, Trash2, Plug, Server } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from '../../services/desktop_api';
 import type { Connection } from './types';
 
 const { Text } = Typography;

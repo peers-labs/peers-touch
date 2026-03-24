@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Popover, Typography, Button, theme, Divider, message, Input } from 'antd';
 import { Check, Edit2, Globe, Bot } from 'lucide-react';
-import { api, type OAuth2Connection, type UserPreferences } from '../services/api';
+import { api, type OAuth2Connection, type UserPreferences } from '../services/desktop_api';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import { PlatformLogo } from './common/PlatformLogo';
 

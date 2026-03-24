@@ -15,7 +15,7 @@ import {
   Settings,
   ChevronDown,
 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from '../../services/desktop_api';
 import { TerminalPanel, type TerminalHandle } from './Terminal';
 import { BuilderPanel } from '../../components/BuilderPanel';
 import { ConnectDialog } from './ConnectDialog';

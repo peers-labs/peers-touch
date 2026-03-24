@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input, Typography, theme, message, Divider } from 'antd';
 import { Key, ExternalLink, Zap } from 'lucide-react';
-import { api, type ProviderDetail } from '../../services/api';
+import { api, type ProviderDetail } from '../../services/desktop_api';
 
 const { Text, Link } = Typography;
 

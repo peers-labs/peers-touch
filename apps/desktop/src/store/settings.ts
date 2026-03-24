@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, type Agent, type ToolInfo } from '../services/api';
+import { api, type Agent, type ToolInfo } from '../services/desktop_api';
 
 interface SettingsState {
   agents: Agent[];

@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Typography, Tag, theme, Tooltip, Input, Modal, message, Alert } from 'antd';
 import { Clock, Check, Copy, Settings2 } from 'lucide-react';
-import type { OAuth2ProviderSummary } from '../../services/api';
-import { api } from '../../services/api';
+import type { OAuth2ProviderSummary } from '../../services/desktop_api';
+import { api } from '../../services/desktop_api';
 import { useOAuth2Store } from '../../store/oauth2';
 import { PlatformLogo } from '../common/PlatformLogo';
 
@@ -111,7 +111,7 @@ function CredentialsModal({
             showIcon
             message={
               <span style={{ fontSize: 12 }}>
-                Currently using credentials from config file (<code>~/.agent-box/oauth2/{provider.id}.yml</code>).
+                Currently using credentials from config file (<code>~/.peers-touch/oauth2/{provider.id}.yml</code>).
                 Saving here will override the config file values.
               </span>
             }

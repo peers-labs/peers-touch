@@ -22,7 +22,7 @@ import {
   api,
   type Agent,
   parseAgentChatConfig,
-} from '../services/api';
+} from '../services/desktop_api';
 import { ModelSelect } from '../components/ModelSelect';
 import { AgentSettingsModal } from '../components/AgentSettingsModal';
 import { BuilderPanel } from '../components/BuilderPanel';

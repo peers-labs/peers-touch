@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Typography, theme, message, Alert } from 'antd';
-import { api, type ModelServiceConfig, type ModelRef, type AvailableModel } from '../services/api';
+import { api, type ModelServiceConfig, type ModelRef, type AvailableModel } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
 
 const { Title, Text } = Typography;

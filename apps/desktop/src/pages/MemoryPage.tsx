@@ -37,7 +37,7 @@ import {
   type Persona,
   type ScoredMemory,
   type MemoryEvent,
-} from '../services/api';
+} from '../services/desktop_api';
 import { useChatStore } from '../store/chat';
 
 const { Text } = Typography;

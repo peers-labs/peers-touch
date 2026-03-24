@@ -3,7 +3,7 @@ import { Modal, Tabs, message as antMessage, Button } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { theme } from 'antd';
 import { Copy, Link, FileText, Download, Check, Link2Off } from 'lucide-react';
-import { api } from '../services/api';
+import { api } from '../services/desktop_api';
 import type { ChatMessage } from '../store/chat';
 
 interface ShareDialogProps {

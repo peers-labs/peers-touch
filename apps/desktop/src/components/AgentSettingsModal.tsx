@@ -14,7 +14,7 @@ import {
 } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { User, MessageSquare, Settings2, Cpu, Plus, X, GripVertical } from 'lucide-react';
-import { api, type Agent, type AgentChatConfig, type AgentParams, parseAgentChatConfig, parseAgentParams } from '../services/api';
+import { api, type Agent, type AgentChatConfig, type AgentParams, parseAgentChatConfig, parseAgentParams } from '../services/desktop_api';
 
 const { TextArea } = Input;
 

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Spin, theme } from 'antd';
-import { api } from '../../services/api';
-import type { WizardConfig, WizardStep as WizardStepType, WizardAPI } from '../../services/api';
+import { api } from '../../services/desktop_api';
+import type { WizardConfig, WizardStep as WizardStepType, WizardAPI } from '../../services/desktop_api';
 import { WelcomeStep } from './steps/WelcomeStep';
 import { OAuthLoginStep } from './steps/OAuthLoginStep';
 import { ProviderSelectStep } from './steps/ProviderSelectStep';
@@ -34,7 +34,6 @@ function resolveTemplate(value: any, ctx: Record<string, any>): any {
 }
 
 async function executeOnSubmitAPIs(apis: WizardAPI[], ctx: Record<string, any>): Promise<void> {
-  const BASE_URL = import.meta.env.VITE_API_URL || '/api';
   for (const apiDef of apis) {
     const apiStr = resolveTemplate(apiDef.api, ctx) as string;
     const body = apiDef.body ? resolveTemplate(apiDef.body, ctx) : undefined;
@@ -43,13 +42,11 @@ async function executeOnSubmitAPIs(apis: WizardAPI[], ctx: Record<string, any>):
     if (!match) continue;
 
     const [, method, path] = match;
-    const url = path.startsWith('/api') ? path.replace(/^\/api/, BASE_URL) : `${BASE_URL}${path}`;
-
-    await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(typeof body === 'string' ? JSON.parse(body) : body) : undefined,
-    });
+    await api.executeWizardApi(
+      method as 'GET' | 'POST' | 'PUT' | 'DELETE',
+      path,
+      body ? (typeof body === 'string' ? JSON.parse(body) : body) : undefined,
+    );
   }
 }
 

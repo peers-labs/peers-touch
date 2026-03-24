@@ -1,7 +1,7 @@
 import { Flexbox } from 'react-layout-kit';
 import { Button, theme } from 'antd';
 import { PartyPopper, Check } from 'lucide-react';
-import type { WizardStep } from '../../../services/api';
+import type { WizardStep } from '../../../services/desktop_api';
 
 interface Props {
   step: WizardStep;

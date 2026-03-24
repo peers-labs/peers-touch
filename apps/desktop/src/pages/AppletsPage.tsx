@@ -17,9 +17,9 @@ import {
   Power,
   PowerOff,
 } from 'lucide-react';
-import { api } from '../services/api';
+import { api } from '../services/desktop_api';
 import { PageHeader } from '../components/PageHeader';
-import type { AppletInfo } from '../services/api';
+import type { AppletInfo } from '../services/desktop_api';
 
 const { Text, Paragraph } = Typography;
 

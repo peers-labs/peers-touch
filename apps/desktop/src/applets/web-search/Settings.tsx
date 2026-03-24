@@ -6,7 +6,7 @@ import {
 import {
   Globe, Plus, Trash2, RefreshCw, ExternalLink, Check, X,
 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from '../../services/desktop_api';
 
 const { Text, Title } = Typography;
 

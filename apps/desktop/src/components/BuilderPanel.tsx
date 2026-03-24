@@ -14,7 +14,7 @@ import {
 import { useChatStore, type ChatMessage } from '../store/chat';
 import { MessageBubble } from './MessageBubble';
 import { ModelProviderSelect } from './ModelProviderSelect';
-import type { Agent, Session } from '../services/api';
+import { streamChat, type Agent, type Session } from '../services/desktop_api';
 
 export interface BuilderPanelProps {
   agentName: string;
@@ -158,63 +158,43 @@ export function BuilderPanel({
     setInput('');
     setLoading(true);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    try {
-      const body: Record<string, unknown> = {
-        message: text,
-        session_key: scopedSessionKey,
-        agent_name: currentAgent,
-      };
-      if (contextPayload) {
-        if (contextPayload.document_context) {
-          body.document_context = contextPayload.document_context;
+    const modelOverride = selectedModel && selectedModel !== defaultModel ? selectedModel : undefined;
+    let assistantContent = '';
+    let modelName = modelOverride || '';
+    const controller = streamChat(
+      text,
+      scopedSessionKey,
+      currentAgent,
+      (event) => {
+        if (event.event === 'text') {
+          const delta = event.data?.content || '';
+          if (delta) assistantContent += delta;
         }
-        const ctx: Record<string, string> = {};
-        for (const [k, v] of Object.entries(contextPayload)) {
-          if (k !== 'document_context' && typeof v === 'string') ctx[k] = v;
+        if (event.event === 'done') {
+          modelName = event.data?.model || modelName;
         }
-        if (Object.keys(ctx).length > 0) body.context = ctx;
-      }
-      const modelOverride = selectedModel && selectedModel !== defaultModel ? selectedModel : undefined;
-      if (modelOverride) body.model = modelOverride;
-      if (searchEnabled) body.enable_search = true;
-
-      const BASE_URL = import.meta.env.VITE_API_URL || '/api';
-      const res = await fetch(`${BASE_URL}/ai-chat/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: scopedSessionKey,
-          topic_id: '',
-          model: modelOverride || '',
-          messages: [{ role: 'CHAT_ROLE_USER', content: text }],
-          stream: false,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const payload = await res.json();
-      const assistantContent = payload?.choices?.[0]?.message?.content || '';
-      const modelName = modelOverride || '';
-
-      setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, content: assistantContent, loading: false, model: modelName || undefined } : m)),
-      );
-
-      window.dispatchEvent(new CustomEvent('agent-builder:stream-end'));
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name !== 'AbortError') {
+      },
+      () => {
         setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: 'Error: ' + (err as Error).message, loading: false } : m)),
+          prev.map((m) => (m.id === assistantId ? { ...m, content: assistantContent, loading: false, model: modelName || undefined } : m)),
         );
-      }
-    } finally {
-      setLoading(false);
-      abortRef.current = null;
-    }
+        window.dispatchEvent(new CustomEvent('agent-builder:stream-end'));
+        setLoading(false);
+        abortRef.current = null;
+      },
+      (err) => {
+        if (err.name !== 'AbortError') {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, content: `Error: ${err.message}`, loading: false } : m)),
+          );
+        }
+        setLoading(false);
+        abortRef.current = null;
+      },
+      [],
+      modelOverride,
+    );
+    abortRef.current = controller;
   }, [input, loading, scopedSessionKey, currentAgent, contextPayload, selectedModel, defaultModel, searchEnabled, onDocumentUpdated]);
 
   const handleStop = useCallback(() => {

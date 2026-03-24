@@ -8,7 +8,7 @@ import { useOAuth2Store } from '../../store/oauth2';
 import { OAuth2ProviderCard } from './OAuth2ProviderCard';
 import { OAuth2ConnectModal } from './OAuth2ConnectModal';
 import { LarkSimulateLoginModal } from './LarkSimulateLoginModal';
-import type { OAuth2ProviderSummary, OAuth2Connection } from '../../services/api';
+import type { OAuth2ProviderSummary, OAuth2Connection } from '../../services/desktop_api';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { PlatformLogo } from '../common/PlatformLogo';
 
@@ -469,7 +469,7 @@ export function OAuth2Tab() {
           message={
             <span>
               OAuth2 credentials (<code>client_id</code> / <code>client_secret</code>) are configured in{' '}
-              <code>~/.agent-box/oauth2/&lt;provider&gt;.yml</code>.
+              <code>~/.peers-touch/oauth2/&lt;provider&gt;.yml</code>.
               You can also add custom providers by creating new YAML files in that directory.
             </span>
           }

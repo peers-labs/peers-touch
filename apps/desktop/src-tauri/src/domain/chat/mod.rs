@@ -7,6 +7,8 @@ static MESSAGE_COUNTER: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, Clone)]
 pub struct Conversation {
     pub id: String,
+    pub title: String,
+    pub model: Option<String>,
     pub unread_count: u32,
     pub last_message_id: Option<String>,
     pub last_timestamp_ms: u128,

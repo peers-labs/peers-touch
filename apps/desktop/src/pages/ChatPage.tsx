@@ -29,7 +29,7 @@ import {
   ArrowLeft,
   Save,
 } from 'lucide-react';
-import { parseAgentChatConfig, api } from '../services/api';
+import { parseAgentChatConfig, api } from '../services/desktop_api';
 
 export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkills, onNavigatePages }: {
   onNavigateSettings?: () => void;
@@ -64,7 +64,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
   const userAvatar = useUserAvatar();
   const [shareOpen, setShareOpen] = useState(false);
   const [portalView, setPortalView] = useState<'list' | 'editor'>('list');
-  const [editingDoc, setEditingDoc] = useState<import('../services/api').NotebookDocument | null>(null);
+  const [editingDoc, setEditingDoc] = useState<import('../services/desktop_api').NotebookDocument | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
 
@@ -72,7 +72,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
   const currentModel = availableModels.find((m) => m.id === currentModelId);
   const isWebSearchEnabled = enabledAppletIds.includes('web-search');
 
-  const handleOpenDocument = useCallback(async (doc: import('../services/api').NotebookDocument) => {
+  const handleOpenDocument = useCallback(async (doc: import('../services/desktop_api').NotebookDocument) => {
     try {
       const fullDoc = await api.getDocument(doc.id);
       setEditingDoc(fullDoc);
@@ -525,12 +525,12 @@ function NotebookPanel({
   onClose,
   onOpenDocument,
 }: {
-  documents: import('../services/api').NotebookDocument[];
+  documents: import('../services/desktop_api').NotebookDocument[];
   loading: boolean;
   onDelete: (id: string) => void;
   onCreate: (title: string, content: string) => void;
   onClose: () => void;
-  onOpenDocument: (doc: import('../services/api').NotebookDocument) => void;
+  onOpenDocument: (doc: import('../services/desktop_api').NotebookDocument) => void;
 }) {
   const { token } = theme.useToken();
   const [creating, setCreating] = useState(false);
@@ -638,7 +638,7 @@ function DocumentItem({
   onDelete,
   onClick,
 }: {
-  doc: import('../services/api').NotebookDocument;
+  doc: import('../services/desktop_api').NotebookDocument;
   onDelete: (id: string) => void;
   onClick: () => void;
 }) {
@@ -694,7 +694,7 @@ function DocumentEditor({
   onClose,
   onOpenFullPage,
 }: {
-  doc: import('../services/api').NotebookDocument;
+  doc: import('../services/desktop_api').NotebookDocument;
   title: string;
   content: string;
   onTitleChange: (t: string) => void;

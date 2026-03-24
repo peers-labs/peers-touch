@@ -42,18 +42,6 @@ async function invokeRustCommand<TInput, TData>(
   }
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
-  }
-  return res.json();
-}
-
 export class AuthCommandException extends Error {
   code: RustErrorCode;
   details?: Record<string, any>;
@@ -80,6 +68,17 @@ async function invokeAuthCommand<TInput>(
     );
   }
   return response.data;
+}
+
+async function invokeRustDataFromStatus<TInput, TOut>(
+  command: string,
+  input?: TInput,
+): Promise<TOut> {
+  const response = await invokeRustCommand<TInput, TauriStubPayload>(command, input);
+  if (response.ok && response.data) {
+    return parseJSONSafe(response.data.status) as TOut;
+  }
+  throw new Error(response.error?.message || `${command} failed`);
 }
 
 export interface Session {
@@ -967,6 +966,8 @@ export interface TauriStubPayload {
   status: string;
 }
 
+export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
+
 export interface AuthLoginInput {
   account: string;
   password: string;
@@ -1003,6 +1004,29 @@ export interface ChatMarkReadInput {
   message_id: string;
 }
 
+export interface ChatConversationInput {
+  conversation_id: string;
+}
+
+export interface ChatRenameConversationInput {
+  conversation_id: string;
+  title: string;
+}
+
+export interface ChatSetConversationModelInput {
+  conversation_id: string;
+  model: string;
+}
+
+export interface ChatMessageInput {
+  message_id: string;
+}
+
+export interface ChatUpdateMessageInput {
+  message_id: string;
+  content: string;
+}
+
 export interface TimelineListInput {
   cursor?: string;
   limit?: number;
@@ -1035,6 +1059,429 @@ export interface AdminNetworkProbeInput {
 export interface AdminExecuteActionInput {
   action: string;
   payload?: Record<string, any>;
+}
+
+export interface ProviderIdInput {
+  id: string;
+}
+
+export interface ProviderUpdateInput {
+  id: string;
+  enabled: boolean;
+  key_vaults?: string;
+  config_json?: string;
+}
+
+export interface ProviderCheckInput {
+  id: string;
+  key_vaults?: string;
+  config_json?: string;
+}
+
+export interface ProviderCreateInput {
+  name: string;
+  description: string;
+  logo: string;
+  key_vaults: string;
+  config_json: string;
+}
+
+export interface ProviderModelAddInput {
+  provider_id: string;
+  data: Record<string, any>;
+}
+
+export interface ProviderModelUpdateInput {
+  provider_id: string;
+  model_id: string;
+  data: Record<string, any>;
+}
+
+export interface ProviderModelDeleteInput {
+  provider_id: string;
+  model_id: string;
+}
+
+export interface ProviderModelFetchInput {
+  provider_id: string;
+  data?: Record<string, any>;
+}
+
+export interface ProviderModelToggleInput {
+  provider_id: string;
+  model_id: string;
+  enabled: boolean;
+}
+
+export interface ProviderModelToggleAllInput {
+  provider_id: string;
+  enabled: boolean;
+}
+
+export interface ChatCompletionInput {
+  session_id: string;
+  model?: string;
+  message: string;
+}
+
+export interface SkillsListInput {
+  source?: string;
+}
+
+export interface SkillsSearchInput {
+  q: string;
+  limit?: number;
+}
+
+export interface SkillIdInput {
+  id: string;
+}
+
+export interface BuiltinSkillIdInput {
+  identifier: string;
+}
+
+export interface SkillCreateInput {
+  name: string;
+  content: string;
+}
+
+export interface SkillUpdateInput {
+  id: string;
+  name?: string;
+  description?: string;
+  content?: string;
+  enabled?: boolean;
+}
+
+export interface SkillToggleInput {
+  id: string;
+  enabled: boolean;
+}
+
+export interface McpNameInput {
+  name: string;
+}
+
+export interface McpCreateInput {
+  data: Partial<MCPServerRecord>;
+}
+
+export interface McpUpdateInput {
+  name: string;
+  data: Partial<MCPServerRecord>;
+}
+
+export interface McpToggleInput {
+  name: string;
+  enabled: boolean;
+}
+
+export interface CronIdInput {
+  id: string;
+}
+
+export interface CronCreateInput {
+  data: CronJobCreate;
+}
+
+export interface CronUpdateInput {
+  id: string;
+  data: Partial<CronJobCreate>;
+}
+
+export interface CronToggleInput {
+  id: string;
+  enabled: boolean;
+}
+
+export interface CronRunsInput {
+  job_id: string;
+}
+
+export interface CronParseScheduleInput {
+  text: string;
+}
+
+export interface ModelConfigKeyInput {
+  key: string;
+}
+
+export interface ModelConfigSetInput {
+  key: string;
+  ref: ModelRef | null;
+}
+
+export interface ProviderIdInputV2 {
+  provider_id: string;
+}
+
+export interface ChannelIdInput {
+  id: string;
+}
+
+export interface ChannelCreateInput {
+  name: string;
+  type: string;
+  config: string;
+  enabled?: boolean;
+}
+
+export interface ChannelUpdateInput {
+  id: string;
+  name?: string;
+  type?: string;
+  config?: string;
+  enabled?: boolean;
+}
+
+export interface ChannelSendMessageInput {
+  id: string;
+  text: string;
+  title?: string;
+  target_id?: string;
+  target_type?: string;
+}
+
+export interface ChannelEventsInput {
+  id: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface OAuthIdInput {
+  id: string;
+}
+
+export interface OAuthSetCredentialsInput {
+  id: string;
+  client_id: string;
+  client_secret: string;
+}
+
+export interface OAuthAuthorizeInput {
+  id: string;
+  environment?: string;
+}
+
+export interface OAuthResourceInput {
+  id: string;
+  resource: string;
+  params?: Record<string, string>;
+}
+
+export interface MemoryIdInput {
+  id: string;
+}
+
+export interface MemoryListInput {
+  params?: Record<string, any>;
+}
+
+export interface MemorySearchInput {
+  query: string;
+  layers?: string[];
+  limit?: number;
+  agent_id?: string;
+  since?: string;
+  until?: string;
+  period?: string;
+}
+
+export interface MemoryEventsInput {
+  params?: Record<string, any>;
+}
+
+export interface MemoryExportInput {
+  params?: Record<string, any>;
+}
+
+export interface MemoryImportInput {
+  data: ExportData;
+  skip_duplicates?: boolean;
+}
+
+export interface MemoryPersonaInput {
+  agent_id?: string;
+}
+
+export interface TtsInput {
+  text: string;
+  voice?: string;
+  speed?: number;
+}
+
+export interface TopicIdInput {
+  topic_id: string;
+}
+
+export interface NotebookIdInput {
+  id: string;
+}
+
+export interface NotebookCreateInput {
+  topic_id: string;
+  title: string;
+  content: string;
+  type?: string;
+}
+
+export interface NotebookUpdateInput {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface AppletIdInput {
+  id: string;
+}
+
+export interface AppletConfigSetInput {
+  id: string;
+  config: Record<string, any>;
+}
+
+export interface AppletActionInput {
+  id: string;
+  action: string;
+  params?: Record<string, any>;
+}
+
+export interface SkillImportAddressInput {
+  address: string;
+  oauth_provider?: string;
+}
+
+export interface SkillImportGitHubInput {
+  owner: string;
+  repo: string;
+  branch?: string;
+  file_path?: string;
+}
+
+export interface SkillMarketIdInput {
+  id: string;
+}
+
+export interface SkillMarketAddInput {
+  url: string;
+  name?: string;
+  branch?: string;
+}
+
+export interface SkillMarketSyncInput {
+  market_id: string;
+}
+
+export interface SkillMarketListInput {
+  market_id: string;
+  q?: string;
+}
+
+export interface SkillMarketDetailInput {
+  market_id: string;
+  file_path: string;
+}
+
+export interface AgentIdInput {
+  id: string;
+}
+
+export interface AgentCreateInput {
+  data: AgentCreate;
+}
+
+export interface AgentUpdateInput {
+  id: string;
+  data: Partial<AgentCreate>;
+}
+
+export interface AgentDuplicateInput {
+  id: string;
+  name: string;
+}
+
+export interface AgentSearchInput {
+  q: string;
+}
+
+export interface SearchPrimaryInput {
+  provider: string;
+}
+
+export interface SearchQueryInput {
+  query: string;
+  source?: string;
+  limit?: number;
+}
+
+export interface AiSearchInput {
+  query: string;
+  web?: boolean;
+}
+
+export interface OnboardingSetInput {
+  data: Partial<OnboardingState>;
+}
+
+export interface WizardStepInput {
+  step_id: string;
+  data: Record<string, any>;
+}
+
+export interface WizardExecuteApiInput {
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  path: string;
+  body?: unknown;
+}
+
+export interface PreferencesSetInput {
+  prefs: Partial<UserPreferences>;
+}
+
+export interface ShareSessionInput {
+  session_key: string;
+}
+
+export interface ShareIdInput {
+  share_id: string;
+}
+
+export interface LogsTailInput {
+  cursor: number;
+  limit?: number;
+  max_bytes?: number;
+}
+
+export interface OAuthSimulateStartInput {
+  create_bot?: boolean;
+  app_name?: string;
+}
+
+export interface OAuthSessionInput {
+  session_id: string;
+}
+
+export interface OAuthCreateBotSessionInput {
+  app_name?: string;
+}
+
+export interface ConfigSectionInput {
+  section: string;
+}
+
+export interface ConfigSectionSetInput {
+  section: string;
+  values: Record<string, any>;
+}
+
+export interface ConfigFieldResetInput {
+  section: string;
+  field: string;
+}
+
+export interface ConfigPostgresTestInput {
+  dsn: string;
 }
 
 export const api = {
@@ -1107,104 +1554,115 @@ export const api = {
   adminExecuteAction: (input: AdminExecuteActionInput) =>
     invokeRustCommand<AdminExecuteActionInput, TauriStubPayload>('admin_execute_action', input),
 
-  health: () => request<{ status: string }>('/health'),
+  getContractVersion: () =>
+    invokeRustDataFromStatus<void, { version: string }>('meta_contract_version'),
+
+  health: () => invokeRustDataFromStatus<void, { status: string }>('system_health'),
 
   listSessions: () =>
-    request<{ sessions: any[] }>('/ai-chat/sessions').then((r) => (r.sessions || []).map(mapAIChatSessionToSession)),
+    invokeRustDataFromStatus<void, { conversations?: any[] }>(
+      'chat_list_conversations',
+      undefined,
+    ).then((r): Session[] =>
+      (r.conversations || []).map(mapAIChatSessionToSession),
+    ),
 
   deleteSession: (key: string) =>
-    request<void>('/ai-chat/session/delete', { method: 'POST', body: JSON.stringify({ session_id: key }) }),
+    invokeRustDataFromStatus<ChatConversationInput, { ok: boolean }>(
+      'chat_delete_conversation',
+      { conversation_id: key },
+    ),
 
   renameSession: (key: string, title: string) =>
-    request<{ ok: boolean; title: string }>(`/sessions/${encodeURIComponent(key)}/title`, {
-      method: 'PUT',
-      body: JSON.stringify({ title }),
-    }),
+    invokeRustDataFromStatus<ChatRenameConversationInput, { ok: boolean; title: string }>(
+      'chat_rename_conversation',
+      { conversation_id: key, title },
+    ),
 
   duplicateSession: (key: string) =>
-    request<{ ok: boolean; key: string; id: string }>(`/sessions/${encodeURIComponent(key)}/duplicate`, {
-      method: 'POST',
-    }),
+    invokeRustDataFromStatus<ChatConversationInput, { ok: boolean; conversationId: string }>(
+      'chat_duplicate_conversation',
+      { conversation_id: key },
+    ),
 
   smartRenameSession: (key: string) =>
-    request<{ ok: boolean; title: string }>(`/sessions/${encodeURIComponent(key)}/smart-rename`, {
-      method: 'POST',
-    }),
+    invokeRustDataFromStatus<ChatConversationInput, { ok: boolean; title: string }>(
+      'chat_smart_rename_conversation',
+      { conversation_id: key },
+    ),
 
   setSessionModel: (key: string, model: string) =>
-    request<{ ok: boolean; model: string }>(`/sessions/${encodeURIComponent(key)}/model`, {
-      method: 'PUT',
-      body: JSON.stringify({ model }),
-    }),
+    invokeRustDataFromStatus<ChatSetConversationModelInput, { ok: boolean; model: string }>(
+      'chat_set_conversation_model',
+      { conversation_id: key, model },
+    ),
 
   getMessages: (key: string) =>
-    request<{ messages: any[] }>(`/ai-chat/messages?session_id=${encodeURIComponent(key)}`).then((r) =>
+    invokeRustDataFromStatus<ChatListMessagesInput, { messages?: any[] }>(
+      'chat_list_messages',
+      { conversation_id: key },
+    ).then((r) =>
       (r.messages || []).map(mapAIChatMessageToMessage),
     ),
 
   deleteMessage: (id: string) =>
-    request<{ ok: boolean }>('/ai-chat/message/delete', { method: 'POST', body: JSON.stringify({ message_id: id }) }),
+    invokeRustDataFromStatus<ChatMessageInput, { ok: boolean }>(
+      'chat_delete_message',
+      { message_id: id },
+    ),
 
   stopChat: (sessionKey: string) =>
-    request<{ ok: boolean; stopped: boolean }>('/chat/stop', {
-      method: 'POST',
-      body: JSON.stringify({ session_key: sessionKey }),
+    invokeRustDataFromStatus<ChatConversationInput, { ok: boolean; stopped: boolean }>('chat_stop', {
+      conversation_id: sessionKey,
     }),
 
   updateMessage: (id: string, content: string) =>
-    request<{ ok: boolean }>(`/messages/${id}/content`, {
-      method: 'PUT',
-      body: JSON.stringify({ content }),
+    invokeRustDataFromStatus<ChatUpdateMessageInput, { ok: boolean }>('chat_update_message', {
+      message_id: id,
+      content,
     }),
 
   listAgents: () =>
-    request<{ agents: Agent[] }>('/agents').then((r) => r.agents),
+    invokeRustDataFromStatus<void, { agents: Agent[] }>('agents_list').then((r) => r.agents),
 
-  getAgent: (id: string) => request<Agent>(`/agents/${id}`),
+  getAgent: (id: string) => invokeRustDataFromStatus<AgentIdInput, Agent>('agents_get', { id }),
 
   createAgent: (data: AgentCreate) =>
-    request<Agent>('/agents', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    invokeRustDataFromStatus<AgentCreateInput, Agent>('agents_create', { data }),
 
   updateAgent: (id: string, data: Partial<AgentCreate>) =>
-    request<Agent>(`/agents/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    invokeRustDataFromStatus<AgentUpdateInput, Agent>('agents_update', { id, data }),
 
   deleteAgent: (id: string) =>
-    request<{ ok: boolean }>(`/agents/${id}`, { method: 'DELETE' }),
+    invokeRustDataFromStatus<AgentIdInput, { ok: boolean }>('agents_delete', { id }),
 
   duplicateAgent: (id: string, name: string) =>
-    request<Agent>(`/agents/${id}/duplicate`, {
-      method: 'POST',
-      body: JSON.stringify({ name }),
-    }),
+    invokeRustDataFromStatus<AgentDuplicateInput, Agent>('agents_duplicate', { id, name }),
 
   searchAgents: (q: string) =>
-    request<{ agents: Agent[] }>(`/agents/search?q=${encodeURIComponent(q)}`).then((r) => r.agents),
+    invokeRustDataFromStatus<AgentSearchInput, { agents: Agent[] }>('agents_search', { q }).then((r) => r.agents),
 
   listAgentSessions: (id: string) =>
-    request<{ sessions: (Session & { agent_id?: string })[] }>(`/agents/${id}/sessions`).then((r) =>
+    invokeRustDataFromStatus<AgentIdInput, { sessions: (Session & { agent_id?: string })[] }>(
+      'agents_list_sessions',
+      { id },
+    ).then((r) =>
       r.sessions.map((s) => ({ ...s, agent_name: s.agent_name ?? s.agent_id ?? '' })),
     ),
 
   listTools: () =>
-    request<{ tools: ToolInfo[] }>('/tools').then((r) => r.tools),
+    invokeRustDataFromStatus<void, { tools: ToolInfo[] }>('tools_list').then((r) => r.tools),
 
   listSearchProviders: () =>
-    request<{ providers: SearchProviderInfo[]; primary: string }>('/tools/search-providers'),
+    invokeRustDataFromStatus<void, { providers: SearchProviderInfo[]; primary: string }>('tools_search_providers'),
 
   setSearchPrimary: (provider: string) =>
-    request<{ ok: boolean; primary: string }>('/tools/search-providers/primary', {
-      method: 'PUT',
-      body: JSON.stringify({ provider }),
+    invokeRustDataFromStatus<SearchPrimaryInput, { ok: boolean; primary: string }>('tools_set_search_primary', {
+      provider,
     }),
 
   listAvailableModels: async () => {
-    const r = await request<{ providers: any[] }>('/ai-chat/providers?page_number=1&page_size=100');
+    const r = await invokeRustDataFromStatus<void, { providers?: any[] }>('provider_list_available_models');
     const models: AvailableModel[] = (r.providers || []).map((p) => {
       const cfg = parseJSONSafe(p.config_json);
       const id = p.check_model || cfg.default_model || `${p.id}:default`;
@@ -1222,243 +1680,244 @@ export const api = {
   },
 
   listProviders: () =>
-    request<{ providers: any[] }>('/ai-chat/providers?page_number=1&page_size=100').then((r) =>
+    invokeRustDataFromStatus<void, { providers?: any[] }>('provider_list').then((r) =>
       (r.providers || []).map(mapAIChatProviderToListItem),
     ),
 
   getProvider: (id: string) =>
-    request<{ provider: any }>(`/ai-chat/provider/get?id=${encodeURIComponent(id)}`).then((r) =>
+    invokeRustDataFromStatus<ProviderIdInput, { provider?: any }>('provider_get', { id }).then((r) =>
       mapAIChatProviderToDetail(r.provider || {}),
     ),
 
   updateProvider: (id: string, data: { api_key: string; base_url: string; enabled: boolean }) =>
-    request<{ provider: any }>('/ai-chat/provider/update', {
-      method: 'POST',
-      body: JSON.stringify({
+    invokeRustDataFromStatus<ProviderUpdateInput, { provider: any }>('provider_update', {
         id,
         enabled: data.enabled,
         key_vaults: JSON.stringify({ api_key: data.api_key || '' }),
         config_json: JSON.stringify({ base_url: data.base_url || '' }),
-      }),
     }),
 
   checkProvider: (id: string, data: { api_key?: string; base_url?: string; model?: string }) =>
-    request<{ ok: boolean; message?: string; error?: string }>('/ai-chat/provider/test', {
-      method: 'POST',
-      body: JSON.stringify({
+    invokeRustDataFromStatus<ProviderCheckInput, { ok: boolean; message?: string; error?: string }>('provider_check', {
         id,
         key_vaults: data.api_key ? JSON.stringify({ api_key: data.api_key }) : undefined,
         config_json: data.base_url ? JSON.stringify({ base_url: data.base_url, model: data.model || '' }) : undefined,
-      }),
     }),
 
   applyPreset: (id: string) =>
-    request<{ ok: boolean; provider_id: string }>(`/providers/${id}/apply-preset`, {
-      method: 'POST',
-    }),
+    invokeRustDataFromStatus<ProviderIdInput, { ok: boolean; provider_id: string }>('provider_apply_preset', { id }),
 
   createProvider: (data: { id: string; name: string; description?: string; logo?: string; base_url: string; api_key?: string }) =>
-    request<{ provider: any }>('/ai-chat/provider/new', {
-      method: 'POST',
-      body: JSON.stringify({
+    invokeRustDataFromStatus<ProviderCreateInput, { provider: any }>('provider_create', {
         name: data.name,
         description: data.description || '',
         logo: data.logo || '',
         key_vaults: JSON.stringify({ api_key: data.api_key || '' }),
         config_json: JSON.stringify({ base_url: data.base_url || '' }),
-      }),
     }),
 
   deleteProvider: (id: string) =>
-    request<{ success: boolean }>('/ai-chat/provider/delete', { method: 'POST', body: JSON.stringify({ id }) }),
+    invokeRustDataFromStatus<ProviderIdInput, { success: boolean }>('provider_delete', { id }),
 
-  addModel: (_providerId: string, _data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) =>
-    Promise.resolve({ ok: true }),
+  addModel: (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) =>
+    invokeRustDataFromStatus<ProviderModelAddInput, { ok: boolean }>('model_add', {
+      provider_id: providerId,
+      data,
+    }),
 
-  updateModel: (_providerId: string, _modelId: string, _data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) =>
-    Promise.resolve({ ok: true }),
+  updateModel: (providerId: string, modelId: string, data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) =>
+    invokeRustDataFromStatus<ProviderModelUpdateInput, { ok: boolean }>('model_update', {
+      provider_id: providerId,
+      model_id: modelId,
+      data,
+    }),
 
-  deleteModel: (_providerId: string, _modelId: string) =>
-    Promise.resolve({ ok: true }),
+  deleteModel: (providerId: string, modelId: string) =>
+    invokeRustDataFromStatus<ProviderModelDeleteInput, { ok: boolean }>('model_delete', {
+      provider_id: providerId,
+      model_id: modelId,
+    }),
 
-  fetchRemoteModels: (_providerId: string, _data?: { api_key?: string; base_url?: string }) =>
-    Promise.resolve({ ok: true, models: [] as string[] }),
+  fetchRemoteModels: (providerId: string, data?: { api_key?: string; base_url?: string }) =>
+    invokeRustDataFromStatus<ProviderModelFetchInput, { ok: boolean; models: string[] }>('model_fetch_remote', {
+      provider_id: providerId,
+      data,
+    }),
 
-  toggleModel: (_providerId: string, _modelId: string, _enabled: boolean) =>
-    Promise.resolve({ ok: true }),
+  toggleModel: (providerId: string, modelId: string, enabled: boolean) =>
+    invokeRustDataFromStatus<ProviderModelToggleInput, { ok: boolean }>('model_toggle', {
+      provider_id: providerId,
+      model_id: modelId,
+      enabled,
+    }),
 
-  toggleAllModels: (_providerId: string, _enabled: boolean) =>
-    Promise.resolve({ ok: true }),
+  toggleAllModels: (providerId: string, enabled: boolean) =>
+    invokeRustDataFromStatus<ProviderModelToggleAllInput, { ok: boolean }>('model_toggle_all', {
+      provider_id: providerId,
+      enabled,
+    }),
 
   getHelp: () =>
-    request<{ categories: HelpCategoryGroup[] }>('/help').then((r) => r.categories),
+    invokeRustDataFromStatus<void, { categories: HelpCategoryGroup[] }>('help_get').then((r) => r.categories),
 
   searchSources: () =>
-    request<{ sources: SearchSource[] }>('/search/sources').then((r) => r.sources),
+    invokeRustDataFromStatus<void, { sources: SearchSource[] }>('search_sources').then((r) => r.sources),
 
   search: (query: string, source = 'all', limit = 20) =>
-    request<{ query: string; source: string; groups?: SearchSourceGroup[]; results?: SearchResultItem[]; count?: number }>(
-      `/search?q=${encodeURIComponent(query)}&source=${source}&limit=${limit}`,
+    invokeRustDataFromStatus<SearchQueryInput, { query: string; source: string; groups?: SearchSourceGroup[]; results?: SearchResultItem[]; count?: number }>(
+      'search_query',
+      { query, source, limit },
     ),
 
   aiSearch: (query: string, web = false) =>
-    request<AISearchResponse>('/search/ai', {
-      method: 'POST',
-      body: JSON.stringify({ query, web }),
-    }),
+    invokeRustDataFromStatus<AiSearchInput, AISearchResponse>('search_ai', { query, web }),
 
   getOnboarding: () =>
-    request<OnboardingState>('/onboarding'),
+    invokeRustDataFromStatus<void, OnboardingState>('onboarding_get'),
 
   setOnboarding: (data: Partial<OnboardingState>) =>
-    request<{ ok: boolean }>('/onboarding', {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    invokeRustDataFromStatus<OnboardingSetInput, { ok: boolean }>('onboarding_set', { data }),
 
   resetOnboarding: () =>
-    request<{ ok: boolean }>('/onboarding/reset', { method: 'POST' }),
+    invokeRustDataFromStatus<void, { ok: boolean }>('onboarding_reset'),
 
   // Setup Wizard
   getWizard: () =>
-    request<WizardResponse>('/setup/wizard'),
+    invokeRustDataFromStatus<void, WizardResponse>('wizard_get'),
 
   getWizardState: () =>
-    request<WizardState>('/setup/wizard/state'),
+    invokeRustDataFromStatus<void, WizardState>('wizard_state_get'),
 
   saveWizardStep: (stepId: string, data: Record<string, any>) =>
-    request<WizardState>('/setup/wizard/step', {
-      method: 'POST',
-      body: JSON.stringify({ step_id: stepId, data }),
-    }),
+    invokeRustDataFromStatus<WizardStepInput, WizardState>('wizard_step_save', { step_id: stepId, data }),
 
   completeWizard: () =>
-    request<WizardState>('/setup/wizard/complete', { method: 'POST' }),
+    invokeRustDataFromStatus<void, WizardState>('wizard_complete'),
+
+  executeWizardApi: (method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown) => {
+    const normalizedPath = path.startsWith('/api') ? path.replace(/^\/api/, '') : path;
+    return invokeRustDataFromStatus<WizardExecuteApiInput, unknown>('wizard_api_execute', {
+      method,
+      path: normalizedPath,
+      body,
+    });
+  },
 
   getStatistics: () =>
-    request<StatisticsData>('/statistics'),
+    invokeRustDataFromStatus<void, StatisticsData>('statistics_get'),
 
   getPreferences: () =>
-    request<UserPreferences>('/preferences'),
+    invokeRustDataFromStatus<void, UserPreferences>('preferences_get'),
 
   setPreferences: (prefs: Partial<UserPreferences>) =>
-    request<{ ok: boolean }>('/preferences', {
-      method: 'PUT',
-      body: JSON.stringify(prefs),
-    }),
+    invokeRustDataFromStatus<PreferencesSetInput, { ok: boolean }>('preferences_set', { prefs }),
 
   // Notebook / Documents
   listDocuments: (topicId: string) =>
-    request<{ documents: NotebookDocument[] }>(`/notebooks?topic_id=${encodeURIComponent(topicId)}`).then(r => r.documents),
+    invokeRustDataFromStatus<TopicIdInput, { documents: NotebookDocument[] }>('notebook_list_documents', { topic_id: topicId }).then(r => r.documents),
 
   getDocument: (id: string) =>
-    request<NotebookDocument>(`/notebooks/${id}`),
+    invokeRustDataFromStatus<NotebookIdInput, NotebookDocument>('notebook_get_document', { id }),
 
   createDocument: (topicId: string, title: string, content: string, type?: string) =>
-    request<NotebookDocument>('/notebooks', {
-      method: 'POST',
-      body: JSON.stringify({ topic_id: topicId, title, content, type: type || 'note' }),
+    invokeRustDataFromStatus<NotebookCreateInput, NotebookDocument>('notebook_create_document', {
+      topic_id: topicId,
+      title,
+      content,
+      type: type || 'note',
     }),
 
   updateDocument: (id: string, title: string, content: string) =>
-    request<{ ok: boolean }>(`/notebooks/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ title, content }),
-    }),
+    invokeRustDataFromStatus<NotebookUpdateInput, { ok: boolean }>('notebook_update_document', { id, title, content }),
 
   deleteDocument: (id: string) =>
-    request<{ ok: boolean }>(`/notebooks/${id}`, { method: 'DELETE' }),
+    invokeRustDataFromStatus<NotebookIdInput, { ok: boolean }>('notebook_delete_document', { id }),
 
   listAllDocuments: () =>
-    request<{ documents: NotebookDocumentWithTopic[] }>('/documents').then(r => r.documents),
+    invokeRustDataFromStatus<void, { documents: NotebookDocumentWithTopic[] }>('notebook_list_all_documents').then(r => r.documents),
 
   // Share
   createShare: (sessionKey: string) =>
-    request<{ share_id: string; session_key: string; title: string; visibility: string }>(`/sessions/${sessionKey}/share`, { method: 'POST' }),
+    invokeRustDataFromStatus<ShareSessionInput, { share_id: string; session_key: string; title: string; visibility: string }>(
+      'share_create',
+      { session_key: sessionKey },
+    ),
 
   deleteShare: (sessionKey: string) =>
-    request<{ ok: boolean }>(`/sessions/${sessionKey}/share`, { method: 'DELETE' }),
+    invokeRustDataFromStatus<ShareSessionInput, { ok: boolean }>('share_delete', { session_key: sessionKey }),
 
   getSharedSession: (shareId: string) =>
-    request<{ share_id: string; title: string; messages: Message[] }>(`/share/${shareId}`),
+    invokeRustDataFromStatus<ShareIdInput, { share_id: string; title: string; messages: Message[] }>('share_get', { share_id: shareId }),
 
   listApplets: () =>
-    request<{ applets: AppletInfo[] }>('/applets').then((r) => r.applets),
+    invokeRustDataFromStatus<void, { applets: AppletInfo[] }>('applets_list').then((r) => r.applets),
 
   getApplet: (id: string) =>
-    request<AppletInfo>(`/applets/${id}`),
+    invokeRustDataFromStatus<AppletIdInput, AppletInfo>('applets_get', { id }),
 
   activateApplet: (id: string) =>
-    request<{ ok: boolean }>(`/applets/${id}/activate`, { method: 'POST' }),
+    invokeRustDataFromStatus<AppletIdInput, { ok: boolean }>('applets_activate', { id }),
 
   deactivateApplet: (id: string) =>
-    request<{ ok: boolean }>(`/applets/${id}/deactivate`, { method: 'POST' }),
+    invokeRustDataFromStatus<AppletIdInput, { ok: boolean }>('applets_deactivate', { id }),
 
   getAppletConfig: (id: string) =>
-    request<{ config: Record<string, any> }>(`/applets/${id}/config`).then((r) => r.config),
+    invokeRustDataFromStatus<AppletIdInput, { config: Record<string, any> }>('applets_get_config', { id }).then((r) => r.config),
 
   setAppletConfig: (id: string, config: Record<string, any>) =>
-    request<{ ok: boolean }>(`/applets/${id}/config`, {
-      method: 'PUT',
-      body: JSON.stringify(config),
-    }),
+    invokeRustDataFromStatus<AppletConfigSetInput, { ok: boolean }>('applets_set_config', { id, config }),
 
   appletAction: <T = any>(id: string, action: string, params?: Record<string, any>) =>
-    request<T>(`/applets/${id}/action/${action}`, {
-      method: 'POST',
-      body: params ? JSON.stringify(params) : undefined,
-    }),
+    invokeRustDataFromStatus<AppletActionInput, T>('applets_action', { id, action, params }),
 
   // ── Skills API ──
 
   listSkills: (source?: string) =>
-    request<{ skills: SkillListItem[]; builtin: BuiltinSkillInfo[] }>(
-      `/skills${source ? `?source=${source}` : ''}`,
+    invokeRustDataFromStatus<SkillsListInput, { skills: SkillListItem[]; builtin: BuiltinSkillInfo[] }>(
+      'skills_list',
+      { source },
     ),
 
   // Backend BM25 full-text search on skills (name + description + content + keywords).
   // Frontend calls this for deep/content-level search; for instant UI filtering,
   // use client-side fuzzy match on the already-loaded list.
   searchSkills: (q: string, limit?: number) =>
-    request<{ skills: SkillListItem[] }>(
-      `/skills/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ''}`,
-    ),
+    invokeRustDataFromStatus<SkillsSearchInput, { skills: SkillListItem[] }>('skills_search', { q, limit }),
 
-  getSkill: (id: string) => request<SkillRecord>(`/skills/${id}`),
+  getSkill: (id: string) => invokeRustDataFromStatus<SkillIdInput, SkillRecord>('skills_get', { id }),
   getBuiltinSkill: (identifier: string) =>
-    request<BuiltinSkillRecord>(`/skills/builtin/${encodeURIComponent(identifier)}`),
+    invokeRustDataFromStatus<BuiltinSkillIdInput, BuiltinSkillRecord>('skills_get_builtin', { identifier }),
 
   createSkill: (name: string, content: string) =>
-    request<SkillImportResult>('/skills', {
-      method: 'POST',
-      body: JSON.stringify({ name, content }),
-    }),
+    invokeRustDataFromStatus<SkillCreateInput, SkillImportResult>('skills_create', { name, content }),
 
   updateSkill: (id: string, data: Partial<SkillRecord>) =>
-    request<{ ok: boolean }>(`/skills/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
+    invokeRustDataFromStatus<SkillUpdateInput, { ok: boolean }>('skills_update', {
+      id,
+      name: data.name,
+      description: data.description,
+      content: data.content,
+      enabled: data.enabled,
     }),
 
   deleteSkill: (id: string) =>
-    request<{ ok: boolean }>(`/skills/${id}`, { method: 'DELETE' }),
+    invokeRustDataFromStatus<SkillIdInput, { ok: boolean }>('skills_delete', { id }),
 
   toggleSkill: (id: string, enabled: boolean) =>
-    request<{ ok: boolean }>(`/skills/${id}/toggle`, {
-      method: 'PUT',
-      body: JSON.stringify({ enabled }),
-    }),
+    invokeRustDataFromStatus<SkillToggleInput, { ok: boolean }>('skills_toggle', { id, enabled }),
 
   importSkillFromAddress: (address: string, oauthProvider?: string) =>
-    request<SkillImportBatchResult>('/skills/import/url', {
-      method: 'POST',
-      body: JSON.stringify({ address, oauth_provider: oauthProvider }),
+    invokeRustDataFromStatus<SkillImportAddressInput, SkillImportBatchResult>('skills_import_url', {
+      address,
+      oauth_provider: oauthProvider,
     }),
 
   importSkillFromGitHub: (owner: string, repo: string, branch?: string, filePath?: string) =>
-    request<SkillImportResult>('/skills/import/github', {
-      method: 'POST',
-      body: JSON.stringify({ owner, repo, branch, filePath }),
+    invokeRustDataFromStatus<SkillImportGitHubInput, SkillImportResult>('skills_import_github', {
+      owner,
+      repo,
+      branch,
+      file_path: filePath,
     }),
 
   importSkillFromZIP: async (file: File): Promise<SkillImportResult> => {
@@ -1492,191 +1951,178 @@ export const api = {
   // ── Skill Market API ──
 
   getSkillsDir: () =>
-    request<{ path: string }>('/skills/dir'),
+    invokeRustDataFromStatus<void, { path: string }>('skills_market_dir'),
 
   openSkillsDir: () =>
-    request<{ ok: boolean; path: string }>('/skills/dir/open', { method: 'POST' }),
+    invokeRustDataFromStatus<void, { ok: boolean; path: string }>('skills_market_open_dir'),
 
   listSkillMarkets: () =>
-    request<{ markets: MarketSummary[] }>('/skills/market').then(r => r.markets),
+    invokeRustDataFromStatus<void, { markets: MarketSummary[] }>('skills_market_list').then(r => r.markets),
 
   addSkillMarketSource: (url: string, name?: string, branch?: string) =>
-    request<{ ok: boolean }>('/skills/market', {
-      method: 'POST',
-      body: JSON.stringify({ url, name, branch }),
-    }),
+    invokeRustDataFromStatus<SkillMarketAddInput, { ok: boolean }>('skills_market_add', { url, name, branch }),
 
   removeSkillMarketSource: (id: string) =>
-    request<{ ok: boolean }>(`/skills/market/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    invokeRustDataFromStatus<SkillMarketIdInput, { ok: boolean }>('skills_market_remove', { id }),
 
   syncSkillMarket: (marketId: string) =>
-    request<{ skills: MarketSkillEntry[]; total: number }>(
-      `/skills/market/${encodeURIComponent(marketId)}/sync`, { method: 'POST' }),
+    invokeRustDataFromStatus<SkillMarketSyncInput, { skills: MarketSkillEntry[]; total: number }>(
+      'skills_market_sync',
+      { market_id: marketId },
+    ),
 
   listMarketSkills: (marketId: string, q?: string) => {
-    const params = q ? `?q=${encodeURIComponent(q)}` : '';
-    return request<{ skills: MarketSkillEntry[]; total: number }>(
-      `/skills/market/${encodeURIComponent(marketId)}/skills${params}`);
+    return invokeRustDataFromStatus<SkillMarketListInput, { skills: MarketSkillEntry[]; total: number }>(
+      'skills_market_list_skills',
+      { market_id: marketId, q },
+    );
   },
 
   getMarketSkillDetail: (marketId: string, filePath: string) =>
-    request<MarketSkillDetail>(`/skills/market/${encodeURIComponent(marketId)}/detail`, {
-      method: 'POST',
-      body: JSON.stringify({ filePath }),
+    invokeRustDataFromStatus<SkillMarketDetailInput, MarketSkillDetail>('skills_market_detail', {
+      market_id: marketId,
+      file_path: filePath,
     }),
 
   installMarketSkill: (marketId: string, filePath: string) =>
-    request<SkillImportResult>('/skills/market/install', {
-      method: 'POST',
-      body: JSON.stringify({ market_id: marketId, file_path: filePath }),
+    invokeRustDataFromStatus<SkillMarketDetailInput, SkillImportResult>('skills_market_install', {
+      market_id: marketId,
+      file_path: filePath,
     }),
 
   // ── MCP Servers API ──
 
   listMCPServers: () =>
-    request<{ servers: MCPServerItem[] }>('/mcp/servers').then((r) => r.servers),
+    invokeRustDataFromStatus<void, { servers: MCPServerItem[] }>('mcp_list_servers').then((r) => r.servers),
 
   getMCPServer: (name: string) =>
-    request<MCPServerRecord>(`/mcp/servers/${name}`),
+    invokeRustDataFromStatus<McpNameInput, MCPServerRecord>('mcp_get_server', { name }),
 
   createMCPServer: (data: Partial<MCPServerRecord>) =>
-    request<{ ok: boolean; name: string }>('/mcp/servers', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    invokeRustDataFromStatus<McpCreateInput, { ok: boolean; name: string }>('mcp_create_server', { data }),
 
   updateMCPServer: (name: string, data: Partial<MCPServerRecord>) =>
-    request<{ ok: boolean }>(`/mcp/servers/${name}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    invokeRustDataFromStatus<McpUpdateInput, { ok: boolean }>('mcp_update_server', { name, data }),
 
   deleteMCPServer: (name: string) =>
-    request<{ ok: boolean }>(`/mcp/servers/${name}`, { method: 'DELETE' }),
+    invokeRustDataFromStatus<McpNameInput, { ok: boolean }>('mcp_delete_server', { name }),
 
   toggleMCPServer: (name: string, enabled: boolean) =>
-    request<{ ok: boolean }>(`/mcp/servers/${name}/toggle`, {
-      method: 'PUT',
-      body: JSON.stringify({ enabled }),
-    }),
+    invokeRustDataFromStatus<McpToggleInput, { ok: boolean }>('mcp_toggle_server', { name, enabled }),
 
   testMCPServer: (name: string) =>
-    request<{ ok: boolean; error?: string; tools?: string[] }>(`/mcp/servers/${name}/test`, {
-      method: 'POST',
-    }),
+    invokeRustDataFromStatus<McpNameInput, { ok: boolean; error?: string; tools?: string[] }>('mcp_test_server', { name }),
 
   // ── Cron Jobs API ──
 
   cronStatus: () =>
-    request<CronStatus>('/cron/status'),
+    invokeRustDataFromStatus<void, CronStatus>('cron_status'),
 
   listCronJobs: () =>
-    request<{ jobs: CronJob[] }>('/cron/jobs').then((r) => r.jobs),
+    invokeRustDataFromStatus<void, { jobs: CronJob[] }>('cron_list_jobs').then((r) => r.jobs),
 
   createCronJob: (data: CronJobCreate) =>
-    request<CronJob>('/cron/jobs', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    invokeRustDataFromStatus<CronCreateInput, { job: CronJob }>('cron_create_job', { data }).then((r) => r.job),
 
   updateCronJob: (id: string, data: Partial<CronJobCreate>) =>
-    request<CronJob>(`/cron/jobs/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    invokeRustDataFromStatus<CronUpdateInput, { job: CronJob }>('cron_update_job', { id, data }).then((r) => r.job),
 
   deleteCronJob: (id: string) =>
-    request<{ ok: boolean }>(`/cron/jobs/${id}`, { method: 'DELETE' }),
+    invokeRustDataFromStatus<CronIdInput, { ok: boolean }>('cron_delete_job', { id }),
 
   toggleCronJob: (id: string, enabled: boolean) =>
-    request<{ ok: boolean }>(`/cron/jobs/${id}/toggle`, {
-      method: 'PUT',
-      body: JSON.stringify({ enabled }),
-    }),
+    invokeRustDataFromStatus<CronToggleInput, { ok: boolean }>('cron_toggle_job', { id, enabled }),
 
   runCronJob: (id: string) =>
-    request<{ ok: boolean }>(`/cron/jobs/${id}/run`, { method: 'POST' }),
+    invokeRustDataFromStatus<CronIdInput, { ok: boolean }>('cron_run_job', { id }),
 
   listCronRuns: (jobId: string) =>
-    request<{ runs: CronRun[] }>(`/cron/jobs/${jobId}/runs`).then((r) => r.runs),
+    invokeRustDataFromStatus<CronRunsInput, { runs: CronRun[] }>('cron_list_runs', { job_id: jobId }).then((r) => r.runs),
 
   parseCronSchedule: (text: string) =>
-    request<CronScheduleParsed>('/cron/parse-schedule', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    }),
+    invokeRustDataFromStatus<CronParseScheduleInput, CronScheduleParsed>('cron_parse_schedule', { text }),
 
   // ── Model Service ──
 
   // Model config registry (key-based)
   listModelConfig: () =>
-    request<{ config: Record<string, ModelRef> }>('/model-config').then((r) => r.config),
+    invokeRustDataFromStatus<void, { config: Record<string, ModelRef> }>('model_config_list').then((r) => r.config),
 
   getModelConfig: (key: string) =>
-    request<{ key: string; ref: ModelRef | null; resolved: ModelRef | null }>(
-      `/model-config/${encodeURIComponent(key)}`,
+    invokeRustDataFromStatus<ModelConfigKeyInput, { key: string; ref: ModelRef | null; resolved: ModelRef | null }>(
+      'model_config_get',
+      { key },
     ),
 
   setModelConfig: (key: string, ref: ModelRef | null) =>
-    request<{ key: string; ref: ModelRef | null }>(`/model-config/${encodeURIComponent(key)}`, {
-      method: 'PUT',
-      body: JSON.stringify(ref ?? { provider: '', model: '' }),
-    }),
+    invokeRustDataFromStatus<ModelConfigSetInput, { key: string; ref: ModelRef | null }>('model_config_set', { key, ref }),
 
   deleteModelConfig: (key: string) =>
-    request<{ ok: boolean }>(`/model-config/${encodeURIComponent(key)}`, {
-      method: 'DELETE',
-    }),
+    invokeRustDataFromStatus<ModelConfigKeyInput, { ok: boolean }>('model_config_delete', { key }),
 
   getProviderReferences: (providerId: string) =>
-    request<{ references: ModelServiceReference[] }>(`/providers/${providerId}/references`).then((r) => r.references),
+    invokeRustDataFromStatus<ProviderIdInputV2, { references: ModelServiceReference[] }>(
+      'model_config_provider_references',
+      { provider_id: providerId },
+    ).then((r) => r.references),
 
   // ── Channels (Bot/Webhook) ──
 
   listChannels: () =>
-    request<{ channels: Channel[] }>('/channels').then((r) => r.channels),
+    invokeRustDataFromStatus<void, { channels: Channel[] }>('channels_list').then((r) => r.channels),
 
   getChannel: (id: string) =>
-    request<Channel>(`/channels/${id}`),
+    invokeRustDataFromStatus<ChannelIdInput, Channel>('channels_get', { id }),
 
   createChannel: (data: { name: string; type: string; config: string; enabled?: boolean }) =>
-    request<Channel>('/channels', { method: 'POST', body: JSON.stringify(data) }),
+    invokeRustDataFromStatus<ChannelCreateInput, Channel>('channels_create', data),
 
   updateChannel: (id: string, data: Partial<{ name: string; type: string; config: string; enabled: boolean }>) =>
-    request<Channel>(`/channels/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    invokeRustDataFromStatus<ChannelUpdateInput, Channel>('channels_update', { id, ...data }),
 
   deleteChannel: (id: string) =>
-    request<{ ok: boolean }>(`/channels/${id}`, { method: 'DELETE' }),
+    invokeRustDataFromStatus<ChannelIdInput, { ok: boolean }>('channels_delete', { id }),
 
   testChannel: (id: string) =>
-    request<{ ok: boolean }>(`/channels/${id}/test`, { method: 'POST' }),
+    invokeRustDataFromStatus<ChannelIdInput, { ok: boolean }>('channels_test', { id }),
 
   sendChannelMessage: (id: string, text: string, title?: string, targetId?: string, targetType?: string) =>
-    request<{ ok: boolean }>(`/channels/${id}/send`, {
-      method: 'POST',
-      body: JSON.stringify({ text, title, markdown: true, targetId, targetType }),
+    invokeRustDataFromStatus<ChannelSendMessageInput, { ok: boolean }>('channels_send', {
+      id,
+      text,
+      title,
+      target_id: targetId,
+      target_type: targetType,
     }),
 
   listChannelChats: (id: string) =>
-    request<{ chats: ChatTarget[] }>(`/channels/${id}/chats`),
+    invokeRustDataFromStatus<ChannelIdInput, { chats: ChatTarget[] }>('channels_list_chats', { id }),
 
   startBot: (id: string) =>
-    request<{ ok: boolean }>(`/channels/${id}/bot/start`, { method: 'POST' }),
+    invokeRustDataFromStatus<ChannelIdInput, { ok: boolean }>('channels_start_bot', { id }),
 
   stopBot: (id: string) =>
-    request<{ ok: boolean }>(`/channels/${id}/bot/stop`, { method: 'POST' }),
+    invokeRustDataFromStatus<ChannelIdInput, { ok: boolean }>('channels_stop_bot', { id }),
 
   getBotStatus: (id: string) =>
-    request<BotStatus>(`/channels/${id}/bot/status`),
+    invokeRustDataFromStatus<ChannelIdInput, BotStatus>('channels_bot_status', { id }),
 
   listChannelEvents: (id: string, limit = 50, offset = 0) =>
-    request<{ events: ChannelEvent[]; total: number }>(`/channels/${id}/events?limit=${limit}&offset=${offset}`),
+    invokeRustDataFromStatus<ChannelEventsInput, { events: ChannelEvent[]; total: number }>('channels_list_events', {
+      id,
+      limit,
+      offset,
+    }),
 
   getChannelStats: (id: string) =>
-    request<ChannelEventStats>(`/channels/${id}/stats`),
+    invokeRustDataFromStatus<ChannelIdInput, ChannelEventStats>('channels_stats', { id }),
 
   tailLogs: (cursor: number, limit: number = 1000, maxBytes: number = 102400) =>
-    request<LogTailResponse>(`/logs?cursor=${cursor}&limit=${limit}&maxBytes=${maxBytes}`),
+    invokeRustDataFromStatus<LogsTailInput, LogTailResponse>('logs_tail', {
+      cursor,
+      limit,
+      max_bytes: maxBytes,
+    }),
 
   uploadFile: async (file: File): Promise<UploadResult> => {
     const formData = new FormData();
@@ -1694,74 +2140,68 @@ export const api = {
 
   // OAuth2
   oauth2ListProviders: () =>
-    request<OAuth2ProviderSummary[]>('/oauth2/providers'),
+    invokeRustDataFromStatus<void, OAuth2ProviderSummary[]>('oauth2_list_providers'),
 
   oauth2GetProvider: (id: string) =>
-    request<OAuth2ProviderDetail>(`/oauth2/providers/${id}`),
+    invokeRustDataFromStatus<OAuthIdInput, OAuth2ProviderDetail>('oauth2_get_provider', { id }),
 
   oauth2GetCredentialInfo: (id: string) =>
-    request<{ client_id: string; secret_masked: string; source: string; yaml_has_conf: boolean }>(
-      `/oauth2/providers/${id}/credentials`,
+    invokeRustDataFromStatus<OAuthIdInput, { client_id: string; secret_masked: string; source: string; yaml_has_conf: boolean }>(
+      'oauth2_get_credential_info',
+      { id },
     ),
 
   oauth2SetCredentials: (id: string, clientId: string, clientSecret: string) =>
-    request<{ status: string }>(`/oauth2/providers/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+    invokeRustDataFromStatus<OAuthSetCredentialsInput, { status: string }>('oauth2_set_credentials', {
+      id,
+      client_id: clientId,
+      client_secret: clientSecret,
     }),
 
   oauth2Authorize: (id: string, environment?: string) =>
-    request<{ auth_url: string }>(`/oauth2/authorize/${id}${environment ? `?environment=${environment}` : ''}`),
+    invokeRustDataFromStatus<OAuthAuthorizeInput, { auth_url: string }>('oauth2_authorize', { id, environment }),
 
   oauth2ListConnections: () =>
-    request<OAuth2Connection[]>('/oauth2/connections'),
+    invokeRustDataFromStatus<void, OAuth2Connection[]>('oauth2_list_connections'),
 
   oauth2GetConnection: (id: string) =>
-    request<OAuth2Connection>(`/oauth2/connections/${id}`),
+    invokeRustDataFromStatus<OAuthIdInput, OAuth2Connection>('oauth2_get_connection', { id }),
 
   oauth2Disconnect: (id: string) =>
-    request<{ status: string }>(`/oauth2/connections/${id}`, { method: 'DELETE' }),
+    invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_disconnect', { id }),
 
   oauth2RefreshToken: (id: string) =>
-    request<{ status: string }>(`/oauth2/connections/${id}/refresh`, { method: 'POST' }),
+    invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_refresh_token', { id }),
 
   oauth2CallResource: (id: string, resource: string, params?: Record<string, string>) =>
-    request<unknown>(`/oauth2/resources/${id}/${resource}`, {
-      method: 'POST',
-      body: JSON.stringify(params || {}),
-    }),
+    invokeRustDataFromStatus<OAuthResourceInput, unknown>('oauth2_call_resource', { id, resource, params }),
 
   oauth2Reload: () =>
-    request<{ status: string }>('/oauth2/reload', { method: 'POST' }),
+    invokeRustDataFromStatus<void, { status: string }>('oauth2_reload'),
 
   oauth2GetPage: (id: string) =>
-    request<{ provider: OAuth2ProviderDetail; has_credentials: boolean }>(`/oauth2/page/${id}`),
+    invokeRustDataFromStatus<OAuthIdInput, { provider: OAuth2ProviderDetail; has_credentials: boolean }>('oauth2_get_page', { id }),
 
   oauthSimulateLarkStart: (opts?: { create_bot?: boolean; app_name?: string }) =>
-    request<SimulateLoginStart>('/oauth/simulate/lark/start', {
-      method: 'POST',
-      body: JSON.stringify(opts || {}),
-    }),
+    invokeRustDataFromStatus<OAuthSimulateStartInput, SimulateLoginStart>('oauth_simulate_lark_start', opts || {}),
 
   oauthSimulateLarkPoll: (sessionId: string) =>
-    request<SimulateLoginPoll>(`/oauth/simulate/lark/poll/${sessionId}`),
+    invokeRustDataFromStatus<OAuthSessionInput, SimulateLoginPoll>('oauth_simulate_lark_poll', { session_id: sessionId }),
 
   oauthSimulateLarkCreateBotSession: (appName?: string) =>
-    request<{ status: string; bot: LarkBotCredentials; channel_id?: string; error?: string }>(
-      '/oauth/simulate/lark/create-bot-session',
-      { method: 'POST', body: JSON.stringify({ app_name: appName || 'Lark Bot' }) },
+    invokeRustDataFromStatus<OAuthCreateBotSessionInput, { status: string; bot: LarkBotCredentials; channel_id?: string; error?: string }>(
+      'oauth_simulate_lark_create_bot_session',
+      { app_name: appName || 'Lark Bot' },
     ),
 
   // ── Memory API ──
 
   listMemories: (params?: { layer?: string; page?: number; page_size?: number; order_by?: string; agent_id?: string; since?: string; until?: string; period?: '24h' | '7d' | '30d' | '90d' }) =>
-    request<{ memories: Memory[]; total: number }>(
-      `/memories${params ? `?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string>).toString()}` : ''}`,
-    ),
+    invokeRustDataFromStatus<MemoryListInput, { memories: Memory[]; total: number }>('memory_list', { params }),
 
-  getMemory: (id: string) => request<Memory>(`/memories/${id}`),
+  getMemory: (id: string) => invokeRustDataFromStatus<MemoryIdInput, Memory>('memory_get', { id }),
 
-  deleteMemory: (id: string) => request<{ ok: boolean }>(`/memories/${id}`, { method: 'DELETE' }),
+  deleteMemory: (id: string) => invokeRustDataFromStatus<MemoryIdInput, { ok: boolean }>('memory_delete', { id }),
 
   searchMemories: (
     query: string,
@@ -1770,9 +2210,7 @@ export const api = {
     agentId?: string,
     timeFilter?: MemoryTimeFilter,
   ) =>
-    request<{ results: ScoredMemory[] }>('/memories/search', {
-      method: 'POST',
-      body: JSON.stringify({
+    invokeRustDataFromStatus<MemorySearchInput, { results: ScoredMemory[] }>('memory_search', {
         query,
         layers,
         limit,
@@ -1780,44 +2218,38 @@ export const api = {
         since: timeFilter?.since,
         until: timeFilter?.until,
         period: timeFilter?.period,
-      }),
     }),
 
   getPersona: (agentId?: string) =>
-    request<{ persona: Persona | null }>(`/memories/persona${agentId ? `?agent_id=${agentId}` : ''}`),
+    invokeRustDataFromStatus<MemoryPersonaInput, { persona: Persona | null }>('memory_persona', {
+      agent_id: agentId,
+    }),
 
-  getMemoryStats: () => request<MemoryStats>('/memories/stats'),
+  getMemoryStats: () => invokeRustDataFromStatus<void, MemoryStats>('memory_stats'),
 
   getMemoryEvents: (params?: { type?: string; limit?: number; offset?: number; agent_id?: string; since?: string; until?: string; period?: '24h' | '7d' | '30d' | '90d' }) =>
-    request<{ events: MemoryEvent[] }>(
-      `/memories/events${params ? `?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string>).toString()}` : ''}`,
-    ),
+    invokeRustDataFromStatus<MemoryEventsInput, { events: MemoryEvent[] }>('memory_events', { params }),
 
   exportMemories: (params?: { layer?: string; agent_id?: string }) =>
-    request<ExportData>(`/memories/export${params ? `?${new URLSearchParams(params as Record<string, string>).toString()}` : ''}`),
+    invokeRustDataFromStatus<MemoryExportInput, ExportData>('memory_export', { params }),
 
   importMemories: (data: ExportData, skipDuplicates?: boolean) =>
-    request<ImportResult>(`/memories/import?skip_duplicates=${skipDuplicates !== false}`, {
-      method: 'POST',
-      body: JSON.stringify(data),
+    invokeRustDataFromStatus<MemoryImportInput, ImportResult>('memory_import', {
+      data,
+      skip_duplicates: skipDuplicates !== false,
     }),
 
   getEmbeddingStatus: () =>
-    request<{ provider: string; model: string; dimensions: number; vector_count: number }>('/memories/embedding-status'),
+    invokeRustDataFromStatus<void, { provider: string; model: string; dimensions: number; vector_count: number }>('memory_embedding_status'),
 
   reEmbed: () =>
-    request<{ ok: boolean; reembedded_count: number }>('/memories/reembed', {
-      method: 'POST',
-    }),
+    invokeRustDataFromStatus<void, { ok: boolean; reembedded_count: number }>('memory_reembed'),
 
   tts: (text: string, voice?: string, speed?: number) =>
-    request<{ url: string }>('/tts', {
-      method: 'POST',
-      body: JSON.stringify({ text, voice, speed }),
-    }),
+    invokeRustDataFromStatus<TtsInput, { url: string }>('tts_synthesize', { text, voice, speed }),
 
   ttsVoices: () =>
-    request<{ voices: TTSVoice[] }>('/tts/voices'),
+    invokeRustDataFromStatus<void, { voices: TTSVoice[] }>('tts_voices'),
 
   stt: async (file: Blob, language?: string): Promise<{ text: string }> => {
     const formData = new FormData();
@@ -1837,38 +2269,33 @@ export const api = {
   // ── Config Sections (override mechanism) ──
 
   getConfigSection: (section: string) =>
-    request<Record<string, ConfigFieldMeta>>(`/config/sections/${section}`),
+    invokeRustDataFromStatus<ConfigSectionInput, Record<string, ConfigFieldMeta>>('config_section_get', { section }),
 
   setConfigSection: (section: string, values: Record<string, any>) =>
-    request<{ ok: boolean }>(`/config/sections/${section}`, {
-      method: 'PUT',
-      body: JSON.stringify(values),
-    }),
+    invokeRustDataFromStatus<ConfigSectionSetInput, { ok: boolean }>('config_section_set', { section, values }),
 
   resetConfigField: (section: string, field: string) =>
-    request<{ ok: boolean }>(`/config/sections/${section}/${field}`, {
-      method: 'DELETE',
-    }),
+    invokeRustDataFromStatus<ConfigFieldResetInput, { ok: boolean }>('config_field_reset', { section, field }),
 
   testPostgresConnection: (dsn: string) =>
-    request<{ ok: boolean; has_pgvector?: boolean; error?: string; warning?: string }>('/config/test-postgres', {
-      method: 'POST',
-      body: JSON.stringify({ dsn }),
-    }),
+    invokeRustDataFromStatus<ConfigPostgresTestInput, { ok: boolean; has_pgvector?: boolean; error?: string; warning?: string }>(
+      'config_test_postgres',
+      { dsn },
+    ),
 
   listEmbeddingModels: () =>
-    request<{
+    invokeRustDataFromStatus<void, {
       models: EmbeddingModelInfo[];
       resolved: { provider_id: string; provider_name: string; model: string };
       configured: { provider: string; model: string };
-    }>('/embedding-models'),
+    }>('embedding_models_list'),
 
   // Visitor / online count
   visitorHeartbeat: () =>
-    request<{ online: number; ip: string }>('/visitor/heartbeat', { method: 'POST' }),
+    invokeRustDataFromStatus<void, { online: number; ip: string }>('visitor_heartbeat'),
 
   getOnlineCount: () =>
-    request<{ online: number }>('/visitor/online'),
+    invokeRustDataFromStatus<void, { online: number }>('visitor_online'),
 };
 
 export interface ConfigFieldMeta {
@@ -1911,15 +2338,17 @@ function millisToISO(millis?: number): string {
 }
 
 function mapAIChatSessionToSession(item: any): Session {
+  const updatedMillis = Number(item.updated_at ?? item.lastTimestampMs ?? Date.now());
+  const createdMillis = Number(item.created_at ?? item.lastTimestampMs ?? Date.now());
   return {
     id: item.id,
     key: item.id,
     agent_name: item.agent_id || 'assistant',
     title: item.title || 'New Chat',
-    message_count: item.message_count || 0,
-    model_override: item.model_name || undefined,
-    created_at: millisToISO(item.created_at),
-    updated_at: millisToISO(item.updated_at),
+    message_count: Number(item.message_count ?? item.messageCount ?? item.unreadCount ?? 0),
+    model_override: item.model_name || item.modelName || undefined,
+    created_at: millisToISO(createdMillis),
+    updated_at: millisToISO(updatedMillis),
   };
 }
 
@@ -1928,8 +2357,8 @@ function mapAIChatMessageToMessage(item: any): Message {
     id: item.id,
     role: String(item.role || '').replace('CHAT_ROLE_', '').toLowerCase() || 'assistant',
     content: item.content || '',
-    model: item.model_name || undefined,
-    created_at: millisToISO(item.created_at),
+    model: item.model_name || item.modelName || undefined,
+    created_at: millisToISO(Number(item.created_at ?? item.createdAt ?? Date.now())),
     tool_calls: item.tool_calls_json || undefined,
   };
 }
@@ -1988,32 +2417,22 @@ export function streamChat(
   const controller = new AbortController();
   (async () => {
     try {
-      const response = await fetch(`${BASE_URL}/ai-chat/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const payload = await invokeRustDataFromStatus<ChatCompletionInput, { text: string; model?: string }>(
+        'chat_completion_once',
+        {
           session_id: sessionKey,
-          topic_id: '',
           model: model || '',
-          messages: [
-            {
-              role: 'CHAT_ROLE_USER',
-              content: message,
-            },
-          ],
-          stream: false,
-        }),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+          message,
+        },
+      );
+      if (controller.signal.aborted) {
+        return;
       }
-      const payload = await response.json();
-      const text = payload?.choices?.[0]?.message?.content || '';
+      const text = payload?.text || '';
       if (text) {
         onEvent({ event: 'text', data: { content: text } });
       }
-      onEvent({ event: 'done', data: { model: model || '' } });
+      onEvent({ event: 'done', data: { model: payload?.model || model || '' } });
       onDone();
     } catch (err: any) {
       if (err?.name !== 'AbortError') {

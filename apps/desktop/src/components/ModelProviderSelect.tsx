@@ -4,7 +4,7 @@ import { Check, ChevronRight, Settings, Search, X, Eye, Wrench, Sparkles } from 
 import { ProviderIcon } from './settings/ProviderIcon';
 import { Divider, theme, Tooltip } from 'antd';
 import { useChatStore } from '../store/chat';
-import type { AvailableModel } from '../services/api';
+import type { AvailableModel } from '../services/desktop_api';
 
 interface ModelProviderSelectProps {
   models?: AvailableModel[];

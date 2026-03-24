@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input, Typography, theme, message, Divider, Radio } from 'antd';
 import { Key, ExternalLink, Zap, CheckCircle } from 'lucide-react';
-import { api } from '../../../services/api';
-import type { WizardStep, ProviderListItem, ProviderDetail } from '../../../services/api';
+import { api } from '../../../services/desktop_api';
+import type { WizardStep, ProviderListItem, ProviderDetail } from '../../../services/desktop_api';
 
 const { Text, Link } = Typography;
 

@@ -10,7 +10,7 @@ import {
   Webhook, MessageSquare, Bot, Hash, ArrowDownLeft, ArrowUpRight,
   BarChart3, AlertCircle, Timer, Inbox, QrCode, CheckCircle, Loader2,
 } from 'lucide-react';
-import { api, type Channel, type ChatTarget, type ChannelEvent, type ChannelEventStats } from '../services/api';
+import { api, type Channel, type ChatTarget, type ChannelEvent, type ChannelEventStats } from '../services/desktop_api';
 import { PageHeader } from '../components/PageHeader';
 import { LarkSimulateLoginModal } from '../components/settings/LarkSimulateLoginModal';
 import { useOAuth2Store } from '../store/oauth2';
@@ -521,7 +521,7 @@ export function ChannelsPage() {
         title={editing ? 'Edit Channel' : 'Add Channel'}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={440}
+        size="default"
         extra={
           editing ? (
             <Button type="primary" onClick={handleSave}>Save</Button>
@@ -727,7 +727,7 @@ export function ChannelsPage() {
         ) : 'Channel Details'}
         open={!!detailChannel}
         onClose={() => setDetailChannel(null)}
-        width={560}
+        size="large"
         extra={detailChannel && (
           <Space>
             <Button icon={<Settings2 size={14} />} onClick={() => {
@@ -790,7 +790,7 @@ export function ChannelsPage() {
         title={`Send to ${sendDrawer?.name || ''}`}
         open={!!sendDrawer}
         onClose={() => setSendDrawer(null)}
-        width={400}
+        size="default"
       >
         <Flexbox gap={12}>
           <TextArea

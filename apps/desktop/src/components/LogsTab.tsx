@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input, Switch, theme, Typography, Space, Empty, Tag, Checkbox } from 'antd';
 import { RefreshCw, Download, Pause, Play, Search, FileText, Trash2 } from 'lucide-react';
-import { api } from '../services/api';
+import { api } from '../services/desktop_api';
 
 const { Text, Title } = Typography;
 

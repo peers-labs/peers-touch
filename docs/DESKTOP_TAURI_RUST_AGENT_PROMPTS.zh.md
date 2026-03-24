@@ -1,12 +1,14 @@
 # Desktop Tauri Rust 并行执行 Prompt 包
 
 ## 使用方式
+
 - 将本文件每个小节整体复制给一个独立 AI 执行。
 - 每个 AI 仅处理自己分组，禁止越界改动目录。
-- 所有组共享基线文档：[DESKTOP_TAURI_RUST_PARALLEL_PLAN.zh.md](file:///e:/Projects/peers-touch/peers-touch/docs/DESKTOP_TAURI_RUST_PARALLEL_PLAN.zh.md)。
+- 所有组共享基线文档：[DESKTOP\_TAURI\_RUST\_PARALLEL\_PLAN.zh.md](file:///e:/Projects/peers-touch/peers-touch/docs/DESKTOP_TAURI_RUST_PARALLEL_PLAN.zh.md)。
 - 执行节奏：S 先完成契约冻结，A 完成全域 stub 后，B/C/D/E/F/G 可全并发。
 
 ## 全局约束（每个 AI 都要附带）
+
 ```text
 项目：peers-touch
 目标：将 desktop 业务逻辑下沉到 apps/desktop/src-tauri（Rust），TS 仅保留 UI 与状态编排。
@@ -19,6 +21,7 @@
 ```
 
 ## Prompt-S（契约冻结组）
+
 ```text
 你是 S 组（契约冻结组）。
 目标：冻结全域契约，消除后续并行阻塞。
@@ -41,6 +44,7 @@
 ```
 
 ## Prompt-A（平台骨架组）
+
 ```text
 你是 A 组（平台骨架组）。
 目标：建立 Tauri Rust 业务承载骨架与全域 stub，供后续并发替换实现。
@@ -65,6 +69,7 @@
 ```
 
 ## Prompt-B（鉴权与会话组）
+
 ```text
 你是 B 组（鉴权与会话组）。
 目标：实现 auth 域 Rust 业务链路并接入 TS store。
@@ -89,6 +94,7 @@
 ```
 
 ## Prompt-C（设置与本地存储组）
+
 ```text
 你是 C 组（设置与本地存储组）。
 目标：实现 settings 域与本地存储基础设施。
@@ -112,6 +118,7 @@
 ```
 
 ## Prompt-D（聊天核心组，含实时与P2P）
+
 ```text
 你是 D 组（聊天核心组）。
 目标：实现 chat 域主链路与实时/P2P 能力。
@@ -141,6 +148,7 @@
 ```
 
 ## Prompt-E（发现与资料组）
+
 ```text
 你是 E 组（发现与资料组）。
 目标：实现 timeline + profile 两个业务域。
@@ -165,6 +173,7 @@
 ```
 
 ## Prompt-F（管理员与诊断组）
+
 ```text
 你是 F 组（管理员与诊断组）。
 目标：实现 admin 域并加门禁与审计。
@@ -187,6 +196,7 @@
 ```
 
 ## Prompt-G（TS 收口与契约测试组）
+
 ```text
 你是 G 组（TS 收口与契约测试组）。
 目标：把 TS 业务调用收口到 Rust command，并补契约测试。
@@ -210,6 +220,7 @@
 ```
 
 ## 联调 Prompt（合并阶段）
+
 ```text
 你负责联调整理。
 任务：
@@ -222,3 +233,4 @@
 - 存在回滚开关；
 - 文档与实现一致。
 ```
+

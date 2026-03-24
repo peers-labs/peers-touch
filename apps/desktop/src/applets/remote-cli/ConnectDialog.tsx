@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal, Form, Input, Select, InputNumber, Switch, Divider, Alert, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { KeyRound, Server, User, Lock, FileKey2 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from '../../services/desktop_api';
 import type { Connection } from './types';
 
 export interface ConnectDialogProps {

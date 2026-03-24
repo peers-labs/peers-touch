@@ -15,7 +15,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
 import { useProviderStore } from '../store/provider';
-import { api, type AppletInfo, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/api';
+import { api, type AppletInfo, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';

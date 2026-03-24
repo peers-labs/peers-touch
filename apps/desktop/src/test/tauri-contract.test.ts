@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { AuthCommandException, api } from '../services/api';
+import { AuthCommandException, api, DESKTOP_TAURI_CONTRACT_VERSION } from '../services/desktop_api';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -134,5 +134,20 @@ describe('TS ↔ Rust command contract', () => {
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('INTERNAL_ERROR');
     expect(result.error?.message).toContain('bridge failure');
+  });
+
+  it('读取 Rust 契约版本并与前端常量对齐', async () => {
+    invokeMock.mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'meta_contract_version',
+        status: JSON.stringify({ version: DESKTOP_TAURI_CONTRACT_VERSION }),
+      },
+    });
+
+    const result = await api.getContractVersion();
+
+    expect(invokeMock).toHaveBeenCalledWith('meta_contract_version', undefined);
+    expect(result.version).toBe(DESKTOP_TAURI_CONTRACT_VERSION);
   });
 });
