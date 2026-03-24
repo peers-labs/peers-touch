@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useRef, useState, useCallback } from 'react'
 import { Flexbox } from 'react-layout-kit';
 import { Users, AlertCircle } from 'lucide-react';
 import { Tooltip, theme } from 'antd';
-import { api } from '../services/api';
+import { api } from '../services/desktop_api';
 import { useOAuth2Store } from '../store/oauth2';
 
 const HEARTBEAT_INTERVAL = 60_000;

@@ -21,7 +21,7 @@ import {
   type SkillImportResult,
   type SkillListItem,
   type SkillZipValidation,
-} from '../services/api';
+} from '../services/desktop_api';
 const { Text, Title, Paragraph } = Typography;
 const { TextArea } = Input;
 
@@ -586,7 +586,7 @@ function MarketBrowserDialog({
         }
         open
         onClose={onClose}
-        width={640}
+        size="large"
         placement="right"
       >
         <Flexbox gap={16}>

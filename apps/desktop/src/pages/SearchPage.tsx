@@ -18,7 +18,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useSearchStore } from '../store/search';
-import type { SearchResultItem, SearchSourceGroup } from '../services/api';
+import type { SearchResultItem, SearchSourceGroup } from '../services/desktop_api';
 
 function useDebounce(callback: (value: string) => void, delay: number) {
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);

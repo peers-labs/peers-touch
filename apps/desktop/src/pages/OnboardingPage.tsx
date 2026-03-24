@@ -5,7 +5,7 @@ import { WelcomeStep } from '../components/onboarding/WelcomeStep';
 import { InterestsStep } from '../components/onboarding/InterestsStep';
 import { LanguageStep } from '../components/onboarding/LanguageStep';
 import { ProviderSetupStep } from '../components/onboarding/ProviderSetupStep';
-import { api } from '../services/api';
+import { api } from '../services/desktop_api';
 
 interface Props {
   onComplete: () => void;

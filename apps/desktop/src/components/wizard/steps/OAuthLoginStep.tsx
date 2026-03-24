@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Spin, Typography, theme } from 'antd';
 import { LogIn, CheckCircle, XCircle, QrCode } from 'lucide-react';
-import { api } from '../../../services/api';
-import type { WizardStep, SimulateLoginPoll } from '../../../services/api';
+import { api } from '../../../services/desktop_api';
+import type { WizardStep, SimulateLoginPoll } from '../../../services/desktop_api';
 
 const { Text } = Typography;
 

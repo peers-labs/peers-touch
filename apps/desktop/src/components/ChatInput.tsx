@@ -49,7 +49,7 @@ import {
 import { theme, Divider, Popconfirm, Slider, Switch, Modal, Tabs, Empty, Tag, Progress, message as antMessage } from 'antd';
 import { useChatStore } from '../store/chat';
 import { ModelProviderSelect } from './ModelProviderSelect';
-import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/api';
+import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/desktop_api';
 import { SkillAppletPopoverContent } from './SkillAppletSelector';
 import { estimateTokenCount } from 'tokenx';
 

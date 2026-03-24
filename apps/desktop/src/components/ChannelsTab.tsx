@@ -8,7 +8,7 @@ import type { MenuProps } from 'antd';
 import {
   ChevronDown, ExternalLink, Zap, Webhook,
 } from 'lucide-react';
-import { api, type Channel } from '../services/api';
+import { api, type Channel } from '../services/desktop_api';
 import { LarkSimulateLoginModal } from './settings/LarkSimulateLoginModal';
 
 const { Text, Title } = Typography;

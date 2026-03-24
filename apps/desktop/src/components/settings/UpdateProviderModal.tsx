@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, Form, Input, message } from 'antd';
 import { useProviderStore } from '../../store/provider';
-import type { ProviderDetail } from '../../services/api';
+import type { ProviderDetail } from '../../services/desktop_api';
 
 interface UpdateProviderModalProps {
   open: boolean;
