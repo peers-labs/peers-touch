@@ -1,0 +1,7 @@
+{
+  "routes": [
+    { "src": "/api/oauth/start", "dest": "/api/oauth/start" },
+    { "src": "/api/oauth/callback", "dest": "/api/oauth/callback" },
+    { "src": "/api/healthz", "dest": "/api/healthz" }
+  ]
+}
