@@ -12,7 +12,7 @@ import {
 import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
 import { UpdateProviderModal } from './UpdateProviderModal';
-import { api } from '../../services/api';
+import { api } from '../../services/desktop_api';
 
 const { Text, Title, Link } = Typography;
 

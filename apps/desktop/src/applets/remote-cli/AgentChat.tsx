@@ -3,7 +3,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Markdown } from '@lobehub/ui';
 import { theme, Tag } from 'antd';
 import { Play, Bot, User } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from '../../services/desktop_api';
 import { MessageComposer } from '../../components/MessageComposer';
 import type { AgentMessage, AgentResponse } from './types';
 

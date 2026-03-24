@@ -30,7 +30,7 @@ import {
   Zap,
   History,
 } from 'lucide-react';
-import { api, type CronJob, type CronRun } from '../services/api';
+import { api, type CronJob, type CronRun } from '../services/desktop_api';
 import { CronJobDrawer } from '../components/CronJobDrawer';
 import { PageHeader } from '../components/PageHeader';
 
@@ -370,7 +370,7 @@ export function CronPage() {
         title={`Run History — ${runsDrawer?.job.name || ''}`}
         open={!!runsDrawer}
         onClose={() => setRunsDrawer(null)}
-        width={520}
+        size="default"
       >
         {runsLoading ? (
           <Flexbox align="center" justify="center" style={{ padding: 40 }}>

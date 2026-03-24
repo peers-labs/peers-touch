@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Popover, Typography, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { CircleDot, HelpCircle } from 'lucide-react';
-import { api, type ConfigFieldMeta } from '../services/api';
+import { api, type ConfigFieldMeta } from '../services/desktop_api';
 
 const { Text } = Typography;
 

@@ -12,7 +12,7 @@ import {
   Shield,
   Plug,
 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from '../../services/desktop_api';
 import type { Connection } from './types';
 
 interface SSHConfigHost {
@@ -150,7 +150,7 @@ export function ServerManager({
       }
       open={open}
       onClose={onClose}
-      width={480}
+      size="default"
       extra={
         <Button type="primary" icon={<Plus size={14} />} onClick={onAdd}>
           New

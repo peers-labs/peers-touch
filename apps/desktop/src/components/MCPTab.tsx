@@ -8,7 +8,7 @@ import {
   Plus, Trash2, Play,
   CheckCircle, XCircle,
 } from 'lucide-react';
-import { api, type MCPServerItem, type MCPServerRecord } from '../services/api';
+import { api, type MCPServerItem, type MCPServerRecord } from '../services/desktop_api';
 
 const { Text, Title } = Typography;
 
