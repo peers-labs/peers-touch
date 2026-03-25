@@ -1,6 +1,30 @@
 import { invoke } from '@tauri-apps/api/core';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const WEB_OAUTH_CONNECTIONS_KEY = 'pt.desktop.web.oauth.connections';
+
+interface OAuthWebProviderConfig {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  category: string;
+  enabled: boolean;
+  status: string;
+  has_credentials: boolean;
+  callback_url: string;
+  environments: Array<{
+    id: string;
+    name: string;
+    authorize_url: string;
+    token_url: string;
+    userinfo_url?: string;
+    default: boolean;
+  }>;
+}
+
+let oauthWebProviderConfigCache: OAuthWebProviderConfig[] | null = null;
 
 export type RustErrorCode =
   | 'NOT_IMPLEMENTED'
@@ -79,6 +103,106 @@ async function invokeRustDataFromStatus<TInput, TOut>(
     return parseJSONSafe(response.data.status) as TOut;
   }
   throw new Error(response.error?.message || `${command} failed`);
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+function readWebOAuthConnections(): OAuth2Connection[] {
+  try {
+    const raw = localStorage.getItem(WEB_OAUTH_CONNECTIONS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as OAuth2Connection[];
+  } catch {
+    return [];
+  }
+}
+
+function writeWebOAuthConnections(connections: OAuth2Connection[]) {
+  try {
+    localStorage.setItem(WEB_OAUTH_CONNECTIONS_KEY, JSON.stringify(connections));
+  } catch {}
+}
+
+function upsertWebOAuthConnection(next: OAuth2Connection) {
+  const list = readWebOAuthConnections();
+  const idx = list.findIndex((item) => item.provider_id === next.provider_id);
+  if (idx >= 0) {
+    list[idx] = next;
+  } else {
+    list.push(next);
+  }
+  writeWebOAuthConnections(list);
+}
+
+function consumeOAuthCallbackFromLocation() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  const provider = url.searchParams.get('provider') || '';
+  const providerUserId = url.searchParams.get('provider_user_id') || '';
+  if (!provider || !providerUserId) return;
+  const now = new Date().toISOString();
+  upsertWebOAuthConnection({
+    provider_id: provider,
+    provider_name: provider.charAt(0).toUpperCase() + provider.slice(1),
+    user_id: providerUserId,
+    user_name: url.searchParams.get('username') || url.searchParams.get('display_name') || providerUserId,
+    email: url.searchParams.get('email') || '',
+    avatar_url: url.searchParams.get('avatar_url') || '',
+    profile_url: '',
+    connected_at: now,
+    expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
+    scopes: [],
+    status: 'active',
+  });
+
+  const cleanUrl = new URL(window.location.href);
+  const keys = ['provider', 'provider_user_id', 'username', 'display_name', 'avatar_url', 'email'];
+  keys.forEach((key) => cleanUrl.searchParams.delete(key));
+  window.history.replaceState({}, '', cleanUrl.toString());
+}
+
+async function loadWebOAuthProviderConfigs(): Promise<OAuthWebProviderConfig[]> {
+  if (oauthWebProviderConfigCache) return oauthWebProviderConfigCache;
+  const res = await fetch(`${BASE_URL}/oauth/providers`, { cache: 'no-cache' });
+  if (!res.ok) {
+    throw new Error(`backend oauth providers api unavailable: ${res.status}`);
+  }
+  const payload = await res.json();
+  const list = Array.isArray(payload) ? payload : payload.providers;
+  if (!Array.isArray(list)) {
+    throw new Error('backend oauth providers payload invalid');
+  }
+  oauthWebProviderConfigCache = list;
+  return oauthWebProviderConfigCache;
+}
+
+function webOAuthProviderCatalog(
+  providers: OAuthWebProviderConfig[],
+  connections: OAuth2Connection[],
+): OAuth2ProviderSummary[] {
+  const isConnected = (providerId: string) =>
+    connections.some((item) => item.provider_id === providerId && item.status === 'active');
+  return providers
+    .filter((item) => item.enabled !== false)
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      icon: item.icon,
+      color: item.color,
+      category: item.category,
+      builtin: true,
+      enabled: item.enabled,
+      status: item.status,
+      has_credentials: item.has_credentials,
+      connected: isConnected(item.id),
+      callback_url: item.callback_url,
+      environments: item.environments,
+    }));
 }
 
 export interface Session {
@@ -2140,47 +2264,135 @@ export const api = {
 
   // OAuth2
   oauth2ListProviders: () =>
-    invokeRustDataFromStatus<void, OAuth2ProviderSummary[]>('oauth2_list_providers'),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<void, OAuth2ProviderSummary[]>('oauth2_list_providers')
+      : (async () => {
+          consumeOAuthCallbackFromLocation();
+          const providers = await loadWebOAuthProviderConfigs();
+          const connections = readWebOAuthConnections();
+          return webOAuthProviderCatalog(providers, connections);
+        })(),
 
   oauth2GetProvider: (id: string) =>
-    invokeRustDataFromStatus<OAuthIdInput, OAuth2ProviderDetail>('oauth2_get_provider', { id }),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<OAuthIdInput, OAuth2ProviderDetail>('oauth2_get_provider', { id })
+      : (async () => {
+          const providers = await loadWebOAuthProviderConfigs();
+          const p = providers.find((item) => item.id === id);
+          if (!p) throw new Error('provider not found');
+          const env = p.environments?.find((item) => item.default) || p.environments?.[0];
+          if (!env) throw new Error('provider environment not configured');
+          return {
+            id: p.id,
+            name: p.name,
+            description: p.description || `${p.name} OAuth2 provider`,
+            icon: p.icon || '',
+            color: p.color || '',
+            category: p.category || 'other',
+            builtin: true,
+            enabled: p.enabled !== false,
+            oauth2: {
+              authorize_url: env.authorize_url,
+              token_url: env.token_url,
+              userinfo_url: env.userinfo_url,
+              scopes: [],
+              pkce: false,
+            },
+          } as OAuth2ProviderDetail;
+        })(),
 
   oauth2GetCredentialInfo: (id: string) =>
-    invokeRustDataFromStatus<OAuthIdInput, { client_id: string; secret_masked: string; source: string; yaml_has_conf: boolean }>(
-      'oauth2_get_credential_info',
-      { id },
-    ),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<OAuthIdInput, { client_id: string; secret_masked: string; source: string; yaml_has_conf: boolean }>(
+          'oauth2_get_credential_info',
+          { id },
+        )
+      : Promise.resolve({ client_id: '', secret_masked: '****', source: 'web', yaml_has_conf: true }),
 
   oauth2SetCredentials: (id: string, clientId: string, clientSecret: string) =>
-    invokeRustDataFromStatus<OAuthSetCredentialsInput, { status: string }>('oauth2_set_credentials', {
-      id,
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<OAuthSetCredentialsInput, { status: string }>('oauth2_set_credentials', {
+          id,
+          client_id: clientId,
+          client_secret: clientSecret,
+        })
+      : Promise.resolve({ status: 'ok' }),
 
   oauth2Authorize: (id: string, environment?: string) =>
-    invokeRustDataFromStatus<OAuthAuthorizeInput, { auth_url: string }>('oauth2_authorize', { id, environment }),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<OAuthAuthorizeInput, { auth_url: string }>('oauth2_authorize', { id, environment })
+      : (async () => {
+          const providers = await loadWebOAuthProviderConfigs();
+          const p = providers.find((item) => item.id === id);
+          if (!p) throw new Error('provider not found');
+          if ((p.status || 'active') === 'coming_soon') throw new Error('provider developing');
+          if (!p.callback_url) throw new Error('provider callback_url missing');
+          const returnTo = typeof window !== 'undefined' ? window.location.href : '';
+          const startUrl = p.callback_url.replace(/\/callback(\?.*)?$/, '/start');
+          const authUrl = `${startUrl}?site_id=default&return_to=${encodeURIComponent(returnTo)}`;
+          return { auth_url: authUrl };
+        })(),
 
   oauth2ListConnections: () =>
-    invokeRustDataFromStatus<void, OAuth2Connection[]>('oauth2_list_connections'),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<void, OAuth2Connection[]>('oauth2_list_connections')
+      : (async () => {
+          consumeOAuthCallbackFromLocation();
+          return readWebOAuthConnections();
+        })(),
 
   oauth2GetConnection: (id: string) =>
-    invokeRustDataFromStatus<OAuthIdInput, OAuth2Connection>('oauth2_get_connection', { id }),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<OAuthIdInput, OAuth2Connection>('oauth2_get_connection', { id })
+      : (async () => {
+          const item = readWebOAuthConnections().find((conn) => conn.provider_id === id);
+          if (!item) throw new Error('connection not found');
+          return item;
+        })(),
 
   oauth2Disconnect: (id: string) =>
-    invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_disconnect', { id }),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_disconnect', { id })
+      : (async () => {
+          const list = readWebOAuthConnections().filter((conn) => conn.provider_id !== id);
+          writeWebOAuthConnections(list);
+          return { status: 'ok' };
+        })(),
 
   oauth2RefreshToken: (id: string) =>
-    invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_refresh_token', { id }),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_refresh_token', { id })
+      : (async () => {
+          const list = readWebOAuthConnections();
+          const idx = list.findIndex((conn) => conn.provider_id === id);
+          if (idx < 0) throw new Error('connection not found');
+          list[idx] = {
+            ...list[idx],
+            expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
+            status: 'active',
+          };
+          writeWebOAuthConnections(list);
+          return { status: 'ok' };
+        })(),
 
   oauth2CallResource: (id: string, resource: string, params?: Record<string, string>) =>
     invokeRustDataFromStatus<OAuthResourceInput, unknown>('oauth2_call_resource', { id, resource, params }),
 
   oauth2Reload: () =>
-    invokeRustDataFromStatus<void, { status: string }>('oauth2_reload'),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<void, { status: string }>('oauth2_reload')
+      : Promise.resolve({ status: 'ok' }),
 
   oauth2GetPage: (id: string) =>
-    invokeRustDataFromStatus<OAuthIdInput, { provider: OAuth2ProviderDetail; has_credentials: boolean }>('oauth2_get_page', { id }),
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<OAuthIdInput, { provider: OAuth2ProviderDetail; has_credentials: boolean }>('oauth2_get_page', { id })
+      : (async () => {
+          const provider = await api.oauth2GetProvider(id);
+          return {
+            provider,
+            has_credentials: true,
+          };
+        })(),
 
   oauthSimulateLarkStart: (opts?: { create_bot?: boolean; app_name?: string }) =>
     invokeRustDataFromStatus<OAuthSimulateStartInput, SimulateLoginStart>('oauth_simulate_lark_start', opts || {}),

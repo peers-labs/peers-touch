@@ -5,7 +5,9 @@
 import './providers';
 import './model-service';
 import './tts';
+import './account';
 import './oauth2';
+import './connections';
 import './skills';
 import './mcp';
 import './channels';

@@ -13,7 +13,27 @@ var oauthOptions struct {
 			Server struct {
 				Subserver struct {
 					OAuth struct {
-						Enabled bool `pconf:"enabled"`
+						Enabled   bool `pconf:"enabled"`
+						Providers []struct {
+							ID             string `pconf:"id"`
+							Name           string `pconf:"name"`
+							Description    string `pconf:"description"`
+							Icon           string `pconf:"icon"`
+							Color          string `pconf:"color"`
+							Category       string `pconf:"category"`
+							Enabled        bool   `pconf:"enabled"`
+							Status         string `pconf:"status"`
+							HasCredentials bool   `pconf:"has-credentials"`
+							CallbackURL    string `pconf:"callback-url"`
+							Environments   []struct {
+								ID           string `pconf:"id"`
+								Name         string `pconf:"name"`
+								AuthorizeURL string `pconf:"authorize-url"`
+								TokenURL     string `pconf:"token-url"`
+								UserinfoURL  string `pconf:"userinfo-url"`
+								Default      bool   `pconf:"default"`
+							} `pconf:"environments"`
+						} `pconf:"providers"`
 					} `pconf:"oauth"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`

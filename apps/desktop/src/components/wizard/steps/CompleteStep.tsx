@@ -84,7 +84,7 @@ export function CompleteStep({ step, wizardContext, onComplete }: Props) {
           border: 'none',
         }}
       >
-        Enter Peers-Touch
+        Enter Peers Touch
       </Button>
     </Flexbox>
   );

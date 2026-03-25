@@ -12,7 +12,8 @@
   "app": {
     "windows": [
       {
-        "title": "Peers Touch Desktop",
+        "title": "",
+        "decorations": false,
         "width": 1200,
         "height": 800
       }
