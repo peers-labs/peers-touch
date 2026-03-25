@@ -5,7 +5,9 @@ import "time"
 type Method string
 
 const (
-	MethodJWT Method = "jwt"
+	MethodJWT         Method = "jwt"
+	MethodOAuth2      Method = "oauth2"
+	MethodConnections Method = "connections"
 )
 
 type Credentials struct {

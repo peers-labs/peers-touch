@@ -27,7 +27,7 @@ function normalizeSimulateError(raw?: string): string {
   const text = (raw || '').trim();
   const lower = text.toLowerCase();
   if (lower === 'not found' || lower.includes('404')) {
-    return 'Simulated Login API is unavailable (404). Restart Agent Box backend with the latest code and retry.';
+    return 'Simulated Login API is unavailable (404). Restart Peers Touch backend with the latest code and retry.';
   }
   if (lower === 'session not found') {
     return 'Login session not found. It may have expired or the service restarted. Click Retry to generate a new QR code.';

@@ -402,7 +402,7 @@ export function ChannelsPage() {
           <Empty description="No channels configured yet" image={Empty.PRESENTED_IMAGE_SIMPLE}>
             <Flexbox gap={12} align="center">
               <Text type="secondary" style={{ maxWidth: 400, textAlign: 'center' }}>
-                Channels connect Agent Box to messaging platforms. Configure a Telegram, Lark, or Slack bot
+                Channels connect Peers Touch to messaging platforms. Configure a Telegram, Lark, or Slack bot
                 to let users interact with your AI agent directly from their messaging app.
               </Text>
               <Button type="primary" onClick={handleCreate}>Add Your First Channel</Button>
@@ -576,7 +576,7 @@ export function ChannelsPage() {
                               type="link"
                               size="small"
                               style={{ padding: 0 }}
-                              onClick={() => window.dispatchEvent(new CustomEvent('navigate-settings-tab', { detail: 'oauth' }))}
+                              onClick={() => window.dispatchEvent(new CustomEvent('navigate-settings-tab', { detail: 'account' }))}
                             >
                               Login Info
                             </Button>
@@ -1164,7 +1164,7 @@ function SendTestCard({ channelId, connected }: { channelId: string; connected: 
   const [chats, setChats] = useState<ChatTarget[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
-  const [testText, setTestText] = useState('Hello from Agent Box!');
+  const [testText, setTestText] = useState('Hello from Peers Touch!');
   const [sending, setSending] = useState(false);
 
   const handleSend = async () => {

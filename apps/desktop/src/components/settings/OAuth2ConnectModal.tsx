@@ -80,7 +80,7 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
               Sign in with {provider.name}
             </Title>
             <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
-              You will be redirected to {provider.name} to authorize Agent Box.
+              You will be redirected to {provider.name} to authorize Peers Touch.
             </Text>
             <Flexbox gap={8} style={{ width: '100%' }}>
               <Text type="secondary" style={{ fontSize: 13 }}>
@@ -154,7 +154,7 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
                 Sign in with {provider.name}
               </Title>
               <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
-                You will be redirected to {provider.name} to authorize Agent Box to access your account.
+                You will be redirected to {provider.name} to authorize Peers Touch to access your account.
               </Text>
             </Flexbox>
             {!hasCreds && (
