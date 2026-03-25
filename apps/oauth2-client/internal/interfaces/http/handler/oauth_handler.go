@@ -17,7 +17,15 @@ type OAuthHandler struct {
 }
 
 func (h *OAuthHandler) Start(w http.ResponseWriter, r *http.Request) {
-	provider, ok := valueobject.ParseProvider(r.URL.Query().Get("provider"))
+	h.startWithProvider(w, r, "")
+}
+
+func (h *OAuthHandler) StartWithProvider(w http.ResponseWriter, r *http.Request, provider valueobject.Provider) {
+	h.startWithProvider(w, r, provider)
+}
+
+func (h *OAuthHandler) startWithProvider(w http.ResponseWriter, r *http.Request, forced valueobject.Provider) {
+	provider, ok := resolveProvider(r, forced)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_provider"})
 		return
@@ -39,7 +47,15 @@ func (h *OAuthHandler) Start(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
-	provider, ok := valueobject.ParseProvider(r.URL.Query().Get("provider"))
+	h.callbackWithProvider(w, r, "")
+}
+
+func (h *OAuthHandler) CallbackWithProvider(w http.ResponseWriter, r *http.Request, provider valueobject.Provider) {
+	h.callbackWithProvider(w, r, provider)
+}
+
+func (h *OAuthHandler) callbackWithProvider(w http.ResponseWriter, r *http.Request, forced valueobject.Provider) {
+	provider, ok := resolveProvider(r, forced)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_provider"})
 		return
@@ -100,4 +116,11 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func resolveProvider(r *http.Request, forced valueobject.Provider) (valueobject.Provider, bool) {
+	if forced != "" {
+		return forced, true
+	}
+	return valueobject.ParseProvider(r.URL.Query().Get("provider"))
 }

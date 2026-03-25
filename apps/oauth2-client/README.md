@@ -36,14 +36,22 @@ apps/oauth2-client
 
 ## 路由
 
-- `GET /oauth/start?provider=github&site_id=main&return_to=https://example.com/post-auth`
-- `GET /oauth/callback?provider=github&code=...&state=...`
+- `GET /oauth/github/start?site_id=main&return_to=https://example.com/post-auth`
+- `GET /oauth/github/callback?code=...&state=...`
+- `GET /oauth/google/start?site_id=main&return_to=https://example.com/post-auth`
+- `GET /oauth/google/callback?code=...&state=...`
 - `GET /healthz`
 
 Vercel 路由：
 
-- `GET /api/oauth/start`
-- `GET /api/oauth/callback`
+- `GET /api/oauth/github/start`
+- `GET /api/oauth/github/callback`
+- `GET /api/oauth/google/start`
+- `GET /api/oauth/google/callback`
+- `GET /api/oauth/weixin/start`
+- `GET /api/oauth/weixin/callback`
+- `GET /api/oauth/start`（兼容旧参数模式）
+- `GET /api/oauth/callback`（兼容旧参数模式）
 - `GET /api/healthz`
 
 ## 回调返回字段

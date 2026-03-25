@@ -1,5 +1,11 @@
 {
   "routes": [
+    { "src": "/api/oauth/github/start", "dest": "/api/oauth/github/start" },
+    { "src": "/api/oauth/google/start", "dest": "/api/oauth/google/start" },
+    { "src": "/api/oauth/weixin/start", "dest": "/api/oauth/weixin/start" },
+    { "src": "/api/oauth/github/callback", "dest": "/api/oauth/github/callback" },
+    { "src": "/api/oauth/google/callback", "dest": "/api/oauth/google/callback" },
+    { "src": "/api/oauth/weixin/callback", "dest": "/api/oauth/weixin/callback" },
     { "src": "/api/oauth/start", "dest": "/api/oauth/start" },
     { "src": "/api/oauth/callback", "dest": "/api/oauth/callback" },
     { "src": "/api/healthz", "dest": "/api/healthz" }
