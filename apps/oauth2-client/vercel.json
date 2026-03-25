@@ -6,8 +6,6 @@
     { "src": "/api/oauth/github/callback", "dest": "/api/oauth/github/callback" },
     { "src": "/api/oauth/google/callback", "dest": "/api/oauth/google/callback" },
     { "src": "/api/oauth/weixin/callback", "dest": "/api/oauth/weixin/callback" },
-    { "src": "/api/oauth/start", "dest": "/api/oauth/start" },
-    { "src": "/api/oauth/callback", "dest": "/api/oauth/callback" },
     { "src": "/api/healthz", "dest": "/api/healthz" }
   ]
 }
