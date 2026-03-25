@@ -39,7 +39,7 @@ export function LanguageStep({ initial, onNext, onBack }: Props) {
           Which language?
         </h2>
         <p style={{ fontSize: 15, color: token.colorTextSecondary, margin: 0, textAlign: 'center' }}>
-          Choose the language Agent Box should respond in.
+          Choose the language Peers Touch should respond in.
         </p>
       </Flexbox>
 

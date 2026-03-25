@@ -5,6 +5,7 @@ import { WelcomeStep } from '../components/onboarding/WelcomeStep';
 import { InterestsStep } from '../components/onboarding/InterestsStep';
 import { LanguageStep } from '../components/onboarding/LanguageStep';
 import { ProviderSetupStep } from '../components/onboarding/ProviderSetupStep';
+import { OAuthSignInStep } from '../components/onboarding/OAuthSignInStep';
 import { api } from '../services/desktop_api';
 
 interface Props {
@@ -20,13 +21,13 @@ export function OnboardingPage({ onComplete }: Props) {
   const handleInterests = (selected: string[]) => {
     setInterests(selected);
     api.setOnboarding({ interests: selected }).catch(() => {});
-    setStep(2);
+    setStep(3);
   };
 
   const handleLanguage = (lang: string) => {
     setLanguage(lang);
     api.setOnboarding({ language: lang }).catch(() => {});
-    setStep(3);
+    setStep(4);
   };
 
   const handleComplete = async () => {
@@ -35,10 +36,11 @@ export function OnboardingPage({ onComplete }: Props) {
   };
 
   const steps = [
-    <WelcomeStep key="welcome" onNext={() => setStep(1)} />,
-    <InterestsStep key="interests" initial={interests} onNext={handleInterests} onBack={() => setStep(0)} />,
-    <LanguageStep key="language" initial={language} onNext={handleLanguage} onBack={() => setStep(1)} />,
-    <ProviderSetupStep key="provider" onComplete={handleComplete} onBack={() => setStep(2)} />,
+    <OAuthSignInStep key="oauth-signin" onNext={() => setStep(1)} />,
+    <WelcomeStep key="welcome" onNext={() => setStep(2)} />,
+    <InterestsStep key="interests" initial={interests} onNext={handleInterests} onBack={() => setStep(1)} />,
+    <LanguageStep key="language" initial={language} onNext={handleLanguage} onBack={() => setStep(2)} />,
+    <ProviderSetupStep key="provider" onComplete={handleComplete} onBack={() => setStep(3)} />,
   ];
 
   return (
@@ -66,7 +68,7 @@ export function OnboardingPage({ onComplete }: Props) {
       >
         {/* Step indicators */}
         <Flexbox horizontal justify="center" gap={6} style={{ padding: '20px 24px 0' }}>
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2, 3, 4].map((i) => (
             <div
               key={i}
               style={{

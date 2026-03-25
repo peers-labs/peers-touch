@@ -107,7 +107,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
     () =>
       agents.find((a) => a.name === selectedAgent) || {
         name: selectedAgent || 'assistant',
-        title: 'Agent Box',
+        title: 'Peers Touch',
         description: 'Your default personal AI assistant.',
         avatar: '🤖',
         openingMessage: '',

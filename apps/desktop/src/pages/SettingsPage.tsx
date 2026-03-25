@@ -583,7 +583,7 @@ function StatisticsTab() {
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" gap={8}>
           <Text strong style={{ fontSize: 16 }}>
-            This is your <span style={{ color: token.colorPrimary, fontWeight: 700, fontSize: 20 }}>{summary.days_with_us}</span> day with Agent Box
+            This is your <span style={{ color: token.colorPrimary, fontWeight: 700, fontSize: 20 }}>{summary.days_with_us}</span> day with Peers Touch
           </Text>
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 12 }}>
@@ -896,7 +896,7 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
       >
         <Flexbox horizontal align="center" gap={8}>
           <Sparkles size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>Agent Box</Title>
+          <Title level={5} style={{ margin: 0 }}>Peers Touch</Title>
           <Tag style={{ fontSize: 11 }}>dev</Tag>
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 13 }}>

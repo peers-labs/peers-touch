@@ -42,6 +42,8 @@ func (s *oauthSubServer) Address() server.SubserverAddress {
 
 func (s *oauthSubServer) Handlers() []server.Handler {
 	return []server.Handler{
+		server.NewHTTPHandler("oauth-providers", "/oauth/providers", server.GET, server.HertzHandlerFunc(s.handleProviders)),
+		server.NewHTTPHandler("oauth-providers-api", "/api/oauth/providers", server.GET, server.HertzHandlerFunc(s.handleProviders)),
 		server.NewHTTPHandler("oauth-authorize", "/oauth/authorize", server.GET, server.HertzHandlerFunc(s.handleAuthorize)),
 		server.NewHTTPHandler("oauth-token", "/oauth/token", server.POST, server.HertzHandlerFunc(s.handleToken)),
 	}
@@ -149,6 +151,42 @@ func (s *oauthSubServer) handleToken(c context.Context, ctx *app.RequestContext)
 		"scope":        ac.Scopes,
 		"created_at":   time.Now().Unix(),
 	})
+}
+
+func (s *oauthSubServer) handleProviders(c context.Context, ctx *app.RequestContext) {
+	providers := make([]map[string]any, 0, len(oauthOptions.Peers.Node.Server.Subserver.OAuth.Providers))
+	for _, p := range oauthOptions.Peers.Node.Server.Subserver.OAuth.Providers {
+		if !p.Enabled {
+			continue
+		}
+		envs := make([]map[string]any, 0, len(p.Environments))
+		for _, env := range p.Environments {
+			envs = append(envs, map[string]any{
+				"id":            env.ID,
+				"name":          env.Name,
+				"authorize_url": env.AuthorizeURL,
+				"token_url":     env.TokenURL,
+				"userinfo_url":  env.UserinfoURL,
+				"default":       env.Default,
+			})
+		}
+		providers = append(providers, map[string]any{
+			"id":              p.ID,
+			"name":            p.Name,
+			"description":     p.Description,
+			"icon":            p.Icon,
+			"color":           p.Color,
+			"category":        p.Category,
+			"builtin":         true,
+			"enabled":         p.Enabled,
+			"status":          p.Status,
+			"has_credentials": p.HasCredentials,
+			"connected":       false,
+			"callback_url":    p.CallbackURL,
+			"environments":    envs,
+		})
+	}
+	ctx.JSON(http.StatusOK, providers)
 }
 
 func scopeSubset(req, allowed string) bool {

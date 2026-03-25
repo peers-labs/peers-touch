@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input, Typography, theme, message, Divider } from 'antd';
-import { Key, ExternalLink, Zap } from 'lucide-react';
-import { api, type ProviderDetail } from '../../services/desktop_api';
+import { Button, Input, Typography, theme, message, Select } from 'antd';
+import { Key, ExternalLink } from 'lucide-react';
+import { api, type ProviderDetail, type ProviderListItem } from '../../services/desktop_api';
 
 const { Text, Link } = Typography;
 
@@ -12,20 +12,31 @@ interface Props {
 }
 
 export function ProviderSetupStep({ onComplete, onBack }: Props) {
+  const [providers, setProviders] = useState<ProviderListItem[]>([]);
   const [provider, setProvider] = useState<ProviderDetail | null>(null);
+  const [selectedId, setSelectedId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [checking, setChecking] = useState(false);
-  const [applyingPreset, setApplyingPreset] = useState(false);
   const { token } = theme.useToken();
 
   useEffect(() => {
     api.listProviders().then((providers) => {
+      setProviders(providers);
       const defaultProvider = providers.find((p) => p.enabled) || providers[0];
       if (defaultProvider) {
-        api.getProvider(defaultProvider.id).then(setProvider);
+        setSelectedId(defaultProvider.id);
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setProvider(null);
+      return;
+    }
+    api.getProvider(selectedId).then(setProvider).catch(() => setProvider(null));
+    setApiKey('');
+  }, [selectedId]);
 
   const handleCheck = async () => {
     if (!provider) return;
@@ -41,23 +52,6 @@ export function ProviderSetupStep({ onComplete, onBack }: Props) {
       message.error('Connection check failed');
     } finally {
       setChecking(false);
-    }
-  };
-
-  const handleApplyPreset = async () => {
-    if (!provider) return;
-    setApplyingPreset(true);
-    try {
-      const result = await api.applyPreset(provider.id);
-      if (result.ok) {
-        message.success('Preset provider configured!');
-        await api.setOnboarding({ completed: true });
-        onComplete();
-      }
-    } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : 'Failed to apply preset');
-    } finally {
-      setApplyingPreset(false);
     }
   };
 
@@ -103,31 +97,6 @@ export function ProviderSetupStep({ onComplete, onBack }: Props) {
 
       {provider && (
         <Flexbox gap={16} style={{ width: '100%', maxWidth: 420 }}>
-          {/* Quick preset button */}
-          <Button
-            type="primary"
-            size="large"
-            icon={<Zap size={16} />}
-            onClick={handleApplyPreset}
-            loading={applyingPreset}
-            style={{
-              height: 48,
-              borderRadius: 12,
-              fontSize: 15,
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, #667eea, #764ba2)',
-              border: 'none',
-            }}
-            block
-          >
-            Use Preset Provider (Ark)
-          </Button>
-
-          <Divider style={{ margin: '4px 0', fontSize: 13, color: token.colorTextQuaternary }}>
-            or enter your own API key
-          </Divider>
-
-          {/* Manual setup */}
           <Flexbox
             gap={12}
             style={{
@@ -137,6 +106,15 @@ export function ProviderSetupStep({ onComplete, onBack }: Props) {
               border: `1px solid ${token.colorBorderSecondary}`,
             }}
           >
+            <Flexbox gap={6}>
+              <Text style={{ fontSize: 13, fontWeight: 500 }}>Provider</Text>
+              <Select
+                value={selectedId}
+                onChange={setSelectedId}
+                size="large"
+                options={providers.map((item) => ({ value: item.id, label: item.name }))}
+              />
+            </Flexbox>
             <Flexbox horizontal justify="space-between" align="center">
               <Text strong style={{ fontSize: 16 }}>{provider.name}</Text>
               {provider.api_key_url && (

@@ -138,7 +138,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
     <Flexbox style={{ height: '100%', overflow: 'auto' }}>
       <PageHeader
         title="Agent Applets"
-        subtitle="Extend Agent Box with pluggable applets — each is a self-contained agent with its own UI, tools, and knowledge."
+        subtitle="Extend Peers Touch with pluggable applets — each is a self-contained agent with its own UI, tools, and knowledge."
         icon={<Blocks size={20} />}
       />
 

@@ -48,7 +48,7 @@ export function InterestsStep({ initial, onNext, onBack }: Props) {
           Take your pick
         </h2>
         <p style={{ fontSize: 15, color: token.colorTextSecondary, margin: 0, textAlign: 'center' }}>
-          What would you like Agent Box to help with?
+          What would you like Peers Touch to help with?
         </p>
       </Flexbox>
 

@@ -8,3 +8,11 @@ body {
 #app {
   padding: 24px;
 }
+
+.window-drag {
+  -webkit-app-region: drag;
+}
+
+.window-no-drag {
+  -webkit-app-region: no-drag;
+}

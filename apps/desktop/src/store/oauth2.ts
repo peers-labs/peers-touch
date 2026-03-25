@@ -26,6 +26,7 @@ interface OAuth2Store {
   providers: OAuth2ProviderSummary[];
   connections: OAuth2Connection[];
   loading: boolean;
+  error: string | null;
   authenticated: boolean;
   authErrorCode: string | null;
 
@@ -46,15 +47,16 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
   providers: [],
   connections: [],
   loading: false,
+  error: null,
   authenticated: false,
   authErrorCode: null,
 
   loadProviders: async () => {
     try {
       const providers = await api.oauth2ListProviders();
-      set({ providers: providers || [] });
-    } catch {
-      set({ providers: [] });
+      set({ providers: providers || [], error: null });
+    } catch (err: any) {
+      set({ providers: [], error: err?.message || 'failed to load oauth providers' });
     }
   },
 

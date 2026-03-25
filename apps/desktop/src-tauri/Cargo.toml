@@ -10,6 +10,8 @@ tauri-build = { version = "2.0.1", features = [] }
 tauri = { version = "2.0.1", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+urlencoding = "2"
 
 [features]
 default = ["custom-protocol"]

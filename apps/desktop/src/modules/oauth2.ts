@@ -1,11 +1,11 @@
-import { KeyRound } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { registerModule } from './registry';
-import { OAuth2Tab } from '../components/settings/OAuth2Tab';
+import { AuthTab } from '../components/settings/OAuth2Tab';
 
 registerModule({
-  id: 'oauth',
-  name: 'OAuth',
-  icon: KeyRound,
-  settingsPanel: OAuth2Tab,
-  settingsEntry: { order: 20 },
+  id: 'auth',
+  name: 'Auth',
+  icon: ShieldCheck,
+  settingsPanel: AuthTab,
+  settingsEntry: { order: 25 },
 });

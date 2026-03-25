@@ -28,4 +28,5 @@ var (
 	ErrOAuth2InvalidClient = errors.New("invalid OAuth2 client")
 	ErrOAuth2InvalidScope  = errors.New("invalid OAuth2 scope")
 	ErrOAuth2ProviderError = errors.New("OAuth2 provider error")
+	ErrOAuth2ReauthRequired = errors.New("OAuth2 re-authentication required")
 )

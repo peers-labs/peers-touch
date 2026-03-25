@@ -1,0 +1,72 @@
+peers:
+  node:
+    server:
+      subserver:
+        oauth:
+          enabled: true
+          providers:
+          - id: github
+            name: GitHub
+            description: GitHub OAuth2 provider
+            icon: github
+            color: '#24292F'
+            category: developer
+            enabled: true
+            status: active
+            has-credentials: true
+            callback-url: https://peers-touch.vercel.app/api/oauth/github/callback
+            environments:
+            - id: prod
+              name: Production
+              authorize-url: https://github.com/login/oauth/authorize
+              token-url: https://github.com/login/oauth/access_token
+              default: true
+          - id: google
+            name: Google
+            description: Google OAuth2 provider
+            icon: google
+            color: '#4285F4'
+            category: enterprise
+            enabled: true
+            status: active
+            has-credentials: true
+            callback-url: https://peers-touch.vercel.app/api/oauth/google/callback
+            environments:
+            - id: prod
+              name: Production
+              authorize-url: https://accounts.google.com/o/oauth2/v2/auth
+              token-url: https://oauth2.googleapis.com/token
+              userinfo-url: https://openidconnect.googleapis.com/v1/userinfo
+              default: true
+          - id: weixin
+            name: Weixin
+            description: Weixin OAuth2 provider
+            icon: message-circle
+            color: '#07C160'
+            category: social
+            enabled: true
+            status: coming_soon
+            has-credentials: false
+            callback-url: https://peers-touch.vercel.app/api/oauth/weixin/callback
+            environments:
+            - id: prod
+              name: Production
+              authorize-url: https://open.weixin.qq.com/connect/qrconnect
+              token-url: https://api.weixin.qq.com/sns/oauth2/access_token
+              default: true
+          - id: lark
+            name: Lark
+            description: Lark OAuth2 provider
+            icon: bird
+            color: '#3370FF'
+            category: enterprise
+            enabled: true
+            status: active
+            has-credentials: false
+            callback-url: https://peers-touch.vercel.app/api/oauth/lark/callback
+            environments:
+            - id: prod
+              name: Production
+              authorize-url: https://open.larksuite.com/open-apis/authen/v1/authorize
+              token-url: https://open.larksuite.com/open-apis/authen/v1/oidc/access_token
+              default: true

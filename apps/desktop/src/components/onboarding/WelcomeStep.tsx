@@ -36,7 +36,7 @@ export function WelcomeStep({ onNext }: Props) {
           Nice to meet you
         </h1>
         <p style={{ fontSize: 16, color: token.colorTextSecondary, margin: 0, textAlign: 'center', maxWidth: 420 }}>
-          Agent Box is your personal AI assistant that can read files, execute commands, search the web, and much more.
+          Peers Touch is your personal AI assistant that can read files, execute commands, search the web, and much more.
         </p>
       </Flexbox>
 
