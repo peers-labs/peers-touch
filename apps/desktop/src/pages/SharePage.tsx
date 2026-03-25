@@ -87,7 +87,7 @@ export default function SharePage({ token }: { token: string }) {
       >
         <Bot size={24} style={{ color: themeToken.colorPrimary }} />
         <span style={{ fontSize: 15, fontWeight: 600, color: themeToken.colorText }}>
-          Agent Box
+          Peers Touch
         </span>
       </Flexbox>
 

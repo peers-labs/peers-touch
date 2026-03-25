@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Users, AlertCircle } from 'lucide-react';
+import { Users, AlertCircle, Minus, Square, X } from 'lucide-react';
 import { Tooltip, theme } from 'antd';
 import { api } from '../services/desktop_api';
 import { useOAuth2Store } from '../store/oauth2';
@@ -123,19 +123,19 @@ function AuthStatusIndicator() {
   if (hasAccounts === null) return null;
   if (hasAccounts) return null;
 
-  const navigateToOAuth = () => {
-    const event = new CustomEvent('navigate-settings-tab', { detail: 'oauth' });
+  const navigateToAccount = () => {
+    const event = new CustomEvent('navigate-settings-tab', { detail: 'account' });
     window.dispatchEvent(event);
   };
 
   return (
     <>
       <style>{pulseKeyframes}</style>
-      <Tooltip title="No accounts authorized — click to set up OAuth">
+      <Tooltip title="No accounts authorized — click to open Account settings">
         <Flexbox
           align="center"
           justify="center"
-          onClick={navigateToOAuth}
+          onClick={navigateToAccount}
           style={{
             width: 28,
             height: 28,
@@ -167,42 +167,118 @@ function AuthStatusIndicator() {
 
 export function GlobalLayout({ sideNav, children }: GlobalLayoutProps) {
   const { token } = theme.useToken();
+  const isTauriDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    if (!isTauriDesktop) return;
+    let mounted = true;
+    const syncMaximized = async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const maximized = await getCurrentWindow().isMaximized();
+      if (mounted) setIsMaximized(maximized);
+    };
+    void syncMaximized();
+    return () => {
+      mounted = false;
+    };
+  }, [isTauriDesktop]);
+
+  const onMinimize = useCallback(async () => {
+    if (!isTauriDesktop) return;
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().minimize();
+  }, [isTauriDesktop]);
+
+  const onToggleMaximize = useCallback(async () => {
+    if (!isTauriDesktop) return;
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const appWindow = getCurrentWindow();
+    const maximized = await appWindow.isMaximized();
+    if (maximized) {
+      await appWindow.unmaximize();
+      setIsMaximized(false);
+    } else {
+      await appWindow.maximize();
+      setIsMaximized(true);
+    }
+  }, [isTauriDesktop]);
+
+  const onClose = useCallback(async () => {
+    if (!isTauriDesktop) return;
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().close();
+  }, [isTauriDesktop]);
 
   return (
     <Flexbox style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {/* Top bar */}
       <Flexbox
         horizontal
         align="center"
         justify="space-between"
+        className="window-drag"
+        data-tauri-drag-region
         style={{
           height: 40,
           minHeight: 40,
-          padding: '0 16px',
+          padding: '0 8px 0 12px',
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
           background: token.colorBgContainer,
           zIndex: 10,
+          userSelect: 'none',
         }}
       >
-        <Flexbox horizontal align="center" gap={8}>
-          <span
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: token.colorText,
-              letterSpacing: 0.5,
-            }}
-          >
-            Agent Box
-          </span>
-        </Flexbox>
-        <Flexbox horizontal align="center" gap={12}>
+        <div style={{ flex: 1, height: '100%' }} data-tauri-drag-region />
+        <Flexbox horizontal align="center" gap={10} className="window-no-drag">
           <AuthStatusIndicator />
           <OnlineIndicator />
+          <Flexbox horizontal align="center" gap={4}>
+            <Flexbox
+              align="center"
+              justify="center"
+              onClick={onMinimize}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 6,
+                cursor: 'pointer',
+                color: token.colorTextSecondary,
+              }}
+            >
+              <Minus size={14} />
+            </Flexbox>
+            <Flexbox
+              align="center"
+              justify="center"
+              onClick={onToggleMaximize}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 6,
+                cursor: 'pointer',
+                color: token.colorTextSecondary,
+              }}
+            >
+              <Square size={12} fill={isMaximized ? token.colorTextSecondary : 'none'} />
+            </Flexbox>
+            <Flexbox
+              align="center"
+              justify="center"
+              onClick={onClose}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 6,
+                cursor: 'pointer',
+                color: token.colorTextSecondary,
+              }}
+            >
+              <X size={14} />
+            </Flexbox>
+          </Flexbox>
         </Flexbox>
       </Flexbox>
 
-      {/* Main area: sidebar + content + (right sidebar placeholder) */}
       <Flexbox horizontal flex={1} style={{ overflow: 'hidden' }}>
         {sideNav}
         <Flexbox flex={1} style={{ overflow: 'hidden', position: 'relative' }}>
@@ -210,7 +286,6 @@ export function GlobalLayout({ sideNav, children }: GlobalLayoutProps) {
         </Flexbox>
       </Flexbox>
 
-      {/* Bottom bar — hidden, placeholder retained */}
       <Flexbox
         horizontal
         align="center"
@@ -227,7 +302,6 @@ export function GlobalLayout({ sideNav, children }: GlobalLayoutProps) {
           display: 'none',
         }}
       >
-        Agent Box
       </Flexbox>
     </Flexbox>
   );

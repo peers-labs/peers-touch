@@ -275,7 +275,7 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
               <Bot size={32} color="#fff" />
             </div>
             <Title level={3} style={{ margin: 0 }}>
-              Search Agent Box
+              Search Peers Touch
             </Title>
             <Text type="secondary">
               Search conversations, tools, help, providers — or ask AI
