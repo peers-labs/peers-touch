@@ -16,20 +16,7 @@ type OAuthHandler struct {
 	Sites          usecase.SiteRegistry
 }
 
-func (h *OAuthHandler) Start(w http.ResponseWriter, r *http.Request) {
-	h.startWithProvider(w, r, "")
-}
-
 func (h *OAuthHandler) StartWithProvider(w http.ResponseWriter, r *http.Request, provider valueobject.Provider) {
-	h.startWithProvider(w, r, provider)
-}
-
-func (h *OAuthHandler) startWithProvider(w http.ResponseWriter, r *http.Request, forced valueobject.Provider) {
-	provider, ok := resolveProvider(r, forced)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_provider"})
-		return
-	}
 	siteID := strings.TrimSpace(r.URL.Query().Get("site_id"))
 	if siteID == "" {
 		siteID = "default"
@@ -46,20 +33,7 @@ func (h *OAuthHandler) startWithProvider(w http.ResponseWriter, r *http.Request,
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
-func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
-	h.callbackWithProvider(w, r, "")
-}
-
 func (h *OAuthHandler) CallbackWithProvider(w http.ResponseWriter, r *http.Request, provider valueobject.Provider) {
-	h.callbackWithProvider(w, r, provider)
-}
-
-func (h *OAuthHandler) callbackWithProvider(w http.ResponseWriter, r *http.Request, forced valueobject.Provider) {
-	provider, ok := resolveProvider(r, forced)
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_provider"})
-		return
-	}
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if state == "" || code == "" {
@@ -116,11 +90,4 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func resolveProvider(r *http.Request, forced valueobject.Provider) (valueobject.Provider, bool) {
-	if forced != "" {
-		return forced, true
-	}
-	return valueobject.ParseProvider(r.URL.Query().Get("provider"))
 }
