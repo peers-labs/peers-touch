@@ -16,27 +16,31 @@ func main() {
 		log.Fatalf("build container failed: %v", err)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/oauth/github/start", func(w http.ResponseWriter, r *http.Request) {
+	handle := func(path string, fn http.HandlerFunc) {
+		mux.HandleFunc(path, fn)
+		mux.HandleFunc("/api"+path, fn)
+	}
+	handle("/oauth/github/start", func(w http.ResponseWriter, r *http.Request) {
 		container.Handler.StartWithProvider(w, r, valueobject.ProviderGitHub)
 	})
-	mux.HandleFunc("/oauth/google/start", func(w http.ResponseWriter, r *http.Request) {
+	handle("/oauth/google/start", func(w http.ResponseWriter, r *http.Request) {
 		container.Handler.StartWithProvider(w, r, valueobject.ProviderGoogle)
 	})
-	mux.HandleFunc("/oauth/weixin/start", func(w http.ResponseWriter, r *http.Request) {
+	handle("/oauth/weixin/start", func(w http.ResponseWriter, r *http.Request) {
 		container.Handler.StartWithProvider(w, r, valueobject.ProviderWeixin)
 	})
-	mux.HandleFunc("/oauth/github/callback", func(w http.ResponseWriter, r *http.Request) {
+	handle("/oauth/github/callback", func(w http.ResponseWriter, r *http.Request) {
 		container.Handler.CallbackWithProvider(w, r, valueobject.ProviderGitHub)
 	})
-	mux.HandleFunc("/oauth/google/callback", func(w http.ResponseWriter, r *http.Request) {
+	handle("/oauth/google/callback", func(w http.ResponseWriter, r *http.Request) {
 		container.Handler.CallbackWithProvider(w, r, valueobject.ProviderGoogle)
 	})
-	mux.HandleFunc("/oauth/weixin/callback", func(w http.ResponseWriter, r *http.Request) {
+	handle("/oauth/weixin/callback", func(w http.ResponseWriter, r *http.Request) {
 		container.Handler.CallbackWithProvider(w, r, valueobject.ProviderWeixin)
 	})
-	mux.HandleFunc("/oauth/start", container.Handler.Start)
-	mux.HandleFunc("/oauth/callback", container.Handler.Callback)
-	mux.HandleFunc("/healthz", container.Handler.Healthz)
+	handle("/oauth/start", container.Handler.Start)
+	handle("/oauth/callback", container.Handler.Callback)
+	handle("/healthz", container.Handler.Healthz)
 	addr := resolveListenAddr()
 	log.Printf("oauth2-client listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
