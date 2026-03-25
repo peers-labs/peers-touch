@@ -288,7 +288,7 @@ func defaultRedirectURI(baseURL string, provider valueobject.Provider) string {
 	if baseURL == "" {
 		return ""
 	}
-	return baseURL + "/api/oauth/callback?provider=" + string(provider)
+	return baseURL + "/api/oauth/" + string(provider) + "/callback"
 }
 
 func normalizeBaseURL(raw string) string {
