@@ -23,6 +23,7 @@ export function ProviderSelectStep({ step, onNext, onBack }: Props) {
   const { token } = theme.useToken();
   const config = step.config || {};
   const presets = (config.presets as PresetConfig[]) || [];
+  const showPresets = config.show_presets === true && presets.length > 0;
   const showBuiltin = config.show_builtin !== false;
   const builtinFilter = (config.builtin_filter as string[]) || [];
 
@@ -32,7 +33,6 @@ export function ProviderSelectStep({ step, onNext, onBack }: Props) {
   const [apiKey, setApiKey] = useState('');
   const [checking, setChecking] = useState(false);
   const [applying, setApplying] = useState(false);
-  const [_mode, _setMode] = useState<'preset' | 'builtin' | 'custom'>(presets.length > 0 ? 'preset' : 'builtin');
   const [done, setDone] = useState(false);
 
   useEffect(() => {
@@ -149,7 +149,7 @@ export function ProviderSelectStep({ step, onNext, onBack }: Props) {
 
       <Flexbox gap={16} style={{ width: '100%', maxWidth: 420 }}>
         {/* Preset providers (team-provided, one-click) */}
-        {presets.map((preset) => (
+        {showPresets && presets.map((preset) => (
           <Button
             key={preset.provider}
             type="primary"
@@ -171,7 +171,7 @@ export function ProviderSelectStep({ step, onNext, onBack }: Props) {
           </Button>
         ))}
 
-        {presets.length > 0 && showBuiltin && (
+        {showPresets && showBuiltin && (
           <Divider style={{ margin: '4px 0', fontSize: 13, color: token.colorTextQuaternary }}>
             or configure manually
           </Divider>

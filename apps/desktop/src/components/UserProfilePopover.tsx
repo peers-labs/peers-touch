@@ -161,12 +161,12 @@ export function UserProfilePopover({ children }: Props) {
           setOpen(false);
           window.location.hash = '#/settings';
           setTimeout(() => {
-            const event = new CustomEvent('navigate-settings-tab', { detail: 'oauth' });
+            const event = new CustomEvent('navigate-settings-tab', { detail: 'account' });
             window.dispatchEvent(event);
           }, 100);
         }}
       >
-        Manage Connections
+        Manage Account
       </Button>
     </Flexbox>
   );

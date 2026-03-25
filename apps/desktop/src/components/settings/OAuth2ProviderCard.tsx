@@ -83,7 +83,7 @@ function CredentialsModal({
     >
       <Flexbox gap={16} style={{ paddingBlock: 12 }}>
         <Text type="secondary" style={{ fontSize: 13 }}>
-          Register Agent Box as an OAuth2 client with {provider.name}.
+          Register Peers Touch as an OAuth2 client with {provider.name}.
         </Text>
 
         {provider.callback_url && (

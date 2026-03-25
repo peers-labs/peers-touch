@@ -6,20 +6,20 @@ import (
 	"os"
 
 	peers "github.com/peers-labs/peers-touch/station/frame"
-	brokerA "github.com/peers-labs/peers-touch/station/frame/core/plugin/broker/a"
 	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
 	"github.com/peers-labs/peers-touch/station/frame/core/event"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
+	brokerA "github.com/peers-labs/peers-touch/station/frame/core/plugin/broker/a"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
 
+	_ "github.com/peers-labs/peers-touch/station/app/subserver/ai_chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
 	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
-	_ "github.com/peers-labs/peers-touch/station/app/subserver/ai_chat"
 	touchactivitypub "github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 

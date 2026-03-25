@@ -17,6 +17,7 @@ func init() {
 			&Actor{}, &ActorTouchMeta{}, &PeerAddress{}, &ActorStatus{},
 			// OAuth models
 			&OAuthClient{}, &OAuthAuthCode{}, &OAuthToken{},
+			&OAuth2IdentityBinding{}, &OAuth2TokenState{}, &OAuth2ConnectionState{},
 			// Chat models
 			&Conversation{}, &ConvMember{}, &Message{},
 			&Attachment{}, &Receipt{}, &Reaction{}, &KeyEpoch{},
