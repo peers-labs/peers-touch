@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { EmojiPicker } from '@lobehub/ui';
 import {
@@ -242,7 +243,7 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
 
 type ProfileTab = 'prompt' | 'cron' | 'memories';
 
-const TABS: { key: ProfileTab; label: string; icon: React.ReactNode }[] = [
+const TABS: { key: ProfileTab; label: string; icon: ReactNode }[] = [
   { key: 'prompt', label: 'Prompt', icon: null },
   { key: 'cron', label: 'Scheduled Tasks', icon: <Clock size={13} /> },
   { key: 'memories', label: 'Memories', icon: <Brain size={13} /> },

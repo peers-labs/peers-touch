@@ -4,4 +4,3 @@ peers:
       subserver:
         ai-chat:
           enabled: true
-          db-name: ai_chat

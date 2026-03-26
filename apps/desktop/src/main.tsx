@@ -4,7 +4,6 @@ import { ThemeProvider } from '@lobehub/ui';
 import App from './App';
 import SharePage from './pages/SharePage';
 import './modules';
-import './applets';
 import './index.css';
 
 function Root() {

@@ -6,6 +6,7 @@ import {
   Settings,
   Search,
   FileText,
+  Blocks,
 } from 'lucide-react';
 import { Spin } from 'antd';
 import { ChatPage } from './pages/ChatPage';
@@ -22,10 +23,11 @@ import { api } from './services/desktop_api';
 import type { Agent } from './services/desktop_api';
 import { useChatStore } from './store/chat';
 import { useOAuth2Store } from './store/oauth2';
-import { getAppletFrontend } from './applets/registry';
+import AppletManager from './applet/AppletManager';
 import { getModulesWithSidebar, getModule } from './modules/registry';
 import { UserProfilePopover, useUserAvatar } from './components/UserProfilePopover';
 import { UserSquareAvatar } from './components/common/UserSquareAvatar';
+import { AppletRuntimePage } from './pages/AppletRuntimePage';
 
 type Page = string;
 type AppState = 'loading' | 'onboarding' | 'ready';
@@ -69,6 +71,7 @@ function App() {
   const [settingsNav, setSettingsNav] = useState<SettingsNavState>({});
 
   const [profileAgentName, setProfileAgentName] = useState(() => getAgentNameFromHash());
+  const appletManager = AppletManager.getInstance();
 
   const setPage = useCallback((p: Page) => {
     setPageRaw(p);
@@ -91,6 +94,10 @@ function App() {
   // Agent settings drawer state
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+
+  useEffect(() => {
+    appletManager.scanApplets().catch(() => {});
+  }, [appletManager]);
 
   useEffect(() => {
     api.getPreferences()
@@ -225,17 +232,27 @@ function App() {
 
   if (appState === 'loading') {
     return (
-      <Flexbox align="center" justify="center" style={{ width: '100vw', height: '100vh' }}>
-        <Spin size="large" />
-      </Flexbox>
+      <GlobalLayout sideNav={null}>
+        <Flexbox align="center" justify="center" style={{ width: '100%', height: '100%' }}>
+          <Spin size="large" />
+        </Flexbox>
+      </GlobalLayout>
     );
   }
 
   if (appState === 'onboarding') {
     if (onboardingMode === 'wizard') {
-      return <WizardRenderer onComplete={() => setAppState('ready')} />;
+      return (
+        <GlobalLayout sideNav={null}>
+          <WizardRenderer onComplete={() => setAppState('ready')} />
+        </GlobalLayout>
+      );
     }
-    return <OnboardingPage onComplete={() => setAppState('ready')} />;
+    return (
+      <GlobalLayout sideNav={null}>
+        <OnboardingPage onComplete={() => setAppState('ready')} />
+      </GlobalLayout>
+    );
   }
 
   const sideNavElement = (
@@ -284,16 +301,16 @@ function App() {
                 />
               ))}
             {pinnedApplets.map((appletId) => {
-              const af = getAppletFrontend(appletId);
-              if (!af?.sidebarIcon || !af.page) return null;
+              const info = appletManager.getAppletInfo(appletId);
+              if (!info) return null;
               return (
                 <ActionIcon
                   key={appletId}
-                  icon={af.sidebarIcon}
+                  icon={Blocks}
                   size="large"
                   active={page === `applet:${appletId}`}
                   onClick={() => handleTabChange(`applet:${appletId}`)}
-                  title={appletId}
+                  title={info.name}
                 />
               );
             })}
@@ -418,12 +435,9 @@ function App() {
       })()}
       {page.startsWith('applet:') && (() => {
         const appletId = page.slice('applet:'.length);
-        const af = getAppletFrontend(appletId);
-        if (!af?.page) return null;
-        const PageComp = af.page;
         return (
-          <PageComp
-            onBack={() => setPage('applets')}
+          <AppletRuntimePage
+            appletId={appletId}
             onPin={() => togglePin(appletId)}
             pinned={pinnedApplets.includes(appletId)}
           />

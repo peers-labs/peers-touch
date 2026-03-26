@@ -11,12 +11,9 @@ type User struct {
 	DisplayName *string   `gorm:"unique;type:text"`
 	CreatedAt   time.Time `gorm:"not null;default:now()"`
 	UpdatedAt   time.Time `gorm:"not null;default:now()"`
-
-	// 关联关系
-	Providers []Provider `gorm:"foreignKey:PeersUserID;references:PeersUserID"`
 }
 
 // TableName 设置表名
 func (User) TableName() string {
-	return "ai_chat.users"
+	return "ai_chat_users"
 }
