@@ -1,150 +1,98 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Popover, Typography, Button, theme, Divider, message, Input } from 'antd';
-import { Check, Edit2, Globe, Bot } from 'lucide-react';
-import { api, type OAuth2Connection, type UserPreferences } from '../services/desktop_api';
+import { Popover, Typography, Button, theme, Divider, message } from 'antd';
+import { Check, Globe } from 'lucide-react';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import { PlatformLogo } from './common/PlatformLogo';
+import { useAccountIdentityStore } from '../store/accountIdentity';
 
 const { Text } = Typography;
 
 interface Props {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 export function UserProfilePopover({ children }: Props) {
   const { token } = theme.useToken();
   const [open, setOpen] = useState(false);
-  const [prefs, setPrefs] = useState<UserPreferences>({});
-  const [connections, setConnections] = useState<OAuth2Connection[]>([]);
-  const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState('');
-
-  const load = useCallback(async () => {
-    try {
-      const [p, c] = await Promise.all([
-        api.getPreferences(),
-        api.oauth2ListConnections().catch(() => []),
-      ]);
-      setPrefs(p);
-      setConnections(c || []);
-    } catch {
-      // ignore
-    }
-  }, []);
+  const { accounts, activeAccountId, load, switchAccount } = useAccountIdentityStore();
+  const activeAccount = useMemo(
+    () => accounts.find((item) => item.id === activeAccountId) || accounts[0],
+    [accounts, activeAccountId],
+  );
 
   useEffect(() => {
-    if (open) load();
+    if (open) {
+      load();
+    }
   }, [open, load]);
 
-  const updatePrefs = async (update: Partial<UserPreferences>) => {
-    const next = { ...prefs, ...update };
-    setPrefs(next);
-    window.dispatchEvent(new CustomEvent('user-preferences-updated', { detail: next }));
-    try {
-      await api.setPreferences(update);
-    } catch {
-      message.error('Failed to save');
-    }
-  };
+  useEffect(() => {
+    const handler = () => {
+      load();
+    };
+    window.addEventListener('oauth2-connections-changed', handler);
+    window.addEventListener('account-identity-changed', handler);
+    return () => {
+      window.removeEventListener('oauth2-connections-changed', handler);
+      window.removeEventListener('account-identity-changed', handler);
+    };
+  }, [load]);
 
-  const handleSetAvatar = (url: string, provider?: string) => {
-    updatePrefs({ user_avatar: url, user_avatar_provider: provider });
-  };
-
-  const handleSaveName = () => {
-    if (nameInput.trim()) {
-      updatePrefs({ user_name: nameInput.trim() });
-    }
-    setEditingName(false);
-  };
-
-  const userName = prefs.user_name || 'User';
-  const userAvatar = prefs.user_avatar;
+  const userName = activeAccount?.name || 'User';
+  const userAvatar = activeAccount?.avatar_url || undefined;
 
   const content = (
-    <Flexbox gap={16} style={{ width: 280, padding: 4 }}>
+    <Flexbox gap={16} style={{ width: 300, padding: 4 }}>
       <Flexbox horizontal align="center" gap={12}>
         <AvatarDisplay url={userAvatar} name={userName} size={48} />
         <Flexbox gap={2} style={{ flex: 1 }}>
-          {editingName ? (
-            <Flexbox horizontal gap={4}>
-              <Input
-                size="small"
-                value={nameInput}
-                onChange={e => setNameInput(e.target.value)}
-                onPressEnter={handleSaveName}
-                autoFocus
-                style={{ flex: 1 }}
-              />
-              <Button size="small" type="primary" icon={<Check size={12} />} onClick={handleSaveName} />
-            </Flexbox>
-          ) : (
-            <Flexbox horizontal align="center" gap={4}>
-              <Text strong style={{ fontSize: 15 }}>{userName}</Text>
-              <Edit2
-                size={12}
-                style={{ cursor: 'pointer', color: token.colorTextSecondary }}
-                onClick={() => { setNameInput(userName === 'User' ? '' : userName); setEditingName(true); }}
-              />
-            </Flexbox>
-          )}
+          <Text strong style={{ fontSize: 15 }}>{userName}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {connections.length > 0
-              ? `${connections.length} platform${connections.length > 1 ? 's' : ''} connected`
-              : 'No platforms connected'}
+            {accounts.length > 0
+              ? `${accounts.length} account${accounts.length > 1 ? 's' : ''} available`
+              : 'No account connected'}
           </Text>
         </Flexbox>
       </Flexbox>
 
-      {connections.length > 0 && (
-        <>
-          <Divider style={{ margin: 0 }} />
-          <Flexbox gap={8}>
-            <Text type="secondary" style={{ fontSize: 12 }}>Choose avatar source</Text>
-            <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-              <AvatarOption
-                selected={!userAvatar}
-                onClick={() => handleSetAvatar('', '')}
-                fallback={<Bot size={16} color="#764ba2" />}
-                label="Default"
-                color="#764ba2"
-              />
-
-              {connections.map(conn => {
-                const isSelected = prefs.user_avatar_provider === conn.provider_id;
-                return (
-                  <AvatarOption
-                    key={conn.provider_id}
-                    selected={isSelected}
-                    onClick={() => handleSetAvatar(conn.avatar_url, conn.provider_id)}
-                    avatarUrl={conn.avatar_url}
-                    fallback={<PlatformLogo providerId={conn.provider_id} size={16} />}
-                    label={conn.provider_name || conn.provider_id}
-                    color={token.colorPrimary}
-                  />
-                );
-              })}
-            </Flexbox>
-          </Flexbox>
-        </>
-      )}
-
-      {connections.length > 0 && (
+      {accounts.length > 0 && (
         <>
           <Divider style={{ margin: 0 }} />
           <Flexbox gap={6}>
-            <Text type="secondary" style={{ fontSize: 12 }}>Connected accounts</Text>
-            {connections.map(conn => {
+            <Text type="secondary" style={{ fontSize: 12 }}>Choose active account</Text>
+            {accounts.map((account) => {
+              const isActive = activeAccount?.id === account.id;
+              const providerId = account.provider || 'unknown';
+              const onSelect = async () => {
+                if (isActive) return;
+                try {
+                  await switchAccount(account.id);
+                } catch {
+                  message.error('Failed to switch account');
+                }
+              };
               return (
-                <Flexbox key={conn.provider_id} horizontal align="center" gap={8}>
-                  <PlatformLogo providerId={conn.provider_id} size={14} />
+                <Flexbox
+                  key={account.id}
+                  horizontal
+                  align="center"
+                  gap={8}
+                  style={{
+                    border: `1px solid ${isActive ? token.colorPrimary : token.colorBorderSecondary}`,
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    cursor: isActive ? 'default' : 'pointer',
+                    background: isActive ? `${token.colorPrimary}10` : 'transparent',
+                  }}
+                  onClick={onSelect}
+                >
+                  <PlatformLogo providerId={providerId} size={14} />
                   <Text style={{ fontSize: 13, flex: 1 }}>
-                    {conn.provider_name}
+                    {account.name}
                   </Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {conn.user_name || conn.user_id}
-                  </Text>
+                  {isActive && <Check size={12} color={token.colorPrimary} />}
                 </Flexbox>
               );
             })}
@@ -189,88 +137,25 @@ function AvatarDisplay({ url, name, size }: { url?: string; name: string; size: 
   return <UserSquareAvatar url={url} name={name} size={size} />;
 }
 
-function AvatarOption({
-  selected,
-  onClick,
-  avatarUrl,
-  fallback,
-  label,
-  color,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  avatarUrl?: string;
-  fallback: React.ReactNode;
-  label: string;
-  color: string;
-}) {
-  const { token } = theme.useToken();
-  return (
-    <Flexbox
-      align="center"
-      gap={4}
-      style={{
-        cursor: 'pointer',
-        padding: 6,
-        borderRadius: 8,
-        border: `2px solid ${selected ? color : 'transparent'}`,
-        background: selected ? color + '10' : 'transparent',
-        transition: 'all 0.2s',
-      }}
-      onClick={onClick}
-    >
-      {avatarUrl ? (
-        <UserSquareAvatar url={avatarUrl} name={label} size={32} radius={8} />
-      ) : (
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            background: token.colorFillSecondary,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {fallback}
-        </div>
-      )}
-      <Text style={{ fontSize: 10, maxWidth: 50, textAlign: 'center' }} ellipsis>
-        {label}
-      </Text>
-      {selected && (
-        <Check size={10} color={color} />
-      )}
-    </Flexbox>
-  );
-}
-
 export function useUserAvatar(): { url?: string; name: string } {
   const [data, setData] = useState<{ url?: string; name: string }>({ name: 'User' });
 
   useEffect(() => {
-    api.getPreferences()
-      .then(prefs => {
-        setData({
-          url: prefs.user_avatar || undefined,
-          name: prefs.user_name || 'User',
-        });
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as UserPreferences | undefined;
-      if (!detail) return;
+    const refresh = async () => {
+      await useAccountIdentityStore.getState().load();
+      const state = useAccountIdentityStore.getState();
+      const active = state.accounts.find((item) => item.id === state.activeAccountId) || state.accounts[0];
       setData({
-        url: detail.user_avatar || undefined,
-        name: detail.user_name || 'User',
+        url: active?.avatar_url || undefined,
+        name: active?.name || 'User',
       });
     };
-    window.addEventListener('user-preferences-updated', handler);
-    return () => window.removeEventListener('user-preferences-updated', handler);
+    refresh().catch(() => {});
+    const handler = () => {
+      refresh().catch(() => {});
+    };
+    window.addEventListener('account-identity-changed', handler);
+    return () => window.removeEventListener('account-identity-changed', handler);
   }, []);
 
   return data;

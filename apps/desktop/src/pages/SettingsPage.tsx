@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Tabs, Tag, Table, Button, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
+import { Tabs, Tag, Table, Button, Input, Typography, Collapse, Spin, message, theme, Modal, Tooltip } from 'antd';
 import {
   Settings, Bot, Wrench, HelpCircle,
   MessageSquare, Puzzle, Sparkles,
@@ -15,8 +16,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
 import { useProviderStore } from '../store/provider';
-import { api, type AppletInfo, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
-import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
+import { api, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
+import AppletManager, { type AppletInfo as RuntimeAppletInfo } from '../applet/AppletManager';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
 
@@ -69,15 +70,16 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
   const registryTabs = getModulesWithSettings().map((mod) => {
     const Icon = mod.icon;
     const Panel = mod.settingsPanel!;
+    const tabLabel = (
+      <Flexbox horizontal align="center" gap={6}>
+        <Icon size={14} />
+        {mod.settingsEntry?.label || mod.name}
+      </Flexbox>
+    );
     return {
       key: mod.id,
       order: mod.settingsEntry!.order,
-      label: (
-        <Flexbox horizontal align="center" gap={6}>
-          <Icon size={14} />
-          {mod.settingsEntry?.label || mod.name}
-        </Flexbox>
-      ),
+      label: mod.settingsEntry?.tooltip ? <Tooltip title={mod.settingsEntry.tooltip}>{tabLabel}</Tooltip> : tabLabel,
       children: <Panel />,
     };
   });
@@ -163,51 +165,13 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
 }
 
 function AppletsSettingsTab() {
-  const [applets, setApplets] = useState<AppletInfo[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [applets, setApplets] = useState<RuntimeAppletInfo[]>([]);
   const { token } = theme.useToken();
+  const appletManager = AppletManager.getInstance();
 
   useEffect(() => {
-    api.listApplets().then(setApplets).catch(console.error);
-  }, []);
-
-  const SettingsPanel = selected ? getAppletFrontend(selected)?.settingsPanel : undefined;
-
-  if (SettingsPanel) {
-    return (
-      <Flexbox style={{ height: '100%', overflow: 'hidden' }}>
-        <Flexbox
-          horizontal
-          align="center"
-          gap={8}
-          style={{
-            padding: '12px 24px',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            flexShrink: 0,
-          }}
-        >
-          <div
-            onClick={() => setSelected(null)}
-            style={{
-              cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: 6,
-              fontSize: 13,
-              color: token.colorPrimary,
-              transition: 'background 0.2s',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget).style.background = token.colorPrimaryBg; }}
-            onMouseLeave={(e) => { (e.currentTarget).style.background = 'transparent'; }}
-          >
-            ← Back to Applets
-          </div>
-        </Flexbox>
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          <SettingsPanel />
-        </div>
-      </Flexbox>
-    );
-  }
+    appletManager.scanApplets().then(setApplets).catch(() => setApplets([]));
+  }, [appletManager]);
 
   return (
     <Flexbox style={{ padding: 24, maxWidth: 700, overflow: 'auto', height: '100%' }} gap={16}>
@@ -217,34 +181,30 @@ function AppletsSettingsTab() {
           <Title level={5} style={{ margin: 0 }}>Applet Settings</Title>
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 13 }}>
-          Configure installed applets. Each applet may have its own settings panel.
+          当前版本已移除内嵌 applet 设置面板，Applet 配置由 packages/applets 产物自身处理。
         </Text>
       </Flexbox>
 
       <Flexbox gap={10}>
         {applets.map((applet) => {
-          const hasSettings = hasSettingsPanel(applet.manifest.id);
-          const IconComp = ICON_MAP[applet.manifest.icon];
+          const IconComp = ICON_MAP[applet.icon];
           return (
             <Flexbox
-              key={applet.manifest.id}
+              key={applet.id}
               horizontal
               align="center"
               gap={14}
-              onClick={hasSettings ? () => setSelected(applet.manifest.id) : undefined}
               style={{
                 padding: '16px 20px',
                 borderRadius: 12,
                 background: token.colorBgContainer,
                 border: `1px solid ${token.colorBorderSecondary}`,
-                cursor: hasSettings ? 'pointer' : 'default',
+                cursor: 'default',
                 transition: 'all 0.2s',
               }}
               onMouseEnter={(e) => {
-                if (hasSettings) {
-                  (e.currentTarget).style.borderColor = token.colorPrimary;
-                  (e.currentTarget).style.boxShadow = `0 2px 8px ${token.colorPrimaryBg}`;
-                }
+                (e.currentTarget).style.borderColor = token.colorPrimary;
+                (e.currentTarget).style.boxShadow = `0 2px 8px ${token.colorPrimaryBg}`;
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget).style.borderColor = token.colorBorderSecondary;
@@ -267,27 +227,22 @@ function AppletsSettingsTab() {
               </div>
               <Flexbox flex={1} gap={2}>
                 <Flexbox horizontal align="center" gap={8}>
-                  <Text strong style={{ fontSize: 14 }}>{applet.manifest.name}</Text>
+                  <Text strong style={{ fontSize: 14 }}>{applet.name}</Text>
                   <Tag
-                    color={applet.status === 'active' ? 'success' : applet.status === 'error' ? 'error' : 'default'}
+                    color="default"
                     style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
                   >
-                    {applet.status}
+                    installed
                   </Tag>
                   <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}>
-                    v{applet.manifest.version}
+                    v{applet.version}
                   </Tag>
                 </Flexbox>
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  {applet.manifest.description}
+                  {applet.description}
                 </Text>
               </Flexbox>
-              {hasSettings && (
-                <Text type="secondary" style={{ fontSize: 18, flexShrink: 0 }}>›</Text>
-              )}
-              {!hasSettings && (
-                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>No settings</Text>
-              )}
+              <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>No host settings</Text>
             </Flexbox>
           );
         })}
@@ -348,7 +303,7 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
     }
   }
 
-  const cells: React.ReactNode[] = [];
+  const cells: ReactNode[] = [];
   for (let w = 0; w < weeks; w++) {
     for (let day = 0; day < 7; day++) {
       const d = new Date(startDate);
@@ -441,7 +396,7 @@ function RankList({
   valueHeader,
 }: {
   title: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   items: { name: string; count: number }[] | null;
   labelHeader: string;
   valueHeader: string;
@@ -554,7 +509,7 @@ function StatisticsTab() {
 
   const { summary } = data;
 
-  const summaryCards: { label: string; value: string | number; sub?: string; icon: React.ReactNode }[] = [
+  const summaryCards: { label: string; value: string | number; sub?: string; icon: ReactNode }[] = [
     {
       label: 'Sessions',
       value: summary.sessions,
@@ -835,7 +790,7 @@ function ToolsTab() {
           size="small"
           pagination={false}
           style={{ borderRadius: 8, overflow: 'hidden' }}
-          onRow={(record) => ({ 'data-item-id': record.name } as React.HTMLAttributes<HTMLElement>)}
+          onRow={(record) => ({ 'data-item-id': record.name } as HTMLAttributes<HTMLElement>)}
         />
       </Flexbox>
     </Flexbox>

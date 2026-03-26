@@ -33,7 +33,7 @@ func GetMessageHandlers() []MessageHandlerInfo {
 		{Handler: server.NewTypedHandler("message-post-attachment", string(MessageRouterURLAttach), server.POST, HandlePostAttachment, commonWrapper)},
 		{Handler: server.NewTypedHandler("message-get-attachment", string(MessageRouterURLGetAttach), server.POST, HandleGetAttachment, commonWrapper)},
 		{Handler: server.NewTypedHandler("message-search", string(MessageRouterURLSearch), server.POST, HandleSearchMessages, commonWrapper)},
-		{Handler: server.NewTypedHandler("message-get-snapshot", string(MessageRouterURLSnapshot), server.POST, HandleGetSnapshot, commonWrapper)},
+		{Handler: server.NewTypedHandler("message-get-snapshot", string(MessageRouterURLSnapshot), server.GET, HandleGetSnapshot, commonWrapper)},
 		{Handler: server.NewTypedHandler("message-post-snapshot", string(MessageRouterURLSnapshot), server.POST, HandlePostSnapshot, commonWrapper)},
 	}
 }

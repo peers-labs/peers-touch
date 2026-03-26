@@ -1,130 +1,44 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Typography, Tag, Spin, Badge, message, Tooltip } from 'antd';
+import { Typography, Tag, Spin } from 'antd';
 import { theme } from 'antd';
 import {
   Blocks,
-  Globe,
   Clock,
-  Shield,
-  Wifi,
-  Sparkles,
-  Search,
-  HelpCircle,
-  Wrench,
-  Bot,
   ChevronRight,
-  Power,
-  PowerOff,
 } from 'lucide-react';
-import { api } from '../services/desktop_api';
+import AppletManager from '../applet/AppletManager';
+import type { AppletInfo } from '../applet/AppletManager';
 import { PageHeader } from '../components/PageHeader';
-import type { AppletInfo } from '../services/desktop_api';
 
 const { Text, Paragraph } = Typography;
-
-const APPLET_ICON_MAP: Record<string, { icon: React.ReactNode; gradient: string }> = {
-  Globe: {
-    icon: <Globe size={28} color="#fff" />,
-    gradient: 'linear-gradient(135deg, #0ea5e9, #2563eb)',
-  },
-  Bot: {
-    icon: <Bot size={28} color="#fff" />,
-    gradient: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
-  },
-  Search: {
-    icon: <Search size={28} color="#fff" />,
-    gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
-  },
-  Wrench: {
-    icon: <Wrench size={28} color="#fff" />,
-    gradient: 'linear-gradient(135deg, #10b981, #059669)',
-  },
-  Sparkles: {
-    icon: <Sparkles size={28} color="#fff" />,
-    gradient: 'linear-gradient(135deg, #ec4899, #db2777)',
-  },
-};
-
-function getAppletIcon(name?: string) {
-  const entry = APPLET_ICON_MAP[name || ''];
-  if (entry) return entry;
-  return {
-    icon: <Blocks size={28} color="#fff" />,
-    gradient: 'linear-gradient(135deg, #667eea, #764ba2)',
-  };
-}
-
-const CAP_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
-  search: { label: 'Search', icon: <Search size={11} /> },
-  tools: { label: 'Tools', icon: <Wrench size={11} /> },
-  help: { label: 'Help', icon: <HelpCircle size={11} /> },
-  agents: { label: 'Agents', icon: <Bot size={11} /> },
-};
-
-const PERM_LABELS: Record<string, { label: string; color: string }> = {
-  network: { label: 'Network', color: 'blue' },
-  llm: { label: 'LLM', color: 'purple' },
-  'file:read': { label: 'Files', color: 'green' },
-  'file:write': { label: 'Write', color: 'orange' },
-  shell: { label: 'Shell', color: 'red' },
-  database: { label: 'DB', color: 'cyan' },
-  secrets: { label: 'Secrets', color: 'gold' },
-};
-
-import { hasPage } from '../applets/registry';
 
 export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const [applets, setApplets] = useState<AppletInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const { token } = theme.useToken();
+  const appletManager = AppletManager.getInstance();
 
   const loadApplets = useCallback(async () => {
     try {
-      const data = await api.listApplets();
+      const data = await appletManager.scanApplets();
       setApplets(data);
     } catch {
-      // ignore
+      setApplets([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [appletManager]);
 
   useEffect(() => {
     loadApplets();
   }, [loadApplets]);
 
-  const handleToggle = useCallback(async (id: string, currentStatus: string) => {
-    try {
-      if (currentStatus === 'active') {
-        await api.deactivateApplet(id);
-        message.success('Applet deactivated');
-      } else {
-        await api.activateApplet(id);
-        message.success('Applet activated');
-      }
-      loadApplets();
-    } catch (e: any) {
-      message.error(e.message || 'Operation failed');
-    }
-  }, [loadApplets]);
-
-  const handleOpen = useCallback(async (id: string, currentStatus: string) => {
-    if (currentStatus !== 'active') {
-      try {
-        await api.activateApplet(id);
-        loadApplets();
-      } catch (e: any) {
-        message.error(e.message || 'Failed to activate');
-        return;
-      }
-    }
-    if (hasPage(id) && onNavigate) {
+  const handleOpen = useCallback((id: string) => {
+    if (onNavigate) {
       onNavigate(`applet:${id}`);
-    } else {
-      message.info('This applet does not have a dedicated page yet');
     }
-  }, [loadApplets, onNavigate]);
+  }, [onNavigate]);
 
   if (loading) {
     return (
@@ -154,10 +68,9 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
       >
         {applets.map((info) => (
           <AppletCard
-            key={info.manifest.id}
+            key={info.id}
             info={info}
-            onToggle={() => handleToggle(info.manifest.id, info.status)}
-            onOpen={() => handleOpen(info.manifest.id, info.status)}
+            onOpen={() => handleOpen(info.id)}
           />
         ))}
 
@@ -183,24 +96,19 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
 
 function AppletCard({
   info,
-  onToggle,
   onOpen,
 }: {
   info: AppletInfo;
-  onToggle: () => void;
   onOpen: () => void;
 }) {
   const { token } = theme.useToken();
-  const { manifest, status } = info;
-  const iconData = getAppletIcon(manifest.icon);
-  const isActive = status === 'active';
 
   return (
     <div className="applet-card">
       <div
         style={{
           borderRadius: 16,
-          border: `1px solid ${isActive ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
+          border: `1px solid ${token.colorBorderSecondary}`,
           background: token.colorBgContainer,
           overflow: 'hidden',
           transition: 'all 0.25s ease',
@@ -213,7 +121,7 @@ function AppletCard({
           e.currentTarget.style.transform = 'translateY(-2px)';
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = isActive ? token.colorPrimaryBorder : token.colorBorderSecondary;
+          e.currentTarget.style.borderColor = token.colorBorderSecondary;
           e.currentTarget.style.boxShadow = 'none';
           e.currentTarget.style.transform = 'translateY(0)';
         }}
@@ -222,85 +130,46 @@ function AppletCard({
         <div
           style={{
             height: 3,
-            background: isActive ? iconData.gradient : token.colorBorderSecondary,
+            background: 'linear-gradient(135deg, #667eea, #764ba2)',
             transition: 'background 0.3s',
           }}
         />
 
         <Flexbox style={{ padding: '20px 20px 16px' }} gap={14}>
-          {/* Row 1: Icon + Name + Status + Toggle */}
+          {/* Row 1: Icon + Name + Status */}
           <Flexbox horizontal align="center" gap={14}>
-            {/* Applet icon */}
             <div
               style={{
                 width: 52,
                 height: 52,
                 borderRadius: 14,
-                background: iconData.gradient,
+                background: 'linear-gradient(135deg, #667eea, #764ba2)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0,
-                boxShadow: isActive ? `0 4px 12px rgba(0,0,0,0.12)` : 'none',
-                opacity: isActive ? 1 : 0.6,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                opacity: 1,
                 transition: 'opacity 0.2s, box-shadow 0.2s',
               }}
             >
-              {iconData.icon}
+              <Blocks size={28} color="#fff" />
             </div>
 
             <Flexbox flex={1} style={{ minWidth: 0 }}>
               <Flexbox horizontal align="center" gap={8}>
                 <Text strong style={{ fontSize: 16, lineHeight: 1.3 }}>
-                  {manifest.name}
+                  {info.name}
                 </Text>
                 <Text type="secondary" style={{ fontSize: 11 }}>
-                  v{manifest.version}
+                  v{info.version}
                 </Text>
-                <Badge
-                  status={isActive ? 'success' : 'default'}
-                  text={
-                    <Text
-                      style={{
-                        fontSize: 11,
-                        color: isActive ? token.colorSuccess : token.colorTextQuaternary,
-                      }}
-                    >
-                      {isActive ? 'Active' : 'Inactive'}
-                    </Text>
-                  }
-                />
+                <Tag color="default" style={{ margin: 0 }}>Installed</Tag>
               </Flexbox>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                by {manifest.author}
+                by {info.author}
               </Text>
             </Flexbox>
-
-            {/* Toggle button */}
-            <Tooltip title={isActive ? 'Deactivate' : 'Activate'}>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggle();
-                }}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 10,
-                  border: `1px solid ${isActive ? token.colorErrorBorder : token.colorSuccessBorder}`,
-                  background: isActive ? token.colorErrorBg : token.colorSuccessBg,
-                  color: isActive ? token.colorError : token.colorSuccess,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  transition: 'all 0.2s',
-                }}
-              >
-                {isActive ? <PowerOff size={16} /> : <Power size={16} />}
-              </button>
-            </Tooltip>
           </Flexbox>
 
           {/* Row 2: Description */}
@@ -309,14 +178,11 @@ function AppletCard({
             style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}
             ellipsis={{ rows: 2 }}
           >
-            {manifest.description}
+            {info.description}
           </Paragraph>
 
-          {/* Row 3: Capabilities + Permissions */}
           <Flexbox horizontal align="center" gap={6} wrap="wrap">
-            {manifest.capabilities?.map((cap) => {
-              const capMeta = CAP_LABELS[cap];
-              if (!capMeta) return null;
+            {info.capabilities?.map((cap) => {
               return (
                 <Tag
                   key={cap}
@@ -331,21 +197,15 @@ function AppletCard({
                     margin: 0,
                   }}
                 >
-                  {capMeta.icon}
-                  {capMeta.label}
+                  {cap}
                 </Tag>
               );
             })}
-
-            <div style={{ width: 1, height: 14, background: token.colorBorderSecondary, margin: '0 2px' }} />
-
-            {manifest.permissions?.map((perm) => {
-              const permMeta = PERM_LABELS[perm];
-              if (!permMeta) return null;
+            {info.permissions?.map((perm) => {
               return (
                 <Tag
                   key={perm}
-                  color={permMeta.color}
+                  color="blue"
                   style={{
                     fontSize: 11,
                     lineHeight: '20px',
@@ -357,14 +217,12 @@ function AppletCard({
                     margin: 0,
                   }}
                 >
-                  {perm === 'network' ? <Wifi size={10} /> : <Shield size={10} />}
-                  {permMeta.label}
+                  {perm}
                 </Tag>
               );
             })}
           </Flexbox>
 
-          {/* Row 4: Footer — Last used + Open */}
           <Flexbox
             horizontal
             align="center"
@@ -377,7 +235,7 @@ function AppletCard({
             <Flexbox horizontal align="center" gap={6}>
               <Clock size={12} style={{ color: token.colorTextQuaternary }} />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                Last used 2 hours ago
+                Runtime: /applets-dist/{info.id}
               </Text>
             </Flexbox>
 

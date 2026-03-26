@@ -12,7 +12,7 @@ type Message struct {
 	TopicID         *string         `gorm:"type:varchar(36);index:idx_messages_topic_id,priority:1"`
 	ModelName       *string         `gorm:"type:varchar(100)"`
 	Role            string          `gorm:"not null;type:varchar(20);check:role in ('user', 'assistant', 'system')"`
-	Content         *string         `gorm:"type:text;index:idx_messages_content_search,priority:1,type:gin"`
+	Content         *string         `gorm:"type:text;index:idx_messages_content_search,priority:1"`
 	ErrorJSON       json.RawMessage `gorm:"type:jsonb;column:error_json"`
 	AttachmentsJSON json.RawMessage `gorm:"type:jsonb;column:attachments_json"`
 	ImagesJSON      json.RawMessage `gorm:"type:jsonb;column:images_json"`
@@ -31,5 +31,5 @@ type Message struct {
 
 // TableName 设置表名
 func (Message) TableName() string {
-	return "ai_chat.messages"
+	return "ai_chat_messages"
 }
