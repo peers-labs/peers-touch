@@ -12,14 +12,23 @@
   "app": {
     "windows": [
       {
-        "title": "",
-        "decorations": false,
+        "title": "Peers Touch Desktop",
+        "decorations": true,
         "width": 1200,
         "height": 800
       }
     ],
     "security": {
       "csp": null
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "peers-touch"
+        ]
+      }
     }
   },
   "bundle": {

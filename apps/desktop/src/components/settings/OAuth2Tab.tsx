@@ -213,7 +213,7 @@ function UnsignedAccountCard({
         <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
           <Text strong style={{ fontSize: 14 }}>{provider.name}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            Ready to sign in
+            使用 {provider.name} 登录
           </Text>
         </Flexbox>
         <Button
@@ -223,7 +223,7 @@ function UnsignedAccountCard({
           onClick={onSignIn}
           style={{ background: providerColor, flexShrink: 0 }}
         >
-          {signInLabel || 'Sign in'}
+          {signInLabel || `使用${provider.name}登录`}
         </Button>
       </Flexbox>
     </Flexbox>
