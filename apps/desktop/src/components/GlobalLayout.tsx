@@ -168,6 +168,7 @@ function AuthStatusIndicator() {
 export function GlobalLayout({ sideNav, children }: GlobalLayoutProps) {
   const { token } = theme.useToken();
   const isTauriDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const showCustomWindowChrome = !isTauriDesktop;
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
@@ -212,72 +213,74 @@ export function GlobalLayout({ sideNav, children }: GlobalLayoutProps) {
 
   return (
     <Flexbox style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      <Flexbox
-        horizontal
-        align="center"
-        justify="space-between"
-        className="window-drag"
-        data-tauri-drag-region
-        style={{
-          height: 40,
-          minHeight: 40,
-          padding: '0 8px 0 12px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgContainer,
-          zIndex: 10,
-          userSelect: 'none',
-        }}
-      >
-        <div style={{ flex: 1, height: '100%' }} data-tauri-drag-region />
-        <Flexbox horizontal align="center" gap={10} className="window-no-drag">
-          <AuthStatusIndicator />
-          <OnlineIndicator />
-          <Flexbox horizontal align="center" gap={4}>
-            <Flexbox
-              align="center"
-              justify="center"
-              onClick={onMinimize}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 6,
-                cursor: 'pointer',
-                color: token.colorTextSecondary,
-              }}
-            >
-              <Minus size={14} />
-            </Flexbox>
-            <Flexbox
-              align="center"
-              justify="center"
-              onClick={onToggleMaximize}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 6,
-                cursor: 'pointer',
-                color: token.colorTextSecondary,
-              }}
-            >
-              <Square size={12} fill={isMaximized ? token.colorTextSecondary : 'none'} />
-            </Flexbox>
-            <Flexbox
-              align="center"
-              justify="center"
-              onClick={onClose}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 6,
-                cursor: 'pointer',
-                color: token.colorTextSecondary,
-              }}
-            >
-              <X size={14} />
+      {showCustomWindowChrome && (
+        <Flexbox
+          horizontal
+          align="center"
+          justify="space-between"
+          className="window-drag"
+          data-tauri-drag-region
+          style={{
+            height: 40,
+            minHeight: 40,
+            padding: '0 8px 0 12px',
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            background: token.colorBgContainer,
+            zIndex: 10,
+            userSelect: 'none',
+          }}
+        >
+          <div style={{ flex: 1, height: '100%' }} data-tauri-drag-region />
+          <Flexbox horizontal align="center" gap={10} className="window-no-drag">
+            <AuthStatusIndicator />
+            <OnlineIndicator />
+            <Flexbox horizontal align="center" gap={4}>
+              <Flexbox
+                align="center"
+                justify="center"
+                onClick={onMinimize}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  color: token.colorTextSecondary,
+                }}
+              >
+                <Minus size={14} />
+              </Flexbox>
+              <Flexbox
+                align="center"
+                justify="center"
+                onClick={onToggleMaximize}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  color: token.colorTextSecondary,
+                }}
+              >
+                <Square size={12} fill={isMaximized ? token.colorTextSecondary : 'none'} />
+              </Flexbox>
+              <Flexbox
+                align="center"
+                justify="center"
+                onClick={onClose}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  color: token.colorTextSecondary,
+                }}
+              >
+                <X size={14} />
+              </Flexbox>
             </Flexbox>
           </Flexbox>
         </Flexbox>
-      </Flexbox>
+      )}
 
       <Flexbox horizontal flex={1} style={{ overflow: 'hidden' }}>
         {sideNav}

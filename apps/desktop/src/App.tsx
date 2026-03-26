@@ -215,6 +215,30 @@ function App() {
     return () => window.removeEventListener('agentbox:navigate', handler);
   }, [setPage]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void (async () => {
+      const { onOpenUrl } = await import('@tauri-apps/plugin-deep-link');
+      unlisten = await onOpenUrl(async (urls) => {
+        for (const url of urls) {
+          const consumed = await api.oauth2ConsumeCallbackFromUrl(url);
+          if (consumed && !disposed) {
+            window.history.replaceState({}, '', '#/settings');
+            window.dispatchEvent(new Event('oauth2-callback-complete'));
+          }
+        }
+      });
+    })();
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
   const handleCreateAgent = useCallback(() => {
     setEditingAgent(null);
     setAgentDrawerOpen(true);

@@ -9,6 +9,7 @@ use state::AppState;
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             interface::tauri_commands::meta_contract_version,
