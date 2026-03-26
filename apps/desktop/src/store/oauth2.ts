@@ -135,13 +135,31 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
   },
 
   startAuth: async (id, environment) => {
-    const { auth_url } = await api.oauth2Authorize(id, environment);
+    const returnTo = typeof window !== 'undefined' ? window.location.href : undefined;
+    const { auth_url } = await api.oauth2Authorize(id, environment, returnTo);
     const w = window.open(auth_url, '_blank', 'width=600,height=700');
     return new Promise<void>((resolve) => {
-      const interval = setInterval(() => {
-        if (!w || w.closed) {
+      const interval = setInterval(async () => {
+        if (!w) {
           clearInterval(interval);
-          get().loadAll().then(resolve);
+          await get().loadAll();
+          resolve();
+          return;
+        }
+        try {
+          const consumed = await api.oauth2ConsumeCallbackFromUrl(w.location.href);
+          if (consumed) {
+            w.close();
+            clearInterval(interval);
+            await get().loadAll();
+            resolve();
+            return;
+          }
+        } catch {}
+        if (w.closed) {
+          clearInterval(interval);
+          await get().loadAll();
+          resolve();
         }
       }, 1000);
     });

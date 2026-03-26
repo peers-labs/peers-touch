@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
-import { Terminal as XTerm } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
-import '@xterm/xterm/css/xterm.css';
+import { Terminal as XTerm } from 'xterm';
+import { FitAddon } from 'xterm-addon-fit';
+import { WebLinksAddon } from 'xterm-addon-web-links';
+import 'xterm/css/xterm.css';
 
 export interface TerminalHandle {
   writeCommand: (cmd: string) => void;
@@ -146,7 +146,7 @@ export const TerminalPanel = forwardRef<TerminalHandle, TerminalProps>(
         term.writeln('\r\n\x1b[31mWebSocket error.\x1b[0m');
       };
 
-      const disposable = term.onData((data) => {
+      const disposable = term.onData((data: string) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(data);
         }

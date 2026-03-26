@@ -22,5 +22,5 @@ type Attachment struct {
 
 // TableName 设置表名
 func (Attachment) TableName() string {
-	return "ai_chat.attachments"
+	return "ai_chat_attachments"
 }

@@ -15,9 +15,9 @@ import {
   Settings,
   ChevronDown,
 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from './api';
 import { TerminalPanel, type TerminalHandle } from './Terminal';
-import { BuilderPanel } from '../../components/BuilderPanel';
+import { BuilderPanel } from './components/BuilderPanel';
 import { ConnectDialog } from './ConnectDialog';
 import { ServerManager } from './ServerManager';
 import type { Connection, SessionInfo } from './types';
@@ -59,10 +59,7 @@ export function RemoteCLIPage({ onBack, onPin, pinned }: Props) {
 
   const loadConnections = useCallback(async () => {
     try {
-      const data = await api.appletAction<{ connections: Connection[] }>(
-        'remote-cli',
-        'list-connections',
-      );
+      const data = await api.appletAction<{ connections: Connection[] }>('list-connections');
       setConnections(data.connections || []);
     } catch {
       // ignore
@@ -74,13 +71,10 @@ export function RemoteCLIPage({ onBack, onPin, pinned }: Props) {
 
     (async () => {
       try {
-        const data = await api.appletAction<{ sessions: SessionInfo[] }>(
-          'remote-cli',
-          'list-sessions',
-        );
+        const data = await api.appletAction<{ sessions: SessionInfo[] }>('list-sessions');
         const sessions = data.sessions || [];
         if (sessions.length > 0) {
-          const recovered: Tab[] = sessions.map((s) => {
+          const recovered: Tab[] = sessions.map((s: SessionInfo) => {
             tabCounter++;
             return {
               id: `tab-${tabCounter}`,
@@ -102,11 +96,7 @@ export function RemoteCLIPage({ onBack, onPin, pinned }: Props) {
     const params: Record<string, unknown> = { connection_id: connId };
     if (passphrase) params.passphrase = passphrase;
 
-    const data = await api.appletAction<{ session: SessionInfo }>(
-      'remote-cli',
-      'create-session',
-      params,
-    );
+    const data = await api.appletAction<{ session: SessionInfo }>('create-session', params);
     tabCounter++;
     const tab: Tab = {
       id: `tab-${tabCounter}`,
@@ -136,7 +126,7 @@ export function RemoteCLIPage({ onBack, onPin, pinned }: Props) {
   const handleSaveConnection = useCallback(
     async (connData: Partial<Connection> & { secret?: string }): Promise<Connection> => {
       if (connData.id) {
-        await api.appletAction('remote-cli', 'update-connection', {
+        await api.appletAction('update-connection', {
           id: connData.id,
           name: connData.name,
           host: connData.host,
@@ -149,10 +139,7 @@ export function RemoteCLIPage({ onBack, onPin, pinned }: Props) {
         await loadConnections();
         return connData as Connection;
       }
-      const result = await api.appletAction<{ connection: Connection }>(
-        'remote-cli',
-        'add-connection',
-        {
+      const result = await api.appletAction<{ connection: Connection }>('add-connection', {
           name: connData.name,
           host: connData.host,
           port: connData.port || 22,
@@ -173,7 +160,7 @@ export function RemoteCLIPage({ onBack, onPin, pinned }: Props) {
       const tab = tabs.find((t) => t.id === tabId);
       if (!tab) return;
       try {
-        await api.appletAction('remote-cli', 'close-session', {
+        await api.appletAction('close-session', {
           session_id: tab.session.id,
         });
       } catch {
@@ -214,7 +201,7 @@ export function RemoteCLIPage({ onBack, onPin, pinned }: Props) {
       const tab = tabs.find((t) => t.id === tabId);
       if (!tab) return;
       try {
-        await api.appletAction('remote-cli', 'resize', {
+        await api.appletAction('resize', {
           session_id: tab.session.id,
           cols,
           rows,

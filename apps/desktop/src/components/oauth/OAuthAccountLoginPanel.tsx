@@ -4,7 +4,6 @@ import { Button, Popconfirm, Tag, Tooltip, Typography, message, theme } from 'an
 import { Clock, LogIn, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
 import { useOAuth2Store } from '../../store/oauth2';
 import { OAuth2ConnectModal } from '../settings/OAuth2ConnectModal';
-import { LarkSimulateLoginModal } from '../settings/LarkSimulateLoginModal';
 import type { OAuth2Connection, OAuth2ProviderSummary } from '../../services/desktop_api';
 import { PlatformLogo } from '../common/PlatformLogo';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -175,18 +174,13 @@ function UnsignedAccountCard({
   provider,
   onSignIn,
   signInLabel,
-  tip,
 }: {
   provider: OAuth2ProviderSummary;
   onSignIn: () => void;
   signInLabel?: string;
-  tip?: string;
 }) {
   const { token } = theme.useToken();
   const providerColor = provider.color || token.colorPrimary;
-  const hasCreds = provider.has_credentials;
-  const isDeveloping = provider.status === 'coming_soon';
-  const effectiveTip = isDeveloping ? 'Developing' : tip;
 
   return (
     <Flexbox
@@ -195,13 +189,13 @@ function UnsignedAccountCard({
         borderRadius: 12,
         border: `1px dashed ${token.colorBorderSecondary}`,
         background: token.colorFillQuaternary,
-        minWidth: 280,
-        maxWidth: 340,
-        flex: '1 1 280px',
+        minWidth: 220,
+        maxWidth: 260,
+        flex: '1 1 220px',
       }}
       gap={10}
     >
-      <Flexbox horizontal align="center" gap={12}>
+      <Flexbox horizontal align="center" justify="space-between" gap={12}>
         <Flexbox
           align="center"
           justify="center"
@@ -214,32 +208,18 @@ function UnsignedAccountCard({
         </Flexbox>
         <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
           <Text strong style={{ fontSize: 14 }}>{provider.name}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {isDeveloping ? 'Developing' : hasCreds ? 'Not signed in' : 'Credentials not configured'}
-          </Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>Ready to sign in</Text>
         </Flexbox>
-      </Flexbox>
-
-      {hasCreds && !isDeveloping ? (
         <Button
           size="small"
           type="primary"
           icon={<LogIn size={14} />}
           onClick={onSignIn}
-          style={{ alignSelf: 'flex-start', background: providerColor }}
+          style={{ background: providerColor, flexShrink: 0 }}
         >
-          {signInLabel || 'Sign In'}
+          {signInLabel || 'Sign in'}
         </Button>
-      ) : (
-        <Text type="secondary" style={{ fontSize: 11, paddingLeft: 4 }}>
-          {isDeveloping ? 'This provider is under development.' : 'Configure credentials in Settings - Connections first.'}
-        </Text>
-      )}
-      {effectiveTip && (
-        <Text type="secondary" style={{ fontSize: 11, paddingLeft: 4 }}>
-          {effectiveTip}
-        </Text>
-      )}
+      </Flexbox>
     </Flexbox>
   );
 }
@@ -252,7 +232,6 @@ interface Props {
 export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChange }: Props) {
   const { providers, connections, loadAll, disconnect, refreshToken } = useOAuth2Store();
   const [signInProvider, setSignInProvider] = useState<OAuth2ProviderSummary | null>(null);
-  const [simulateOpen, setSimulateOpen] = useState(false);
 
   useEffect(() => {
     loadAll();
@@ -265,19 +244,9 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
   }, [connections]);
 
   const oauth2AccountProviders = useMemo(
-    () => providers.filter(p => p.id !== 'lark_simulate'),
+    () => providers.filter(p => p.id === 'github' || p.id === 'google'),
     [providers],
   );
-  const simulateAccountProviders = useMemo(() => {
-    const lark = providers.find(p => p.id === 'lark');
-    if (!lark) return [];
-    return [{
-      ...lark,
-      id: 'lark_simulate',
-      has_credentials: true,
-      description: 'Scan QR code for web simulated login',
-    } as OAuth2ProviderSummary];
-  }, [providers]);
 
   useEffect(() => {
     if (!onAuthStateChange) return;
@@ -286,10 +255,6 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
   }, [connections, onAuthStateChange]);
 
   const handleSignIn = (provider: OAuth2ProviderSummary) => {
-    if (provider.id === 'lark_simulate') {
-      setSimulateOpen(true);
-      return;
-    }
     setSignInProvider(provider);
   };
 
@@ -315,7 +280,7 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
     <Flexbox gap={16} style={{ flexShrink: 0 }}>
       {showDescription && (
         <Text type="secondary" style={{ fontSize: 12 }}>
-          OAuth2 identities for your account. You can skip profile completion and continue.
+          Sign in with GitHub or Google. You can continue and complete profile later.
         </Text>
       )}
 
@@ -340,40 +305,7 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
                 key={provider.id}
                 provider={provider}
                 onSignIn={() => handleSignIn(provider)}
-              />
-            );
-          })}
-        </Flexbox>
-      </Flexbox>
-
-      <Flexbox gap={8}>
-        <Flexbox gap={2}>
-          <Text strong style={{ fontSize: 14, paddingLeft: 2 }}>Simulated Login</Text>
-          <Text type="secondary" style={{ fontSize: 11, paddingLeft: 2 }}>
-            Tip: Scan QR for quick onboarding in development; use OAuth 2 for long-term stable integration.
-          </Text>
-        </Flexbox>
-        <Flexbox horizontal gap={12} style={{ flexWrap: 'wrap' }}>
-          {simulateAccountProviders.map(provider => {
-            const conn = connectionMap[provider.id];
-            if (isValidUserAccount(conn)) {
-              return (
-                <SignedInAccountCard
-                  key={provider.id}
-                  connection={conn}
-                  provider={provider}
-                  onRefresh={() => handleRefresh(provider.id)}
-                  onSignOut={() => handleSignOut(provider.id)}
-                />
-              );
-            }
-            return (
-              <UnsignedAccountCard
-                key={provider.id}
-                provider={provider}
-                onSignIn={() => handleSignIn(provider)}
-                signInLabel="Simulated Login"
-                tip="Scan QR to sign in quickly."
+                signInLabel={conn ? 'Re-connect' : 'Sign in'}
               />
             );
           })}
@@ -385,13 +317,6 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
         open={!!signInProvider}
         onClose={() => {
           setSignInProvider(null);
-          loadAll();
-        }}
-      />
-      <LarkSimulateLoginModal
-        open={simulateOpen}
-        onClose={() => {
-          setSimulateOpen(false);
           loadAll();
         }}
       />

@@ -12,7 +12,7 @@ import {
   Shield,
   Plug,
 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from './api';
 import type { Connection } from './types';
 
 interface SSHConfigHost {
@@ -62,10 +62,7 @@ export function ServerManager({
 
   const loadSSHConfig = useCallback(async () => {
     try {
-      const data = await api.appletAction<{ hosts: SSHConfigHost[] }>(
-        'remote-cli',
-        'parse-ssh-config',
-      );
+      const data = await api.appletAction<{ hosts: SSHConfigHost[] }>('parse-ssh-config');
       setSSHHosts(data.hosts || []);
     } catch {
       // no ssh config
@@ -78,7 +75,7 @@ export function ServerManager({
 
   const handleDelete = async (id: string) => {
     try {
-      await api.appletAction('remote-cli', 'remove-connection', { id });
+      await api.appletAction('remove-connection', { id });
       message.success('Connection removed');
       onRefresh();
     } catch (e: any) {
@@ -89,7 +86,7 @@ export function ServerManager({
   const handleImport = async (host: SSHConfigHost) => {
     setImporting(true);
     try {
-      await api.appletAction('remote-cli', 'add-connection', {
+      await api.appletAction('add-connection', {
         name: host.alias,
         host: host.hostname,
         port: host.port || 22,
@@ -117,7 +114,7 @@ export function ServerManager({
     let count = 0;
     for (const host of toImport) {
       try {
-        await api.appletAction('remote-cli', 'add-connection', {
+        await api.appletAction('add-connection', {
           name: host.alias,
           host: host.hostname,
           port: host.port || 22,

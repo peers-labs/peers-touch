@@ -1,5 +1,5 @@
 import { Terminal } from 'lucide-react';
-import { registerApplet } from '../registry';
+import { registerApplet } from '@peers-touch/applet-sdk';
 import { RemoteCLISettings } from './Settings';
 import { RemoteCLIPage } from './Page';
 

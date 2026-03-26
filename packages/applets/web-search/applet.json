@@ -1,4 +1,5 @@
 {
+  "manifestVersion": 2,
   "id": "web-search",
   "name": "Web Search",
   "version": "1.0.0",
@@ -6,6 +7,14 @@
   "author": "Peers Touch",
   "icon": "assets/icon.png",
   "main": "index.html",
+  "load": {
+    "type": "lynx",
+    "entry": "index.html"
+  },
+  "bridge": {
+    "version": 2,
+    "protocol": "peers-touch.applet.bridge.v2"
+  },
   "permissions": [
     "storage",
     "network",
