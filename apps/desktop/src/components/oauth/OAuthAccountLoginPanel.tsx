@@ -208,7 +208,7 @@ function UnsignedAccountCard({
         </Flexbox>
         <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
           <Text strong style={{ fontSize: 14 }}>{provider.name}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>Ready to sign in</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>使用 {provider.name} 登录</Text>
         </Flexbox>
         <Button
           size="small"
@@ -217,7 +217,7 @@ function UnsignedAccountCard({
           onClick={onSignIn}
           style={{ background: providerColor, flexShrink: 0 }}
         >
-          {signInLabel || 'Sign in'}
+          {signInLabel || `使用${provider.name}登录`}
         </Button>
       </Flexbox>
     </Flexbox>
@@ -280,7 +280,7 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
     <Flexbox gap={16} style={{ flexShrink: 0 }}>
       {showDescription && (
         <Text type="secondary" style={{ fontSize: 12 }}>
-          Sign in with GitHub or Google. You can continue and complete profile later.
+          请选择一种方式登录，你也可以稍后补充资料。
         </Text>
       )}
 
