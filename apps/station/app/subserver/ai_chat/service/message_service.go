@@ -49,8 +49,8 @@ func GetMessage(ctx context.Context, messageID string) (*model.ChatMessage, erro
 		return nil, errcode.New(errcode.AIChatUnauthorized, http.StatusUnauthorized, "user id not found in context", nil)
 	}
 	var row dbModel.Message
-	if err := rds.Joins("JOIN ai_chat.sessions ON ai_chat.sessions.id = ai_chat.messages.session_id").
-		Where("ai_chat.messages.id = ? AND ai_chat.sessions.user_id = ?", messageID, subject.ID).
+	if err := rds.Joins("JOIN ai_chat_sessions ON ai_chat_sessions.id = ai_chat_messages.session_id").
+		Where("ai_chat_messages.id = ? AND ai_chat_sessions.user_id = ?", messageID, subject.ID).
 		First(&row).Error; err != nil {
 		return nil, errcode.New(errcode.AIChatNotFound, http.StatusNotFound, "message not found", err)
 	}
@@ -66,7 +66,7 @@ func DeleteMessage(ctx context.Context, messageID string) error {
 	if subject == nil || subject.ID == "" {
 		return errcode.New(errcode.AIChatUnauthorized, http.StatusUnauthorized, "user id not found in context", nil)
 	}
-	if err := rds.Where("id IN (SELECT m.id FROM ai_chat.messages m JOIN ai_chat.sessions s ON s.id = m.session_id WHERE m.id = ? AND s.user_id = ?)", messageID, subject.ID).
+	if err := rds.Where("id IN (SELECT m.id FROM ai_chat_messages m JOIN ai_chat_sessions s ON s.id = m.session_id WHERE m.id = ? AND s.user_id = ?)", messageID, subject.ID).
 		Delete(&dbModel.Message{}).Error; err != nil {
 		return errcode.New(errcode.AIChatInternal, http.StatusInternalServerError, "failed to delete message", err)
 	}

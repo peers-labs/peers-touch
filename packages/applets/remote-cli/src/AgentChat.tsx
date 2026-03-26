@@ -3,8 +3,8 @@ import { Flexbox } from 'react-layout-kit';
 import { Markdown } from '@lobehub/ui';
 import { theme, Tag } from 'antd';
 import { Play, Bot, User } from 'lucide-react';
-import { api } from '../../services/api';
-import { MessageComposer } from '../../components/MessageComposer';
+import { api } from './api';
+import { MessageComposer } from './components/MessageComposer';
 import type { AgentMessage, AgentResponse } from './types';
 
 interface AgentChatProps {
@@ -42,7 +42,7 @@ export function AgentChat({ sessionId, onRunCommand }: AgentChatProps) {
           content: m.role === 'assistant' ? m.content : m.content,
         }));
 
-        const resp = await api.appletAction<AgentResponse>('remote-cli', 'agent-chat', {
+        const resp = await api.appletAction<AgentResponse>('agent-chat', {
           session_id: sessionId || '',
           message: text,
           history,

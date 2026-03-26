@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Avatar, Markdown } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
@@ -60,7 +61,7 @@ function MiniButton({
   title,
   onClick,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   onClick: () => void;
 }) {

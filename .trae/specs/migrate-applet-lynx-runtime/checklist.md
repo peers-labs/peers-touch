@@ -1,0 +1,10 @@
+- [x] 不再存在 iframe 运行 Applet 的代码路径
+- [x] 不再存在基于 postMessage 的旧 applet 调用协议路径
+- [x] Desktop Applet 运行时由 Lynx Host 唯一托管
+- [x] `packages/applets` 成为唯一运行时产物来源
+- [x] applet.json/index.json 完成 v2 schema 校验并可拒载非法产物
+- [x] Rust 侧 Capability Gateway 已接管能力调用与权限校验
+- [x] 所有能力调用具备 request_id 与审计日志记录
+- [x] 未声明权限的能力调用会被强制拒绝
+- [x] Applet pin/open 主流程在新架构下可正常工作
+- [x] 旧链路清理后 desktop 编译与关键页面回归通过

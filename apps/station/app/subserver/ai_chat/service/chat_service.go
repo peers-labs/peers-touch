@@ -49,9 +49,9 @@ func completeChatOnce(ctx context.Context, req *model.ChatCompletionRequest, use
 	now := time.Now()
 	contextMessages := make([]*model.ChatMessage, 0, 7)
 	var history []dbModel.Message
-	if err := rds.Joins("JOIN ai_chat.sessions ON ai_chat.sessions.id = ai_chat.messages.session_id").
-		Where("ai_chat.messages.session_id = ? AND ai_chat.sessions.user_id = ?", req.GetSessionId(), userID).
-		Order("ai_chat.messages.created_at desc").
+	if err := rds.Joins("JOIN ai_chat_sessions ON ai_chat_sessions.id = ai_chat_messages.session_id").
+		Where("ai_chat_messages.session_id = ? AND ai_chat_sessions.user_id = ?", req.GetSessionId(), userID).
+		Order("ai_chat_messages.created_at desc").
 		Limit(6).
 		Find(&history).Error; err == nil {
 		for i := len(history) - 1; i >= 0; i-- {

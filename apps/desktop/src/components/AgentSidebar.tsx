@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, SearchBar } from '@lobehub/ui';
 import {
@@ -358,7 +359,7 @@ function NavItem({
   token,
   style,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   onClick?: () => void;
   active?: boolean;

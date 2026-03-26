@@ -20,6 +20,7 @@ export interface SidebarEntry {
 export interface SettingsEntry {
   order: number;
   label?: string;
+  tooltip?: string;
 }
 
 export interface ModuleFrontend {

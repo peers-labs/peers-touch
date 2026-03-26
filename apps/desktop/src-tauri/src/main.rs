@@ -4,7 +4,7 @@ mod error;
 mod interface;
 mod state;
 
-use interface::tauri_commands::{admin, agents, applets, auth, channels, chat, cron, mcp, memory, model_config, models, notebook, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
+use interface::tauri_commands::{account, admin, agents, applets, auth, channels, chat, cron, mcp, memory, model_config, models, notebook, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
 use state::AppState;
 
 fn main() {
@@ -131,6 +131,7 @@ fn main() {
             applets::applets_get_config,
             applets::applets_set_config,
             applets::applets_action,
+            applets::applets_invoke,
             mcp::mcp_list_servers,
             mcp::mcp_get_server,
             mcp::mcp_create_server,
@@ -170,6 +171,7 @@ fn main() {
             oauth2::oauth2_get_credential_info,
             oauth2::oauth2_set_credentials,
             oauth2::oauth2_authorize,
+            oauth2::oauth2_handle_callback,
             oauth2::oauth2_list_connections,
             oauth2::oauth2_get_connection,
             oauth2::oauth2_disconnect,
@@ -177,6 +179,10 @@ fn main() {
             oauth2::oauth2_call_resource,
             oauth2::oauth2_reload,
             oauth2::oauth2_get_page,
+            account::account_list,
+            account::account_get_active,
+            account::account_switch,
+            account::account_upsert_oauth,
             memory::memory_list,
             memory::memory_get,
             memory::memory_delete,

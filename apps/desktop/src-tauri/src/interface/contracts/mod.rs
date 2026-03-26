@@ -322,6 +322,34 @@ pub struct OAuthSetCredentialsInput {
 pub struct OAuthAuthorizeInput {
     pub id: String,
     pub environment: Option<String>,
+    pub return_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuthCallbackInput {
+    pub provider: String,
+    pub provider_user_id: String,
+    pub username: Option<String>,
+    pub display_name: Option<String>,
+    pub email: Option<String>,
+    pub avatar_url: Option<String>,
+    pub profile_url: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountIdInput {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountUpsertOAuthInput {
+    pub provider: String,
+    pub provider_user_id: String,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub avatar_url: Option<String>,
+    pub profile_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -420,6 +448,14 @@ pub struct AppletConfigSetInput {
 pub struct AppletActionInput {
     pub id: String,
     pub action: String,
+    pub params: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletInvokeInput {
+    pub id: String,
+    pub capability: String,
+    pub action: Option<String>,
     pub params: Option<serde_json::Value>,
 }
 

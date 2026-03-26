@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, DraggablePanel, Markdown } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
@@ -481,7 +482,7 @@ function QuickAction({
   label,
   onClick,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   onClick: () => void;
 }) {

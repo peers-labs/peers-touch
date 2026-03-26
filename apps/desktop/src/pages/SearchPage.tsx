@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { SearchBar } from '@lobehub/ui';
 import { Empty, Spin, Tag, Typography } from 'antd';
@@ -33,7 +34,7 @@ function useDebounce(callback: (value: string) => void, delay: number) {
 
 const { Text, Paragraph, Title } = Typography;
 
-const ICON_MAP: Record<string, React.ReactNode> = {
+const ICON_MAP: Record<string, ReactNode> = {
   MessageSquare: <MessageSquare size={16} />,
   MessagesSquare: <MessagesSquare size={16} />,
   Wrench: <Wrench size={16} />,
@@ -50,7 +51,7 @@ function getIcon(name?: string) {
 }
 
 function getSmallIcon(name?: string) {
-  const map: Record<string, React.ReactNode> = {
+  const map: Record<string, ReactNode> = {
     MessageSquare: <MessageSquare size={14} />,
     MessagesSquare: <MessagesSquare size={14} />,
     Wrench: <Wrench size={14} />,
@@ -67,7 +68,7 @@ function getSmallIcon(name?: string) {
 // ── Reusable Search Tab ──────────────────────────────────────────────
 
 interface SearchTabLabelProps {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   count?: number;
   loading?: boolean;

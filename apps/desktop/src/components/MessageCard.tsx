@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tag } from 'antd';
 import { theme } from 'antd';
@@ -25,14 +26,14 @@ interface Props {
   onNavigate?: (uri: string) => void;
 }
 
-const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
+const statusConfig: Record<string, { color: string; icon: ReactNode; label: string }> = {
   ok: { color: 'success', icon: <CheckCircle2 size={14} />, label: 'Success' },
   error: { color: 'error', icon: <XCircle size={14} />, label: 'Error' },
   info: { color: 'processing', icon: <Info size={14} />, label: 'Info' },
   warning: { color: 'warning', icon: <AlertTriangle size={14} />, label: 'Warning' },
 };
 
-const typeLabels: Record<string, { icon: React.ReactNode; label: string }> = {
+const typeLabels: Record<string, { icon: ReactNode; label: string }> = {
   'cron-run': { icon: <Clock size={14} />, label: 'Cron Run' },
   'channel-sent': { icon: <CheckCircle2 size={14} />, label: 'Delivered' },
   system: { icon: <Info size={14} />, label: 'System' },

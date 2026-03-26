@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const WEB_OAUTH_CONNECTIONS_KEY = 'pt.desktop.web.oauth.connections';
+const WEB_ACCOUNT_STATE_KEY = 'pt.desktop.web.account.identity.state';
 
 interface OAuthWebProviderConfig {
   id: string;
@@ -64,6 +65,53 @@ async function invokeRustCommand<TInput, TData>(
       },
     };
   }
+}
+
+function readWebAccountState(): AccountIdentityState {
+  try {
+    const raw = localStorage.getItem(WEB_ACCOUNT_STATE_KEY);
+    if (!raw) return { accounts: [] };
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.accounts)) return { accounts: [] };
+    return {
+      active_account_id: typeof parsed.active_account_id === 'string' ? parsed.active_account_id : undefined,
+      accounts: parsed.accounts as AccountIdentity[],
+    };
+  } catch {
+    return { accounts: [] };
+  }
+}
+
+function writeWebAccountState(state: AccountIdentityState) {
+  try {
+    localStorage.setItem(WEB_ACCOUNT_STATE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+function upsertWebAccountFromOAuth(input: AccountUpsertOAuthInput): AccountIdentityState {
+  const state = readWebAccountState();
+  const accountId = `${input.provider}:${input.provider_user_id}`;
+  const now = new Date().toISOString();
+  const nextName = input.name || input.provider_user_id;
+  const idx = state.accounts.findIndex((item) => item.id === accountId);
+  const next: AccountIdentity = {
+    id: accountId,
+    provider: input.provider,
+    provider_user_id: input.provider_user_id,
+    name: nextName,
+    email: input.email || '',
+    avatar_url: input.avatar_url || '',
+    profile_url: input.profile_url || '',
+    last_login_at: now,
+  };
+  if (idx >= 0) {
+    state.accounts[idx] = next;
+  } else {
+    state.accounts.push(next);
+  }
+  state.active_account_id = accountId;
+  writeWebAccountState(state);
+  return state;
 }
 
 export class AuthCommandException extends Error {
@@ -138,31 +186,68 @@ function upsertWebOAuthConnection(next: OAuth2Connection) {
   writeWebOAuthConnections(list);
 }
 
-function consumeOAuthCallbackFromLocation() {
-  if (typeof window === 'undefined') return;
-  const url = new URL(window.location.href);
+function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
+  const url = new URL(urlText);
   const provider = url.searchParams.get('provider') || '';
   const providerUserId = url.searchParams.get('provider_user_id') || '';
-  if (!provider || !providerUserId) return;
+  if (!provider || !providerUserId) return null;
+  return {
+    provider,
+    provider_user_id: providerUserId,
+    username: url.searchParams.get('username') || undefined,
+    display_name: url.searchParams.get('display_name') || undefined,
+    email: url.searchParams.get('email') || undefined,
+    avatar_url: url.searchParams.get('avatar_url') || undefined,
+    profile_url: url.searchParams.get('profile_url') || undefined,
+    expires_at: url.searchParams.get('expires_at') || undefined,
+  };
+}
+
+function cleanOAuthCallbackParams(urlText: string): string {
+  const cleanUrl = new URL(urlText);
+  const keys = [
+    'provider',
+    'provider_user_id',
+    'username',
+    'display_name',
+    'avatar_url',
+    'email',
+    'profile_url',
+    'expires_at',
+  ];
+  keys.forEach((key) => cleanUrl.searchParams.delete(key));
+  return cleanUrl.toString();
+}
+
+function consumeOAuthCallbackFromLocation() {
+  if (typeof window === 'undefined') return;
+  const payload = parseOAuthCallbackFromUrl(window.location.href);
+  if (!payload) return;
+  const provider = payload.provider;
+  const providerUserId = payload.provider_user_id;
   const now = new Date().toISOString();
   upsertWebOAuthConnection({
     provider_id: provider,
     provider_name: provider.charAt(0).toUpperCase() + provider.slice(1),
     user_id: providerUserId,
-    user_name: url.searchParams.get('username') || url.searchParams.get('display_name') || providerUserId,
-    email: url.searchParams.get('email') || '',
-    avatar_url: url.searchParams.get('avatar_url') || '',
-    profile_url: '',
+    user_name: payload.username || payload.display_name || providerUserId,
+    email: payload.email || '',
+    avatar_url: payload.avatar_url || '',
+    profile_url: payload.profile_url || '',
     connected_at: now,
-    expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
+    expires_at: payload.expires_at || new Date(Date.now() + 3600 * 1000).toISOString(),
     scopes: [],
     status: 'active',
   });
-
-  const cleanUrl = new URL(window.location.href);
-  const keys = ['provider', 'provider_user_id', 'username', 'display_name', 'avatar_url', 'email'];
-  keys.forEach((key) => cleanUrl.searchParams.delete(key));
-  window.history.replaceState({}, '', cleanUrl.toString());
+  upsertWebAccountFromOAuth({
+    provider,
+    provider_user_id: providerUserId,
+    name: payload.username || payload.display_name || providerUserId,
+    email: payload.email || undefined,
+    avatar_url: payload.avatar_url || undefined,
+    profile_url: payload.profile_url || undefined,
+  });
+  window.history.replaceState({}, '', cleanOAuthCallbackParams(window.location.href));
 }
 
 async function loadWebOAuthProviderConfigs(): Promise<OAuthWebProviderConfig[]> {
@@ -471,6 +556,7 @@ export interface WizardState {
 }
 
 export interface AppletManifest {
+  manifestVersion: 2;
   id: string;
   name: string;
   version: string;
@@ -479,6 +565,14 @@ export interface AppletManifest {
   icon: string;
   capabilities: string[];
   permissions: string[];
+  load: {
+    type: 'lynx';
+    entry: string;
+  };
+  bridge: {
+    version: 2;
+    protocol: 'peers-touch.applet.bridge.v2';
+  };
   config_schema?: Record<string, any>;
 }
 
@@ -903,6 +997,22 @@ export interface UserPreferences {
   stt_language?: string;
   stt_auto_stop?: boolean;
   web_search_enabled?: boolean;
+}
+
+export interface AccountIdentity {
+  id: string;
+  provider: string;
+  provider_user_id: string;
+  name: string;
+  email: string;
+  avatar_url: string;
+  profile_url: string;
+  last_login_at: string;
+}
+
+interface AccountIdentityState {
+  active_account_id?: string;
+  accounts: AccountIdentity[];
 }
 
 export interface SearchProviderInfo {
@@ -1386,6 +1496,31 @@ export interface OAuthSetCredentialsInput {
 export interface OAuthAuthorizeInput {
   id: string;
   environment?: string;
+  return_to?: string;
+}
+
+export interface OAuthCallbackInput {
+  provider: string;
+  provider_user_id: string;
+  username?: string;
+  display_name?: string;
+  email?: string;
+  avatar_url?: string;
+  profile_url?: string;
+  expires_at?: string;
+}
+
+export interface AccountUpsertOAuthInput {
+  provider: string;
+  provider_user_id: string;
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  profile_url?: string;
+}
+
+interface AccountIdInput {
+  id: string;
 }
 
 export interface OAuthResourceInput {
@@ -1468,6 +1603,13 @@ export interface AppletConfigSetInput {
 export interface AppletActionInput {
   id: string;
   action: string;
+  params?: Record<string, any>;
+}
+
+export interface AppletInvokeInput {
+  id: string;
+  capability: string;
+  action?: string;
   params?: Record<string, any>;
 }
 
@@ -1936,6 +2078,40 @@ export const api = {
   setPreferences: (prefs: Partial<UserPreferences>) =>
     invokeRustDataFromStatus<PreferencesSetInput, { ok: boolean }>('preferences_set', { prefs }),
 
+  accountList: () =>
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<void, { accounts: AccountIdentity[]; active_account_id?: string }>('account_list')
+      : Promise.resolve(readWebAccountState()),
+
+  accountGetActive: () =>
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<void, { account: AccountIdentity | null }>('account_get_active').then((r) => r.account)
+      : Promise.resolve((() => {
+          const state = readWebAccountState();
+          return state.accounts.find((item) => item.id === state.active_account_id) || null;
+        })()),
+
+  accountSwitch: (id: string) =>
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<AccountIdInput, { ok: boolean }>('account_switch', { id })
+      : (async () => {
+          const state = readWebAccountState();
+          if (!state.accounts.some((item) => item.id === id)) {
+            throw new Error('account not found');
+          }
+          state.active_account_id = id;
+          writeWebAccountState(state);
+          return { ok: true };
+        })(),
+
+  accountUpsertOAuth: (input: AccountUpsertOAuthInput) =>
+    isTauriRuntime()
+      ? invokeRustDataFromStatus<AccountUpsertOAuthInput, { ok: boolean; active_account_id: string }>('account_upsert_oauth', input)
+      : Promise.resolve((() => {
+          const state = upsertWebAccountFromOAuth(input);
+          return { ok: true, active_account_id: state.active_account_id || '' };
+        })()),
+
   // Notebook / Documents
   listDocuments: (topicId: string) =>
     invokeRustDataFromStatus<TopicIdInput, { documents: NotebookDocument[] }>('notebook_list_documents', { topic_id: topicId }).then(r => r.documents),
@@ -1993,6 +2169,9 @@ export const api = {
 
   appletAction: <T = any>(id: string, action: string, params?: Record<string, any>) =>
     invokeRustDataFromStatus<AppletActionInput, T>('applets_action', { id, action, params }),
+
+  appletInvoke: <T = any>(id: string, capability: string, action?: string, params?: Record<string, any>) =>
+    invokeRustDataFromStatus<AppletInvokeInput, T>('applets_invoke', { id, capability, action, params }),
 
   // ── Skills API ──
 
@@ -2318,20 +2497,77 @@ export const api = {
         })
       : Promise.resolve({ status: 'ok' }),
 
-  oauth2Authorize: (id: string, environment?: string) =>
+  oauth2Authorize: (id: string, environment?: string, returnTo?: string) =>
     isTauriRuntime()
-      ? invokeRustDataFromStatus<OAuthAuthorizeInput, { auth_url: string }>('oauth2_authorize', { id, environment })
+      ? invokeRustDataFromStatus<OAuthAuthorizeInput, { auth_url: string }>('oauth2_authorize', { id, environment, return_to: returnTo })
       : (async () => {
           const providers = await loadWebOAuthProviderConfigs();
           const p = providers.find((item) => item.id === id);
           if (!p) throw new Error('provider not found');
           if ((p.status || 'active') === 'coming_soon') throw new Error('provider developing');
-          if (!p.callback_url) throw new Error('provider callback_url missing');
-          const returnTo = typeof window !== 'undefined' ? window.location.href : '';
-          const startUrl = p.callback_url.replace(/\/callback(\?.*)?$/, '/start');
-          const authUrl = `${startUrl}?site_id=default&return_to=${encodeURIComponent(returnTo)}`;
+        const callbackUrl =
+          p.callback_url ||
+          (id === 'github' || id === 'google'
+            ? `https://peers-touch.vercel.app/api/oauth/${id}/callback`
+            : '');
+        if (!callbackUrl) throw new Error('provider callback_url missing');
+          const resolvedReturnTo = returnTo || (typeof window !== 'undefined' ? window.location.href : '');
+        const startUrl = callbackUrl.replace(/\/callback(\?.*)?$/, '/start');
+          const authUrl = `${startUrl}?site_id=default&return_to=${encodeURIComponent(resolvedReturnTo)}`;
           return { auth_url: authUrl };
         })(),
+
+  oauth2HandleCallback: (input: OAuthCallbackInput) =>
+    isTauriRuntime()
+      ? (async () => {
+          const result = await invokeRustDataFromStatus<OAuthCallbackInput, { status: string }>('oauth2_handle_callback', input);
+          await api.accountUpsertOAuth({
+            provider: input.provider,
+            provider_user_id: input.provider_user_id,
+            name: input.username || input.display_name || input.provider_user_id,
+            email: input.email || undefined,
+            avatar_url: input.avatar_url || undefined,
+            profile_url: input.profile_url || undefined,
+          });
+          return result;
+        })()
+      : (async () => {
+          const provider = input.provider;
+          const providerUserId = input.provider_user_id;
+          const now = new Date().toISOString();
+          upsertWebOAuthConnection({
+            provider_id: provider,
+            provider_name: provider.charAt(0).toUpperCase() + provider.slice(1),
+            user_id: providerUserId,
+            user_name: input.username || input.display_name || providerUserId,
+            email: input.email || '',
+            avatar_url: input.avatar_url || '',
+            profile_url: input.profile_url || '',
+            connected_at: now,
+            expires_at: input.expires_at || new Date(Date.now() + 3600 * 1000).toISOString(),
+            scopes: [],
+            status: 'active',
+          });
+          upsertWebAccountFromOAuth({
+            provider,
+            provider_user_id: providerUserId,
+            name: input.username || input.display_name || providerUserId,
+            email: input.email || undefined,
+            avatar_url: input.avatar_url || undefined,
+            profile_url: input.profile_url || undefined,
+          });
+          return { status: 'ok' };
+        })(),
+
+  oauth2ConsumeCallbackFromUrl: async (urlText: string) => {
+    const payload = parseOAuthCallbackFromUrl(urlText);
+    if (!payload) return false;
+    await api.oauth2HandleCallback(payload);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('account-identity-changed'));
+    }
+    return true;
+  },
 
   oauth2ListConnections: () =>
     isTauriRuntime()

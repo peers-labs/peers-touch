@@ -13,18 +13,18 @@ import {
   NotificationOptions,
   AppletMeta,
   AppletEvent,
-  EventCallback
+  AppletRegistration,
+  EventCallback,
+  LynxNativeBridgeModule,
+  LynxWindow
 } from './types'
 
 class AppletSDK extends EventEmitter {
   private static instance: AppletSDK
   private appletMeta: AppletMeta | null = null
-  private callbackId = 0
-  private callbacks: Map<number, { resolve: Function; reject: Function }> = new Map()
 
   private constructor() {
     super()
-    this.initMessageListener()
   }
 
   public static getInstance(): AppletSDK {
@@ -34,61 +34,49 @@ class AppletSDK extends EventEmitter {
     return AppletSDK.instance
   }
 
-  /**
-   * 初始化消息监听器，接收来自宿主的消息
-   */
-  private initMessageListener(): void {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('message', this.handleMessage.bind(this))
+  private getBridge(): LynxNativeBridgeModule | null {
+    if (typeof window === 'undefined') {
+      return null
     }
+    const hostWindow = window as LynxWindow
+    return (
+      hostWindow.__PEERS_TOUCH_LYNX_BRIDGE__
+      || hostWindow.lynx?.nativeBridge
+      || hostWindow.lynx?.nativeModules?.AppletBridge
+      || hostWindow.LynxNativeBridge
+      || null
+    )
   }
 
-  /**
-   * 处理来自宿主的消息
-   */
-  private handleMessage(event: MessageEvent): void {
-    const { type, callbackId, success, data, error, eventName, eventData } = event.data
-
-    // 处理API调用响应
-    if (type === 'api-response' && callbackId !== undefined) {
-      const callback = this.callbacks.get(callbackId)
-      if (callback) {
-        if (success) {
-          callback.resolve(data)
-        } else {
-          callback.reject(new Error(error || 'Unknown error'))
-        }
-        this.callbacks.delete(callbackId)
+  private normalizeResult(raw: unknown): unknown {
+    if (typeof raw === 'object' && raw !== null && 'ok' in raw) {
+      const bridgeResponse = raw as { ok?: boolean; result?: unknown; error?: { message?: string } }
+      if (bridgeResponse.ok === false) {
+        throw new Error(bridgeResponse.error?.message || 'Native bridge call failed')
+      }
+      if (bridgeResponse.ok === true && 'result' in bridgeResponse) {
+        return bridgeResponse.result
       }
     }
-
-    // 处理事件通知
-    if (type === 'event' && eventName) {
-      this.emit(eventName, eventData)
-    }
+    return raw
   }
 
   /**
    * 调用宿主API
    */
   private invokeAPI(api: string, params: any = {}): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const id = this.callbackId++
-      this.callbacks.set(id, { resolve, reject })
+    const bridge = this.getBridge()
+    if (!bridge || typeof bridge.invoke !== 'function') {
+      return Promise.reject(new Error('Lynx Native Bridge is unavailable'))
+    }
+    return Promise.resolve(bridge.invoke(api, params)).then((raw) => this.normalizeResult(raw))
+  }
 
-      // 发送消息到宿主
-      if (window.parent !== window) {
-        window.parent.postMessage({
-          type: 'api-call',
-          api,
-          params,
-          callbackId: id,
-        }, '*')
-      } else {
-        // 开发环境模拟
-        reject(new Error('Not running in applet environment'))
-      }
-    })
+  /**
+   * 通用调用入口（供高阶封装使用）
+   */
+  public invoke<T = unknown>(api: string, params: Record<string, unknown> = {}): Promise<T> {
+    return this.invokeAPI(api, params)
   }
 
   /**
@@ -134,7 +122,7 @@ class AppletSDK extends EventEmitter {
     if (this.appletMeta) {
       return Promise.resolve(this.appletMeta)
     }
-    return this.invokeAPI('applet.getInfo').then(meta => {
+    return this.invokeAPI('applet.getManifest').then(meta => {
       this.appletMeta = meta
       return meta
     })
@@ -189,6 +177,22 @@ class AppletSDK extends EventEmitter {
 
 // 导出单例
 export const sdk = AppletSDK.getInstance()
+
+declare global {
+  interface Window {
+    __PEERS_TOUCH_APPLET_FRONTEND__?: AppletRegistration
+  }
+}
+
+/**
+ * 前端 Applet 自注册（由宿主读取）
+ */
+export function registerApplet(definition: AppletRegistration): AppletRegistration {
+  if (typeof window !== 'undefined') {
+    window.__PEERS_TOUCH_APPLET_FRONTEND__ = definition
+  }
+  return definition
+}
 
 // 导出所有类型
 export * from './types'

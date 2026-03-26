@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Modal, Radio, Button, Typography, Spin, Result, theme, Space, Alert } from 'antd';
+import { Modal, Button, Typography, Spin, Result, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
-import { LogIn, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
+import { LogIn, CheckCircle2, XCircle } from 'lucide-react';
 import type { OAuth2ProviderSummary } from '../../services/desktop_api';
 import { useOAuth2Store } from '../../store/oauth2';
 import { PlatformLogo } from '../common/PlatformLogo';
 
 const { Text, Title } = Typography;
 
-type AuthState = 'idle' | 'selecting_env' | 'waiting' | 'success' | 'error';
+type AuthState = 'idle' | 'waiting' | 'success' | 'error';
 
 interface Props {
   provider: OAuth2ProviderSummary | null;
@@ -20,31 +20,24 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
   const { token } = theme.useToken();
   const { startAuth, connections } = useOAuth2Store();
   const [authState, setAuthState] = useState<AuthState>('idle');
-  const [selectedEnv, setSelectedEnv] = useState<string>('');
   const [error, setError] = useState('');
 
-  const hasEnvironments = provider && provider.environments && provider.environments.length > 0;
-  const hasCreds = provider?.has_credentials ?? false;
+  const hasRemoteOAuth = provider ? ['github', 'google'].includes(provider.id) : false;
+  const canSignIn = hasRemoteOAuth || (provider?.has_credentials ?? false);
 
   useEffect(() => {
     if (open && provider) {
       setError('');
-      if (hasEnvironments) {
-        const defaultEnv = provider.environments!.find(e => e.default);
-        setSelectedEnv(defaultEnv?.id || provider.environments![0].id);
-        setAuthState('selecting_env');
-      } else {
-        setAuthState('idle');
-      }
+      setAuthState('idle');
     }
-  }, [open, provider, hasEnvironments]);
+  }, [open, provider]);
 
   const handleSignIn = useCallback(async () => {
     if (!provider) return;
     setAuthState('waiting');
     setError('');
     try {
-      await startAuth(provider.id, hasEnvironments ? selectedEnv : undefined);
+      await startAuth(provider.id);
       const updatedConn = useOAuth2Store.getState().connections.find(
         c => c.provider_id === provider.id,
       );
@@ -58,85 +51,12 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
       setAuthState('error');
       setError(err?.message || 'Authorization failed');
     }
-  }, [provider, startAuth, hasEnvironments, selectedEnv]);
+  }, [provider, startAuth]);
 
   if (!provider) return null;
 
   const renderContent = () => {
     switch (authState) {
-      case 'selecting_env':
-        return (
-          <Flexbox gap={20} align="center" style={{ padding: '12px 0' }}>
-            <Flexbox
-              align="center" justify="center"
-              style={{
-                width: 56, height: 56, borderRadius: 14,
-                background: provider.color + '18',
-              }}
-            >
-              <PlatformLogo providerId={provider.id} size={28} color={provider.color} />
-            </Flexbox>
-            <Title level={5} style={{ margin: 0 }}>
-              Sign in with {provider.name}
-            </Title>
-            <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
-              You will be redirected to {provider.name} to authorize Peers Touch.
-            </Text>
-            <Flexbox gap={8} style={{ width: '100%' }}>
-              <Text type="secondary" style={{ fontSize: 13 }}>
-                Select your environment:
-              </Text>
-              <Radio.Group
-                value={selectedEnv}
-                onChange={e => setSelectedEnv(e.target.value)}
-                style={{ width: '100%' }}
-              >
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  {provider.environments!.map(env => (
-                    <Radio
-                      key={env.id}
-                      value={env.id}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: 8,
-                        border: `1px solid ${selectedEnv === env.id ? provider.color : token.colorBorderSecondary}`,
-                        background: selectedEnv === env.id ? provider.color + '08' : 'transparent',
-                        width: '100%',
-                        transition: 'all 0.2s',
-                      }}
-                    >
-                      <Text strong={selectedEnv === env.id}>{env.name}</Text>
-                    </Radio>
-                  ))}
-                </Space>
-              </Radio.Group>
-            </Flexbox>
-            {!hasCreds && (
-              <Alert
-                type="warning"
-                showIcon
-                icon={<AlertTriangle size={14} style={{ marginTop: 2 }} />}
-                message={
-                  <span style={{ fontSize: 12 }}>
-                    Credentials not configured. Configure them in the Connections section first.
-                  </span>
-                }
-                style={{ borderRadius: 8, width: '100%' }}
-              />
-            )}
-            <Button
-              type="primary"
-              size="large"
-              icon={<LogIn size={16} />}
-              onClick={handleSignIn}
-              disabled={!hasCreds}
-              style={{ background: hasCreds ? provider.color : undefined, width: '100%', marginTop: 4 }}
-            >
-              Sign In
-            </Button>
-          </Flexbox>
-        );
-
       case 'idle':
         return (
           <Flexbox gap={20} align="center" style={{ padding: '12px 0' }}>
@@ -157,26 +77,13 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
                 You will be redirected to {provider.name} to authorize Peers Touch to access your account.
               </Text>
             </Flexbox>
-            {!hasCreds && (
-              <Alert
-                type="warning"
-                showIcon
-                icon={<AlertTriangle size={14} style={{ marginTop: 2 }} />}
-                message={
-                  <span style={{ fontSize: 12 }}>
-                    Credentials not configured. Configure them in the Connections section first.
-                  </span>
-                }
-                style={{ borderRadius: 8, width: '100%' }}
-              />
-            )}
             <Button
               type="primary"
               size="large"
               icon={<LogIn size={16} />}
               onClick={handleSignIn}
-              disabled={!hasCreds}
-              style={{ background: hasCreds ? provider.color : undefined, width: '100%' }}
+              disabled={!canSignIn}
+              style={{ background: canSignIn ? provider.color : undefined, width: '100%' }}
             >
               Sign in with {provider.name}
             </Button>
@@ -229,7 +136,7 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
                 <Button onClick={onClose}>Cancel</Button>
                 <Button
                   type="primary"
-                  onClick={() => setAuthState(hasEnvironments ? 'selecting_env' : 'idle')}
+                  onClick={handleSignIn}
                 >
                   Try Again
                 </Button>

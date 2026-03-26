@@ -112,7 +112,7 @@ export function WizardRenderer({ onComplete }: Props) {
 
   if (loading) {
     return (
-      <Flexbox align="center" justify="center" style={{ width: '100vw', height: '100vh' }}>
+      <Flexbox align="center" justify="center" style={{ width: '100%', height: '100%' }}>
         <Spin size="large" />
       </Flexbox>
     );
@@ -191,8 +191,8 @@ export function WizardRenderer({ onComplete }: Props) {
       align="center"
       justify="center"
       style={{
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100%',
         background: token.colorBgLayout,
       }}
     >

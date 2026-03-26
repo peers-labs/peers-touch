@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Drawer,
   Form,
@@ -212,7 +213,7 @@ function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps)
 function SectionCard({ title, description, children }: {
   title: string;
   description?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div style={{

@@ -1,6 +1,6 @@
 use crate::error::AppResult;
 use crate::interface::contracts::{
-    OAuthAuthorizeInput, OAuthIdInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
+    OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
 };
 
 #[path = "../../application/oauth2/mod.rs"]
@@ -29,6 +29,11 @@ pub fn oauth2_set_credentials(input: OAuthSetCredentialsInput) -> AppResult<Stub
 #[tauri::command]
 pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
     application_oauth2::oauth2_authorize(input)
+}
+
+#[tauri::command]
+pub fn oauth2_handle_callback(input: OAuthCallbackInput) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_handle_callback(input)
 }
 
 #[tauri::command]

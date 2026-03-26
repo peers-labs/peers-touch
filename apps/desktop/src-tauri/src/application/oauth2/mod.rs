@@ -1,6 +1,6 @@
 use crate::error::{AppResult, ErrorCode};
 use crate::interface::contracts::{
-    OAuthAuthorizeInput, OAuthIdInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
+    OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -363,20 +363,65 @@ pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
     if provider.status == "coming_soon" {
         return AppResult::fail(ErrorCode::Conflict, "provider developing", None);
     }
-    let (client_id, _, yaml_has_conf) = try_cmd!(read_credentials(provider_id));
-    if !yaml_has_conf || client_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "credentials not configured", None);
-    }
     let env = input.environment.unwrap_or_else(|| "prod".to_string());
+    let return_to = input
+        .return_to
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "peers-touch://oauth/callback".to_string());
+    let start_url = provider
+        .callback_url
+        .replace("/callback", "/start");
     let auth_url = format!(
-        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}",
-        provider.authorize_url,
-        urlencoding::encode(&client_id),
-        urlencoding::encode(&provider.callback_url),
-        urlencoding::encode(&provider.scopes.join(" ")),
-        urlencoding::encode(&format!("peers-touch-{}", provider_id))
+        "{}?site_id=default&return_to={}",
+        start_url,
+        urlencoding::encode(&return_to),
     );
     success_payload("oauth2_authorize", json!({ "auth_url": auth_url, "environment": env }))
+}
+
+pub fn oauth2_handle_callback(input: OAuthCallbackInput) -> AppResult<StubPayload> {
+    let provider_id = input.provider.trim();
+    if provider_id.is_empty() {
+        return invalid_argument("provider is required");
+    }
+    if get_provider(provider_id).is_none() {
+        return AppResult::fail(ErrorCode::NotFound, "provider not found", None);
+    }
+    if input.provider_user_id.trim().is_empty() {
+        return invalid_argument("provider_user_id is required");
+    }
+    let mut map = try_cmd!(read_connections());
+    let now = unix_to_rfc3339(chrono_like_now_unix());
+    let expires_at = input
+        .expires_at
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| Some(unix_to_rfc3339(chrono_like_now_unix() + 3600)));
+    let provider_name = get_provider(provider_id)
+        .map(|p| p.name)
+        .unwrap_or_else(|| provider_id.to_string());
+    let user_name = input
+        .username
+        .filter(|v| !v.trim().is_empty())
+        .or(input.display_name)
+        .unwrap_or_else(|| input.provider_user_id.clone());
+    map.insert(
+        provider_id.to_string(),
+        OAuthConnectionState {
+            provider_id: provider_id.to_string(),
+            provider_name,
+            user_id: input.provider_user_id,
+            user_name,
+            email: input.email.unwrap_or_default(),
+            avatar_url: input.avatar_url.unwrap_or_default(),
+            profile_url: input.profile_url.unwrap_or_default(),
+            connected_at: now,
+            expires_at,
+            scopes: vec![],
+            status: "active".to_string(),
+        },
+    );
+    try_cmd!(write_connections(&map));
+    success_payload("oauth2_handle_callback", json!({ "status":"ok" }))
 }
 
 pub fn oauth2_list_connections() -> AppResult<StubPayload> {

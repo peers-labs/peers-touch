@@ -9,7 +9,7 @@
     "mono:build": "pnpm -r --if-present run build",
     "desktop:dev": "pnpm --filter @peers-touch/app-desktop run dev",
     "desktop:build": "pnpm --filter @peers-touch/app-desktop run build",
-    "applets:build": "pnpm --filter @peers-touch/applets run build",
-    "applets:dev": "pnpm --filter @peers-touch/applets run dev"
+    "applets:build": "node packages/applets/build.js",
+    "applets:dev": "node packages/applets/dev-sync.js"
   }
 }

@@ -30,5 +30,5 @@ type Provider struct {
 
 // TableName 设置表名
 func (Provider) TableName() string {
-	return "ai_chat.providers"
+	return "ai_chat_providers"
 }

@@ -31,5 +31,5 @@ type Session struct {
 
 // TableName 设置表名
 func (Session) TableName() string {
-	return "ai_chat.sessions"
+	return "ai_chat_sessions"
 }

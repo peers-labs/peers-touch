@@ -8,8 +8,6 @@ import (
 )
 
 // memoryNodeStorage implements NodeStorage interface
-
-// memoryNodeStorage implements NodeStorage interface
 type memoryNodeStorage struct {
 	mu    sync.RWMutex
 	nodes map[string]*Node

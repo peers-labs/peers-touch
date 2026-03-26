@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Input, Typography, Button, Modal, Form, message, theme, Divider, Avatar } from 'antd';
 import { Search, Plus, Brain } from 'lucide-react';
@@ -117,7 +118,7 @@ export function ProviderMenu() {
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
+function SectionTitle({ children }: { children: ReactNode }) {
   const { token } = theme.useToken();
   return (
     <>

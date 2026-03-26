@@ -5,7 +5,7 @@
  * into the applet frontend registry.
  */
 import { Globe } from 'lucide-react';
-import { registerApplet } from '../registry';
+import { registerApplet } from '@peers-touch/applet-sdk';
 import { WebSearchSettings } from './Settings';
 import { WebSearchAppletPage } from './Page';
 

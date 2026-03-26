@@ -4,7 +4,7 @@
  * Plan tasks with Kanban, run Coding Agents in workspaces, review diffs, ship via PR.
  */
 import { Plane } from 'lucide-react';
-import { registerApplet } from '../registry';
+import { registerApplet } from '@peers-touch/applet-sdk';
 import { AgentPilotPage } from './Page';
 
 registerApplet({

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { Card, Spin, Alert } from 'antd'
+import { useEffect, useState } from 'react'
+import { Alert, Card, Spin } from 'antd'
 import AppletManager from './AppletManager'
+import LynxHost from './LynxHost'
 
 interface LynxContainerProps {
   appletId: string
@@ -17,7 +18,6 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
   onLoad,
   onError,
 }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const appletManager = AppletManager.getInstance()
@@ -52,23 +52,7 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
     return () => {
       appletManager.unloadApplet(appletId)
     }
-  }, [appletId])
-
-  const handleIframeLoad = () => {
-    console.log(`Applet ${appletId} loaded successfully`)
-    // 向Applet发送初始化消息
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({
-        type: 'applet-init',
-        appletId,
-      }, '*')
-    }
-  }
-
-  const handleIframeError = () => {
-    setError(new Error('Failed to load Applet iframe'))
-    setLoading(false)
-  }
+  }, [appletId, appletManager, onError, onLoad])
 
   if (loading) {
     return (
@@ -92,12 +76,14 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
   }
 
   const appletInfo = appletManager.getAppletInfo(appletId)
-  const appletUrl = `${appletInfo?.path}/${appletInfo?.main || 'index.html'}`
+  const appletEntry = appletInfo?.load?.entry || appletInfo?.main || 'index.html'
+  const appletUrl = `${appletInfo?.path}/${appletEntry}`
 
   return (
-    <iframe
-      ref={iframeRef}
+    <LynxHost
+      appletId={appletId}
       src={appletUrl}
+      title={appletInfo?.name || appletId}
       style={{
         width,
         height,
@@ -105,11 +91,16 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
         borderRadius: '8px',
         overflow: 'hidden',
       }}
-      data-applet-id={appletId}
-      onLoad={handleIframeLoad}
-      onError={handleIframeError}
-      sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
-      title={appletInfo?.name || appletId}
+      onLoad={() => {
+        setLoading(false)
+        onLoad?.()
+      }}
+      onError={(hostError) => {
+        const nextError = hostError instanceof Error ? hostError : new Error('Failed to load Lynx Host')
+        setError(nextError)
+        setLoading(false)
+        onError?.(nextError)
+      }}
     />
   )
 }

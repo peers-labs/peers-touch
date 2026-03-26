@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox, Center } from 'react-layout-kit';
 import { ActionIcon, Markdown } from '@lobehub/ui';
 import { theme, Input, Empty, Spin, Popconfirm, message as antMessage, Divider } from 'antd';
@@ -41,7 +42,7 @@ function EditorToolbar({ onInsert }: { onInsert: (prefix: string, suffix: string
   const { token } = theme.useToken();
   const [hovered, setHovered] = useState<string | null>(null);
 
-  const btn = (key: string, icon: React.ReactNode, title: string, p: string, s: string, b?: boolean) => (
+  const btn = (key: string, icon: ReactNode, title: string, p: string, s: string, b?: boolean) => (
     <div
       key={key}
       onClick={() => onInsert(p, s, b)}

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import {
   useRef,
   useState,
@@ -56,7 +57,7 @@ import { estimateTokenCount } from 'tokenx';
 function Action({
   icon, title, onClick, disabled, active, color, style,
 }: {
-  icon: React.ReactNode; title?: string; onClick?: (e: React.MouseEvent) => void;
+  icon: ReactNode; title?: string; onClick?: (e: React.MouseEvent) => void;
   disabled?: boolean; active?: boolean; color?: string; style?: CSSProperties;
 }) {
   const { token } = theme.useToken();

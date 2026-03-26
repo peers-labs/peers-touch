@@ -47,6 +47,7 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 				gormConfig := &gorm.Config{
 					// todo: let gorm logger level follow the one of frame's
 					Logger: NewGormLogger().LogMode(gormlogger.Info),
+					DisableForeignKeyConstraintWhenMigrating: true,
 				}
 
 				n.db[rds.Name], err = gorm.Open(dialector(rds.DSN), gormConfig)
