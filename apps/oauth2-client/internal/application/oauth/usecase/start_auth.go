@@ -83,7 +83,9 @@ func sanitizeReturnTo(raw string) string {
 		return ""
 	}
 	if u.Scheme != "https" && u.Scheme != "http" {
-		return ""
+		if u.Scheme != "peers-touch" {
+			return ""
+		}
 	}
 	return u.String()
 }

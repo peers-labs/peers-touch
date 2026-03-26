@@ -135,9 +135,36 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
   },
 
   startAuth: async (id, environment) => {
-    const returnTo = typeof window !== 'undefined' ? window.location.href : undefined;
+    const isTauriRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    const returnTo = isTauriRuntime ? 'peers-touch://oauth/callback' : (typeof window !== 'undefined' ? window.location.href : undefined);
     const { auth_url } = await api.oauth2Authorize(id, environment, returnTo);
     const w = window.open(auth_url, '_blank', 'width=600,height=700');
+    if (isTauriRuntime) {
+      return new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = async () => {
+          if (settled) return;
+          settled = true;
+          window.removeEventListener('oauth2-callback-complete', onCallback);
+          clearTimeout(timeoutTimer);
+          clearInterval(closedWatcher);
+          await get().loadAll();
+          resolve();
+        };
+        const onCallback = () => {
+          void finish();
+        };
+        window.addEventListener('oauth2-callback-complete', onCallback);
+        const timeoutTimer = setTimeout(() => {
+          void finish();
+        }, 120000);
+        const closedWatcher = setInterval(() => {
+          if (!w || w.closed) {
+            void finish();
+          }
+        }, 1000);
+      });
+    }
     return new Promise<void>((resolve) => {
       const interval = setInterval(async () => {
         if (!w) {

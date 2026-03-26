@@ -45,11 +45,11 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
         setAuthState('success');
       } else {
         setAuthState('error');
-        setError('Authorization was cancelled or failed. Please try again.');
+        setError('登录未完成，请重试。');
       }
     } catch (err: any) {
       setAuthState('error');
-      setError(err?.message || 'Authorization failed');
+      setError(err?.message || '登录失败，请重试。');
     }
   }, [provider, startAuth]);
 
@@ -71,10 +71,10 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
             </Flexbox>
             <Flexbox gap={4} align="center">
               <Title level={5} style={{ margin: 0 }}>
-                Sign in with {provider.name}
+                使用 {provider.name} 登录
               </Title>
               <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
-                You will be redirected to {provider.name} to authorize Peers Touch to access your account.
+                点击后将前往 {provider.name} 完成授权。
               </Text>
             </Flexbox>
             <Button
@@ -85,7 +85,7 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
               disabled={!canSignIn}
               style={{ background: canSignIn ? provider.color : undefined, width: '100%' }}
             >
-              Sign in with {provider.name}
+              使用 {provider.name} 登录
             </Button>
           </Flexbox>
         );
@@ -96,12 +96,10 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
             <Spin size="large" />
             <Flexbox gap={4} align="center">
               <Title level={5} style={{ margin: 0 }}>
-                Waiting for authorization...
+                等待完成登录...
               </Title>
               <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
-                Complete the sign-in in the popup window.
-                <br />
-                This dialog will update automatically.
+                请在新打开的窗口完成授权。
               </Text>
             </Flexbox>
           </Flexbox>
@@ -113,8 +111,8 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
           <Result
             status="success"
             icon={<CheckCircle2 size={48} color={token.colorSuccess} />}
-            title="Signed In Successfully"
-            subTitle={conn ? `Welcome, ${conn.user_name || conn.user_id}` : 'Account authorized'}
+            title="登录成功"
+            subTitle={conn ? `欢迎你，${conn.user_name || conn.user_id}` : '账号已授权'}
             extra={
               <Button type="primary" onClick={onClose}>
                 Done
@@ -129,16 +127,16 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
           <Result
             status="error"
             icon={<XCircle size={48} color={token.colorError} />}
-            title="Sign In Failed"
+            title="登录失败"
             subTitle={error}
             extra={
               <Flexbox horizontal gap={8} justify="center">
-                <Button onClick={onClose}>Cancel</Button>
+                <Button onClick={onClose}>取消</Button>
                 <Button
                   type="primary"
                   onClick={handleSignIn}
                 >
-                  Try Again
+                  重试
                 </Button>
               </Flexbox>
             }
