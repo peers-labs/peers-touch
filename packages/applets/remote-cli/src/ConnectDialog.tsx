@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal, Form, Input, Select, InputNumber, Switch, Divider, Alert, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { KeyRound, Server, User, Lock, FileKey2 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from './api';
 import type { Connection } from './types';
 
 export interface ConnectDialogProps {
@@ -40,7 +40,7 @@ export function ConnectDialog({ open, onClose, onConnect, onSave, connection, mo
 
   const loadSSHKeys = useCallback(async () => {
     try {
-      const data = await api.appletAction<{ keys: SSHKeyFile[] }>('remote-cli', 'list-ssh-keys');
+      const data = await api.appletAction<{ keys: SSHKeyFile[] }>('list-ssh-keys');
       setSSHKeys(data.keys || []);
     } catch {
       // ignore

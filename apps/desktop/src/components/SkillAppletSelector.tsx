@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Popover } from '@lobehub/ui';
 import { theme, Checkbox, Divider, Tag } from 'antd';
@@ -18,10 +19,10 @@ function SelectorRow({
   trailing,
   onClick,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   description?: string;
-  trailing?: React.ReactNode;
+  trailing?: ReactNode;
   onClick?: () => void;
 }) {
   const { token } = theme.useToken();

@@ -6,7 +6,7 @@ import {
 import {
   Globe, Plus, Trash2, RefreshCw, ExternalLink, Check, X,
 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from './api';
 
 const { Text, Title } = Typography;
 
@@ -30,7 +30,7 @@ export function WebSearchSettings() {
 
   const loadSites = async () => {
     try {
-      const resp = await api.appletAction<{ sites: PortalSite[] }>('web-search', 'list-sites');
+      const resp = await api.appletAction<{ sites: PortalSite[] }>('list-sites');
       setSites(resp.sites || []);
     } catch {
       // Applet might not be active
@@ -45,7 +45,7 @@ export function WebSearchSettings() {
     if (!addingURL.trim()) return;
     setAdding(true);
     try {
-      await api.appletAction('web-search', 'add-site', { url: addingURL.trim() });
+      await api.appletAction('add-site', { url: addingURL.trim() });
       setAddingURL('');
       message.success('Site added successfully');
       await loadSites();
@@ -58,7 +58,7 @@ export function WebSearchSettings() {
 
   const handleRemove = async (url: string) => {
     try {
-      await api.appletAction('web-search', 'remove-site', { url });
+      await api.appletAction('remove-site', { url });
       message.success('Site removed');
       await loadSites();
     } catch (err: any) {
@@ -69,7 +69,7 @@ export function WebSearchSettings() {
   const handleToggle = async (url: string, enabled: boolean) => {
     setSites((prev) => prev.map((s) => s.url === url ? { ...s, enabled } : s));
     try {
-      await api.appletAction('web-search', 'toggle-site', { url, enabled });
+      await api.appletAction('toggle-site', { url, enabled });
     } catch (err: any) {
       setSites((prev) => prev.map((s) => s.url === url ? { ...s, enabled: !enabled } : s));
       message.error(err.message || 'Failed to toggle site');
@@ -79,7 +79,7 @@ export function WebSearchSettings() {
   const handleCrawl = async (url: string) => {
     setCrawling(url);
     try {
-      const resp = await api.appletAction<{ articles: number }>('web-search', 'crawl-site', { url });
+      const resp = await api.appletAction<{ articles: number }>('crawl-site', { url });
       message.success(`Crawled ${resp.articles} articles`);
       await loadSites();
     } catch (err: any) {
@@ -92,7 +92,7 @@ export function WebSearchSettings() {
   const handleCrawlAll = async () => {
     setCrawling('all');
     try {
-      await api.appletAction('web-search', 'crawl-all');
+      await api.appletAction('crawl-all');
       message.success('Background crawl started');
     } catch (err: any) {
       message.error(err.message || 'Crawl failed');

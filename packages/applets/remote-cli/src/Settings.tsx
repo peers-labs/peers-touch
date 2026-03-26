@@ -15,7 +15,7 @@ import {
   theme,
 } from 'antd';
 import { Plus, Trash2, Plug, Server } from 'lucide-react';
-import { api } from '../../services/api';
+import { api } from './api';
 import type { Connection } from './types';
 
 const { Text } = Typography;
@@ -37,10 +37,7 @@ export function RemoteCLISettings() {
 
   const loadConnections = useCallback(async () => {
     try {
-      const data = await api.appletAction<{ connections: Connection[] }>(
-        'remote-cli',
-        'list-connections',
-      );
+      const data = await api.appletAction<{ connections: Connection[] }>('list-connections');
       setConnections(data.connections || []);
     } catch {
       // Applet may not be active yet
@@ -67,7 +64,7 @@ export function RemoteCLISettings() {
       if (editingId) {
         params.id = editingId;
       }
-      await api.appletAction('remote-cli', action, params);
+      await api.appletAction(action, params);
       message.success(editingId ? 'Connection updated' : 'Connection added');
       setModalOpen(false);
       setEditingId(null);
@@ -81,7 +78,7 @@ export function RemoteCLISettings() {
   const handleDelete = useCallback(
     async (id: string) => {
       try {
-        await api.appletAction('remote-cli', 'remove-connection', { id });
+        await api.appletAction('remove-connection', { id });
         message.success('Connection removed');
         loadConnections();
       } catch (e: any) {
@@ -94,11 +91,7 @@ export function RemoteCLISettings() {
   const handleTest = useCallback(async (id: string) => {
     setTesting(id);
     try {
-      const result = await api.appletAction<{ ok: boolean; error?: string }>(
-        'remote-cli',
-        'test-connection',
-        { id },
-      );
+      const result = await api.appletAction<{ ok: boolean; error?: string }>('test-connection', { id });
       if (result.ok) {
         message.success('Connection successful');
       } else {

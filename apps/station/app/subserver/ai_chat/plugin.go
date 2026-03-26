@@ -14,8 +14,7 @@ var aiChatOptions struct {
 			Server struct {
 				Subserver struct {
 					AIChat struct {
-						Enabled bool   `pconf:"enabled"`
-						DBName  string `pconf:"db-name"`
+						Enabled bool `pconf:"enabled"`
 					} `pconf:"ai-chat"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
@@ -28,11 +27,9 @@ type aiChatPlugin struct{}
 func (p *aiChatPlugin) Name() string { return "ai-chat" }
 
 func (p *aiChatPlugin) Options() []option.Option {
-	var opts []option.Option
-	if name := aiChatOptions.Peers.Node.Server.Subserver.AIChat.DBName; name != "" {
-		opts = append(opts, WithDBName(name))
+	return []option.Option{
+		WithDBName("ai_chat"),
 	}
-	return opts
 }
 
 func (p *aiChatPlugin) Enabled() bool {

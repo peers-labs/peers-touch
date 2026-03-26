@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import {
   Input, Button, Switch, Typography, Tag, theme, message,
@@ -24,10 +25,10 @@ function FormRow({
   extra,
 }: {
   label: string;
-  desc?: React.ReactNode;
-  children: React.ReactNode;
+  desc?: ReactNode;
+  children: ReactNode;
   last?: boolean;
-  extra?: React.ReactNode;
+  extra?: ReactNode;
 }) {
   const { token } = theme.useToken();
   return (
