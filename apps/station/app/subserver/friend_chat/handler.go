@@ -2,9 +2,9 @@ package friend_chat
 
 import (
 	"context"
-	"time"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/service"
+	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
+	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -12,378 +12,314 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type friendChatURL struct{ name, path string }
-
-func (u friendChatURL) SubPath() string { return u.path }
-func (u friendChatURL) Name() string    { return u.name }
-
-func (s *friendChatSubServer) Handlers() []server.Handler {
+func (s *subServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
-	jwtWrapper := s.jwtWrapper
 	return []server.Handler{
-		server.NewTypedHandler("fc-session-create", "/friend-chat/session/create", server.POST, s.handleSessionCreate, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("fc-sessions", "/friend-chat/sessions", server.GET, s.handleGetSessions, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("fc-message-send", "/friend-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("fc-message-sync", "/friend-chat/message/sync", server.POST, s.handleSyncMessages, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("fc-messages", "/friend-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("fc-message-ack", "/friend-chat/message/ack", server.POST, s.handleMessageAck, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("fc-online", "/friend-chat/online", server.POST, s.handleOnline, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("fc-offline", "/friend-chat/offline", server.POST, s.handleOffline, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("fc-pending", "/friend-chat/pending", server.GET, s.handleGetPending, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("fc-session-create", "/friend-chat/session/create", server.POST, s.handleCreateSession, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-sessions", "/friend-chat/sessions", server.GET, s.handleGetSessions, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-message-send", "/friend-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-message-sync", "/friend-chat/message/sync", server.POST, s.handleSyncMessages, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-messages", "/friend-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-message-ack", "/friend-chat/message/ack", server.POST, s.handleAckMessage, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-online", "/friend-chat/online", server.POST, s.handleOnline, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-offline", "/friend-chat/offline", server.POST, s.handleOffline, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-pending", "/friend-chat/pending", server.GET, s.handleGetPending, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-stats", "/friend-chat/stats", server.GET, s.handleStats),
 	}
 }
 
-func (s *friendChatSubServer) handleSendMessage(ctx context.Context, req *chat.SendMessageRequest) (*chat.SendMessageResponse, error) {
+func (s *subServer) handleCreateSession(ctx context.Context, req *chat.CreateSessionRequest) (*chat.CreateSessionResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-
-	if req.ReceiverDid == "" {
-		return nil, server.BadRequest("receiver_did is required")
+	if req.ParticipantDid == "" {
+		return nil, server.BadRequest("participant_did is required")
 	}
-	if req.Content == "" {
-		return nil, server.BadRequest("content is required")
+	session, created, err := s.service.GetOrCreateSession(subject.ID, req.ParticipantDid)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to get or create session", err)
 	}
+	return &chat.CreateSessionResponse{
+		Session: &chat.FriendChatSession{
+			Ulid:            session.ID,
+			ParticipantADid: session.ParticipantADID,
+			ParticipantBDid: session.ParticipantBDID,
+			LastMessageUlid: session.LastMessageID,
+			LastMessageAt:   timestamppb.New(session.LastMessageAt),
+			UnreadCountA:    session.UnreadCountA,
+			UnreadCountB:    session.UnreadCountB,
+			CreatedAt:       timestamppb.New(session.CreatedAt),
+			UpdatedAt:       timestamppb.New(session.UpdatedAt),
+		},
+		Created: created,
+	}, nil
+}
 
+func (s *subServer) handleGetSessions(ctx context.Context, req *chat.GetSessionsRequest) (*chat.GetSessionsResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	limit := int(req.Limit)
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	offset := int(req.Offset)
+	if offset < 0 {
+		offset = 0
+	}
+	items, total, err := s.service.ListSessions(subject.ID, limit, offset)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to list sessions", err)
+	}
+	out := make([]*chat.FriendChatSession, 0, len(items))
+	for _, item := range items {
+		out = append(out, &chat.FriendChatSession{
+			Ulid:            item.ID,
+			ParticipantADid: item.ParticipantADID,
+			ParticipantBDid: item.ParticipantBDID,
+			LastMessageUlid: item.LastMessageID,
+			LastMessageAt:   timestamppb.New(item.LastMessageAt),
+			UnreadCountA:    item.UnreadCountA,
+			UnreadCountB:    item.UnreadCountB,
+			CreatedAt:       timestamppb.New(item.CreatedAt),
+			UpdatedAt:       timestamppb.New(item.UpdatedAt),
+		})
+	}
+	return &chat.GetSessionsResponse{Sessions: out, Total: int32(total)}, nil
+}
+
+func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessageRequest) (*chat.SendMessageResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.SessionUlid == "" || req.ReceiverDid == "" || req.Content == "" {
+		return nil, server.BadRequest("session_ulid receiver_did content are required")
+	}
 	msgType := int32(req.Type)
 	if msgType == 0 {
 		msgType = 1
 	}
-
-	msg, err := s.messageService.SendMessage(ctx, &service.SendMessageRequest{
-		SessionULID: req.SessionUlid,
-		SenderDID:   subject.ID,
-		ReceiverDID: req.ReceiverDid,
-		Type:        msgType,
-		Content:     req.Content,
-		ReplyToULID: req.ReplyToUlid,
-	})
+	message, err := s.service.SendMessageByActor(subject.ID, req.SessionUlid, req.ReceiverDid, msgType, req.Content, req.ReplyToUlid)
 	if err != nil {
+		if err == application.ErrSessionNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		if err == application.ErrNotParticipant || err == application.ErrInvalidReceiver {
+			return nil, server.Forbidden(err.Error())
+		}
 		return nil, server.InternalErrorWithCause("failed to send message", err)
 	}
-
-	s.mu.RLock()
-	peer, isOnline := s.onlinePeers[req.ReceiverDid]
-	if isOnline && time.Now().Unix()-peer.UpdatedAt > 60 {
-		isOnline = false
-	}
-	s.mu.RUnlock()
-
+	s.mu.Lock()
+	_, isOnline := s.online[req.ReceiverDid]
 	relayStatus := "delivered"
 	if !isOnline {
 		relayStatus = "queued"
-		s.relayService.StoreOfflineMessage(ctx, &service.StoreOfflineRequest{
-			MessageULID:      msg.ULID,
+		s.pending[req.ReceiverDid] = append(s.pending[req.ReceiverDid], pendingMessage{
+			ULID:             message.ID,
 			SenderDID:        subject.ID,
-			ReceiverDID:      req.ReceiverDid,
 			SessionULID:      req.SessionUlid,
 			EncryptedPayload: []byte(req.Content),
-			ExpireDuration:   0,
+			CreatedAt:        message.CreatedAt.Unix(),
 		})
 	}
-
+	s.mu.Unlock()
 	return &chat.SendMessageResponse{
 		Message: &chat.FriendChatMessage{
-			Ulid:        msg.ULID,
-			SessionUlid: msg.SessionULID,
-			SenderDid:   msg.SenderDID,
-			ReceiverDid: msg.ReceiverDID,
-			Type:        chat.FriendMessageType(msg.Type),
-			Content:     msg.Content,
-			Status:      chat.FriendMessageStatus(msg.Status),
+			Ulid:        message.ID,
+			SessionUlid: message.SessionID,
+			SenderDid:   message.SenderDID,
+			ReceiverDid: message.ReceiverDID,
+			Type:        chat.FriendMessageType(message.Type),
+			Content:     message.Content,
+			ReplyToUlid: message.ReplyToID,
+			Status:      chat.FriendMessageStatus(message.Status),
+			SentAt:      timestamppb.New(message.SentAt),
+			CreatedAt:   timestamppb.New(message.CreatedAt),
+			UpdatedAt:   timestamppb.New(message.UpdatedAt),
 		},
 		RelayStatus: relayStatus,
 	}, nil
 }
 
-func (s *friendChatSubServer) handleSyncMessages(
-	ctx context.Context,
-	req *chat.SyncMessagesRequest,
-) (*chat.SyncMessagesResponse, error) {
+func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetMessagesRequest) (*chat.GetMessagesResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-
-	if len(req.GetMessages()) == 0 {
-		return nil, server.BadRequest("messages list is required")
-	}
-
-	senderActorDID := subject.ID
-	synced := int32(0)
-	failed := make([]string, 0)
-
-	for _, item := range req.GetMessages() {
-		msgType := item.GetType()
-		if msgType == chat.FriendMessageType_FRIEND_MESSAGE_TYPE_UNSPECIFIED {
-			msgType = chat.FriendMessageType_FRIEND_MESSAGE_TYPE_TEXT
-		}
-		_, err := s.messageService.SendMessage(ctx, &service.SendMessageRequest{
-			SessionULID: item.GetSessionUlid(),
-			SenderDID:   senderActorDID,
-			ReceiverDID: item.GetReceiverDid(),
-			Type:        int32(msgType),
-			Content:     item.GetContent(),
-			ReplyToULID: "",
-		})
-		if err != nil {
-			failed = append(failed, item.GetUlid())
-		} else {
-			synced++
-		}
-	}
-
-	return &chat.SyncMessagesResponse{Synced: synced, Failed: failed}, nil
-}
-
-func (s *friendChatSubServer) handleGetMessages(
-	ctx context.Context,
-	req *chat.GetMessagesRequest,
-) (*chat.GetMessagesResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-
 	if req.SessionUlid == "" {
 		return nil, server.BadRequest("session_ulid is required")
 	}
-
 	limit := int(req.Limit)
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-
-	messages, hasMore, err := s.messageService.GetMessagesBySession(ctx, req.SessionUlid, req.BeforeUlid, limit)
+	items, err := s.service.ListMessagesByActor(subject.ID, req.SessionUlid, req.BeforeUlid, limit+1)
 	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to get messages", err)
+		if err == application.ErrSessionNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		if err == application.ErrNotParticipant {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to list messages", err)
 	}
-
-	resp := &chat.GetMessagesResponse{
-		Messages: make([]*chat.FriendChatMessage, 0, len(messages)),
-		HasMore:  hasMore,
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
 	}
-
-	for _, m := range messages {
-		resp.Messages = append(resp.Messages, &chat.FriendChatMessage{
-			Ulid:        m.ULID,
-			SenderDid:   m.SenderDID,
-			ReceiverDid: m.ReceiverDID,
-			Type:        chat.FriendMessageType(m.Type),
-			Content:     m.Content,
-			Status:      chat.FriendMessageStatus(m.Status),
-			SentAt:      timestamppb.New(m.SentAt),
+	nextCursor := ""
+	if hasMore && len(items) > 0 {
+		nextCursor = items[len(items)-1].ID
+	}
+	out := make([]*chat.FriendChatMessage, 0, len(items))
+	for _, item := range items {
+		out = append(out, &chat.FriendChatMessage{
+			Ulid:        item.ID,
+			SessionUlid: item.SessionID,
+			SenderDid:   item.SenderDID,
+			ReceiverDid: item.ReceiverDID,
+			Type:        chat.FriendMessageType(item.Type),
+			Content:     item.Content,
+			ReplyToUlid: item.ReplyToID,
+			Status:      chat.FriendMessageStatus(item.Status),
+			SentAt:      timestamppb.New(item.SentAt),
+			CreatedAt:   timestamppb.New(item.CreatedAt),
+			UpdatedAt:   timestamppb.New(item.UpdatedAt),
 		})
 	}
-
-	return resp, nil
+	return &chat.GetMessagesResponse{Messages: out, HasMore: hasMore, NextCursor: nextCursor}, nil
 }
 
-func (s *friendChatSubServer) handleOnline(
-	ctx context.Context,
-	req *chat.OnlineRequest,
-) (*chat.OnlineResponse, error) {
+func (s *subServer) handleAckMessage(ctx context.Context, req *chat.MessageAckRequest) (*chat.MessageAckResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
+	if len(req.Ulids) == 0 {
+		return nil, server.BadRequest("ulids is required")
+	}
+	if err := s.service.AckMessages(subject.ID, req.Ulids, req.Status); err != nil {
+		return nil, server.InternalErrorWithCause("failed to ack messages", err)
+	}
+	s.mu.Lock()
+	delete(s.pending, subject.ID)
+	s.mu.Unlock()
+	return &chat.MessageAckResponse{}, nil
+}
 
+func (s *subServer) handleSyncMessages(ctx context.Context, req *chat.SyncMessagesRequest) (*chat.SyncMessagesResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if len(req.Messages) == 0 {
+		return nil, server.BadRequest("messages list is required")
+	}
+	synced := int32(0)
+	failed := make([]string, 0)
+	for _, item := range req.Messages {
+		msgType := int32(item.Type)
+		if msgType == 0 {
+			msgType = 1
+		}
+		if item.SessionUlid == "" || item.ReceiverDid == "" || item.Content == "" {
+			failed = append(failed, item.Ulid)
+			continue
+		}
+		in := domain.Message{
+			ID:          item.Ulid,
+			SessionID:   item.SessionUlid,
+			ReceiverDID: item.ReceiverDid,
+			Type:        msgType,
+			Content:     item.Content,
+			ReplyToID:   "",
+		}
+		resultSynced, resultFailed := s.service.SyncMessagesByActor(subject.ID, []domain.Message{in})
+		synced += resultSynced
+		failed = append(failed, resultFailed...)
+	}
+	return &chat.SyncMessagesResponse{Synced: synced, Failed: failed}, nil
+}
+
+func (s *subServer) handleOnline(ctx context.Context, req *chat.OnlineRequest) (*chat.OnlineResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
 	did := subject.ID
 	if req.Did != "" {
 		did = req.Did
 	}
-
 	if did == "" {
 		return nil, server.BadRequest("did is required")
 	}
-
 	s.mu.Lock()
-	s.onlinePeers[did] = onlinePeer{DID: did, UpdatedAt: time.Now().Unix()}
+	s.online[did] = timestamppb.Now().GetSeconds()
 	s.mu.Unlock()
-
 	return &chat.OnlineResponse{Status: "online"}, nil
 }
 
-func (s *friendChatSubServer) handleOffline(
-	ctx context.Context,
-	req *chat.OnlineRequest,
-) (*chat.OnlineResponse, error) {
+func (s *subServer) handleOffline(ctx context.Context, req *chat.OnlineRequest) (*chat.OnlineResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-
 	did := subject.ID
 	if req.Did != "" {
 		did = req.Did
 	}
-
 	if did == "" {
 		return nil, server.BadRequest("did is required")
 	}
-
 	s.mu.Lock()
-	delete(s.onlinePeers, did)
+	delete(s.online, did)
 	s.mu.Unlock()
-
 	return &chat.OnlineResponse{Status: "offline"}, nil
 }
 
-func (s *friendChatSubServer) handleGetPending(
-	ctx context.Context,
-	req *chat.GetPendingRequest,
-) (*chat.GetPendingResponse, error) {
+func (s *subServer) handleGetPending(ctx context.Context, req *chat.GetPendingRequest) (*chat.GetPendingResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-
-	receiverDID := subject.ID
-
-	limit := req.Limit
+	limit := int(req.Limit)
 	if limit <= 0 || limit > 100 {
 		limit = 100
 	}
-
-	messages, err := s.relayService.GetPendingMessages(ctx, receiverDID, int(limit))
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to get pending messages", err)
+	s.mu.RLock()
+	items := s.pending[subject.ID]
+	s.mu.RUnlock()
+	if len(items) > limit {
+		items = items[:limit]
 	}
-
-	resp := &chat.GetPendingResponse{
-		Messages: make([]*chat.PendingMessageInfo, 0, len(messages)),
-	}
-
-	for _, m := range messages {
-		resp.Messages = append(resp.Messages, &chat.PendingMessageInfo{
-			Ulid:             m.ULID,
-			SenderDid:        m.SenderDID,
-			SessionUlid:      m.SessionULID,
-			EncryptedPayload: m.EncryptedPayload,
-			CreatedAt:        m.CreatedAt.Unix(),
+	out := make([]*chat.PendingMessageInfo, 0, len(items))
+	for _, item := range items {
+		out = append(out, &chat.PendingMessageInfo{
+			Ulid:             item.ULID,
+			SenderDid:        item.SenderDID,
+			SessionUlid:      item.SessionULID,
+			EncryptedPayload: item.EncryptedPayload,
+			CreatedAt:        item.CreatedAt,
 		})
 	}
-
-	return resp, nil
+	return &chat.GetPendingResponse{Messages: out}, nil
 }
 
-func (s *friendChatSubServer) handleStats(
-	ctx context.Context,
-	req *chat.GetStatsRequest,
-) (*chat.GetStatsResponse, error) {
+func (s *subServer) handleStats(ctx context.Context, req *chat.GetStatsRequest) (*chat.GetStatsResponse, error) {
+	_ = req
 	s.mu.RLock()
-	onlineCount := len(s.onlinePeers)
+	onlineCount := len(s.online)
+	pendingCount := int64(0)
+	for _, items := range s.pending {
+		pendingCount += int64(len(items))
+	}
 	s.mu.RUnlock()
-
-	pendingCount, _ := s.relayService.GetPendingCount(ctx, "")
-
 	return &chat.GetStatsResponse{
 		OnlinePeers:     int32(onlineCount),
 		PendingMessages: pendingCount,
 		Status:          string(s.status),
 	}, nil
-}
-
-func (s *friendChatSubServer) handleMessageAck(
-	ctx context.Context,
-	req *chat.MessageAckRequest,
-) (*chat.MessageAckResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-
-	if len(req.Ulids) == 0 {
-		return nil, server.BadRequest("ulids list is required")
-	}
-
-	if req.Status == int32(chat.FriendMessageStatus_FRIEND_MESSAGE_STATUS_DELIVERED) {
-		s.messageService.MarkAsDelivered(ctx, req.Ulids)
-	} else if req.Status == int32(chat.FriendMessageStatus_FRIEND_MESSAGE_STATUS_READ) {
-		s.messageService.MarkAsRead(ctx, req.Ulids)
-	}
-
-	s.relayService.AcknowledgeMessages(ctx, req.Ulids)
-
-	return &chat.MessageAckResponse{}, nil
-}
-
-func (s *friendChatSubServer) handleSessionCreate(
-	ctx context.Context,
-	req *chat.CreateSessionRequest,
-) (*chat.CreateSessionResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-
-	if req.ParticipantDid == "" {
-		return nil, server.BadRequest("participant_did is required")
-	}
-
-	currentActorDID := subject.ID
-
-	session, err := s.sessionService.GetOrCreateSession(ctx, currentActorDID, req.ParticipantDid)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to create session", err)
-	}
-
-	unreadCountA := session.UnreadCountA
-	unreadCountB := session.UnreadCountB
-
-	return &chat.CreateSessionResponse{
-		Session: &chat.FriendChatSession{
-			Ulid:            session.ULID,
-			ParticipantADid: session.ParticipantADID,
-			ParticipantBDid: session.ParticipantBDID,
-			LastMessageUlid: session.LastMessageULID,
-			LastMessageAt:   timestamppb.New(session.LastMessageAt),
-			UnreadCountA:    unreadCountA,
-			UnreadCountB:    unreadCountB,
-		},
-		Created: false,
-	}, nil
-}
-
-func (s *friendChatSubServer) handleGetSessions(
-	ctx context.Context,
-	req *chat.GetSessionsRequest,
-) (*chat.GetSessionsResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-
-	did := subject.ID
-
-	limit := req.Limit
-	if limit <= 0 || limit > 100 {
-		limit = 50
-	}
-
-	sessions, err := s.sessionService.GetSessionsByDID(ctx, did, int(limit))
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to get sessions", err)
-	}
-
-	resp := &chat.GetSessionsResponse{
-		Sessions: make([]*chat.FriendChatSession, 0, len(sessions)),
-		Total:    int32(len(sessions)),
-	}
-
-	for _, sess := range sessions {
-		resp.Sessions = append(resp.Sessions, &chat.FriendChatSession{
-			Ulid:            sess.ULID,
-			ParticipantADid: sess.ParticipantADID,
-			ParticipantBDid: sess.ParticipantBDID,
-			LastMessageUlid: sess.LastMessageULID,
-			LastMessageAt:   timestamppb.New(sess.LastMessageAt),
-			UnreadCountA:    sess.UnreadCountA,
-			UnreadCountB:    sess.UnreadCountB,
-		})
-	}
-
-	return resp, nil
 }

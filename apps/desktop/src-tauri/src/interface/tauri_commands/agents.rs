@@ -1,10 +1,10 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{
-    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentUpdateInput, StubPayload,
+use crate::contracts::{
+    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentUpdateInput,
+    StubPayload,
 };
 
-#[path = "../../application/agents/mod.rs"]
-mod application_agents;
+use crate::application::agents as application_agents;
 
 #[tauri::command]
 pub fn agents_list() -> AppResult<StubPayload> {

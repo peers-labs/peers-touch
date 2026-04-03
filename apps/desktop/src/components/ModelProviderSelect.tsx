@@ -9,7 +9,7 @@ import type { AvailableModel } from '../services/desktop_api';
 interface ModelProviderSelectProps {
   models?: AvailableModel[];
   selectedModelId?: string;
-  onSelect: (modelId: string) => void;
+  onSelect: (modelId: string, providerId: string) => void;
   onClose: () => void;
   onNavigateSettings?: () => void;
 }
@@ -41,9 +41,10 @@ export function ModelProviderSelect({
   }, [models, loadModels]);
 
   const filteredModels = useMemo(() => {
-    if (!searchQuery) return effectiveModels;
+    const enabledModels = effectiveModels.filter((m) => m.enabled);
+    if (!searchQuery) return enabledModels;
     const q = searchQuery.toLowerCase();
-    return effectiveModels.filter((m) =>
+    return enabledModels.filter((m) =>
       (m.display_name || m.id).toLowerCase().includes(q) ||
       m.id.toLowerCase().includes(q) ||
       m.provider_name?.toLowerCase().includes(q),
@@ -91,7 +92,7 @@ export function ModelProviderSelect({
       </div>
 
       {/* Model list */}
-      <div style={{ maxHeight: 400, overflow: 'auto', padding: '4px 0' }}>
+      <div style={{ maxHeight: 400, overflow: 'auto', padding: '4px 0', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
         {Object.entries(modelsByProvider).map(([provName, provModels]) => (
           <div key={provName}>
             <div
@@ -110,7 +111,7 @@ export function ModelProviderSelect({
                 role="button"
                 tabIndex={0}
                 onClick={() => {
-                  onSelect(m.id);
+                  onSelect(m.id, m.provider_id);
                   onClose();
                 }}
                 style={{

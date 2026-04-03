@@ -156,6 +156,34 @@ func (h *ProviderHandlers) HandleListProviders(ctx context.Context, req *model.L
 	}, nil
 }
 
+type SyncProvidersRequest struct {
+	Providers  []*model.Provider `json:"providers"`
+	Tombstones []string          `json:"tombstones"`
+	Revision   int64             `json:"revision"`
+}
+
+type SyncProvidersResponse struct {
+	Ok        bool              `json:"ok"`
+	Providers []*model.Provider `json:"providers"`
+	Revision  int64             `json:"revision"`
+}
+
+func (h *ProviderHandlers) HandleSyncProviders(ctx context.Context, req *SyncProvidersRequest) (*SyncProvidersResponse, error) {
+	providers, err := service.SyncProviders(ctx, req.Providers, req.Tombstones)
+	if err != nil {
+		logger.Error(ctx, "Failed to sync providers", "error", err)
+		return nil, toHandlerError(err)
+	}
+
+	logger.Info(ctx, "Providers synced", "count", len(providers))
+
+	return &SyncProvidersResponse{
+		Ok:        true,
+		Providers: providers,
+		Revision:  req.Revision,
+	}, nil
+}
+
 func (h *ProviderHandlers) HandleTestProvider(ctx context.Context, req *model.TestProviderRequest) (*model.TestProviderResponse, error) {
 	if req.Id == "" {
 		return nil, toHandlerError(errcode.New(errcode.AIChatInvalidRequest, http.StatusBadRequest, "id is required", nil))

@@ -1088,7 +1088,7 @@ export function ChatInput({
                     return (
                       <div key="model" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 24, background: token.colorFillTertiary }}>
                         <Popover open={modelOpen} onOpenChange={setModelOpen} placement="topLeft" trigger="click"
-                          content={<ModelProviderSelect selectedModelId={selectedModel || defaultModel} onSelect={(id) => useChatStore.getState().setSelectedModel(id)} onClose={() => setModelOpen(false)} onNavigateSettings={() => { setModelOpen(false); onNavigateSettings?.(); }} />}
+                          content={<ModelProviderSelect selectedModelId={selectedModel || defaultModel} onSelect={(id, pid) => useChatStore.getState().setSelectedModel(id, pid)} onClose={() => setModelOpen(false)} onNavigateSettings={() => { setModelOpen(false); onNavigateSettings?.(); }} />}
                           styles={{ content: { padding: 0, minWidth: 280, maxWidth: 360 } }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 24, cursor: isStreaming ? 'not-allowed' : 'pointer', transition: 'background 0.2s' }}

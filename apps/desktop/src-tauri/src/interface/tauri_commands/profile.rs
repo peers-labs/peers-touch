@@ -1,10 +1,9 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload};
+use crate::contracts::{
+    FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
+};
 
-#[path = "../../domain/profile/mod.rs"]
-mod domain_profile;
-#[path = "../../application/profile/mod.rs"]
-mod application_profile;
+use crate::application::profile as application_profile;
 
 #[tauri::command]
 pub fn profile_get() -> AppResult<StubPayload> {

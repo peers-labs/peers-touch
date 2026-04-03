@@ -128,7 +128,7 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
   );
 
   return (
-    <Flexbox gap={16} style={{ padding: 16 }}>
+    <Flexbox gap={16} style={{ padding: 16, height: '100%', overflow: 'auto' }}>
       <Flexbox horizontal align="center" justify="space-between">
         <Flexbox>
           <Title level={5} style={{ margin: 0 }}>Channels Overview</Title>

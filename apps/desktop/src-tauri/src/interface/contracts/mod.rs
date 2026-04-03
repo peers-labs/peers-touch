@@ -48,6 +48,7 @@ pub struct ChatSendMessageInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatCompletionInput {
     pub session_id: String,
+    pub provider_id: Option<String>,
     pub model: Option<String>,
     pub message: String,
 }
@@ -335,6 +336,7 @@ pub struct OAuthCallbackInput {
     pub avatar_url: Option<String>,
     pub profile_url: Option<String>,
     pub expires_at: Option<String>,
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -350,6 +352,7 @@ pub struct AccountUpsertOAuthInput {
     pub email: Option<String>,
     pub avatar_url: Option<String>,
     pub profile_url: Option<String>,
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -548,24 +551,6 @@ pub struct AiSearchInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OnboardingSetInput {
-    pub data: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WizardStepInput {
-    pub step_id: String,
-    pub data: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WizardExecuteApiInput {
-    pub method: String,
-    pub path: String,
-    pub body: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreferencesSetInput {
     pub prefs: serde_json::Value,
 }
@@ -661,4 +646,133 @@ pub struct ProviderModelToggleInput {
 pub struct ProviderModelToggleAllInput {
     pub provider_id: String,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSnapshotGetInput {
+    pub slices: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextActionDispatchInput {
+    pub action: String,
+    pub payload: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalUrlInput {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuthLoopbackStartInput {
+    pub id: String,
+    pub environment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuthLoopbackPollInput {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatListInput {
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatListMessagesInput {
+    pub session_ulid: String,
+    pub limit: Option<u32>,
+    pub before_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatSendInput {
+    pub session_ulid: String,
+    pub receiver_did: String,
+    pub content: String,
+    pub r#type: Option<i32>,
+    pub reply_to_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatAckInput {
+    pub ulids: Vec<String>,
+    pub status: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatCreateSessionInput {
+    pub participant_did: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatSyncInput {
+    pub session_ulid: String,
+    pub limit: Option<u32>,
+    pub max_pages: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatListInput {
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatListMessagesInput {
+    pub group_ulid: String,
+    pub limit: Option<u32>,
+    pub before_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatSendInput {
+    pub group_ulid: String,
+    pub content: String,
+    pub r#type: Option<i32>,
+    pub reply_to_ulid: Option<String>,
+    pub mentioned_dids: Option<Vec<String>>,
+    pub mention_all: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatUnreadInput {
+    pub group_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatMarkReadInput {
+    pub group_ulid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatSyncInput {
+    pub group_ulid: String,
+    pub limit: Option<u32>,
+    pub max_pages: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatKeyRotateInput {
+    pub next_version: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatLocalSearchInput {
+    pub query: String,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatScopeCursorGetInput {
+    pub scope: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatScopeCursorSetInput {
+    pub scope: String,
+    pub cursor: String,
 }

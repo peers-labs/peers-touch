@@ -17,11 +17,22 @@ func init() {
 // TouchConfig holds configuration for the touch layer
 type TouchConfig struct {
 	Peers struct {
+		Actor struct {
+			PresetUsers []PresetActorConfig `json:"preset_users" pconf:"preset_users" yaml:"preset_users"`
+		} `json:"actor" pconf:"actor" yaml:"actor"`
 		Touch struct {
 			Routers  RouterConfig   `json:"routers" pconf:"routers" yaml:"routers"`
 			Security SecurityConfig `json:"security" pconf:"security" yaml:"security"`
 		} `json:"touch" pconf:"touch"`
 	} `json:"peers" pconf:"peers"`
+}
+
+type PresetActorConfig struct {
+	Username    string            `json:"username" pconf:"username" yaml:"username"`
+	Email       string            `json:"email" pconf:"email" yaml:"email"`
+	Password    string            `json:"password" pconf:"password" yaml:"password"`
+	DisplayName string            `json:"display_name" pconf:"display_name" yaml:"display_name"`
+	Endpoints   map[string]string `json:"endpoints" pconf:"endpoints" yaml:"endpoints"`
 }
 
 // RouterConfig controls which routers are enabled
@@ -58,9 +69,11 @@ func (r *RouterConfig) Options() []option.Option {
 
 // GetRouterConfig returns the router configuration with default values
 func GetRouterConfig() *RouterConfig {
-	// Always return the loaded configuration
-	// If no configuration is loaded, the zero values (false) will be used
 	return &touchConfig.Peers.Touch.Routers
+}
+
+func GetPresetUsers() []PresetActorConfig {
+	return touchConfig.Peers.Actor.PresetUsers
 }
 
 // GetPasswordConfig returns the password configuration with default values

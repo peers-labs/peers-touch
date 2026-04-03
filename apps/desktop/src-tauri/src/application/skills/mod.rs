@@ -1,7 +1,7 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{
-    BuiltinSkillIdInput, SkillCreateInput, SkillIdInput, SkillsListInput, SkillsSearchInput, SkillToggleInput,
-    SkillUpdateInput, StubPayload,
+use crate::contracts::{
+    BuiltinSkillIdInput, SkillCreateInput, SkillIdInput, SkillToggleInput, SkillUpdateInput,
+    SkillsListInput, SkillsSearchInput, StubPayload,
 };
 use serde_json::json;
 use std::sync::{Mutex, OnceLock};
@@ -99,7 +99,11 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 }
 
 fn internal_error() -> AppResult<StubPayload> {
-    AppResult::fail(ErrorCode::InternalError, "failed to access skill store", None)
+    AppResult::fail(
+        ErrorCode::InternalError,
+        "failed to access skill store",
+        None,
+    )
 }
 
 pub fn skills_list(input: SkillsListInput) -> AppResult<StubPayload> {
@@ -122,7 +126,10 @@ pub fn skills_list(input: SkillsListInput) -> AppResult<StubPayload> {
         "avatar": "",
         "useCount": 0
     })];
-    success_payload("skills_list", json!({ "skills": skills, "builtin": builtin }))
+    success_payload(
+        "skills_list",
+        json!({ "skills": skills, "builtin": builtin }),
+    )
 }
 
 pub fn skills_search(input: SkillsSearchInput) -> AppResult<StubPayload> {
@@ -138,7 +145,9 @@ pub fn skills_search(input: SkillsSearchInput) -> AppResult<StubPayload> {
     let skills = guard
         .skills
         .iter()
-        .filter(|item| item.name.to_lowercase().contains(&q) || item.description.to_lowercase().contains(&q))
+        .filter(|item| {
+            item.name.to_lowercase().contains(&q) || item.description.to_lowercase().contains(&q)
+        })
         .take(limit)
         .map(SkillRecord::list_json)
         .collect::<Vec<_>>();
@@ -253,7 +262,10 @@ pub fn skills_delete(input: SkillIdInput) -> AppResult<StubPayload> {
     };
     let before = guard.skills.len();
     guard.skills.retain(|item| item.id != id);
-    success_payload("skills_delete", json!({ "ok": before != guard.skills.len() }))
+    success_payload(
+        "skills_delete",
+        json!({ "ok": before != guard.skills.len() }),
+    )
 }
 
 pub fn skills_toggle(input: SkillToggleInput) -> AppResult<StubPayload> {

@@ -152,4 +152,38 @@ for file in $GO_PROTO_FILES; do
     protoc $PROTOC_GEN_GO --go_out="$GO_OUT" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$PROTO_ROOT" "$file"
 done
 
+# -----------------------------------------------------------------------------
+# TypeScript (Protobuf-ES) CODE GENERATION
+# -----------------------------------------------------------------------------
+TS_OUT="$PROJECT_ROOT/apps/desktop/src/gen/proto"
+
+if [ ! -d "$TS_OUT" ]; then
+    echo "Creating TypeScript output directory: $TS_OUT"
+    mkdir -p "$TS_OUT"
+fi
+
+TS_PROTO_FILES=$(find "$PROTO_ROOT/domain" -name "*.proto" -not -path "*/ai_box/ai_box_message.proto")
+
+PROTOC_GEN_ES=""
+if [ -x "$PROJECT_ROOT/apps/desktop/node_modules/.bin/protoc-gen-es" ]; then
+    PROTOC_GEN_ES="--plugin=protoc-gen-es=$PROJECT_ROOT/apps/desktop/node_modules/.bin/protoc-gen-es"
+elif command -v protoc-gen-es &> /dev/null; then
+    PROTOC_GEN_ES=""
+else
+    echo "Warning: protoc-gen-es not found, skipping TypeScript generation"
+    TS_PROTO_FILES=""
+fi
+
+if [ -n "$TS_PROTO_FILES" ]; then
+    echo "Running protoc for TypeScript..."
+    for file in $TS_PROTO_FILES; do
+        REL_PATH=${file#$PROTO_ROOT/}
+        TS_REL_PATH="${REL_PATH%.proto}_pb.ts"
+        FULL_TS_PATH="$TS_OUT/$TS_REL_PATH"
+        echo "Generating $file to $FULL_TS_PATH"
+        protoc $PROTOC_GEN_ES --es_out="$TS_OUT" --es_opt=target=ts -I"$PROTO_ROOT" "$file"
+    done
+    echo "TypeScript proto generation complete."
+fi
+
 echo "Protobuf code generation complete."

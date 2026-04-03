@@ -1,18 +1,11 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{
-    ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput, ChatMessageInput,
-    ChatRenameConversationInput, ChatSendMessageInput, ChatSetConversationModelInput, ChatUpdateMessageInput,
-    StubPayload,
+use crate::contracts::{
+    ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput,
+    ChatMessageInput, ChatRenameConversationInput, ChatSendMessageInput,
+    ChatSetConversationModelInput, ChatUpdateMessageInput, StubPayload,
 };
 
-#[path = "../../domain/chat/mod.rs"]
-mod domain_chat;
-#[path = "../../infrastructure/realtime/mod.rs"]
-mod infrastructure_realtime;
-#[path = "../../infrastructure/p2p/mod.rs"]
-mod infrastructure_p2p;
-#[path = "../../application/chat/mod.rs"]
-mod application_chat;
+use crate::application::chat as application_chat;
 
 #[tauri::command]
 pub fn chat_list_conversations() -> AppResult<StubPayload> {
@@ -75,6 +68,13 @@ pub fn chat_stop(input: ChatConversationInput) -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload> {
-    application_chat::chat_completion_once(input)
+pub async fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload> {
+    match tauri::async_runtime::spawn_blocking(move || application_chat::chat_completion_once(input)).await {
+        Ok(result) => result,
+        Err(_) => AppResult::fail(
+            crate::error::ErrorCode::InternalError,
+            "chat completion task panicked",
+            None,
+        ),
+    }
 }

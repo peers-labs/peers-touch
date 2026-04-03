@@ -101,7 +101,7 @@ export function ModelServiceTab() {
   const noModels = models.length === 0;
 
   return (
-    <Flexbox gap={0} style={{ padding: '16px 24px' }}>
+    <Flexbox gap={0} style={{ padding: '16px 24px', height: '100%', overflow: 'auto' }}>
       <Title level={5} style={{ margin: '0 0 4px' }}>Model Service</Title>
       <Text type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
         Configure which model each scenario uses. All models are governed by Provider settings — disabling a provider invalidates its model assignments here.

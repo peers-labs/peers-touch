@@ -460,4 +460,4 @@ Key changes:
 - [Logger Abstract Interface](../../logger/README.md)
 - [Logrus Documentation](https://github.com/sirupsen/logrus)
 - [Lumberjack Documentation](https://github.com/natefinch/lumberjack)
-- [Station Library Usage Standards](../../../../../.prompts/30-STATION/35-lib-usage.md)
+- [Station Library Usage Standards](../../../../../docs/station/lib-usage.md)

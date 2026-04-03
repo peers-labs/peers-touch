@@ -1,5 +1,5 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{StubPayload, TtsInput};
+use crate::contracts::{StubPayload, TtsInput};
 use serde_json::json;
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {

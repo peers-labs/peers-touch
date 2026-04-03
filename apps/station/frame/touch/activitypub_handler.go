@@ -58,6 +58,18 @@ func GetActivityPubHandlers() []ActivityPubHandlerInfo {
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
 		{
+			RouterURL: RouterURLActorLogout,
+			Handler:   ActorLogout,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
+		},
+		{
+			RouterURL: RouterURLActorChangePassword,
+			Handler:   ActorChangePassword,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
+		},
+		{
 			RouterURL: RouterURLActorProfile,
 			Handler:   GetActorProfile,
 			Method:    server.GET,
@@ -296,6 +308,78 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 		},
 	}
 	SuccessResponse(c, ctx, "Login successful", response)
+}
+
+func ActorLogout(c context.Context, ctx *app.RequestContext) {
+	// 1. Try to get session_id from cookie or request body
+	sessionID := string(ctx.Cookie("session_id"))
+	
+	var req struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := ctx.Bind(&req); err == nil && req.SessionID != "" {
+		sessionID = req.SessionID
+	}
+	
+	// 2. Clear from store
+	if sessionID != "" {
+		_ = auth.LogoutSession(c, sessionID)
+	}
+	
+	// 3. Update user status to offline
+	subject := coreauth.GetSubject(c)
+	if subject != nil {
+		if userID, err := strconv.ParseUint(subject.ID, 10, 64); err == nil {
+			_ = activitypub.UpdateActorStatus(c, userID, db.ActorStatusOffline, "")
+		}
+	}
+	
+	// 4. Clear session cookie
+	ctx.SetCookie("session_id", "", -1, "/", "", protocol.CookieSameSiteDisabled, false, true)
+	
+	SuccessResponse(c, ctx, "Logout successful", nil)
+}
+
+func ActorChangePassword(c context.Context, ctx *app.RequestContext) {
+	subject := coreauth.GetSubject(c)
+	if subject == nil {
+		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	userID, err := strconv.ParseUint(subject.ID, 10, 64)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid user identity"})
+		return
+	}
+
+	var req struct {
+		OldPassword string `json:"old_password"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := ctx.Bind(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if req.OldPassword == "" || req.NewPassword == "" {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "old_password and new_password are required"})
+		return
+	}
+	if len(req.NewPassword) < 1 {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "new password too short"})
+		return
+	}
+
+	if err := auth.ChangePassword(c, userID, req.OldPassword, req.NewPassword); err != nil {
+		if err == auth.ErrInvalidCredentials {
+			ctx.JSON(http.StatusForbidden, map[string]string{"error": "old password is incorrect"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to change password"})
+		return
+	}
+
+	SuccessResponse(c, ctx, "Password changed successfully", nil)
 }
 
 func GetActorProfile(c context.Context, ctx *app.RequestContext) {

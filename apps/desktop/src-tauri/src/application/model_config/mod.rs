@@ -1,5 +1,7 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{ModelConfigKeyInput, ModelConfigSetInput, ProviderIdInputV2, StubPayload};
+use crate::contracts::{
+    ModelConfigKeyInput, ModelConfigSetInput, ProviderIdInputV2, StubPayload,
+};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -15,7 +17,7 @@ impl ModelConfigStore {
         config.insert(
             "default".to_string(),
             json!({
-                "provider":"openai-default",
+                "provider":"openai",
                 "model":"gpt-4o-mini"
             }),
         );
@@ -41,7 +43,11 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 }
 
 fn internal_error() -> AppResult<StubPayload> {
-    AppResult::fail(ErrorCode::InternalError, "failed to access model config store", None)
+    AppResult::fail(
+        ErrorCode::InternalError,
+        "failed to access model config store",
+        None,
+    )
 }
 
 pub fn model_config_list() -> AppResult<StubPayload> {
@@ -62,7 +68,10 @@ pub fn model_config_get(input: ModelConfigKeyInput) -> AppResult<StubPayload> {
         Err(_) => return internal_error(),
     };
     let value = guard.config.get(key).cloned();
-    success_payload("model_config_get", json!({ "key": key, "ref": value, "resolved": value }))
+    success_payload(
+        "model_config_get",
+        json!({ "key": key, "ref": value, "resolved": value }),
+    )
 }
 
 pub fn model_config_set(input: ModelConfigSetInput) -> AppResult<StubPayload> {
@@ -79,7 +88,10 @@ pub fn model_config_set(input: ModelConfigSetInput) -> AppResult<StubPayload> {
         return success_payload("model_config_set", json!({ "key": key, "ref": value }));
     }
     guard.config.remove(&key);
-    success_payload("model_config_set", json!({ "key": key, "ref": Value::Null }))
+    success_payload(
+        "model_config_set",
+        json!({ "key": key, "ref": Value::Null }),
+    )
 }
 
 pub fn model_config_delete(input: ModelConfigKeyInput) -> AppResult<StubPayload> {

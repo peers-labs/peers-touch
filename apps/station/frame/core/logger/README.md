@@ -244,4 +244,4 @@ go test -cover
 ## See Also
 
 - [Logrus Implementation](../plugin/logger/logrus/README.md)
-- [Station Library Usage Standards](../../../.prompts/30-STATION/35-lib-usage.md)
+- [Station Library Usage Standards](../../../docs/station/lib-usage.md)

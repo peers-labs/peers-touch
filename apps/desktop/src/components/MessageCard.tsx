@@ -96,6 +96,7 @@ export default function MessageCard({ card, onNavigate }: Props) {
       {/* Body */}
       {card.body && (
         <div
+          className="selectable"
           style={{
             fontSize: 13,
             color: card.status === 'error' ? token.colorErrorText : token.colorTextSecondary,

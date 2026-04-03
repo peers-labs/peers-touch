@@ -7,6 +7,7 @@ static MESSAGE_COUNTER: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, Clone)]
 pub struct Conversation {
     pub id: String,
+    pub agent_id: String,
     pub title: String,
     pub model: Option<String>,
     pub unread_count: u32,
@@ -19,6 +20,7 @@ pub struct Message {
     pub id: String,
     pub conversation_id: String,
     pub content: String,
+    pub role: String,
     pub read: bool,
     pub via: DeliveryVia,
     pub retry_count: u8,
@@ -91,6 +93,15 @@ pub fn parse_cursor(raw: Option<&str>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+pub fn extract_agent_id(session_key: &str) -> String {
+    let parts: Vec<&str> = session_key.splitn(3, ':').collect();
+    if parts.len() >= 2 && parts[0] == "agent" {
+        parts[1].to_string()
+    } else {
+        "assistant".to_string()
+    }
 }
 
 pub fn delivery_outcome(via: DeliveryVia, retries: u8) -> DeliveryOutcome {

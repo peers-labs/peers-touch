@@ -3,7 +3,12 @@ name = "peers-touch-desktop"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "provider_models_lib"
+path = "src/provider_models_lib.rs"
+
 [build-dependencies]
+prost-build = "0.14.3"
 tauri-build = { version = "2.0.1", features = [] }
 
 [dependencies]
@@ -11,8 +16,17 @@ tauri = { version = "2.0.1", features = [] }
 tauri-plugin-deep-link = "2.0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 urlencoding = "2"
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"] }
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+keyring = "3"
+prost = { version = "0.14.3", features = ["derive"] }
+prost-types = "0.14.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
 
 [features]
 default = ["custom-protocol"]

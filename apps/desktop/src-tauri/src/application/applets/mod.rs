@@ -1,12 +1,12 @@
+use crate::domain::applets::{
+    authorize, build_request_id, emit_audit, normalize_capability, AccessContext,
+};
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{
+use crate::contracts::{
     AppletActionInput, AppletConfigSetInput, AppletIdInput, AppletInvokeInput, StubPayload,
 };
 use crate::state::AppState;
 use serde_json::{json, Value};
-use super::domain_applets::{
-    authorize, build_request_id, emit_audit, normalize_capability, AccessContext,
-};
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
