@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { log } from '../utils/logger';
 import {
   api,
   streamChat,
@@ -60,6 +61,7 @@ interface ChatState {
 
   // Toolbar state
   selectedModel: string;
+  selectedProviderId: string;
   selectedAgent: string;
   availableModels: AvailableModel[];
   defaultModel: string;
@@ -91,7 +93,7 @@ interface ChatState {
   clearImages: () => void;
 
   // Toolbar actions
-  setSelectedModel: (model: string) => void;
+  setSelectedModel: (model: string, providerId?: string) => void;
   setSelectedAgent: (agent: string) => void;
   loadModels: () => Promise<void>;
   loadAgents: () => Promise<void>;
@@ -135,6 +137,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingImages: [],
 
   selectedModel: '',
+  selectedProviderId: '',
   selectedAgent: 'assistant',
   availableModels: [],
   defaultModel: '',
@@ -149,8 +152,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   wideScreen: false,
 
   loadSessions: async () => {
+    log.info('chat', 'Loading sessions');
     try {
       const sessions = await api.listSessions();
+      log.info('chat', 'Sessions loaded', { count: sessions.length });
       set({ sessions });
       const { currentSessionKey, selectedModel, defaultModel } = get();
       if (!selectedModel || selectedModel === defaultModel) {
@@ -160,7 +165,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
     } catch (e) {
-      console.error('Failed to load sessions:', e);
+      log.error('chat', 'Failed to load sessions', e);
     }
   },
 
@@ -187,6 +192,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   selectSession: async (key: string, sessionOverride?: Session) => {
+    log.info('chat', 'Selecting session', { key });
     if (key === get().currentSessionKey) return;
     const session = sessionOverride ?? get().sessions.find((s) => s.key === key);
     const sessionModel = session?.model_override || '';
@@ -264,10 +270,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   newSession: () => {
     const key = `session-${Date.now()}`;
+    log.info('chat', 'New session created', { key });
     set({ currentSessionKey: key, messages: [], pendingImages: [], selectedModel: get().defaultModel });
   },
 
   deleteSession: async (key: string) => {
+    log.info('chat', 'Deleting session', { key });
     try {
       await api.deleteSession(key);
       const { sessions, currentSessionKey } = get();
@@ -282,7 +290,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ sessions: remaining });
       }
     } catch (e) {
-      console.error('Failed to delete session:', e);
+      log.error('chat', 'Failed to delete session', e);
     }
   },
 
@@ -306,7 +314,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ),
       }));
     } catch (err) {
-      console.error('Upload failed:', err);
+      log.error('chat', 'Upload failed', err);
       set((s) => ({
         pendingImages: s.pendingImages.filter((p) => p.previewUrl !== previewUrl),
       }));
@@ -330,11 +338,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ pendingImages: [] });
   },
 
-  setSelectedModel: (model: string) => {
-    set({ selectedModel: model });
+  setSelectedModel: (model: string, providerId?: string) => {
+    set({ selectedModel: model, selectedProviderId: providerId || '' });
     const { currentSessionKey, selectedAgent } = get();
     api.setSessionModel(currentSessionKey, model).then(() => {
-      // Update local session so model persists when switching topics
       get().mergeSessionModel(currentSessionKey, model, selectedAgent || 'assistant');
     }).catch(() => {});
   },
@@ -344,6 +351,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const res = await api.listAvailableModels();
       const models = res.models || [];
+      log.info('chat', 'Models loaded', { count: models.length });
       const modelIds = new Set(models.map((m) => m.id));
       const preferredDefault = res.default && modelIds.has(res.default) ? res.default : '';
       const currentSelected = get().selectedModel;
@@ -352,19 +360,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
         preferredDefault ||
         models[0]?.id ||
         '';
+      const nextProvider = models.find((m) => m.id === nextSelected)?.provider_id || '';
       set({
         availableModels: models,
         defaultModel: preferredDefault || models[0]?.id || '',
         selectedModel: nextSelected,
+        selectedProviderId: nextProvider,
       });
     } catch {
-      // keep empty
     }
   },
 
   loadAgents: async () => {
     try {
       const agents = await api.listAgents();
+      log.info('chat', 'Agents loaded', { count: agents.length });
       set({ agents });
       const current = agents.find((a) => a.name === get().selectedAgent);
       if (current?.model && !get().selectedModel) {
@@ -433,7 +443,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agents: s.agents.map((a) => (a.id === updated.id ? updated : a)),
       }));
     } catch (e) {
-      console.error('Failed to update agent config:', e);
+      log.error('chat', 'Failed to update agent config', e);
     }
   },
 
@@ -452,6 +462,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   syncMessages: async () => {
+    log.debug('chat', 'Syncing messages', { key: get().currentSessionKey });
     const { currentSessionKey, messages: currentMessages } = get();
 
     const errorMap = new Map<string, string>();
@@ -527,11 +538,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const newKey = `session-${Date.now()}`;
     set({ currentSessionKey: newKey, messages: [] });
     get().loadSessions();
-    console.log(`Saved topic "${title}" from ${currentSessionKey}, switched to ${newKey}`);
+    log.info('chat', `Saved topic "${title}" from ${currentSessionKey}, switched to ${newKey}`);
   },
 
   sendMessage: (content: string) => {
-    const { currentSessionKey, pendingImages, selectedAgent, selectedModel, defaultModel } = get();
+    log.info('chat', 'Sending message', { sessionKey: get().currentSessionKey, contentLength: content.length });
+    const { currentSessionKey, pendingImages, selectedAgent, selectedModel, selectedProviderId, defaultModel } = get();
 
     const readyImages = pendingImages.filter((p) => !p.uploading && p.dataUrl);
     const imageUrls = readyImages.map((p) => p.servingUrl || p.previewUrl);
@@ -619,6 +631,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               break;
             }
             case 'error':
+              log.error('chat', 'Stream error', { event: event.data });
               msgs[idx] = {
                 ...msgs[idx],
                 error: event.data.error,
@@ -635,11 +648,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       },
       () => {
+        log.info('chat', 'Stream complete');
         set({ isStreaming: false, abortController: null });
         get().syncMessages();
         get().loadSessions();
       },
       (err: Error) => {
+        log.error('chat', 'Send message failed', { error: err.message });
         set((state) => {
           const msgs = state.messages.map((m) =>
             m.id === assistantId
@@ -648,9 +663,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           );
           return { messages: msgs, isStreaming: false, abortController: null };
         });
+        get().syncMessages();
+        get().loadSessions();
       },
       chatImages.length > 0 ? chatImages : undefined,
       modelOverride,
+      selectedProviderId || undefined,
     );
 
     set({ abortController: controller });
@@ -698,7 +716,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       .map((id) => api.deleteMessage(id).catch(() => {}));
     await Promise.all(deletePromises);
 
-    const { currentSessionKey, selectedAgent, selectedModel, defaultModel } = get();
+    const { currentSessionKey, selectedAgent, selectedModel, selectedProviderId, defaultModel } = get();
     const modelOverride = selectedModel && selectedModel !== defaultModel ? selectedModel : undefined;
 
     const assistantMsg: ChatMessage = {
@@ -773,15 +791,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
           messages: state.messages.map((m) => m.id === assistantId ? { ...m, error: err.message, loading: false } : m),
           isStreaming: false, abortController: null,
         }));
+        get().syncMessages();
+        get().loadSessions();
       },
       userMsg.images?.map((url) => ({ data_url: url, mime_type: 'image/png' })),
       modelOverride,
+      selectedProviderId || undefined,
     );
 
     set({ abortController: controller });
   },
 
   stopStreaming: () => {
+    log.info('chat', 'Streaming stopped');
     const { abortController, currentSessionKey } = get();
     if (abortController) {
       abortController.abort();
@@ -835,7 +857,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await api.createDocument(currentSessionKey, title, content);
       get().loadDocuments();
     } catch (e) {
-      console.error('Failed to create document:', e);
+      log.error('chat', 'Failed to create document', e);
     }
   },
 
@@ -844,7 +866,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await api.deleteDocument(id);
       set((s) => ({ portalDocuments: s.portalDocuments.filter((d) => d.id !== id) }));
     } catch (e) {
-      console.error('Failed to delete document:', e);
+      log.error('chat', 'Failed to delete document', e);
     }
   },
 
@@ -867,7 +889,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await api.createDocument(currentSessionKey, title, content, 'note');
       get().loadDocuments();
     } catch (e) {
-      console.error('Failed to save to notebook:', e);
+      log.error('chat', 'Failed to save to notebook', e);
     }
   },
 

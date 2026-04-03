@@ -1,8 +1,7 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{AiSearchInput, SearchQueryInput, StubPayload};
+use crate::contracts::{AiSearchInput, SearchQueryInput, StubPayload};
 
-#[path = "../../application/search/mod.rs"]
-mod application_search;
+use crate::application::search as application_search;
 
 #[tauri::command]
 pub fn help_get() -> AppResult<StubPayload> {

@@ -1,11 +1,10 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{
-    BuiltinSkillIdInput, SkillCreateInput, SkillIdInput, SkillsListInput, SkillsSearchInput, SkillToggleInput,
-    SkillUpdateInput, StubPayload,
+use crate::contracts::{
+    BuiltinSkillIdInput, SkillCreateInput, SkillIdInput, SkillToggleInput, SkillUpdateInput,
+    SkillsListInput, SkillsSearchInput, StubPayload,
 };
 
-#[path = "../../application/skills/mod.rs"]
-mod application_skills;
+use crate::application::skills as application_skills;
 
 #[tauri::command]
 pub fn skills_list(input: SkillsListInput) -> AppResult<StubPayload> {

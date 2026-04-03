@@ -350,6 +350,6 @@ Make sure your auth middleware sets the `user_id` in the context.
 
 ## 📚 Related Documentation
 
-- [ADR-003: Social Refactor](../../../.prompts/90-CONTEXT/decisions/003-social-refactor-from-activitypub.md)
+- [ADR-003: Social Refactor](../../../docs/context/decisions/003-social-refactor-from-activitypub.md)
 - [POST_TYPES.md](../../../model/domain/social/POST_TYPES.md)
 - [REFACTOR_PLAN.md](./REFACTOR_PLAN.md)

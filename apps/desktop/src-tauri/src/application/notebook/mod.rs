@@ -1,5 +1,5 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{
+use crate::contracts::{
     NotebookCreateInput, NotebookIdInput, NotebookUpdateInput, StubPayload, TopicIdInput,
 };
 use serde_json::json;

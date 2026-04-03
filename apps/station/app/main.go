@@ -2,28 +2,18 @@ package main
 
 import (
 	"context"
-	"log"
-	"os"
 
 	peers "github.com/peers-labs/peers-touch/station/frame"
 	"github.com/peers-labs/peers-touch/station/frame/core/debug/actuator"
-	"github.com/peers-labs/peers-touch/station/frame/core/event"
-	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
-	brokerA "github.com/peers-labs/peers-touch/station/frame/core/plugin/broker/a"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	"github.com/peers-labs/peers-touch/station/frame/core/store"
-	"gorm.io/gorm"
 
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/ai_chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
 	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
-	touchactivitypub "github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
-	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 
-	// default plugins
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
@@ -33,16 +23,10 @@ import (
 )
 
 func main() {
-	_ = log.Print
-	_ = os.Args
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	p := peers.NewPeer()
-
-	// Initialize Auth Provider (Core)
-	// jwtProvider := auth.NewJWTProvider(auth.Get().Secret, auth.Get().AccessTTL)
 
 	err := p.Init(
 		ctx,
@@ -58,26 +42,7 @@ func main() {
 		panic(err)
 	}
 
-	// Seed preset users into DB (idempotent)
-	_ = touchactivitypub.SeedPresetUsers(ctx)
-
-	// Initialize session store with database
-	getDBWrapper := func(c context.Context) (*gorm.DB, error) {
-		return store.GetRDS(c)
-	}
-	if err := auth.InitDBSessionStore(getDBWrapper); err != nil {
-		log.Printf("Warning: Failed to init DB session store: %v, using memory store", err)
-	}
-
-	// Initialize event system for real-time push (SSE)
-	broker := brokerA.New()
-	eventLog := logger.NewLogger(context.Background(), logger.WithLevel(logger.InfoLevel))
-	eventSystem := event.NewEventSystem(broker, eventLog)
-	event.SetGlobalEventSystem(eventSystem)
-	log.Printf("Event system initialized for real-time push")
-
-	err = p.Start()
-	if err != nil {
+	if err := p.Start(); err != nil {
 		panic(err)
 	}
 }

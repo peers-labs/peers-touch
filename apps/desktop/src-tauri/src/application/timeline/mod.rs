@@ -1,9 +1,10 @@
+use crate::domain::timeline::TimelineError;
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{StubPayload, TimelineActionInput, TimelineListInput};
-use super::domain_timeline::{self, TimelineError};
+use crate::infrastructure::timeline_store;
+use crate::contracts::{StubPayload, TimelineActionInput, TimelineListInput};
 
 pub fn timeline_list(input: TimelineListInput) -> AppResult<StubPayload> {
-    match domain_timeline::list(input.cursor.as_deref(), input.limit) {
+    match timeline_store::list(input.cursor.as_deref(), input.limit) {
         Ok(outcome) => AppResult::success(StubPayload {
             command: "timeline_list".to_string(),
             status: format!(
@@ -18,7 +19,7 @@ pub fn timeline_list(input: TimelineListInput) -> AppResult<StubPayload> {
 }
 
 pub fn timeline_like(input: TimelineActionInput) -> AppResult<StubPayload> {
-    match domain_timeline::like(&input.post_id) {
+    match timeline_store::like(&input.post_id) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             "timeline like rolled back",
@@ -38,7 +39,7 @@ pub fn timeline_like(input: TimelineActionInput) -> AppResult<StubPayload> {
 
 pub fn timeline_comment(input: TimelineActionInput) -> AppResult<StubPayload> {
     let content = input.content.unwrap_or_default();
-    match domain_timeline::comment(&input.post_id, &content) {
+    match timeline_store::comment(&input.post_id, &content) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             "timeline comment rolled back",
@@ -57,7 +58,7 @@ pub fn timeline_comment(input: TimelineActionInput) -> AppResult<StubPayload> {
 }
 
 pub fn timeline_repost(input: TimelineActionInput) -> AppResult<StubPayload> {
-    match domain_timeline::repost(&input.post_id, input.content.as_deref()) {
+    match timeline_store::repost(&input.post_id, input.content.as_deref()) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             "timeline repost rolled back",

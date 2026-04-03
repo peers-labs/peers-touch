@@ -378,7 +378,6 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
     fontWeight: 500,
     letterSpacing: 0.1,
     cursor: 'pointer',
-    userSelect: 'none' as const,
     boxShadow: selected ? `0 0 0 1px ${token.colorPrimaryBorder}` : 'none',
     transition: 'background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
   });

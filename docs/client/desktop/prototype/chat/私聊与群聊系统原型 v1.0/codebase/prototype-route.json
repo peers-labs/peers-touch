@@ -1,0 +1,87 @@
+{
+  "state_name": "Search Agent Box (Home)",
+  "state_url": "/chat?tab=search",
+  "children": [
+    {
+      "interaction": "Click Messages icon in left sidebar",
+      "state_name": "Chat - Direct Message",
+      "state_url": "/chat?tab=messages&session=s1",
+      "children": [
+        {
+          "interaction": "Click on Group Chat session",
+          "state_name": "Chat - Group Message",
+          "state_url": "/chat?tab=messages&session=s2",
+          "children": [
+            {
+              "interaction": "Click Info icon in header",
+              "state_name": "Chat - Group Info Panel",
+              "state_url": "/chat?tab=messages&session=s2&info=true",
+              "children": []
+            }
+          ]
+        },
+        {
+          "interaction": "Click Info icon in header",
+          "state_name": "Chat - Direct Info Panel",
+          "state_url": "/chat?tab=messages&session=s1&info=true",
+          "children": []
+        },
+        {
+          "interaction": "Click + button next to search",
+          "state_name": "Chat - Plus Menu",
+          "state_url": "/chat?tab=messages&session=s1&menu=plus",
+          "children": [
+            {
+              "interaction": "Click Create Group",
+              "state_name": "Chat - Create Group Modal",
+              "state_url": "/chat?tab=messages&session=s1&modal=create_group",
+              "children": []
+            },
+            {
+              "interaction": "Click Find People",
+              "state_name": "Chat - Find People Modal",
+              "state_url": "/chat?tab=messages&session=s1&modal=find_people",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "interaction": "Click Documents icon",
+      "state_name": "Documents View",
+      "state_url": "/chat?tab=documents",
+      "children": []
+    },
+    {
+      "interaction": "Click Apps icon",
+      "state_name": "Apps View",
+      "state_url": "/chat?tab=apps",
+      "children": []
+    },
+    {
+      "interaction": "Click AI icon",
+      "state_name": "AI View",
+      "state_url": "/chat?tab=ai",
+      "children": []
+    },
+    {
+      "interaction": "Click History icon",
+      "state_name": "History View",
+      "state_url": "/chat?tab=history",
+      "children": []
+    },
+    {
+      "interaction": "Click Send icon",
+      "state_name": "Send View",
+      "state_url": "/chat?tab=send",
+      "children": []
+    },
+    {
+      "interaction": "Click Settings icon",
+      "state_name": "Settings View",
+      "state_url": "/chat?tab=settings",
+      "children": []
+    }
+  ]
+}

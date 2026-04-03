@@ -1,53 +1,69 @@
-# 脚本现状与推荐入口
+# tooling/scripts 使用说明（2026-03）
 
-本目录历史脚本较多，部分已不适配当前仓库结构。下面是已盘点结果与推荐入口。
+本目录是仓库统一脚本入口。运行程序时，优先使用这里的脚本，而不是手工在各子目录执行命令。
 
-## 推荐入口（当前可用）
+## 1. 启动程序（推荐）
 
-| 脚本 | 用途 | 说明 |
-|---|---|---|
-| `preview-web.sh` | 启动 Desktop Web 预览 | 默认 `http://localhost:3000`，会检查/拉起 station |
-| `preview-desktop.sh` | 启动 Desktop(Tauri) 预览 | 会先停止 `preview-web.sh`，并检查/拉起 station |
-| `dev-clean.sh` | 清理常见开发进程 | 兼容旧 PID 文件 |
-
-### 使用方式
+### Desktop（Tauri）
 
 ```bash
-# Web 预览（默认 3000）
-./tooling/scripts/preview-web.sh
-
-# Web 预览（指定端口）
-./tooling/scripts/preview-web.sh 3001
-
-# Desktop(Tauri) 预览
 ./tooling/scripts/preview-desktop.sh
 ```
+
+行为说明：
+- 自动检查并拉起 station（依赖 `_ensure-station.sh`）。
+- 自动清理旧的 desktop/web 预览 PID，避免 Vite 端口冲突。
+- 若检测到 Vite 端口（默认 3000）被占用，会先干掉监听进程再启动。
+- 在 `apps/desktop` 下启动 `tauri:dev -- --no-watch`。
 
 可选环境变量：
 
 ```bash
-# 指定 station 代理目标（默认 http://127.0.0.1:18080）
 export VITE_STATION_PROXY_TARGET=http://127.0.0.1:18080
-
-# 指定 station 就绪检查接口（默认 $VITE_STATION_PROXY_TARGET/api/oauth/providers）
 export STATION_HEALTHCHECK_URL=http://127.0.0.1:18080/api/oauth/providers
+export VITE_PORT=3000
 ```
 
-## 盘点结论（迁移前遗留）
+### 停止开发进程
 
-| 脚本 | 状态 | 主要问题 |
-|---|---|---|
-| `dev-station.sh` | legacy | `PROJECT_ROOT` 计算错误（仅上溯一层） |
-| `dev-full-stack.sh` | legacy | 目录推导错误，且流程假设旧启动方式 |
-| `dev-two-desktops.sh` | legacy | 仍以 Flutter Desktop 构建为主，不符合当前 Tauri 主路径 |
-| `dev-desktop-mobile.sh` | legacy | 混合旧 Flutter/Tauri 假设，目录推导错误 |
-| `run_all_tests.sh` | legacy | 根目录推导错误，测试范围与现仓库不一致 |
-| `pt.sh` / `pt.ps1` | legacy | 仍引用旧目录（`station/app`、`desktop`、`client/mobile`） |
-| `check-go-style.sh` | partial | 默认目录仍为旧结构，需参数化后使用 |
-| `format-go.sh` | partial | 仅在目标 Go 子模块目录执行才安全 |
-| `update-external-repos.sh` | unknown | 与当前 OAuth/desktop 预览链路无直接关系 |
+```bash
+./tooling/scripts/dev-clean.sh
+```
 
-## 约定
+说明：
+- 清理常见 PID 文件与历史开发进程。
+- 会尝试终止 station / desktop / mobile 相关旧进程。
 
-- 配置可使用 YAML（例如 OAuth provider 配置）。
-- 运行状态与业务状态不再依赖 SQLite 本地真相源，统一走原生架构。
+## 2. 脚本现状总览
+
+| 脚本 | 当前状态 | 主要用途 | 备注 |
+|---|---|---|---|
+| `preview-desktop.sh` | 推荐 | 本地启动 Desktop(Tauri) | 当前最稳定入口 |
+| `_ensure-station.sh` | 内部依赖 | 检查/启动 station 并做健康探测 | 由 preview 脚本调用 |
+| `dev-clean.sh` | 推荐 | 清理开发进程 | 建议重启开发环境前执行 |
+| `check-go-style.sh` | 可用（按参数） | Go 风格检查与 lint | 默认目录仍偏旧，建议传入明确目录 |
+| `format-go.sh` | 可用（谨慎） | Go 格式化 | 仅在目标 Go 模块目录执行 |
+| `run_all_tests.sh` | 有风险 | 历史测试聚合脚本 | 根目录推导有偏差，使用前先检查路径 |
+| `pt.sh` / `pt.ps1` | legacy | 历史任务分发 | 仍包含旧目录假设，不建议作为主入口 |
+| `update-external-repos.sh` | 可用（需参数） | 更新 external 仓库 | 默认 external 路径请先确认 |
+
+## 3. 推荐工作流
+
+1. 启动：`./tooling/scripts/preview-desktop.sh`
+2. 如果端口或僵尸进程冲突：`./tooling/scripts/dev-clean.sh`
+3. Go 代码检查（按目录显式执行）：
+
+```bash
+./tooling/scripts/check-go-style.sh apps/station/app
+```
+
+4. Go 格式化（在目标模块目录执行）：
+
+```bash
+cd apps/station/app
+../../../tooling/scripts/format-go.sh
+```
+
+## 4. 已移除/不存在说明
+
+- 仓库当前没有 `preview-web.sh`，请不要再按旧文档使用该命令。

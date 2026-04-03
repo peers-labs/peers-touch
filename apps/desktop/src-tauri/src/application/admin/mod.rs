@@ -1,10 +1,10 @@
-use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{AdminExecuteActionInput, AdminNetworkProbeInput, StubPayload};
-use crate::state::AppState;
-use super::domain_admin::{
+use crate::domain::admin::{
     authorize, build_request_id, emit_audit, validate_action, validate_probe_target, AccessContext,
     AdminCapability,
 };
+use crate::error::{AppResult, ErrorCode};
+use crate::contracts::{AdminExecuteActionInput, AdminNetworkProbeInput, StubPayload};
+use crate::state::AppState;
 
 fn current_access_context(state: &AppState) -> Result<AccessContext, AppResult<StubPayload>> {
     match state.session.lock() {
@@ -62,7 +62,10 @@ pub fn admin_health(state: &AppState) -> AppResult<StubPayload> {
     })
 }
 
-pub fn admin_network_probe(state: &AppState, input: AdminNetworkProbeInput) -> AppResult<StubPayload> {
+pub fn admin_network_probe(
+    state: &AppState,
+    input: AdminNetworkProbeInput,
+) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     let context = match current_access_context(state) {
         Ok(context) => context,
@@ -96,7 +99,10 @@ pub fn admin_network_probe(state: &AppState, input: AdminNetworkProbeInput) -> A
     })
 }
 
-pub fn admin_execute_action(state: &AppState, input: AdminExecuteActionInput) -> AppResult<StubPayload> {
+pub fn admin_execute_action(
+    state: &AppState,
+    input: AdminExecuteActionInput,
+) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     let context = match current_access_context(state) {
         Ok(context) => context,

@@ -1,18 +1,30 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod application;
+mod bootstrap;
+mod contracts;
+mod domain;
 mod error;
+mod infrastructure;
 mod interface;
+mod model;
 mod state;
 
-use interface::tauri_commands::{account, admin, agents, applets, auth, channels, chat, cron, mcp, memory, model_config, models, notebook, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
-use state::AppState;
+use interface::tauri_commands::{account, actor, admin, agents, applets, auth, channels, chat, cron, friend_chat, frontend_log, group_chat, mcp, memory, model_config, models, notebook, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
 
 fn main() {
+    let ctx = bootstrap::run();
+
+    tracing::info!("Launching Tauri application");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
-        .manage(AppState::default())
+        .manage(ctx.app_state)
         .invoke_handler(tauri::generate_handler![
             interface::tauri_commands::meta_contract_version,
+            frontend_log::frontend_log,
+            actor::actor_search_actors,
+            actor::actor_get_my_profile,
             auth::auth_login,
             auth::auth_logout,
             auth::auth_restore_session,
@@ -75,14 +87,8 @@ fn main() {
             search::search_query,
             search::search_ai,
             system::system_health,
-            system::onboarding_get,
-            system::onboarding_set,
+            system::open_external_url,
             system::onboarding_reset,
-            system::wizard_get,
-            system::wizard_state_get,
-            system::wizard_step_save,
-            system::wizard_complete,
-            system::wizard_api_execute,
             system::statistics_get,
             system::preferences_get,
             system::preferences_set,
@@ -100,6 +106,10 @@ fn main() {
             system::embedding_models_list,
             system::visitor_heartbeat,
             system::visitor_online,
+            system::context_snapshot_get,
+            system::context_action_dispatch,
+            system::context_capabilities,
+            system::context_health,
             skills::skills_list,
             skills::skills_search,
             skills::skills_get,
@@ -180,6 +190,8 @@ fn main() {
             oauth2::oauth2_call_resource,
             oauth2::oauth2_reload,
             oauth2::oauth2_get_page,
+            oauth2::oauth2_start_loopback,
+            oauth2::oauth2_poll_loopback,
             account::account_list,
             account::account_get_active,
             account::account_switch,
@@ -193,10 +205,54 @@ fn main() {
             memory::memory_events,
             memory::memory_export,
             memory::memory_import,
-            memory::memory_embedding_status,
-            memory::memory_reembed,
             tts::tts_synthesize,
-            tts::tts_voices
+            tts::tts_voices,
+            friend_chat::friend_chat_list_sessions,
+            friend_chat::friend_chat_create_session,
+            friend_chat::friend_chat_list_messages,
+            friend_chat::friend_chat_send_message,
+            friend_chat::friend_chat_ack_messages,
+            friend_chat::friend_chat_sync_messages,
+            friend_chat::friend_chat_go_online,
+            friend_chat::friend_chat_go_offline,
+            friend_chat::friend_chat_get_pending,
+            friend_chat::friend_chat_get_stats,
+            friend_chat::friend_chat_local_search,
+            friend_chat::friend_chat_local_search_scoped,
+            friend_chat::friend_chat_set_cursor_scoped,
+            friend_chat::friend_chat_get_cursor_scoped,
+            friend_chat::friend_chat_get_key_version_scoped,
+            friend_chat::friend_chat_rotate_key_scoped,
+            friend_chat::friend_chat_sync_from_station_scoped,
+            group_chat::group_chat_list_groups,
+            group_chat::group_chat_list_messages,
+            group_chat::group_chat_send_message,
+            group_chat::group_chat_unread_count,
+            group_chat::group_chat_mark_read,
+            group_chat::group_chat_create_group,
+            group_chat::group_chat_get_group,
+            group_chat::group_chat_update_group,
+            group_chat::group_chat_invite_to_group,
+            group_chat::group_chat_join_group,
+            group_chat::group_chat_leave_group,
+            group_chat::group_chat_get_members,
+            group_chat::group_chat_remove_member,
+            group_chat::group_chat_recall_message,
+            group_chat::group_chat_delete_message,
+            group_chat::group_chat_search_messages,
+            group_chat::group_chat_update_nickname,
+            group_chat::group_chat_get_settings,
+            group_chat::group_chat_update_settings,
+            group_chat::group_chat_get_offline_messages,
+            group_chat::group_chat_ack_offline_messages,
+            group_chat::group_chat_get_stats,
+            group_chat::group_chat_local_search,
+            group_chat::group_chat_local_search_scoped,
+            group_chat::group_chat_set_cursor_scoped,
+            group_chat::group_chat_get_cursor_scoped,
+            group_chat::group_chat_get_key_version_scoped,
+            group_chat::group_chat_rotate_key_scoped,
+            group_chat::group_chat_sync_from_station_scoped
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

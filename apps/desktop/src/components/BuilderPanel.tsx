@@ -15,6 +15,7 @@ import { useChatStore, type ChatMessage } from '../store/chat';
 import { MessageBubble } from './MessageBubble';
 import { ModelProviderSelect } from './ModelProviderSelect';
 import { streamChat, type Agent, type Session } from '../services/desktop_api';
+import { EVENT, eventBus } from '../kernel/events';
 
 export interface BuilderPanelProps {
   agentName: string;
@@ -127,6 +128,7 @@ export function BuilderPanel({
     agents,
     defaultModel,
     selectedModel,
+    selectedProviderId,
     sessions,
     setSelectedModel,
   } = useChatStore();
@@ -178,7 +180,7 @@ export function BuilderPanel({
         setMessages((prev) =>
           prev.map((m) => (m.id === assistantId ? { ...m, content: assistantContent, loading: false, model: modelName || undefined } : m)),
         );
-        window.dispatchEvent(new CustomEvent('agent-builder:stream-end'));
+        eventBus.publish(EVENT.AGENT_BUILDER_STREAM_ENDED, undefined);
         setLoading(false);
         abortRef.current = null;
       },
@@ -193,6 +195,7 @@ export function BuilderPanel({
       },
       [],
       modelOverride,
+      selectedProviderId || undefined,
     );
     abortRef.current = controller;
   }, [input, loading, scopedSessionKey, currentAgent, contextPayload, selectedModel, defaultModel, searchEnabled, onDocumentUpdated]);
@@ -401,8 +404,8 @@ export function BuilderPanel({
                   content={
                     <ModelProviderSelect
                       selectedModelId={currentModelId}
-                      onSelect={(id) => {
-                        setSelectedModel(id);
+                      onSelect={(id, pid) => {
+                        setSelectedModel(id, pid);
                         setModelOpen(false);
                       }}
                       onClose={() => setModelOpen(false)}

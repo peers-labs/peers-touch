@@ -17,7 +17,27 @@ import (
 
 const DefaultSessionDuration = 24 * time.Hour
 
-// AuthMethod represents different authentication methods
+var sessionManager *session.Manager
+
+func InitSessionManager(ctx context.Context) {
+	dbStore := session.NewDBStore(func(ctx context.Context) (*gorm.DB, error) {
+		return store.GetRDS(ctx)
+	}, DefaultSessionDuration)
+
+	if err := dbStore.AutoMigrate(ctx); err != nil {
+		panic(fmt.Errorf("session store auto migrate failed: %v", err))
+	}
+
+	sessionManager = session.NewManager(dbStore, DefaultSessionDuration)
+}
+
+func SessionManager() *session.Manager {
+	if sessionManager == nil {
+		panic("session manager not initialized: store not ready")
+	}
+	return sessionManager
+}
+
 type AuthMethod string
 
 const (
@@ -25,47 +45,12 @@ const (
 	AuthMethodOAuth2 AuthMethod = "oauth2"
 )
 
-// AuthProvider defines the interface for authentication providers
 type AuthProvider interface {
-	// Authenticate validates user credentials and returns authentication result
 	Authenticate(ctx context.Context, credentials *Credentials) (*AuthResult, error)
-
-	// ValidateToken validates an authentication token and returns user info
 	ValidateToken(ctx context.Context, token string) (*TokenInfo, error)
-
-	// RefreshToken refreshes an existing token
 	RefreshToken(ctx context.Context, refreshToken string) (*AuthResult, error)
-
-	// RevokeToken revokes/invalidates a token
 	RevokeToken(ctx context.Context, token string) error
-
-	// GetMethod returns the authentication method this provider supports
 	GetMethod() AuthMethod
-}
-
-// Global session manager with database persistence
-var GlobalSessionManager *session.Manager
-var GlobalDBSessionStore *session.DBStore
-
-func init() {
-	// Start with memory store, will be upgraded to DB store when database is available
-	sessionStore := session.NewMemoryStore(DefaultSessionDuration)
-	GlobalSessionManager = session.NewManager(sessionStore, DefaultSessionDuration)
-}
-
-// InitDBSessionStore initializes the database-backed session store
-// Should be called after database connection is established
-func InitDBSessionStore(getDB func(ctx context.Context) (*gorm.DB, error)) error {
-	GlobalDBSessionStore = session.NewDBStore(getDB, DefaultSessionDuration)
-	
-	// Auto-migrate the session table
-	if err := GlobalDBSessionStore.AutoMigrate(context.Background()); err != nil {
-		return err
-	}
-	
-	// Update manager to use DB store
-	GlobalSessionManager = session.NewManager(GlobalDBSessionStore, DefaultSessionDuration)
-	return nil
 }
 
 // Credentials represents user login credentials
@@ -154,16 +139,12 @@ type SessionLoginResult struct {
 	KickedSession bool                   `json:"kicked_session,omitempty"` // True if another session was kicked
 }
 
-// LoginWithSession handles JWT authentication and session creation
-// deviceType: "desktop" | "mobile" | "web"
 func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, userAgent, deviceType string) (*SessionLoginResult, error) {
-	// Get database connection
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Lookup user and verify password
 	var user db.Actor
 	if err := rds.WithContext(ctx).Where("email = ?", credentials.Email).First(&user).Error; err != nil {
 		return nil, ErrUserNotFound
@@ -172,62 +153,45 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 		return nil, ErrInvalidCredentials
 	}
 
-	// Issue token via core auth provider
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{SubjectID: fmt.Sprintf("%d", user.ID), Attributes: map[string]string{"email": user.Email}})
 	if err != nil {
 		return nil, err
 	}
 
-	// Generate session ID
 	sessionID, err := generateSessionID()
 	if err != nil {
 		return nil, err
 	}
 
-	// Default device type
 	if deviceType == "" {
 		deviceType = "desktop"
 	}
 
-	var kicked bool
-	
-	// Use DB store if available for kick mechanism
-	if GlobalDBSessionStore != nil {
-		sess := &session.Session{
-			ID:        sessionID,
-			UserID:    uint64(user.ID),
-			Email:     user.Email,
-			CreatedAt: time.Now(),
-			ExpiresAt: time.Now().Add(DefaultSessionDuration),
-			LastSeen:  time.Now(),
-			IPAddress: clientIP,
-			UserAgent: userAgent,
-			Data:      map[string]interface{}{"device_type": deviceType},
-		}
-		
-		// Create session with kick mechanism
-		_, kickedCount, err := GlobalDBSessionStore.CreateWithKick(ctx, sess, session.DeviceType(deviceType))
-		if err != nil {
-			return nil, err
-		}
-		kicked = kickedCount > 0
-	} else {
-		// Fallback to memory store (no kick mechanism)
-		_, err = GlobalSessionManager.Create(ctx, uint64(user.ID), user.Email, sessionID, clientIP, userAgent)
-		if err != nil {
-			return nil, err
-		}
+	sess := &session.Session{
+		ID:        sessionID,
+		UserID:    uint64(user.ID),
+		Email:     user.Email,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(DefaultSessionDuration),
+		LastSeen:  time.Now(),
+		IPAddress: clientIP,
+		UserAgent: userAgent,
+		Data:      map[string]interface{}{"device_type": deviceType},
 	}
 
-	// Return login result
+	_, kickedCount, err := SessionManager().CreateWithKick(ctx, sess, session.DeviceType(deviceType))
+	if err != nil {
+		return nil, err
+	}
+
 	return &SessionLoginResult{
 		AccessToken:   token.Value,
 		RefreshToken:  "",
 		TokenType:     token.Type,
 		ExpiresAt:     token.ExpiresAt,
 		SessionID:     sessionID,
-		KickedSession: kicked,
+		KickedSession: kickedCount > 0,
 		User: map[string]interface{}{
 			"id":           user.ID,
 			"actor_id":     user.ID,
@@ -239,22 +203,39 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 	}, nil
 }
 
-// ValidateSession checks if a session is still valid
-// Returns (valid, reason) where reason is empty if valid, or "kicked"/"expired"/"not_found" if not
 func ValidateSession(ctx context.Context, sessionID string) (bool, string) {
-	if GlobalDBSessionStore == nil {
-		// Fallback to memory store validation
-		_, err := GlobalSessionManager.Validate(ctx, sessionID)
-		if err != nil {
-			if err == session.ErrSessionExpired {
-				return false, "expired"
-			}
-			return false, "not_found"
-		}
-		return true, ""
+	return SessionManager().CheckValid(ctx, sessionID)
+}
+
+func LogoutSession(ctx context.Context, sessionID string) error {
+	return SessionManager().Delete(ctx, sessionID)
+}
+
+func ChangePassword(ctx context.Context, userID uint64, oldPassword, newPassword string) error {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return err
 	}
-	
-	return GlobalDBSessionStore.CheckSessionValid(ctx, sessionID)
+
+	var user db.Actor
+	if err := rds.WithContext(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
+		return ErrUserNotFound
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPassword)); err != nil {
+		return ErrInvalidCredentials
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password failed: %w", err)
+	}
+
+	if err := rds.WithContext(ctx).Model(&db.Actor{}).Where("id = ?", userID).Update("password_hash", string(hash)).Error; err != nil {
+		return fmt.Errorf("update password failed: %w", err)
+	}
+
+	return nil
 }
 
 // generateSessionID generates a random session ID

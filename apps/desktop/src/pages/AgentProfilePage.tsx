@@ -28,6 +28,7 @@ import { ModelSelect } from '../components/ModelSelect';
 import { AgentSettingsModal } from '../components/AgentSettingsModal';
 import { BuilderPanel } from '../components/BuilderPanel';
 import { SkillAppletTagBar } from '../components/SkillAppletSelector';
+import { EVENT, eventBus } from '../kernel/events';
 
 interface AgentProfilePageProps {
   agentName: string;
@@ -276,8 +277,7 @@ export function AgentProfilePage({
   // Refresh agent data when Agent Builder modifies the agent
   useEffect(() => {
     const handler = () => loadAgents();
-    window.addEventListener('agent-builder:stream-end', handler);
-    return () => window.removeEventListener('agent-builder:stream-end', handler);
+    return eventBus.subscribe(EVENT.AGENT_BUILDER_STREAM_ENDED, handler);
   }, [loadAgents]);
 
   useEffect(() => {
@@ -523,7 +523,6 @@ export function AgentProfilePage({
                       activeTab === tab.key ? token.colorPrimary : 'transparent'
                     }`,
                     transition: 'color 0.2s, border-color 0.2s',
-                    userSelect: 'none',
                   }}
                 >
                   {tab.icon}

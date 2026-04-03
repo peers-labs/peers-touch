@@ -1,9 +1,10 @@
-use super::domain_settings::{
-    default_settings, default_value, key_name, parse_key, side_effect, validate_value, SettingKey, SettingSideEffect,
+use crate::domain::settings::{
+    default_settings, default_value, key_name, parse_key, side_effect, validate_value, SettingKey,
+    SettingSideEffect,
 };
-use super::storage_infrastructure::{load_settings, save_settings, StorageError};
+use crate::infrastructure::storage::{load_settings, save_settings, StorageError};
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{SettingsGetInput, SettingsSetInput, StubPayload};
+use crate::contracts::{SettingsGetInput, SettingsSetInput, StubPayload};
 use crate::state::AppState;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -64,7 +65,11 @@ pub fn settings_reset(state: &AppState) -> AppResult<StubPayload> {
     if let Err(error) = save_settings(&settings) {
         return storage_error_to_result("settings_reset", error);
     }
-    for key in [SettingKey::Theme, SettingKey::Locale, SettingKey::TelemetryEnabled] {
+    for key in [
+        SettingKey::Theme,
+        SettingKey::Locale,
+        SettingKey::TelemetryEnabled,
+    ] {
         let value = settings
             .get(key_name(key))
             .cloned()
@@ -87,7 +92,11 @@ fn load_settings_with_defaults() -> Result<HashMap<String, Value>, StorageError>
     Ok(settings)
 }
 
-fn apply_side_effect(state: &AppState, key: SettingKey, value: &Value) -> Result<(), AppResult<StubPayload>> {
+fn apply_side_effect(
+    state: &AppState,
+    key: SettingKey,
+    value: &Value,
+) -> Result<(), AppResult<StubPayload>> {
     match side_effect(key) {
         SettingSideEffect::None => Ok(()),
         SettingSideEffect::ThemeChanged => {
@@ -125,6 +134,11 @@ fn invalid_value(command: &str, message: String) -> AppResult<StubPayload> {
 
 fn storage_error_to_result(command: &str, error: StorageError) -> AppResult<StubPayload> {
     match error {
+        StorageError::ResolveFailed(message) => AppResult::fail(
+            ErrorCode::InternalError,
+            "failed to resolve settings storage path",
+            Some(json!({ "command": command, "reason": "resolve_failed", "source": message })),
+        ),
         StorageError::ReadFailed(message) => AppResult::fail(
             ErrorCode::InternalError,
             "failed to read settings",
@@ -134,6 +148,17 @@ fn storage_error_to_result(command: &str, error: StorageError) -> AppResult<Stub
             ErrorCode::Conflict,
             "failed to write settings",
             Some(json!({ "command": command, "reason": "write_failed", "source": message })),
+        ),
+        StorageError::KeyError(key_error) => AppResult::fail(
+            ErrorCode::InternalError,
+            "key provider error",
+            Some(json!({
+                "command": command,
+                "reason": "key_error",
+                "code": key_error.code.to_string(),
+                "ref": key_error.key_ref_hash,
+                "source": key_error.message
+            })),
         ),
     }
 }

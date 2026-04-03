@@ -1,6 +1,7 @@
-use super::auth_domain::{issue_session, validate_token, AuthDomainError, AuthSession};
+use crate::domain::auth::session::{issue_session, validate_token, AuthDomainError, AuthSession};
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{AuthLoginInput, AuthValidateTokenInput, StubPayload};
+use crate::infrastructure::storage::{self, StorageKind};
+use crate::contracts::{AuthLoginInput, AuthValidateTokenInput, StubPayload};
 use crate::state::{AppState, SessionState};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -74,7 +75,10 @@ pub fn auth_restore_session(state: &State<AppState>) -> AppResult<StubPayload> {
     })
 }
 
-pub fn auth_validate_token(input: AuthValidateTokenInput, state: &State<AppState>) -> AppResult<StubPayload> {
+pub fn auth_validate_token(
+    input: AuthValidateTokenInput,
+    state: &State<AppState>,
+) -> AppResult<StubPayload> {
     let token = match input.token {
         Some(token) if !token.trim().is_empty() => token,
         _ => {
@@ -126,7 +130,10 @@ fn read_session(state: &State<AppState>) -> Result<SessionState, AppResult<StubP
     })
 }
 
-fn write_session(state: &State<AppState>, session: &AuthSession) -> Result<(), AppResult<StubPayload>> {
+fn write_session(
+    state: &State<AppState>,
+    session: &AuthSession,
+) -> Result<(), AppResult<StubPayload>> {
     let mut guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
@@ -180,7 +187,7 @@ fn persist_session(session: &AuthSession) -> Result<(), AppResult<StubPayload>> 
             Some(json!({ "reason": "session_serialize_failed" })),
         )
     })?;
-    fs::write(file_path, payload).map_err(|_| {
+    storage::write_string_atomic(&file_path, &payload).map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
             "failed to persist session",
@@ -214,10 +221,14 @@ fn clear_persisted_session() -> Result<(), AppResult<StubPayload>> {
 }
 
 fn persisted_session_file() -> PathBuf {
-    std::env::temp_dir()
-        .join("peers-touch")
-        .join("desktop")
-        .join("auth-session.json")
+    storage::app_file_path("desktop", StorageKind::Temp, &["auth", "session.json"]).unwrap_or_else(
+        |_| {
+            std::env::temp_dir()
+                .join("peers-touch")
+                .join("desktop")
+                .join("auth-session.json")
+        },
+    )
 }
 
 fn map_domain_error(error: AuthDomainError) -> AppResult<StubPayload> {

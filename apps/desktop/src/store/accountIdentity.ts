@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, type AccountIdentity } from '../services/desktop_api';
+import { EVENT, eventBus } from '../kernel/events';
 
 interface AccountIdentityStore {
   accounts: AccountIdentity[];
@@ -13,9 +14,7 @@ interface AccountIdentityStore {
 let loadPromise: Promise<void> | null = null;
 
 function notifyChanged() {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('account-identity-changed'));
-  }
+  eventBus.publish(EVENT.AUTH_IDENTITY_CHANGED, undefined);
 }
 
 export const useAccountIdentityStore = create<AccountIdentityStore>((set, get) => ({

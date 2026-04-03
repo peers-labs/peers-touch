@@ -1,10 +1,10 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{
-    OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
+use crate::contracts::{
+    OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
+    OAuthLoopbackStartInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
 };
 
-#[path = "../../application/oauth2/mod.rs"]
-mod application_oauth2;
+use crate::application::oauth2 as application_oauth2;
 
 #[tauri::command]
 pub fn oauth2_list_providers() -> AppResult<StubPayload> {
@@ -69,4 +69,14 @@ pub fn oauth2_reload() -> AppResult<StubPayload> {
 #[tauri::command]
 pub fn oauth2_get_page(input: OAuthIdInput) -> AppResult<StubPayload> {
     application_oauth2::oauth2_get_page(input)
+}
+
+#[tauri::command]
+pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_start_loopback(input)
+}
+
+#[tauri::command]
+pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_poll_loopback(input)
 }

@@ -323,7 +323,6 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
                   borderBottom: activeSource === t.key ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
                   transition: 'all 0.15s',
                   flexShrink: 0,
-                  userSelect: 'none',
                 }}
               >
                 {t.label}
