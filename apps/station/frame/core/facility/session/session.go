@@ -113,12 +113,17 @@ func (m *MemoryStore) startCleanup() {
 	}
 }
 
+type KickableStore interface {
+	Store
+	CreateWithKick(ctx context.Context, sess *Session, deviceType DeviceType) (*Session, int64, error)
+	CheckSessionValid(ctx context.Context, sessionID string) (bool, string)
+}
+
 type Manager struct {
 	store Store
 	ttl   time.Duration
 }
 
-// NewManager creates a session manager using the provided store and TTL.
 func NewManager(store Store, ttl time.Duration) *Manager {
 	if ttl == 0 {
 		ttl = 24 * time.Hour
@@ -126,7 +131,6 @@ func NewManager(store Store, ttl time.Duration) *Manager {
 	return &Manager{store: store, ttl: ttl}
 }
 
-// Create creates and persists a new session for a user.
 func (m *Manager) Create(ctx context.Context, userID uint64, email, sessionID, ip, ua string) (*Session, error) {
 	s := &Session{
 		ID:        sessionID,
@@ -145,17 +149,24 @@ func (m *Manager) Create(ctx context.Context, userID uint64, email, sessionID, i
 	return s, nil
 }
 
-// Get fetches a session by ID.
+func (m *Manager) CreateWithKick(ctx context.Context, sess *Session, deviceType DeviceType) (*Session, int64, error) {
+	if ks, ok := m.store.(KickableStore); ok {
+		return ks.CreateWithKick(ctx, sess, deviceType)
+	}
+	if err := m.store.Set(ctx, sess.ID, sess); err != nil {
+		return nil, 0, err
+	}
+	return sess, 0, nil
+}
+
 func (m *Manager) Get(ctx context.Context, sessionID string) (*Session, error) {
 	return m.store.Get(ctx, sessionID)
 }
 
-// Delete removes a session by ID.
 func (m *Manager) Delete(ctx context.Context, sessionID string) error {
 	return m.store.Delete(ctx, sessionID)
 }
 
-// Validate ensures a session exists and is not expired.
 func (m *Manager) Validate(ctx context.Context, sessionID string) (*Session, error) {
 	s, err := m.Get(ctx, sessionID)
 	if err != nil {
@@ -166,4 +177,18 @@ func (m *Manager) Validate(ctx context.Context, sessionID string) (*Session, err
 		return nil, ErrSessionExpired
 	}
 	return s, nil
+}
+
+func (m *Manager) CheckValid(ctx context.Context, sessionID string) (bool, string) {
+	if ks, ok := m.store.(KickableStore); ok {
+		return ks.CheckSessionValid(ctx, sessionID)
+	}
+	_, err := m.Validate(ctx, sessionID)
+	if err != nil {
+		if err == ErrSessionExpired {
+			return false, "expired"
+		}
+		return false, "not_found"
+	}
+	return true, ""
 }

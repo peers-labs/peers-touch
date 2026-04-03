@@ -1265,19 +1265,19 @@ function SkillProtocolPreview({ content, token }: { content: string; token: any 
     <Flexbox gap={12}>
       <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
         <Text strong>Manifest</Text>
-        <div style={{ marginTop: 8, fontFamily: 'monospace', whiteSpace: 'pre-wrap', fontSize: 12 }}>
+        <div className="selectable" style={{ marginTop: 8, fontFamily: 'monospace', whiteSpace: 'pre-wrap', fontSize: 12 }}>
           {sections.frontmatter || 'No frontmatter'}
         </div>
       </Card>
       <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
         <Text strong>Content</Text>
-        <div style={{ marginTop: 8, maxHeight: 360, overflow: 'auto' }}>
+        <div className="selectable" style={{ marginTop: 8, maxHeight: 360, overflow: 'auto' }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{sections.body || ''}</ReactMarkdown>
         </div>
       </Card>
       <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
         <Text strong>Raw Protocol</Text>
-        <div style={{ marginTop: 8, maxHeight: 220, overflow: 'auto', fontFamily: 'monospace', whiteSpace: 'pre-wrap', fontSize: 12 }}>
+        <div className="selectable" style={{ marginTop: 8, maxHeight: 220, overflow: 'auto', fontFamily: 'monospace', whiteSpace: 'pre-wrap', fontSize: 12 }}>
           {content}
         </div>
       </Card>

@@ -1,0 +1,23 @@
+# Examples Directory Rule
+# This rule informs the AI assistant about the location and structure of examples
+
+examples:
+  location: "peers-touch-go/example"
+  description: "Contains example implementations and usage demonstrations for the peers-touch-go framework"
+  
+  structure:
+    bootstrap: "Bootstrap node example with configuration files"
+    config: "Configuration source examples"
+    hellohumans: "Human interaction example with peer configuration"
+    helloworld: "Basic hello world example with actor and peer setup"
+    libp2p: "Direct libp2p usage examples"
+    libp2p_lookup: "DHT lookup example"
+    libp2p_putvalue: "DHT put value example"
+  
+  usage_guidelines:
+    - "When asked for examples, always check the peers-touch-go/example directory first"
+    - "Use existing examples as templates for new implementations"
+    - "Refer to configuration files in conf/ subdirectories for setup patterns"
+    - "Examples demonstrate both basic and advanced usage patterns"
+  
+  note: "This directory contains working examples that demonstrate various aspects of the framework including bootstrap nodes, peer communication, DHT operations, and configuration management"

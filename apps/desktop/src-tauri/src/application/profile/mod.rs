@@ -1,9 +1,12 @@
+use crate::domain::profile::{ProfileError, UploadKind};
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload};
-use super::domain_profile::{self, ProfileError, UploadKind};
+use crate::infrastructure::profile_store;
+use crate::contracts::{
+    FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
+};
 
 pub fn profile_get() -> AppResult<StubPayload> {
-    match domain_profile::get() {
+    match profile_store::get() {
         Ok(snapshot) => AppResult::success(StubPayload {
             command: "profile_get".to_string(),
             status: format!(
@@ -16,7 +19,7 @@ pub fn profile_get() -> AppResult<StubPayload> {
 }
 
 pub fn profile_update(input: ProfileUpdateInput) -> AppResult<StubPayload> {
-    match domain_profile::update(input.display_name, input.bio, input.location) {
+    match profile_store::update(input.display_name, input.bio, input.location) {
         Ok(snapshot) => AppResult::success(StubPayload {
             command: "profile_update".to_string(),
             status: format!("updated:{}@{}", snapshot.display_name, snapshot.location),
@@ -34,7 +37,7 @@ pub fn profile_upload_header(input: FileUploadInput) -> AppResult<StubPayload> {
 }
 
 pub fn profile_update_privacy(input: ProfilePrivacyInput) -> AppResult<StubPayload> {
-    match domain_profile::update_privacy(input.visibility, input.allow_direct_message) {
+    match profile_store::update_privacy(input.visibility, input.allow_direct_message) {
         Ok(snapshot) => AppResult::success(StubPayload {
             command: "profile_update_privacy".to_string(),
             status: format!(
@@ -47,7 +50,7 @@ pub fn profile_update_privacy(input: ProfilePrivacyInput) -> AppResult<StubPaylo
 }
 
 fn map_upload(command: &str, kind: UploadKind, input: FileUploadInput) -> AppResult<StubPayload> {
-    match domain_profile::upload(kind, &input.file_path) {
+    match profile_store::upload(kind, &input.file_path) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             "profile upload rolled back",

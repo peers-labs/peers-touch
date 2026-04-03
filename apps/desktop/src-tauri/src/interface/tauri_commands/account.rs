@@ -1,8 +1,7 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{AccountIdInput, AccountUpsertOAuthInput, StubPayload};
+use crate::contracts::{AccountIdInput, AccountUpsertOAuthInput, StubPayload};
 
-#[path = "../../application/account/mod.rs"]
-mod application_account;
+use crate::application::account as application_account;
 
 #[tauri::command]
 pub fn account_list() -> AppResult<StubPayload> {

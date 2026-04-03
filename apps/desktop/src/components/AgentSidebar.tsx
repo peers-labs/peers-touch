@@ -164,10 +164,20 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   const handleNewTopic = useCallback(() => {
     const agentName = selectedAgent || 'assistant';
     const key = `agent:${agentName}:${Date.now()}`;
+    const now = new Date().toISOString();
+    const placeholder: Session = {
+      id: key,
+      key,
+      agent_name: agentName,
+      title: 'New Topic',
+      message_count: 0,
+      created_at: now,
+      updated_at: now,
+    };
+    setAgentSessions((prev) => [placeholder, ...prev]);
     selectSession(key);
     onNavigateChat?.();
-    setTimeout(loadAgentTopics, 300);
-  }, [selectedAgent, selectSession, loadAgentTopics, onNavigateChat]);
+  }, [selectedAgent, selectSession, onNavigateChat]);
 
   const handleDeleteTopic = useCallback(
     async (sessionKey: string) => {
@@ -424,7 +434,6 @@ function TopicGroup({
         style={{
           padding: '4px 8px',
           cursor: 'pointer',
-          userSelect: 'none',
         }}
       >
         <ChevronRight

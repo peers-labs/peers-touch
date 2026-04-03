@@ -1,10 +1,10 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{
-    CronCreateInput, CronIdInput, CronParseScheduleInput, CronRunsInput, CronToggleInput, CronUpdateInput, StubPayload,
+use crate::contracts::{
+    CronCreateInput, CronIdInput, CronParseScheduleInput, CronRunsInput, CronToggleInput,
+    CronUpdateInput, StubPayload,
 };
 
-#[path = "../../application/cron/mod.rs"]
-mod application_cron;
+use crate::application::cron as application_cron;
 
 #[tauri::command]
 pub fn cron_status() -> AppResult<StubPayload> {

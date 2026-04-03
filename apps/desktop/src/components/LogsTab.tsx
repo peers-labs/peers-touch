@@ -51,10 +51,29 @@ function parseLogLine(line: string): LogEntry {
     const trimmed = line.trim();
     if (!trimmed) return { raw: line, message: line };
 
-    // Try JSON
     if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
         try {
             const obj = JSON.parse(trimmed);
+
+            if (obj.timestamp && obj.level && obj.target) {
+                const fields = { ...obj };
+                delete fields.timestamp;
+                delete fields.level;
+                delete fields.target;
+                delete fields.message;
+                const extras = Object.entries(fields)
+                    .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
+                    .join(' ');
+                const msg = extras ? `${obj.message || ''} ${extras}` : (obj.message || '');
+                return {
+                    raw: line,
+                    time: obj.timestamp,
+                    level: normalizeLevel(obj.level),
+                    subsystem: obj.target,
+                    message: msg.trim(),
+                };
+            }
+
             const meta = obj._meta || {};
             let msg = obj.msg || obj.message || (typeof obj['1'] === 'string' ? obj['1'] : (typeof obj['0'] === 'string' ? obj['0'] : line));
             if (obj.req) msg += ' | req=' + obj.req;
@@ -71,7 +90,6 @@ function parseLogLine(line: string): LogEntry {
         }
     }
 
-    // Try Logfmt / TextFormatter
     const entry: LogEntry = { raw: line, message: line };
     
     const timeMatch = line.match(/time="([^"]+)"/);
@@ -289,6 +307,7 @@ export function LogsTab() {
 
         <div 
             ref={scrollRef}
+            className="selectable"
             style={{ 
                 flex: 1, 
                 background: '#1a1a1a', 

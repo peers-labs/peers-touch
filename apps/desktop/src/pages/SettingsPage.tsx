@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { HTMLAttributes, ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Tabs, Tag, Table, Button, Input, Typography, Collapse, Spin, message, theme, Modal, Tooltip } from 'antd';
+import { Tabs, Tag, Table, Button, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
 import {
   Settings, Bot, Wrench, HelpCircle,
   MessageSquare, Puzzle, Sparkles,
@@ -16,8 +15,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
 import { useProviderStore } from '../store/provider';
-import { api, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
-import AppletManager, { type AppletInfo as RuntimeAppletInfo } from '../applet/AppletManager';
+import { api, type AppletInfo, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
+import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
 
@@ -70,16 +69,15 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
   const registryTabs = getModulesWithSettings().map((mod) => {
     const Icon = mod.icon;
     const Panel = mod.settingsPanel!;
-    const tabLabel = (
-      <Flexbox horizontal align="center" gap={6}>
-        <Icon size={14} />
-        {mod.settingsEntry?.label || mod.name}
-      </Flexbox>
-    );
     return {
       key: mod.id,
       order: mod.settingsEntry!.order,
-      label: mod.settingsEntry?.tooltip ? <Tooltip title={mod.settingsEntry.tooltip}>{tabLabel}</Tooltip> : tabLabel,
+      label: (
+        <Flexbox horizontal align="center" gap={6}>
+          <Icon size={14} />
+          {mod.settingsEntry?.label || mod.name}
+        </Flexbox>
+      ),
       children: <Panel />,
     };
   });
@@ -165,13 +163,51 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
 }
 
 function AppletsSettingsTab() {
-  const [applets, setApplets] = useState<RuntimeAppletInfo[]>([]);
+  const [applets, setApplets] = useState<AppletInfo[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
   const { token } = theme.useToken();
-  const appletManager = AppletManager.getInstance();
 
   useEffect(() => {
-    appletManager.scanApplets().then(setApplets).catch(() => setApplets([]));
-  }, [appletManager]);
+    api.listApplets().then(setApplets).catch(console.error);
+  }, []);
+
+  const SettingsPanel = selected ? getAppletFrontend(selected)?.settingsPanel : undefined;
+
+  if (SettingsPanel) {
+    return (
+      <Flexbox style={{ height: '100%', overflow: 'hidden' }}>
+        <Flexbox
+          horizontal
+          align="center"
+          gap={8}
+          style={{
+            padding: '12px 24px',
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            flexShrink: 0,
+          }}
+        >
+          <div
+            onClick={() => setSelected(null)}
+            style={{
+              cursor: 'pointer',
+              padding: '4px 8px',
+              borderRadius: 6,
+              fontSize: 13,
+              color: token.colorPrimary,
+              transition: 'background 0.2s',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget).style.background = token.colorPrimaryBg; }}
+            onMouseLeave={(e) => { (e.currentTarget).style.background = 'transparent'; }}
+          >
+            ← Back to Applets
+          </div>
+        </Flexbox>
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          <SettingsPanel />
+        </div>
+      </Flexbox>
+    );
+  }
 
   return (
     <Flexbox style={{ padding: 24, maxWidth: 700, overflow: 'auto', height: '100%' }} gap={16}>
@@ -181,30 +217,34 @@ function AppletsSettingsTab() {
           <Title level={5} style={{ margin: 0 }}>Applet Settings</Title>
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 13 }}>
-          当前版本已移除内嵌 applet 设置面板，Applet 配置由 packages/applets 产物自身处理。
+          Configure installed applets. Each applet may have its own settings panel.
         </Text>
       </Flexbox>
 
       <Flexbox gap={10}>
         {applets.map((applet) => {
-          const IconComp = ICON_MAP[applet.icon];
+          const hasSettings = hasSettingsPanel(applet.manifest.id);
+          const IconComp = ICON_MAP[applet.manifest.icon];
           return (
             <Flexbox
-              key={applet.id}
+              key={applet.manifest.id}
               horizontal
               align="center"
               gap={14}
+              onClick={hasSettings ? () => setSelected(applet.manifest.id) : undefined}
               style={{
                 padding: '16px 20px',
                 borderRadius: 12,
                 background: token.colorBgContainer,
                 border: `1px solid ${token.colorBorderSecondary}`,
-                cursor: 'default',
+                cursor: hasSettings ? 'pointer' : 'default',
                 transition: 'all 0.2s',
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget).style.borderColor = token.colorPrimary;
-                (e.currentTarget).style.boxShadow = `0 2px 8px ${token.colorPrimaryBg}`;
+                if (hasSettings) {
+                  (e.currentTarget).style.borderColor = token.colorPrimary;
+                  (e.currentTarget).style.boxShadow = `0 2px 8px ${token.colorPrimaryBg}`;
+                }
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget).style.borderColor = token.colorBorderSecondary;
@@ -227,22 +267,27 @@ function AppletsSettingsTab() {
               </div>
               <Flexbox flex={1} gap={2}>
                 <Flexbox horizontal align="center" gap={8}>
-                  <Text strong style={{ fontSize: 14 }}>{applet.name}</Text>
+                  <Text strong style={{ fontSize: 14 }}>{applet.manifest.name}</Text>
                   <Tag
-                    color="default"
+                    color={applet.status === 'active' ? 'success' : applet.status === 'error' ? 'error' : 'default'}
                     style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
                   >
-                    installed
+                    {applet.status}
                   </Tag>
                   <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}>
-                    v{applet.version}
+                    v{applet.manifest.version}
                   </Tag>
                 </Flexbox>
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  {applet.description}
+                  {applet.manifest.description}
                 </Text>
               </Flexbox>
-              <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>No host settings</Text>
+              {hasSettings && (
+                <Text type="secondary" style={{ fontSize: 18, flexShrink: 0 }}>›</Text>
+              )}
+              {!hasSettings && (
+                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>No settings</Text>
+              )}
             </Flexbox>
           );
         })}
@@ -303,7 +348,7 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
     }
   }
 
-  const cells: ReactNode[] = [];
+  const cells: React.ReactNode[] = [];
   for (let w = 0; w < weeks; w++) {
     for (let day = 0; day < 7; day++) {
       const d = new Date(startDate);
@@ -396,7 +441,7 @@ function RankList({
   valueHeader,
 }: {
   title: string;
-  icon: ReactNode;
+  icon: React.ReactNode;
   items: { name: string; count: number }[] | null;
   labelHeader: string;
   valueHeader: string;
@@ -509,7 +554,7 @@ function StatisticsTab() {
 
   const { summary } = data;
 
-  const summaryCards: { label: string; value: string | number; sub?: string; icon: ReactNode }[] = [
+  const summaryCards: { label: string; value: string | number; sub?: string; icon: React.ReactNode }[] = [
     {
       label: 'Sessions',
       value: summary.sessions,
@@ -538,7 +583,7 @@ function StatisticsTab() {
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" gap={8}>
           <Text strong style={{ fontSize: 16 }}>
-            This is your <span style={{ color: token.colorPrimary, fontWeight: 700, fontSize: 20 }}>{summary.days_with_us}</span> day with Peers Touch
+            This is your <span style={{ color: token.colorPrimary, fontWeight: 700, fontSize: 20 }}>{summary.days_with_us}</span> day with Peers-Touch
           </Text>
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 12 }}>
@@ -624,7 +669,7 @@ function GeneralTab() {
   }, [loadAgents]);
 
   return (
-    <Flexbox style={{ padding: 24, maxWidth: 700, overflow: 'auto' }} gap={24}>
+    <Flexbox style={{ padding: 24, maxWidth: 700, overflow: 'auto', height: '100%' }} gap={24}>
       <Flexbox
         gap={16}
         style={{
@@ -790,7 +835,7 @@ function ToolsTab() {
           size="small"
           pagination={false}
           style={{ borderRadius: 8, overflow: 'hidden' }}
-          onRow={(record) => ({ 'data-item-id': record.name } as HTMLAttributes<HTMLElement>)}
+          onRow={(record) => ({ 'data-item-id': record.name } as React.HTMLAttributes<HTMLElement>)}
         />
       </Flexbox>
     </Flexbox>
@@ -851,7 +896,7 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
       >
         <Flexbox horizontal align="center" gap={8}>
           <Sparkles size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>Peers Touch</Title>
+          <Title level={5} style={{ margin: 0 }}>Peers-Touch</Title>
           <Tag style={{ fontSize: 11 }}>dev</Tag>
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 13 }}>
@@ -964,17 +1009,17 @@ function DangerZoneResetOnboarding() {
 
   const handleReset = () => {
     Modal.confirm({
-      title: '重新进入初始化状态',
+      title: '重新进入登录页面',
       icon: <AlertTriangle size={20} style={{ color: token.colorError }} />,
       content: (
         <Flexbox gap={8}>
-          <Text>将清除以下初始化状态：</Text>
+          <Text>将清除以下状态：</Text>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li>是否已完成初始化</li>
-            <li>向导进度（若使用自定义向导）</li>
+            <li>当前登录会话</li>
+            <li>OAuth 连接信息</li>
           </ul>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            Provider、模型、偏好等配置保留在 KV 中，重新初始化时会覆盖。确定继续？
+            Provider、模型、偏好等配置保留。确定继续？
           </Text>
         </Flexbox>
       ),
@@ -1011,7 +1056,7 @@ function DangerZoneResetOnboarding() {
         <Text strong style={{ color: token.colorError }}>危险操作</Text>
       </Flexbox>
       <Text type="secondary" style={{ fontSize: 13 }}>
-        重新进入初始化向导，用于验证配置或重新完成初始化流程。
+        退出登录并返回登录页面。
       </Text>
       <Button
         danger
@@ -1019,7 +1064,7 @@ function DangerZoneResetOnboarding() {
         loading={loading}
         onClick={handleReset}
       >
-        重新进入初始化状态
+        退出登录
       </Button>
     </Flexbox>
   );

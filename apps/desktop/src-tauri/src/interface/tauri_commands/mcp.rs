@@ -1,8 +1,9 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload};
+use crate::contracts::{
+    McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload,
+};
 
-#[path = "../../application/mcp/mod.rs"]
-mod application_mcp;
+use crate::application::mcp as application_mcp;
 
 #[tauri::command]
 pub fn mcp_list_servers() -> AppResult<StubPayload> {

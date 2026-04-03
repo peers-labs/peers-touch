@@ -9,6 +9,21 @@ html, body, #root {
   width: 100%;
 }
 
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }

@@ -1,8 +1,7 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{StubPayload, TtsInput};
+use crate::contracts::{StubPayload, TtsInput};
 
-#[path = "../../application/tts/mod.rs"]
-mod application_tts;
+use crate::application::tts as application_tts;
 
 #[tauri::command]
 pub fn tts_synthesize(input: TtsInput) -> AppResult<StubPayload> {

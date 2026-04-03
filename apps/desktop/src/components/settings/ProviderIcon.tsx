@@ -4,16 +4,28 @@ import Anthropic from '@lobehub/icons/es/Anthropic';
 import Google from '@lobehub/icons/es/Google';
 import DeepSeek from '@lobehub/icons/es/DeepSeek';
 import Ollama from '@lobehub/icons/es/Ollama';
+import OpenRouter from '@lobehub/icons/es/OpenRouter';
+import Mistral from '@lobehub/icons/es/Mistral';
+import Groq from '@lobehub/icons/es/Groq';
+import Together from '@lobehub/icons/es/Together';
+import Cohere from '@lobehub/icons/es/Cohere';
 import { theme } from 'antd';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ICON_MAP: Record<string, React.ComponentType<any>> = {
-  ark: Doubao.Avatar,
-  openai: OpenAI.Avatar,
-  anthropic: Anthropic.Avatar,
-  google: Google.Avatar,
-  deepseek: DeepSeek.Avatar,
-  ollama: Ollama.Avatar,
+type IconComponent = React.ComponentType<{ size?: number | string; style?: React.CSSProperties }>;
+
+const ICON_MAP: Record<string, IconComponent> = {
+  ark: Doubao.Color,
+  doubao: Doubao.Color,
+  openai: OpenAI,
+  anthropic: Anthropic,
+  google: Google.Color,
+  deepseek: DeepSeek.Color,
+  ollama: Ollama,
+  openrouter: OpenRouter,
+  mistral: Mistral.Color,
+  groq: Groq,
+  together: Together.Color,
+  cohere: Cohere.Color,
 };
 
 interface Props {
@@ -24,12 +36,26 @@ interface Props {
 
 export function ProviderIcon({ providerId, providerName, size = 32 }: Props) {
   const { token } = theme.useToken();
-  let Icon = ICON_MAP[providerId];
-  if (!Icon && providerId.startsWith('doubao-seed')) {
-    Icon = Doubao.Avatar;
-  }
+  const Icon = ICON_MAP[providerId];
+
   if (Icon) {
-    return <Icon size={size} />;
+    return (
+      <div
+        style={{
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          background: token.colorBgContainer,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          overflow: 'hidden',
+        }}
+      >
+        <Icon size={size * 0.7} />
+      </div>
+    );
   }
 
   return (

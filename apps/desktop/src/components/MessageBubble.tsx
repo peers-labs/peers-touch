@@ -31,6 +31,7 @@ import type { ChatMessage, ToolCallInfo } from '../store/chat';
 import { useChatStore } from '../store/chat';
 import MessageCard, { type CardData } from './MessageCard';
 import { parseDeepLink } from '../utils/deeplink';
+import { EVENT, eventBus } from '../kernel/events';
 
 const { TextArea } = Input;
 
@@ -202,7 +203,6 @@ function ToolCallsBlock({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
           fontSize: 12,
           fontWeight: 500,
           color: token.colorTextSecondary,
-          userSelect: 'none',
         }}
       >
         {expanded
@@ -356,7 +356,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
   const handleDeepLinkNav = useCallback((uri: string) => {
     const parsed = parseDeepLink(uri);
     if (!parsed) return;
-    window.dispatchEvent(new CustomEvent('Peers-Touch:navigate', { detail: parsed }));
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, parsed);
   }, []);
 
   if (cardData) {
@@ -612,21 +612,24 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
                   </div>
                 );
               })()}
-              <Markdown
-                variant="chat"
-                animated={message.loading}
-                fontSize={14}
-                componentProps={{
-                  highlight: { fullFeatured: true },
-                }}
-              >
-                {message.content}
-              </Markdown>
+              <div className="selectable">
+                <Markdown
+                  variant="chat"
+                  animated={message.loading}
+                  fontSize={14}
+                  componentProps={{
+                    highlight: { fullFeatured: true },
+                  }}
+                >
+                  {message.content}
+                </Markdown>
+              </div>
             </>
           ) : null}
 
           {message.error && (
             <div
+              className="selectable"
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',

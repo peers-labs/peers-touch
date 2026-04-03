@@ -1,8 +1,7 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{SearchPrimaryInput, StubPayload};
+use crate::contracts::{SearchPrimaryInput, StubPayload};
 
-#[path = "../../application/tools/mod.rs"]
-mod application_tools;
+use crate::application::tools as application_tools;
 
 #[tauri::command]
 pub fn tools_list() -> AppResult<StubPayload> {

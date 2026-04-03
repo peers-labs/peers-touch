@@ -35,7 +35,11 @@ impl<T: Serialize> AppResult<T> {
         }
     }
 
-    pub fn fail(code: ErrorCode, message: impl Into<String>, details: Option<serde_json::Value>) -> Self {
+    pub fn fail(
+        code: ErrorCode,
+        message: impl Into<String>,
+        details: Option<serde_json::Value>,
+    ) -> Self {
         Self {
             ok: false,
             data: None,

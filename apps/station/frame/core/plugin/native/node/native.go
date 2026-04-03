@@ -9,6 +9,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/frame/core/client"
 	"github.com/peers-labs/peers-touch/station/frame/core/cmd"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/appdir"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -230,6 +231,23 @@ func NewService(rootOpts *option.Options, opts ...option.Option) node.Node {
 				return err
 			}
 
+			return nil
+		}),
+		node.BeforeInit(func(sOpts *node.Options) error {
+			report, err := appdir.ResolveReport("station")
+			if err != nil {
+				log.Errorf("resolve station storage report error: %s", err)
+				return err
+			}
+			if err = appdir.Ensure(report.Paths); err != nil {
+				log.Errorf("ensure station storage dirs error: %s", err)
+				return err
+			}
+			log.Infof("station storage profile=%s paths_file=%s", report.Profile, report.PathsFile)
+			kinds := []string{"config", "data", "cache", "logs", "runtime", "temp"}
+			for _, kind := range kinds {
+				log.Infof("station storage kind=%s path=%s source=%s", kind, report.Paths[kind], report.Sources[kind])
+			}
 			return nil
 		}),
 		// kernal components pre-initialization, this helps to set up the options for each component.

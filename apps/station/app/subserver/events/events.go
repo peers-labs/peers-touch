@@ -5,6 +5,9 @@ import (
 	"context"
 	"sync"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/broker"
+	"github.com/peers-labs/peers-touch/station/frame/core/event"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
@@ -17,6 +20,12 @@ type eventsSubServer struct {
 
 func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusStarting
+
+	brk := broker.Get()
+	log := logger.NewLogger(ctx, logger.WithLevel(logger.InfoLevel))
+	eventSystem := event.NewEventSystem(brk, log)
+	event.SetGlobalEventSystem(eventSystem)
+
 	return nil
 }
 

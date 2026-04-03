@@ -60,6 +60,7 @@ func (n *nativePeer) Init(ctx context.Context, opts ...option.Option) error {
 
 		// prepare all fundamental handlers
 		opts = append(opts, touch.Routers()...)
+		opts = append(opts, touch.Lifecycle()...)
 
 		for _, o := range opts {
 			n.opts.Apply(o)

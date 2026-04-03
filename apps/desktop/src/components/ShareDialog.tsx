@@ -122,6 +122,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
             children: (
               <Flexbox gap={12}>
                 <div
+                  className="selectable"
                   style={{
                     maxHeight: 300,
                     overflow: 'auto',
@@ -193,6 +194,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
                       }}
                     >
                       <span
+                        className="selectable"
                         style={{
                           flex: 1,
                           fontSize: 13,

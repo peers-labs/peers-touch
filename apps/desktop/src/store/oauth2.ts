@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { AuthCommandException, api, type OAuth2ProviderSummary, type OAuth2Connection } from '../services/desktop_api';
+import { EVENT, eventBus } from '../kernel/events';
 
 let loadAllPromise: Promise<void> | null = null;
 const AUTH_TOKEN_STORAGE_KEY = 'pt.desktop.auth.token';
@@ -76,7 +77,7 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
       try {
         await Promise.all([get().loadProviders(), get().loadConnections()]);
         set({ loading: false });
-        window.dispatchEvent(new Event('oauth2-connections-changed'));
+        eventBus.publish(EVENT.OAUTH_CONNECTIONS_CHANGED, undefined);
       } finally {
         loadAllPromise = null;
       }
@@ -136,35 +137,42 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
 
   startAuth: async (id, environment) => {
     const isTauriRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    const returnTo = isTauriRuntime ? 'peers-touch://oauth/callback' : (typeof window !== 'undefined' ? window.location.href : undefined);
-    const { auth_url } = await api.oauth2Authorize(id, environment, returnTo);
-    const w = window.open(auth_url, '_blank', 'width=600,height=700');
     if (isTauriRuntime) {
-      return new Promise<void>((resolve) => {
+      const { auth_url, session_id } = await api.oauth2StartLoopback(id, environment);
+      await api.openExternalUrl(auth_url);
+      return new Promise<void>((resolve, reject) => {
         let settled = false;
-        const finish = async () => {
+        let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+        let poller: ReturnType<typeof setInterval> | undefined;
+        const finish = async (errorMessage?: string) => {
           if (settled) return;
           settled = true;
-          window.removeEventListener('oauth2-callback-complete', onCallback);
-          clearTimeout(timeoutTimer);
-          clearInterval(closedWatcher);
+          if (timeoutTimer) clearTimeout(timeoutTimer);
+          if (poller) clearInterval(poller);
           await get().loadAll();
+          if (errorMessage) {
+            reject(new Error(errorMessage));
+            return;
+          }
           resolve();
         };
-        const onCallback = () => {
-          void finish();
-        };
-        window.addEventListener('oauth2-callback-complete', onCallback);
-        const timeoutTimer = setTimeout(() => {
-          void finish();
-        }, 120000);
-        const closedWatcher = setInterval(() => {
-          if (!w || w.closed) {
-            void finish();
-          }
+        poller = setInterval(async () => {
+          try {
+            const polled = await api.oauth2PollLoopback(session_id);
+            if (polled.completed) {
+              const errorMessage = polled.status === 'completed' ? undefined : (polled.error || 'oauth authorization failed');
+              void finish(errorMessage);
+            }
+          } catch {}
         }, 1000);
+        timeoutTimer = setTimeout(() => {
+          void finish('oauth authorization timeout');
+        }, 120000);
       });
     }
+    const browserReturnTo = typeof window !== 'undefined' ? window.location.href : undefined;
+    const { auth_url } = await api.oauth2Authorize(id, environment, browserReturnTo);
+    const w = window.open(auth_url, '_blank', 'width=600,height=700');
     return new Promise<void>((resolve) => {
       const interval = setInterval(async () => {
         if (!w) {

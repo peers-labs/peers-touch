@@ -1,7 +1,7 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{
-    MemoryEventsInput, MemoryExportInput, MemoryIdInput, MemoryImportInput, MemoryListInput, MemoryPersonaInput,
-    MemorySearchInput, StubPayload,
+use crate::contracts::{
+    MemoryEventsInput, MemoryExportInput, MemoryIdInput, MemoryImportInput, MemoryListInput,
+    MemoryPersonaInput, MemorySearchInput, StubPayload,
 };
 use serde_json::json;
 
@@ -86,20 +86,4 @@ pub fn memory_import(input: MemoryImportInput) -> AppResult<StubPayload> {
             "errors":[]
         }),
     )
-}
-
-pub fn memory_embedding_status() -> AppResult<StubPayload> {
-    success_payload(
-        "memory_embedding_status",
-        json!({
-            "provider":"none",
-            "model":"none",
-            "dimensions":0,
-            "vector_count":0
-        }),
-    )
-}
-
-pub fn memory_reembed() -> AppResult<StubPayload> {
-    success_payload("memory_reembed", json!({ "ok": true, "reembedded_count": 0 }))
 }

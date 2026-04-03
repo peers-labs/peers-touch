@@ -1,6 +1,7 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{
-    CronCreateInput, CronIdInput, CronParseScheduleInput, CronRunsInput, CronToggleInput, CronUpdateInput, StubPayload,
+use crate::contracts::{
+    CronCreateInput, CronIdInput, CronParseScheduleInput, CronRunsInput, CronToggleInput,
+    CronUpdateInput, StubPayload,
 };
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
@@ -61,11 +62,18 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 }
 
 fn internal_error() -> AppResult<StubPayload> {
-    AppResult::fail(ErrorCode::InternalError, "failed to access cron store", None)
+    AppResult::fail(
+        ErrorCode::InternalError,
+        "failed to access cron store",
+        None,
+    )
 }
 
 pub fn cron_status() -> AppResult<StubPayload> {
-    success_payload("cron_status", json!({ "enabled": true, "lastTick": "2026-03-24T00:00:00.000Z" }))
+    success_payload(
+        "cron_status",
+        json!({ "enabled": true, "lastTick": "2026-03-24T00:00:00.000Z" }),
+    )
 }
 
 pub fn cron_list_jobs() -> AppResult<StubPayload> {
@@ -118,7 +126,11 @@ pub fn cron_update_job(input: CronUpdateInput) -> AppResult<StubPayload> {
         Err(_) => return internal_error(),
     };
     if let Some(item) = guard.jobs.iter_mut().find(|item| item.id == id) {
-        item.enabled = input.data.get("enabled").and_then(Value::as_bool).unwrap_or(item.enabled);
+        item.enabled = input
+            .data
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(item.enabled);
         item.data = input.data;
         let mut data = item.data.clone();
         if let Some(obj) = data.as_object_mut() {
@@ -141,7 +153,10 @@ pub fn cron_delete_job(input: CronIdInput) -> AppResult<StubPayload> {
     };
     let before = guard.jobs.len();
     guard.jobs.retain(|item| item.id != id);
-    success_payload("cron_delete_job", json!({ "ok": before != guard.jobs.len() }))
+    success_payload(
+        "cron_delete_job",
+        json!({ "ok": before != guard.jobs.len() }),
+    )
 }
 
 pub fn cron_toggle_job(input: CronToggleInput) -> AppResult<StubPayload> {
@@ -165,7 +180,10 @@ pub fn cron_run_job(input: CronIdInput) -> AppResult<StubPayload> {
     if id.is_empty() {
         return invalid_argument("id is required");
     }
-    success_payload("cron_run_job", json!({ "ok": true, "runId": format!("run-{}", id) }))
+    success_payload(
+        "cron_run_job",
+        json!({ "ok": true, "runId": format!("run-{}", id) }),
+    )
 }
 
 pub fn cron_list_runs(input: CronRunsInput) -> AppResult<StubPayload> {

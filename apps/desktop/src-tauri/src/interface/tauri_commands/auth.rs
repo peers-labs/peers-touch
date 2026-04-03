@@ -1,12 +1,9 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{AuthLoginInput, AuthValidateTokenInput, StubPayload};
+use crate::contracts::{AuthLoginInput, AuthValidateTokenInput, StubPayload};
 use crate::state::AppState;
 use tauri::State;
 
-#[path = "../../application/auth/service.rs"]
-mod auth_service;
-#[path = "../../domain/auth/session.rs"]
-mod auth_domain;
+use crate::application::auth::service as auth_service;
 
 #[tauri::command]
 pub fn auth_login(input: AuthLoginInput, state: State<AppState>) -> AppResult<StubPayload> {
@@ -24,6 +21,9 @@ pub fn auth_restore_session(state: State<AppState>) -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn auth_validate_token(input: AuthValidateTokenInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn auth_validate_token(
+    input: AuthValidateTokenInput,
+    state: State<AppState>,
+) -> AppResult<StubPayload> {
     auth_service::auth_validate_token(input, &state)
 }

@@ -1,12 +1,284 @@
+pub mod key_provider;
+
+use crate::domain::storage::database::{DatabaseOpenSpec, EncryptionLevel};
+use crate::domain::storage::key_management::{KeyProvider, KeyProviderError};
+use rusqlite::{params, Connection};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
 pub enum StorageError {
+    ResolveFailed(String),
     ReadFailed(String),
     WriteFailed(String),
+    KeyError(KeyProviderError),
+}
+
+impl fmt::Display for StorageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StorageError::ResolveFailed(msg) => write!(f, "resolve_failed: {msg}"),
+            StorageError::ReadFailed(msg) => write!(f, "read_failed: {msg}"),
+            StorageError::WriteFailed(msg) => write!(f, "write_failed: {msg}"),
+            StorageError::KeyError(e) => write!(f, "key_error: {e}"),
+        }
+    }
+}
+
+impl From<KeyProviderError> for StorageError {
+    fn from(e: KeyProviderError) -> Self {
+        StorageError::KeyError(e)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StorageKind {
+    Config,
+    Data,
+    Cache,
+    Logs,
+    Runtime,
+    Temp,
+}
+
+impl StorageKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StorageKind::Config => "config",
+            StorageKind::Data => "data",
+            StorageKind::Cache => "cache",
+            StorageKind::Logs => "logs",
+            StorageKind::Runtime => "runtime",
+            StorageKind::Temp => "temp",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StorageLayout {
+    pub app_name: String,
+    pub root_source: String,
+    pub root: PathBuf,
+    pub dirs: HashMap<StorageKind, PathBuf>,
+}
+
+pub fn initialize_app_storage(app_name: &str) -> Result<StorageLayout, StorageError> {
+    tracing::info!(app_name = %app_name, "Initializing app storage");
+    let layout = resolve_layout(app_name)?;
+    tracing::info!(app_name = %app_name, root = %layout.root.display(), "Storage root resolved");
+    for (kind, path) in &layout.dirs {
+        tracing::debug!(kind = %kind.as_str(), path = %path.display(), "Creating storage directory");
+        fs::create_dir_all(path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    }
+    Ok(layout)
+}
+
+pub fn resolve_layout(app_name: &str) -> Result<StorageLayout, StorageError> {
+    let app = app_name.trim();
+    if app.is_empty() {
+        return Err(StorageError::ResolveFailed("app name is empty".to_string()));
+    }
+    let (root, source) = resolve_storage_root()?;
+    let app_root = root.join(app);
+    let mut dirs = HashMap::new();
+    dirs.insert(StorageKind::Config, app_root.join("config"));
+    dirs.insert(StorageKind::Data, app_root.join("data"));
+    dirs.insert(StorageKind::Cache, app_root.join("cache"));
+    dirs.insert(StorageKind::Logs, app_root.join("logs"));
+    dirs.insert(StorageKind::Runtime, app_root.join("runtime"));
+    dirs.insert(StorageKind::Temp, app_root.join("temp"));
+    Ok(StorageLayout {
+        app_name: app.to_string(),
+        root_source: source,
+        root,
+        dirs,
+    })
+}
+
+pub fn app_file_path(
+    app_name: &str,
+    kind: StorageKind,
+    segments: &[&str],
+) -> Result<PathBuf, StorageError> {
+    let layout = resolve_layout(app_name)?;
+    let mut path = layout
+        .dirs
+        .get(&kind)
+        .cloned()
+        .ok_or_else(|| StorageError::ResolveFailed("storage kind missing".to_string()))?;
+    for segment in segments {
+        path = path.join(segment);
+    }
+    Ok(path)
+}
+
+pub fn resolve_user_scope(actor_id: Option<&str>) -> String {
+    match actor_id {
+        Some(id) if !id.trim().is_empty() => sanitize_segment(id),
+        _ => "__default__".to_string(),
+    }
+}
+
+pub fn resolve_database_path(
+    app_name: &str,
+    domain: &str,
+    profile: &str,
+    actor_id: Option<&str>,
+) -> Result<PathBuf, StorageError> {
+    let user_scope = resolve_user_scope(actor_id);
+    let file_name = format!("{}.{}.db", sanitize_segment(domain), sanitize_segment(profile));
+    app_file_path(
+        app_name,
+        StorageKind::Data,
+        &["db", "users", &user_scope, &file_name],
+    )
+}
+
+pub fn open_database(
+    spec: &DatabaseOpenSpec,
+    key_provider: &dyn KeyProvider,
+) -> Result<Connection, StorageError> {
+    let path = resolve_database_path(
+        &spec.app_name,
+        &spec.domain,
+        &spec.profile,
+        Some(spec.user_scope.as_str()),
+    )?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    }
+    let conn = Connection::open(path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    if spec.encryption_level != EncryptionLevel::L0 {
+        let key = key_provider.get_or_create_key(&spec.key_ref)?;
+        let key_text = String::from_utf8_lossy(&key.key_bytes).replace('\'', "''");
+        let pragma_key = format!("PRAGMA key = '{key_text}';");
+        conn.execute_batch(&pragma_key)
+            .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+        conn.execute_batch("SELECT count(*) FROM sqlite_master;")
+            .map_err(|_| StorageError::WriteFailed(
+                "database key verification failed: wrong key or corrupted database".to_string(),
+            ))?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS _db_key_meta (
+                key_ref TEXT PRIMARY KEY,
+                key_version INTEGER NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+        conn.execute(
+            "INSERT INTO _db_key_meta(key_ref, key_version, schema_version, updated_at)
+             VALUES(?1, ?2, ?3, strftime('%s','now'))
+             ON CONFLICT(key_ref) DO UPDATE SET key_version=excluded.key_version, schema_version=excluded.schema_version, updated_at=excluded.updated_at",
+            params![key.key_id, key.key_version, spec.schema_version],
+        )
+        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    }
+    Ok(conn)
+}
+
+pub fn get_database_key_version(
+    spec: &DatabaseOpenSpec,
+    key_provider: &dyn KeyProvider,
+) -> Result<Option<i32>, StorageError> {
+    let conn = open_database(spec, key_provider)?;
+    let mut stmt = conn
+        .prepare("SELECT key_version FROM _db_key_meta WHERE key_ref = ?1")
+        .map_err(|error| StorageError::ReadFailed(error.to_string()))?;
+    let mut rows = stmt
+        .query(params![spec.key_ref.as_str()])
+        .map_err(|error| StorageError::ReadFailed(error.to_string()))?;
+    if let Some(row) = rows
+        .next()
+        .map_err(|error| StorageError::ReadFailed(error.to_string()))?
+    {
+        let key_version: i32 = row
+            .get(0)
+            .map_err(|error| StorageError::ReadFailed(error.to_string()))?;
+        Ok(Some(key_version))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn rotate_database_key(
+    spec: &DatabaseOpenSpec,
+    key_provider: &dyn KeyProvider,
+    next_version: i32,
+) -> Result<i32, StorageError> {
+    if next_version <= 0 {
+        return Err(StorageError::WriteFailed("next key version must be positive".to_string()));
+    }
+    let prev_key = key_provider.get_or_create_key(&spec.key_ref)?;
+    let conn = open_database(spec, key_provider)?;
+    let rotated = key_provider.rotate_key(&spec.key_ref, next_version)?;
+    let key_text = String::from_utf8_lossy(&rotated.key_bytes).replace('\'', "''");
+    let pragma_rekey = format!("PRAGMA rekey = '{key_text}';");
+    if let Err(rekey_err) = conn.execute_batch(&pragma_rekey) {
+        tracing::error!(domain = %spec.domain, profile = %spec.profile, error = %rekey_err, "Database rekey failed, rolling back");
+        let _ = key_provider.rotate_key(&spec.key_ref, prev_key.key_version);
+        return Err(StorageError::WriteFailed(format!(
+            "rekey failed, rolled back key to v{}: {rekey_err}",
+            prev_key.key_version
+        )));
+    }
+    conn.execute(
+        "INSERT INTO _db_key_meta(key_ref, key_version, schema_version, updated_at)
+         VALUES(?1, ?2, ?3, strftime('%s','now'))
+         ON CONFLICT(key_ref) DO UPDATE SET key_version=excluded.key_version, schema_version=excluded.schema_version, updated_at=excluded.updated_at",
+        params![rotated.key_id, rotated.key_version, spec.schema_version],
+    )
+    .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    append_migration_log(
+        &spec.app_name,
+        format!(
+            "rekey_ok domain={} profile={} scope={} version={}",
+            spec.domain, spec.profile, spec.user_scope, rotated.key_version
+        )
+        .as_str(),
+    )?;
+    Ok(rotated.key_version)
+}
+
+fn sanitize_segment(input: &str) -> String {
+    let trimmed = input.trim();
+    let mut out = String::with_capacity(trimmed.len());
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        "__default__".to_string()
+    } else {
+        out
+    }
+}
+
+pub fn write_string_atomic(path: &Path, payload: &str) -> Result<(), StorageError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| StorageError::WriteFailed("invalid target file name".to_string()))?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| StorageError::WriteFailed(error.to_string()))?
+        .as_nanos();
+    let tmp = path.with_file_name(format!(".{file_name}.tmp-{timestamp}"));
+    fs::write(&tmp, payload).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    fs::rename(&tmp, path).map_err(|error| StorageError::WriteFailed(error.to_string()))
 }
 
 pub fn load_settings() -> Result<HashMap<String, Value>, StorageError> {
@@ -16,27 +288,100 @@ pub fn load_settings() -> Result<HashMap<String, Value>, StorageError> {
     }
     let raw = fs::read_to_string(file_path)
         .map_err(|error| StorageError::ReadFailed(error.to_string()))?;
-    let parsed =
-        serde_json::from_str::<HashMap<String, Value>>(&raw).map_err(|error| {
-            StorageError::ReadFailed(error.to_string())
-        })?;
+    let parsed = serde_json::from_str::<HashMap<String, Value>>(&raw)
+        .map_err(|error| StorageError::ReadFailed(error.to_string()))?;
     Ok(parsed)
 }
 
 pub fn save_settings(settings: &HashMap<String, Value>) -> Result<(), StorageError> {
     let file_path = settings_file_path();
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
-    }
     let payload = serde_json::to_string(settings)
         .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
-    fs::write(file_path, payload).map_err(|error| StorageError::WriteFailed(error.to_string()))
+    write_string_atomic(&file_path, &payload)
 }
 
 fn settings_file_path() -> PathBuf {
-    std::env::temp_dir()
-        .join("peers-touch")
-        .join("desktop")
-        .join("settings.json")
+    app_file_path("desktop", StorageKind::Config, &["settings.json"])
+        .unwrap_or_else(|_| PathBuf::from("settings.json"))
+}
+
+fn append_migration_log(app_name: &str, message: &str) -> Result<(), StorageError> {
+    tracing::info!(app_name = %app_name, event = %message, "Appending migration log");
+    let log_path = app_file_path(app_name, StorageKind::Logs, &["storage-migration.jsonl"])?;
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| StorageError::WriteFailed(error.to_string()))?
+        .as_secs();
+    let entry = serde_json::json!({
+        "ts": ts,
+        "event": message,
+    });
+    writeln!(file, "{}", entry).map_err(|error| StorageError::WriteFailed(error.to_string()))
+}
+
+fn resolve_storage_root() -> Result<(PathBuf, String), StorageError> {
+    if let Ok(path) = std::env::var("PEERS_STORAGE_ROOT") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return Ok((
+                PathBuf::from(trimmed).join("peers-touch"),
+                "env".to_string(),
+            ));
+        }
+    }
+    let root = default_platform_root()?;
+    Ok((root, "platform_default".to_string()))
+}
+
+fn default_platform_root() -> Result<PathBuf, StorageError> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME")
+            .map_err(|_| StorageError::ResolveFailed("HOME is not set".to_string()))?;
+        return Ok(PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("peers-touch"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let trimmed = local_app_data.trim();
+            if !trimmed.is_empty() {
+                return Ok(PathBuf::from(trimmed).join("peers-touch"));
+            }
+        }
+        if let Ok(user_profile) = std::env::var("USERPROFILE") {
+            let trimmed = user_profile.trim();
+            if !trimmed.is_empty() {
+                return Ok(PathBuf::from(trimmed).join("AppData").join("Local").join("peers-touch"));
+            }
+        }
+        return Err(StorageError::ResolveFailed(
+            "LOCALAPPDATA and USERPROFILE are not set".to_string(),
+        ));
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        if let Ok(xdg_data_home) = std::env::var("XDG_DATA_HOME") {
+            let trimmed = xdg_data_home.trim();
+            if !trimmed.is_empty() {
+                return Ok(PathBuf::from(trimmed).join("peers-touch"));
+            }
+        }
+        let home = std::env::var("HOME")
+            .map_err(|_| StorageError::ResolveFailed("HOME is not set".to_string()))?;
+        Ok(PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join("peers-touch"))
+    }
 }

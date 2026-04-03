@@ -6,6 +6,7 @@ import { Check, Globe } from 'lucide-react';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import { PlatformLogo } from './common/PlatformLogo';
 import { useAccountIdentityStore } from '../store/accountIdentity';
+import { EVENT, eventBus } from '../kernel/events';
 
 const { Text } = Typography;
 
@@ -32,11 +33,11 @@ export function UserProfilePopover({ children }: Props) {
     const handler = () => {
       load();
     };
-    window.addEventListener('oauth2-connections-changed', handler);
-    window.addEventListener('account-identity-changed', handler);
+    const offOauth = eventBus.subscribe(EVENT.OAUTH_CONNECTIONS_CHANGED, handler);
+    const offIdentity = eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, handler);
     return () => {
-      window.removeEventListener('oauth2-connections-changed', handler);
-      window.removeEventListener('account-identity-changed', handler);
+      offOauth();
+      offIdentity();
     };
   }, [load]);
 
@@ -109,8 +110,7 @@ export function UserProfilePopover({ children }: Props) {
           setOpen(false);
           window.location.hash = '#/settings';
           setTimeout(() => {
-            const event = new CustomEvent('navigate-settings-tab', { detail: 'account' });
-            window.dispatchEvent(event);
+            eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings', id: 'account' });
           }, 100);
         }}
       >
@@ -137,8 +137,8 @@ function AvatarDisplay({ url, name, size }: { url?: string; name: string; size: 
   return <UserSquareAvatar url={url} name={name} size={size} />;
 }
 
-export function useUserAvatar(): { url?: string; name: string } {
-  const [data, setData] = useState<{ url?: string; name: string }>({ name: 'User' });
+export function useUserAvatar(): { url?: string; name: string; provider?: string } {
+  const [data, setData] = useState<{ url?: string; name: string; provider?: string }>({ name: 'User' });
 
   useEffect(() => {
     const refresh = async () => {
@@ -148,14 +148,14 @@ export function useUserAvatar(): { url?: string; name: string } {
       setData({
         url: active?.avatar_url || undefined,
         name: active?.name || 'User',
+        provider: active?.provider || undefined,
       });
     };
     refresh().catch(() => {});
     const handler = () => {
       refresh().catch(() => {});
     };
-    window.addEventListener('account-identity-changed', handler);
-    return () => window.removeEventListener('account-identity-changed', handler);
+    return eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, handler);
   }, []);
 
   return data;

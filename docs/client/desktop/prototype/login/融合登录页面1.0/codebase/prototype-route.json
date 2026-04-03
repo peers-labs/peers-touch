@@ -1,0 +1,39 @@
+{
+  "state_name": "Login - Logged Out (Email)",
+  "state_url": "/login?state=logged_out&tab=email",
+  "children": [
+    {
+      "interaction": "Switch to Quick Login tab",
+      "state_name": "Login - Logged Out (Quick)",
+      "state_url": "/login?state=logged_out&tab=quick",
+      "children": [
+        {
+          "interaction": "Click OAuth button",
+          "state_name": "Login - Auto Recognized (Logged In)",
+          "state_url": "/login?state=logged_in",
+          "children": [
+            {
+              "interaction": "Click Switch Account",
+              "state_name": "Login - Switch Account",
+              "state_url": "/login?state=logged_out&tab=quick",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "interaction": "Click Sign In button",
+      "state_name": "Login - Auto Recognized (Logged In)",
+      "state_url": "/login?state=logged_in",
+      "children": [
+        {
+          "interaction": "Click Switch Account",
+          "state_name": "Login - Switch Account",
+          "state_url": "/login?state=logged_out&tab=quick",
+          "children": []
+        }
+      ]
+    }
+  ]
+}

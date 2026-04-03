@@ -343,7 +343,11 @@ export function OAuth2Tab() {
       <OAuth2ConnectModal
         provider={signInProvider}
         open={!!signInProvider}
-        onClose={() => {
+        onCancel={() => {
+          setSignInProvider(null);
+          loadAll();
+        }}
+        onSuccess={() => {
           setSignInProvider(null);
           loadAll();
         }}

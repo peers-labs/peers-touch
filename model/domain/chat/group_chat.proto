@@ -260,6 +260,7 @@ message GetGroupMessagesRequest {
 message GetGroupMessagesResponse {
   repeated GroupMessage messages = 1;
   bool has_more = 2;
+  string next_cursor = 3;
 }
 
 // 撤回消息

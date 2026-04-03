@@ -1,0 +1,172 @@
+use crate::domain::storage::key_management::{KeyErrorCode, KeyMaterial, KeyProvider, KeyProviderError};
+use keyring::Entry;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformBackend {
+    MacOSKeychain,
+    WindowsDpapi,
+    LinuxSecretService,
+    GenericFallback,
+}
+
+#[derive(Default)]
+pub struct PlatformKeyProvider {
+    store: Mutex<HashMap<String, KeyMaterial>>,
+}
+
+impl PlatformKeyProvider {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn backend() -> PlatformBackend {
+        #[cfg(target_os = "macos")]
+        {
+            PlatformBackend::MacOSKeychain
+        }
+        #[cfg(target_os = "windows")]
+        {
+            PlatformBackend::WindowsDpapi
+        }
+        #[cfg(target_os = "linux")]
+        {
+            PlatformBackend::LinuxSecretService
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        {
+            PlatformBackend::GenericFallback
+        }
+    }
+
+    fn backend_name() -> &'static str {
+        match Self::backend() {
+            PlatformBackend::MacOSKeychain => "macos-keychain",
+            PlatformBackend::WindowsDpapi => "windows-dpapi",
+            PlatformBackend::LinuxSecretService => "linux-secret-service",
+            PlatformBackend::GenericFallback => "generic-fallback",
+        }
+    }
+
+    fn service_name() -> &'static str {
+        "peers-touch.desktop.storage"
+    }
+
+    fn username_for_ref(key_ref: &str) -> String {
+        format!("chat-db-key:{key_ref}")
+    }
+
+    fn encode_material(item: &KeyMaterial) -> String {
+        let key_text = String::from_utf8_lossy(&item.key_bytes);
+        format!("v{}|{}|{}", item.key_version, item.key_id, key_text)
+    }
+
+    fn decode_material(payload: &str) -> Option<KeyMaterial> {
+        let mut parts = payload.splitn(3, '|');
+        let version_part = parts.next()?;
+        let key_id = parts.next()?.to_string();
+        let key_text = parts.next()?.to_string();
+        let key_version = version_part
+            .strip_prefix('v')
+            .and_then(|s| s.parse::<i32>().ok())?;
+        Some(KeyMaterial {
+            key_id,
+            key_version,
+            key_bytes: key_text.into_bytes(),
+        })
+    }
+
+    fn generate_key_material(key_ref: &str, key_version: i32) -> KeyMaterial {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let bytes = format!("pt:{}:{key_ref}:{key_version}:{ts}", Self::backend_name()).into_bytes();
+        KeyMaterial {
+            key_id: key_ref.to_string(),
+            key_version,
+            key_bytes: bytes,
+        }
+    }
+
+    fn classify_keyring_error(key_ref: &str, err: &keyring::Error) -> KeyProviderError {
+        match err {
+            keyring::Error::NoEntry => KeyProviderError::not_found(key_ref, "no entry in os keystore"),
+            keyring::Error::Ambiguous(_) => KeyProviderError::internal(key_ref, "ambiguous keystore entry"),
+            keyring::Error::NoStorageAccess(_) => KeyProviderError::permission_denied(key_ref, "os keystore access denied"),
+            _ => {
+                let msg = format!("os keystore error: {err}");
+                if msg.contains("locked") || msg.contains("Locked") {
+                    KeyProviderError::backend_locked(key_ref, "os keystore is locked")
+                } else {
+                    KeyProviderError::io_failure(key_ref, "os keystore I/O failure")
+                }
+            }
+        }
+    }
+
+    fn read_from_os_store(key_ref: &str) -> Result<Option<KeyMaterial>, KeyProviderError> {
+        let entry = Entry::new(Self::service_name(), Self::username_for_ref(key_ref).as_str())
+            .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
+        match entry.get_password() {
+            Ok(payload) => Ok(Self::decode_material(payload.as_str())),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(Self::classify_keyring_error(key_ref, &e)),
+        }
+    }
+
+    fn write_to_os_store(key_ref: &str, item: &KeyMaterial) -> Result<(), KeyProviderError> {
+        let entry = Entry::new(Self::service_name(), Self::username_for_ref(item.key_id.as_str()).as_str())
+            .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
+        entry
+            .set_password(Self::encode_material(item).as_str())
+            .map_err(|e| Self::classify_keyring_error(key_ref, &e))
+    }
+}
+
+impl KeyProvider for PlatformKeyProvider {
+    fn get_or_create_key(&self, key_ref: &str) -> Result<KeyMaterial, KeyProviderError> {
+        match Self::read_from_os_store(key_ref) {
+            Ok(Some(item)) => return Ok(item),
+            Ok(None) => {}
+            Err(e) if e.code == KeyErrorCode::NotFound => {}
+            Err(e) => return Err(e),
+        }
+        let mut guard = self
+            .store
+            .lock()
+            .map_err(|_| KeyProviderError::internal(key_ref, "key provider state lock poisoned"))?;
+        if let Some(item) = guard.get(key_ref) {
+            return Ok(item.clone());
+        }
+        let created = Self::generate_key_material(key_ref, 1);
+        guard.insert(key_ref.to_string(), created.clone());
+        let _ = Self::write_to_os_store(key_ref, &created);
+        Ok(created)
+    }
+
+    fn rotate_key(&self, key_ref: &str, next_version: i32) -> Result<KeyMaterial, KeyProviderError> {
+        let prev = self.get_or_create_key(key_ref)?;
+        if next_version <= prev.key_version {
+            return Err(KeyProviderError::version_conflict(
+                key_ref,
+                format!("next_version({next_version}) <= current({})", prev.key_version),
+            ));
+        }
+        let mut guard = self
+            .store
+            .lock()
+            .map_err(|_| KeyProviderError::internal(key_ref, "key provider state lock poisoned"))?;
+        let rotated = Self::generate_key_material(key_ref, next_version);
+        if let Err(e) = Self::write_to_os_store(key_ref, &rotated) {
+            return Err(KeyProviderError::io_failure(
+                key_ref,
+                format!("failed to persist rotated key to os store: {e}"),
+            ));
+        }
+        guard.insert(key_ref.to_string(), rotated.clone());
+        Ok(rotated)
+    }
+}

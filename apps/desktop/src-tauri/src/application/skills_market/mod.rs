@@ -1,7 +1,7 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{
-    SkillImportAddressInput, SkillImportGitHubInput, SkillMarketAddInput, SkillMarketDetailInput, SkillMarketIdInput,
-    SkillMarketListInput, SkillMarketSyncInput, StubPayload,
+use crate::contracts::{
+    SkillImportAddressInput, SkillImportGitHubInput, SkillMarketAddInput, SkillMarketDetailInput,
+    SkillMarketIdInput, SkillMarketListInput, SkillMarketSyncInput, StubPayload,
 };
 use serde_json::json;
 
@@ -20,7 +20,10 @@ pub fn skills_import_url(input: SkillImportAddressInput) -> AppResult<StubPayloa
     if input.address.trim().is_empty() {
         return invalid_argument("address is required");
     }
-    success_payload("skills_import_url", json!({ "success": 1, "failed": 0, "items": [] }))
+    success_payload(
+        "skills_import_url",
+        json!({ "success": 1, "failed": 0, "items": [] }),
+    )
 }
 
 pub fn skills_import_github(input: SkillImportGitHubInput) -> AppResult<StubPayload> {
@@ -38,7 +41,10 @@ pub fn skills_market_dir() -> AppResult<StubPayload> {
 }
 
 pub fn skills_market_open_dir() -> AppResult<StubPayload> {
-    success_payload("skills_market_open_dir", json!({ "ok": true, "path": ".skills" }))
+    success_payload(
+        "skills_market_open_dir",
+        json!({ "ok": true, "path": ".skills" }),
+    )
 }
 
 pub fn skills_market_list() -> AppResult<StubPayload> {
@@ -71,7 +77,10 @@ pub fn skills_market_list_skills(input: SkillMarketListInput) -> AppResult<StubP
         return invalid_argument("market_id is required");
     }
     let _ = input.q;
-    success_payload("skills_market_list_skills", json!({ "skills": [], "total": 0 }))
+    success_payload(
+        "skills_market_list_skills",
+        json!({ "skills": [], "total": 0 }),
+    )
 }
 
 pub fn skills_market_detail(input: SkillMarketDetailInput) -> AppResult<StubPayload> {
