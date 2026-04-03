@@ -118,6 +118,7 @@ message GetMessagesRequest {
 message GetMessagesResponse {
   repeated FriendChatMessage messages = 1;
   bool has_more = 2;
+  string next_cursor = 3;
 }
 
 message CreateSessionRequest {

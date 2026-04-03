@@ -1,12 +1,9 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{AdminExecuteActionInput, AdminNetworkProbeInput, StubPayload};
+use crate::contracts::{AdminExecuteActionInput, AdminNetworkProbeInput, StubPayload};
 use crate::state::AppState;
 use tauri::State;
 
-#[path = "../../domain/admin/mod.rs"]
-mod domain_admin;
-#[path = "../../application/admin/mod.rs"]
-mod application_admin;
+use crate::application::admin as application_admin;
 
 #[tauri::command]
 pub fn admin_health(state: State<'_, AppState>) -> AppResult<StubPayload> {

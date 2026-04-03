@@ -1,5 +1,7 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload};
+use crate::contracts::{
+    McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload,
+};
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
 
@@ -134,7 +136,11 @@ pub fn mcp_create_server(input: McpCreateInput) -> AppResult<StubPayload> {
     };
     guard.servers.push(McpServerRecord {
         name: name.clone(),
-        enabled: input.data.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+        enabled: input
+            .data
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
         data: input.data,
     });
     success_payload("mcp_create_server", json!({ "ok": true, "name": name }))
@@ -150,7 +156,11 @@ pub fn mcp_update_server(input: McpUpdateInput) -> AppResult<StubPayload> {
         Err(_) => return internal_error(),
     };
     if let Some(item) = guard.servers.iter_mut().find(|item| item.name == name) {
-        item.enabled = input.data.get("enabled").and_then(Value::as_bool).unwrap_or(item.enabled);
+        item.enabled = input
+            .data
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(item.enabled);
         item.data = input.data;
         return success_payload("mcp_update_server", json!({ "ok": true }));
     }
@@ -168,7 +178,10 @@ pub fn mcp_delete_server(input: McpNameInput) -> AppResult<StubPayload> {
     };
     let before = guard.servers.len();
     guard.servers.retain(|item| item.name != name);
-    success_payload("mcp_delete_server", json!({ "ok": before != guard.servers.len() }))
+    success_payload(
+        "mcp_delete_server",
+        json!({ "ok": before != guard.servers.len() }),
+    )
 }
 
 pub fn mcp_toggle_server(input: McpToggleInput) -> AppResult<StubPayload> {

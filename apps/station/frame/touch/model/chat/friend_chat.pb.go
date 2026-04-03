@@ -930,6 +930,7 @@ type GetMessagesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Messages      []*FriendChatMessage   `protobuf:"bytes,1,rep,name=messages,proto3" json:"messages,omitempty"`
 	HasMore       bool                   `protobuf:"varint,2,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,3,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -976,6 +977,13 @@ func (x *GetMessagesResponse) GetHasMore() bool {
 		return x.HasMore
 	}
 	return false
+}
+
+func (x *GetMessagesResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
 }
 
 type CreateSessionRequest struct {
@@ -2079,10 +2087,12 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12\x1f\n" +
 	"\vbefore_ulid\x18\x02 \x01(\tR\n" +
 	"beforeUlid\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"z\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"\x9b\x01\n" +
 	"\x13GetMessagesResponse\x12H\n" +
 	"\bmessages\x18\x01 \x03(\v2,.peers_touch.model.chat.v1.FriendChatMessageR\bmessages\x12\x19\n" +
-	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"?\n" +
+	"\bhas_more\x18\x02 \x01(\bR\ahasMore\x12\x1f\n" +
+	"\vnext_cursor\x18\x03 \x01(\tR\n" +
+	"nextCursor\"?\n" +
 	"\x14CreateSessionRequest\x12'\n" +
 	"\x0fparticipant_did\x18\x01 \x01(\tR\x0eparticipantDid\"y\n" +
 	"\x15CreateSessionResponse\x12F\n" +

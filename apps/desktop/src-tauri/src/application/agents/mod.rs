@@ -1,6 +1,7 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{
-    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentUpdateInput, StubPayload,
+use crate::contracts::{
+    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentUpdateInput,
+    StubPayload,
 };
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
@@ -23,7 +24,8 @@ impl AgentStore {
                 id: "agent-1".to_string(),
                 data: json!({
                     "id":"agent-1",
-                    "name":"Default Agent",
+                    "name":"assistant",
+                    "title":"Default Agent",
                     "description":"",
                     "avatar":"🤖",
                     "scope":"general"
@@ -51,7 +53,12 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 }
 
 fn internal_error() -> AppResult<StubPayload> {
-    AppResult::fail(ErrorCode::InternalError, "failed to access agents store", None)
+    tracing::error!("Failed to acquire agents store lock");
+    AppResult::fail(
+        ErrorCode::InternalError,
+        "failed to access agents store",
+        None,
+    )
 }
 
 pub fn agents_list() -> AppResult<StubPayload> {
@@ -59,7 +66,12 @@ pub fn agents_list() -> AppResult<StubPayload> {
         Ok(guard) => guard,
         Err(_) => return internal_error(),
     };
-    let agents = guard.agents.iter().map(|item| item.data.clone()).collect::<Vec<_>>();
+    let agents = guard
+        .agents
+        .iter()
+        .map(|item| item.data.clone())
+        .collect::<Vec<_>>();
+    tracing::info!(command = "agents_list", count = agents.len(), "Agents listed");
     success_payload("agents_list", json!({ "agents": agents }))
 }
 
@@ -83,6 +95,7 @@ pub fn agents_create(input: AgentCreateInput) -> AppResult<StubPayload> {
         Err(_) => return internal_error(),
     };
     let id = format!("agent-{}", guard.agents.len() + 1);
+    tracing::info!(command = "agents_create", agent_id = %id, "Creating agent");
     let mut data = input.data;
     if let Some(obj) = data.as_object_mut() {
         obj.insert("id".to_string(), json!(id.clone()));
@@ -95,6 +108,7 @@ pub fn agents_create(input: AgentCreateInput) -> AppResult<StubPayload> {
 }
 
 pub fn agents_update(input: AgentUpdateInput) -> AppResult<StubPayload> {
+    tracing::info!(command = "agents_update", agent_id = %input.id, "Updating agent");
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -114,6 +128,7 @@ pub fn agents_update(input: AgentUpdateInput) -> AppResult<StubPayload> {
 }
 
 pub fn agents_delete(input: AgentIdInput) -> AppResult<StubPayload> {
+    tracing::info!(command = "agents_delete", agent_id = %input.id, "Deleting agent");
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -123,7 +138,10 @@ pub fn agents_delete(input: AgentIdInput) -> AppResult<StubPayload> {
     };
     let before = guard.agents.len();
     guard.agents.retain(|item| item.id != input.id);
-    success_payload("agents_delete", json!({ "ok": before != guard.agents.len() }))
+    success_payload(
+        "agents_delete",
+        json!({ "ok": before != guard.agents.len() }),
+    )
 }
 
 pub fn agents_duplicate(input: AgentDuplicateInput) -> AppResult<StubPayload> {
@@ -176,8 +194,25 @@ pub fn agents_search(input: AgentSearchInput) -> AppResult<StubPayload> {
 }
 
 pub fn agents_list_sessions(input: AgentIdInput) -> AppResult<StubPayload> {
+    tracing::info!(command = "agents_list_sessions", agent_id = %input.id, "Listing agent sessions");
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
-    success_payload("agents_list_sessions", json!({ "sessions": [] }))
+    let guard = match agent_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error(),
+    };
+    let agent_name = match guard.agents.iter().find(|item| item.id == input.id) {
+        Some(agent) => agent
+            .data
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("assistant")
+            .to_string(),
+        None => return AppResult::fail(ErrorCode::NotFound, "agent not found", None),
+    };
+    drop(guard);
+    let sessions = crate::application::chat::list_conversations_by_agent(&agent_name);
+    tracing::debug!(command = "agents_list_sessions", agent_id = %input.id, count = sessions.len(), "Agent sessions retrieved");
+    success_payload("agents_list_sessions", json!({ "sessions": sessions }))
 }

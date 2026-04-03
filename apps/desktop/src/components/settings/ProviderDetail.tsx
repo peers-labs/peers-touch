@@ -206,9 +206,7 @@ export function ProviderDetail() {
       if (result.ok) {
         setCheckPass(true);
         message.success('Connection successful!');
-        if (!detail.builtin) {
-          doFetchModels(true);
-        }
+        doFetchModels(true);
       } else {
         message.error(result.error || 'Connection failed');
       }
@@ -327,34 +325,32 @@ export function ProviderDetail() {
             </Flexbox>
           </Flexbox>
           <Flexbox horizontal align="center" gap={8}>
+            <Tooltip title="Provider Settings">
+              <Button
+                type="text"
+                size="small"
+                icon={<Settings2 size={16} />}
+                onClick={() => setShowEditModal(true)}
+                style={{ color: token.colorTextSecondary }}
+              />
+            </Tooltip>
             {!detail.builtin && (
-              <>
-                <Tooltip title="Provider Settings">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<Settings2 size={16} />}
-                    onClick={() => setShowEditModal(true)}
-                    style={{ color: token.colorTextSecondary }}
-                  />
-                </Tooltip>
-                <Button
-                  danger
-                  size="small"
-                  icon={<Trash2 size={14} />}
-                  onClick={() => {
-                    Modal.confirm({
-                      title: 'Delete this provider?',
-                      content: `Provider "${detail.name}" and all its configuration will be permanently deleted.`,
-                      okText: 'Delete',
-                      okButtonProps: { danger: true },
-                      onOk: handleDelete,
-                    });
-                  }}
-                >
-                  Delete
-                </Button>
-              </>
+              <Button
+                danger
+                size="small"
+                icon={<Trash2 size={14} />}
+                onClick={() => {
+                  Modal.confirm({
+                    title: 'Delete this provider?',
+                    content: `Provider "${detail.name}" and all its configuration will be permanently deleted.`,
+                    okText: 'Delete',
+                    okButtonProps: { danger: true },
+                    onOk: handleDelete,
+                  });
+                }}
+              >
+                Delete
+              </Button>
             )}
             <Switch
               checked={enabled}
@@ -516,7 +512,7 @@ export function ProviderDetail() {
             </Text>
           </Flexbox>
           <Flexbox horizontal gap={8}>
-            {filteredModels.length > 5 && (
+            {filteredModels.length > 0 && (
               <>
                 <Button
                   size="small"
@@ -548,22 +544,18 @@ export function ProviderDetail() {
                 </Button>
               </>
             )}
-            {!detail.builtin && (
-              <>
-                <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                  Add Model
-                </Button>
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<RefreshCw size={14} />}
-                  loading={fetching}
-                  onClick={() => doFetchModels(false)}
-                >
-                  Fetch models
-                </Button>
-              </>
-            )}
+            <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+              Add Model
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              icon={<RefreshCw size={14} />}
+              loading={fetching}
+              onClick={() => doFetchModels(false)}
+            >
+              Fetch models
+            </Button>
           </Flexbox>
         </Flexbox>
 
@@ -630,6 +622,9 @@ export function ProviderDetail() {
                       <Tag style={{ fontSize: 11, margin: 0 }}>{formatContextWindow(m.context_window)}</Tag>
                     )}
                     <Tag style={{ fontSize: 11, margin: 0 }}>{m.type}</Tag>
+                    {m.type === 'embedding' && (
+                      <Tag color="green" style={{ fontSize: 10, margin: 0 }}>Embedding</Tag>
+                    )}
                     {m.function_call && (
                       <Tooltip title="Tool Use"><Wrench size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
                     )}
@@ -668,18 +663,16 @@ export function ProviderDetail() {
                         style={{ width: 24, height: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: token.colorTextSecondary }}
                       />
                     </Tooltip>
-                    {!detail.builtin && (
-                      <Tooltip title="Remove model">
-                        <Button
-                          type="text"
-                          size="small"
-                          danger
-                          icon={<X size={14} />}
-                          onClick={() => handleDeleteModel(m.id)}
-                          style={{ width: 24, height: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        />
-                      </Tooltip>
-                    )}
+                    <Tooltip title="Remove model">
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<X size={14} />}
+                        onClick={() => handleDeleteModel(m.id)}
+                        style={{ width: 24, height: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      />
+                    </Tooltip>
                   </Flexbox>
                 </Flexbox>
               ))}
@@ -715,33 +708,29 @@ export function ProviderDetail() {
                   Please create a custom model<br />or pull a model to get started.
                 </Text>
               </Flexbox>
-              {!detail.builtin && (
-                <Flexbox horizontal gap={12}>
-                  <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                    Add Model
-                  </Button>
-                  <Button
-                    type="primary"
-                    icon={<RefreshCw size={14} />}
-                    loading={fetching}
-                    onClick={() => doFetchModels(false)}
-                  >
-                    Fetch models
-                  </Button>
-                </Flexbox>
-              )}
+              <Flexbox horizontal gap={12}>
+                <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+                  Add Model
+                </Button>
+                <Button
+                  type="primary"
+                  icon={<RefreshCw size={14} />}
+                  loading={fetching}
+                  onClick={() => doFetchModels(false)}
+                >
+                  Fetch models
+                </Button>
+              </Flexbox>
             </Flexbox>
           )}
         </div>
       </Flexbox>
 
-      {!detail.builtin && (
-        <UpdateProviderModal
-          open={showEditModal}
-          detail={detail}
-          onClose={() => setShowEditModal(false)}
-        />
-      )}
+      <UpdateProviderModal
+        open={showEditModal}
+        detail={detail}
+        onClose={() => setShowEditModal(false)}
+      />
 
       <AddModelModal
         open={showAddModel}

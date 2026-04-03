@@ -1,4 +1,93 @@
 import { invoke } from '@tauri-apps/api/core';
+import { fromBinary } from '@bufbuild/protobuf';
+import type { Message as ProtoMessage } from '@bufbuild/protobuf';
+import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
+import { log } from '../utils/logger';
+import {
+  ActorListSchema,
+  ActorProfileSchema,
+} from '../gen/proto/domain/actor/actor_pb';
+import {
+  GetSessionsResponseSchema,
+  CreateSessionResponseSchema,
+  GetMessagesResponseSchema,
+  SendMessageResponseSchema,
+  MessageAckResponseSchema,
+  SyncMessagesResponseSchema,
+  OnlineResponseSchema,
+  GetPendingResponseSchema,
+  GetStatsResponseSchema,
+} from '../gen/proto/domain/chat/friend_chat_pb';
+import {
+  ListGroupsResponseSchema,
+  GetGroupMessagesResponseSchema,
+  SendGroupMessageResponseSchema,
+  GetUnreadCountResponseSchema,
+  MarkGroupReadResponseSchema,
+  CreateGroupResponseSchema,
+  GetGroupResponseSchema,
+  UpdateGroupResponseSchema,
+  InviteToGroupResponseSchema,
+  JoinGroupResponseSchema,
+  LeaveGroupResponseSchema,
+  GetGroupMembersResponseSchema,
+  RemoveMemberResponseSchema,
+  RecallGroupMessageResponseSchema,
+  DeleteGroupMessageResponseSchema,
+  SearchGroupMessagesResponseSchema,
+  UpdateMyNicknameResponseSchema,
+  GetGroupSettingsResponseSchema,
+  UpdateGroupSettingsResponseSchema,
+  GetOfflineMessagesResponseSchema,
+  AckOfflineMessagesResponseSchema,
+  GetGroupStatsResponseSchema,
+} from '../gen/proto/domain/chat/group_chat_pb';
+export type {
+  ActorList,
+  ActorProfile,
+  Actor,
+} from '../gen/proto/domain/actor/actor_pb';
+export type {
+  FriendChatSession,
+  FriendChatMessage,
+  GetSessionsResponse,
+  CreateSessionResponse,
+  GetMessagesResponse,
+  SendMessageResponse,
+  SyncMessagesResponse,
+  OnlineResponse,
+  GetPendingResponse,
+  PendingMessageInfo,
+  GetStatsResponse,
+} from '../gen/proto/domain/chat/friend_chat_pb';
+export type {
+  Group,
+  GroupMessage,
+  ListGroupsResponse,
+  GetGroupMessagesResponse,
+  SendGroupMessageResponse,
+  GetUnreadCountResponse,
+  MarkGroupReadResponse,
+  GroupMember,
+  GroupInvitation,
+  CreateGroupResponse,
+  GetGroupResponse,
+  UpdateGroupResponse,
+  InviteToGroupResponse,
+  JoinGroupResponse,
+  LeaveGroupResponse,
+  GetGroupMembersResponse,
+  RemoveMemberResponse,
+  RecallGroupMessageResponse,
+  DeleteGroupMessageResponse,
+  SearchGroupMessagesResponse,
+  UpdateMyNicknameResponse,
+  GetGroupSettingsResponse,
+  UpdateGroupSettingsResponse,
+  GetOfflineMessagesResponse,
+  AckOfflineMessagesResponse,
+  GetGroupStatsResponse,
+} from '../gen/proto/domain/chat/group_chat_pb';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const WEB_OAUTH_CONNECTIONS_KEY = 'pt.desktop.web.oauth.connections';
@@ -48,15 +137,30 @@ export interface RustCommandResult<T = Record<string, any>> {
   error?: RustCommandError;
 }
 
+const QUIET_COMMANDS = new Set(['logs_tail', 'frontend_log', 'visitor_heartbeat']);
+
 async function invokeRustCommand<TInput, TData>(
   command: string,
   input?: TInput,
 ): Promise<RustCommandResult<TData>> {
+  const quiet = QUIET_COMMANDS.has(command);
+  const start = Date.now();
+  if (!quiet) {
+    log.info('api', `→ ${command}`, input != null ? { req: input } : undefined);
+  }
   try {
     const payload = input === undefined ? undefined : { input };
     const result = await invoke<RustCommandResult<TData>>(command, payload);
+    const elapsed = Date.now() - start;
+    if (!result.ok) {
+      log.warn('api', `← ${command} FAIL (${elapsed}ms)`, { error: result.error?.message });
+    } else if (!quiet) {
+      log.info('api', `← ${command} OK (${elapsed}ms)`);
+    }
     return result;
   } catch (error) {
+    const elapsed = Date.now() - start;
+    log.error('api', `← ${command} ERROR (${elapsed}ms)`, { error: error instanceof Error ? error.message : String(error) });
     return {
       ok: false,
       error: {
@@ -94,6 +198,7 @@ function upsertWebAccountFromOAuth(input: AccountUpsertOAuthInput): AccountIdent
   const now = new Date().toISOString();
   const nextName = input.name || input.provider_user_id;
   const idx = state.accounts.findIndex((item) => item.id === accountId);
+  const existing = idx >= 0 ? state.accounts[idx] : undefined;
   const next: AccountIdentity = {
     id: accountId,
     provider: input.provider,
@@ -102,6 +207,7 @@ function upsertWebAccountFromOAuth(input: AccountUpsertOAuthInput): AccountIdent
     email: input.email || '',
     avatar_url: input.avatar_url || '',
     profile_url: input.profile_url || '',
+    created_at: existing?.created_at || input.created_at || now,
     last_login_at: now,
   };
   if (idx >= 0) {
@@ -150,6 +256,21 @@ async function invokeRustDataFromStatus<TInput, TOut>(
   if (response.ok && response.data) {
     return parseJSONSafe(response.data.status) as TOut;
   }
+  const err = new Error(response.error?.message || `${command} failed`);
+  log.error('api', `Command error: ${command}`, { error: err });
+  throw err;
+}
+
+async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
+  command: string,
+  schema: GenMessage<TMsg>,
+  input?: TInput,
+): Promise<TMsg> {
+  const response = await invokeRustCommand<TInput, number[]>(command, input);
+  if (response.ok && response.data) {
+    const bytes = new Uint8Array(response.data);
+    return fromBinary(schema, bytes);
+  }
   throw new Error(response.error?.message || `${command} failed`);
 }
 
@@ -191,11 +312,16 @@ function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
   const provider = url.searchParams.get('provider') || '';
   const providerUserId = url.searchParams.get('provider_user_id') || '';
   if (!provider || !providerUserId) return null;
+  const createdAt = url.searchParams.get('created_at')
+    || url.searchParams.get('createdAt')
+    || url.searchParams.get('register_time')
+    || undefined;
   return {
     provider,
     provider_user_id: providerUserId,
     username: url.searchParams.get('username') || undefined,
     display_name: url.searchParams.get('display_name') || undefined,
+    created_at: createdAt,
     email: url.searchParams.get('email') || undefined,
     avatar_url: url.searchParams.get('avatar_url') || undefined,
     profile_url: url.searchParams.get('profile_url') || undefined,
@@ -210,6 +336,9 @@ function cleanOAuthCallbackParams(urlText: string): string {
     'provider_user_id',
     'username',
     'display_name',
+    'created_at',
+    'createdAt',
+    'register_time',
     'avatar_url',
     'email',
     'profile_url',
@@ -243,6 +372,7 @@ function consumeOAuthCallbackFromLocation() {
     provider,
     provider_user_id: providerUserId,
     name: payload.username || payload.display_name || providerUserId,
+    created_at: payload.created_at,
     email: payload.email || undefined,
     avatar_url: payload.avatar_url || undefined,
     profile_url: payload.profile_url || undefined,
@@ -473,86 +603,6 @@ export interface HelpCategoryMeta {
 export interface HelpCategoryGroup {
   category: HelpCategoryMeta;
   items: HelpItem[];
-}
-
-export interface OnboardingState {
-  completed: boolean;
-  language: string;
-  interests: string[];
-}
-
-// Setup Wizard types
-export type WizardStepType = 'welcome' | 'oauth_login' | 'provider_select' | 'form' | 'action' | 'complete';
-
-export interface WizardFieldOption {
-  value: string;
-  label: string;
-  icon?: string;
-  desc?: string;
-}
-
-export interface WizardField {
-  id: string;
-  type: string;
-  label: string;
-  required: boolean;
-  options?: WizardFieldOption[];
-  default?: string;
-  hint?: string;
-  placeholder?: string;
-}
-
-export interface WizardAPI {
-  api: string;
-  body?: Record<string, any>;
-  optional?: boolean;
-}
-
-export interface WizardFeature {
-  icon: string;
-  title: string;
-  desc: string;
-}
-
-export interface WizardStep {
-  id: string;
-  type: WizardStepType;
-  title: string;
-  desc?: string;
-  required: boolean;
-  config?: Record<string, any>;
-  fields?: WizardField[];
-  on_submit?: WizardAPI[];
-  actions?: WizardAPI[];
-  summary?: string[];
-  features?: WizardFeature[];
-}
-
-export interface WizardConfig {
-  id: string;
-  name: string;
-  version: string;
-  branding: {
-    title: string;
-    subtitle: string;
-    logo?: string;
-    primary_color?: string;
-  };
-  steps: WizardStep[];
-}
-
-export interface WizardResponse {
-  available: boolean;
-  config?: WizardConfig;
-}
-
-export interface WizardState {
-  wizard_id: string;
-  current_step: string;
-  completed: boolean;
-  context: Record<string, any>;
-  started_at?: string;
-  completed_at?: string;
 }
 
 export interface AppletManifest {
@@ -1007,6 +1057,7 @@ export interface AccountIdentity {
   email: string;
   avatar_url: string;
   profile_url: string;
+  created_at: string;
   last_login_at: string;
 }
 
@@ -1354,6 +1405,7 @@ export interface ProviderModelToggleAllInput {
 
 export interface ChatCompletionInput {
   session_id: string;
+  provider_id?: string;
   model?: string;
   message: string;
 }
@@ -1499,11 +1551,21 @@ export interface OAuthAuthorizeInput {
   return_to?: string;
 }
 
+export interface OAuthLoopbackStartInput {
+  id: string;
+  environment?: string;
+}
+
+export interface OAuthLoopbackPollInput {
+  session_id: string;
+}
+
 export interface OAuthCallbackInput {
   provider: string;
   provider_user_id: string;
   username?: string;
   display_name?: string;
+  created_at?: string;
   email?: string;
   avatar_url?: string;
   profile_url?: string;
@@ -1514,6 +1576,7 @@ export interface AccountUpsertOAuthInput {
   provider: string;
   provider_user_id: string;
   name?: string;
+  created_at?: string;
   email?: string;
   avatar_url?: string;
   profile_url?: string;
@@ -1686,23 +1749,12 @@ export interface AiSearchInput {
   web?: boolean;
 }
 
-export interface OnboardingSetInput {
-  data: Partial<OnboardingState>;
-}
-
-export interface WizardStepInput {
-  step_id: string;
-  data: Record<string, any>;
-}
-
-export interface WizardExecuteApiInput {
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  path: string;
-  body?: unknown;
-}
-
 export interface PreferencesSetInput {
   prefs: Partial<UserPreferences>;
+}
+
+export interface ExternalUrlInput {
+  url: string;
 }
 
 export interface ShareSessionInput {
@@ -1748,6 +1800,59 @@ export interface ConfigFieldResetInput {
 
 export interface ConfigPostgresTestInput {
   dsn: string;
+}
+
+export interface ContextSnapshotGetInput {
+  slices?: string[];
+}
+
+export interface ContextActionDispatchInput {
+  action: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface FriendChatSyncInput {
+  session_ulid: string;
+  limit?: number;
+  max_pages?: number;
+}
+
+export interface GroupChatSyncInput {
+  group_ulid: string;
+  limit?: number;
+  max_pages?: number;
+}
+
+export interface ChatLocalSearchInput {
+  query: string;
+  limit?: number;
+}
+
+export interface ChatScopeCursorSetInput {
+  scope: string;
+  cursor: string;
+}
+
+export interface ChatScopeCursorGetInput {
+  scope: string;
+}
+
+export interface ChatKeyRotateInput {
+  next_version: number;
+}
+
+export interface ContextCapabilitiesOutput {
+  capability: Record<string, boolean>;
+  updatedAt: number;
+}
+
+export interface ContextHealthOutput {
+  status: 'booting' | 'ready' | 'degraded';
+  runtimeState: string;
+  networkOnline: boolean;
+  degraded: boolean;
+  issues: string[];
+  updatedAt: number;
 }
 
 export const api = {
@@ -1824,6 +1929,24 @@ export const api = {
     invokeRustDataFromStatus<void, { version: string }>('meta_contract_version'),
 
   health: () => invokeRustDataFromStatus<void, { status: string }>('system_health'),
+
+  contextSnapshotGet: (input?: ContextSnapshotGetInput) =>
+    invokeRustDataFromStatus<ContextSnapshotGetInput | void, Record<string, unknown>>('context_snapshot_get', input),
+
+  contextActionDispatch: (input: ContextActionDispatchInput) =>
+    invokeRustDataFromStatus<ContextActionDispatchInput, { ok?: boolean; action?: string; snapshot?: Record<string, unknown> }>(
+      'context_action_dispatch',
+      input,
+    ),
+
+  contextCapabilities: () =>
+    invokeRustDataFromStatus<void, ContextCapabilitiesOutput>('context_capabilities'),
+
+  contextHealth: () =>
+    invokeRustDataFromStatus<void, ContextHealthOutput>('context_health'),
+
+  openExternalUrl: (url: string) =>
+    invokeRustDataFromStatus<ExternalUrlInput, { ok: boolean }>('open_external_url', { url }),
 
   listSessions: () =>
     invokeRustDataFromStatus<void, { conversations?: any[] }>(
@@ -1929,18 +2052,30 @@ export const api = {
 
   listAvailableModels: async () => {
     const r = await invokeRustDataFromStatus<void, { providers?: any[] }>('provider_list_available_models');
-    const models: AvailableModel[] = (r.providers || []).map((p) => {
+    const models: AvailableModel[] = (r.providers || []).flatMap((p) => {
+      const providerModels = Array.isArray(p.models) ? p.models : [];
+      if (providerModels.length > 0) {
+        return providerModels.map((model: any) => ({
+          id: model.id || p.check_model || `${p.id}:default`,
+          display_name: model.display_name || model.id || p.check_model || `${p.id}:default`,
+          provider_id: p.id,
+          provider_name: p.name || p.id,
+          type: model.type || 'chat',
+          context_window: Number(model.context_window || 0),
+          enabled: Boolean(model.enabled !== false),
+        }));
+      }
       const cfg = parseJSONSafe(p.config_json);
-      const id = p.check_model || cfg.default_model || `${p.id}:default`;
-      return {
-        id,
-        display_name: id,
+      const fallbackId = p.check_model || cfg.default_model || `${p.id}:default`;
+      return [{
+        id: fallbackId,
+        display_name: fallbackId,
         provider_id: p.id,
         provider_name: p.name || p.id,
         type: 'chat',
         context_window: 0,
-        enabled: Boolean(p.enabled),
-      };
+        enabled: true,
+      }];
     });
     return { models, default: models[0]?.id || '' };
   },
@@ -2038,36 +2173,8 @@ export const api = {
   aiSearch: (query: string, web = false) =>
     invokeRustDataFromStatus<AiSearchInput, AISearchResponse>('search_ai', { query, web }),
 
-  getOnboarding: () =>
-    invokeRustDataFromStatus<void, OnboardingState>('onboarding_get'),
-
-  setOnboarding: (data: Partial<OnboardingState>) =>
-    invokeRustDataFromStatus<OnboardingSetInput, { ok: boolean }>('onboarding_set', { data }),
-
   resetOnboarding: () =>
     invokeRustDataFromStatus<void, { ok: boolean }>('onboarding_reset'),
-
-  // Setup Wizard
-  getWizard: () =>
-    invokeRustDataFromStatus<void, WizardResponse>('wizard_get'),
-
-  getWizardState: () =>
-    invokeRustDataFromStatus<void, WizardState>('wizard_state_get'),
-
-  saveWizardStep: (stepId: string, data: Record<string, any>) =>
-    invokeRustDataFromStatus<WizardStepInput, WizardState>('wizard_step_save', { step_id: stepId, data }),
-
-  completeWizard: () =>
-    invokeRustDataFromStatus<void, WizardState>('wizard_complete'),
-
-  executeWizardApi: (method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown) => {
-    const normalizedPath = path.startsWith('/api') ? path.replace(/^\/api/, '') : path;
-    return invokeRustDataFromStatus<WizardExecuteApiInput, unknown>('wizard_api_execute', {
-      method,
-      path: normalizedPath,
-      body,
-    });
-  },
 
   getStatistics: () =>
     invokeRustDataFromStatus<void, StatisticsData>('statistics_get'),
@@ -2517,6 +2624,23 @@ export const api = {
           return { auth_url: authUrl };
         })(),
 
+  oauth2StartLoopback: (id: string, environment?: string) =>
+    invokeRustDataFromStatus<OAuthLoopbackStartInput, { auth_url: string; session_id: string }>(
+      'oauth2_start_loopback',
+      { id, environment },
+    ),
+
+  oauth2PollLoopback: (sessionId: string) =>
+    invokeRustDataFromStatus<OAuthLoopbackPollInput, {
+      completed: boolean;
+      status: 'pending' | 'completed' | 'failed' | 'expired';
+      callback_url?: string;
+      error?: string;
+    }>(
+      'oauth2_poll_loopback',
+      { session_id: sessionId },
+    ),
+
   oauth2HandleCallback: (input: OAuthCallbackInput) =>
     isTauriRuntime()
       ? (async () => {
@@ -2525,6 +2649,7 @@ export const api = {
             provider: input.provider,
             provider_user_id: input.provider_user_id,
             name: input.username || input.display_name || input.provider_user_id,
+            created_at: input.created_at,
             email: input.email || undefined,
             avatar_url: input.avatar_url || undefined,
             profile_url: input.profile_url || undefined,
@@ -2552,6 +2677,7 @@ export const api = {
             provider,
             provider_user_id: providerUserId,
             name: input.username || input.display_name || providerUserId,
+            created_at: input.created_at,
             email: input.email || undefined,
             avatar_url: input.avatar_url || undefined,
             profile_url: input.profile_url || undefined,
@@ -2744,6 +2870,130 @@ export const api = {
 
   getOnlineCount: () =>
     invokeRustDataFromStatus<void, { online: number }>('visitor_online'),
+
+  // ── Actor API ──
+
+  actorSearchActors: async (query: string) =>
+    invokeRustProto('actor_search_actors', ActorListSchema, { query }),
+
+  actorGetMyProfile: async () =>
+    invokeRustProto('actor_get_my_profile', ActorProfileSchema, {}),
+
+  friendChatListSessions: (limit?: number, offset?: number) =>
+    invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),
+
+  friendChatCreateSession: (participantDid: string) =>
+    invokeRustProto('friend_chat_create_session', CreateSessionResponseSchema, { participant_did: participantDid }),
+
+  friendChatListMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) =>
+    invokeRustProto('friend_chat_list_messages', GetMessagesResponseSchema, { session_ulid: sessionUlid, before_ulid: beforeUlid, limit }),
+
+  friendChatSendMessage: (sessionUlid: string, receiverDid: string, content: string, type?: number, replyToUlid?: string) =>
+    invokeRustProto('friend_chat_send_message', SendMessageResponseSchema, { session_ulid: sessionUlid, receiver_did: receiverDid, content, type, reply_to_ulid: replyToUlid }),
+
+  friendChatAckMessages: (ulids: string[], status: number) =>
+    invokeRustProto('friend_chat_ack_messages', MessageAckResponseSchema, { ulids, status }),
+
+  friendChatLocalSearch: (query: string, limit?: number) =>
+    invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
+      'friend_chat_local_search_scoped', { query, limit },
+    ).then(r => r.messages || []),
+
+  friendChatSync: (sessionUlid: string, limit?: number, maxPages?: number) =>
+    invokeRustDataFromStatus<FriendChatSyncInput, { synced_count: number; pages_fetched: number }>(
+      'friend_chat_sync_from_station_scoped', { session_ulid: sessionUlid, limit, max_pages: maxPages },
+    ),
+
+  friendChatSyncMessages: (messagesJson: string) =>
+    invokeRustProto('friend_chat_sync_messages', SyncMessagesResponseSchema, { session_ulid: '', messages_json: messagesJson }),
+
+  friendChatGoOnline: (did?: string) =>
+    invokeRustProto('friend_chat_go_online', OnlineResponseSchema, { did }),
+
+  friendChatGoOffline: (did?: string) =>
+    invokeRustProto('friend_chat_go_offline', OnlineResponseSchema, { did }),
+
+  friendChatGetPending: (limit?: number) =>
+    invokeRustProto('friend_chat_get_pending', GetPendingResponseSchema, { limit }),
+
+  friendChatGetStats: () =>
+    invokeRustProto('friend_chat_get_stats', GetStatsResponseSchema),
+
+  groupChatListGroups: (limit?: number, offset?: number) =>
+    invokeRustProto('group_chat_list_groups', ListGroupsResponseSchema, { limit, offset }),
+
+  groupChatListMessages: (groupUlid: string, beforeUlid?: string, limit?: number) =>
+    invokeRustProto('group_chat_list_messages', GetGroupMessagesResponseSchema, { group_ulid: groupUlid, before_ulid: beforeUlid, limit }),
+
+  groupChatSendMessage: (groupUlid: string, content: string, type?: number, replyToUlid?: string, mentionedDids?: string[], mentionAll?: boolean) =>
+    invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, { group_ulid: groupUlid, content, type, reply_to_ulid: replyToUlid, mentioned_dids: mentionedDids, mention_all: mentionAll }),
+
+  groupChatUnreadCount: (groupUlid?: string) =>
+    invokeRustProto('group_chat_unread_count', GetUnreadCountResponseSchema, { group_ulid: groupUlid }),
+
+  groupChatMarkRead: (groupUlid: string) =>
+    invokeRustProto('group_chat_mark_read', MarkGroupReadResponseSchema, { group_ulid: groupUlid }),
+
+  groupChatLocalSearch: (query: string, limit?: number) =>
+    invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
+      'group_chat_local_search_scoped', { query, limit },
+    ).then(r => r.messages || []),
+
+  groupChatSync: (groupUlid: string, limit?: number, maxPages?: number) =>
+    invokeRustDataFromStatus<GroupChatSyncInput, { synced_count: number; pages_fetched: number }>(
+      'group_chat_sync_from_station_scoped', { group_ulid: groupUlid, limit, max_pages: maxPages },
+    ),
+
+  groupChatCreateGroup: (name: string, description?: string, memberDids?: string[]) =>
+    invokeRustProto('group_chat_create_group', CreateGroupResponseSchema, { name, description, member_dids: memberDids }),
+
+  groupChatGetGroup: (groupUlid: string) =>
+    invokeRustProto('group_chat_get_group', GetGroupResponseSchema, { group_ulid: groupUlid }),
+
+  groupChatUpdateGroup: (groupUlid: string, name: string, description?: string) =>
+    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, { group_ulid: groupUlid, name, description }),
+
+  groupChatInviteToGroup: (groupUlid: string, memberDids: string[]) =>
+    invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_dids: memberDids }),
+
+  groupChatJoinGroup: (groupUlid: string, invitationUlid?: string) =>
+    invokeRustProto('group_chat_join_group', JoinGroupResponseSchema, { group_ulid: groupUlid, invitation_ulid: invitationUlid }),
+
+  groupChatLeaveGroup: (groupUlid: string) =>
+    invokeRustProto('group_chat_leave_group', LeaveGroupResponseSchema, { group_ulid: groupUlid }),
+
+  groupChatGetMembers: (groupUlid: string, limit?: number, offset?: number) =>
+    invokeRustProto('group_chat_get_members', GetGroupMembersResponseSchema, { group_ulid: groupUlid, limit, offset }),
+
+  groupChatRemoveMember: (groupUlid: string, memberDid: string) =>
+    invokeRustProto('group_chat_remove_member', RemoveMemberResponseSchema, { group_ulid: groupUlid, member_did: memberDid }),
+
+  groupChatRecallMessage: (groupUlid: string, messageUlid: string) =>
+    invokeRustProto('group_chat_recall_message', RecallGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),
+
+  groupChatDeleteMessage: (groupUlid: string, messageUlid: string) =>
+    invokeRustProto('group_chat_delete_message', DeleteGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),
+
+  groupChatSearchMessages: (groupUlid: string, query: string, limit?: number) =>
+    invokeRustProto('group_chat_search_messages', SearchGroupMessagesResponseSchema, { group_ulid: groupUlid, query, limit }),
+
+  groupChatUpdateNickname: (groupUlid: string, nickname: string) =>
+    invokeRustProto('group_chat_update_nickname', UpdateMyNicknameResponseSchema, { group_ulid: groupUlid, nickname }),
+
+  groupChatGetSettings: (groupUlid: string) =>
+    invokeRustProto('group_chat_get_settings', GetGroupSettingsResponseSchema, { group_ulid: groupUlid }),
+
+  groupChatUpdateSettings: (groupUlid: string, settingsJson: string) =>
+    invokeRustProto('group_chat_update_settings', UpdateGroupSettingsResponseSchema, { group_ulid: groupUlid, settings_json: settingsJson }),
+
+  groupChatGetOfflineMessages: (groupUlid: string, limit?: number) =>
+    invokeRustProto('group_chat_get_offline_messages', GetOfflineMessagesResponseSchema, { group_ulid: groupUlid, limit }),
+
+  groupChatAckOfflineMessages: (groupUlid: string, messageUlids: string[]) =>
+    invokeRustProto('group_chat_ack_offline_messages', AckOfflineMessagesResponseSchema, { group_ulid: groupUlid, message_ulids: messageUlids }),
+
+  groupChatGetStats: () =>
+    invokeRustProto('group_chat_get_stats', GetGroupStatsResponseSchema),
 };
 
 export interface ConfigFieldMeta {
@@ -2824,7 +3074,7 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     description: item.description || '',
     logo: item.logo || undefined,
     enabled: Boolean(item.enabled),
-    builtin: item.id === 'ollama-default',
+    builtin: Boolean(item.builtin),
     has_api_key: Boolean(keyVaults.api_key || keyVaults.key || ''),
   };
 }
@@ -2833,6 +3083,30 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
   const checkModel = item.check_model || cfg.default_model || 'default';
+  const providerModels = Array.isArray(item.models)
+    ? item.models
+    : Array.isArray(cfg.models)
+      ? cfg.models
+      : [];
+  const models: ModelItem[] = providerModels
+    .map((model: any) => {
+      const id = String(model?.id || '').trim();
+      if (!id) return null;
+      return {
+        id,
+        display_name: String(model?.display_name || id),
+        type: String(model?.type || 'chat'),
+        enabled: Boolean(model?.enabled ?? true),
+        context_window: Number(model?.context_window || 0),
+        function_call: Boolean(model?.function_call),
+        vision: Boolean(model?.vision),
+        reasoning: Boolean(model?.reasoning),
+        search: Boolean(model?.search),
+        image_output: Boolean(model?.image_output),
+        video: Boolean(model?.video),
+      } as ModelItem;
+    })
+    .filter((model: ModelItem | null): model is ModelItem => Boolean(model));
   return {
     ...mapAIChatProviderToListItem(item),
     home_url: cfg.home_url || '',
@@ -2842,13 +3116,15 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     default_base_url: cfg.default_base_url || cfg.base_url || '',
     show_checker: true,
     check_model: checkModel,
-    models: [{
-      id: checkModel,
-      display_name: checkModel,
-      type: 'chat',
-      enabled: true,
-      context_window: 0,
-    }],
+    models: models.length > 0
+      ? models
+      : [{
+        id: checkModel,
+        display_name: checkModel,
+        type: 'chat',
+        enabled: true,
+        context_window: 0,
+      }],
   };
 }
 
@@ -2861,14 +3137,17 @@ export function streamChat(
   onError: (err: Error) => void,
   _images?: ChatImageInput[],
   model?: string,
+  providerId?: string,
 ): AbortController {
   const controller = new AbortController();
+  log.info('api', 'streamChat started', { sessionKey, model });
   (async () => {
     try {
-      const payload = await invokeRustDataFromStatus<ChatCompletionInput, { text: string; model?: string }>(
+      const payload = await invokeRustDataFromStatus<ChatCompletionInput, { text: string; model?: string; provider_id?: string }>(
         'chat_completion_once',
         {
           session_id: sessionKey,
+          provider_id: providerId || '',
           model: model || '',
           message,
         },
@@ -2881,9 +3160,11 @@ export function streamChat(
         onEvent({ event: 'text', data: { content: text } });
       }
       onEvent({ event: 'done', data: { model: payload?.model || model || '' } });
+      log.info('api', 'streamChat complete');
       onDone();
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
+        log.error('api', 'streamChat error', { error: err.message || String(err) });
         onError(err instanceof Error ? err : new Error(String(err)));
       }
     }

@@ -159,6 +159,14 @@ func (s *aiChatSubServer) Handlers() []server.Handler {
 			jwtWrapper,
 		),
 		server.NewTypedHandler(
+			"aichat-provider-sync",
+			"/ai-chat/provider/sync",
+			server.POST,
+			providerHandlers.HandleSyncProviders,
+			logIDWrapper,
+			jwtWrapper,
+		),
+		server.NewTypedHandler(
 			"aichat-session-create",
 			"/ai-chat/session/new",
 			server.POST,

@@ -89,9 +89,10 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   createProvider: async (data) => {
-    await api.createProvider(data);
+    const created = await api.createProvider(data);
     await get().loadProviders();
-    get().selectProvider(data.id);
+    const nextId = created?.provider?.id || data.id;
+    get().selectProvider(nextId);
   },
 
   deleteProvider: async (id: string) => {

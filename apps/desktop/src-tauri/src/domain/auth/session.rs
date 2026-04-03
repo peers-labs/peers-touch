@@ -20,10 +20,14 @@ pub fn issue_session(account: &str, password: &str) -> Result<AuthSession, AuthD
     let account = account.trim();
     let password = password.trim();
     if account.is_empty() {
-        return Err(AuthDomainError::InvalidArgument("account is required".to_string()));
+        return Err(AuthDomainError::InvalidArgument(
+            "account is required".to_string(),
+        ));
     }
     if password.is_empty() {
-        return Err(AuthDomainError::InvalidArgument("password is required".to_string()));
+        return Err(AuthDomainError::InvalidArgument(
+            "password is required".to_string(),
+        ));
     }
     let now = now_epoch_seconds();
     let expires_at = now + TOKEN_TTL_SECONDS;
@@ -59,7 +63,9 @@ fn parse_token(token: &str) -> Result<(String, u64), AuthDomainError> {
     let actor_id = parts.next().unwrap_or_default();
     let expires_raw = parts.next().unwrap_or_default();
     if prefix != "pt" || actor_id.is_empty() || expires_raw.is_empty() || parts.next().is_some() {
-        return Err(AuthDomainError::Unauthorized("invalid token format".to_string()));
+        return Err(AuthDomainError::Unauthorized(
+            "invalid token format".to_string(),
+        ));
     }
     let expires_at = expires_raw
         .parse::<u64>()

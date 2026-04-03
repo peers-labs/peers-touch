@@ -10,5 +10,5 @@ registerModule({
   page: MemoryPage,
   settingsPanel: MemorySettingsTab,
   sidebarEntry: { position: 'top', order: 35, title: 'Memory' },
-  settingsEntry: { order: 25, label: 'Memory & Embedding' },
+  settingsEntry: { order: 25, label: 'Memory' },
 });

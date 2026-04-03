@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, DraggablePanel, SideNav } from '@lobehub/ui';
 import {
-  MessageSquare,
+  Bot,
+  MessageCircle,
   Settings,
   Search,
   FileText,
@@ -13,8 +14,7 @@ import { ChatPage } from './pages/ChatPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SearchPage } from './pages/SearchPage';
 import { NotesPage } from './pages/NotesPage';
-import { OnboardingPage } from './pages/OnboardingPage';
-import { WizardRenderer } from './components/wizard/WizardRenderer';
+import { LoginPage } from './pages/LoginPage';
 import { AgentProfilePage } from './pages/AgentProfilePage';
 import { AgentSidebar } from './components/AgentSidebar';
 import { AgentSettingsDrawer } from './components/AgentSettingsDrawer';
@@ -27,13 +27,16 @@ import AppletManager from './applet/AppletManager';
 import { getModulesWithSidebar, getModule } from './modules/registry';
 import { UserProfilePopover, useUserAvatar } from './components/UserProfilePopover';
 import { UserSquareAvatar } from './components/common/UserSquareAvatar';
+import { PlatformLogo } from './components/common/PlatformLogo';
 import { AppletRuntimePage } from './pages/AppletRuntimePage';
+import { EVENT, eventBus, onWindowKeydown, onWindowPopState } from './kernel/events';
+import { globalContext } from './kernel/global-context';
+import type { ParsedDeepLink } from './utils/deeplink';
 
 type Page = string;
-type AppState = 'loading' | 'onboarding' | 'ready';
-type OnboardingMode = 'default' | 'wizard';
+type AppState = 'loading' | 'login' | 'ready';
 
-const CORE_PAGES = ['chat', 'settings', 'search', 'notes', 'agent-profile'];
+const CORE_PAGES = ['chat', 'agent', 'settings', 'search', 'notes', 'agent-profile'];
 
 export interface SettingsNavState {
   tab?: string;
@@ -65,13 +68,27 @@ function getAgentNameFromHash(): string {
 
 function App() {
   const [appState, setAppState] = useState<AppState>('loading');
-  const [onboardingMode, setOnboardingMode] = useState<OnboardingMode>('default');
+  const [restoredUser, setRestoredUser] = useState<{ name: string; email: string; avatar?: string } | null>(null);
   const [page, setPageRaw] = useState<Page>(getPageFromHash);
   const [sidebarExpand, setSidebarExpand] = useState(true);
   const [settingsNav, setSettingsNav] = useState<SettingsNavState>({});
 
   const [profileAgentName, setProfileAgentName] = useState(() => getAgentNameFromHash());
   const appletManager = AppletManager.getInstance();
+
+  useEffect(() => {
+    globalContext.bootstrap().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (appState === 'loading') {
+      globalContext.setRuntimeAppState('booting');
+    } else if (appState === 'ready') {
+      globalContext.setRuntimeAppState('ready');
+    } else {
+      globalContext.setRuntimeAppState('degraded');
+    }
+  }, [appState]);
 
   const setPage = useCallback((p: Page) => {
     setPageRaw(p);
@@ -86,9 +103,9 @@ function App() {
         setProfileAgentName(getAgentNameFromHash());
       }
     };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
+    return onWindowPopState(onPopState);
   }, []);
+
   const [pinnedApplets, setPinnedApplets] = useState<string[]>([]);
 
   // Agent settings drawer state
@@ -116,20 +133,24 @@ function App() {
   }, []);
 
   useEffect(() => {
-    Promise.all([api.getOnboarding(), api.getWizard()])
-      .then(([state, wizard]) => {
-        if (state.completed) {
-          setAppState('ready');
-          useOAuth2Store.getState().loadAll(); // Preload so Channels hasLarkSimulate is correct
-        } else {
-          setOnboardingMode(wizard.available ? 'wizard' : 'default');
-          setAppState('onboarding');
+    const store = useOAuth2Store.getState();
+    Promise.all([
+      store.restoreSession().catch(() => {}),
+      store.loadAll().catch(() => {}),
+    ]).then(() => {
+      const { authenticated, connections } = useOAuth2Store.getState();
+      if (authenticated) {
+        const active = connections.find(c => c.status === 'active' && c.user_id && c.user_id !== 'unknown');
+        if (active) {
+          setRestoredUser({
+            name: active.user_name || active.user_id || 'User',
+            email: active.email || '',
+            avatar: active.avatar_url,
+          });
         }
-      })
-      .catch(() => {
-        setAppState('ready');
-        useOAuth2Store.getState().loadAll();
-      });
+      }
+      setAppState('login');
+    });
   }, []);
 
   const handleTabChange = useCallback((key: string) => {
@@ -143,7 +164,7 @@ function App() {
       if (sessionKey) {
         useChatStore.getState().selectSession(sessionKey);
       }
-      setPage('chat');
+      setPage('agent');
     } else if (url.startsWith('/notes/') || url.startsWith('/pages/')) {
       const docId = url.split(/\/(?:notes|pages)\//)[1];
       if (docId) {
@@ -167,77 +188,37 @@ function App() {
         setPage('search');
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    return onWindowKeydown(handler);
   }, []);
 
   const userAvatar = useUserAvatar();
 
-  // Listen for cross-component settings tab navigation
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const tab = (e as CustomEvent).detail;
-      setSettingsNav({ tab });
-      setPage('settings');
-    };
-    window.addEventListener('navigate-settings-tab', handler);
-    return () => window.removeEventListener('navigate-settings-tab', handler);
-  }, [setPage]);
-
   // Deep link navigation: pt:// URI → page navigation
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const parsed = (e as CustomEvent).detail as { resource: string; id?: string; subResource?: string; subId?: string };
-      if (!parsed) return;
-      switch (parsed.resource) {
-        case 'cron':
-          setPage('cron');
-          break;
-        case 'sessions':
-          if (parsed.id) {
-            useChatStore.getState().selectSession(parsed.id);
-          }
-          setPage('chat');
-          break;
-        case 'settings':
-          if (parsed.id) setSettingsNav({ tab: parsed.id });
-          setPage('settings');
-          break;
-        case 'channels':
-          setPage('channels');
-          break;
-        case 'documents':
-          setPage('notes');
-          break;
-      }
-    };
-    window.addEventListener('agentbox:navigate', handler);
-    return () => window.removeEventListener('agentbox:navigate', handler);
-  }, [setPage]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
-    let unlisten: (() => void) | undefined;
-    let disposed = false;
-    void (async () => {
-      const { onOpenUrl } = await import('@tauri-apps/plugin-deep-link');
-      unlisten = await onOpenUrl(async (urls) => {
-        for (const url of urls) {
-          const consumed = await api.oauth2ConsumeCallbackFromUrl(url);
-          if (consumed && !disposed) {
-            window.history.replaceState({}, '', '#/settings');
-            window.dispatchEvent(new Event('oauth2-callback-complete'));
-          }
+  useEffect(() => eventBus.subscribe(EVENT.NAVIGATION_REQUESTED, (parsed) => {
+    const nav = parsed as ParsedDeepLink;
+    if (!nav?.resource) return;
+    switch (nav.resource) {
+      case 'cron':
+        setPage('cron');
+        break;
+      case 'sessions':
+        if (nav.id) {
+          useChatStore.getState().selectSession(nav.id);
         }
-      });
-    })();
-    return () => {
-      disposed = true;
-      if (unlisten) {
-        unlisten();
-      }
-    };
-  }, []);
+        setPage('agent');
+        break;
+      case 'settings':
+        if (nav.id) setSettingsNav({ tab: nav.id });
+        setPage('settings');
+        break;
+      case 'channels':
+        setPage('channels');
+        break;
+      case 'documents':
+        setPage('notes');
+        break;
+    }
+  }), [setPage]);
 
   const handleCreateAgent = useCallback(() => {
     setEditingAgent(null);
@@ -264,17 +245,16 @@ function App() {
     );
   }
 
-  if (appState === 'onboarding') {
-    if (onboardingMode === 'wizard') {
-      return (
-        <GlobalLayout sideNav={null}>
-          <WizardRenderer onComplete={() => setAppState('ready')} />
-        </GlobalLayout>
-      );
-    }
+  if (appState === 'login') {
     return (
       <GlobalLayout sideNav={null}>
-        <OnboardingPage onComplete={() => setAppState('ready')} />
+        <LoginPage
+          onComplete={() => {
+            useOAuth2Store.getState().loadAll();
+            setAppState('ready');
+          }}
+          restoredUser={restoredUser}
+        />
       </GlobalLayout>
     );
   }
@@ -284,8 +264,27 @@ function App() {
       <SideNav
         avatar={
           <UserProfilePopover>
-            <div style={{ cursor: 'pointer' }}>
+            <div style={{ cursor: 'pointer', position: 'relative', width: 36, height: 36 }}>
               <UserSquareAvatar url={userAvatar.url} name={userAvatar.name} size={36} radius={8} />
+              {userAvatar.provider && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: -4,
+                    bottom: -4,
+                    width: 14,
+                    height: 14,
+                    borderRadius: 7,
+                    background: '#fff',
+                    border: '1px solid #f0f0f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <PlatformLogo providerId={userAvatar.provider} size={10} />
+                </div>
+              )}
             </div>
           </UserProfilePopover>
         }
@@ -299,11 +298,18 @@ function App() {
               title="Search (⌘K)"
             />
             <ActionIcon
-              icon={MessageSquare}
+              icon={MessageCircle}
               size="large"
               active={page === 'chat'}
               onClick={() => handleTabChange('chat')}
-              title="Agents"
+              title="Chat"
+            />
+            <ActionIcon
+              icon={Bot}
+              size="large"
+              active={page === 'agent'}
+              onClick={() => handleTabChange('agent')}
+              title="Agent"
             />
             <ActionIcon
               icon={FileText}
@@ -352,7 +358,7 @@ function App() {
       />
 
       {/* Agent workspace sidebar (LobeChat style) */}
-      {(page === 'chat' || page === 'agent-profile') && (
+      {(page === 'agent' || page === 'agent-profile') && (
         <DraggablePanel
           placement="left"
           defaultSize={{ width: 260 }}
@@ -373,7 +379,7 @@ function App() {
               window.history.pushState(null, '', `#/agent-profile/${name}`);
               setPageRaw('agent-profile');
             }}
-            onNavigateChat={() => setPage('chat')}
+            onNavigateChat={() => setPage('agent')}
             onAgentChanged={(name) => {
               if (page === 'agent-profile') {
                 setProfileAgentName(name);
@@ -388,7 +394,7 @@ function App() {
 
   return (
     <GlobalLayout sideNav={sideNavElement}>
-      {page === 'chat' && (
+      {page === 'agent' && (
         <ChatPage
           onNavigateSettings={() => {
             setSettingsNav({ tab: 'providers' });
@@ -423,17 +429,17 @@ function App() {
           initialDocId={getDocIdFromHash()}
           onNavigateChat={(sessionKey) => {
             useChatStore.getState().selectSession(sessionKey);
-            setPage('chat');
+            setPage('agent');
           }}
         />
       )}
       {page === 'agent-profile' && (
         <AgentProfilePage
           agentName={profileAgentName}
-          onBack={() => setPage('chat')}
+          onBack={() => setPage('agent')}
           onStartChat={(name) => {
             useChatStore.getState().setSelectedAgent(name);
-            setPage('chat');
+            setPage('agent');
           }}
           onNavigateCron={() => {
             setSettingsNav({ tab: 'cron' });

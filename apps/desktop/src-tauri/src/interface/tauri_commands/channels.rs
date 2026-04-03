@@ -1,10 +1,10 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{
-    ChannelCreateInput, ChannelEventsInput, ChannelIdInput, ChannelSendMessageInput, ChannelUpdateInput, StubPayload,
+use crate::contracts::{
+    ChannelCreateInput, ChannelEventsInput, ChannelIdInput, ChannelSendMessageInput,
+    ChannelUpdateInput, StubPayload,
 };
 
-#[path = "../../application/channels/mod.rs"]
-mod application_channels;
+use crate::application::channels as application_channels;
 
 #[tauri::command]
 pub fn channels_list() -> AppResult<StubPayload> {

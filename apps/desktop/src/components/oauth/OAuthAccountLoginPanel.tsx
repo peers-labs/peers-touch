@@ -227,11 +227,19 @@ function UnsignedAccountCard({
 interface Props {
   showDescription?: boolean;
   onAuthStateChange?: (hasActiveConnection: boolean) => void;
+  compactWhenSignedIn?: boolean;
+  showSectionTitle?: boolean;
 }
 
-export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChange }: Props) {
+export function OAuthAccountLoginPanel({
+  showDescription = true,
+  onAuthStateChange,
+  compactWhenSignedIn = false,
+  showSectionTitle = true,
+}: Props) {
   const { providers, connections, loadAll, disconnect, refreshToken } = useOAuth2Store();
   const [signInProvider, setSignInProvider] = useState<OAuth2ProviderSummary | null>(null);
+  const [showAllProviders, setShowAllProviders] = useState(false);
 
   useEffect(() => {
     loadAll();
@@ -253,6 +261,17 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
     const hasActive = connections.some((conn) => isValidUserAccount(conn) && conn.status === 'active');
     onAuthStateChange(hasActive);
   }, [connections, onAuthStateChange]);
+
+  const hasActiveConnection = useMemo(
+    () => connections.some((conn) => isValidUserAccount(conn) && conn.status === 'active'),
+    [connections],
+  );
+
+  useEffect(() => {
+    if (!hasActiveConnection) {
+      setShowAllProviders(false);
+    }
+  }, [hasActiveConnection]);
 
   const handleSignIn = (provider: OAuth2ProviderSummary) => {
     setSignInProvider(provider);
@@ -285,7 +304,21 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
       )}
 
       <Flexbox gap={10}>
-        <Text strong style={{ fontSize: 14, paddingLeft: 2 }}>OAuth 2</Text>
+        {showSectionTitle && <Text strong style={{ fontSize: 14, paddingLeft: 2 }}>账号登录</Text>}
+        {compactWhenSignedIn && hasActiveConnection && !showAllProviders && (
+          <Flexbox horizontal justify="end">
+            <Button size="small" onClick={() => setShowAllProviders(true)}>
+              Switch Account
+            </Button>
+          </Flexbox>
+        )}
+        {compactWhenSignedIn && hasActiveConnection && showAllProviders && (
+          <Flexbox horizontal justify="end">
+            <Button size="small" onClick={() => setShowAllProviders(false)}>
+              Back
+            </Button>
+          </Flexbox>
+        )}
         <Flexbox horizontal gap={12} style={{ flexWrap: 'wrap' }}>
           {oauth2AccountProviders.map(provider => {
             const conn = connectionMap[provider.id];
@@ -299,6 +332,9 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
                   onSignOut={() => handleSignOut(provider.id)}
                 />
               );
+            }
+            if (compactWhenSignedIn && hasActiveConnection && !showAllProviders) {
+              return null;
             }
             return (
               <UnsignedAccountCard
@@ -315,7 +351,11 @@ export function OAuthAccountLoginPanel({ showDescription = true, onAuthStateChan
       <OAuth2ConnectModal
         provider={signInProvider}
         open={!!signInProvider}
-        onClose={() => {
+        onCancel={() => {
+          setSignInProvider(null);
+          loadAll();
+        }}
+        onSuccess={() => {
           setSignInProvider(null);
           loadAll();
         }}

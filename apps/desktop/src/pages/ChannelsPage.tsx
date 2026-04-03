@@ -14,6 +14,7 @@ import { api, type Channel, type ChatTarget, type ChannelEvent, type ChannelEven
 import { PageHeader } from '../components/PageHeader';
 import { LarkSimulateLoginModal } from '../components/settings/LarkSimulateLoginModal';
 import { useOAuth2Store } from '../store/oauth2';
+import { EVENT, eventBus } from '../kernel/events';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -576,7 +577,7 @@ export function ChannelsPage() {
                               type="link"
                               size="small"
                               style={{ padding: 0 }}
-                              onClick={() => window.dispatchEvent(new CustomEvent('navigate-settings-tab', { detail: 'account' }))}
+                              onClick={() => eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings', id: 'account' })}
                             >
                               Login Info
                             </Button>
@@ -1041,7 +1042,7 @@ function MessageLogPanel({ channelId }: { channelId: string }) {
                     {dateStr} {timeStr}
                   </Text>
                 </Flexbox>
-                <Text style={{ fontSize: 13, lineHeight: '1.4', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                <Text className="selectable" style={{ fontSize: 13, lineHeight: '1.4', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                   {displayText}
                   {isTruncated && (
                     <span
@@ -1059,7 +1060,6 @@ function MessageLogPanel({ channelId }: { channelId: string }) {
                         cursor: 'pointer',
                         marginLeft: 4,
                         fontSize: 12,
-                        userSelect: 'none',
                       }}
                     >
                       {isExpanded ? ' [collapse]' : '... [expand]'}

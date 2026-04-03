@@ -46,6 +46,10 @@ const (
 	RouterURLActorSignUP RouterPath = "/sign-up"
 	// RouterURLActorLogin Client login: obtain session/tokens
 	RouterURLActorLogin RouterPath = "/login"
+	// RouterURLActorLogout Client logout: invalidate session
+	RouterURLActorLogout RouterPath = "/logout"
+	// RouterURLActorChangePassword Client change password
+	RouterURLActorChangePassword RouterPath = "/change-password"
 	// RouterURLActorProfile Actor profile: GET/POST to read or update profile attributes
 	RouterURLActorProfile RouterPath = "/profile"
 	// RouterURLPublicProfile Public actor profile: GET to read extended profile by username

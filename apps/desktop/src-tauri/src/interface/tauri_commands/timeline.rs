@@ -1,10 +1,7 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{StubPayload, TimelineActionInput, TimelineListInput};
+use crate::contracts::{StubPayload, TimelineActionInput, TimelineListInput};
 
-#[path = "../../domain/timeline/mod.rs"]
-mod domain_timeline;
-#[path = "../../application/timeline/mod.rs"]
-mod application_timeline;
+use crate::application::timeline as application_timeline;
 
 #[tauri::command]
 pub fn timeline_list(input: TimelineListInput) -> AppResult<StubPayload> {

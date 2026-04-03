@@ -1,11 +1,10 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{
-    SkillImportAddressInput, SkillImportGitHubInput, SkillMarketAddInput, SkillMarketDetailInput, SkillMarketIdInput,
-    SkillMarketListInput, SkillMarketSyncInput, StubPayload,
+use crate::contracts::{
+    SkillImportAddressInput, SkillImportGitHubInput, SkillMarketAddInput, SkillMarketDetailInput,
+    SkillMarketIdInput, SkillMarketListInput, SkillMarketSyncInput, StubPayload,
 };
 
-#[path = "../../application/skills_market/mod.rs"]
-mod application_skills_market;
+use crate::application::skills_market as application_skills_market;
 
 #[tauri::command]
 pub fn skills_import_url(input: SkillImportAddressInput) -> AppResult<StubPayload> {

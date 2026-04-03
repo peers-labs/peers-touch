@@ -209,6 +209,98 @@ func convertToProto(provider *dbModel.Provider) *model.Provider {
 	}
 }
 
+func SyncProviders(ctx context.Context, providers []*model.Provider, tombstones []string) ([]*model.Provider, error) {
+	rds, err := store.GetRDS(ctx, store.WithRDSDBName("ai_chat"))
+	if err != nil {
+		return nil, errcode.New(errcode.AIChatInternal, http.StatusInternalServerError, "failed to open ai_chat db", err)
+	}
+	subject := auth.GetSubject(ctx)
+	if subject == nil || subject.ID == "" {
+		return nil, errcode.New(errcode.AIChatUnauthorized, http.StatusUnauthorized, "user id not found in context", nil)
+	}
+
+	err = rds.Transaction(func(tx *gorm.DB) error {
+		if len(tombstones) > 0 {
+			if err := tx.Where("id IN ? AND peers_user_id = ?", tombstones, subject.ID).Delete(&dbModel.Provider{}).Error; err != nil {
+				return err
+			}
+		}
+
+		for _, p := range providers {
+			encryptedKeyVaults, err := encryptKeyVaults(p.KeyVaults)
+			if err != nil {
+				return fmt.Errorf("failed to encrypt key vaults: %w", err)
+			}
+
+			dbProvider := &dbModel.Provider{
+				ID:          p.Id,
+				Name:        p.Name,
+				Description: p.Description,
+				PeersUserID: subject.ID,
+				Logo:        p.Logo,
+				Sort:        int(p.Sort),
+				Enabled:     p.Enabled,
+				CheckModel:  p.CheckModel,
+				SourceType:  p.SourceType,
+				KeyVaults:   encryptedKeyVaults,
+				Settings:    []byte(p.SettingsJson),
+				Config:      []byte(p.ConfigJson),
+				AccessedAt:  time.Now(),
+				UpdatedAt:   time.Now(),
+				CreatedAt:   time.Now(),
+			}
+
+			if err := tx.Where("id = ? AND peers_user_id = ?", p.Id, subject.ID).First(&dbModel.Provider{}).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					if err := tx.Create(dbProvider).Error; err != nil {
+						return err
+					}
+				} else {
+					return err
+				}
+			} else {
+				if err := tx.Model(&dbModel.Provider{}).Where("id = ? AND peers_user_id = ?", p.Id, subject.ID).Updates(map[string]interface{}{
+					"name":        dbProvider.Name,
+					"description": dbProvider.Description,
+					"logo":        dbProvider.Logo,
+					"sort":        dbProvider.Sort,
+					"enabled":     dbProvider.Enabled,
+					"check_model": dbProvider.CheckModel,
+					"source_type": dbProvider.SourceType,
+					"key_vaults":  dbProvider.KeyVaults,
+					"settings":    dbProvider.Settings,
+					"config":      dbProvider.Config,
+					"updated_at":  dbProvider.UpdatedAt,
+				}).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, errcode.New(errcode.AIChatInternal, http.StatusInternalServerError, "failed to sync providers", err)
+	}
+
+	var dbProviders []*dbModel.Provider
+	if err := rds.Where("peers_user_id = ?", subject.ID).Find(&dbProviders).Error; err != nil {
+		return nil, errcode.New(errcode.AIChatInternal, http.StatusInternalServerError, "failed to list providers after sync", err)
+	}
+
+	result := make([]*model.Provider, len(dbProviders))
+	for i, p := range dbProviders {
+		decryptedKeyVaults, err := decryptKeyVaults(p.KeyVaults)
+		if err != nil {
+			return nil, errcode.New(errcode.AIChatInternal, http.StatusInternalServerError, "failed to decrypt key vaults", err)
+		}
+		p.KeyVaults = decryptedKeyVaults
+		result[i] = convertToProto(p)
+	}
+
+	return result, nil
+}
+
 // TestProvider 测试提供商可用性（占位实现）
 func TestProvider(ctx context.Context, providerID string) (bool, string, error) {
 	// TODO: 根据 providerID 加载配置并进行健康检查

@@ -2174,6 +2174,7 @@ type GetGroupMessagesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Messages      []*GroupMessage        `protobuf:"bytes,1,rep,name=messages,proto3" json:"messages,omitempty"`
 	HasMore       bool                   `protobuf:"varint,2,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,3,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2220,6 +2221,13 @@ func (x *GetGroupMessagesResponse) GetHasMore() bool {
 		return x.HasMore
 	}
 	return false
+}
+
+func (x *GetGroupMessagesResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
 }
 
 // 撤回消息
@@ -3614,10 +3622,12 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1f\n" +
 	"\vbefore_ulid\x18\x02 \x01(\tR\n" +
 	"beforeUlid\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"z\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"\x9b\x01\n" +
 	"\x18GetGroupMessagesResponse\x12C\n" +
 	"\bmessages\x18\x01 \x03(\v2'.peers_touch.model.chat.v1.GroupMessageR\bmessages\x12\x19\n" +
-	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"]\n" +
+	"\bhas_more\x18\x02 \x01(\bR\ahasMore\x12\x1f\n" +
+	"\vnext_cursor\x18\x03 \x01(\tR\n" +
+	"nextCursor\"]\n" +
 	"\x19RecallGroupMessageRequest\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12!\n" +

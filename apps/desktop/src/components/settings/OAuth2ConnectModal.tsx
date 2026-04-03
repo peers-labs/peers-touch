@@ -13,10 +13,11 @@ type AuthState = 'idle' | 'waiting' | 'success' | 'error';
 interface Props {
   provider: OAuth2ProviderSummary | null;
   open: boolean;
-  onClose: () => void;
+  onCancel: () => void;
+  onSuccess: () => void;
 }
 
-export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
+export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Props) {
   const { token } = theme.useToken();
   const { startAuth, connections } = useOAuth2Store();
   const [authState, setAuthState] = useState<AuthState>('idle');
@@ -114,7 +115,7 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
             title="登录成功"
             subTitle={conn ? `欢迎你，${conn.user_name || conn.user_id}` : '账号已授权'}
             extra={
-              <Button type="primary" onClick={onClose}>
+              <Button type="primary" onClick={onSuccess}>
                 Done
               </Button>
             }
@@ -131,7 +132,7 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
             subTitle={error}
             extra={
               <Flexbox horizontal gap={8} justify="center">
-                <Button onClick={onClose}>取消</Button>
+                <Button onClick={onCancel}>取消</Button>
                 <Button
                   type="primary"
                   onClick={handleSignIn}
@@ -145,16 +146,24 @@ export function OAuth2ConnectModal({ provider, open, onClose }: Props) {
     }
   };
 
+  const handleModalCancel = useCallback(() => {
+    if (authState === 'success') {
+      onSuccess();
+    } else {
+      onCancel();
+    }
+  }, [authState, onCancel, onSuccess]);
+
   return (
     <Modal
       open={open}
-      onCancel={onClose}
+      onCancel={handleModalCancel}
       footer={null}
       width={420}
       centered
       destroyOnClose
-      closable
-      maskClosable
+      closable={authState !== 'waiting'}
+      maskClosable={authState !== 'waiting'}
     >
       {renderContent()}
     </Modal>

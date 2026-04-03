@@ -1,6 +1,7 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::interface::contracts::{
-    ChannelCreateInput, ChannelEventsInput, ChannelIdInput, ChannelSendMessageInput, ChannelUpdateInput, StubPayload,
+use crate::contracts::{
+    ChannelCreateInput, ChannelEventsInput, ChannelIdInput, ChannelSendMessageInput,
+    ChannelUpdateInput, StubPayload,
 };
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
@@ -51,7 +52,11 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 }
 
 fn internal_error() -> AppResult<StubPayload> {
-    AppResult::fail(ErrorCode::InternalError, "failed to access channels store", None)
+    AppResult::fail(
+        ErrorCode::InternalError,
+        "failed to access channels store",
+        None,
+    )
 }
 
 pub fn channels_list() -> AppResult<StubPayload> {
@@ -59,7 +64,11 @@ pub fn channels_list() -> AppResult<StubPayload> {
         Ok(guard) => guard,
         Err(_) => return internal_error(),
     };
-    let channels = guard.channels.iter().map(|item| item.data.clone()).collect::<Vec<_>>();
+    let channels = guard
+        .channels
+        .iter()
+        .map(|item| item.data.clone())
+        .collect::<Vec<_>>();
     success_payload("channels_list", json!({ "channels": channels }))
 }
 
@@ -95,7 +104,11 @@ pub fn channels_create(input: ChannelCreateInput) -> AppResult<StubPayload> {
         "enabled": input.enabled.unwrap_or(true)
     });
     guard.channels.push(ChannelRecord {
-        id: data.get("id").and_then(Value::as_str).unwrap_or_default().to_string(),
+        id: data
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         data: data.clone(),
     });
     success_payload("channels_create", data)
@@ -141,7 +154,10 @@ pub fn channels_delete(input: ChannelIdInput) -> AppResult<StubPayload> {
     };
     let before = guard.channels.len();
     guard.channels.retain(|item| item.id != id);
-    success_payload("channels_delete", json!({ "ok": before != guard.channels.len() }))
+    success_payload(
+        "channels_delete",
+        json!({ "ok": before != guard.channels.len() }),
+    )
 }
 
 pub fn channels_test(input: ChannelIdInput) -> AppResult<StubPayload> {
@@ -208,7 +224,10 @@ pub fn channels_list_events(input: ChannelEventsInput) -> AppResult<StubPayload>
     }
     let limit = input.limit.unwrap_or(50);
     let offset = input.offset.unwrap_or(0);
-    success_payload("channels_list_events", json!({ "events": [], "total": 0, "limit": limit, "offset": offset }))
+    success_payload(
+        "channels_list_events",
+        json!({ "events": [], "total": 0, "limit": limit, "offset": offset }),
+    )
 }
 
 pub fn channels_stats(input: ChannelIdInput) -> AppResult<StubPayload> {

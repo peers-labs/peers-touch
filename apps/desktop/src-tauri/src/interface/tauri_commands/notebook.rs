@@ -1,10 +1,9 @@
 use crate::error::AppResult;
-use crate::interface::contracts::{
+use crate::contracts::{
     NotebookCreateInput, NotebookIdInput, NotebookUpdateInput, StubPayload, TopicIdInput,
 };
 
-#[path = "../../application/notebook/mod.rs"]
-mod application_notebook;
+use crate::application::notebook as application_notebook;
 
 #[tauri::command]
 pub fn notebook_list_documents(input: TopicIdInput) -> AppResult<StubPayload> {

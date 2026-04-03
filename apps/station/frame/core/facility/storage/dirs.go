@@ -122,9 +122,23 @@ func AppRuntimeDir() string {
 	}
 }
 
+func AppTempDir() string {
+	id := appID()
+	switch runtime.GOOS {
+	case "windows":
+		base := os.Getenv("TEMP")
+		if base == "" {
+			base = os.TempDir()
+		}
+		return filepath.Join(base, id, "tmp")
+	default:
+		return filepath.Join(os.TempDir(), id, "tmp")
+	}
+}
+
 // EnsureAppDirs creates all required app directories.
 func EnsureAppDirs() error {
-	dirs := []string{AppConfigDir(), AppDataDir(), AppCacheDir(), AppLogsDir(), AppRuntimeDir()}
+	dirs := []string{AppConfigDir(), AppDataDir(), AppCacheDir(), AppLogsDir(), AppRuntimeDir(), AppTempDir()}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return err
