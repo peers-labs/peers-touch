@@ -24,6 +24,8 @@ type options struct {
 
 	// EnableRelay tells the transport to enable relay
 	EnableRelay bool
+	// EnableRelayService makes this node act as a circuit relay server for other peers
+	EnableRelayService bool
 	// StaticRelays contains the addresses of static relay nodes to use.
 	StaticRelays []multiaddr.Multiaddr
 	// SecurityTransports configures the security protocols to use (e.g., "noise", "tls").
@@ -37,6 +39,13 @@ type options struct {
 func EnableRelay() option.Option {
 	return wrapOptions(func(o *options) {
 		o.EnableRelay = true
+	})
+}
+
+// EnableRelayService makes this node serve as a circuit relay for other peers.
+func EnableRelayServiceOpt() option.Option {
+	return wrapOptions(func(o *options) {
+		o.EnableRelayService = true
 	})
 }
 
