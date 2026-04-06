@@ -1,0 +1,12 @@
+peers:
+  node:
+    transport:
+      native:
+        enable-relay-service: true
+    server:
+      subserver:
+        relay:
+          enabled: true
+          max-stations: 100
+          max-requests-per-sec: 1000
+          heartbeat-timeout: 60

@@ -12,10 +12,12 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/pion/turn/v4"
 )
 
 // SubServer implements a TURN service.
+// 新增 iceStore: ICE Server 凭证持久化，支持多 source 聚合（station/relay/public）。
 type SubServer struct {
 	opts *Options
 
@@ -24,16 +26,30 @@ type SubServer struct {
 	udpConn net.PacketConn
 	tcpLis  *net.TCPListener
 
+	iceStore *ICEStore
+
 	address string
 }
 
-// Init initializes TURN server and listeners.
+// Init initializes TURN server, ICE store, and network listeners.
 func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 	for _, opt := range opts {
 		s.opts.Apply(opt)
 	}
 
 	s.address = fmt.Sprintf(":%d", s.opts.Port)
+
+	// 初始化 ICE Server 凭证 Store
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		logger.Warnf(ctx, "[turn] failed to get RDS for ICE store, ICE cache disabled: %v", err)
+	} else {
+		s.iceStore = NewICEStore(rds)
+		if err := s.iceStore.AutoMigrate(); err != nil {
+			return fmt.Errorf("[turn] ICE store auto migrate failed: %w", err)
+		}
+		logger.Infof(ctx, "[turn] ICE server cache store initialized")
+	}
 
 	// Initialize network listeners
 	udpConn, err := net.ListenPacket("udp4", s.address)
@@ -125,7 +141,7 @@ func (s *SubServer) Status() server.Status { return s.status }
 // TURN core relay service (UDP/TCP) is handled by pion/turn library and doesn't need HTTP handlers.
 // Only ICE configuration API needs HTTP endpoint for clients to discover STUN/TURN servers.
 func (s *SubServer) Handlers() []server.Handler {
-	return NewICEHandler(s.opts).Handlers()
+	return NewICEHandler(s.opts, s.iceStore).Handlers()
 }
 
 // Type returns the subserver type.
