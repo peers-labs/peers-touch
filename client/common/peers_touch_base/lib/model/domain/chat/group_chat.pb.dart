@@ -2461,10 +2461,12 @@ class GetGroupMessagesResponse extends $pb.GeneratedMessage {
   factory GetGroupMessagesResponse({
     $core.Iterable<GroupMessage>? messages,
     $core.bool? hasMore,
+    $core.String? nextCursor,
   }) {
     final result = create();
     if (messages != null) result.messages.addAll(messages);
     if (hasMore != null) result.hasMore = hasMore;
+    if (nextCursor != null) result.nextCursor = nextCursor;
     return result;
   }
 
@@ -2485,6 +2487,7 @@ class GetGroupMessagesResponse extends $pb.GeneratedMessage {
     ..pPM<GroupMessage>(1, _omitFieldNames ? '' : 'messages',
         subBuilder: GroupMessage.create)
     ..aOB(2, _omitFieldNames ? '' : 'hasMore')
+    ..aOS(3, _omitFieldNames ? '' : 'nextCursor')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2518,6 +2521,15 @@ class GetGroupMessagesResponse extends $pb.GeneratedMessage {
   $core.bool hasHasMore() => $_has(1);
   @$pb.TagNumber(2)
   void clearHasMore() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get nextCursor => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set nextCursor($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasNextCursor() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearNextCursor() => $_clearField(3);
 }
 
 /// 撤回消息

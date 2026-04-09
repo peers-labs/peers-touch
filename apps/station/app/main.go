@@ -8,13 +8,17 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
-	_ "github.com/peers-labs/peers-touch/station/app/subserver/ai_chat"
+	"github.com/peers-labs/peers-touch/station/app/subserver/activitypub"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
 	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
+	"github.com/peers-labs/peers-touch/station/app/subserver/mastodon"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social"
 
+	_ "github.com/peers-labs/peers-touch/station/app/subserver/ai_chat"
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
+
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
@@ -27,7 +31,6 @@ func main() {
 	defer cancel()
 
 	p := peers.NewPeer()
-
 	err := p.Init(
 		ctx,
 		node.WithPrivateKey("private.pem"),
@@ -37,6 +40,9 @@ func main() {
 		server.WithSubServer("group_chat", groupchat.NewGroupChatSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
 		server.WithSubServer("events", events.NewEventsSubServer),
+		server.WithSubServer("social", social.NewSocialSubServer),
+		server.WithSubServer("activitypub", activitypub.NewActivityPubSubServer),
+		server.WithSubServer("mastodon", mastodon.NewMastodonSubServer),
 	)
 	if err != nil {
 		panic(err)

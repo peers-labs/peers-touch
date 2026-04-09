@@ -881,3 +881,45 @@ pub struct FrontendLogInput {
     pub message: String,
     pub data: Option<String>,
 }
+
+// --- Onboarding / Wizard contracts ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnboardingSetInput {
+    pub step: Option<String>,
+    pub completed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WizardStepInput {
+    pub step: String,
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WizardExecuteApiInput {
+    pub action: String,
+    pub params: Option<serde_json::Value>,
+}
+
+// --- Actor contracts ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActorSearchUsersInput {
+    pub q: String,
+    pub limit: Option<u32>,
+}
+
+// --- Group chat create / leave contracts ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatCreateGroupInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub member_dids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatLeaveGroupInput {
+    pub group_ulid: String,
+}

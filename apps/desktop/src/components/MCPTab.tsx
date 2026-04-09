@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Button, Card, Input, Modal, Switch, Tag, Empty,
-  Typography, Select, message, Popconfirm, Tooltip, Spin, theme,
+  Card, Modal, Switch, Empty,
+  Typography, Select, message, Popconfirm, Spin, theme,
 } from 'antd';
+import { Button, Input, Tag, Tooltip } from '@lobehub/ui';
 import {
   Plus, Trash2, Play,
   CheckCircle, XCircle,

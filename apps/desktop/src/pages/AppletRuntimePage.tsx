@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Blocks, Pin, PinOff } from 'lucide-react';
-import { Button, Empty, Spin, Tag, theme, Typography } from 'antd';
+import { Empty, Spin, theme, Typography } from 'antd';
+import { Button, Tag } from '@lobehub/ui';
 import { PageHeader } from '../components/PageHeader';
 import AppletManager from '../applet/AppletManager';
 import LynxContainer from '../applet/LynxContainer';

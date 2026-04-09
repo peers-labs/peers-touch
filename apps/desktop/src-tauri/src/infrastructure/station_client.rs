@@ -1,6 +1,7 @@
 use prost::Message;
 use reqwest::blocking::Client;
 use reqwest::Method;
+use serde_json::Value;
 
 pub(crate) fn station_base_url() -> String {
     std::env::var("PT_STATION_URL")
@@ -8,6 +9,116 @@ pub(crate) fn station_base_url() -> String {
         .unwrap_or_else(|_| "http://127.0.0.1:18080".to_string())
         .trim_end_matches('/')
         .to_string()
+}
+
+fn build_client() -> Result<Client, String> {
+    Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to create HTTP client");
+            format!("create http client failed: {}", e)
+        })
+}
+
+// JSON POST without auth — used for login where no token exists yet.
+pub(crate) fn post_json_no_auth(
+    path: &str,
+    body: Value,
+) -> Result<Value, String> {
+    let url = format!("{}{}", station_base_url(), path);
+    tracing::info!(path = %path, "→ station (json, no-auth)");
+
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+
+    let resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| {
+            let elapsed = start.elapsed().as_millis();
+            tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
+            format!("request failed: {}", e)
+        })?;
+
+    let status = resp.status();
+    let elapsed = start.elapsed().as_millis();
+
+    let result: Value = resp.json().map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
+        format!("decode json response failed: {}", e)
+    })?;
+
+    if !status.is_success() {
+        let msg = result.get("message")
+            .or_else(|| result.get("msg"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown error");
+        tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station FAIL");
+        return Err(format!("station returned {}: {}", status.as_u16(), msg));
+    }
+
+    tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no-auth)");
+    Ok(result)
+}
+
+// JSON-based request for chat APIs (friend_chat, group_chat).
+// Sends/receives JSON with Content-Type: application/json.
+pub(crate) fn request_json(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<Value>,
+) -> Result<Value, String> {
+    let url = format!("{}{}", station_base_url(), path);
+    tracing::info!(method = %method, path = %path, "→ station (json)");
+
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+
+    let mut req = client.request(method.clone(), &url).bearer_auth(token);
+
+    if let Some(q) = query {
+        req = req.query(q);
+    }
+
+    if let Some(b) = body {
+        req = req
+            .header("Content-Type", "application/json")
+            .json(&b);
+    } else {
+        req = req.header("Content-Type", "application/json");
+    }
+
+    req = req.header("Accept", "application/json");
+
+    let resp = req.send().map_err(|e| {
+        let elapsed = start.elapsed().as_millis();
+        tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
+        format!("request failed: {}", e)
+    })?;
+
+    let status = resp.status();
+    let elapsed = start.elapsed().as_millis();
+
+    if !status.is_success() {
+        let code = status.as_u16();
+        let text = resp.text().unwrap_or_default();
+        tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
+        return Err(format!("station returned {} : {}", code, text));
+    }
+
+    let result: Value = resp.json().map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
+        format!("decode json response failed: {}", e)
+    })?;
+
+    tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json)");
+    Ok(result)
 }
 
 pub(crate) fn request_proto<Req, Resp>(
@@ -31,14 +142,7 @@ where
     );
 
     let start = std::time::Instant::now();
-
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to create HTTP client");
-            format!("create http client failed: {}", e)
-        })?;
+    let client = build_client()?;
 
     let mut req = client
         .request(method.clone(), &url)

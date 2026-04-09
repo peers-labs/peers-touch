@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
-import { Modal, Tabs, message as antMessage, Button } from 'antd';
+import { Modal, Tabs, theme } from 'antd';
+import { Button, toast } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
-import { theme } from 'antd';
 import { Copy, Link, FileText, Download, Check, Link2Off } from 'lucide-react';
 import { api } from '../services/desktop_api';
 import type { ChatMessage } from '../store/chat';
@@ -52,7 +52,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
   const handleCopyText = useCallback(() => {
     navigator.clipboard.writeText(markdownText).then(() => {
       setCopied(true);
-      antMessage.success('Conversation copied as Markdown');
+      toast.success('Conversation copied as Markdown');
       setTimeout(() => setCopied(false), 2000);
     });
   }, [markdownText]);
@@ -74,7 +74,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
       const url = `${window.location.origin}/share/s/${result.share_id}`;
       setShareLink(url);
     } catch {
-      antMessage.error('Failed to create share link');
+      toast.error('Failed to create share link');
     } finally {
       setSharing(false);
     }
@@ -83,7 +83,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
   const handleCopyLink = useCallback(() => {
     navigator.clipboard.writeText(shareLink).then(() => {
       setLinkCopied(true);
-      antMessage.success('Link copied');
+      toast.success('Link copied');
       setTimeout(() => setLinkCopied(false), 2000);
     });
   }, [shareLink]);
@@ -93,9 +93,9 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
     try {
       await api.deleteShare(sessionKey);
       setShareLink('');
-      antMessage.success('Share link revoked');
+      toast.success('Share link revoked');
     } catch {
-      antMessage.error('Failed to revoke link');
+      toast.error('Failed to revoke link');
     } finally {
       setRevoking(false);
     }

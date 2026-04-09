@@ -2,7 +2,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Check, ChevronRight, Settings, Search, X, Eye, Wrench, Sparkles } from 'lucide-react';
 import { ProviderIcon } from './settings/ProviderIcon';
-import { Divider, theme, Tooltip } from 'antd';
+import { Tooltip } from '@lobehub/ui';
+import { Divider, theme } from 'antd';
 import { useChatStore } from '../store/chat';
 import type { AvailableModel } from '../services/desktop_api';
 

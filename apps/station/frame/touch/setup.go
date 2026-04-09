@@ -4,6 +4,7 @@ import (
 	"context"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	promInit "github.com/peers-labs/peers-touch/station/frame/core/metrics/prometheus"
 	"github.com/peers-labs/peers-touch/station/frame/core/node"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -19,6 +20,10 @@ func Lifecycle() []option.Option {
 			return nil
 		}),
 		node.AfterStart(onAfterStart),
+		node.AfterStart(func() error {
+			promInit.TryStartRemoteWrite(context.Background())
+			return nil
+		}),
 	}
 }
 

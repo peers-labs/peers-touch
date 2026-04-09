@@ -13,8 +13,12 @@ interface AccountIdentityStore {
 
 let loadPromise: Promise<void> | null = null;
 
-function notifyChanged() {
-  eventBus.publish(EVENT.AUTH_IDENTITY_CHANGED, undefined);
+function accountsEqual(a: AccountIdentity[], b: AccountIdentity[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id || a[i].name !== b[i].name || a[i].avatar_url !== b[i].avatar_url) return false;
+  }
+  return true;
 }
 
 export const useAccountIdentityStore = create<AccountIdentityStore>((set, get) => ({
@@ -29,11 +33,15 @@ export const useAccountIdentityStore = create<AccountIdentityStore>((set, get) =
       set({ loading: true, error: undefined });
       try {
         const [list, active] = await Promise.all([api.accountList(), api.accountGetActive()]);
-        set({
-          accounts: list.accounts || [],
-          activeAccountId: active?.id || list.active_account_id,
-          loading: false,
-        });
+        const newAccounts = list.accounts || [];
+        const newActiveId = active?.id || list.active_account_id;
+        const prev = get();
+        const changed = !accountsEqual(prev.accounts, newAccounts)
+          || prev.activeAccountId !== newActiveId;
+        set({ accounts: newAccounts, activeAccountId: newActiveId, loading: false });
+        if (changed) {
+          eventBus.publish(EVENT.AUTH_IDENTITY_CHANGED, undefined);
+        }
       } catch (error: any) {
         set({
           loading: false,
@@ -42,7 +50,6 @@ export const useAccountIdentityStore = create<AccountIdentityStore>((set, get) =
       } finally {
         loadPromise = null;
       }
-      notifyChanged();
     })();
     return loadPromise;
   },

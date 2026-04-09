@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
-	"github.com/peers-labs/peers-touch/station/frame/touch/activitypub"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
@@ -42,12 +42,12 @@ func DiscoverActor(ctx context.Context, params *model.WebFingerParams, rels []st
 	}
 
 	// 3. Look up user
-	actor, err := activitypub.GetActorByName(ctx, username)
+	foundActor, err := actor.GetActorByName(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("error looking up actor: %v", err)
 	}
 
-	if actor == nil {
+	if foundActor == nil {
 		return nil, fmt.Errorf("actor not found: %s", username)
 	}
 
@@ -90,12 +90,11 @@ func DiscoverActor(ctx context.Context, params *model.WebFingerParams, rels []st
 
 // GetActivityPubActor returns the ActivityPub actor representation for an actor
 func GetActivityPubActor(ctx context.Context, username string) (*model.WebFingerActivityPubActor, error) {
-	// Look up the user in the database
-	actor, err := activitypub.GetActorByName(ctx, username)
+	foundActor, err := actor.GetActorByName(ctx, username)
 	if err != nil {
 		return nil, err
 	}
-	if actor == nil {
+	if foundActor == nil {
 		return nil, fmt.Errorf("actor not found")
 	}
 
@@ -106,7 +105,7 @@ func GetActivityPubActor(ctx context.Context, username string) (*model.WebFinger
 	return &model.WebFingerActivityPubActor{
 		ID:                actorID,
 		Type:              "Person",
-		PreferredUsername: actor.Name,
+		PreferredUsername: foundActor.Name,
 		Inbox:             fmt.Sprintf("%s/activitypub/%s/inbox", baseURL, username),
 		Outbox:            fmt.Sprintf("%s/activitypub/%s/outbox", baseURL, username),
 		PublicKey: &model.ActivityPubPublicKey{

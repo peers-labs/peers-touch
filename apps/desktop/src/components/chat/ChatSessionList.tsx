@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Badge, Button, Dropdown, Empty, Input, Segmented, Spin, Typography, theme } from 'antd';
+import { Button, Dropdown, Input, Segmented } from '@lobehub/ui';
+import { Badge, Empty, Spin, theme, Typography } from 'antd';
 import { MessageCircle, Users, Search, Plus, UserPlus, UsersRound } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';

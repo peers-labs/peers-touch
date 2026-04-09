@@ -1,12 +1,17 @@
 peers:
   node:
-    transport:
-      native:
-        enable-relay-service: true
     server:
       subserver:
         relay:
           enabled: true
           max-stations: 100
-          max-requests-per-sec: 1000
           heartbeat-timeout: 60
+          forward-timeout: 30
+          max-body-size: 10485760
+          max-concurrent-per-station: 64
+          stream-ping-interval: 30
+          stream-ping-timeout: 5
+          stream-listen-addr: ""
+          graceful-drain-timeout: 10
+          tls-cert-file: ""
+          tls-key-file: ""

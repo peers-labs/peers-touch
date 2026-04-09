@@ -28,15 +28,15 @@
 
 ## 3. 当前代码映射
 - Registry 数据源：  
-  [providers.default.yaml](../../../apps/desktop/src-tauri/src/application/provider/providers.default.yaml)
+  [providers.default.yaml](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/provider/providers.default.yaml)
 - Provider 状态层：  
-  [state.rs](../../../apps/desktop/src-tauri/src/application/provider/state.rs)
+  [state.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/provider/state.rs)
 - Protocol Adapter 聚合：  
-  [remote.rs](../../../apps/desktop/src-tauri/src/application/provider/remote.rs)
+  [remote.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/provider/remote.rs)
 - Provider 命令入口：  
-  [provider.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/provider.rs)
+  [provider.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/interface/tauri_commands/provider.rs)
 - Models 命令入口：  
-  [models.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/models.rs)
+  [models.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/interface/tauri_commands/models.rs)
 
 ## 4. 用户作用域设计
 - ProviderStore 已升级为多作用域注册表（scope -> store），默认 scope 为 `__default__`。

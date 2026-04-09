@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Flexbox, Center } from 'react-layout-kit';
-import { Markdown } from '@lobehub/ui';
-import { Alert, Spin, theme } from 'antd';
+import { Alert, Markdown } from '@lobehub/ui';
+import { Spin, theme } from 'antd';
 import { Bot, User } from 'lucide-react';
 
 interface SharedMessage {

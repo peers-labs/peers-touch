@@ -104,20 +104,18 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) (err error)
 			mdns.WithService("_peers-touch._tcp"),
 		)
 		if err != nil {
-			return fmt.Errorf("failed to create mDNS service: %w", err)
-		}
+			logger.Warnf(ctx, "[Bootstrap] mDNS service creation failed, peer discovery degraded: %v", err)
+		} else {
+			s.mdnsService.Watch(func(peer *types.Peer) {
+				ctx := context.Background()
+				logger.Infof(ctx, "Discovered peer via mDNS: %s (type: %s)", peer.Name, peer.ID)
+			})
 
-		// Set up discovery callback - bootstrap just logs discoveries
-		s.mdnsService.Watch(func(peer *types.Peer) {
-			// Bootstrap subserver should not connect to mDNS-discovered nodes
-			// Just log the discovery for informational purposes
-			ctx := context.Background()
-			logger.Infof(ctx, "Discovered peer via mDNS: %s (type: %s)", peer.Name, peer.ID)
-		})
-
-		err = s.mdnsService.Start()
-		if err != nil {
-			return fmt.Errorf("failed to start mDNS service: %w", err)
+			err = s.mdnsService.Start()
+			if err != nil {
+				logger.Warnf(ctx, "[Bootstrap] mDNS service start failed, peer discovery degraded: %v", err)
+				s.mdnsService = nil
+			}
 		}
 	}
 

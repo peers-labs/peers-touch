@@ -2,6 +2,9 @@ package usecase
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/url"
 	"time"
@@ -68,7 +71,10 @@ func (u HandleCallbackUseCase) Execute(ctx context.Context, input HandleCallback
 	if session.ReturnTo != "" {
 		target = session.ReturnTo
 	}
-	redirectURL, err := appendQuery(target, map[string]string{
+
+	ts := time.Now().UTC().Format(time.RFC3339)
+
+	params := map[string]string{
 		"site_id":          session.SiteID,
 		"provider":         string(input.Provider),
 		"provider_user_id": identity.ProviderUserID,
@@ -77,8 +83,18 @@ func (u HandleCallbackUseCase) Execute(ctx context.Context, input HandleCallback
 		"display_name":     identity.DisplayName,
 		"avatar_url":       identity.AvatarURL,
 		"email":            identity.Email,
-		"ts":               time.Now().UTC().Format(time.RFC3339),
-	})
+		"ts":               ts,
+	}
+
+	// Compute HMAC-SHA256 signature when bridge secret is configured.
+	if site.BridgeSecret != "" {
+		message := string(input.Provider) + ":" + identity.ProviderUserID + ":" + identity.Email + ":" + ts
+		mac := hmac.New(sha256.New, []byte(site.BridgeSecret))
+		mac.Write([]byte(message))
+		params["sig"] = hex.EncodeToString(mac.Sum(nil))
+	}
+
+	redirectURL, err := appendQuery(target, params)
 	if err != nil {
 		return nil, err
 	}

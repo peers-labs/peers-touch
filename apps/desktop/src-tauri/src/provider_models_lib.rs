@@ -1,7 +1,6 @@
 pub mod error;
 #[path = "state/mod.rs"]
 pub mod state;
-pub mod model;
 
 pub(crate) use interface::contracts;
 

@@ -1,0 +1,9 @@
+peers:
+  metrics:
+    prometheus:
+      remote-write:
+        enabled: false
+        endpoint: ""
+        username: ""
+        password: ""
+        interval: "15s"

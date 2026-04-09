@@ -4,6 +4,5 @@ pub mod auth;
 pub mod chat;
 pub mod profile;
 pub mod settings;
-pub mod social_chat;
 pub mod storage;
 pub mod timeline;

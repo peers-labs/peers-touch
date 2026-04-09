@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Typography, Tag, Spin, Badge, message, Tooltip } from 'antd';
-import { theme } from 'antd';
+import { Tag, Tooltip, toast } from '@lobehub/ui';
+import { Typography, Spin, Badge, theme } from 'antd';
 import {
   Blocks,
   Globe,
@@ -98,14 +98,14 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
     try {
       if (currentStatus === 'active') {
         await api.deactivateApplet(id);
-        message.success('Applet deactivated');
+        toast.success('Applet deactivated');
       } else {
         await api.activateApplet(id);
-        message.success('Applet activated');
+        toast.success('Applet activated');
       }
       loadApplets();
     } catch (e: any) {
-      message.error(e.message || 'Operation failed');
+      toast.error(e.message || 'Operation failed');
     }
   }, [loadApplets]);
 
@@ -115,14 +115,14 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
         await api.activateApplet(id);
         loadApplets();
       } catch (e: any) {
-        message.error(e.message || 'Failed to activate');
+        toast.error(e.message || 'Failed to activate');
         return;
       }
     }
     if (hasPage(id) && onNavigate) {
       onNavigate(`applet:${id}`);
     } else {
-      message.info('This applet does not have a dedicated page yet');
+      toast.info('This applet does not have a dedicated page yet');
     }
   }, [loadApplets, onNavigate]);
 

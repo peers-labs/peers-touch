@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Popover } from '@lobehub/ui';
-import { theme, Checkbox, Divider, Tag } from 'antd';
+import { theme, Checkbox, Divider } from 'antd';
+import { Tag } from '@lobehub/ui';
 import {
   Plus,
   BookOpen,

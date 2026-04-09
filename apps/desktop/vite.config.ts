@@ -5,13 +5,14 @@ import wasm from 'vite-plugin-wasm'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react(), wasm()],
+  base: './',
   resolve: {
     alias: {
       '@': '/src',
     },
   },
   server: {
-    port: 3000,
+    port: 3210,
     strictPort: true,
     proxy: {
       '/api': {

@@ -1,21 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Alert,
-  Button,
   Form,
-  Input,
   InputNumber,
   message,
   Modal,
   Select,
   Spin,
   Switch,
-  Tag,
-  Tooltip,
   Typography,
+  theme,
 } from 'antd';
-import { theme } from 'antd';
+import { Alert, Button, Tag, Tooltip, TextArea } from '@lobehub/ui';
 import {
   CheckCircle2,
   CircleDot,
@@ -28,8 +24,6 @@ import {
 import {
   api,
   type ConfigFieldMeta,
-  type ModelItem,
-  type ProviderListItem,
 } from '../../services/desktop_api';
 
 const { Text } = Typography;
@@ -72,34 +66,19 @@ export function MemorySettingsTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [mem, providers] = await Promise.all([
+      const [mem, embeddingResult] = await Promise.all([
         api.getConfigSection('memory'),
-        api.listProviders(),
+        api.listEmbeddingModels(),
       ]);
 
       setMemoryData(mem);
 
-      const options: EmbeddingOption[] = [];
-      for (const provider of providers) {
-        if (!provider.enabled) continue;
-        try {
-          const detail = await api.getProviderDetail(provider.id);
-          if (detail.models) {
-            for (const model of detail.models) {
-              if (model.type === 'embedding' && model.enabled) {
-                options.push({
-                  provider_id: provider.id,
-                  provider_name: provider.name,
-                  model_id: model.id,
-                  model_name: model.display_name || model.id,
-                });
-              }
-            }
-          }
-        } catch {
-          // skip provider if detail fetch fails
-        }
-      }
+      const options: EmbeddingOption[] = (embeddingResult.models || []).map(m => ({
+        provider_id: m.provider,
+        provider_name: m.provider,
+        model_id: m.id,
+        model_name: m.name || m.id,
+      }));
       setEmbeddingOptions(options);
 
       const savedEmbedding = mem.embedding_model?.value;
@@ -288,7 +267,7 @@ export function MemorySettingsTab() {
               <Form.Item name="postgres_dsn" label={
                 <Flexbox horizontal align="center" gap={6}><span>Connection String</span>{memoryData?.postgres_dsn && <SourceBadge meta={memoryData.postgres_dsn} />}</Flexbox>
               }>
-                <Input.TextArea rows={2} placeholder="postgres://user:pass@host:5432/db?sslmode=disable" style={{ fontFamily: 'monospace', fontSize: 12 }} />
+                <TextArea rows={2} placeholder="postgres://user:pass@host:5432/db?sslmode=disable" style={{ fontFamily: 'monospace', fontSize: 12 }} />
               </Form.Item>
               <Flexbox horizontal gap={8} align="center" style={{ marginBottom: 12 }}>
                 <Button size="small" icon={<Zap size={12} />} onClick={handleTestPg} loading={pgTesting}>Test</Button>

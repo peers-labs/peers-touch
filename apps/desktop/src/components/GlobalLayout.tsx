@@ -1,9 +1,10 @@
 import { type ReactNode, useEffect, useRef, useState, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Users, AlertCircle, Minus, Square, X } from 'lucide-react';
+import { Users, AlertCircle } from 'lucide-react';
 import { Tooltip, theme } from 'antd';
 import { api } from '../services/desktop_api';
 import { useOAuth2Store } from '../store/oauth2';
+import { EVENT, eventBus } from '../kernel/events';
 
 const HEARTBEAT_INTERVAL = 60_000;
 const AUTH_CHECK_INTERVAL = 120_000;
@@ -13,7 +14,7 @@ interface GlobalLayoutProps {
   children: ReactNode;
 }
 
-function OnlineIndicator() {
+export function OnlineIndicator() {
   const [count, setCount] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const { token } = theme.useToken();
@@ -50,7 +51,6 @@ function OnlineIndicator() {
           fontSize: 13,
           color: token.colorTextSecondary,
           cursor: 'default',
-          userSelect: 'none',
         }}
       >
         <span
@@ -90,21 +90,17 @@ const pulseKeyframes = `
 }
 `;
 
-function AuthStatusIndicator() {
-  const { connections, loading, loadAll } = useOAuth2Store();
+export function AuthStatusIndicator() {
+  const connections = useOAuth2Store((s) => s.connections);
+  const loading = useOAuth2Store((s) => s.loading);
+  const loadAll = useOAuth2Store((s) => s.loadAll);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     loadAll();
     timerRef.current = setInterval(loadAll, AUTH_CHECK_INTERVAL);
-    const noop = () => {
-      // Store already updated by whoever called loadAll. Do NOT call loadAll here —
-      // it would cause a cascade (loadAll→event→loadAll→429).
-    };
-    window.addEventListener('oauth2-connections-changed', noop);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      window.removeEventListener('oauth2-connections-changed', noop);
     };
   }, [loadAll]);
 
@@ -124,8 +120,7 @@ function AuthStatusIndicator() {
   if (hasAccounts) return null;
 
   const navigateToAccount = () => {
-    const event = new CustomEvent('navigate-settings-tab', { detail: 'account' });
-    window.dispatchEvent(event);
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings', id: 'account' });
   };
 
   return (
@@ -166,145 +161,13 @@ function AuthStatusIndicator() {
 }
 
 export function GlobalLayout({ sideNav, children }: GlobalLayoutProps) {
-  const { token } = theme.useToken();
-  const isTauriDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-  const showCustomWindowChrome = !isTauriDesktop;
-  const [isMaximized, setIsMaximized] = useState(false);
-
-  useEffect(() => {
-    if (!isTauriDesktop) return;
-    let mounted = true;
-    const syncMaximized = async () => {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      const maximized = await getCurrentWindow().isMaximized();
-      if (mounted) setIsMaximized(maximized);
-    };
-    void syncMaximized();
-    return () => {
-      mounted = false;
-    };
-  }, [isTauriDesktop]);
-
-  const onMinimize = useCallback(async () => {
-    if (!isTauriDesktop) return;
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    await getCurrentWindow().minimize();
-  }, [isTauriDesktop]);
-
-  const onToggleMaximize = useCallback(async () => {
-    if (!isTauriDesktop) return;
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    const appWindow = getCurrentWindow();
-    const maximized = await appWindow.isMaximized();
-    if (maximized) {
-      await appWindow.unmaximize();
-      setIsMaximized(false);
-    } else {
-      await appWindow.maximize();
-      setIsMaximized(true);
-    }
-  }, [isTauriDesktop]);
-
-  const onClose = useCallback(async () => {
-    if (!isTauriDesktop) return;
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    await getCurrentWindow().close();
-  }, [isTauriDesktop]);
-
   return (
     <Flexbox style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {showCustomWindowChrome && (
-        <Flexbox
-          horizontal
-          align="center"
-          justify="space-between"
-          className="window-drag"
-          data-tauri-drag-region
-          style={{
-            height: 40,
-            minHeight: 40,
-            padding: '0 8px 0 12px',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            background: token.colorBgContainer,
-            zIndex: 10,
-            userSelect: 'none',
-          }}
-        >
-          <div style={{ flex: 1, height: '100%' }} data-tauri-drag-region />
-          <Flexbox horizontal align="center" gap={10} className="window-no-drag">
-            <AuthStatusIndicator />
-            <OnlineIndicator />
-            <Flexbox horizontal align="center" gap={4}>
-              <Flexbox
-                align="center"
-                justify="center"
-                onClick={onMinimize}
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  color: token.colorTextSecondary,
-                }}
-              >
-                <Minus size={14} />
-              </Flexbox>
-              <Flexbox
-                align="center"
-                justify="center"
-                onClick={onToggleMaximize}
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  color: token.colorTextSecondary,
-                }}
-              >
-                <Square size={12} fill={isMaximized ? token.colorTextSecondary : 'none'} />
-              </Flexbox>
-              <Flexbox
-                align="center"
-                justify="center"
-                onClick={onClose}
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  color: token.colorTextSecondary,
-                }}
-              >
-                <X size={14} />
-              </Flexbox>
-            </Flexbox>
-          </Flexbox>
-        </Flexbox>
-      )}
-
       <Flexbox horizontal flex={1} style={{ overflow: 'hidden' }}>
         {sideNav}
         <Flexbox flex={1} style={{ overflow: 'hidden', position: 'relative' }}>
           {children}
         </Flexbox>
-      </Flexbox>
-
-      <Flexbox
-        horizontal
-        align="center"
-        justify="center"
-        style={{
-          height: 24,
-          minHeight: 24,
-          padding: '0 16px',
-          borderTop: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgContainer,
-          fontSize: 11,
-          color: token.colorTextQuaternary,
-          userSelect: 'none',
-          display: 'none',
-        }}
-      >
       </Flexbox>
     </Flexbox>
   );

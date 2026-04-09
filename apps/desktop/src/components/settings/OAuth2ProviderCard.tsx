@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Typography, Tag, theme, Tooltip, Input, Modal, message, Alert } from 'antd';
+import { Alert, Button, Input, InputPassword, Tag, Tooltip, toast } from '@lobehub/ui';
+import { Typography, theme, Modal, Input as AntdInput } from 'antd';
 import { Clock, Check, Copy, Settings2 } from 'lucide-react';
 import type { OAuth2ProviderSummary } from '../../services/desktop_api';
 import { api } from '../../services/desktop_api';
@@ -46,26 +47,26 @@ function CredentialsModal({
 
   const handleSave = async () => {
     if (!clientId.trim()) {
-      message.error('Client ID is required');
+      toast.error('Client ID is required');
       return;
     }
     if (source === 'none' && !clientSecret.trim()) {
-      message.error('Client Secret is required for first-time configuration');
+      toast.error('Client Secret is required for first-time configuration');
       return;
     }
     if (!clientSecret.trim() && source !== 'none') {
-      message.info('No changes — secret was not updated');
+      toast.info('No changes — secret was not updated');
       onClose();
       return;
     }
     setSaving(true);
     try {
       await api.oauth2SetCredentials(provider.id, clientId.trim(), clientSecret.trim());
-      message.success('Credentials saved');
+      toast.success('Credentials saved');
       await loadAll();
       onClose();
     } catch (err: any) {
-      message.error(`Failed: ${err.message}`);
+      toast.error(`Failed: ${err.message}`);
     } finally {
       setSaving(false);
     }
@@ -91,14 +92,14 @@ function CredentialsModal({
             <Text type="secondary" style={{ fontSize: 12 }}>
               Redirect URI (register this with {provider.name}):
             </Text>
-            <Input.Search
+            <AntdInput.Search
               readOnly
               value={provider.callback_url}
               enterButton={<Copy size={12} />}
               size="small"
               onSearch={() => {
                 navigator.clipboard.writeText(provider.callback_url);
-                message.success('Copied');
+                toast.success('Copied');
               }}
               styles={{ input: { fontSize: 12, fontFamily: 'monospace' } }}
             />
@@ -145,7 +146,7 @@ function CredentialsModal({
 
         <Flexbox gap={4}>
           <Text strong style={{ fontSize: 12 }}>Client Secret</Text>
-          <Input.Password
+          <InputPassword
             value={clientSecret}
             onChange={e => setClientSecret(e.target.value)}
             placeholder={source !== 'none' ? 'Re-enter to update' : 'Enter client_secret'}

@@ -4,12 +4,11 @@ import { Flexbox } from 'react-layout-kit';
 import { EmojiPicker } from '@lobehub/ui';
 import {
   theme,
-  Button,
   Divider,
-  Tag,
   Empty,
   message as antMessage,
 } from 'antd';
+import { Tag, Button } from '@lobehub/ui';
 import {
   Settings2,
   Play,

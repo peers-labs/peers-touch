@@ -73,11 +73,20 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
   loadAll: async () => {
     if (loadAllPromise) return loadAllPromise;
     loadAllPromise = (async () => {
+      const prevConnections = get().connections;
+      const prevProviders = get().providers;
       set({ loading: true });
       try {
         await Promise.all([get().loadProviders(), get().loadConnections()]);
         set({ loading: false });
-        eventBus.publish(EVENT.OAUTH_CONNECTIONS_CHANGED, undefined);
+        const next = get();
+        const connectionsChanged =
+          prevConnections.length !== next.connections.length
+          || prevConnections.some((c, i) => c.provider_id !== next.connections[i]?.provider_id || c.status !== next.connections[i]?.status);
+        const providersChanged = prevProviders.length !== next.providers.length;
+        if (connectionsChanged || providersChanged) {
+          eventBus.publish(EVENT.OAUTH_CONNECTIONS_CHANGED, undefined);
+        }
       } finally {
         loadAllPromise = null;
       }
@@ -102,6 +111,19 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
       set({ authenticated: true, authErrorCode: null });
       return;
     } catch (error) {
+      // Primary restore failed — try loading Station session persisted
+      // by the oauth-bridge flow (covers the case where a user logged
+      // in via OAuth but the generic session file was not yet written).
+      try {
+        const result = await api.ensureStationSession();
+        if (result.ok) {
+          set({ authenticated: true, authErrorCode: null });
+          return;
+        }
+      } catch {
+        // Station session also unavailable — fall through to original error handling.
+      }
+
       if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {
         writeStoredToken(null);
         set({ authenticated: false, authErrorCode: error.code });
@@ -136,67 +158,49 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
   },
 
   startAuth: async (id, environment) => {
-    const isTauriRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    if (isTauriRuntime) {
-      const { auth_url, session_id } = await api.oauth2StartLoopback(id, environment);
-      await api.openExternalUrl(auth_url);
-      return new Promise<void>((resolve, reject) => {
-        let settled = false;
-        let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-        let poller: ReturnType<typeof setInterval> | undefined;
-        const finish = async (errorMessage?: string) => {
-          if (settled) return;
-          settled = true;
-          if (timeoutTimer) clearTimeout(timeoutTimer);
-          if (poller) clearInterval(poller);
-          await get().loadAll();
-          if (errorMessage) {
-            reject(new Error(errorMessage));
-            return;
-          }
-          resolve();
-        };
-        poller = setInterval(async () => {
+    const { auth_url, session_id } = await api.oauth2StartLoopback(id, environment);
+    await api.openExternalUrl(auth_url);
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+      let poller: ReturnType<typeof setInterval> | undefined;
+      const finish = async (errorMessage?: string) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (poller) clearInterval(poller);
+        await get().loadAll();
+
+        // After a successful OAuth loopback, the backend persists a Station JWT
+        // via the oauth-bridge API call. Load it into BFF session state so the
+        // app is immediately authenticated without requiring a restart.
+        if (!errorMessage) {
           try {
-            const polled = await api.oauth2PollLoopback(session_id);
-            if (polled.completed) {
-              const errorMessage = polled.status === 'completed' ? undefined : (polled.error || 'oauth authorization failed');
-              void finish(errorMessage);
-            }
-          } catch {}
-        }, 1000);
-        timeoutTimer = setTimeout(() => {
-          void finish('oauth authorization timeout');
-        }, 120000);
-      });
-    }
-    const browserReturnTo = typeof window !== 'undefined' ? window.location.href : undefined;
-    const { auth_url } = await api.oauth2Authorize(id, environment, browserReturnTo);
-    const w = window.open(auth_url, '_blank', 'width=600,height=700');
-    return new Promise<void>((resolve) => {
-      const interval = setInterval(async () => {
-        if (!w) {
-          clearInterval(interval);
-          await get().loadAll();
-          resolve();
+            await api.ensureStationSession();
+            set({ authenticated: true, authErrorCode: null });
+          } catch (err: any) {
+            console.warn('[oauth2] ensureStationSession failed (non-fatal):', err?.message);
+          }
+        }
+
+        if (errorMessage) {
+          reject(new Error(errorMessage));
           return;
         }
+        resolve();
+      };
+      poller = setInterval(async () => {
         try {
-          const consumed = await api.oauth2ConsumeCallbackFromUrl(w.location.href);
-          if (consumed) {
-            w.close();
-            clearInterval(interval);
-            await get().loadAll();
-            resolve();
-            return;
+          const polled = await api.oauth2PollLoopback(session_id);
+          if (polled.completed) {
+            const errorMessage = polled.status === 'completed' ? undefined : (polled.error || 'oauth authorization failed');
+            void finish(errorMessage);
           }
         } catch {}
-        if (w.closed) {
-          clearInterval(interval);
-          await get().loadAll();
-          resolve();
-        }
       }, 1000);
+      timeoutTimer = setTimeout(() => {
+        void finish('oauth authorization timeout');
+      }, 120000);
     });
   },
 

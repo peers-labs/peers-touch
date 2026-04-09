@@ -4,9 +4,126 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Peers Touch Desktop</title>
+    <style id="pt-boot-style">
+      #pt-boot-fallback {
+        position: fixed; inset: 0; z-index: 99999;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        background: #fafafa;
+        font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        transition: opacity 0.4s ease;
+      }
+      #pt-boot-fallback[data-hidden] {
+        opacity: 0; pointer-events: none;
+      }
+      #pt-boot-spinner {
+        width: 32px; height: 32px; border: 3px solid #e8e8e8;
+        border-top-color: #667eea; border-radius: 50%;
+        animation: pt-spin 0.8s linear infinite;
+      }
+      @keyframes pt-spin { to { transform: rotate(360deg); } }
+      #pt-boot-error {
+        display: none; max-width: 420px; text-align: center;
+        padding: 32px; background: #fff; border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      }
+      #pt-boot-error h3 { margin: 12px 0 8px; font-size: 18px; font-weight: 600; color: #1a1a1a; }
+      #pt-boot-error p { font-size: 13px; color: #666; line-height: 1.5; margin: 0 0 16px; }
+      #pt-boot-error button {
+        padding: 8px 24px; font-size: 13px; font-weight: 500; cursor: pointer;
+        border: none; border-radius: 8px; color: #fff; background: #667eea;
+      }
+      #pt-boot-error button:hover { background: #5a6fdb; }
+      #pt-boot-error details { margin-top: 16px; font-size: 11px; color: #999; text-align: left; }
+      #pt-boot-error pre {
+        padding: 8px; border-radius: 6px; background: #f5f5f5;
+        overflow: auto; max-height: 120px; font-size: 10px; color: #c00;
+        white-space: pre-wrap; word-break: break-all;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Boot Fallback: visible until React mounts, shows error if JS fails -->
+    <div id="pt-boot-fallback">
+      <div id="pt-boot-spinner"></div>
+      <div id="pt-boot-error">
+        <div style="font-size:36px">⚠️</div>
+        <h3>Failed to start</h3>
+        <p id="pt-boot-error-msg">The application bundle could not be loaded. This usually means the frontend was not built correctly.</p>
+        <button onclick="location.reload()">Reload</button>
+        <details>
+          <summary>Diagnostics</summary>
+          <pre id="pt-boot-diag"></pre>
+        </details>
+      </div>
+    </div>
+
+    <script>
+      // Boot diagnostics — independent of the React bundle
+      (function() {
+        var BOOT_TIMEOUT_MS = 8000;
+        var bootLog = [];
+        var startTime = Date.now();
+
+        function logBoot(msg) {
+          var ts = Date.now() - startTime;
+          var entry = '[' + ts + 'ms] ' + msg;
+          bootLog.push(entry);
+          try { console.log('[pt-boot] ' + entry); } catch(e) {}
+        }
+
+        logBoot('boot script started');
+
+        // Detect stale dist: if the main module script tag is missing, dist is broken
+        var moduleScripts = document.querySelectorAll('script[type="module"]');
+        logBoot('module scripts found: ' + moduleScripts.length);
+
+        // Listen for script load errors
+        window.addEventListener('error', function(e) {
+          if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
+            logBoot('RESOURCE LOAD ERROR: ' + (e.target.src || e.target.href));
+            showBootError('A required resource failed to load:\n' + (e.target.src || e.target.href));
+          }
+        }, true);
+
+        // Timeout: if React hasn't mounted after BOOT_TIMEOUT_MS, show error
+        var bootTimer = setTimeout(function() {
+          var root = document.getElementById('root');
+          if (root && root.childNodes.length === 0) {
+            logBoot('TIMEOUT: React did not mount within ' + BOOT_TIMEOUT_MS + 'ms');
+            showBootError(
+              'The app did not start within ' + (BOOT_TIMEOUT_MS / 1000) + 's.\n' +
+              'This usually means the frontend build output (dist/) is stale or missing.\n\n' +
+              'Try running: pnpm build && pnpm tauri:dev'
+            );
+          }
+        }, BOOT_TIMEOUT_MS);
+
+        // Called by React app after successful mount to dismiss the fallback
+        window.__PT_BOOT_READY__ = function() {
+          logBoot('React app mounted — dismissing boot fallback');
+          clearTimeout(bootTimer);
+          var fallback = document.getElementById('pt-boot-fallback');
+          if (fallback) {
+            fallback.setAttribute('data-hidden', '');
+            setTimeout(function() { fallback.remove(); }, 500);
+          }
+        };
+
+        function showBootError(detail) {
+          logBoot('showBootError: ' + detail);
+          var spinner = document.getElementById('pt-boot-spinner');
+          var errorBox = document.getElementById('pt-boot-error');
+          var diagPre = document.getElementById('pt-boot-diag');
+          if (spinner) spinner.style.display = 'none';
+          if (errorBox) errorBox.style.display = 'block';
+          if (diagPre) diagPre.textContent = bootLog.join('\n') + '\n\n' + (detail || '');
+        }
+      })();
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -50,3 +50,13 @@ pub fn memory_export(input: MemoryExportInput) -> AppResult<StubPayload> {
 pub fn memory_import(input: MemoryImportInput) -> AppResult<StubPayload> {
     application_memory::memory_import(input)
 }
+
+#[tauri::command]
+pub fn memory_embedding_status() -> AppResult<StubPayload> {
+    application_memory::memory_embedding_status()
+}
+
+#[tauri::command]
+pub fn memory_reembed() -> AppResult<StubPayload> {
+    application_memory::memory_reembed()
+}

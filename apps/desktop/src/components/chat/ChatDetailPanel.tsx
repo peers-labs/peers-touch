@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Divider, Typography, theme } from 'antd';
+import { Button } from '@lobehub/ui';
+import { Divider, theme, Typography } from 'antd';
 import { X, Search, BarChart3, LogOut, Ban, UserPlus } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import { api } from '../../services/desktop_api';

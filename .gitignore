@@ -54,3 +54,4 @@ apps/station/app/peers-touch-app
 apps/station/app/peers-touch-station
 apps/station/app/app
 external
+apps/mobile/android/gradle/wrapper/gradle-wrapper.jar
