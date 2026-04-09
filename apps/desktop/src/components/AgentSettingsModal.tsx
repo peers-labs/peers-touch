@@ -1,22 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Modal,
-  Tabs,
-  Input,
   Select,
   Switch,
   Slider,
   InputNumber,
-  Button,
   Divider,
   message,
   theme,
 } from 'antd';
+import { Tabs, Input, TextArea, Button } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { User, MessageSquare, Settings2, Cpu, Plus, X, GripVertical } from 'lucide-react';
 import { api, type Agent, type AgentChatConfig, type AgentParams, parseAgentChatConfig, parseAgentParams } from '../services/desktop_api';
-
-const { TextArea } = Input;
 
 const AVATAR_OPTIONS = ['🤖', '👨‍💻', '🔬', '✍️', '🧠', '🎨', '📊', '🔧', '🌐', '📝', '🎯', '💡', '🛡️', '🚀', '🎓', '🧪', '🏗️', '🎭', '📈', '🔍'];
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Input, Typography, Button, Modal, Form, message, theme, Divider, Avatar } from 'antd';
+import { Typography, Modal, Form, theme, Divider, Avatar } from 'antd';
+import { Input, Button, TextArea, InputPassword, toast } from '@lobehub/ui';
 import { Search, Plus, Brain } from 'lucide-react';
 import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
@@ -147,11 +148,11 @@ function CreateProviderModal({
       const values = await form.validateFields();
       setLoading(true);
       await onCreate(values);
-      message.success('Provider created');
+      toast.success('Provider created');
       form.resetFields();
       onClose();
     } catch (e: unknown) {
-      if (e instanceof Error) message.error(e.message);
+      if (e instanceof Error) toast.error(e.message);
     } finally {
       setLoading(false);
     }
@@ -206,7 +207,7 @@ function CreateProviderModal({
         </Form.Item>
 
         <Form.Item name="description" label="Provider Description">
-          <Input.TextArea placeholder="Provider description (optional)" rows={3} variant="filled" />
+          <TextArea placeholder="Provider description (optional)" rows={3} variant="filled" />
         </Form.Item>
 
         <Form.Item name="logo" label="Provider Logo">
@@ -224,7 +225,7 @@ function CreateProviderModal({
         </Form.Item>
 
         <Form.Item name="api_key" label="API Key">
-          <Input.Password
+          <InputPassword
             placeholder="Please enter your API Key"
             variant="filled"
             autoComplete="new-password"

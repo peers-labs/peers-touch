@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, DraggablePanel, Markdown } from '@lobehub/ui';
+import { ActionIcon, DraggablePanel, Markdown, Dropdown, Tag, Input } from '@lobehub/ui';
+import type { MenuProps } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
-import { theme, Dropdown, Switch, Tag, Empty, Input } from 'antd';
-import type { MenuProps } from 'antd';
+import { theme, Switch, Empty } from 'antd';
 import { useChatStore } from '../store/chat';
 import { MessageBubble } from '../components/MessageBubble';
 import { ChatInput } from '../components/ChatInput';

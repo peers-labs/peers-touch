@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Modal, Button, Typography, Spin, Result, theme } from 'antd';
+import { Button } from '@lobehub/ui';
+import { Modal, Typography, Spin, Result, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { LogIn, CheckCircle2, XCircle } from 'lucide-react';
 import type { OAuth2ProviderSummary } from '../../services/desktop_api';
 import { useOAuth2Store } from '../../store/oauth2';
 import { PlatformLogo } from '../common/PlatformLogo';
+import { log } from '../../utils/logger';
 
 const { Text, Title } = Typography;
 
@@ -147,9 +149,12 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
   };
 
   const handleModalCancel = useCallback(() => {
+    log.warn('OAuth2Modal', 'handleModalCancel called', { authState });
     if (authState === 'success') {
+      log.warn('OAuth2Modal', '-> routing to onSuccess');
       onSuccess();
     } else {
+      log.warn('OAuth2Modal', '-> routing to onCancel');
       onCancel();
     }
   }, [authState, onCancel, onSuccess]);

@@ -1,10 +1,9 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Avatar, Markdown } from '@lobehub/ui';
+import { Avatar, Markdown, Tag, Dropdown, TextArea, toast } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
-import { Tag, message as antMessage, Input, Dropdown } from 'antd';
-import type { MenuProps } from 'antd';
+import type { MenuProps } from '@lobehub/ui';
 import { theme } from 'antd';
 import {
   Wrench,
@@ -32,8 +31,6 @@ import { useChatStore } from '../store/chat';
 import MessageCard, { type CardData } from './MessageCard';
 import { parseDeepLink } from '../utils/deeplink';
 import { EVENT, eventBus } from '../kernel/events';
-
-const { TextArea } = Input;
 
 interface Props {
   message: ChatMessage;
@@ -278,7 +275,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
     }
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      antMessage.success('Copied');
+      toast.success('Copied');
       setTimeout(() => setCopied(false), 2000);
     });
   }, [message.content, message.toolCalls]);
@@ -313,7 +310,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
 
   const handleSaveToNotebook = useCallback(() => {
     saveMessageToNotebook(message);
-    antMessage.success('Saved to notebook');
+    toast.success('Saved to notebook');
   }, [saveMessageToNotebook, message]);
 
   const assistantMoreMenu: MenuProps['items'] = [

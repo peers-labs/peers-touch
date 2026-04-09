@@ -47,7 +47,8 @@ import {
   Mic,
   MicOff,
 } from 'lucide-react';
-import { theme, Divider, Popconfirm, Slider, Switch, Modal, Tabs, Empty, Tag, Progress, message as antMessage } from 'antd';
+import { theme, Divider, Popconfirm, Slider, Switch, Modal, Tabs, Empty, Progress } from 'antd';
+import { Tag, toast } from '@lobehub/ui';
 import { useChatStore } from '../store/chat';
 import { ModelProviderSelect } from './ModelProviderSelect';
 import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/desktop_api';
@@ -605,7 +606,7 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
       await api.toggleSkill(id, enabled);
       setSkills((prev) => prev.map((s) => s.id === id ? { ...s, enabled } : s));
     } catch (e: any) {
-      antMessage.error(e.message);
+      toast.error(e.message);
     }
   };
 
@@ -898,7 +899,7 @@ export function ChatInput({
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      antMessage.warning('Speech recognition is not supported in this browser. Try Chrome or Edge.');
+      toast.warning('Speech recognition is not supported in this browser. Try Chrome or Edge.');
       return;
     }
 
@@ -921,7 +922,7 @@ export function ChatInput({
       setIsRecording(false);
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       if (event.error === 'not-allowed') {
-        antMessage.error('Microphone access denied. Please allow microphone access in browser settings.');
+        toast.error('Microphone access denied. Please allow microphone access in browser settings.');
       }
     };
 

@@ -4,5 +4,6 @@ use (
 	./apps/oauth2-client
 	./apps/station/app
 	./apps/station/frame
+	./apps/station/frame/core/plugin/native
 	./packages/sdk/go
 )

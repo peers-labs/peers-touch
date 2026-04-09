@@ -410,6 +410,147 @@ class OAuthToken extends $pb.GeneratedMessage {
   $0.Timestamp ensureExpiresAt() => $_ensure(7);
 }
 
+/// OAuthBridgeRequest is the payload from the external OAuth gateway
+/// to Station for silent registration / login.
+class OAuthBridgeRequest extends $pb.GeneratedMessage {
+  factory OAuthBridgeRequest({
+    $core.String? provider,
+    $core.String? providerUserId,
+    $core.String? email,
+    $core.String? username,
+    $core.String? displayName,
+    $core.String? avatarUrl,
+    $core.String? ts,
+    $core.String? sig,
+  }) {
+    final result = create();
+    if (provider != null) result.provider = provider;
+    if (providerUserId != null) result.providerUserId = providerUserId;
+    if (email != null) result.email = email;
+    if (username != null) result.username = username;
+    if (displayName != null) result.displayName = displayName;
+    if (avatarUrl != null) result.avatarUrl = avatarUrl;
+    if (ts != null) result.ts = ts;
+    if (sig != null) result.sig = sig;
+    return result;
+  }
+
+  OAuthBridgeRequest._();
+
+  factory OAuthBridgeRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory OAuthBridgeRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'OAuthBridgeRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.oauth.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'provider')
+    ..aOS(2, _omitFieldNames ? '' : 'providerUserId')
+    ..aOS(3, _omitFieldNames ? '' : 'email')
+    ..aOS(4, _omitFieldNames ? '' : 'username')
+    ..aOS(5, _omitFieldNames ? '' : 'displayName')
+    ..aOS(6, _omitFieldNames ? '' : 'avatarUrl')
+    ..aOS(7, _omitFieldNames ? '' : 'ts')
+    ..aOS(8, _omitFieldNames ? '' : 'sig')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OAuthBridgeRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OAuthBridgeRequest copyWith(void Function(OAuthBridgeRequest) updates) =>
+      super.copyWith((message) => updates(message as OAuthBridgeRequest))
+          as OAuthBridgeRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static OAuthBridgeRequest create() => OAuthBridgeRequest._();
+  @$core.override
+  OAuthBridgeRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static OAuthBridgeRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<OAuthBridgeRequest>(create);
+  static OAuthBridgeRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get provider => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set provider($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasProvider() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearProvider() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get providerUserId => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set providerUserId($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasProviderUserId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearProviderUserId() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get email => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set email($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasEmail() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearEmail() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get username => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set username($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasUsername() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearUsername() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get displayName => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set displayName($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasDisplayName() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearDisplayName() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.String get avatarUrl => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set avatarUrl($core.String value) => $_setString(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasAvatarUrl() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearAvatarUrl() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.String get ts => $_getSZ(6);
+  @$pb.TagNumber(7)
+  set ts($core.String value) => $_setString(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasTs() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearTs() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.String get sig => $_getSZ(7);
+  @$pb.TagNumber(8)
+  set sig($core.String value) => $_setString(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasSig() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearSig() => $_clearField(8);
+}
+
 const $core.bool _omitFieldNames =
     $core.bool.fromEnvironment('protobuf.omit_field_names');
 const $core.bool _omitMessageNames =

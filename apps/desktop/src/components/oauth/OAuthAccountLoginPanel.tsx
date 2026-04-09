@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Popconfirm, Tag, Tooltip, Typography, message, theme } from 'antd';
+import { Button, Tag, Tooltip, toast } from '@lobehub/ui';
+import { Popconfirm, Typography, theme } from 'antd';
 import { Clock, LogIn, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
 import { useOAuth2Store } from '../../store/oauth2';
 import { OAuth2ConnectModal } from '../settings/OAuth2ConnectModal';
@@ -280,18 +281,18 @@ export function OAuthAccountLoginPanel({
   const handleSignOut = async (id: string) => {
     try {
       await disconnect(id);
-      message.success('Signed out');
+      toast.success('Signed out');
     } catch (err: any) {
-      message.error(`Sign out failed: ${err.message}`);
+      toast.error(`Sign out failed: ${err.message}`);
     }
   };
 
   const handleRefresh = async (id: string) => {
     try {
       await refreshToken(id);
-      message.success('Token refreshed');
+      toast.success('Token refreshed');
     } catch (err: any) {
-      message.error(`Refresh failed: ${err.message}`);
+      toast.error(`Refresh failed: ${err.message}`);
     }
   };
 

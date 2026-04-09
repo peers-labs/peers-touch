@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Card, Button, Space, Typography, Alert, List, Tag } from 'antd'
+import { Card, Typography, List } from 'antd'
+import { Flexbox } from 'react-layout-kit'
+import { Button, Tag, Alert } from '@lobehub/ui'
 import LynxContainer from '@/applet/LynxContainer'
 import AppletManager from '@/applet/AppletManager'
 
@@ -67,14 +69,14 @@ const AppletExample: React.FC = () => {
       />
 
       <Card style={{ marginBottom: '20px' }}>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Flexbox gap={8} style={{ width: '100%' }}>
           <Paragraph>
             The Applet runtime allows you to run lightweight applications within the desktop client,
             powered by the Lynx cross-platform rendering engine. Applets are loaded from the local
             <code>applets-dist</code> directory.
           </Paragraph>
           
-          <Space>
+          <Flexbox gap={8} horizontal>
             <Button 
               type="primary" 
               onClick={scanApplets}
@@ -90,7 +92,7 @@ const AppletExample: React.FC = () => {
                 Close Applet
               </Button>
             )}
-          </Space>
+          </Flexbox>
 
           <div>
             <Title level={4}>Available Applets ({availableApplets.length})</Title>
@@ -117,10 +119,10 @@ const AppletExample: React.FC = () => {
                   >
                     <Card.Meta
                       title={
-                        <Space>
+                        <Flexbox gap={8} horizontal>
                           <span>{applet.name}</span>
                           <Tag color="blue">v{applet.version}</Tag>
-                        </Space>
+                        </Flexbox>
                       }
                       description={
                         <>
@@ -145,16 +147,16 @@ const AppletExample: React.FC = () => {
               showIcon
             />
           )}
-        </Space>
+        </Flexbox>
       </Card>
 
       {selectedApplet && (
         <Card 
           title={
-            <Space>
+            <Flexbox gap={8} horizontal>
               <span>{availableApplets.find(a => a.id === selectedApplet)?.name || selectedApplet}</span>
               <Tag color="green">Running</Tag>
-            </Space>
+            </Flexbox>
           }
           extra={
             <Button 

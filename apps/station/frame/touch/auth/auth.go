@@ -153,8 +153,17 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 		return nil, ErrInvalidCredentials
 	}
 
+	return IssueTokenAndSession(ctx, &user, clientIP, userAgent, deviceType, nil)
+}
+
+// IssueTokenAndSession creates a JWT token + session for an already-authenticated Actor.
+// extraData is merged into session.Data (e.g. {"auth_method": "oauth_bridge"}).
+func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAgent, deviceType string, extraData map[string]interface{}) (*SessionLoginResult, error) {
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{SubjectID: fmt.Sprintf("%d", user.ID), Attributes: map[string]string{"email": user.Email}})
+	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
+		SubjectID:  fmt.Sprintf("%d", actor.ID),
+		Attributes: map[string]string{"email": actor.Email},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -168,16 +177,21 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 		deviceType = "desktop"
 	}
 
+	data := map[string]interface{}{"device_type": deviceType}
+	for k, v := range extraData {
+		data[k] = v
+	}
+
 	sess := &session.Session{
 		ID:        sessionID,
-		UserID:    uint64(user.ID),
-		Email:     user.Email,
+		UserID:    uint64(actor.ID),
+		Email:     actor.Email,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(DefaultSessionDuration),
 		LastSeen:  time.Now(),
 		IPAddress: clientIP,
 		UserAgent: userAgent,
-		Data:      map[string]interface{}{"device_type": deviceType},
+		Data:      data,
 	}
 
 	_, kickedCount, err := SessionManager().CreateWithKick(ctx, sess, session.DeviceType(deviceType))
@@ -193,12 +207,12 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 		SessionID:     sessionID,
 		KickedSession: kickedCount > 0,
 		User: map[string]interface{}{
-			"id":           user.ID,
-			"actor_id":     user.ID,
-			"name":         user.PreferredUsername,
-			"display_name": user.Name,
-			"email":        user.Email,
-			"username":     user.PreferredUsername,
+			"id":           actor.ID,
+			"actor_id":     actor.ID,
+			"name":         actor.PreferredUsername,
+			"display_name": actor.Name,
+			"email":        actor.Email,
+			"username":     actor.PreferredUsername,
 		},
 	}, nil
 }

@@ -16,28 +16,27 @@ pub enum AuthDomainError {
     Unauthorized(String),
 }
 
-pub fn issue_session(account: &str, password: &str) -> Result<AuthSession, AuthDomainError> {
-    let account = account.trim();
-    let password = password.trim();
-    if account.is_empty() {
+pub fn validate_login_input(account: &str, password: &str) -> Result<(), AuthDomainError> {
+    if account.trim().is_empty() {
         return Err(AuthDomainError::InvalidArgument(
             "account is required".to_string(),
         ));
     }
-    if password.is_empty() {
+    if password.trim().is_empty() {
         return Err(AuthDomainError::InvalidArgument(
             "password is required".to_string(),
         ));
     }
-    let now = now_epoch_seconds();
-    let expires_at = now + TOKEN_TTL_SECONDS;
-    let actor_id = normalize_actor_id(account);
-    let token = format!("pt.{}.{}", actor_id, expires_at);
-    Ok(AuthSession {
+    Ok(())
+}
+
+pub fn from_station_response(actor_id: String, token: String) -> AuthSession {
+    let expires_at = now_epoch_seconds() + TOKEN_TTL_SECONDS;
+    AuthSession {
         actor_id,
         token,
         expires_at,
-    })
+    }
 }
 
 pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
@@ -45,32 +44,17 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     if token.is_empty() {
         return Err(AuthDomainError::Unauthorized("missing token".to_string()));
     }
-    let (actor_id, expires_at) = parse_token(token)?;
-    let now = now_epoch_seconds();
-    if expires_at <= now {
-        return Err(AuthDomainError::Unauthorized("token expired".to_string()));
-    }
-    Ok(AuthSession {
-        actor_id,
-        token: token.to_string(),
-        expires_at,
-    })
-}
 
-fn parse_token(token: &str) -> Result<(String, u64), AuthDomainError> {
-    let mut parts = token.split('.');
-    let prefix = parts.next().unwrap_or_default();
-    let actor_id = parts.next().unwrap_or_default();
-    let expires_raw = parts.next().unwrap_or_default();
-    if prefix != "pt" || actor_id.is_empty() || expires_raw.is_empty() || parts.next().is_some() {
-        return Err(AuthDomainError::Unauthorized(
-            "invalid token format".to_string(),
-        ));
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() == 3 && token.starts_with("eyJ") {
+        return Ok(AuthSession {
+            actor_id: String::new(),
+            token: token.to_string(),
+            expires_at: now_epoch_seconds() + TOKEN_TTL_SECONDS,
+        });
     }
-    let expires_at = expires_raw
-        .parse::<u64>()
-        .map_err(|_| AuthDomainError::Unauthorized("invalid token expiry".to_string()))?;
-    Ok((actor_id.to_string(), expires_at))
+
+    Err(AuthDomainError::Unauthorized("invalid token: station login required".to_string()))
 }
 
 fn now_epoch_seconds() -> u64 {
@@ -80,28 +64,18 @@ fn now_epoch_seconds() -> u64 {
         .unwrap_or_default()
 }
 
-fn normalize_actor_id(input: &str) -> String {
-    let normalized: String = input
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    normalized.trim_matches('_').to_string()
-}
 
 #[cfg(test)]
 mod tests {
-    use super::{issue_session, validate_token};
+    use super::{from_station_response, validate_token};
 
     #[test]
-    fn issue_and_validate_token() {
-        let session = issue_session("Alice", "secret").expect("session should be created");
-        let validated = validate_token(&session.token).expect("token should be valid");
-        assert_eq!(validated.actor_id, "alice");
+    fn station_jwt_validate() {
+        let session = from_station_response(
+            "12345".to_string(),
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.abcdefghijklmnopqrstuvwxyz".to_string(),
+        );
+        let validated = validate_token(&session.token).expect("JWT should be accepted");
+        assert_eq!(validated.token, session.token);
     }
 }

@@ -113,10 +113,6 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 		libp2pOpts = append(libp2pOpts, libp2p.EnableRelay())
 	}
 
-	if extOpts != nil && extOpts.EnableRelayService {
-		libp2pOpts = append(libp2pOpts, libp2p.EnableRelayService())
-	}
-
 	// Convert string addresses to multiaddr.Multiaddr
 	if len(t.opts.Addrs) > 0 {
 		var listenAddrs []multiaddr.Multiaddr

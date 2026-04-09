@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input, Switch, theme, Typography, Space, Empty, Tag, Checkbox } from 'antd';
+import { Button, Input, Tag } from '@lobehub/ui';
+import { Switch, theme, Typography, Empty, Checkbox } from 'antd';
 import { RefreshCw, Download, Pause, Play, Search, FileText, Trash2 } from 'lucide-react';
 import { api } from '../services/desktop_api';
 
@@ -266,7 +267,7 @@ export function LogsTab() {
                 </Flexbox>
                 <Text type="secondary" style={{ fontSize: 12 }}>Live tail of application logs (JSONL/Logfmt)</Text>
             </Flexbox>
-            <Space>
+            <Flexbox gap={8} horizontal>
                  <Input 
                     placeholder="Filter logs..." 
                     prefix={<Search size={14} />} 
@@ -284,12 +285,12 @@ export function LogsTab() {
                  <Button icon={<RefreshCw size={14} />} onClick={() => fetchLogs(true)}>Refresh</Button>
                  <Button icon={<Download size={14} />} onClick={handleExport}>Export Visible</Button>
                  <Button icon={<Trash2 size={14} />} danger onClick={() => setEntries([])} />
-            </Space>
+            </Flexbox>
         </Flexbox>
 
         <Flexbox horizontal gap={12} align="center">
             <Text style={{ fontSize: 12, marginRight: 8 }}>Levels:</Text>
-            <Space wrap>
+            <Flexbox gap={8} horizontal style={{ flexWrap: 'wrap' }}>
                 {LEVELS.map(lvl => (
                     <Checkbox 
                         key={lvl} 
@@ -299,7 +300,7 @@ export function LogsTab() {
                         <Tag color={getLevelColor(lvl)} style={{ fontSize: 10, margin: 0 }}>{lvl.toUpperCase()}</Tag>
                     </Checkbox>
                 ))}
-            </Space>
+            </Flexbox>
             <Button size="small" onClick={onlyWarningsAndAbove}>
               Only Warnings+
             </Button>
@@ -354,12 +355,12 @@ export function LogsTab() {
              <Text type="secondary" style={{ fontSize: 11 }}>
                 Showing {filteredEntries.length} of {entries.length} entries.
              </Text>
-             <Space size={16}>
+             <Flexbox gap={16} horizontal>
                 <Flexbox horizontal align="center" gap={8}>
                     <Text style={{ fontSize: 12 }}>Auto-follow</Text>
                     <Switch size="small" checked={autoFollow} onChange={setAutoFollow} />
                 </Flexbox>
-             </Space>
+             </Flexbox>
         </Flexbox>
     </Flexbox>
   );

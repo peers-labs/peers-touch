@@ -1,19 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
-  Drawer,
   Form,
-  Input,
   Select,
-  Button,
   Switch,
   Typography,
   message,
 } from 'antd';
+import { Drawer, Input, Button, TextArea } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { api, type Agent, type AgentCreate } from '../services/desktop_api';
 import { useChatStore } from '../store/chat';
 
-const { TextArea } = Input;
 const { Text } = Typography;
 
 const AVATAR_OPTIONS = ['🤖', '👨‍💻', '🔬', '✍️', '🧠', '🎨', '📊', '🔧', '🌐', '📝', '🎯', '💡', '🛡️', '🚀', '🎓', '🧪'];

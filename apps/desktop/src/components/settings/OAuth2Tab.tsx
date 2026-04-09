@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Typography, Spin, Empty, theme, message, Button, Tag, Tooltip, Popconfirm } from 'antd';
+import { Button, Tag, Tooltip, toast } from '@lobehub/ui';
+import { Typography, Spin, Empty, theme, Popconfirm } from 'antd';
 import {
   RefreshCw, ShieldCheck, Clock, LogIn, Unlink,
 } from 'lucide-react';
@@ -258,18 +259,18 @@ export function OAuth2Tab() {
   const handleSignOut = async (id: string) => {
     try {
       await disconnect(id);
-      message.success('Signed out');
+      toast.success('Signed out');
     } catch (err: any) {
-      message.error(`Sign out failed: ${err.message}`);
+      toast.error(`Sign out failed: ${err.message}`);
     }
   };
 
   const handleRefresh = async (id: string) => {
     try {
       await refreshToken(id);
-      message.success('Token refreshed');
+      toast.success('Token refreshed');
     } catch (err: any) {
-      message.error(`Refresh failed: ${err.message}`);
+      toast.error(`Refresh failed: ${err.message}`);
     }
   };
 

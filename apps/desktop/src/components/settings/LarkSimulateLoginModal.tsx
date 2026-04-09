@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Modal, QRCode, Result, Spin, Typography } from 'antd';
+import { Alert, Button } from '@lobehub/ui';
+import { Modal, QRCode, Result, Spin, Typography } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { CheckCircle2, XCircle } from 'lucide-react';
 import { api, type LarkBotCredentials, type OAuth2Connection } from '../../services/desktop_api';

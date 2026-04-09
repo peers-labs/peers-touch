@@ -14,7 +14,6 @@ class AppEventBus {
     type: TType,
     ...args: EventPayloadMap[TType] extends void ? [payload?: EventPayloadMap[TType]] : [payload: EventPayloadMap[TType]]
   ) {
-    if (typeof window === 'undefined') return;
     this.ensureKnownType(type);
     const payload = (args[0] as EventPayloadMap[TType]) ?? undefined;
     eventDebugBuffer.push({
@@ -29,7 +28,6 @@ class AppEventBus {
     type: TType,
     handler: (payload: EventPayloadMap[TType]) => void,
   ) {
-    if (typeof window === 'undefined') return () => {};
     this.ensureKnownType(type);
     const listener = (event: Event) => {
       const payload = (event as CustomEvent<EventPayloadMap[TType]>).detail;

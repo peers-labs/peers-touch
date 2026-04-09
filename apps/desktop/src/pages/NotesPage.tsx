@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox, Center } from 'react-layout-kit';
-import { ActionIcon, Markdown } from '@lobehub/ui';
-import { theme, Input, Empty, Spin, Popconfirm, message as antMessage, Divider } from 'antd';
+import { ActionIcon, Markdown, toast } from '@lobehub/ui';
+import { theme, Input, Empty, Spin, Popconfirm, Divider } from 'antd';
 import {
   Plus,
   FileText,
@@ -225,7 +225,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
       const docs = await api.listAllDocuments();
       setDocuments(docs);
     } catch {
-      antMessage.error('Failed to load documents');
+      toast.error('Failed to load documents');
     } finally {
       setLoading(false);
     }
@@ -321,7 +321,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
           setEditTitle(full.title);
           setEditContent(full.content);
         } catch {
-          antMessage.error('Failed to load document');
+          toast.error('Failed to load document');
         }
       }
       setDirty(false);
@@ -349,7 +349,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
       );
       setDirty(false);
     } catch {
-      antMessage.error('Failed to save');
+      toast.error('Failed to save');
     } finally {
       setSaving(false);
     }
@@ -387,7 +387,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
       setEditContent('');
       setDirty(false);
     } catch {
-      antMessage.error('Failed to create document');
+      toast.error('Failed to create document');
     }
   }, [newDocTitle]);
 
@@ -402,7 +402,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
           setEditContent('');
         }
       } catch {
-        antMessage.error('Failed to delete');
+        toast.error('Failed to delete');
       }
     },
     [selectedDocId],

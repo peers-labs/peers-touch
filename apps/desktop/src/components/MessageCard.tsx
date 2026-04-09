@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Tag } from 'antd';
+import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
 import {
   Clock,

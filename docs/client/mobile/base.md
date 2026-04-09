@@ -266,9 +266,9 @@ Mobile 端需要与 Desktop 端和 Station 在以下模块上保持数据同步�
 | Settings | 主题、通知等用户偏好 | Station ↔ Mobile / Desktop |
 
 同步协议的横向架构设计文档位于 `docs/`，包括：
-* [station-desktop-scope-boundary.md](../../architecture/station-desktop-scope-boundary.md)：Station / 客户端职责边界与功能分配
-* [unified-runtime-storage-architecture.md](../../architecture/storage/unified-runtime-storage-architecture.md)：统一运行时存储架构
-* [architecture.md](../../global/architecture.md)：全局架构
+* [station-desktop-scope-boundary.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/station-desktop-scope-boundary.md)：Station / 客户端职责边界与功能分配
+* [unified-runtime-storage-architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/storage/unified-runtime-storage-architecture.md)：统一运行时存储架构
+* [architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/architecture.md)：全局架构
 
 Mobile 端同步策略遵循以下原则：
 1. Station 为单一真源，Mobile 不维护独立领域真相

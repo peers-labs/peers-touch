@@ -19,10 +19,9 @@ type TransportConfig struct {
 				Name   string   `json:"name" pconf:"name"`
 				Addrs  []string `json:"addrs" pconf:"addrs"`
 				Native struct {
-				EnableRelay           bool   `json:"enable-relay" pconf:"enable-relay"`
-				EnableRelayService    bool   `json:"enable-relay-service" pconf:"enable-relay-service"`
-				Libp2pIdentityKeyFile string `json:"libp2p-identity-key-file" pconf:"libp2p-identity-key-file"`
-			} `json:"native" pconf:"native"`
+					EnableRelay           bool   `json:"enable-relay" pconf:"enable-relay"`
+					Libp2pIdentityKeyFile string `json:"libp2p-identity-key-file" pconf:"libp2p-identity-key-file"`
+				} `json:"native" pconf:"native"`
 
 				Secure  bool   `json:"secure" pconf:"secure"`
 				Timeout string `json:"timeout" pconf:"timeout"`
@@ -47,10 +46,6 @@ func (c *TransportConfig) Options() []option.Option {
 
 	if c.Peers.Node.Transport.Native.EnableRelay {
 		opts = append(opts, EnableRelay())
-	}
-
-	if c.Peers.Node.Transport.Native.EnableRelayService {
-		opts = append(opts, EnableRelayServiceOpt())
 	}
 
 	if len(c.Peers.Node.Transport.Native.Libp2pIdentityKeyFile) > 0 {

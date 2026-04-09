@@ -27,3 +27,10 @@ pub fn auth_validate_token(
 ) -> AppResult<StubPayload> {
     auth_service::auth_validate_token(input, &state)
 }
+
+/// Load a Station JWT (persisted during OAuth callback) into AppState
+/// so the BFF session becomes immediately active.
+#[tauri::command]
+pub fn ensure_station_session(state: State<AppState>) -> AppResult<StubPayload> {
+    auth_service::ensure_station_session(&state)
+}

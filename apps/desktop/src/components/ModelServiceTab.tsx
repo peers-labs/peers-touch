@@ -9,7 +9,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Typography, theme, message, Alert } from 'antd';
+import { Alert, toast } from '@lobehub/ui';
+import { Typography, theme } from 'antd';
 import { api, type ModelServiceConfig, type ModelRef, type AvailableModel } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
 
@@ -83,7 +84,7 @@ export function ModelServiceTab() {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         const body = ref.provider || ref.model ? ref : null;
-        api.setModelConfig(key, body).catch(() => message.error('Failed to save'));
+        api.setModelConfig(key, body).catch(() => toast.error('Failed to save'));
       }, 500);
 
       return next;
