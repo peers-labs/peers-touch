@@ -1,6 +1,8 @@
-use crate::domain::auth::session::{issue_session, validate_token, AuthDomainError, AuthSession};
+use crate::domain::auth::session::{validate_login_input, from_station_response, validate_token, AuthDomainError, AuthSession};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::storage::{self, StorageKind};
+use crate::infrastructure::station_client;
+use crate::application::oauth2 as application_oauth2;
 use crate::contracts::{AuthLoginInput, AuthValidateTokenInput, StubPayload};
 use crate::state::{AppState, SessionState};
 use serde::{Deserialize, Serialize};
@@ -10,10 +12,37 @@ use std::path::PathBuf;
 use tauri::State;
 
 pub fn auth_login(input: AuthLoginInput, state: &State<AppState>) -> AppResult<StubPayload> {
-    let session = match issue_session(&input.account, &input.password) {
-        Ok(session) => session,
-        Err(error) => return map_domain_error(error),
+    if let Err(error) = validate_login_input(&input.account, &input.password) {
+        return map_domain_error(error);
+    }
+
+    let body = json!({ "email": input.account, "password": input.password });
+    let resp = match station_client::post_json_no_auth("/actor/login", body) {
+        Ok(r) => r,
+        Err(e) => return AppResult::fail(ErrorCode::Unauthorized, &e, None),
     };
+
+    let data = match resp.get("data") {
+        Some(d) => d,
+        None => return AppResult::fail(ErrorCode::Unauthorized, "unexpected response from station", None),
+    };
+
+    let token = data
+        .pointer("/tokens/access_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if token.is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "no token in station response", None);
+    }
+
+    let actor_id = data
+        .pointer("/actor/id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let session = from_station_response(actor_id, token);
     if let Err(error) = write_session(state, &session) {
         return error;
     }
@@ -46,6 +75,22 @@ pub fn auth_restore_session(state: &State<AppState>) -> AppResult<StubPayload> {
     };
     if snapshot.token.is_none() {
         snapshot = read_persisted_session().unwrap_or(snapshot);
+    }
+    if snapshot.token.is_none() {
+        if let Some((actor_id, token)) = application_oauth2::read_station_session() {
+            snapshot = SessionState {
+                actor_id: Some(actor_id),
+                token: Some(token),
+            };
+        }
+    }
+    if snapshot.token.is_none() {
+        if let Some((actor_id, token)) = application_oauth2::try_bridge_from_connections() {
+            snapshot = SessionState {
+                actor_id: Some(actor_id),
+                token: Some(token),
+            };
+        }
     }
     let token = match snapshot.token {
         Some(token) => token,
@@ -247,4 +292,33 @@ fn map_domain_error(error: AuthDomainError) -> AppResult<StubPayload> {
 
 fn unauthorized(message: impl Into<String>, details: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::Unauthorized, message, Some(details))
+}
+
+/// Load the Station JWT that was persisted by `save_oauth_callback`
+/// (via the oauth-bridge call) and write it into AppState so the BFF
+/// session is immediately active without requiring an app restart.
+pub fn ensure_station_session(state: &State<AppState>) -> AppResult<StubPayload> {
+    let (actor_id, token) = match application_oauth2::read_station_session() {
+        Some(pair) => pair,
+        None => {
+            return AppResult::fail(
+                ErrorCode::NotFound,
+                "no station session found",
+                Some(json!({ "command": "ensure_station_session", "reason": "session_missing" })),
+            )
+        }
+    };
+
+    let session = from_station_response(actor_id, token);
+    if let Err(error) = write_session(state, &session) {
+        return error;
+    }
+    if let Err(error) = persist_session(&session) {
+        return error;
+    }
+
+    AppResult::success(StubPayload {
+        command: "ensure_station_session".to_string(),
+        status: "ok".to_string(),
+    })
 }

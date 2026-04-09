@@ -5,6 +5,8 @@
   "identifier": "com.peers.touch.desktop",
   "build": {
     "frontendDist": "../dist",
+    "devUrl": "http://localhost:3210",
+    "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },
   "app": {
@@ -13,7 +15,10 @@
         "title": "Peers Touch Desktop",
         "decorations": true,
         "width": 1200,
-        "height": 800
+        "height": 800,
+        "minWidth": 860,
+        "minHeight": 640,
+        "center": true
       }
     ],
     "security": {

@@ -22,10 +22,11 @@ func (r siteRegistry) Get(siteID string) (usecase.SiteConfig, bool) {
 }
 
 type rawSite struct {
-	SiteID     string                         `json:"site_id"`
-	SuccessURL string                         `json:"success_url"`
-	ErrorURL   string                         `json:"error_url"`
-	Providers  map[string]port.ProviderConfig `json:"providers"`
+	SiteID       string                         `json:"site_id"`
+	SuccessURL   string                         `json:"success_url"`
+	ErrorURL     string                         `json:"error_url"`
+	BridgeSecret string                         `json:"bridge_secret"`
+	Providers    map[string]port.ProviderConfig `json:"providers"`
 }
 
 type rawProviderLite struct {
@@ -37,10 +38,11 @@ type rawProviderLite struct {
 }
 
 type rawSiteLite struct {
-	SiteID     string                     `json:"site_id"`
-	SuccessURL string                     `json:"success_url"`
-	ErrorURL   string                     `json:"error_url"`
-	Providers  map[string]rawProviderLite `json:"providers"`
+	SiteID       string                     `json:"site_id"`
+	SuccessURL   string                     `json:"success_url"`
+	ErrorURL     string                     `json:"error_url"`
+	BridgeSecret string                     `json:"bridge_secret"`
+	Providers    map[string]rawProviderLite `json:"providers"`
 }
 
 type rawFileConfig struct {
@@ -81,10 +83,11 @@ func LoadSiteRegistry() (usecase.SiteRegistry, error) {
 			continue
 		}
 		sites[item.SiteID] = usecase.SiteConfig{
-			SiteID:     item.SiteID,
-			SuccessURL: item.SuccessURL,
-			ErrorURL:   item.ErrorURL,
-			Providers:  providers,
+			SiteID:       item.SiteID,
+			SuccessURL:   item.SuccessURL,
+			ErrorURL:     item.ErrorURL,
+			BridgeSecret: firstNonEmpty(strings.TrimSpace(item.BridgeSecret), strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET"))),
+			Providers:    providers,
 		}
 	}
 	if len(sites) == 0 {
@@ -182,10 +185,11 @@ func buildFromLite(rawSites []rawSiteLite) (usecase.SiteRegistry, error) {
 			continue
 		}
 		sites[siteID] = usecase.SiteConfig{
-			SiteID:     siteID,
-			SuccessURL: successURL,
-			ErrorURL:   errorURL,
-			Providers:  providers,
+			SiteID:       siteID,
+			SuccessURL:   successURL,
+			ErrorURL:     errorURL,
+			BridgeSecret: firstNonEmpty(strings.TrimSpace(s.BridgeSecret), strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET"))),
+			Providers:    providers,
 		}
 	}
 	if len(sites) == 0 {
@@ -241,10 +245,11 @@ func loadFromSingleSiteEnv() (usecase.SiteRegistry, error) {
 	}
 	return siteRegistry{sites: map[string]usecase.SiteConfig{
 		siteID: {
-			SiteID:     siteID,
-			SuccessURL: successURL,
-			ErrorURL:   errorURL,
-			Providers:  providers,
+			SiteID:       siteID,
+			SuccessURL:   successURL,
+			ErrorURL:     errorURL,
+			BridgeSecret: strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET")),
+			Providers:    providers,
 		},
 	}}, nil
 }

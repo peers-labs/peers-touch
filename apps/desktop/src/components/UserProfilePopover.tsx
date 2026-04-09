@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Popover, Typography, Button, theme, Divider, message } from 'antd';
+import { Popover, Typography, theme, Divider } from 'antd';
+import { Button, toast } from '@lobehub/ui';
 import { Check, Globe } from 'lucide-react';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import { PlatformLogo } from './common/PlatformLogo';
@@ -28,18 +29,6 @@ export function UserProfilePopover({ children }: Props) {
       load();
     }
   }, [open, load]);
-
-  useEffect(() => {
-    const handler = () => {
-      load();
-    };
-    const offOauth = eventBus.subscribe(EVENT.OAUTH_CONNECTIONS_CHANGED, handler);
-    const offIdentity = eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, handler);
-    return () => {
-      offOauth();
-      offIdentity();
-    };
-  }, [load]);
 
   const userName = activeAccount?.name || 'User';
   const userAvatar = activeAccount?.avatar_url || undefined;
@@ -71,7 +60,7 @@ export function UserProfilePopover({ children }: Props) {
                 try {
                   await switchAccount(account.id);
                 } catch {
-                  message.error('Failed to switch account');
+                  toast.error('Failed to switch account');
                 }
               };
               return (
@@ -138,25 +127,15 @@ function AvatarDisplay({ url, name, size }: { url?: string; name: string; size: 
 }
 
 export function useUserAvatar(): { url?: string; name: string; provider?: string } {
-  const [data, setData] = useState<{ url?: string; name: string; provider?: string }>({ name: 'User' });
+  const accounts = useAccountIdentityStore((s) => s.accounts);
+  const activeAccountId = useAccountIdentityStore((s) => s.activeAccountId);
 
-  useEffect(() => {
-    const refresh = async () => {
-      await useAccountIdentityStore.getState().load();
-      const state = useAccountIdentityStore.getState();
-      const active = state.accounts.find((item) => item.id === state.activeAccountId) || state.accounts[0];
-      setData({
-        url: active?.avatar_url || undefined,
-        name: active?.name || 'User',
-        provider: active?.provider || undefined,
-      });
+  return useMemo(() => {
+    const active = accounts.find((item) => item.id === activeAccountId) || accounts[0];
+    return {
+      url: active?.avatar_url || undefined,
+      name: active?.name || 'User',
+      provider: active?.provider || undefined,
     };
-    refresh().catch(() => {});
-    const handler = () => {
-      refresh().catch(() => {});
-    };
-    return eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, handler);
-  }, []);
-
-  return data;
+  }, [accounts, activeAccountId]);
 }

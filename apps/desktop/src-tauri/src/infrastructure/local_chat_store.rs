@@ -3,7 +3,6 @@ use super::storage::get_database_key_version;
 use super::storage::open_database;
 use super::storage::rotate_database_key;
 use crate::domain::storage::database::DatabaseOpenSpec;
-use crate::model::chat;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -143,48 +142,6 @@ pub fn ingest_group_payload(user_scope: &str, payload: &Value) -> Result<(), Str
             sender_did: message.get("sender_did").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
             content: message.get("content").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
             sent_at: message.get("sent_at").and_then(|v| v.as_i64()).unwrap_or(0),
-        };
-        if !record.message_id.is_empty() {
-            upsert_record(&conn, &record)?;
-        }
-    }
-    Ok(())
-}
-
-fn timestamp_to_millis(ts: &Option<prost_types::Timestamp>) -> i64 {
-    ts.as_ref()
-        .map(|t| t.seconds * 1000 + t.nanos as i64 / 1_000_000)
-        .unwrap_or(0)
-}
-
-pub fn ingest_friend_messages_proto(user_scope: &str, messages: &[chat::FriendChatMessage]) -> Result<(), String> {
-    let conn = open_connection(user_scope)?;
-    for m in messages {
-        let record = LocalChatRecord {
-            scope: "friend".to_string(),
-            conversation_id: m.session_ulid.clone(),
-            message_id: m.ulid.clone(),
-            sender_did: m.sender_did.clone(),
-            content: m.content.clone(),
-            sent_at: timestamp_to_millis(&m.sent_at),
-        };
-        if !record.message_id.is_empty() {
-            upsert_record(&conn, &record)?;
-        }
-    }
-    Ok(())
-}
-
-pub fn ingest_group_messages_proto(user_scope: &str, messages: &[chat::GroupMessage]) -> Result<(), String> {
-    let conn = open_connection(user_scope)?;
-    for m in messages {
-        let record = LocalChatRecord {
-            scope: "group".to_string(),
-            conversation_id: m.group_ulid.clone(),
-            message_id: m.ulid.clone(),
-            sender_did: m.sender_did.clone(),
-            content: m.content.clone(),
-            sent_at: timestamp_to_millis(&m.sent_at),
         };
         if !record.message_id.is_empty() {
             upsert_record(&conn, &record)?;

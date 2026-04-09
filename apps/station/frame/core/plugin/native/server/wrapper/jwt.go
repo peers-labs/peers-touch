@@ -13,8 +13,5 @@ func JWT(provider coreauth.Provider) server.Wrapper {
 }
 
 func GetSubject(ctx context.Context, req server.Request) *coreauth.Subject {
-	if subject, ok := ctx.Value(httpadapter.SubjectContextKey).(*coreauth.Subject); ok {
-		return subject
-	}
-	return nil
+	return coreauth.GetSubject(ctx)
 }

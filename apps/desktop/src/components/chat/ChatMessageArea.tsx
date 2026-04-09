@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Empty, Input, Spin, Tooltip, Typography, theme } from 'antd';
+import { Button, TextArea, Tooltip } from '@lobehub/ui';
+import { Spin, theme, Typography, Empty } from 'antd';
 import {
   Send, Inbox, Phone, Video, Search, Info,
   Paperclip, Smile, Check, CheckCheck,
@@ -14,7 +15,6 @@ import type { Timestamp } from '@bufbuild/protobuf/wkt';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 
 const { Text } = Typography;
-const { TextArea } = Input;
 
 function isFriendMsg(msg: FriendChatMessage | GroupMessage): msg is FriendChatMessage {
   return 'sessionUlid' in msg;

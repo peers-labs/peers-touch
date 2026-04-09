@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Badge, Button, Card, Drawer, Empty, Form, Input, Modal, Progress, Select, Switch, Tabs,
-  Tag, Typography, theme, message, Tooltip, Popconfirm, Space, Divider, Alert,
+  Badge, Card, Empty, Form, Modal, Progress, Select, Switch,
+  Typography, theme, message, Popconfirm, Space, Divider,
   Descriptions, Statistic,
 } from 'antd';
+import { Button, Drawer, Input, Tabs, Tag, Alert, Tooltip, TextArea, InputPassword } from '@lobehub/ui';
 import {
   Plus, Trash2, Zap, Settings2, Send, RefreshCw, Play, Square,
   Webhook, MessageSquare, Bot, Hash, ArrowDownLeft, ArrowUpRight,
@@ -17,7 +18,6 @@ import { useOAuth2Store } from '../store/oauth2';
 import { EVENT, eventBus } from '../kernel/events';
 
 const { Text } = Typography;
-const { TextArea } = Input;
 
 const TelegramIcon = ({ size = 20 }: { size?: number }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="#0088cc">
@@ -673,7 +673,7 @@ export function ChannelsPage() {
                           extra={field.help ? <Text type="secondary" style={{ fontSize: 12 }}>{field.help}</Text> : undefined}
                         >
                           {field.type === 'password' ? (
-                            <Input.Password placeholder={field.placeholder} />
+                            <InputPassword placeholder={field.placeholder} />
                           ) : (
                             <Input placeholder={field.placeholder} />
                           )}
@@ -702,7 +702,7 @@ export function ChannelsPage() {
                   extra={field.help ? <Text type="secondary" style={{ fontSize: 12 }}>{field.help}</Text> : undefined}
                 >
                   {field.type === 'password' ? (
-                    <Input.Password placeholder={field.placeholder} />
+                    <InputPassword placeholder={field.placeholder} />
                   ) : (
                     <Input placeholder={field.placeholder} />
                   )}
@@ -1265,7 +1265,7 @@ function SendTestCard({ channelId, connected }: { channelId: string; connected: 
           />
         )}
 
-        <Input.TextArea
+        <TextArea
           rows={2}
           value={testText}
           onChange={(e) => setTestText(e.target.value)}

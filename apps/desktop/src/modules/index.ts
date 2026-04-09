@@ -8,7 +8,6 @@ import './tts';
 import './account';
 import './skills';
 import './mcp';
-import './social-chat';
 import './channels';
 import './cron';
 import './memory';

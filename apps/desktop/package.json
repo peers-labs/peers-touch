@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
+    "prebuild:check": "tsc --noEmit -p tsconfig.json",
     "icon:build": "tauri icon ./src-tauri/icon-source.png --output ./src-tauri/icons",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

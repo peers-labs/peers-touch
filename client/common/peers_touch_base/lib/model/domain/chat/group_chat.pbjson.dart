@@ -910,6 +910,7 @@ const GetGroupMessagesResponse$json = {
       '10': 'messages'
     },
     {'1': 'has_more', '3': 2, '4': 1, '5': 8, '10': 'hasMore'},
+    {'1': 'next_cursor', '3': 3, '4': 1, '5': 9, '10': 'nextCursor'},
   ],
 };
 
@@ -917,7 +918,7 @@ const GetGroupMessagesResponse$json = {
 final $typed_data.Uint8List getGroupMessagesResponseDescriptor = $convert.base64Decode(
     'ChhHZXRHcm91cE1lc3NhZ2VzUmVzcG9uc2USQwoIbWVzc2FnZXMYASADKAsyJy5wZWVyc190b3'
     'VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZVIIbWVzc2FnZXMSGQoIaGFzX21vcmUYAiAB'
-    'KAhSB2hhc01vcmU=');
+    'KAhSB2hhc01vcmUSHwoLbmV4dF9jdXJzb3IYAyABKAlSCm5leHRDdXJzb3I=');
 
 @$core.Deprecated('Use recallGroupMessageRequestDescriptor instead')
 const RecallGroupMessageRequest$json = {

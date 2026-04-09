@@ -120,3 +120,26 @@ final $typed_data.Uint8List oAuthTokenDescriptor = $convert.base64Decode(
     'gFIAEoCVIGdXNlcklkEhsKCWNsaWVudF9pZBgGIAEoCVIIY2xpZW50SWQSOQoKY3JlYXRlZF9h'
     'dBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSCWNyZWF0ZWRBdBI5CgpleHBpcm'
     'VzX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcFIJZXhwaXJlc0F0');
+
+@$core.Deprecated('Use oAuthBridgeRequestDescriptor instead')
+const OAuthBridgeRequest$json = {
+  '1': 'OAuthBridgeRequest',
+  '2': [
+    {'1': 'provider', '3': 1, '4': 1, '5': 9, '10': 'provider'},
+    {'1': 'provider_user_id', '3': 2, '4': 1, '5': 9, '10': 'providerUserId'},
+    {'1': 'email', '3': 3, '4': 1, '5': 9, '10': 'email'},
+    {'1': 'username', '3': 4, '4': 1, '5': 9, '10': 'username'},
+    {'1': 'display_name', '3': 5, '4': 1, '5': 9, '10': 'displayName'},
+    {'1': 'avatar_url', '3': 6, '4': 1, '5': 9, '10': 'avatarUrl'},
+    {'1': 'ts', '3': 7, '4': 1, '5': 9, '10': 'ts'},
+    {'1': 'sig', '3': 8, '4': 1, '5': 9, '10': 'sig'},
+  ],
+};
+
+/// Descriptor for `OAuthBridgeRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List oAuthBridgeRequestDescriptor = $convert.base64Decode(
+    'ChJPQXV0aEJyaWRnZVJlcXVlc3QSGgoIcHJvdmlkZXIYASABKAlSCHByb3ZpZGVyEigKEHByb3'
+    'ZpZGVyX3VzZXJfaWQYAiABKAlSDnByb3ZpZGVyVXNlcklkEhQKBWVtYWlsGAMgASgJUgVlbWFp'
+    'bBIaCgh1c2VybmFtZRgEIAEoCVIIdXNlcm5hbWUSIQoMZGlzcGxheV9uYW1lGAUgASgJUgtkaX'
+    'NwbGF5TmFtZRIdCgphdmF0YXJfdXJsGAYgASgJUglhdmF0YXJVcmwSDgoCdHMYByABKAlSAnRz'
+    'EhAKA3NpZxgIIAEoCVIDc2ln');

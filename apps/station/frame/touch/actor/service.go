@@ -3,6 +3,7 @@ package actor
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -40,8 +41,7 @@ func GetActorByUsername(ctx context.Context, username string) (*db.Actor, error)
 	var actor db.Actor
 	if err := rds.Where("preferred_username = ?", username).First(&actor).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			logger.Warnf(ctx, "Actor not found for username: %s", username)
-			return nil, fmt.Errorf("actor not found: %s", username)
+			return nil, gorm.ErrRecordNotFound
 		}
 		logger.Errorf(ctx, "Failed to query actor: %v", err)
 		return nil, fmt.Errorf("query actor failed: %w", err)
@@ -141,7 +141,8 @@ func SearchActors(ctx context.Context, query string, excludeActorID uint64) ([]*
 	}
 
 	var actors []*db.Actor
-	searchQuery := "%" + query + "%"
+	escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(query)
+	searchQuery := "%" + escaped + "%"
 	dbQuery := rds.Where("id != ?", excludeActorID).
 		Where("preferred_username LIKE ? OR name LIKE ?", searchQuery, searchQuery)
 	
@@ -166,4 +167,20 @@ func ValidateActorOwnership(ctx context.Context, actorID uint64, username string
 	}
 
 	return nil
+}
+
+func IsFollowing(ctx context.Context, followerID, followingID uint64) (bool, error) {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return false, fmt.Errorf("database connection failed: %w", err)
+	}
+
+	var count int64
+	if err := rds.Model(&db.Follow{}).
+		Where("follower_id = ? AND following_id = ?", followerID, followingID).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("query follow failed: %w", err)
+	}
+
+	return count > 0, nil
 }

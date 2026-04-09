@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input, Modal, Typography, theme } from 'antd';
+import { Button, Input, toast } from '@lobehub/ui';
+import { theme, Modal, Typography } from 'antd';
 import { Search } from 'lucide-react';
 import { api } from '../../services/desktop_api';
 import { useSocialChatStore } from '../../store/socialChat';
@@ -36,8 +37,8 @@ export function FindPeopleModal({ open, onClose }: Props) {
         username: a.username,
         displayName: a.displayName,
       })));
-    } catch (e) {
-      console.error('search failed', e);
+    } catch (e: any) {
+      toast.error(e?.message || 'Search failed');
       setResults([]);
     } finally {
       setSearching(false);
@@ -79,9 +80,16 @@ export function FindPeopleModal({ open, onClose }: Props) {
           prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
           placeholder="Search by username..."
           value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            if (!e.target.value.trim()) setResults([]);
+          }}
           onPressEnter={handleSearch}
           allowClear
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           suffix={
             <Button
               type="link"

@@ -12,6 +12,10 @@ type SiteConfig struct {
 	SuccessURL string
 	ErrorURL   string
 	Providers  map[valueobject.Provider]port.ProviderConfig
+
+	// BridgeSecret is the shared HMAC key used to sign callback query params.
+	// If empty, signing is skipped.
+	BridgeSecret string
 }
 
 type SiteRegistry interface {

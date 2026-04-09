@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Alert, Avatar, Button, Card, Descriptions, Divider, Drawer, Empty, Input, Modal,
-  Popconfirm, Progress, Select, Spin, Switch, Tabs, Tag, Tooltip, Typography, Upload, message, theme,
+  Card, Descriptions, Divider, Empty, Modal,
+  Popconfirm, Progress, Select, Spin, Switch, Typography, Upload, message, theme,
 } from 'antd';
+import { Alert, Avatar, Button, Drawer, Input, Tabs, Tag, Tooltip, TextArea } from '@lobehub/ui';
 import {
   BookOpen, ChevronRight, Code2, Download, Edit, ExternalLink,
   FolderOpen, Link as LinkIcon, Plus, RefreshCw, Search,
@@ -23,7 +24,6 @@ import {
   type SkillZipValidation,
 } from '../services/desktop_api';
 const { Text, Title, Paragraph } = Typography;
-const { TextArea } = Input;
 
 export function SkillsTab() {
   const { token } = theme.useToken();

@@ -2,9 +2,10 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Input, Button, Switch, Typography, Tag, theme, message,
-  Spin, Divider, Avatar, Tooltip, Modal, Form, Slider, Checkbox, AutoComplete, Select, Tabs,
+  Switch, Typography, theme, message,
+  Spin, Divider, Modal, Form, Slider, Checkbox, AutoComplete, Select, Tabs,
 } from 'antd';
+import { Input, Button, Tag, Avatar, Tooltip, InputPassword } from '@lobehub/ui';
 import {
   CheckCircle2, Settings2, ExternalLink, Lock, Trash2, Plus,
   Brain, X, RefreshCw, Wrench, Eye, Sparkles, Pencil,
@@ -94,6 +95,7 @@ export function ProviderDetail() {
     detail, loading, updateProvider, toggleProvider,
     checkProvider, deleteProvider, addModel, updateModel, deleteModel,
     fetchRemoteModels, selectProvider, toggleModel, toggleAllModels,
+    selectedId,
   } = useProviderStore();
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -110,15 +112,19 @@ export function ProviderDetail() {
   const { token } = theme.useToken();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // Whether the displayed detail matches the currently selected provider.
+  // When switching, detail still holds old provider data until the new one loads.
+  const isStale = detail != null && selectedId != null && detail.id !== selectedId;
+
   useEffect(() => {
-    if (detail) {
+    if (detail && !isStale) {
       setApiKey(detail.api_key || '');
       setBaseUrl(detail.base_url || detail.default_base_url || '');
       setEnabled(detail.enabled);
       setCheckModel(detail.check_model || detail.models?.[0]?.id || '');
       setCheckPass(false);
     }
-  }, [detail]);
+  }, [detail, isStale]);
 
   const debouncedSave = useCallback(
     (key: string, url: string) => {
@@ -178,7 +184,7 @@ export function ProviderDetail() {
     return list;
   }, [allModels, modelTypeTab, modelSearchKeyword]);
 
-  if (loading) {
+  if (loading && !detail) {
     return (
       <Flexbox flex={1} align="center" justify="center">
         <Spin />
@@ -270,7 +276,17 @@ export function ProviderDetail() {
   }));
 
   return (
-    <Flexbox gap={16} style={{ padding: 24, height: '100%', overflow: 'hidden' }}>
+    <Flexbox
+      gap={16}
+      style={{
+        padding: 24,
+        height: '100%',
+        overflow: 'hidden',
+        opacity: isStale ? 0 : 1,
+        transition: 'opacity 0.15s ease-out',
+        pointerEvents: isStale ? 'none' : 'auto',
+      }}
+    >
       {/* Config Card - fixed height */}
       <div
         style={{
@@ -414,7 +430,7 @@ export function ProviderDetail() {
               )
             }
           >
-            <Input.Password
+            <InputPassword
               value={apiKey}
               onChange={(e) => handleApiKeyChange(e.target.value)}
               placeholder="Please enter your API Key"

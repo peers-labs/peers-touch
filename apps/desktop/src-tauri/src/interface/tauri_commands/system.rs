@@ -3,7 +3,8 @@ use crate::contracts::{
     ContextActionDispatchInput, ContextSnapshotGetInput,
     ConfigFieldResetInput, ConfigPostgresTestInput, ConfigSectionInput, ConfigSectionSetInput,
     ExternalUrlInput, LogsTailInput, OAuthCreateBotSessionInput, OAuthSessionInput, OAuthSimulateStartInput,
-    PreferencesSetInput, ShareIdInput, ShareSessionInput, StubPayload,
+    OnboardingSetInput, PreferencesSetInput, ShareIdInput, ShareSessionInput, StubPayload,
+    WizardExecuteApiInput, WizardStepInput,
 };
 
 use crate::application::system as application_system;
@@ -17,8 +18,36 @@ pub fn open_external_url(input: ExternalUrlInput) -> AppResult<StubPayload> {
     application_system::open_external_url(input)
 }
 #[tauri::command]
+pub fn onboarding_get() -> AppResult<StubPayload> {
+    application_system::onboarding_get()
+}
+#[tauri::command]
+pub fn onboarding_set(input: OnboardingSetInput) -> AppResult<StubPayload> {
+    application_system::onboarding_set(input)
+}
+#[tauri::command]
 pub fn onboarding_reset() -> AppResult<StubPayload> {
     application_system::onboarding_reset()
+}
+#[tauri::command]
+pub fn wizard_get() -> AppResult<StubPayload> {
+    application_system::wizard_get()
+}
+#[tauri::command]
+pub fn wizard_state_get() -> AppResult<StubPayload> {
+    application_system::wizard_state_get()
+}
+#[tauri::command]
+pub fn wizard_step_save(input: WizardStepInput) -> AppResult<StubPayload> {
+    application_system::wizard_step_save(input)
+}
+#[tauri::command]
+pub fn wizard_complete() -> AppResult<StubPayload> {
+    application_system::wizard_complete()
+}
+#[tauri::command]
+pub fn wizard_api_execute(input: WizardExecuteApiInput) -> AppResult<StubPayload> {
+    application_system::wizard_api_execute(input)
 }
 #[tauri::command]
 pub fn statistics_get() -> AppResult<StubPayload> {

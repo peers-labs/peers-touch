@@ -8,8 +8,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
-const SubjectContextKey = "auth_subject"
-
 func RequireJWT(p coreauth.Provider) func(ctx context.Context, next http.Handler) http.Handler {
 	return func(ctx context.Context, next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -20,7 +18,7 @@ func RequireJWT(p coreauth.Provider) func(ctx context.Context, next http.Handler
 				logger.Warnf(ctx, "[RequireJWT] Missing or invalid Bearer token format")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(401)
-				w.Write([]byte(`{"error":"Valid JWT token required"}`))
+				w.Write([]byte(`{"code":401,"error":"authentication required"}`))
 				return
 			}
 
@@ -32,21 +30,14 @@ func RequireJWT(p coreauth.Provider) func(ctx context.Context, next http.Handler
 				logger.Warnf(ctx, "[RequireJWT] Token validation failed: %v", err)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(401)
-				w.Write([]byte(`{"error":"Invalid or expired token"}`))
+				w.Write([]byte(`{"code":401,"error":"authentication required"}`))
 				return
 			}
 
 			logger.Infof(ctx, "[RequireJWT] Token valid, subject: %s", subject.ID)
 
-			ctxWithSubject := context.WithValue(r.Context(), SubjectContextKey, subject)
+			ctxWithSubject := coreauth.WithSubject(r.Context(), subject)
 			next.ServeHTTP(w, r.WithContext(ctxWithSubject))
 		})
 	}
-}
-
-func GetSubject(r *http.Request) *coreauth.Subject {
-	if subject, ok := r.Context().Value(SubjectContextKey).(*coreauth.Subject); ok {
-		return subject
-	}
-	return nil
 }

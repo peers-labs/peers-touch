@@ -417,6 +417,7 @@ const GetMessagesResponse$json = {
       '10': 'messages'
     },
     {'1': 'has_more', '3': 2, '4': 1, '5': 8, '10': 'hasMore'},
+    {'1': 'next_cursor', '3': 3, '4': 1, '5': 9, '10': 'nextCursor'},
   ],
 };
 
@@ -424,7 +425,7 @@ const GetMessagesResponse$json = {
 final $typed_data.Uint8List getMessagesResponseDescriptor = $convert.base64Decode(
     'ChNHZXRNZXNzYWdlc1Jlc3BvbnNlEkgKCG1lc3NhZ2VzGAEgAygLMiwucGVlcnNfdG91Y2gubW'
     '9kZWwuY2hhdC52MS5GcmllbmRDaGF0TWVzc2FnZVIIbWVzc2FnZXMSGQoIaGFzX21vcmUYAiAB'
-    'KAhSB2hhc01vcmU=');
+    'KAhSB2hhc01vcmUSHwoLbmV4dF9jdXJzb3IYAyABKAlSCm5leHRDdXJzb3I=');
 
 @$core.Deprecated('Use createSessionRequestDescriptor instead')
 const CreateSessionRequest$json = {

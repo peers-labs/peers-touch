@@ -28,10 +28,6 @@ function now() {
   return Date.now()
 }
 
-function isTauriRuntime() {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-}
-
 function createInitialSnapshot(): GlobalContextSnapshot {
   const online = typeof navigator === 'undefined' ? true : navigator.onLine
   const nowTs = now()
@@ -215,12 +211,10 @@ export const useGlobalContextStore = create<GlobalContextState>((set, get) => ({
   getSnapshot: () => get().snapshot,
 
   setRuntimeAppState: (state) => {
-    if (isTauriRuntime()) {
-      api.contextActionDispatch({
-        action: 'set_runtime_state',
-        payload: { appState: state },
-      }).catch(() => {})
-    }
+    api.contextActionDispatch({
+      action: 'set_runtime_state',
+      payload: { appState: state },
+    }).catch(() => {})
     set((prev) => ({
       snapshot: {
         ...prev.snapshot,
@@ -295,15 +289,13 @@ export const useGlobalContextStore = create<GlobalContextState>((set, get) => ({
   },
 
   refreshFromSources: async () => {
-    if (isTauriRuntime()) {
-      try {
-        const rustSnapshot = await api.contextSnapshotGet()
-        set((prev) => ({
-          snapshot: mapSnapshotFromRust(prev.snapshot, rustSnapshot),
-        }))
-        publishUpdate('authoritative')
-      } catch {}
-    }
+    try {
+      const rustSnapshot = await api.contextSnapshotGet()
+      set((prev) => ({
+        snapshot: mapSnapshotFromRust(prev.snapshot, rustSnapshot),
+      }))
+      publishUpdate('authoritative')
+    } catch {}
     await Promise.all([
       useAccountIdentityStore.getState().load(),
       useOAuth2Store.getState().loadAll(),
@@ -317,12 +309,10 @@ export const useGlobalContextStore = create<GlobalContextState>((set, get) => ({
   startRuntimeBindings: () => {
     if (get().runtimeUnsubscribe) return
     const offOnline = onWindowOnline(() => {
-      if (isTauriRuntime()) {
-        api.contextActionDispatch({
-          action: 'set_network_mode',
-          payload: { online: true },
-        }).catch(() => {})
-      }
+      api.contextActionDispatch({
+        action: 'set_network_mode',
+        payload: { online: true },
+      }).catch(() => {})
       set((prev) => ({
         snapshot: {
           ...prev.snapshot,
@@ -347,12 +337,10 @@ export const useGlobalContextStore = create<GlobalContextState>((set, get) => ({
       publishUpdate('runtime')
     })
     const offOffline = onWindowOffline(() => {
-      if (isTauriRuntime()) {
-        api.contextActionDispatch({
-          action: 'set_network_mode',
-          payload: { online: false },
-        }).catch(() => {})
-      }
+      api.contextActionDispatch({
+        action: 'set_network_mode',
+        payload: { online: false },
+      }).catch(() => {})
       set((prev) => ({
         snapshot: {
           ...prev.snapshot,

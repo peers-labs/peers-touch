@@ -41,17 +41,20 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   selectProvider: async (id: string, skipLoading?: boolean) => {
+    set({ selectedId: id });
     if (!skipLoading) {
-      set({ selectedId: id, loading: true });
-    } else {
-      set({ selectedId: id });
+      set({ loading: true });
     }
     try {
       const detail = await api.getProvider(id);
-      set({ detail, loading: false });
+      if (get().selectedId === id) {
+        set({ detail, loading: false });
+      }
     } catch (e) {
       console.error('Failed to load provider detail:', e);
-      set({ loading: false });
+      if (get().selectedId === id) {
+        set({ loading: false });
+      }
     }
   },
 

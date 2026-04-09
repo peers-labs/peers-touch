@@ -10,17 +10,17 @@
 
 ### 代码修改
 
-1. **新实现**: [handleSendMessageTyped()](../../../station/app/subserver/friend_chat/handler.go#L161-L226)
+1. **新实现**: [handleSendMessageTyped()](file://station/app/subserver/friend_chat/handler.go#L161-L226)
    - 使用 TypedHandler 框架
    - 签名: `func(context.Context, *chat.SendMessageRequest) (*chat.SendMessageResponse, error)`
    - 代码行数: ~50 行纯业务逻辑
 
-2. **旧实现**: [handleSendMessage_legacy()](../../../station/app/subserver/friend_chat/handler.go#L233)
+2. **旧实现**: [handleSendMessage_legacy()](file://station/app/subserver/friend_chat/handler.go#L233)
    - 保留用于对比
    - 原始的 HTTP handler 实现
    - 代码行数: ~60+ 行（包含大量序列化代码）
 
-3. **注册变更**: [Handlers()](../../../station/app/subserver/friend_chat/handler.go#L32)
+3. **注册变更**: [Handlers()](file://station/app/subserver/friend_chat/handler.go#L32)
    ```go
    // 旧方式
    server.NewHTTPHandler("fc-message-send", "/friend-chat/message/send", 
@@ -44,7 +44,7 @@
 
 **命令**:
 ```bash
-cd <project-root>
+cd <workspace-root>/peers-touch
 bash scripts/dev-station.sh
 ```
 

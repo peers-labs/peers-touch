@@ -1,5 +1,6 @@
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::auth_identity;
+use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::contracts::{
     OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
@@ -111,7 +112,7 @@ fn parse_query_params(raw_path: &str) -> HashMap<String, String> {
     params
 }
 
-fn save_oauth_callback(input: OAuthCallbackInput) -> CmdResult<()> {
+fn save_oauth_callback(input: OAuthCallbackInput, ts: Option<String>, sig: Option<String>) -> CmdResult<()> {
     let provider_id = input.provider.trim();
     if provider_id.is_empty() {
         return Err(invalid_argument("provider is required"));
@@ -132,6 +133,10 @@ fn save_oauth_callback(input: OAuthCallbackInput) -> CmdResult<()> {
         .map(|p| p.name)
         .unwrap_or_else(|| provider_id.to_string());
     let provider_user_id = input.provider_user_id.clone();
+    let display_name_value = input
+        .display_name
+        .clone()
+        .unwrap_or_else(|| provider_user_id.clone());
     let user_name = input
         .username
         .filter(|v| !v.trim().is_empty())
@@ -167,6 +172,41 @@ fn save_oauth_callback(input: OAuthCallbackInput) -> CmdResult<()> {
         Some(profile_url.as_str()),
     )
     .map_err(internal_error)?;
+
+    // Bridge the OAuth identity to Station via oauth-bridge API.
+    // On success, persist the returned JWT so the app can load it later
+    // via `ensure_station_session`.
+    let bridge_body = json!({
+        "provider": provider_id,
+        "provider_user_id": input.provider_user_id,
+        "email": email,
+        "username": user_name,
+        "display_name": display_name_value,
+        "avatar_url": avatar_url,
+        "ts": ts.clone().unwrap_or_default(),
+        "sig": sig.clone().unwrap_or_default(),
+    });
+    match station_client::post_json_no_auth("/actor/oauth-bridge", bridge_body) {
+        Ok(resp) => {
+            if let Some(data) = resp.get("data") {
+                let token = data
+                    .pointer("/tokens/access_token")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                let actor_id = data
+                    .pointer("/actor/id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                if !token.is_empty() {
+                    let _ = save_station_session(actor_id, token);
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "station oauth-bridge call failed, continuing without station session");
+        }
+    }
+
     Ok(())
 }
 
@@ -175,6 +215,80 @@ fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayl
         command: command.to_string(),
         status: data.to_string(),
     })
+}
+
+// ── Station session persistence ──
+// After a successful oauth-bridge call we store the Station JWT
+// to a file so it can be picked up by `ensure_station_session`.
+
+fn station_session_path() -> Result<PathBuf, String> {
+    storage::app_file_path("desktop", StorageKind::Data, &["auth", "station_session.json"])
+        .map_err(|e| format!("resolve station_session path: {e:?}"))
+}
+
+fn save_station_session(actor_id: &str, token: &str) -> Result<(), String> {
+    let path = station_session_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("create auth dir: {e}"))?;
+    }
+    let data = json!({ "actor_id": actor_id, "token": token });
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("encode station session: {e}"))?;
+    storage::write_string_atomic(&path, &content)
+        .map_err(|e| format!("write station session: {e:?}"))
+}
+
+/// Read a previously saved Station JWT (actor_id, token).
+/// Returns `None` when the file does not exist or cannot be parsed.
+pub fn read_station_session() -> Option<(String, String)> {
+    let path = station_session_path().ok()?;
+    let raw = fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let actor_id = v.get("actor_id")?.as_str()?.to_string();
+    let token = v.get("token")?.as_str()?.to_string();
+    if token.is_empty() {
+        return None;
+    }
+    Some((actor_id, token))
+}
+
+/// Attempt to obtain a Station JWT by calling the oauth-bridge endpoint
+/// with the first active OAuth connection found locally.
+/// Returns `Some((actor_id, token))` on success, `None` on any failure.
+pub fn try_bridge_from_connections() -> Option<(String, String)> {
+    let map = read_connections().ok()?;
+    let conn = map.values().find(|c| c.status == "active")?;
+
+    let bridge_body = json!({
+        "provider": conn.provider_id,
+        "provider_user_id": conn.user_id,
+        "email": conn.email,
+        "username": conn.user_name,
+        "display_name": conn.user_name,
+        "avatar_url": conn.avatar_url,
+    });
+
+    let resp = station_client::post_json_no_auth("/actor/oauth-bridge", bridge_body).ok()?;
+    let data = resp.get("data")?;
+
+    let token = data
+        .pointer("/tokens/access_token")
+        .or_else(|| data.pointer("/tokens/token"))
+        .and_then(|v| v.as_str())?
+        .to_string();
+    if token.is_empty() {
+        return None;
+    }
+
+    let actor_id = data
+        .pointer("/actor/id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let _ = save_station_session(&actor_id, &token);
+    Some((actor_id, token))
 }
 
 fn invalid_argument(message: &str) -> AppResult<StubPayload> {
@@ -636,7 +750,7 @@ pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPa
                     avatar_url: params.get("avatar_url").cloned(),
                     profile_url: params.get("profile_url").cloned(),
                     expires_at: params.get("expires_at").cloned(),
-                }) {
+                }, params.get("ts").cloned(), params.get("sig").cloned()) {
                     Ok(_) => {
                         update_loopback_session(
                             &session_id_for_thread,
@@ -736,7 +850,7 @@ pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayl
 }
 
 pub fn oauth2_handle_callback(input: OAuthCallbackInput) -> AppResult<StubPayload> {
-    try_cmd!(save_oauth_callback(input));
+    try_cmd!(save_oauth_callback(input, None, None));
     success_payload("oauth2_handle_callback", json!({ "status":"ok" }))
 }
 
