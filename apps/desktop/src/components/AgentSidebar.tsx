@@ -19,8 +19,9 @@ import {
   Pencil,
   Copy,
 } from 'lucide-react';
-import { theme, Dropdown, Modal, Input, Popover, message as antMessage } from 'antd';
-import type { MenuProps } from 'antd';
+import { theme, Modal, Popover } from 'antd';
+import { Dropdown, Input, toast } from '@lobehub/ui';
+import type { MenuProps } from '@lobehub/ui';
 import { useChatStore } from '../store/chat';
 import type { Agent, Session } from '../services/desktop_api';
 import { api } from '../services/desktop_api';
@@ -518,28 +519,28 @@ function TopicItem({
       await api.renameSession(topic.key, newTitle);
       onReload();
     } catch (e: any) {
-      antMessage.error(e.message || 'Rename failed');
+      toast.error(e.message || 'Rename failed');
     }
   }, [renameTitle, topic.title, topic.key, onReload]);
 
   const handleSmartRename = useCallback(async () => {
     try {
-      antMessage.loading({ content: 'Generating title...', key: 'smart-rename' });
+      toast.loading('Generating title...');
       const res = await api.smartRenameSession(topic.key);
-      antMessage.success({ content: `Renamed to "${res.title}"`, key: 'smart-rename' });
+      toast.success(`Renamed to "${res.title}"`);
       onReload();
     } catch (e: any) {
-      antMessage.error({ content: e.message || 'Smart rename failed', key: 'smart-rename' });
+      toast.error(e.message || 'Smart rename failed');
     }
   }, [topic.key, onReload]);
 
   const handleDuplicate = useCallback(async () => {
     try {
       await api.duplicateSession(topic.key);
-      antMessage.success('Topic duplicated');
+      toast.success('Topic duplicated');
       onReload();
     } catch (e: any) {
-      antMessage.error(e.message || 'Duplicate failed');
+      toast.error(e.message || 'Duplicate failed');
     }
   }, [topic.key, onReload]);
 

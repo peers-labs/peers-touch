@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────
+# preview-desktop.sh — Production-like preview (loads from dist/)
+#
+# Unlike dev-desktop.sh (HMR mode), this script builds the
+# frontend into dist/ and loads it statically, mimicking the
+# production build. Use this for final verification before release.
+# ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,14 +57,20 @@ fi
 
 cd "$DESKTOP_DIR"
 
-if command -v pnpm >/dev/null 2>&1 && [[ -f "pnpm-lock.yaml" ]]; then
-  CMD=(pnpm tauri:dev -- --no-watch)
-else
-  CMD=(npm run tauri:dev -- --no-watch)
+echo "[INFO] building frontend..."
+pnpm build
+
+echo "[INFO] building Rust BFF (if needed)..."
+(cd src-tauri && cargo build 2>&1 | tail -3)
+
+BINARY="$DESKTOP_DIR/src-tauri/target/debug/peers-touch-desktop"
+if [[ ! -f "$BINARY" ]]; then
+  echo "[ERROR] Rust binary not found: $BINARY"
+  exit 1
 fi
 
-echo "[INFO] starting desktop preview (tauri)..."
-"${CMD[@]}" &
+echo "[INFO] starting desktop preview (production-like)..."
+"$BINARY" &
 echo $! > "$DESKTOP_PID_FILE"
 echo "[INFO] pid: $(cat "$DESKTOP_PID_FILE")"
 echo "[INFO] close desktop app or Ctrl+C to stop"

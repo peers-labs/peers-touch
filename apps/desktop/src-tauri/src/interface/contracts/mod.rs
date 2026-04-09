@@ -337,6 +337,10 @@ pub struct OAuthCallbackInput {
     pub profile_url: Option<String>,
     pub expires_at: Option<String>,
     pub created_at: Option<String>,
+    /// HMAC timestamp from Station relay for oauth-bridge verification
+    pub ts: Option<String>,
+    /// HMAC signature from Station relay for oauth-bridge verification
+    pub sig: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

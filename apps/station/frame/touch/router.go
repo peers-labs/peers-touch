@@ -90,16 +90,16 @@ func wrapHandler(handlerName string, configCheck func(*RouterConfig) bool, handl
 }
 
 // Routers returns server options with touch handlers
+// NOTE: social, activitypub, and mastodon routers have been migrated to app/subserver/.
 func Routers() []option.Option {
 	routers := make([]server.Routers, 0)
 	routers = append(routers, NewManageRouter())
-	routers = append(routers, NewActivityPubRouter())
+	routers = append(routers, NewActorRouter())
 	routers = append(routers, NewWellKnownRouter())
 	routers = append(routers, NewPeerRouter())
 	routers = append(routers, NewMessageRouter())
-	routers = append(routers, NewMastodonRouter())
-	routers = append(routers, NewSocialRouter())
 	routers = append(routers, NewSessionRouter())
+	routers = append(routers, NewMetricsRouter())
 	return []option.Option{
 		server.WithRouters(routers...),
 	}

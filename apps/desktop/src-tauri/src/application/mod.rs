@@ -21,7 +21,6 @@ pub mod search;
 pub mod settings;
 pub mod skills;
 pub mod skills_market;
-pub mod social_chat;
 pub mod station_client;
 pub mod system;
 pub mod timeline;

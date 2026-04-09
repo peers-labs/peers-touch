@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Modal, Form, Input, message } from 'antd';
+import { Modal, Form } from 'antd';
+import { Input, TextArea, toast } from '@lobehub/ui';
 import { useProviderStore } from '../../store/provider';
 import type { ProviderDetail } from '../../services/desktop_api';
 
@@ -22,10 +23,10 @@ export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderMod
       // For now we call updateProvider which only updates api_key/base_url/enabled.
       await updateProvider(detail.id, detail.api_key, detail.base_url, detail.enabled);
       void values; // future: send name/description/logo update
-      message.success('Provider updated');
+      toast.success('Provider updated');
       onClose();
     } catch (e: unknown) {
-      if (e instanceof Error) message.error(e.message);
+      if (e instanceof Error) toast.error(e.message);
     } finally {
       setLoading(false);
     }
@@ -63,7 +64,7 @@ export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderMod
           <Input placeholder="Display name for the provider" />
         </Form.Item>
         <Form.Item name="description" label="Provider Description">
-          <Input.TextArea placeholder="Provider description (optional)" rows={2} />
+          <TextArea placeholder="Provider description (optional)" rows={2} />
         </Form.Item>
         <Form.Item name="logo" label="Provider Logo">
           <Input placeholder="https://example.com/logo.png" allowClear />

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Badge, Button, Card, Dropdown, Empty, Switch,
-  Tag, Typography, theme, message, Tooltip, Space, Alert,
+  Badge, Card, Empty, Switch,
+  Typography, theme, message, Space,
 } from 'antd';
-import type { MenuProps } from 'antd';
+import { Button, Tag, Alert, Tooltip, Dropdown } from '@lobehub/ui';
+import type { MenuProps } from '@lobehub/ui';
 import {
   ChevronDown, ExternalLink, Zap, Webhook,
 } from 'lucide-react';

@@ -80,7 +80,7 @@ flutter run
 
 ### 2. 核心修改
 
-#### [connection.dart](../common/peers_touch_base/lib/storage/connection/connection.dart)
+#### [connection.dart](file://client/common/peers_touch_base/lib/storage/connection/connection.dart)
 
 ```dart
 // 进程独立数据库
@@ -96,7 +96,7 @@ LazyDatabase getGlobalConnection(String dbName) {
 }
 ```
 
-#### [secure_storage.dart](../common/peers_touch_base/lib/storage/secure_storage.dart)
+#### [secure_storage.dart](file://client/common/peers_touch_base/lib/storage/secure_storage.dart)
 
 ```dart
 SecureStorageImpl() {
@@ -110,7 +110,7 @@ SecureStorageImpl() {
 }
 ```
 
-#### [global_users_storage.dart](../common/peers_touch_base/lib/storage/global_users_storage.dart)
+#### [global_users_storage.dart](file://client/common/peers_touch_base/lib/storage/global_users_storage.dart)
 
 ```dart
 class GlobalUsersStorage {

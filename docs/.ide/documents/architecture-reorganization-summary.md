@@ -141,7 +141,7 @@ export 'reply_preview.dart';
 ```
 
 #### 3.2 主入口向后兼容
-[`lib/peers_touch_ui.dart`](../../../client/common/peers_touch_ui/lib/peers_touch_ui.dart) 同时提供新旧API：
+[`lib/peers_touch_ui.dart`](file://client/common/peers_touch_ui/lib/peers_touch_ui.dart) 同时提供新旧API：
 
 ```dart
 // 新 API（推荐）

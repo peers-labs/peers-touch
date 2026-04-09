@@ -2,21 +2,19 @@ import { useCallback, useEffect, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import {
   Badge,
-  Button,
   Card,
   Empty,
-  Input,
+  Input as AntdInput,
   message,
   Pagination,
   Popconfirm,
   Select,
   Spin,
   Table,
-  Tabs,
-  Tag,
   Typography,
   theme,
 } from 'antd';
+import { Button, Tabs, Tag } from '@lobehub/ui';
 import {
   Brain,
   Search,
@@ -537,7 +535,7 @@ function SearchTab() {
   return (
     <Flexbox gap={16}>
       <Flexbox horizontal gap={8}>
-        <Input.Search
+        <AntdInput.Search
           placeholder="Search memories..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}

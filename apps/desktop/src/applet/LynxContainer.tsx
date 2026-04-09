@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Alert, Card, Spin } from 'antd'
+import { Alert } from '@lobehub/ui'
+import { Card, Spin } from 'antd'
 import AppletManager from './AppletManager'
 import LynxHost from './LynxHost'
 

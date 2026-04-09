@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input, Modal, Typography, theme } from 'antd';
+import { Button, Input } from '@lobehub/ui';
+import { theme, Modal, Typography } from 'antd';
 import { Search, Check } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import { api } from '../../services/desktop_api';

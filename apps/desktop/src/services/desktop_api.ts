@@ -1868,6 +1868,9 @@ export const api = {
   authValidateToken: (input: AuthValidateTokenInput) =>
     invokeAuthCommand<AuthValidateTokenInput>('auth_validate_token', input),
 
+  ensureStationSession: () =>
+    invokeAuthCommand<void>('ensure_station_session'),
+
   settingsGet: (input: SettingsGetInput) =>
     invokeRustCommand<SettingsGetInput, TauriStubPayload>('settings_get', input),
 
@@ -2873,11 +2876,19 @@ export const api = {
 
   // ── Actor API ──
 
-  actorSearchActors: async (query: string) =>
-    invokeRustProto('actor_search_actors', ActorListSchema, { query }),
+  actorSearchActors: async (query: string) => {
+    const data = await invokeRustDataFromStatus<{ q: string }, { items: any[]; total: number }>(
+      'actor_search_actors', { q: query },
+    );
+    return { items: data?.items || [], total: data?.total || 0 };
+  },
 
-  actorGetMyProfile: async () =>
-    invokeRustProto('actor_get_my_profile', ActorProfileSchema, {}),
+  actorGetMyProfile: async () => {
+    const data = await invokeRustDataFromStatus<void, { id: string; displayName: string; username: string; avatar: string }>(
+      'actor_get_my_profile',
+    );
+    return data;
+  },
 
   friendChatListSessions: (limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),

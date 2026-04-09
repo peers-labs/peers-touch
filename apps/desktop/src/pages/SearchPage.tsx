@@ -1,9 +1,8 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { SearchBar } from '@lobehub/ui';
-import { Empty, Spin, Tag, Typography } from 'antd';
-import { theme } from 'antd';
+import { SearchBar, Tag } from '@lobehub/ui';
+import { Empty, Spin, Typography, theme } from 'antd';
 import {
   Search,
   MessageSquare,

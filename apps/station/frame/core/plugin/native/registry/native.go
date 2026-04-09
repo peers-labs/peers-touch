@@ -190,90 +190,80 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 	if r.extOpts.mdnsEnable {
 		logger.Infof(ctx, "[Registry] mDNS node enabled for peer discovery")
 
-		// Create new mDNS service with registry namespace
 		r.mdnsService, err = mdns.NewMDNSService(ctx,
 			mdns.WithNamespace("registry"),
 			mdns.WithService("_peers-touch._tcp"),
 		)
 		if err != nil {
-			return fmt.Errorf("failed to create mDNS service: %w", err)
-		}
-
-		// Set up discovery callback for bootstrap nodes
-		r.mdnsService.Watch(func(discoveredPeer *types.Peer) {
-			// Check if this is a bootstrap node
-			if len(discoveredPeer.Nodes) > 0 {
-				for _, node := range discoveredPeer.Nodes {
-					if node.Type == "bootstrap" {
-						// Convert peer to AddrInfo
-						ctx := context.Background()
-						peerID, err := peer.Decode(discoveredPeer.ID)
-						if err != nil {
-							logger.Errorf(ctx, "Failed to decode peer ID: %v", err)
-							continue
-						}
-						pi := peer.AddrInfo{
-							ID:    peerID,
-							Addrs: []multiaddr.Multiaddr{},
-						}
-
-						// Parse addresses from peer metadata
-						if addrs, ok := discoveredPeer.Metadata["addresses"].([]string); ok {
-							for _, addrStr := range addrs {
-								if addr, err := multiaddr.NewMultiaddr(addrStr); err == nil {
-									pi.Addrs = append(pi.Addrs, addr)
-								}
+			logger.Warnf(ctx, "[Registry] mDNS service creation failed, peer discovery degraded: %v", err)
+		} else {
+			r.mdnsService.Watch(func(discoveredPeer *types.Peer) {
+				if len(discoveredPeer.Nodes) > 0 {
+					for _, node := range discoveredPeer.Nodes {
+						if node.Type == "bootstrap" {
+							ctx := context.Background()
+							peerID, err := peer.Decode(discoveredPeer.ID)
+							if err != nil {
+								logger.Errorf(ctx, "Failed to decode peer ID: %v", err)
+								continue
 							}
-						}
+							pi := peer.AddrInfo{
+								ID:    peerID,
+								Addrs: []multiaddr.Multiaddr{},
+							}
 
-						// Add to bootstrap nodes list
-						r.mdnsBootstrapLock.Lock()
-						for _, addr := range pi.Addrs {
-							// Create full multiaddr with peer ID
-							fullAddr := addr.Encapsulate(multiaddr.StringCast("/p2p/" + pi.ID.String()))
-
-							// Check if already exists to avoid duplicates
-							alreadyExists := false
-							for _, existing := range r.mdnsDiscoveredBootstrapNodes {
-								if existing.Equal(fullAddr) {
-									alreadyExists = true
-									break
+							if addrs, ok := discoveredPeer.Metadata["addresses"].([]string); ok {
+								for _, addrStr := range addrs {
+									if addr, err := multiaddr.NewMultiaddr(addrStr); err == nil {
+										pi.Addrs = append(pi.Addrs, addr)
+									}
 								}
 							}
 
-							if !alreadyExists {
-								r.mdnsDiscoveredBootstrapNodes = append(r.mdnsDiscoveredBootstrapNodes, fullAddr)
-								logger.Infof(context.Background(), "Added mDNS bootstrap node: %s", fullAddr.String())
+							r.mdnsBootstrapLock.Lock()
+							for _, addr := range pi.Addrs {
+								fullAddr := addr.Encapsulate(multiaddr.StringCast("/p2p/" + pi.ID.String()))
+
+								alreadyExists := false
+								for _, existing := range r.mdnsDiscoveredBootstrapNodes {
+									if existing.Equal(fullAddr) {
+										alreadyExists = true
+										break
+									}
+								}
+
+								if !alreadyExists {
+									r.mdnsDiscoveredBootstrapNodes = append(r.mdnsDiscoveredBootstrapNodes, fullAddr)
+									logger.Infof(context.Background(), "Added mDNS bootstrap node: %s", fullAddr.String())
+								}
 							}
-						}
-						r.mdnsBootstrapLock.Unlock()
+							r.mdnsBootstrapLock.Unlock()
 
-						// Connect to the discovered peer
-						if err := r.host.Connect(ctx, pi); err != nil {
-							logger.Errorf(ctx, "Failed to connect to discovered bootstrap peer: %v", err)
+							if err := r.host.Connect(ctx, pi); err != nil {
+								logger.Errorf(ctx, "Failed to connect to discovered bootstrap peer: %v", err)
 
-							return
+								return
+							}
 						}
 					}
 				}
-			}
-		})
+			})
 
-		// Start the mDNS service
-		if err := r.mdnsService.Start(); err != nil {
-			return fmt.Errorf("failed to start mDNS service: %w", err)
+			if err := r.mdnsService.Start(); err != nil {
+				logger.Warnf(ctx, "[Registry] mDNS service start failed, peer discovery degraded: %v", err)
+				r.mdnsService = nil
+			} else {
+				go func() {
+					<-ctx.Done()
+					if r.mdnsService != nil {
+						if err := r.mdnsService.Stop(); err != nil {
+							logger.Errorf(context.Background(), "[Registry] Error stopping mDNS service: %v", err)
+						}
+					}
+					logger.Infof(context.Background(), "[Registry] mDNS cleanup completed")
+				}()
+			}
 		}
-
-		// Cleanup mDNS when context is done
-		go func() {
-			<-ctx.Done()
-			if r.mdnsService != nil {
-				if err := r.mdnsService.Stop(); err != nil {
-					logger.Errorf(context.Background(), "[Registry] Error stopping mDNS service: %v", err)
-				}
-			}
-			logger.Infof(context.Background(), "[Registry] mDNS cleanup completed")
-		}()
 	}
 
 	// Init TURN

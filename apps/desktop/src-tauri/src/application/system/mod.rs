@@ -5,7 +5,8 @@ use crate::contracts::{
     ContextActionDispatchInput, ContextSnapshotGetInput,
     ConfigFieldResetInput, ConfigPostgresTestInput, ConfigSectionInput, ConfigSectionSetInput,
     ExternalUrlInput, LogsTailInput, OAuthCreateBotSessionInput, OAuthSessionInput, OAuthSimulateStartInput,
-    PreferencesSetInput, ShareIdInput, ShareSessionInput, StubPayload,
+    OnboardingSetInput, PreferencesSetInput, ShareIdInput, ShareSessionInput, StubPayload,
+    WizardExecuteApiInput, WizardStepInput,
 };
 use serde_json::json;
 use std::fs;
@@ -162,6 +163,42 @@ pub fn open_external_url(input: ExternalUrlInput) -> AppResult<StubPayload> {
         );
     }
     success_payload("open_external_url", json!({ "ok": true }))
+}
+
+pub fn onboarding_get() -> AppResult<StubPayload> {
+    success_payload("onboarding_get", json!({"completed": false, "step": "welcome"}))
+}
+
+pub fn onboarding_set(_input: OnboardingSetInput) -> AppResult<StubPayload> {
+    success_payload("onboarding_set", json!({"ok": true}))
+}
+
+pub fn wizard_get() -> AppResult<StubPayload> {
+    success_payload("wizard_get", json!({
+        "steps": [],
+        "current_step": null,
+        "completed": false
+    }))
+}
+
+pub fn wizard_state_get() -> AppResult<StubPayload> {
+    success_payload("wizard_state_get", json!({
+        "current_step": null,
+        "completed_steps": [],
+        "data": {}
+    }))
+}
+
+pub fn wizard_step_save(_input: WizardStepInput) -> AppResult<StubPayload> {
+    success_payload("wizard_step_save", json!({"ok": true}))
+}
+
+pub fn wizard_complete() -> AppResult<StubPayload> {
+    success_payload("wizard_complete", json!({"ok": true}))
+}
+
+pub fn wizard_api_execute(_input: WizardExecuteApiInput) -> AppResult<StubPayload> {
+    success_payload("wizard_api_execute", json!({"ok": true, "result": null}))
 }
 
 pub fn onboarding_reset() -> AppResult<StubPayload> {

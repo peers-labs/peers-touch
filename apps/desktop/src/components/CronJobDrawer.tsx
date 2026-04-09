@@ -1,27 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  Drawer,
   Form,
-  Input,
   Select,
   InputNumber,
-  Button,
   Segmented,
   Typography,
   message,
   Checkbox,
-  Tag,
   Switch,
   Collapse,
 } from 'antd';
+import { Drawer, Input, Tag, Button, TextArea } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { Sparkles, Terminal, Bot, ChevronDown } from 'lucide-react';
 import { ModelSelect } from './ModelSelect';
 import type { ModelRef } from '../services/desktop_api';
 import { api, type CronJob, type CronJobCreate, type Agent, type Channel, type AvailableModel, type ChatTarget } from '../services/desktop_api';
 
-const { TextArea } = Input;
 const { Text } = Typography;
 
 /* ──────────────────────────────────────────────────────────────────

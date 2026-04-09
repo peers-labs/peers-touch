@@ -87,3 +87,19 @@ pub fn memory_import(input: MemoryImportInput) -> AppResult<StubPayload> {
         }),
     )
 }
+
+pub fn memory_embedding_status() -> AppResult<StubPayload> {
+    success_payload(
+        "memory_embedding_status",
+        json!({
+            "total":0,
+            "embedded":0,
+            "pending":0,
+            "status":"idle"
+        }),
+    )
+}
+
+pub fn memory_reembed() -> AppResult<StubPayload> {
+    success_payload("memory_reembed", json!({ "ok": true, "queued": 0 }))
+}
