@@ -22,7 +22,7 @@ pub fn timeline_like(input: TimelineActionInput) -> AppResult<StubPayload> {
     match timeline_store::like(&input.post_id) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
-            "timeline like rolled back",
+            "error.timeline.likeRolledBack",
             Some(serde_json::json!({
                 "command": "timeline_like",
                 "postId": outcome.post_id,
@@ -42,7 +42,7 @@ pub fn timeline_comment(input: TimelineActionInput) -> AppResult<StubPayload> {
     match timeline_store::comment(&input.post_id, &content) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
-            "timeline comment rolled back",
+            "error.timeline.commentRolledBack",
             Some(serde_json::json!({
                 "command": "timeline_comment",
                 "postId": outcome.post_id,
@@ -61,7 +61,7 @@ pub fn timeline_repost(input: TimelineActionInput) -> AppResult<StubPayload> {
     match timeline_store::repost(&input.post_id, input.content.as_deref()) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
-            "timeline repost rolled back",
+            "error.timeline.repostRolledBack",
             Some(serde_json::json!({
                 "command": "timeline_repost",
                 "postId": outcome.post_id,
@@ -80,23 +80,23 @@ fn map_error(command: &str, error: TimelineError) -> AppResult<StubPayload> {
     match error {
         TimelineError::InvalidArgument(message) => AppResult::fail(
             ErrorCode::InvalidArgument,
-            message,
-            Some(serde_json::json!({ "command": command })),
+            "error.timeline.invalidArgument",
+            Some(serde_json::json!({ "command": command, "detail": message })),
         ),
         TimelineError::NotFound(message) => AppResult::fail(
             ErrorCode::NotFound,
-            message,
-            Some(serde_json::json!({ "command": command })),
+            "error.timeline.notFound",
+            Some(serde_json::json!({ "command": command, "detail": message })),
         ),
         TimelineError::Conflict(message) => AppResult::fail(
             ErrorCode::Conflict,
-            message,
-            Some(serde_json::json!({ "command": command })),
+            "error.timeline.conflict",
+            Some(serde_json::json!({ "command": command, "detail": message })),
         ),
         TimelineError::Internal(message) => AppResult::fail(
             ErrorCode::InternalError,
-            message,
-            Some(serde_json::json!({ "command": command })),
+            "error.timeline.internal",
+            Some(serde_json::json!({ "command": command, "detail": message })),
         ),
     }
 }

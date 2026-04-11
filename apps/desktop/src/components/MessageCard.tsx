@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   ExternalLink,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface CardData {
   type: string;
@@ -26,23 +27,24 @@ interface Props {
   onNavigate?: (uri: string) => void;
 }
 
-const statusConfig: Record<string, { color: string; icon: ReactNode; label: string }> = {
-  ok: { color: 'success', icon: <CheckCircle2 size={14} />, label: 'Success' },
-  error: { color: 'error', icon: <XCircle size={14} />, label: 'Error' },
-  info: { color: 'processing', icon: <Info size={14} />, label: 'Info' },
-  warning: { color: 'warning', icon: <AlertTriangle size={14} />, label: 'Warning' },
+const statusConfig: Record<string, { color: string; icon: ReactNode; labelKey: string }> = {
+  ok: { color: 'success', icon: <CheckCircle2 size={14} />, labelKey: 'chat.card.status.ok' },
+  error: { color: 'error', icon: <XCircle size={14} />, labelKey: 'chat.card.status.error' },
+  info: { color: 'processing', icon: <Info size={14} />, labelKey: 'chat.card.status.info' },
+  warning: { color: 'warning', icon: <AlertTriangle size={14} />, labelKey: 'chat.card.status.warning' },
 };
 
-const typeLabels: Record<string, { icon: ReactNode; label: string }> = {
-  'cron-run': { icon: <Clock size={14} />, label: 'Cron Run' },
-  'channel-sent': { icon: <CheckCircle2 size={14} />, label: 'Delivered' },
-  system: { icon: <Info size={14} />, label: 'System' },
+const typeLabels: Record<string, { icon: ReactNode; labelKey: string }> = {
+  'cron-run': { icon: <Clock size={14} />, labelKey: 'chat.card.type.cronRun' },
+  'channel-sent': { icon: <CheckCircle2 size={14} />, labelKey: 'chat.card.type.channelSent' },
+  system: { icon: <Info size={14} />, labelKey: 'chat.card.type.system' },
 };
 
 export default function MessageCard({ card, onNavigate }: Props) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const sc = card.status ? statusConfig[card.status] : undefined;
-  const tl = typeLabels[card.type] || { icon: <Info size={14} />, label: card.type };
+  const tl = typeLabels[card.type] || { icon: <Info size={14} />, labelKey: card.type };
 
   const borderColor =
     card.status === 'error'
@@ -68,7 +70,7 @@ export default function MessageCard({ card, onNavigate }: Props) {
           icon={tl.icon}
           style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}
         >
-          {tl.label}
+          {t(tl.labelKey)}
         </Tag>
         {sc && (
           <Tag
@@ -76,7 +78,7 @@ export default function MessageCard({ card, onNavigate }: Props) {
             icon={sc.icon}
             style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
-            {sc.label}
+            {t(sc.labelKey)}
           </Tag>
         )}
         {card.meta?.duration != null && (
@@ -123,7 +125,7 @@ export default function MessageCard({ card, onNavigate }: Props) {
           onClick={() => onNavigate?.(card.link!)}
         >
           <ExternalLink size={12} />
-          {card.linkText || 'View details'}
+          {card.linkText || t('chat.card.viewDetails')}
         </div>
       )}
     </Flexbox>

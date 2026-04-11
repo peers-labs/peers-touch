@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/desktop_api';
 import { useChatStore } from '../store/chat';
+import { useTranslation } from 'react-i18next';
 
 function SelectorRow({
   icon,
@@ -133,6 +134,7 @@ function PopoverBody({
   onNavigateSkillManagement,
   onNavigateAppletManagement,
 }: PopoverBodyProps) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
 
   return (
@@ -147,7 +149,7 @@ function PopoverBody({
             fontWeight: 500,
           }}
         >
-          Skills
+          {t('provider.skillSelector.skills')}
         </div>
         {builtins.map((s) => (
           <SelectorRow
@@ -175,12 +177,12 @@ function PopoverBody({
               fontSize: 13,
             }}
           >
-            No skills available
+            {t('provider.skillSelector.noSkills')}
           </div>
         )}
         <SelectorRow
           icon={<BookOpen size={18} />}
-          label="Skill Hub"
+          label={t('provider.skillSelector.skillHub')}
           trailing={<ChevronRight size={16} style={{ opacity: 0.5 }} />}
           onClick={() => {
             onClose();
@@ -189,7 +191,7 @@ function PopoverBody({
         />
         <SelectorRow
           icon={<Settings2 size={18} />}
-          label="Skill Management"
+          label={t('provider.skillSelector.skillManagement')}
           trailing={<ChevronRight size={16} style={{ opacity: 0.5 }} />}
           onClick={() => {
             onClose();
@@ -208,7 +210,7 @@ function PopoverBody({
             fontWeight: 500,
           }}
         >
-          Applets
+          {t('provider.skillSelector.applets')}
         </div>
         {applets.length === 0 ? (
           <div
@@ -218,7 +220,7 @@ function PopoverBody({
               fontSize: 13,
             }}
           >
-            No applets installed
+            {t('provider.skillSelector.noApplets')}
           </div>
         ) : (
           applets.map((a) => (
@@ -242,7 +244,7 @@ function PopoverBody({
         )}
         <SelectorRow
           icon={<Settings2 size={18} />}
-          label="Applet Management"
+          label={t('provider.skillSelector.appletManagement')}
           trailing={<ChevronRight size={16} style={{ opacity: 0.5 }} />}
           onClick={() => {
             onClose();
@@ -292,6 +294,7 @@ export function SkillAppletTagBar({
   onNavigateSkills?: () => void;
   onNavigateApplets?: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const state = useSkillAppletState();
   const [open, setOpen] = useState(false);
@@ -343,7 +346,7 @@ export function SkillAppletTagBar({
           }}
         >
           <Plus size={12} />
-          Add Skill
+          {t('provider.skillSelector.addSkill')}
         </div>
       </Popover>
       {enabledSkills.map((s) => (

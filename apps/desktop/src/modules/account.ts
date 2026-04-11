@@ -1,11 +1,11 @@
 import { User } from 'lucide-react';
 import { registerModule } from './registry';
-import { AccountTab } from '../components/settings/OAuth2Tab';
+import { AccountTab } from '../components/settings/AccountTab';
 
 registerModule({
   id: 'account',
-  name: 'OAuth Sign-In',
+  name: 'Account',
   icon: User,
   settingsPanel: AccountTab,
-  settingsEntry: { order: 20, label: 'OAuth Sign-In' },
+  settingsEntry: { order: 20, label: 'Account' },
 });

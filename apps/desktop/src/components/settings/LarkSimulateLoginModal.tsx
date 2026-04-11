@@ -6,6 +6,7 @@ import { CheckCircle2, XCircle } from 'lucide-react';
 import { api, type LarkBotCredentials, type OAuth2Connection } from '../../services/desktop_api';
 import { useOAuth2Store } from '../../store/oauth2';
 import { PlatformLogo } from '../common/PlatformLogo';
+import { useTranslation } from 'react-i18next';
 
 const { Text, Title } = Typography;
 
@@ -24,22 +25,23 @@ interface Props {
   onSuccess?: (result: { connection?: OAuth2Connection; bot?: LarkBotCredentials; channel_id?: string }) => void;
 }
 
-function normalizeSimulateError(raw?: string): string {
+function normalizeSimulateError(raw: string | undefined, t: (key: string) => string): string {
   const text = (raw || '').trim();
   const lower = text.toLowerCase();
   if (lower === 'not found' || lower.includes('404')) {
-    return 'Simulated Login API is unavailable (404). Restart Peers Touch backend with the latest code and retry.';
+    return t('provider.lark.simulateApiUnavailable');
   }
   if (lower === 'session not found') {
-    return 'Login session not found. It may have expired or the service restarted. Click Retry to generate a new QR code.';
+    return t('provider.lark.sessionNotFound');
   }
   if (!text) {
-    return 'Simulated Login failed. Please retry.';
+    return t('provider.lark.simulateFailedGeneric');
   }
   return text;
 }
 
 export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appName, onSuccess }: Props) {
+  const { t } = useTranslation('provider');
   const [state, setState] = useState<LoginState>('loading');
   const [qrValue, setQrValue] = useState('');
   const [sessionId, setSessionId] = useState('');
@@ -65,7 +67,7 @@ export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appNam
         setState('pending');
       })
       .catch((err: any) => {
-        setError(normalizeSimulateError(err?.message));
+        setError(normalizeSimulateError(err?.message, t));
         setState('error');
       });
   }, [open, createBot, appName]);
@@ -90,18 +92,18 @@ export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appNam
           if (timerRef.current) window.clearInterval(timerRef.current);
           timerRef.current = null;
           setState('expired');
-          setError(res.error || 'QR code expired');
+          setError(res.error || t('provider.lark.qrExpired'));
           return;
         }
         if (timerRef.current) window.clearInterval(timerRef.current);
         timerRef.current = null;
         setState('error');
-        setError(normalizeSimulateError(res.error));
+        setError(normalizeSimulateError(res.error, t));
       } catch (err: any) {
         if (timerRef.current) window.clearInterval(timerRef.current);
         timerRef.current = null;
         setState('error');
-        setError(normalizeSimulateError(err?.message));
+        setError(normalizeSimulateError(err?.message, t));
       }
     }, 2000);
     return () => {
@@ -124,15 +126,15 @@ export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appNam
         setState('pending');
       })
       .catch((err: any) => {
-        setError(normalizeSimulateError(err?.message));
+        setError(normalizeSimulateError(err?.message, t));
         setState('error');
       });
   };
 
-  const title = createBot ? 'Create Lark Bot · Lark (飞书)' : 'Simulated Login · Lark (飞书)';
+  const title = createBot ? t('provider.lark.createBotTitle') : t('provider.lark.simulateTitle');
   const desc = createBot
-    ? 'Scan with Lark (飞书) app to create a new bot and get App ID/Secret. OAuth simulate will also be connected.'
-    : 'Use the Lark (飞书) app to scan the QR code below and complete authorization.';
+    ? t('provider.lark.createBotDesc')
+    : t('provider.lark.simulateDesc');
 
   return (
     <Modal open={open} onCancel={onClose} footer={null} width={440} centered destroyOnClose>
@@ -140,7 +142,7 @@ export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appNam
         <Flexbox gap={16} align="center" style={{ padding: '24px 0' }}>
           <Spin size="large" />
           <Text type="secondary">
-            {createBot ? 'Preparing Lark bot creation...' : 'Preparing Lark QR login...'}
+            {createBot ? t('provider.lark.preparingBot') : t('provider.lark.preparingQr')}
           </Text>
         </Flexbox>
       )}
@@ -160,8 +162,8 @@ export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appNam
             message={
               <span style={{ fontSize: 12 }}>
                 {createBot
-                  ? 'After scanning, a new Lark app will be created with Bot enabled. App ID and Secret will be saved to your channel.'
-                  : 'Simulated Login is based on a web QR session for quick onboarding; OAuth2 Login is better for long-term standard integration.'}
+                  ? t('provider.lark.createBotInfo')
+                  : t('provider.lark.simulateInfo')}
               </span>
             }
             style={{ borderRadius: 8 }}
@@ -172,13 +174,13 @@ export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appNam
         <Result
           status="success"
           icon={<CheckCircle2 size={48} color="#52c41a" />}
-          title={createBot ? 'Lark Bot Created' : 'Lark Simulated Login Succeeded'}
+          title={createBot ? t('provider.lark.botCreated') : t('provider.lark.simulateSucceeded')}
           subTitle={
             createBot && bot
-              ? `App ID: ${bot.app_id}`
+              ? t('provider.lark.appId', { appId: bot.app_id })
               : connection
-                ? `Welcome, ${connection.user_name || connection.user_id}`
-                : 'Login session established'
+                ? t('provider.lark.welcomeUser', { name: connection.user_name || connection.user_id })
+                : t('provider.lark.sessionEstablished')
           }
           extra={
             <Flexbox gap={12} direction="vertical">
@@ -186,18 +188,16 @@ export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appNam
                 <Alert
                   type="warning"
                   showIcon
-                  message="需先发布应用"
+                  message={t('provider.lark.publishRequired')}
                   description={
                     <span style={{ fontSize: 12 }}>
-                      应用已创建，但需在飞书开放平台完成发布后才能使用长连接。请访问{' '}
-                      <a href="https://open.larkoffice.com/app" target="_blank" rel="noreferrer">open.larkoffice.com</a>
-                      {' '}→ 选择应用 → 版本管理与发布 → 创建版本 → 申请发布。审核通过后即可连接。
+                      {t('provider.lark.publishDesc')}
                     </span>
                   }
                   style={{ textAlign: 'left' }}
                 />
               )}
-              <Button type="primary" onClick={onClose}>Done</Button>
+              <Button type="primary" onClick={onClose}>{t('provider.lark.done')}</Button>
             </Flexbox>
           }
         />
@@ -205,18 +205,18 @@ export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appNam
       {state === 'expired' && (
         <Result
           status="warning"
-          title="QR code expired"
+          title={t('provider.lark.qrExpired')}
           subTitle={error}
-          extra={<Button type="primary" onClick={handleRetry}>Regenerate QR Code</Button>}
+          extra={<Button type="primary" onClick={handleRetry}>{t('provider.lark.regenerateQr')}</Button>}
         />
       )}
       {state === 'error' && (
         <Result
           status="error"
           icon={<XCircle size={48} color="#ff4d4f" />}
-          title={createBot ? 'Lark Bot Creation Failed' : 'Lark Simulated Login Failed'}
+          title={createBot ? t('provider.lark.botCreationFailed') : t('provider.lark.simulateFailed')}
           subTitle={error}
-          extra={<Button type="primary" onClick={handleRetry}>Retry</Button>}
+          extra={<Button type="primary" onClick={handleRetry}>{t('provider.lark.retry')}</Button>}
         />
       )}
     </Modal>

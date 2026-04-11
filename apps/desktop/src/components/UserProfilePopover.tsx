@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Popover, Typography, theme, Divider } from 'antd';
 import { Button, toast } from '@lobehub/ui';
@@ -7,6 +8,7 @@ import { Check, Globe } from 'lucide-react';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import { PlatformLogo } from './common/PlatformLogo';
 import { useAccountIdentityStore } from '../store/accountIdentity';
+import { useSessionStore } from '../store/session';
 import { EVENT, eventBus } from '../kernel/events';
 
 const { Text } = Typography;
@@ -18,6 +20,7 @@ interface Props {
 export function UserProfilePopover({ children }: Props) {
   const { token } = theme.useToken();
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation('layout');
   const { accounts, activeAccountId, load, switchAccount } = useAccountIdentityStore();
   const activeAccount = useMemo(
     () => accounts.find((item) => item.id === activeAccountId) || accounts[0],
@@ -30,7 +33,7 @@ export function UserProfilePopover({ children }: Props) {
     }
   }, [open, load]);
 
-  const userName = activeAccount?.name || 'User';
+  const userName = activeAccount?.name || t('layout.user.defaultName');
   const userAvatar = activeAccount?.avatar_url || undefined;
 
   const content = (
@@ -41,8 +44,8 @@ export function UserProfilePopover({ children }: Props) {
           <Text strong style={{ fontSize: 15 }}>{userName}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
             {accounts.length > 0
-              ? `${accounts.length} account${accounts.length > 1 ? 's' : ''} available`
-              : 'No account connected'}
+              ? t('layout.user.accountsAvailable', { count: accounts.length })
+              : t('layout.user.noAccount')}
           </Text>
         </Flexbox>
       </Flexbox>
@@ -51,7 +54,7 @@ export function UserProfilePopover({ children }: Props) {
         <>
           <Divider style={{ margin: 0 }} />
           <Flexbox gap={6}>
-            <Text type="secondary" style={{ fontSize: 12 }}>Choose active account</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{t('layout.user.chooseActive')}</Text>
             {accounts.map((account) => {
               const isActive = activeAccount?.id === account.id;
               const providerId = account.provider || 'unknown';
@@ -60,7 +63,7 @@ export function UserProfilePopover({ children }: Props) {
                 try {
                   await switchAccount(account.id);
                 } catch {
-                  toast.error('Failed to switch account');
+                  toast.error(t('layout.user.switchFailed'));
                 }
               };
               return (
@@ -103,7 +106,7 @@ export function UserProfilePopover({ children }: Props) {
           }, 100);
         }}
       >
-        Manage Account
+        {t('layout.user.manageAccount')}
       </Button>
     </Flexbox>
   );
@@ -127,15 +130,25 @@ function AvatarDisplay({ url, name, size }: { url?: string; name: string; size: 
 }
 
 export function useUserAvatar(): { url?: string; name: string; provider?: string } {
+  const currentUser = useSessionStore((s) => s.currentUser);
   const accounts = useAccountIdentityStore((s) => s.accounts);
   const activeAccountId = useAccountIdentityStore((s) => s.activeAccountId);
+  const { t } = useTranslation('layout');
 
   return useMemo(() => {
+    if (currentUser) {
+      return {
+        url: currentUser.avatarUrl || undefined,
+        name: currentUser.name || t('layout.user.defaultName'),
+        provider: currentUser.loginProvider || currentUser.loginMethod || undefined,
+      };
+    }
+
     const active = accounts.find((item) => item.id === activeAccountId) || accounts[0];
     return {
       url: active?.avatar_url || undefined,
-      name: active?.name || 'User',
+      name: active?.name || t('layout.user.defaultName'),
       provider: active?.provider || undefined,
     };
-  }, [accounts, activeAccountId]);
+  }, [currentUser, accounts, activeAccountId, t]);
 }

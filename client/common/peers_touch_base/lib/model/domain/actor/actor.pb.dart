@@ -28,6 +28,7 @@ class Actor extends $pb.GeneratedMessage {
     $core.Iterable<$core.MapEntry<$core.String, $core.String>>? endpoints,
     $core.bool? isFollowing,
     $fixnum.Int64? actorId,
+    $core.String? avatar,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -39,6 +40,7 @@ class Actor extends $pb.GeneratedMessage {
     if (endpoints != null) result.endpoints.addEntries(endpoints);
     if (isFollowing != null) result.isFollowing = isFollowing;
     if (actorId != null) result.actorId = actorId;
+    if (avatar != null) result.avatar = avatar;
     return result;
   }
 
@@ -71,6 +73,7 @@ class Actor extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(
         9, _omitFieldNames ? '' : 'actor_id', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aOS(10, _omitFieldNames ? '' : 'avatar')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -165,6 +168,15 @@ class Actor extends $pb.GeneratedMessage {
   $core.bool hasActorId() => $_has(8);
   @$pb.TagNumber(9)
   void clearActorId() => $_clearField(9);
+
+  @$pb.TagNumber(10)
+  $core.String get avatar => $_getSZ(9);
+  @$pb.TagNumber(10)
+  set avatar($core.String value) => $_setString(9, value);
+  @$pb.TagNumber(10)
+  $core.bool hasAvatar() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearAvatar() => $_clearField(10);
 }
 
 class UserLink extends $pb.GeneratedMessage {

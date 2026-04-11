@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Card, Typography, List } from 'antd'
 import { Flexbox } from 'react-layout-kit'
 import { Button, Tag, Alert } from '@lobehub/ui'
 import LynxContainer from '@/applet/LynxContainer'
 import AppletManager from '@/applet/AppletManager'
+import { log } from '../utils/logger'
 
 const { Title, Paragraph, Text } = Typography
 
 const AppletExample: React.FC = () => {
+  const { t } = useTranslation('applet')
   const [availableApplets, setAvailableApplets] = useState<any[]>([])
   const [selectedApplet, setSelectedApplet] = useState<string | null>(null)
   const [appletLoaded, setAppletLoaded] = useState(false)
@@ -24,7 +27,7 @@ const AppletExample: React.FC = () => {
       const applets = await appletManager.scanApplets()
       setAvailableApplets(applets)
     } catch (error) {
-      console.error('Failed to scan applets:', error)
+      log.error('applet', 'Failed to scan applets', error)
     } finally {
       setScanning(false)
     }
@@ -35,7 +38,7 @@ const AppletExample: React.FC = () => {
       setSelectedApplet(appletId)
       setAppletLoaded(false)
     } catch (error) {
-      console.error('Failed to load applet:', error)
+      log.error('applet', 'Failed to load applet', error)
     }
   }
 
@@ -49,20 +52,20 @@ const AppletExample: React.FC = () => {
 
   const handleAppletLoad = () => {
     setAppletLoaded(true)
-    console.log('Applet loaded successfully')
+    log.info('applet', 'Applet loaded successfully')
   }
 
   const handleAppletError = (error: Error) => {
-    console.error('Applet load error:', error)
+    log.error('applet', 'Applet load error', error)
   }
 
   return (
     <div style={{ padding: '20px' }}>
-      <Title level={2}>Applet Runtime Example</Title>
+      <Title level={2}>{t('applet.example.title')}</Title>
       
       <Alert
-        message="Applet Runtime"
-        description="This page demonstrates how to load and run Applet from local applets-dist directory."
+        message={t('applet.example.alertTitle')}
+        description={t('applet.example.alertDesc')}
         type="info"
         showIcon
         style={{ marginBottom: '20px' }}
@@ -71,9 +74,7 @@ const AppletExample: React.FC = () => {
       <Card style={{ marginBottom: '20px' }}>
         <Flexbox gap={8} style={{ width: '100%' }}>
           <Paragraph>
-            The Applet runtime allows you to run lightweight applications within the desktop client,
-            powered by the Lynx cross-platform rendering engine. Applets are loaded from the local
-            <code>applets-dist</code> directory.
+            {t('applet.example.description')}
           </Paragraph>
           
           <Flexbox gap={8} horizontal>
@@ -82,20 +83,20 @@ const AppletExample: React.FC = () => {
               onClick={scanApplets}
               loading={scanning}
             >
-              Scan Applets
+              {t('applet.example.scan')}
             </Button>
             {selectedApplet && (
               <Button 
                 danger 
                 onClick={handleUnloadApplet}
               >
-                Close Applet
+                {t('applet.example.closeApplet')}
               </Button>
             )}
           </Flexbox>
 
           <div>
-            <Title level={4}>Available Applets ({availableApplets.length})</Title>
+            <Title level={4}>{t('applet.example.available', { count: availableApplets.length })}</Title>
             <List
               grid={{ gutter: 16, column: 3 }}
               dataSource={availableApplets}
@@ -113,7 +114,7 @@ const AppletExample: React.FC = () => {
                           handleLoadApplet(applet.id)
                         }}
                       >
-                        Open
+                        {t('applet.example.open')}
                       </Button>
                     ]}
                   >
@@ -128,7 +129,7 @@ const AppletExample: React.FC = () => {
                         <>
                           <Paragraph ellipsis={{ rows: 2 }}>{applet.description}</Paragraph>
                           <Text type="secondary" style={{ fontSize: '12px' }}>
-                            Author: {applet.author}
+                            {t('applet.example.author', { author: applet.author })}
                           </Text>
                         </>
                       }
@@ -141,8 +142,8 @@ const AppletExample: React.FC = () => {
 
           {appletLoaded && (
             <Alert
-              message="Applet Loaded"
-              description="The applet has been loaded successfully. You can interact with it below."
+              message={t('applet.example.loaded.title')}
+              description={t('applet.example.loaded.desc')}
               type="success"
               showIcon
             />
@@ -155,7 +156,7 @@ const AppletExample: React.FC = () => {
           title={
             <Flexbox gap={8} horizontal>
               <span>{availableApplets.find(a => a.id === selectedApplet)?.name || selectedApplet}</span>
-              <Tag color="green">Running</Tag>
+              <Tag color="green">{t('applet.runtime.running')}</Tag>
             </Flexbox>
           }
           extra={
@@ -164,7 +165,7 @@ const AppletExample: React.FC = () => {
               size="small" 
               onClick={handleUnloadApplet}
             >
-              Close
+              {t('applet.runtime.close')}
             </Button>
           }
         >

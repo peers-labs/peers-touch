@@ -1,0 +1,29 @@
+{
+  "layout.nav.search": "搜索（⌘K）",
+  "layout.nav.chat": "对话",
+  "layout.nav.agent": "智能体",
+  "layout.nav.notes": "笔记",
+  "layout.nav.settings": "设置",
+
+  "layout.online.tooltip": "过去 5 分钟内有 {{count}} 位访客在线",
+
+  "layout.auth.noAccounts": "暂无已授权账户 — 点击打开账户设置",
+
+  "layout.error.title": "出了点问题",
+  "layout.error.description": "应用遇到了意外错误，你可以尝试重启以恢复。",
+  "layout.error.restart": "重启应用",
+  "layout.error.details": "错误详情",
+
+  "layout.crash.title": "应用崩溃",
+  "layout.crash.failedToStart": "启动失败",
+
+  "layout.splash.peer": "Peer",
+  "layout.splash.peers": "Peers",
+
+  "layout.user.defaultName": "用户",
+  "layout.user.accountsAvailable": "{{count}} 个可用账户",
+  "layout.user.noAccount": "未连接账户",
+  "layout.user.chooseActive": "选择当前账户",
+  "layout.user.switchFailed": "切换账户失败",
+  "layout.user.manageAccount": "管理账户"
+}

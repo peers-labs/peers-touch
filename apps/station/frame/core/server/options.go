@@ -12,8 +12,9 @@ type serverOptionsKey struct{}
 var (
 	wrapper = option.NewWrapper[Options](serverOptionsKey{}, func(options *option.Options) *Options {
 		o := &Options{
-			Options:    options,
-			SubServers: map[string]subServerNewFunctions{},
+			Options:            options,
+			SubServers:         map[string]subServerNewFunctions{},
+			SubserverInstances: map[string]Subserver{},
 		}
 
 		return o
@@ -46,6 +47,11 @@ type Options struct {
 	// GlobalWrappers are wrappers that will be applied to all handlers automatically
 	// These wrappers are applied before handler-specific wrappers
 	GlobalWrappers []Wrapper
+
+	// SubserverInstances holds the initialised Subserver instances keyed by name.
+	// Populated by BaseServer.init() after each subserver is created and initialised,
+	// so that any subserver (e.g. dashboard) can discover its siblings at Start time.
+	SubserverInstances map[string]Subserver
 }
 
 // WithAddress sets the server address.

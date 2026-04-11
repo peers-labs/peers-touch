@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input, Segmented } from '@lobehub/ui';
 import { Badge, Empty, Spin, theme, Typography } from 'antd';
@@ -13,14 +14,14 @@ import { FindPeopleModal } from './FindPeopleModal';
 
 const { Text } = Typography;
 
-function formatTime(ts: Timestamp | undefined): string {
+function formatTime(ts: Timestamp | undefined, t: (key: string) => string): string {
   if (!ts) return '';
   const d = timestampDate(ts);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
   if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (diffDays === 1) return 'Yesterday';
+  if (diffDays === 1) return t('chat.social.sessionList.yesterday');
   if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' });
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
@@ -32,6 +33,7 @@ function getInitial(name: string): string {
 
 export function ChatSessionList() {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const {
     sessions, groups, activeTab, activeSessionUlid, activeGroupUlid,
     loading, loadSessions, loadGroups, setActiveTab, selectSession, selectGroup,
@@ -64,13 +66,13 @@ export function ChatSessionList() {
     {
       key: 'find-people',
       icon: <UserPlus size={14} />,
-      label: 'Find People',
+      label: t('chat.social.sessionList.findPeople'),
       onClick: () => setShowFindPeople(true),
     },
     {
       key: 'create-group',
       icon: <UsersRound size={14} />,
-      label: 'Create Group',
+      label: t('chat.social.sessionList.createGroup'),
       onClick: () => setShowCreateGroup(true),
     },
   ];
@@ -91,7 +93,7 @@ export function ChatSessionList() {
           <Flexbox horizontal align="center" gap={8}>
             <Input
               prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
-              placeholder="Search..."
+              placeholder={t('chat.social.sessionList.searchPlaceholder')}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               allowClear
@@ -120,8 +122,8 @@ export function ChatSessionList() {
             value={activeTab}
             onChange={(v) => setActiveTab(v as 'friend' | 'group')}
             options={[
-              { label: 'Friends', value: 'friend', icon: <MessageCircle size={14} /> },
-              { label: 'Groups', value: 'group', icon: <Users size={14} /> },
+              { label: t('chat.social.sessionList.friends'), value: 'friend', icon: <MessageCircle size={14} /> },
+              { label: t('chat.social.sessionList.groups'), value: 'group', icon: <Users size={14} /> },
             ]}
             size="small"
             style={{ width: '100%' }}
@@ -137,7 +139,7 @@ export function ChatSessionList() {
             <Flexbox align="center" justify="center" flex={1}>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={searchText ? 'No results' : activeTab === 'friend' ? 'No conversations' : 'No groups'}
+                description={searchText ? t('chat.social.sessionList.noResults') : activeTab === 'friend' ? t('chat.social.sessionList.noConversations') : t('chat.social.sessionList.noGroups')}
               />
             </Flexbox>
           ) : (
@@ -152,15 +154,15 @@ export function ChatSessionList() {
 
               if (activeTab === 'friend') {
                 const s = item as FriendChatSession;
-                name = s.participantBDid || 'Unknown';
-                lastMsg = s.lastMessageUlid ? 'Message' : '';
-                timeStr = formatTime(s.lastMessageAt ?? s.updatedAt);
+                name = s.participantBDid || t('chat.social.sessionList.unknown');
+                lastMsg = s.lastMessageUlid ? t('chat.social.sessionList.message') : '';
+                timeStr = formatTime(s.lastMessageAt ?? s.updatedAt, t);
                 unread = s.unreadCountB || 0;
               } else {
                 const g = item as Group;
-                name = g.name || 'Unnamed Group';
-                lastMsg = `${g.memberCount || 0} members`;
-                timeStr = formatTime(g.updatedAt);
+                name = g.name || t('chat.social.sessionList.unnamedGroup');
+                lastMsg = t('chat.social.detail.membersCount', { count: g.memberCount || 0 });
+                timeStr = formatTime(g.updatedAt, t);
                 unread = 0;
               }
 

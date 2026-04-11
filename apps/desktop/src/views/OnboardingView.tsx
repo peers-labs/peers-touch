@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { theme } from 'antd';
 import { GlobalLayout } from '../components/GlobalLayout';
 import { LoginPage } from '../pages/LoginPage';
+import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import type { AppLifecycle } from '../types/navigation';
 
 // ── Phase & Timing ──
@@ -223,6 +224,20 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
             onComplete={lifecycle.completeLogin}
             restoredUser={lifecycle.restoredUser}
           />
+        </div>
+
+        {/* Language switcher — bottom right corner */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 16,
+            right: 16,
+            zIndex: 10,
+            opacity: phase === 'transition' ? 0 : 1,
+            transition: `opacity ${TRANSITION_DURATION}ms ease`,
+          }}
+        >
+          <LanguageSwitcher />
         </div>
       </div>
     </GlobalLayout>

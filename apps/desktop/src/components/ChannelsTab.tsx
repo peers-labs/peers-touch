@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api, type Channel } from '../services/desktop_api';
 import { LarkSimulateLoginModal } from './settings/LarkSimulateLoginModal';
+import { useTranslation } from 'react-i18next';
 
 const { Text, Title } = Typography;
 
@@ -46,10 +47,6 @@ function getIcon(type: string, size = 16) {
   }
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  telegram: 'Telegram', lark: 'Lark (飞书)', slack: 'Slack', webhook: 'Webhook',
-};
-
 const TYPE_COLORS: Record<string, string> = {
   telegram: '#0088cc', lark: '#3370ff', slack: '#4a154b', webhook: '#6366f1',
 };
@@ -63,6 +60,7 @@ interface ChannelsTabProps {
 }
 
 export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(false);
@@ -84,9 +82,9 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
     setTestingId(id);
     try {
       await api.testChannel(id);
-      message.success('Test passed!');
+      message.success(t('provider.channels.testPassed'));
     } catch (err: unknown) {
-      message.error(`Test failed: ${err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error'}`);
+      message.error(t('provider.channels.testFailed', { error: err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error' }));
     } finally {
       setTestingId(null);
     }
@@ -102,7 +100,7 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
       label: (
         <Flexbox horizontal align="center" gap={8}>
           <LarkIcon size={16} />
-          <span>Lark (飞书)</span>
+          <span>{t('provider.channels.type.lark')}</span>
         </Flexbox>
       ),
       onClick: () => setLarkModalOpen(true),
@@ -114,15 +112,15 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
       if (!result.bot) return;
       try {
         await api.createChannel({
-          name: 'My Lark Bot',
+          name: t('provider.channels.myLarkBot'),
           type: 'lark',
           config: JSON.stringify({ appId: result.bot.app_id, appSecret: result.bot.app_secret }),
           enabled: true,
         });
-        message.success('Lark bot channel created');
+        message.success(t('provider.channels.larkBotCreated'));
         load();
       } catch (err: unknown) {
-        message.error(`Create channel failed: ${err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error'}`);
+        message.error(t('provider.channels.createFailed', { error: err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error' }));
       }
     },
     [load],
@@ -132,20 +130,20 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
     <Flexbox gap={16} style={{ padding: 16, height: '100%', overflow: 'auto' }}>
       <Flexbox horizontal align="center" justify="space-between">
         <Flexbox>
-          <Title level={5} style={{ margin: 0 }}>Channels Overview</Title>
+          <Title level={5} style={{ margin: 0 }}>{t('provider.channels.title')}</Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
-            Quick view of connected bots and webhooks. For full management, go to the Channels page.
+            {t('provider.channels.subtitle')}
           </Text>
         </Flexbox>
         <Space>
           <Dropdown menu={{ items: addMenuItems }} trigger={['click']}>
             <Button icon={<ChevronDown size={14} />}>
-              新增
+              {t('provider.channels.add')}
             </Button>
           </Dropdown>
           {onNavigate && (
             <Button type="primary" icon={<ExternalLink size={14} />} onClick={() => onNavigate('channels')}>
-              Open Channels
+              {t('provider.channels.openChannels')}
             </Button>
           )}
         </Space>
@@ -154,25 +152,25 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
       {/* Summary */}
       <Flexbox horizontal gap={12}>
         <Card size="small" style={{ flex: 1, textAlign: 'center' }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>Bots</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.channels.bots')}</Text>
           <div style={{ fontSize: 24, fontWeight: 600 }}>{botCount}</div>
         </Card>
         <Card size="small" style={{ flex: 1, textAlign: 'center' }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>Connected</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.channels.connected')}</Text>
           <div style={{ fontSize: 24, fontWeight: 600, color: token.colorSuccess }}>{connectedCount}</div>
         </Card>
         <Card size="small" style={{ flex: 1, textAlign: 'center' }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>Webhooks</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.channels.webhooks')}</Text>
           <div style={{ fontSize: 24, fontWeight: 600 }}>{webhookCount}</div>
         </Card>
       </Flexbox>
 
       {channels.length === 0 && !loading ? (
-        <Empty description="No channels configured" image={Empty.PRESENTED_IMAGE_SIMPLE}>
+        <Empty description={t('provider.channels.noChannels')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
           {onNavigate ? (
-            <Button type="primary" onClick={() => onNavigate('channels')}>Configure Channels</Button>
+            <Button type="primary" onClick={() => onNavigate('channels')}>{t('provider.channels.configureChannels')}</Button>
           ) : (
-            <Text type="secondary">Add channels from the Channels page in the sidebar.</Text>
+            <Text type="secondary">{t('provider.channels.addFromSidebar')}</Text>
           )}
         </Empty>
       ) : (
@@ -193,16 +191,16 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
                       <Flexbox horizontal align="center" gap={6}>
                         <Text strong style={{ fontSize: 13 }}>{ch.name}</Text>
                         <Tag color={TYPE_COLORS[ch.type]} style={{ margin: 0, fontSize: 11 }}>
-                          {TYPE_LABELS[ch.type]}
+                          {t(`provider.channels.type.${ch.type}`)}
                         </Tag>
                         {isBot && botConnected && (
-                          <Tag color="success" style={{ margin: 0, fontSize: 11 }}>Connected</Tag>
+                          <Tag color="success" style={{ margin: 0, fontSize: 11 }}>{t('provider.channels.connected')}</Tag>
                         )}
                         {isBot && !botConnected && ch.enabled && (
-                          <Tag color="warning" style={{ margin: 0, fontSize: 11 }}>Offline</Tag>
+                          <Tag color="warning" style={{ margin: 0, fontSize: 11 }}>{t('provider.channels.offline')}</Tag>
                         )}
                         {!ch.enabled && (
-                          <Tag color="default" style={{ margin: 0, fontSize: 11 }}>Disabled</Tag>
+                          <Tag color="default" style={{ margin: 0, fontSize: 11 }}>{t('provider.channels.disabled')}</Tag>
                         )}
                       </Flexbox>
                     </Flexbox>
@@ -211,7 +209,7 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
                     <Switch size="small" checked={ch.enabled}
                       onChange={async (v) => { await api.updateChannel(ch.id, { enabled: v }); load(); }}
                     />
-                    <Tooltip title="Test">
+                    <Tooltip title={t('provider.channels.test')}>
                       <Button size="small" icon={<Zap size={14} />}
                         loading={testingId === ch.id} onClick={() => handleTest(ch.id)} />
                     </Tooltip>

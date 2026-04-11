@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActionIcon, DraggablePanel, SideNav } from '@lobehub/ui';
 import {
   Bot,
@@ -28,6 +29,7 @@ interface AppSideNavProps {
 export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavProps) {
   const userAvatar = useUserAvatar();
   const appletManager = AppletManager.getInstance();
+  const { t } = useTranslation('layout');
 
   const [sidebarExpand, setSidebarExpand] = useState(true);
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
@@ -84,28 +86,28 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
               size="large"
               active={page === 'search'}
               onClick={() => navigation.navigateTo('search')}
-              title="Search (⌘K)"
+              title={t('layout.nav.search')}
             />
             <ActionIcon
               icon={MessageCircle}
               size="large"
               active={page === 'chat'}
               onClick={() => navigation.navigateTo('chat')}
-              title="Chat"
+              title={t('layout.nav.chat')}
             />
             <ActionIcon
               icon={Bot}
               size="large"
               active={page === 'agent'}
               onClick={() => navigation.navigateTo('agent')}
-              title="Agent"
+              title={t('layout.nav.agent')}
             />
             <ActionIcon
               icon={FileText}
               size="large"
               active={page === 'notes'}
               onClick={() => navigation.navigateTo('notes')}
-              title="Notes"
+              title={t('layout.nav.notes')}
             />
             {getModulesWithSidebar()
               .filter((m) => m.sidebarEntry!.position === 'top')
@@ -137,12 +139,12 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
         }
         bottomActions={
           <ActionIcon
-            icon={Settings}
-            size="large"
-            active={page === 'settings'}
-            onClick={() => navigation.navigateTo('settings')}
-            title="Settings"
-          />
+              icon={Settings}
+              size="large"
+              active={page === 'settings'}
+              onClick={() => navigation.navigateTo('settings')}
+              title={t('layout.nav.settings')}
+            />
         }
       />
 

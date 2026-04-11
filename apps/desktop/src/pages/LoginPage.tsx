@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input, message, theme, Typography, Spin } from 'antd';
 import { Github, Mail, Eye, EyeOff, ArrowRight, RefreshCw, Lock, LogIn, CheckCircle2, XCircle, X, ChevronRight } from 'lucide-react';
 import { useOAuth2Store } from '../store/oauth2';
+import { useSessionStore } from '../store/session';
 import type { OAuth2ProviderSummary } from '../services/desktop_api';
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { PlatformLogo } from '../components/common/PlatformLogo';
@@ -34,7 +36,9 @@ const PANEL_GAP = 8;
 
 export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
   const { token } = theme.useToken();
-  const { providers, connections, loadAll, loginWithPassword, startAuth } = useOAuth2Store();
+  const { t } = useTranslation('auth');
+  const { providers, connections, loadAll, startAuth } = useOAuth2Store();
+  const { loginWithPassword } = useSessionStore();
 
   const [loginState, setLoginState] = useState<LoginState>(restoredUser ? 'welcome_back' : 'logged_out');
   const [tab, setTab] = useState<LoginTab>('quick');
@@ -53,36 +57,18 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
   const [panelTop, setPanelTop] = useState(0);
 
   useEffect(() => {
-    loadAll().then(() => {
-      const conn = useOAuth2Store.getState().connections
-        .find(c => c.status === 'active' && c.user_id && c.user_id !== 'unknown');
-      if (conn && !restoredUser) {
-        setLoginState('welcome_back');
-      }
-    });
-  }, [loadAll, restoredUser]);
+    loadAll();
+  }, [loadAll]);
 
   const oauth2AccountProviders = useMemo(
     () => providers.filter(p => p.id === 'github' || p.id === 'google'),
     [providers],
   );
 
-  const activeConnection = useMemo(
-    () => connections.find(c => c.status === 'active' && c.user_id && c.user_id !== 'unknown'),
-    [connections],
-  );
-
   const welcomeUser: SessionUser = useMemo(() => {
     if (restoredUser) return restoredUser;
-    if (activeConnection) {
-      return {
-        name: activeConnection.user_name || activeConnection.user_id || 'User',
-        email: activeConnection.email || '',
-        avatar: activeConnection.avatar_url,
-      };
-    }
     return { name: 'User', email: '' };
-  }, [restoredUser, activeConnection]);
+  }, [restoredUser]);
 
   const handleEmailLogin = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -92,7 +78,7 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
       await loginWithPassword(email.trim(), password);
       onComplete();
     } catch (err: any) {
-      message.error(err.message || 'Login failed');
+      message.error(err.message || t('auth.login.failed'));
     } finally {
       setLoading(false);
     }
@@ -131,11 +117,11 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
         setAuthState('success');
       } else {
         setAuthState('error');
-        setAuthError('登录未完成，请重试。');
+        setAuthError(t('auth.login.incomplete'));
       }
     } catch (err: any) {
       setAuthState('error');
-      setAuthError(err?.message || '登录失败，请重试。');
+      setAuthError(err?.message || t('auth.login.failedRetry'));
     }
   }, [connectProvider, startAuth]);
 
@@ -196,7 +182,7 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
   };
 
   const panelOpen = !!connectProvider && loginState === 'logged_out';
-  const hasSignedInUser = !!(restoredUser || activeConnection);
+  const hasSignedInUser = !!restoredUser;
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -244,10 +230,10 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
             </Flexbox>
             <Flexbox gap={2} align="center">
               <Text strong style={{ fontSize: 13 }}>
-                使用 {connectProvider.name} 登录
+                {t('auth.login.loginWith', { provider: connectProvider.name })}
               </Text>
               <Text type="secondary" style={{ fontSize: 11, textAlign: 'center' }}>
-                将前往 {connectProvider.name} 完成授权
+                {t('auth.login.redirectHint', { provider: connectProvider.name })}
               </Text>
             </Flexbox>
             <Button
@@ -261,7 +247,7 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
                 width: '100%', borderRadius: 8, height: 32, fontSize: 12,
               }}
             >
-              开始登录
+              {t('auth.login.startAuth')}
             </Button>
           </Flexbox>
         );
@@ -270,9 +256,9 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
         return (
           <Flexbox gap={12} align="center" style={{ padding: '6px 0' }}>
             <Spin size="small" />
-            <Text strong style={{ fontSize: 12 }}>等待完成登录...</Text>
+            <Text strong style={{ fontSize: 12 }}>{t('auth.login.waiting')}</Text>
             <Text type="secondary" style={{ fontSize: 11, textAlign: 'center' }}>
-              请在新打开的窗口完成授权
+              {t('auth.login.waitingHint')}
             </Text>
           </Flexbox>
         );
@@ -282,12 +268,12 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
         return (
           <Flexbox gap={12} align="center">
             <CheckCircle2 size={28} color={token.colorSuccess} />
-            <Text strong style={{ fontSize: 13 }}>登录成功</Text>
+            <Text strong style={{ fontSize: 13 }}>{t('auth.login.success')}</Text>
             <Text type="secondary" style={{ fontSize: 11 }}>
-              {conn ? `欢迎，${conn.user_name || conn.user_id}` : '账号已授权'}
+              {conn ? t('auth.login.successWelcome', { name: conn.user_name || conn.user_id }) : t('auth.login.accountAuthorized')}
             </Text>
             <Button type="primary" size="small" onClick={handleAuthDone} style={{ width: '100%', borderRadius: 8, height: 32, fontSize: 12 }}>
-              完成
+              {t('auth.welcomeBack.continue')}
             </Button>
           </Flexbox>
         );
@@ -297,11 +283,11 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
         return (
           <Flexbox gap={12} align="center">
             <XCircle size={28} color={token.colorError} />
-            <Text strong style={{ fontSize: 13 }}>登录失败</Text>
+            <Text strong style={{ fontSize: 13 }}>{t('auth.login.failed')}</Text>
             <Text type="secondary" style={{ fontSize: 11, textAlign: 'center' }}>{authError}</Text>
             <Flexbox horizontal gap={6} style={{ width: '100%' }}>
-              <Button size="small" onClick={handleDrawerClose} style={{ flex: 1, borderRadius: 8, height: 32, fontSize: 12 }}>取消</Button>
-              <Button type="primary" size="small" onClick={handleSignIn} style={{ flex: 1, borderRadius: 8, height: 32, fontSize: 12 }}>重试</Button>
+              <Button size="small" onClick={handleDrawerClose} style={{ flex: 1, borderRadius: 8, height: 32, fontSize: 12 }}>{t('auth.login.cancelAction')}</Button>
+              <Button type="primary" size="small" onClick={handleSignIn} style={{ flex: 1, borderRadius: 8, height: 32, fontSize: 12 }}>{t('auth.login.retryAction')}</Button>
             </Flexbox>
           </Flexbox>
         );
@@ -379,10 +365,10 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
               )}
 
               <h2 style={{ fontSize: 22, fontWeight: 700, color: token.colorText, margin: '0 0 6px' }}>
-                Welcome
+                {t('auth.login.title')}
               </h2>
               <Text type="secondary" style={{ fontSize: 13, marginBottom: 24 }}>
-                Sign in to your account to continue
+                {t('auth.login.subtitle')}
               </Text>
 
               <div
@@ -397,10 +383,10 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
                 }}
               >
                 <button style={tabStyle(tab === 'quick')} onClick={() => { setTab('quick'); }}>
-                  Quick Login
+                  {t('auth.login.tab.quick')}
                 </button>
                 <button style={tabStyle(tab === 'email')} onClick={() => { setTab('email'); setConnectProvider(null); setAuthState('idle'); setAuthError(''); }}>
-                  Email Login
+                  {t('auth.login.tab.email')}
                 </button>
               </div>
 
@@ -424,16 +410,16 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
                         }
                         onClick={() => handleOAuthConnect(provider)}
                       >
-                        Continue with {provider.name}
+                        {t('auth.login.continueWith', { provider: provider.name })}
                       </Button>
                     ))}
                     {oauth2AccountProviders.length === 0 && (
                       <>
                         <Button style={oauthButtonStyle} icon={<Github size={18} />} disabled>
-                          Continue with GitHub
+                          {t('auth.login.continueWith', { provider: 'GitHub' })}
                         </Button>
                         <Button style={oauthButtonStyle} icon={<GoogleIcon />} disabled>
-                          Continue with Google
+                          {t('auth.login.continueWith', { provider: 'Google' })}
                         </Button>
                       </>
                     )}
@@ -444,7 +430,7 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
                       <Input
                         size="large"
                         prefix={<Mail size={16} style={{ color: token.colorTextQuaternary }} />}
-                        placeholder="Email address"
+                        placeholder={t('auth.login.email.placeholder')}
                         type="email"
                         value={email}
                         onChange={e => setEmail(e.target.value)}
@@ -464,7 +450,7 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
                             </span>
                           }
                           type={showPassword ? 'text' : 'password'}
-                          placeholder="Password"
+                          placeholder={t('auth.login.password.placeholder')}
                           value={password}
                           onChange={e => setPassword(e.target.value)}
                           style={{ borderRadius: 12, height: 44, flex: 1 }}
@@ -484,7 +470,7 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
                           icon={!loading ? <ArrowRight size={16} /> : undefined}
                           iconPosition="end"
                         >
-                          Sign In
+                          {t('auth.login.submit')}
                         </Button>
                       </Flexbox>
                     </Flexbox>
@@ -527,7 +513,7 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
               </div>
 
               <h2 style={{ fontSize: 22, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
-                Welcome back,
+                {t('auth.welcomeBack.title')}
               </h2>
               <h3 style={{ fontSize: 18, fontWeight: 700, color: token.colorText, margin: '0 0 6px' }}>
                 {welcomeUser.name}
@@ -546,7 +532,7 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
                   icon={<RefreshCw size={16} />}
                   onClick={handleSwitchAccount}
                 >
-                  Switch Account
+                  {t('auth.welcomeBack.switchAccount')}
                 </Button>
                 <Button
                   type="primary"
@@ -556,7 +542,7 @@ export function LoginPage({ onComplete, restoredUser, embedded }: Props) {
                   iconPosition="end"
                   onClick={onComplete}
                 >
-                  Continue
+                  {t('auth.welcomeBack.continue')}
                 </Button>
               </Flexbox>
             </>

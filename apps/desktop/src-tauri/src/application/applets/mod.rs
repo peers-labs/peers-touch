@@ -30,7 +30,7 @@ fn current_access_context(state: &AppState) -> Result<AccessContext, AppResult<S
         }),
         Err(_) => Err(AppResult::fail(
             ErrorCode::InternalError,
-            "failed to access session state",
+            "error.auth.sessionLockFailed",
             None,
         )),
     }
@@ -56,7 +56,7 @@ fn ensure_allowed(
     );
     Err(AppResult::fail(
         ErrorCode::Forbidden,
-        "applet capability denied",
+        "error.applets.capabilityDenied",
         Some(serde_json::json!({
             "requestId": request_id,
             "capability": capability
@@ -117,7 +117,7 @@ fn invoke_gateway(
             );
             return AppResult::fail(
                 ErrorCode::NotImplemented,
-                "unsupported applet command",
+                "error.applets.unsupportedCommand",
                 Some(serde_json::json!({
                     "requestId": request_id,
                     "command": command

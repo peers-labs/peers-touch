@@ -15,6 +15,7 @@ import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
 import { UpdateProviderModal } from './UpdateProviderModal';
 import { api } from '../../services/desktop_api';
+import { useTranslation } from 'react-i18next';
 
 const { Text, Title, Link } = Typography;
 
@@ -91,6 +92,7 @@ function formatContextWindow(v: number): string {
 }
 
 export function ProviderDetail() {
+  const { t } = useTranslation('provider');
   const {
     detail, loading, updateProvider, toggleProvider,
     checkProvider, deleteProvider, addModel, updateModel, deleteModel,
@@ -195,14 +197,14 @@ export function ProviderDetail() {
   if (!detail) {
     return (
       <Flexbox flex={1} align="center" justify="center">
-        <Text type="secondary">Select a provider from the list</Text>
+        <Text type="secondary">{t('provider.detail.selectProvider')}</Text>
       </Flexbox>
     );
   }
 
   const handleCheck = async () => {
     if (!checkModel) {
-      message.warning('Please enter a model ID for connectivity test');
+      message.warning(t('provider.detail.checkWarning'));
       return;
     }
     setChecking(true);
@@ -211,13 +213,13 @@ export function ProviderDetail() {
       const result = await checkProvider(detail.id, apiKey || undefined, baseUrl || undefined, checkModel);
       if (result.ok) {
         setCheckPass(true);
-        message.success('Connection successful!');
+        message.success(t('provider.detail.connectionSuccessful'));
         doFetchModels(true);
       } else {
-        message.error(result.error || 'Connection failed');
+        message.error(result.error || t('provider.detail.connectionFailed'));
       }
     } catch {
-      message.error('Connection check failed');
+      message.error(t('provider.detail.connectionCheckFailed'));
     } finally {
       setChecking(false);
     }
@@ -234,17 +236,17 @@ export function ProviderDetail() {
           for (const id of newModels) {
             await addModel(detail.id, { id, display_name: '', type: 'chat', context_window: 128000 });
           }
-          message.success(`Fetched ${newModels.length} new model(s)`);
+          message.success(t('provider.model.fetchedNew', { count: newModels.length }));
         } else if (!silent) {
-          message.info('No new models found');
+          message.info(t('provider.model.noNewModels'));
         }
         await selectProvider(detail.id);
       } else if (!silent) {
-        message.error(result.error || 'Failed to fetch models');
+        message.error(result.error || t('provider.model.failedToFetch'));
       }
     } catch (e: unknown) {
       if (!silent) {
-        message.error(e instanceof Error ? e.message : 'Failed to fetch models');
+        message.error(e instanceof Error ? e.message : t('provider.model.failedToFetch'));
       }
     } finally {
       setFetching(false);
@@ -254,18 +256,18 @@ export function ProviderDetail() {
   const handleDelete = async () => {
     try {
       await deleteProvider(detail.id);
-      message.success('Provider deleted');
+      message.success(t('provider.detail.deleted'));
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : 'Failed to delete');
+      message.error(e instanceof Error ? e.message : t('provider.detail.failedToDelete'));
     }
   };
 
   const handleDeleteModel = async (modelId: string) => {
     try {
       await deleteModel(detail.id, modelId);
-      message.success('Model removed');
+      message.success(t('provider.model.removed'));
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : 'Failed to delete model');
+      message.error(e instanceof Error ? e.message : t('provider.model.failedToRemove'));
     }
   };
 
@@ -335,13 +337,13 @@ export function ProviderDetail() {
                     color: token.colorTextTertiary,
                   }}
                 >
-                  Not Configured
+                  {t('provider.detail.notConfigured')}
                 </Tag>
               )}
             </Flexbox>
           </Flexbox>
           <Flexbox horizontal align="center" gap={8}>
-            <Tooltip title="Provider Settings">
+            <Tooltip title={t('provider.detail.providerSettings')}>
               <Button
                 type="text"
                 size="small"
@@ -357,15 +359,15 @@ export function ProviderDetail() {
                 icon={<Trash2 size={14} />}
                 onClick={() => {
                   Modal.confirm({
-                    title: 'Delete this provider?',
-                    content: `Provider "${detail.name}" and all its configuration will be permanently deleted.`,
-                    okText: 'Delete',
+                    title: t('provider.detail.deleteConfirm.title'),
+                    content: t('provider.detail.deleteConfirm.content', { name: detail.name }),
+                    okText: t('provider.detail.deleteConfirm.ok'),
                     okButtonProps: { danger: true },
                     onOk: handleDelete,
                   });
                 }}
               >
-                Delete
+                {t('provider.detail.delete')}
               </Button>
             )}
             <Switch
@@ -380,21 +382,21 @@ export function ProviderDetail() {
                     if (refs.length > 0) {
                       const slotNames = refs.map((r) => `• ${r.slot} (${r.model})`).join('\n');
                       Modal.confirm({
-                        title: 'Provider in use by Model Service',
+                        title: t('provider.detail.disableConfirm.title'),
                         content: (
                           <div>
-                            <p>Disabling this provider will affect these Model Service configurations:</p>
+                            <p>{t('provider.detail.disableConfirm.desc')}</p>
                             <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{slotNames}</pre>
-                            <p>You will need to reconfigure them in Settings → Model Service.</p>
+                            <p>{t('provider.detail.disableConfirm.note')}</p>
                           </div>
                         ),
                         onOk: async () => {
                           setEnabled(false);
                           try { await toggleProvider(detail.id, false); }
-                          catch { setEnabled(true); message.error('Failed to toggle provider'); }
+                          catch { setEnabled(true); message.error(t('provider.detail.failedToToggle')); }
                         },
-                        okText: 'Disable anyway',
-                        cancelText: 'Cancel',
+                        okText: t('provider.detail.disableConfirm.ok'),
+                        cancelText: t('provider.detail.disableConfirm.cancel'),
                       });
                       return;
                     }
@@ -406,7 +408,7 @@ export function ProviderDetail() {
                   await toggleProvider(detail.id, checked);
                 } catch {
                   setEnabled(!checked);
-                  message.error('Failed to toggle provider');
+                  message.error(t('provider.detail.failedToToggle'));
                 }
               }}
             />
@@ -416,32 +418,32 @@ export function ProviderDetail() {
         {/* Form Body */}
         <div style={{ padding: '0 20px' }}>
           <FormRow
-            label="API Key"
+            label={t('provider.detail.apiKey')}
             desc={
               detail.api_key_url ? (
                 <>
-                  Please enter your {detail.name} API Key.{' '}
+                  {t('provider.detail.apiKeyDescWithLink', { name: detail.name })}{' '}
                   <Link href={detail.api_key_url} target="_blank" style={{ fontSize: 12 }}>
-                    Get API Key <ExternalLink size={10} style={{ marginLeft: 2 }} />
+                    {t('provider.detail.getApiKey')} <ExternalLink size={10} style={{ marginLeft: 2 }} />
                   </Link>
                 </>
               ) : (
-                `Please enter your ${detail.name} API Key`
+                t('provider.detail.apiKeyDesc', { name: detail.name })
               )
             }
           >
             <InputPassword
               value={apiKey}
               onChange={(e) => handleApiKeyChange(e.target.value)}
-              placeholder="Please enter your API Key"
+              placeholder={t('provider.detail.apiKeyPlaceholder')}
               autoComplete="new-password"
               style={{ width: '100%' }}
             />
           </FormRow>
 
           <FormRow
-            label="API Proxy URL"
-            desc="Must include http(s)://"
+            label={t('provider.detail.apiProxyUrl')}
+            desc={t('provider.detail.apiProxyUrlDesc')}
           >
             <Input
               value={baseUrl}
@@ -454,8 +456,8 @@ export function ProviderDetail() {
 
           {detail.show_checker && (
             <FormRow
-              label="Connectivity Check"
-              desc="Test if the API Key and proxy URL are correctly filled"
+              label={t('provider.detail.connectivityCheck')}
+              desc={t('provider.detail.connectivityCheckDesc')}
             >
               <Flexbox horizontal gap={8} style={{ width: '100%' }}>
                 <AutoComplete
@@ -465,7 +467,7 @@ export function ProviderDetail() {
                     setCheckPass(false);
                   }}
                   options={modelOptions}
-                  placeholder="Enter or select model ID"
+                  placeholder={t('provider.detail.enterModelId')}
                   style={{ flex: 1 }}
                   filterOption={(input, option) =>
                     (option?.value as string)?.toLowerCase().includes(input.toLowerCase()) ||
@@ -483,7 +485,7 @@ export function ProviderDetail() {
                       : undefined
                   }
                 >
-                  {checkPass ? 'Pass' : 'Check'}
+                  {checkPass ? t('provider.detail.checkPass') : t('provider.detail.check')}
                 </Button>
               </Flexbox>
             </FormRow>
@@ -503,16 +505,7 @@ export function ProviderDetail() {
           >
             <Lock size={12} />
             <span>
-              Your key and proxy URL will be encrypted using{' '}
-              <a
-                href="https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/encrypt#aes-gcm"
-                target="_blank"
-                rel="noreferrer"
-                style={{ color: token.colorPrimary }}
-              >
-                AES-GCM
-              </a>{' '}
-              encryption algorithm
+              {t('provider.detail.encryptionNotice')}
             </span>
           </Flexbox>
         </div>
@@ -522,9 +515,9 @@ export function ProviderDetail() {
       <Flexbox gap={12} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         <Flexbox horizontal justify="space-between" align="center" style={{ flexShrink: 0 }}>
           <Flexbox horizontal align="center" gap={8}>
-            <Title level={5} style={{ margin: 0 }}>Model List</Title>
+            <Title level={5} style={{ margin: 0 }}>{t('provider.model.title')}</Title>
             <Text type="secondary" style={{ fontSize: 13 }}>
-              {filteredModels.length} of {allModels.length} models
+              {t('provider.model.count', { filtered: filteredModels.length, total: allModels.length })}
             </Text>
           </Flexbox>
           <Flexbox horizontal gap={8}>
@@ -536,13 +529,13 @@ export function ProviderDetail() {
                   onClick={async () => {
                     try {
                       await toggleAllModels(detail.id, true);
-                      message.success('All models enabled');
+                      message.success(t('provider.model.allEnabled'));
                     } catch (e) {
-                      message.error('Failed to enable all models');
+                      message.error(t('provider.model.failedToEnableAll'));
                     }
                   }}
                 >
-                  Enable All
+                  {t('provider.model.enableAll')}
                 </Button>
                 <Button
                   size="small"
@@ -550,18 +543,18 @@ export function ProviderDetail() {
                   onClick={async () => {
                     try {
                       await toggleAllModels(detail.id, false);
-                      message.success('All models disabled');
+                      message.success(t('provider.model.allDisabled'));
                     } catch (e) {
-                      message.error('Failed to disable all models');
+                      message.error(t('provider.model.failedToDisableAll'));
                     }
                   }}
                 >
-                  Disable All
+                  {t('provider.model.disableAll')}
                 </Button>
               </>
             )}
             <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-              Add Model
+              {t('provider.model.addModel')}
             </Button>
             <Button
               size="small"
@@ -570,7 +563,7 @@ export function ProviderDetail() {
               loading={fetching}
               onClick={() => doFetchModels(false)}
             >
-              Fetch models
+              {t('provider.model.fetchModels')}
             </Button>
           </Flexbox>
         </Flexbox>
@@ -578,7 +571,7 @@ export function ProviderDetail() {
         {allModels.length > 0 && (
           <>
           <Input
-            placeholder="Search models..."
+            placeholder={t('provider.model.searchModels')}
             prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
             value={modelSearchKeyword}
             onChange={(e) => setModelSearchKeyword(e.target.value)}
@@ -591,13 +584,13 @@ export function ProviderDetail() {
             onChange={setModelTypeTab}
             style={{ flexShrink: 0 }}
             items={[
-              { key: 'all', label: <span><Grid3X3 size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />All ({modelTypeCounts.all})</span> },
-              { key: 'chat', label: <span><MessageSquare size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />Chat ({modelTypeCounts.chat ?? 0})</span> },
-              { key: 'image', label: <span><Image size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />Image ({modelTypeCounts.image ?? 0})</span> },
-              { key: 'video', label: <span><Video size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />Video ({modelTypeCounts.video ?? 0})</span> },
-              { key: 'embedding', label: <span><Zap size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />Embedding ({modelTypeCounts.embedding ?? 0})</span> },
-              { key: 'stt', label: <span><Mic size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />ASR ({modelTypeCounts.stt ?? 0})</span> },
-              { key: 'tts', label: <span><AudioLines size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />TTS ({modelTypeCounts.tts ?? 0})</span> },
+              { key: 'all', label: <span><Grid3X3 size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.all', { count: modelTypeCounts.all })}</span> },
+              { key: 'chat', label: <span><MessageSquare size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.chat', { count: modelTypeCounts.chat ?? 0 })}</span> },
+              { key: 'image', label: <span><Image size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.image', { count: modelTypeCounts.image ?? 0 })}</span> },
+              { key: 'video', label: <span><Video size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.video', { count: modelTypeCounts.video ?? 0 })}</span> },
+              { key: 'embedding', label: <span><Zap size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.embedding', { count: modelTypeCounts.embedding ?? 0 })}</span> },
+              { key: 'stt', label: <span><Mic size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.asr', { count: modelTypeCounts.stt ?? 0 })}</span> },
+              { key: 'tts', label: <span><AudioLines size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />{t('provider.model.tab.tts', { count: modelTypeCounts.tts ?? 0 })}</span> },
             ]}
           />
           </>
@@ -639,25 +632,25 @@ export function ProviderDetail() {
                     )}
                     <Tag style={{ fontSize: 11, margin: 0 }}>{m.type}</Tag>
                     {m.type === 'embedding' && (
-                      <Tag color="green" style={{ fontSize: 10, margin: 0 }}>Embedding</Tag>
+                      <Tag color="green" style={{ fontSize: 10, margin: 0 }}>{t('provider.model.embeddingTag')}</Tag>
                     )}
                     {m.function_call && (
-                      <Tooltip title="Tool Use"><Wrench size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
+                      <Tooltip title={t('provider.model.capability.toolUse')}><Wrench size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
                     )}
                     {m.vision && (
-                      <Tooltip title="Vision"><Eye size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
+                      <Tooltip title={t('provider.model.capability.vision')}><Eye size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
                     )}
                     {m.reasoning && (
-                      <Tooltip title="Deep Thinking"><Sparkles size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
+                      <Tooltip title={t('provider.model.capability.deepThinking')}><Sparkles size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
                     )}
                     {m.search && (
-                      <Tooltip title="Built-in Search"><Globe size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
+                      <Tooltip title={t('provider.model.capability.builtInSearch')}><Globe size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
                     )}
                     {m.image_output && (
-                      <Tooltip title="Image Output"><Image size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
+                      <Tooltip title={t('provider.model.capability.imageOutput')}><Image size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
                     )}
                     {m.video && (
-                      <Tooltip title="Video"><Video size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
+                      <Tooltip title={t('provider.model.capability.videoRecognition')}><Video size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
                     )}
                     <Switch
                       size="small"
@@ -666,11 +659,11 @@ export function ProviderDetail() {
                         try {
                           await toggleModel(detail.id, m.id, checked);
                         } catch (e) {
-                          message.error('Failed to toggle model');
+                          message.error(t('provider.model.failedToToggle'));
                         }
                       }}
                     />
-                    <Tooltip title="Edit model config">
+                    <Tooltip title={t('provider.model.editConfig')}>
                       <Button
                         type="text"
                         size="small"
@@ -679,7 +672,7 @@ export function ProviderDetail() {
                         style={{ width: 24, height: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: token.colorTextSecondary }}
                       />
                     </Tooltip>
-                    <Tooltip title="Remove model">
+                    <Tooltip title={t('provider.model.removeModel')}>
                       <Button
                         type="text"
                         size="small"
@@ -719,14 +712,14 @@ export function ProviderDetail() {
                 <Brain size={28} style={{ color: token.colorTextQuaternary }} />
               </div>
               <Flexbox align="center" gap={4}>
-                <Text strong style={{ fontSize: 14 }}>No available models</Text>
+                <Text strong style={{ fontSize: 14 }}>{t('provider.model.empty.title')}</Text>
                 <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
-                  Please create a custom model<br />or pull a model to get started.
+                  {t('provider.model.empty.desc')}
                 </Text>
               </Flexbox>
               <Flexbox horizontal gap={12}>
                 <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                  Add Model
+                  {t('provider.model.addModel')}
                 </Button>
                 <Button
                   type="primary"
@@ -734,7 +727,7 @@ export function ProviderDetail() {
                   loading={fetching}
                   onClick={() => doFetchModels(false)}
                 >
-                  Fetch models
+                  {t('provider.model.fetchModels')}
                 </Button>
               </Flexbox>
             </Flexbox>
@@ -762,7 +755,7 @@ export function ProviderDetail() {
         onSave={async (data) => {
           if (!editModel) return;
           await updateModel(detail.id, editModel.id, data);
-          message.success('Model updated');
+          message.success(t('provider.model.updated'));
           setEditModel(null);
         }}
       />
@@ -787,6 +780,7 @@ function AddModelModal({
     search?: boolean; image_output?: boolean; video?: boolean;
   }) => Promise<void>;
 }) {
+  const { t } = useTranslation('provider');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [ctxSlider, setCtxSlider] = useState(6);
@@ -813,7 +807,7 @@ function AddModelModal({
       setLoading(true);
       values.context_window = ctxValue;
       await onAdd(providerId, values);
-      message.success('Model added');
+      message.success(t('provider.addModel.created'));
       form.resetFields();
       setCtxSlider(6);
       setCtxValue(128000);
@@ -827,7 +821,7 @@ function AddModelModal({
 
   return (
     <Modal
-      title="Create Custom AI Model"
+      title={t('provider.addModel.title')}
       open={open}
       onCancel={onClose}
       footer={null}
@@ -846,21 +840,20 @@ function AddModelModal({
       >
         <Form.Item
           name="id"
-          label="Model ID"
-          rules={[{ required: true, message: 'Model ID is required' }]}
-          extra="This cannot be modified after creation and will be used as the model ID when calling AI"
+          label={t('provider.addModel.modelId')}
+          rules={[{ required: true, message: t('provider.addModel.modelIdRequired') }]}
+          extra={t('provider.addModel.modelIdExtra')}
         >
-          <Input placeholder="Please enter the model ID, e.g., gpt-4o or claude-3.5-sonnet" autoFocus />
+          <Input placeholder={t('provider.addModel.modelIdPlaceholder')} autoFocus />
         </Form.Item>
 
         <Form.Item
           name="display_name"
-          label="Model Display Name"
-        >
-          <Input placeholder="Please enter the display name of the model, e.g., ChatGPT, GPT-4, etc." />
+          label={t('provider.addModel.displayName')}>
+          <Input placeholder={t('provider.addModel.displayNamePlaceholder')} />
         </Form.Item>
 
-        <Form.Item label="Maximum Context Window">
+        <Form.Item label={t('provider.addModel.maxContext')}>
           <Flexbox gap={12}>
             <Flexbox horizontal gap={16} align="center">
               <Slider
@@ -880,7 +873,7 @@ function AddModelModal({
               />
             </Flexbox>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              Set the maximum number of tokens supported by the model
+              {t('provider.addModel.maxContextDesc')}
             </Text>
           </Flexbox>
         </Form.Item>
@@ -890,72 +883,72 @@ function AddModelModal({
         <Form.Item
           name="function_call"
           valuePropName="checked"
-          label="Support Tool Use"
-          extra="This configuration will only enable the model's ability to use tools. Whether the model can truly use the tools depends entirely on the model itself; please test for usability on your own."
+          label={t('provider.addModel.supportToolUse')}
+          extra={t('provider.addModel.supportToolUseExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="vision"
           valuePropName="checked"
-          label="Support Vision"
-          extra="This configuration will only enable image upload capabilities in the application. Whether recognition is supported depends entirely on the model itself. Please test the visual recognition capabilities of the model yourself."
+          label={t('provider.addModel.supportVision')}
+          extra={t('provider.addModel.supportVisionExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="reasoning"
           valuePropName="checked"
-          label="Support Deep Thinking"
-          extra="This configuration will enable the model's deep thinking capabilities, and the specific effects depend entirely on the model itself. Please test whether this model has usable deep thinking abilities."
+          label={t('provider.addModel.supportDeepThinking')}
+          extra={t('provider.addModel.supportDeepThinkingExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="search"
           valuePropName="checked"
-          label="Support Built-in Search"
-          extra="This setting enables the model's built-in web search capability. Whether the built-in search engine is supported depends on the model itself. Please test the model to verify the availability of this feature."
+          label={t('provider.addModel.supportSearch')}
+          extra={t('provider.addModel.supportSearchExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="image_output"
           valuePropName="checked"
-          label="Support Image Generation"
-          extra="This setting enables the model's image generation capability only. The actual performance depends entirely on the model itself. Please test the model to determine if it supports image generation."
+          label={t('provider.addModel.supportImageGen')}
+          extra={t('provider.addModel.supportImageGenExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="video"
           valuePropName="checked"
-          label="Support Video Recognition"
-          extra="This setting enables video recognition configuration within the application. Whether video recognition is supported depends entirely on the model itself. Please test the model to verify the availability of this feature."
+          label={t('provider.addModel.supportVideo')}
+          extra={t('provider.addModel.supportVideoExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="type"
-          label="Model Type"
-          extra="Different model types have distinct use cases and capabilities."
+          label={t('provider.addModel.modelType')}
+          extra={t('provider.addModel.modelTypeExtra')}
         >
           <Select
             options={[
-              { value: 'chat', label: 'Chat (chat)' },
-              { value: 'image', label: 'Image (image)' },
-              { value: 'video', label: 'Video (video)' },
-              { value: 'embedding', label: 'Embedding (embedding)' },
-              { value: 'stt', label: 'ASR (stt)' },
-              { value: 'tts', label: 'TTS (tts)' },
-              { value: 'realtime', label: 'Realtime (realtime)' },
+              { value: 'chat', label: t('provider.addModel.type.chat') },
+              { value: 'image', label: t('provider.addModel.type.image') },
+              { value: 'video', label: t('provider.addModel.type.video') },
+              { value: 'embedding', label: t('provider.addModel.type.embedding') },
+              { value: 'stt', label: t('provider.addModel.type.stt') },
+              { value: 'tts', label: t('provider.addModel.type.tts') },
+              { value: 'realtime', label: t('provider.addModel.type.realtime') },
             ]}
-            placeholder="Select model type"
+            placeholder={t('provider.addModel.modelTypePlaceholder')}
           />
         </Form.Item>
 
         <Button type="primary" block size="large" onClick={handleOk} loading={loading}>
-          Create Model
+          {t('provider.addModel.createBtn')}
         </Button>
       </Form>
     </Modal>
@@ -975,6 +968,7 @@ function EditModelModal({
   onClose: () => void;
   onSave: (data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => Promise<void>;
 }) {
+  const { t } = useTranslation('provider');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [ctxSlider, setCtxSlider] = useState(6);
@@ -1034,7 +1028,7 @@ function EditModelModal({
 
   return (
     <Modal
-      title="Custom Model Configuration"
+      title={t('provider.editModel.title')}
       open={open}
       onCancel={onClose}
       footer={null}
@@ -1050,15 +1044,15 @@ function EditModelModal({
         labelAlign="left"
         colon={false}
       >
-        <Form.Item label="Model ID">
+        <Form.Item label={t('provider.editModel.modelId')}>
           <Text type="secondary">{model.id}</Text>
         </Form.Item>
 
-        <Form.Item name="display_name" label="Model Display Name">
-          <Input placeholder="Display name" />
+        <Form.Item name="display_name" label={t('provider.editModel.displayName')}>
+          <Input placeholder={t('provider.editModel.displayNamePlaceholder')} />
         </Form.Item>
 
-        <Form.Item label="Maximum Context Window">
+        <Form.Item label={t('provider.editModel.maxContext')}>
           <Flexbox gap={12}>
             <Flexbox horizontal gap={16} align="center">
               <Slider
@@ -1080,7 +1074,7 @@ function EditModelModal({
           </Flexbox>
         </Form.Item>
 
-        <Form.Item name="enabled" valuePropName="checked" label="Enabled">
+        <Form.Item name="enabled" valuePropName="checked" label={t('provider.editModel.enabled')}>
           <Switch />
         </Form.Item>
 
@@ -1089,72 +1083,72 @@ function EditModelModal({
         <Form.Item
           name="function_call"
           valuePropName="checked"
-          label="Support Tool Use"
-          extra="This configuration will only enable the model's ability to use tools. Whether the model can truly use the tools depends entirely on the model itself; please test for usability on your own."
+          label={t('provider.addModel.supportToolUse')}
+          extra={t('provider.addModel.supportToolUseExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="vision"
           valuePropName="checked"
-          label="Support Vision"
-          extra="This configuration will only enable image upload capabilities in the application. Whether recognition is supported depends entirely on the model itself. Please test the visual recognition capabilities of the model yourself."
+          label={t('provider.addModel.supportVision')}
+          extra={t('provider.addModel.supportVisionExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="reasoning"
           valuePropName="checked"
-          label="Support Deep Thinking"
-          extra="This configuration will enable the model's deep thinking capabilities, and the specific effects depend entirely on the model itself. Please test whether this model has usable deep thinking abilities."
+          label={t('provider.addModel.supportDeepThinking')}
+          extra={t('provider.addModel.supportDeepThinkingExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="search"
           valuePropName="checked"
-          label="Support Built-in Search"
-          extra="This setting enables the model's built-in web search capability. Whether the built-in search engine is supported depends on the model itself. Please test the model to verify the availability of this feature."
+          label={t('provider.addModel.supportSearch')}
+          extra={t('provider.addModel.supportSearchExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="image_output"
           valuePropName="checked"
-          label="Support Image Generation"
-          extra="This setting enables the model's image generation capability only. The actual performance depends entirely on the model itself. Please test the model to determine if it supports image generation."
+          label={t('provider.addModel.supportImageGen')}
+          extra={t('provider.addModel.supportImageGenExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="video"
           valuePropName="checked"
-          label="Support Video Recognition"
-          extra="This setting enables video recognition configuration within the application. Whether video recognition is supported depends entirely on the model itself. Please test the model to verify the availability of this feature."
+          label={t('provider.addModel.supportVideo')}
+          extra={t('provider.addModel.supportVideoExtra')}
         >
           <Checkbox />
         </Form.Item>
         <Form.Item
           name="type"
-          label="Model Type"
-          extra="Different model types have distinct use cases and capabilities."
+          label={t('provider.addModel.modelType')}
+          extra={t('provider.addModel.modelTypeExtra')}
         >
           <Select
             options={[
-              { value: 'chat', label: 'Chat (chat)' },
-              { value: 'image', label: 'Image (image)' },
-              { value: 'video', label: 'Video (video)' },
-              { value: 'embedding', label: 'Embedding (embedding)' },
-              { value: 'stt', label: 'ASR (stt)' },
-              { value: 'tts', label: 'TTS (tts)' },
-              { value: 'realtime', label: 'Realtime (realtime)' },
+              { value: 'chat', label: t('provider.addModel.type.chat') },
+              { value: 'image', label: t('provider.addModel.type.image') },
+              { value: 'video', label: t('provider.addModel.type.video') },
+              { value: 'embedding', label: t('provider.addModel.type.embedding') },
+              { value: 'stt', label: t('provider.addModel.type.stt') },
+              { value: 'tts', label: t('provider.addModel.type.tts') },
+              { value: 'realtime', label: t('provider.addModel.type.realtime') },
             ]}
-            placeholder="Select model type"
+            placeholder={t('provider.addModel.modelTypePlaceholder')}
           />
         </Form.Item>
 
         <Button type="primary" block size="large" onClick={handleOk} loading={loading}>
-          Save Changes
+          {t('provider.editModel.saveChanges')}
         </Button>
       </Form>
     </Modal>

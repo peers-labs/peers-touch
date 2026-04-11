@@ -538,6 +538,7 @@ func (s *subServer) handleSearchUsers(ctx context.Context, req server.Request, r
 			DisplayName: a.Name,
 			Email:       a.Email,
 			ActorId:     a.ID,
+			Avatar:      a.Icon,
 		}
 	}
 

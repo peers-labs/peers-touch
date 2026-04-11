@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Users, AlertCircle } from 'lucide-react';
 import { Tooltip, theme } from 'antd';
@@ -18,6 +19,7 @@ export function OnlineIndicator() {
   const [count, setCount] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const { token } = theme.useToken();
+  const { t } = useTranslation('layout');
 
   const sendHeartbeat = useCallback(async () => {
     try {
@@ -39,7 +41,7 @@ export function OnlineIndicator() {
   if (count === null) return null;
 
   return (
-    <Tooltip title={`${count} visitor${count !== 1 ? 's' : ''} online in the last 5 minutes`}>
+    <Tooltip title={t('layout.online.tooltip', { count })}>
       <Flexbox
         horizontal
         align="center"
@@ -95,6 +97,7 @@ export function AuthStatusIndicator() {
   const loading = useOAuth2Store((s) => s.loading);
   const loadAll = useOAuth2Store((s) => s.loadAll);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const { t } = useTranslation('layout');
 
   useEffect(() => {
     loadAll();
@@ -126,7 +129,7 @@ export function AuthStatusIndicator() {
   return (
     <>
       <style>{pulseKeyframes}</style>
-      <Tooltip title="No accounts authorized — click to open Account settings">
+      <Tooltip title={t('layout.auth.noAccounts')}>
         <Flexbox
           align="center"
           justify="center"

@@ -60,6 +60,11 @@ export type Actor = Message<"peers_touch.model.actor.v1.Actor"> & {
    * @generated from field: uint64 actor_id = 9 [json_name = "actor_id"];
    */
   actorId: bigint;
+
+  /**
+   * @generated from field: string avatar = 10;
+   */
+  avatar: string;
 };
 
 /**

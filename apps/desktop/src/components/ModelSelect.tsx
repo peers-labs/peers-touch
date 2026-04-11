@@ -3,6 +3,7 @@ import { Select, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { ProviderIcon } from './settings/ProviderIcon';
 import type { AvailableModel } from '../services/desktop_api';
+import { useTranslation } from 'react-i18next';
 
 interface ModelSelectProps {
   models: AvailableModel[];
@@ -20,14 +21,16 @@ export function ModelSelect({
   models,
   value,
   onChange,
-  placeholder = 'Select model...',
+  placeholder,
   style,
   size = 'middle',
   allowClear = true,
   showWarning: _showWarning,
   disabled,
 }: ModelSelectProps) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
+  const effectivePlaceholder = placeholder ?? t('provider.modelSelect.placeholder');
 
   const groupedOptions = useMemo(() => {
     const groups = new Map<string, AvailableModel[]>();
@@ -47,7 +50,7 @@ export function ModelSelect({
             <span style={{ fontSize: 13 }}>{m.display_name || m.id}</span>
             {m.vision && (
               <span style={{ fontSize: 10, color: token.colorTextDescription, marginLeft: 'auto' }}>
-                vision
+                {t('provider.modelSelect.vision')}
               </span>
             )}
           </Flexbox>
@@ -62,7 +65,7 @@ export function ModelSelect({
     <Select
       value={value || undefined}
       onChange={onChange}
-      placeholder={placeholder}
+      placeholder={effectivePlaceholder}
       style={{ minWidth: 200, ...style }}
       size={size}
       allowClear={allowClear}
@@ -79,7 +82,7 @@ export function ModelSelect({
             <span style={{ fontSize: 13 }}>{selectedModel.display_name || selectedModel.id}</span>
           </Flexbox>
         ) : (
-          <span style={{ color: token.colorTextPlaceholder }}>{placeholder}</span>
+          <span style={{ color: token.colorTextPlaceholder }}>{effectivePlaceholder}</span>
         )
       }
     />

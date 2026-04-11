@@ -52,7 +52,5 @@ fn should_fail_once(retry_key: &str) -> bool {
 
 pub fn publish_chat_event(event: &str, conversation_id: &str, message_id: Option<&str>) {
     let message = message_id.unwrap_or("");
-    println!(
-        "{{\"event\":\"{event}\",\"conversationId\":\"{conversation_id}\",\"messageId\":\"{message}\"}}"
-    );
+    tracing::info!(event = %event, conversation_id = %conversation_id, message_id = %message, "chat event published");
 }

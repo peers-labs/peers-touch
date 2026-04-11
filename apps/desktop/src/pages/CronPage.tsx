@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import {
   Empty,
@@ -38,42 +39,41 @@ function formatDuration(ms: number): string {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
-function formatRelativeTime(isoStr: string): string {
+function formatRelativeTime(isoStr: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (!isoStr) return '—';
   const diff = new Date(isoStr).getTime() - Date.now();
   const absDiff = Math.abs(diff);
   const past = diff < 0;
 
-  if (absDiff < 60000) return past ? 'just now' : 'in < 1m';
+  if (absDiff < 60000) return past ? t('cron.schedule.justNow') : t('cron.schedule.inLessThan1m');
   if (absDiff < 3600000) {
     const m = Math.floor(absDiff / 60000);
-    return past ? `${m}m ago` : `in ${m}m`;
+    return past ? t('cron.schedule.minutesAgo', { count: m }) : t('cron.schedule.inMinutes', { count: m });
   }
   if (absDiff < 86400000) {
     const h = Math.floor(absDiff / 3600000);
-    return past ? `${h}h ago` : `in ${h}h`;
+    return past ? t('cron.schedule.hoursAgo', { count: h }) : t('cron.schedule.inHours', { count: h });
   }
   const d = Math.floor(absDiff / 86400000);
-  return past ? `${d}d ago` : `in ${d}d`;
+  return past ? t('cron.schedule.daysAgo', { count: d }) : t('cron.schedule.inDays', { count: d });
 }
 
-/** Format next run for display: "Next: in 7d" for future, "Due: 7d ago" for past (avoids confusing "Next: 7d ago"). */
-function formatNextRunLabel(isoStr: string): string {
+function formatNextRunLabel(isoStr: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (!isoStr) return '—';
   const diff = new Date(isoStr).getTime() - Date.now();
-  const formatted = formatRelativeTime(isoStr);
-  return diff < 0 ? `Due: ${formatted}` : `Next: ${formatted}`;
+  const formatted = formatRelativeTime(isoStr, t);
+  return diff < 0 ? t('cron.schedule.duePrefix', { time: formatted }) : t('cron.schedule.nextPrefix', { time: formatted });
 }
 
-function scheduleLabel(job: CronJob): string {
+function scheduleLabel(job: CronJob, t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (job.scheduleKind === 'interval') {
     const sec = job.intervalSec;
-    if (sec < 3600) return `Every ${sec / 60}m`;
-    if (sec < 86400) return `Every ${sec / 3600}h`;
-    return `Every ${sec / 86400}d`;
+    if (sec < 3600) return t('cron.schedule.everyMinutes', { count: sec / 60 });
+    if (sec < 86400) return t('cron.schedule.everyHours', { count: sec / 3600 });
+    return t('cron.schedule.everyDays', { count: sec / 86400 });
   }
   if (job.scheduleKind === 'cron') return job.cronExpr;
-  if (job.scheduleKind === 'once') return 'Once';
+  if (job.scheduleKind === 'once') return t('cron.schedule.once');
   return job.scheduleKind;
 }
 
@@ -84,9 +84,10 @@ function ScheduleIcon({ kind }: { kind: string }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  if (status === 'ok') return <Badge status="success" text="OK" />;
-  if (status === 'error') return <Badge status="error" text="Error" />;
-  if (status === 'running') return <Badge status="processing" text="Running" />;
+  const { t } = useTranslation('cron');
+  if (status === 'ok') return <Badge status="success" text={t('cron.status.ok')} />;
+  if (status === 'error') return <Badge status="error" text={t('cron.status.error')} />;
+  if (status === 'running') return <Badge status="processing" text={t('cron.status.running')} />;
   return <Badge status="default" text="—" />;
 }
 
@@ -98,13 +99,14 @@ export function CronPage() {
   const [search, setSearch] = useState('');
   const [runsDrawer, setRunsDrawer] = useState<{ job: CronJob; runs: CronRun[] } | null>(null);
   const [runsLoading, setRunsLoading] = useState(false);
+  const { t } = useTranslation('cron');
 
   const loadJobs = useCallback(async () => {
     try {
       const data = await api.listCronJobs();
       setJobs(data);
     } catch (err: any) {
-      message.error('Failed to load jobs: ' + err.message);
+      message.error(t('cron.list.loadFailed', { message: err.message }));
     } finally {
       setLoading(false);
     }
@@ -128,7 +130,7 @@ export function CronPage() {
   const handleDelete = async (id: string) => {
     try {
       await api.deleteCronJob(id);
-      message.success('Job deleted');
+      message.success(t('cron.job.deleteSuccess'));
       loadJobs();
     } catch (err: any) {
       message.error(err.message);
@@ -138,7 +140,7 @@ export function CronPage() {
   const handleRun = async (id: string) => {
     try {
       await api.runCronJob(id);
-      message.success('Job triggered');
+      message.success(t('cron.job.triggerSuccess'));
       setTimeout(loadJobs, 2000);
     } catch (err: any) {
       message.error(err.message);
@@ -177,15 +179,15 @@ export function CronPage() {
   return (
     <Flexbox style={{ height: '100%', overflow: 'hidden' }}>
       <PageHeader
-        title="Cron Jobs"
+        title={t('cron.header.title')}
         icon={<Clock size={20} />}
         extra={<>
-          <Tag color="blue">{activeCount} active</Tag>
-          {pausedCount > 0 && <Tag>{pausedCount} paused</Tag>}
+          <Tag color="blue">{t('cron.header.activeCount', { count: activeCount })}</Tag>
+          {pausedCount > 0 && <Tag>{t('cron.header.pausedCount', { count: pausedCount })}</Tag>}
         </>}
         actions={<>
           <Button icon={<RefreshCw size={14} />} onClick={loadJobs}>
-            Refresh
+            {t('cron.header.refresh')}
           </Button>
           <Button
             type="primary"
@@ -195,7 +197,7 @@ export function CronPage() {
               setDrawerOpen(true);
             }}
           >
-            New Job
+            {t('cron.header.newJob')}
           </Button>
         </>}
       />
@@ -203,7 +205,7 @@ export function CronPage() {
       <Flexbox style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
       {/* Search */}
       <Input
-        placeholder="Search jobs..."
+        placeholder={t('cron.search.placeholder')}
         prefix={<ChevronRight size={14} />}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -217,10 +219,10 @@ export function CronPage() {
           <Spin />
         </Flexbox>
       ) : filteredJobs.length === 0 ? (
-        <Empty description={search ? 'No matching jobs' : 'No cron jobs yet'}>
+        <Empty description={search ? t('cron.list.noMatchingJobs') : t('cron.list.noJobsYet')}>
           {!search && (
             <Button type="primary" onClick={() => setDrawerOpen(true)}>
-              Create your first job
+              {t('cron.list.createFirst')}
             </Button>
           )}
         </Empty>
@@ -264,7 +266,7 @@ export function CronPage() {
                     >
                       <Flexbox horizontal align="center" gap={4}>
                         <ScheduleIcon kind={job.scheduleKind} />
-                        {scheduleLabel(job)}
+                        {scheduleLabel(job, t)}
                       </Flexbox>
                     </Tag>
                     {job.execKind === 'agent' && job.agentName && job.agentName !== 'assistant' && (
@@ -282,7 +284,7 @@ export function CronPage() {
                     )}
                     {job.nextRunAt && (
                       <Tooltip title={new Date(job.nextRunAt).toLocaleString()}>
-                        <span>{formatNextRunLabel(job.nextRunAt)}</span>
+                        <span>{formatNextRunLabel(job.nextRunAt, t)}</span>
                       </Tooltip>
                     )}
                     {job.lastError && (
@@ -297,7 +299,7 @@ export function CronPage() {
 
                 {/* Actions */}
                 <Flexbox horizontal gap={4} style={{ flexShrink: 0, marginLeft: 12 }}>
-                  <Tooltip title="Run now">
+                  <Tooltip title={t('cron.action.runNow')}>
                     <Button
                       size="small"
                       type="text"
@@ -305,7 +307,7 @@ export function CronPage() {
                       onClick={() => handleRun(job.id)}
                     />
                   </Tooltip>
-                  <Tooltip title="Run history">
+                  <Tooltip title={t('cron.action.runHistory')}>
                     <Button
                       size="small"
                       type="text"
@@ -313,7 +315,7 @@ export function CronPage() {
                       onClick={() => handleShowRuns(job)}
                     />
                   </Tooltip>
-                  <Tooltip title={job.enabled ? 'Pause' : 'Resume'}>
+                  <Tooltip title={job.enabled ? t('cron.action.pause') : t('cron.action.resume')}>
                     <Button
                       size="small"
                       type="text"
@@ -321,7 +323,7 @@ export function CronPage() {
                       onClick={() => handleToggle(job)}
                     />
                   </Tooltip>
-                  <Tooltip title="Edit">
+                  <Tooltip title={t('cron.action.edit')}>
                     <Button
                       size="small"
                       type="text"
@@ -333,12 +335,12 @@ export function CronPage() {
                     />
                   </Tooltip>
                   <Popconfirm
-                    title="Delete this job?"
+                    title={t('cron.job.deleteConfirm')}
                     onConfirm={() => handleDelete(job.id)}
-                    okText="Delete"
-                    cancelText="Cancel"
+                    okText={t('cron.job.deleteOk')}
+                    cancelText={t('cron.job.deleteCancel')}
                   >
-                    <Tooltip title="Delete">
+                    <Tooltip title={t('cron.action.delete')}>
                       <Button size="small" type="text" danger icon={<Trash2 size={14} />} />
                     </Tooltip>
                   </Popconfirm>
@@ -363,7 +365,7 @@ export function CronPage() {
 
       {/* Runs History Drawer */}
       <Drawer
-        title={`Run History — ${runsDrawer?.job.name || ''}`}
+        title={t('cron.runs.title', { name: runsDrawer?.job.name || '' })}
         open={!!runsDrawer}
         onClose={() => setRunsDrawer(null)}
         size="default"
@@ -373,7 +375,7 @@ export function CronPage() {
             <Spin />
           </Flexbox>
         ) : runsDrawer?.runs.length === 0 ? (
-          <Empty description="No runs yet" />
+          <Empty description={t('cron.runs.noRuns')} />
         ) : (
           <Collapse
             items={(runsDrawer?.runs || []).map((run) => ({

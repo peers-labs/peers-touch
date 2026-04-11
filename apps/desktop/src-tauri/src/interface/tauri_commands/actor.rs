@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::contracts::{ActorSearchUsersInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -7,15 +8,15 @@ use reqwest::Method;
 use serde_json::json;
 use tauri::State;
 
-fn token_from_state(state: &State<AppState>) -> Result<String, AppResult<StubPayload>> {
+fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<StubPayload>> {
     let guard = state.session.lock().map_err(|_| {
-        AppResult::fail(ErrorCode::InternalError, "failed to access session state", None)
+        AppResult::fail(ErrorCode::InternalError, "error.auth.sessionLockFailed", None)
     })?;
     let token = guard.token.clone().unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "authentication required",
+            "error.auth.authenticationRequired",
             None,
         ));
     }
@@ -30,7 +31,7 @@ fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn actor_search_users(input: ActorSearchUsersInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn actor_search_users(input: ActorSearchUsersInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -40,7 +41,7 @@ pub fn actor_search_users(input: ActorSearchUsersInput, state: State<AppState>) 
         Method::GET, "/api/v1/social/users/search", &token, Some(&[("q", input.q.clone())]), None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.actor.searchFailed", None),
     };
 
     let items: Vec<serde_json::Value> = resp.items.iter().map(|a| {
@@ -50,6 +51,7 @@ pub fn actor_search_users(input: ActorSearchUsersInput, state: State<AppState>) 
             "displayName": a.display_name,
             "email": a.email,
             "actorId": a.actor_id,
+            "avatar": a.avatar,
         })
     }).collect();
 
@@ -57,7 +59,7 @@ pub fn actor_search_users(input: ActorSearchUsersInput, state: State<AppState>) 
 }
 
 #[tauri::command]
-pub fn actor_get_me(state: State<AppState>) -> AppResult<StubPayload> {
+pub fn actor_get_me(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -67,7 +69,7 @@ pub fn actor_get_me(state: State<AppState>) -> AppResult<StubPayload> {
         Method::GET, "/api/v1/social/users/me", &token, None, None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.actor.getMeFailed", None),
     };
 
     to_stub("actor_get_me", json!({
@@ -80,12 +82,12 @@ pub fn actor_get_me(state: State<AppState>) -> AppResult<StubPayload> {
 
 /// Alias for `actor_search_users` - registered as `actor_search_actors` in the invoke handler.
 #[tauri::command]
-pub fn actor_search_actors(input: ActorSearchUsersInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn actor_search_actors(input: ActorSearchUsersInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     actor_search_users(input, state)
 }
 
 /// Alias for `actor_get_me` - registered as `actor_get_my_profile` in the invoke handler.
 #[tauri::command]
-pub fn actor_get_my_profile(state: State<AppState>) -> AppResult<StubPayload> {
+pub fn actor_get_my_profile(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     actor_get_me(state)
 }

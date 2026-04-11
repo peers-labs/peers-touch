@@ -8,7 +8,7 @@
 
 ## 1. 红线规则
 
-源自 `docs/rules/common.md`:
+源自 [`AGENTS.md` — Iron Laws: No Mocking](../../../../AGENTS.md#no-mocking):
 
 > 1. 所有前后端协同的接口、功能, 如果我不说要使用 mock 先替代, 就不准 mock!
 > 2. 当前端需要使用后端的接口时, 前端使用 mock, 将视为作弊!

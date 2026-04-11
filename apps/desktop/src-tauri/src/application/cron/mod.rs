@@ -26,8 +26,8 @@ impl CronStore {
                 enabled: true,
                 data: json!({
                     "id": "cron-1",
-                    "name": "Daily Brief",
-                    "description": "daily summary",
+                    "name": "i18n:cron.dailyBrief.name",
+                    "description": "i18n:cron.dailyBrief.description",
                     "schedule_kind": "cron",
                     "cron_expr": "0 9 * * *",
                     "timezone": "UTC",
@@ -64,7 +64,7 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 fn internal_error() -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::InternalError,
-        "failed to access cron store",
+        "error.cron.storeAccessFailed",
         None,
     )
 }
@@ -139,7 +139,7 @@ pub fn cron_update_job(input: CronUpdateInput) -> AppResult<StubPayload> {
         }
         return success_payload("cron_update_job", json!({ "job": data }));
     }
-    AppResult::fail(ErrorCode::NotFound, "cron job not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.cron.jobNotFound", None)
 }
 
 pub fn cron_delete_job(input: CronIdInput) -> AppResult<StubPayload> {
@@ -172,7 +172,7 @@ pub fn cron_toggle_job(input: CronToggleInput) -> AppResult<StubPayload> {
         item.enabled = input.enabled;
         return success_payload("cron_toggle_job", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "cron job not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.cron.jobNotFound", None)
 }
 
 pub fn cron_run_job(input: CronIdInput) -> AppResult<StubPayload> {

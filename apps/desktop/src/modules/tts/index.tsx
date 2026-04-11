@@ -1,4 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Form, Select, Slider, Switch, Typography, theme } from 'antd';
 import { Volume2 } from 'lucide-react';
@@ -7,30 +9,37 @@ import { api, type TTSVoice, type UserPreferences } from '../../services/desktop
 
 const { Title, Text } = Typography;
 
-const TTS_PROVIDER_OPTIONS = [
-  { value: 'browser', label: 'Browser (free)' },
-  { value: 'edge', label: 'Edge (free)' },
-  { value: 'openai', label: 'OpenAI' },
-];
+function getTtsProviderOptions(t: TFunction) {
+  return [
+    { value: 'browser', label: t('tts.provider.browser') },
+    { value: 'edge', label: t('tts.provider.edge') },
+    { value: 'openai', label: t('tts.provider.openai') },
+  ];
+}
 
-const STT_PROVIDER_OPTIONS = [
-  { value: 'browser', label: 'Browser (free)' },
-  { value: 'openai', label: 'OpenAI Whisper' },
-];
+function getSttProviderOptions(t: TFunction) {
+  return [
+    { value: 'browser', label: t('stt.provider.browser') },
+    { value: 'openai', label: t('stt.provider.openaiWhisper') },
+  ];
+}
 
-const STT_LANGUAGE_OPTIONS = [
-  { value: 'auto', label: 'Auto-detect' },
-  { value: 'en', label: 'English' },
-  { value: 'zh', label: 'Chinese' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'ko', label: 'Korean' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'es', label: 'Spanish' },
-];
+function getSttLanguageOptions(t: TFunction) {
+  return [
+    { value: 'auto', label: t('stt.language.auto') },
+    { value: 'en', label: t('stt.language.en') },
+    { value: 'zh', label: t('stt.language.zh') },
+    { value: 'ja', label: t('stt.language.ja') },
+    { value: 'ko', label: t('stt.language.ko') },
+    { value: 'fr', label: t('stt.language.fr') },
+    { value: 'de', label: t('stt.language.de') },
+    { value: 'es', label: t('stt.language.es') },
+  ];
+}
 
 function TTSSettings() {
   const { token } = theme.useToken();
+  const { t } = useTranslation('tts');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [apiVoices, setApiVoices] = useState<TTSVoice[]>([]);
@@ -107,27 +116,27 @@ function TTSSettings() {
         disabled={loading}
       >
         <Flexbox gap={4}>
-          <Title level={5} style={{ margin: 0 }}>Text-to-Speech</Title>
+          <Title level={5} style={{ margin: 0 }}>{t('tts.title')}</Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
-            Configure how assistant messages are read aloud.
+            {t('tts.description')}
           </Text>
         </Flexbox>
-        <Form.Item name="tts_provider" label="Provider">
-          <Select options={TTS_PROVIDER_OPTIONS} />
+        <Form.Item name="tts_provider" label={t('tts.provider.label')}>
+          <Select options={getTtsProviderOptions(t)} />
         </Form.Item>
-        <Form.Item name="tts_voice" label="Voice">
+        <Form.Item name="tts_voice" label={t('tts.voice.label')}>
           <Select
             options={voiceOptions}
-            placeholder="Select a voice"
+            placeholder={t('tts.voice.placeholder')}
             allowClear
             showSearch
             optionFilterProp="label"
           />
         </Form.Item>
-        <Form.Item name="tts_speed" label="Speed">
+        <Form.Item name="tts_speed" label={t('tts.speed.label')}>
           <Slider min={0.5} max={2} step={0.1} marks={{ 0.5: '0.5', 1: '1', 1.5: '1.5', 2: '2' }} />
         </Form.Item>
-        <Form.Item name="tts_auto_read" label="Auto-read" valuePropName="checked">
+        <Form.Item name="tts_auto_read" label={t('tts.autoRead.label')} valuePropName="checked">
           <Switch />
         </Form.Item>
 
@@ -139,18 +148,18 @@ function TTSSettings() {
           }}
           gap={4}
         >
-          <Title level={5} style={{ margin: 0 }}>Speech-to-Text</Title>
+          <Title level={5} style={{ margin: 0 }}>{t('stt.title')}</Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
-            Configure voice input and transcription.
+            {t('stt.description')}
           </Text>
         </Flexbox>
-        <Form.Item name="stt_provider" label="Provider">
-          <Select options={STT_PROVIDER_OPTIONS} />
+        <Form.Item name="stt_provider" label={t('stt.provider.label')}>
+          <Select options={getSttProviderOptions(t)} />
         </Form.Item>
-        <Form.Item name="stt_language" label="Language">
-          <Select options={STT_LANGUAGE_OPTIONS} />
+        <Form.Item name="stt_language" label={t('stt.language.label')}>
+          <Select options={getSttLanguageOptions(t)} />
         </Form.Item>
-        <Form.Item name="stt_auto_stop" label="Auto-stop" valuePropName="checked">
+        <Form.Item name="stt_auto_stop" label={t('stt.autoStop.label')} valuePropName="checked">
           <Switch />
         </Form.Item>
       </Form>

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
     ProviderCheckInput, ProviderCreateInput, ProviderIdInput, ProviderUpdateInput, StubPayload,
@@ -6,11 +7,11 @@ use crate::application::provider as application_provider;
 use crate::state::AppState;
 use tauri::State;
 
-fn resolve_scope_from_state(state: &State<AppState>) -> Result<Option<String>, AppResult<StubPayload>> {
+fn resolve_scope_from_state(state: &State<'_, Arc<AppState>>) -> Result<Option<String>, AppResult<StubPayload>> {
     let guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "failed to access session state",
+            "error.auth.sessionLockFailed",
             None,
         )
     })?;
@@ -51,7 +52,7 @@ fn provider_list_available_models_for_scope(scope: Option<&str>) -> AppResult<St
 }
 
 #[tauri::command]
-pub fn provider_list(state: State<AppState>) -> AppResult<StubPayload> {
+pub fn provider_list(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -60,7 +61,7 @@ pub fn provider_list(state: State<AppState>) -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn provider_get(input: ProviderIdInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn provider_get(input: ProviderIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -69,7 +70,7 @@ pub fn provider_get(input: ProviderIdInput, state: State<AppState>) -> AppResult
 }
 
 #[tauri::command]
-pub fn provider_update(input: ProviderUpdateInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn provider_update(input: ProviderUpdateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -78,7 +79,7 @@ pub fn provider_update(input: ProviderUpdateInput, state: State<AppState>) -> Ap
 }
 
 #[tauri::command]
-pub fn provider_check(input: ProviderCheckInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn provider_check(input: ProviderCheckInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -87,7 +88,7 @@ pub fn provider_check(input: ProviderCheckInput, state: State<AppState>) -> AppR
 }
 
 #[tauri::command]
-pub fn provider_create(input: ProviderCreateInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn provider_create(input: ProviderCreateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -96,7 +97,7 @@ pub fn provider_create(input: ProviderCreateInput, state: State<AppState>) -> Ap
 }
 
 #[tauri::command]
-pub fn provider_delete(input: ProviderIdInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn provider_delete(input: ProviderIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -105,7 +106,7 @@ pub fn provider_delete(input: ProviderIdInput, state: State<AppState>) -> AppRes
 }
 
 #[tauri::command]
-pub fn provider_apply_preset(input: ProviderIdInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn provider_apply_preset(input: ProviderIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -114,7 +115,7 @@ pub fn provider_apply_preset(input: ProviderIdInput, state: State<AppState>) -> 
 }
 
 #[tauri::command]
-pub fn provider_list_available_models(state: State<AppState>) -> AppResult<StubPayload> {
+pub fn provider_list_available_models(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,

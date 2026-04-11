@@ -48,7 +48,5 @@ pub fn emit_audit(
 ) {
     let actor = actor_id.unwrap_or("anonymous");
     let target = applet_id.unwrap_or("*");
-    println!(
-        "{{\"request_id\":\"{request_id}\",\"command\":\"{command}\",\"applet_id\":\"{target}\",\"capability\":\"{capability}\",\"actor\":\"{actor}\",\"outcome\":\"{outcome}\"}}"
-    );
+    tracing::info!(request_id = %request_id, command = %command, applet_id = %target, capability = %capability, actor = %actor, outcome = %outcome, "applet audit log");
 }

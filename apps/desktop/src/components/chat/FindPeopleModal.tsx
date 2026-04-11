@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input, toast } from '@lobehub/ui';
 import { theme, Modal, Typography } from 'antd';
@@ -20,10 +21,11 @@ interface Props {
 
 export function FindPeopleModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const { loadSessions, selectSession } = useSocialChatStore();
 
   const [searchText, setSearchText] = useState('');
-  const [results, setResults] = useState<{ id: string; username: string; displayName: string }[]>([]);
+  const [results, setResults] = useState<{ id: string; username: string; displayName: string; avatar: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
 
@@ -36,9 +38,10 @@ export function FindPeopleModal({ open, onClose }: Props) {
         id: a.id,
         username: a.username,
         displayName: a.displayName,
+        avatar: a.avatar || '',
       })));
     } catch (e: any) {
-      toast.error(e?.message || 'Search failed');
+      toast.error(e?.message || t('chat.social.findPeople.searchFailed'));
       setResults([]);
     } finally {
       setSearching(false);
@@ -54,7 +57,8 @@ export function FindPeopleModal({ open, onClose }: Props) {
         selectSession(resp.session.ulid);
       }
       handleClose();
-    } catch {
+    } catch (e: any) {
+      toast.error(e?.message || t('chat.social.findPeople.addFailed'));
     } finally {
       setAddingId(null);
     }
@@ -68,7 +72,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
   return (
     <Modal
-      title="Find People"
+      title={t('chat.social.findPeople.title')}
       open={open}
       onCancel={handleClose}
       footer={null}
@@ -78,7 +82,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
       <Flexbox gap={12}>
         <Input
           prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
-          placeholder="Search by username..."
+          placeholder={t('chat.social.findPeople.searchPlaceholder')}
           value={searchText}
           onChange={(e) => {
             setSearchText(e.target.value);
@@ -99,7 +103,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
               disabled={!searchText.trim()}
               style={{ padding: 0 }}
             >
-              Search
+              {t('chat.social.findPeople.search')}
             </Button>
           }
         />
@@ -113,7 +117,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
         >
           {results.length === 0 ? (
             <Text type="secondary" style={{ textAlign: 'center', padding: 24, fontSize: 13 }}>
-              {searchText ? 'No results found' : 'Enter a username to search'}
+              {searchText ? t('chat.social.findPeople.noResults') : t('chat.social.findPeople.hint')}
             </Text>
           ) : (
             results.map((r) => (
@@ -127,22 +131,36 @@ export function FindPeopleModal({ open, onClose }: Props) {
                   borderRadius: 8,
                 }}
               >
-                <Flexbox
-                  align="center"
-                  justify="center"
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    background: token.colorFillSecondary,
-                    color: token.colorTextSecondary,
-                    fontSize: 14,
-                    fontWeight: 600,
-                    flexShrink: 0,
-                  }}
-                >
-                  {getInitial(r.displayName || r.username)}
-                </Flexbox>
+                {r.avatar ? (
+                  <img
+                    src={r.avatar}
+                    alt={r.displayName || r.username}
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      objectFit: 'cover',
+                      flexShrink: 0,
+                    }}
+                  />
+                ) : (
+                  <Flexbox
+                    align="center"
+                    justify="center"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      background: token.colorFillSecondary,
+                      color: token.colorTextSecondary,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {getInitial(r.displayName || r.username)}
+                  </Flexbox>
+                )}
                 <Flexbox flex={1} style={{ minWidth: 0 }}>
                   <Text ellipsis style={{ fontSize: 13 }}>{r.displayName || r.username}</Text>
                   <Text type="secondary" style={{ fontSize: 11 }}>@{r.username}</Text>
@@ -153,7 +171,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
                   loading={addingId === r.username}
                   onClick={() => handleAdd(r.username)}
                 >
-                  Add
+                  {t('chat.social.findPeople.add')}
                 </Button>
               </Flexbox>
             ))

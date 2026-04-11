@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	o "github.com/peers-labs/peers-touch/station/frame/object"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 )
@@ -69,8 +70,7 @@ func (i *Inbox) ReceiveActivity(ctx context.Context, activity *o.Activity) error
 	// Notify listeners
 	for _, listener := range i.listeners {
 		if err := listener.OnActivityReceived(ctx, activity); err != nil {
-			// Log error but don't fail the receive operation
-			fmt.Printf("Inbox listener error: %v\n", err)
+			logger.Errorf(ctx, "inbox OnActivityReceived listener error: %v", err)
 		}
 	}
 
