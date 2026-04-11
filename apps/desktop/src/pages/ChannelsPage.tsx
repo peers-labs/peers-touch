@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import {
   Badge, Card, Empty, Form, Modal, Progress, Select, Switch,
@@ -48,6 +49,8 @@ const SlackIcon = ({ size = 20 }: { size?: number }) => (
   </svg>
 );
 
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
 interface ChannelTypeInfo {
   value: string;
   label: string;
@@ -60,65 +63,63 @@ interface ChannelTypeInfo {
   comingSoon?: boolean;
 }
 
-const CHANNEL_TYPES: ChannelTypeInfo[] = [
-  {
-    value: 'lark',
-    label: 'Lark',
-    color: '#3370ff',
-    icon: <LarkIcon />,
-    desc: 'Connect as a Lark App Bot via WebSocket long connection. No public URL needed.',
-    isBot: true,
-    namePlaceholder: 'My Lark Bot',
-    setupGuide: '1. Go to open.feishu.cn → Create App\n2. Enable Bot capability\n3. Permissions → Add:\n   • im:message (send messages)\n   • im:message:send_as_bot\n   • im:message.p2p_msg:readonly\n   • im:message.group_at_msg:readonly\n   • im:chat (list chats)\n   • im:chat.members:bot_access\n4. Event Subscriptions → Enable WebSocket mode → Add:\n   • im.message.receive_v1\n   • im.chat.member.bot.added_v1\n5. Publish & approve the app version\n6. Copy App ID and App Secret here',
-  },
-  {
-    value: 'telegram',
-    label: 'Telegram',
-    color: '#0088cc',
-    icon: <TelegramIcon />,
-    desc: 'Connect as a Telegram Bot via long polling. No public URL needed.',
-    isBot: true,
-    namePlaceholder: 'My Telegram Bot',
-    setupGuide: '1. Talk to @BotFather on Telegram\n2. Send /newbot and follow instructions\n3. Copy the bot token here',
-    comingSoon: true,
-  },
-  {
-    value: 'slack',
-    label: 'Slack',
-    color: '#4a154b',
-    icon: <SlackIcon />,
-    desc: 'Connect as a Slack App via Socket Mode. No public URL needed.',
-    isBot: true,
-    namePlaceholder: 'My Slack Bot',
-    setupGuide: '1. Go to api.slack.com → Create New App\n2. Enable Socket Mode\n3. Subscribe to "message.im" and "app_mention" events\n4. Add scopes: chat:write, app_mentions:read, im:history\n5. Generate App-Level Token with connections:write\n6. Install app to workspace and copy both tokens here',
-    comingSoon: true,
-  },
-  {
-    value: 'discord',
-    label: 'Discord',
-    color: '#5865F2',
-    icon: <DiscordIcon />,
-    desc: 'Connect as a Discord Bot. Supports DMs and server channels.',
-    isBot: true,
-    namePlaceholder: 'My Discord Bot',
-    setupGuide: '1. Go to discord.com/developers → New Application\n2. Go to Bot → Add Bot → Copy Token\n3. Under Privileged Gateway Intents, enable Message Content Intent\n4. Go to OAuth2 → URL Generator → Select "bot" scope\n5. Select permissions: Send Messages, Read Messages/View Channels\n6. Copy the invite URL and add bot to your server',
-    comingSoon: true,
-  },
-  {
-    value: 'webhook',
-    label: 'Webhook',
-    color: '#6366f1',
-    icon: <Webhook size={20} />,
-    desc: 'Generic HTTP webhook for outbound notifications only (cron results, alerts).',
-    isBot: false,
-    namePlaceholder: 'My Webhook',
-    setupGuide: 'Set the target URL. Payloads are JSON with text, title, and timestamp fields.',
-    comingSoon: true,
-  },
-];
-
-function getTypeInfo(type: string): ChannelTypeInfo {
-  return CHANNEL_TYPES.find((t) => t.value === type) || CHANNEL_TYPES[0];
+function getChannelTypes(t: TFunc): ChannelTypeInfo[] {
+  return [
+    {
+      value: 'lark',
+      label: t('channels.type.lark.label'),
+      color: '#3370ff',
+      icon: <LarkIcon />,
+      desc: t('channels.type.lark.desc'),
+      isBot: true,
+      namePlaceholder: t('channels.type.lark.namePlaceholder'),
+      setupGuide: t('channels.type.lark.setupGuide'),
+    },
+    {
+      value: 'telegram',
+      label: t('channels.type.telegram.label'),
+      color: '#0088cc',
+      icon: <TelegramIcon />,
+      desc: t('channels.type.telegram.desc'),
+      isBot: true,
+      namePlaceholder: t('channels.type.telegram.namePlaceholder'),
+      setupGuide: t('channels.type.telegram.setupGuide'),
+      comingSoon: true,
+    },
+    {
+      value: 'slack',
+      label: t('channels.type.slack.label'),
+      color: '#4a154b',
+      icon: <SlackIcon />,
+      desc: t('channels.type.slack.desc'),
+      isBot: true,
+      namePlaceholder: t('channels.type.slack.namePlaceholder'),
+      setupGuide: t('channels.type.slack.setupGuide'),
+      comingSoon: true,
+    },
+    {
+      value: 'discord',
+      label: t('channels.type.discord.label'),
+      color: '#5865F2',
+      icon: <DiscordIcon />,
+      desc: t('channels.type.discord.desc'),
+      isBot: true,
+      namePlaceholder: t('channels.type.discord.namePlaceholder'),
+      setupGuide: t('channels.type.discord.setupGuide'),
+      comingSoon: true,
+    },
+    {
+      value: 'webhook',
+      label: t('channels.type.webhook.label'),
+      color: '#6366f1',
+      icon: <Webhook size={20} />,
+      desc: t('channels.type.webhook.desc'),
+      isBot: false,
+      namePlaceholder: t('channels.type.webhook.namePlaceholder'),
+      setupGuide: t('channels.type.webhook.setupGuide'),
+      comingSoon: true,
+    },
+  ];
 }
 
 interface ConfigField {
@@ -130,72 +131,74 @@ interface ConfigField {
   help?: string;
 }
 
-const CONFIG_FIELDS: Record<string, ConfigField[]> = {
-  telegram: [
-    {
-      key: 'botToken', label: 'Bot Token', placeholder: '123456:ABC-DEF1234ghIkl-zyx57W2v...',
-      type: 'password', required: true,
-      help: 'Get from @BotFather on Telegram. The bot uses long polling to receive messages.',
-    },
-    {
-      key: 'chatId', label: 'Default Chat ID (optional)', placeholder: '-1001234567890',
-      help: 'Default target for outbound messages (cron/notifications). Leave empty to auto-detect from recent conversations.',
-    },
-  ],
-  lark: [
-    {
-      key: 'appId', label: 'App ID', placeholder: 'cli_a5xxxxxxxxxxxxx',
-      required: true,
-      help: 'From open.feishu.cn → your app → Credentials & Basic Info',
-    },
-    {
-      key: 'appSecret', label: 'App Secret', placeholder: '',
-      type: 'password', required: true,
-      help: 'From the same credentials page. Bot connects via WebSocket, no public URL needed.',
-    },
-  ],
-  slack: [
-    {
-      key: 'appToken', label: 'App-Level Token', placeholder: 'xapp-1-A0xxxxx-...',
-      type: 'password', required: true,
-      help: 'From api.slack.com → your app → Basic Information → App-Level Tokens. Needs "connections:write" scope.',
-    },
-    {
-      key: 'botToken', label: 'Bot User OAuth Token', placeholder: 'xoxb-...',
-      type: 'password', required: true,
-      help: 'From OAuth & Permissions page. Needs "chat:write", "app_mentions:read", "im:history" scopes.',
-    },
-    {
-      key: 'channelId', label: 'Default Channel (optional)', placeholder: 'C0123456789',
-      help: 'Default Slack channel for outbound messages. Leave empty to auto-detect.',
-    },
-  ],
-  discord: [
-    {
-      key: 'botToken', label: 'Bot Token', placeholder: 'MTIzNDU2Nzg5MDEyMzQ1Njc4OQ...',
-      type: 'password', required: true,
-      help: 'From discord.com/developers → your app → Bot → Token. Enable Message Content Intent under Privileged Gateway Intents.',
-    },
-    {
-      key: 'channelId', label: 'Default Channel ID (optional)', placeholder: '1234567890123456789',
-      help: 'Default Discord channel for outbound messages. Leave empty to auto-detect from recent conversations.',
-    },
-  ],
-  webhook: [
-    { key: 'url', label: 'URL', placeholder: 'https://example.com/webhook', required: true },
-    { key: 'method', label: 'HTTP Method', placeholder: 'POST' },
-    {
-      key: 'secret', label: 'HMAC Secret', placeholder: 'signing-secret', type: 'password',
-      help: 'Used to sign the payload with HMAC-SHA256 (X-Peers-Touch-Signature header)',
-    },
-  ],
-};
+function getConfigFields(t: TFunc): Record<string, ConfigField[]> {
+  return {
+    telegram: [
+      {
+        key: 'botToken', label: t('channels.config.telegram.botToken.label'), placeholder: t('channels.config.telegram.botToken.placeholder'),
+        type: 'password', required: true,
+        help: t('channels.config.telegram.botToken.help'),
+      },
+      {
+        key: 'chatId', label: t('channels.config.telegram.chatId.label'), placeholder: t('channels.config.telegram.chatId.placeholder'),
+        help: t('channels.config.telegram.chatId.help'),
+      },
+    ],
+    lark: [
+      {
+        key: 'appId', label: t('channels.config.lark.appId.label'), placeholder: t('channels.config.lark.appId.placeholder'),
+        required: true,
+        help: t('channels.config.lark.appId.help'),
+      },
+      {
+        key: 'appSecret', label: t('channels.config.lark.appSecret.label'), placeholder: '',
+        type: 'password', required: true,
+        help: t('channels.config.lark.appSecret.help'),
+      },
+    ],
+    slack: [
+      {
+        key: 'appToken', label: t('channels.config.slack.appToken.label'), placeholder: t('channels.config.slack.appToken.placeholder'),
+        type: 'password', required: true,
+        help: t('channels.config.slack.appToken.help'),
+      },
+      {
+        key: 'botToken', label: t('channels.config.slack.botToken.label'), placeholder: t('channels.config.slack.botToken.placeholder'),
+        type: 'password', required: true,
+        help: t('channels.config.slack.botToken.help'),
+      },
+      {
+        key: 'channelId', label: t('channels.config.slack.channelId.label'), placeholder: t('channels.config.slack.channelId.placeholder'),
+        help: t('channels.config.slack.channelId.help'),
+      },
+    ],
+    discord: [
+      {
+        key: 'botToken', label: t('channels.config.discord.botToken.label'), placeholder: t('channels.config.discord.botToken.placeholder'),
+        type: 'password', required: true,
+        help: t('channels.config.discord.botToken.help'),
+      },
+      {
+        key: 'channelId', label: t('channels.config.discord.channelId.label'), placeholder: t('channels.config.discord.channelId.placeholder'),
+        help: t('channels.config.discord.channelId.help'),
+      },
+    ],
+    webhook: [
+      { key: 'url', label: t('channels.config.webhook.url.label'), placeholder: t('channels.config.webhook.url.placeholder'), required: true },
+      { key: 'method', label: t('channels.config.webhook.method.label'), placeholder: t('channels.config.webhook.method.placeholder') },
+      {
+        key: 'secret', label: t('channels.config.webhook.secret.label'), placeholder: t('channels.config.webhook.secret.placeholder'), type: 'password',
+        help: t('channels.config.webhook.secret.help'),
+      },
+    ],
+  };
+}
 
 function parseConfig(ch: Channel): Record<string, string> {
   try { return JSON.parse(ch.config); } catch { return {}; }
 }
 
-const CREATE_BOT_STEPS = ['Creating Lark app...', 'Configuring bot...', 'Setting up WebSocket...', 'Saving channel...'];
+const CREATE_BOT_STEPS_COUNT = 4;
 
 function CreateBotProgressModal({
   open,
@@ -209,20 +212,22 @@ function CreateBotProgressModal({
   onClose: () => void;
 }) {
   const { token } = theme.useToken();
-  const completed = step >= CREATE_BOT_STEPS.length && !error;
-  const percent = Math.min(100, ((step + 1) / CREATE_BOT_STEPS.length) * 100);
+  const { t } = useTranslation('channels');
+  const steps = [t('channels.progress.step1'), t('channels.progress.step2'), t('channels.progress.step3'), t('channels.progress.step4')];
+  const completed = step >= steps.length && !error;
+  const percent = Math.min(100, ((step + 1) / steps.length) * 100);
 
   return (
     <Modal
       open={open}
       onCancel={onClose}
-      footer={error ? <Button onClick={onClose}>Close</Button> : null}
+      footer={error ? <Button onClick={onClose}>{t('channels.progress.close')}</Button> : null}
       closable={!!error}
       maskClosable={!!error}
       width={400}
       centered
       destroyOnClose
-      title="Creating Lark Bot"
+      title={t('channels.progress.title')}
     >
       <Flexbox direction="vertical" gap={20} style={{ padding: '8px 0' }}>
         <Progress
@@ -235,12 +240,12 @@ function CreateBotProgressModal({
         ) : completed ? (
           <Flexbox horizontal align="center" gap={12} style={{ color: token.colorSuccess }}>
             <CheckCircle size={24} />
-            <Text strong>Bot created successfully</Text>
+            <Text strong>{t('channels.progress.success')}</Text>
           </Flexbox>
         ) : (
           <Flexbox horizontal align="center" gap={12}>
             <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
-            <Text type="secondary">{CREATE_BOT_STEPS[Math.min(step, CREATE_BOT_STEPS.length - 1)]}</Text>
+            <Text type="secondary">{steps[Math.min(step, steps.length - 1)]}</Text>
           </Flexbox>
         )}
       </Flexbox>
@@ -271,8 +276,14 @@ export function ChannelsPage() {
   const connections = useOAuth2Store((s) => s.connections);
   const loadOAuth2 = useOAuth2Store((s) => s.loadAll);
   const hasLarkSimulate = connections.some((c) => c.provider_id === 'lark_simulate');
+  const { t } = useTranslation('channels');
 
-  // Preload OAuth2 on mount so hasLarkSimulate is correct when opening Add Channel drawer
+  const channelTypes = getChannelTypes(t);
+  const configFields = getConfigFields(t);
+
+  const getTypeInfo = (type: string): ChannelTypeInfo =>
+    channelTypes.find((ct) => ct.value === type) || channelTypes[0];
+
   useEffect(() => {
     loadOAuth2();
   }, [loadOAuth2]);
@@ -311,7 +322,7 @@ export function ChannelsPage() {
     setChannelType(v);
     form.setFieldsValue({ name: form.getFieldValue('name') || '' });
     // Clear config fields from previous type
-    const allKeys = Object.values(CONFIG_FIELDS).flatMap(fields => fields.map(f => f.key));
+    const allKeys = Object.values(configFields).flatMap(fields => fields.map(f => f.key));
     const resetObj: Record<string, undefined> = {};
     allKeys.forEach(k => { resetObj[k] = undefined; });
     form.setFieldsValue(resetObj);
@@ -328,10 +339,10 @@ export function ChannelsPage() {
       const data = { name, type: chType, config: JSON.stringify(cleanConfig), enabled };
       if (editing) {
         await api.updateChannel(editing.id, data);
-        message.success('Channel updated');
+        message.success(t('channels.toast.channelUpdated'));
       } else {
         await api.createChannel(data);
-        message.success('Channel created');
+        message.success(t('channels.toast.channelCreated'));
       }
       setDrawerOpen(false);
       load();
@@ -346,9 +357,9 @@ export function ChannelsPage() {
     setTestingId(id);
     try {
       await api.testChannel(id);
-      message.success('Test passed!');
+      message.success(t('channels.toast.testPassed'));
     } catch (err: unknown) {
-      message.error(`Test failed: ${err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error'}`);
+      message.error(t('channels.toast.testFailed', { error: err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error' }));
     } finally {
       setTestingId(null);
     }
@@ -359,14 +370,14 @@ export function ChannelsPage() {
     try {
       if (ch.botStatus?.connected) {
         await api.stopBot(ch.id);
-        message.success('Bot stopped');
+        message.success(t('channels.toast.botStopped'));
       } else {
         await api.startBot(ch.id);
-        message.success('Bot started');
+        message.success(t('channels.toast.botStarted'));
       }
       setTimeout(load, 500);
     } catch (err: unknown) {
-      message.error(`Bot action failed: ${err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error'}`);
+      message.error(t('channels.toast.botActionFailed', { error: err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error' }));
     } finally {
       setTogglingBot(null);
     }
@@ -377,10 +388,10 @@ export function ChannelsPage() {
     setSending(true);
     try {
       await api.sendChannelMessage(sendDrawer.id, sendText.trim());
-      message.success('Message sent!');
+      message.success(t('channels.toast.messageSent'));
       setSendText('');
     } catch (err: unknown) {
-      message.error(`Send failed: ${err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error'}`);
+      message.error(t('channels.toast.sendFailed', { error: err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error' }));
     } finally {
       setSending(false);
     }
@@ -389,29 +400,28 @@ export function ChannelsPage() {
   return (
     <Flexbox gap={0} style={{ height: '100%', overflow: 'hidden' }}>
       <PageHeader
-        title="Channels"
-        subtitle="Connect to messaging platforms as a real bot. Users can chat with your AI agent via Telegram, Lark, or Slack."
+        title={t('channels.title')}
+        subtitle={t('channels.subtitle')}
         actions={<>
-          <Button icon={<RefreshCw size={14} />} onClick={load} loading={loading}>Refresh</Button>
-          <Button type="primary" icon={<Plus size={14} />} onClick={handleCreate}>Add Channel</Button>
+          <Button icon={<RefreshCw size={14} />} onClick={load} loading={loading}>{t('channels.action.refresh')}</Button>
+          <Button type="primary" icon={<Plus size={14} />} onClick={handleCreate}>{t('channels.action.addChannel')}</Button>
         </>}
       />
 
       {/* Channel List */}
       <Flexbox flex={1} style={{ overflow: 'auto', padding: 24 }} gap={16}>
         {channels.length === 0 && !loading ? (
-          <Empty description="No channels configured yet" image={Empty.PRESENTED_IMAGE_SIMPLE}>
+          <Empty description={t('channels.empty.title')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
             <Flexbox gap={12} align="center">
               <Text type="secondary" style={{ maxWidth: 400, textAlign: 'center' }}>
-                Channels connect Peers Touch to messaging platforms. Configure a Telegram, Lark, or Slack bot
-                to let users interact with your AI agent directly from their messaging app.
+                {t('channels.empty.description')}
               </Text>
-              <Button type="primary" onClick={handleCreate}>Add Your First Channel</Button>
+              <Button type="primary" onClick={handleCreate}>{t('channels.action.addFirstChannel')}</Button>
             </Flexbox>
           </Empty>
         ) : (
           <>
-            {CHANNEL_TYPES.map((typeInfo) => {
+            {channelTypes.map((typeInfo) => {
               const typed = channels.filter((ch) => ch.type === typeInfo.value);
               if (typed.length === 0) return null;
               return (
@@ -448,25 +458,25 @@ export function ChannelsPage() {
                               <Flexbox>
                                 <Flexbox horizontal align="center" gap={8}>
                                   <Text strong>{ch.name}</Text>
-                                  {!ch.enabled && <Tag color="default">Disabled</Tag>}
+                                  {!ch.enabled && <Tag color="default">{t('channels.card.disabled')}</Tag>}
                                   {isBot && botConnected && (
                                     <Tag color="success" style={{ margin: 0 }}>
-                                      Connected{ch.botStatus?.botName ? ` · @${ch.botStatus.botName}` : ''}
+                                      {ch.botStatus?.botName ? t('channels.card.connectedWithName', { botName: ch.botStatus.botName }) : t('channels.card.connected')}
                                     </Tag>
                                   )}
                                   {isBot && !botConnected && ch.enabled && (
                                     <Tag color={ch.type === 'lark' ? 'error' : 'warning'} style={{ margin: 0 }}>
-                                      {ch.type === 'lark' ? 'Incomplete' : 'Disconnected'}
+                                      {ch.type === 'lark' ? t('channels.card.incomplete') : t('channels.card.disconnected')}
                                     </Tag>
                                   )}
                                 </Flexbox>
                                 <Text type="secondary" style={{ fontSize: 12 }}>
                                   {ch.id} · {new Date(ch.createdAt).toLocaleDateString()}
-                                  {isBot && cfg.botToken && ` · Token: ${cfg.botToken.slice(0, 8)}...`}
-                                  {isBot && cfg.appId && ` · App: ${cfg.appId}`}
+                                  {isBot && cfg.botToken && ` · ${t('channels.card.tokenPrefix', { token: cfg.botToken.slice(0, 8) })}`}
+                                  {isBot && cfg.appId && ` · ${t('channels.card.appPrefix', { appId: cfg.appId })}`}
                                   {ch.botStatus?.error && (
                                     <Text type="danger" style={{ fontSize: 12, marginLeft: 8 }}>
-                                      Error: {ch.botStatus.error}
+                                      {t('channels.card.errorPrefix', { error: ch.botStatus.error })}
                                     </Text>
                                   )}
                                 </Text>
@@ -474,7 +484,7 @@ export function ChannelsPage() {
                             </Flexbox>
                             <Space onClick={(e) => e.stopPropagation()}>
                               {isBot && ch.enabled && (
-                                <Tooltip title={botConnected ? 'Stop bot' : 'Start bot'}>
+                                <Tooltip title={botConnected ? t('channels.tooltip.stopBot') : t('channels.tooltip.startBot')}>
                                   <Button
                                     size="small"
                                     type={botConnected ? 'default' : 'primary'}
@@ -490,18 +500,18 @@ export function ChannelsPage() {
                                   load();
                                 }}
                               />
-                              <Tooltip title="Test connection">
+                              <Tooltip title={t('channels.tooltip.testConnection')}>
                                 <Button size="small" icon={<Zap size={14} />}
                                   loading={testingId === ch.id}
                                   onClick={() => handleTest(ch.id)}
                                 />
                               </Tooltip>
-                              <Tooltip title="Edit">
+                              <Tooltip title={t('channels.tooltip.edit')}>
                                 <Button size="small" icon={<Settings2 size={14} />}
                                   onClick={() => handleEdit(ch)}
                                 />
                               </Tooltip>
-                              <Popconfirm title="Delete this channel?" onConfirm={async () => { await api.deleteChannel(ch.id); load(); }}>
+                              <Popconfirm title={t('channels.confirm.deleteChannel')} onConfirm={async () => { await api.deleteChannel(ch.id); load(); }}>
                                 <Button size="small" danger icon={<Trash2 size={14} />} />
                               </Popconfirm>
                             </Space>
@@ -519,30 +529,30 @@ export function ChannelsPage() {
 
       {/* Create / Edit Drawer */}
       <Drawer
-        title={editing ? 'Edit Channel' : 'Add Channel'}
+        title={editing ? t('channels.drawer.titleEdit') : t('channels.drawer.titleAdd')}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         size="default"
         extra={
           editing ? (
-            <Button type="primary" onClick={handleSave}>Save</Button>
+            <Button type="primary" onClick={handleSave}>{t('channels.drawer.save')}</Button>
           ) : channelType === 'lark' && larkSetupTab === 'scan' ? null : (
-            <Button type="primary" onClick={handleSave}>Create</Button>
+            <Button type="primary" onClick={handleSave}>{t('channels.drawer.create')}</Button>
           )
         }
       >
         <Form form={form} layout="vertical" initialValues={{ type: 'lark', enabled: true }}>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+          <Form.Item name="name" label={t('channels.form.name')} rules={[{ required: true }]}>
             <Input placeholder={getTypeInfo(channelType).namePlaceholder} />
           </Form.Item>
 
-          <Form.Item name="type" label="Type" rules={[{ required: true }]}>
+          <Form.Item name="type" label={t('channels.form.type')} rules={[{ required: true }]}>
             <Select onChange={handleTypeChange}>
-              {CHANNEL_TYPES.map((t) => (
-                <Select.Option key={t.value} value={t.value} disabled={!!t.comingSoon}>
-                  <Tooltip title={t.comingSoon ? 'Coming soon' : undefined}>
+              {channelTypes.map((ct) => (
+                <Select.Option key={ct.value} value={ct.value} disabled={!!ct.comingSoon}>
+                  <Tooltip title={ct.comingSoon ? t('channels.type.comingSoon') : undefined}>
                     <Flexbox horizontal align="center" gap={8}>
-                      {t.icon} <span>{t.label}</span>
+                      {ct.icon} <span>{ct.label}</span>
                     </Flexbox>
                   </Tooltip>
                 </Select.Option>
@@ -550,7 +560,7 @@ export function ChannelsPage() {
             </Select>
           </Form.Item>
 
-          <Form.Item name="enabled" label="Enabled" valuePropName="checked">
+          <Form.Item name="enabled" label={t('channels.form.enabled')} valuePropName="checked">
             <Switch />
           </Form.Item>
 
@@ -563,7 +573,7 @@ export function ChannelsPage() {
               items={[
                 {
                   key: 'scan',
-                  label: 'Create via Scan',
+                  label: t('channels.larkSetup.tabScan'),
                   children: (
                     <div style={{ paddingTop: 8 }}>
                       {hasLarkSimulate && (
@@ -571,7 +581,7 @@ export function ChannelsPage() {
                           <Flexbox horizontal align="center" justify="space-between" gap={12}>
                             <Flexbox horizontal align="center" gap={8}>
                               <Badge status="success" />
-                              <Text strong>Logged in</Text>
+                              <Text strong>{t('channels.larkSetup.loggedIn')}</Text>
                             </Flexbox>
                             <Button
                               type="link"
@@ -579,7 +589,7 @@ export function ChannelsPage() {
                               style={{ padding: 0 }}
                               onClick={() => eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings', id: 'account' })}
                             >
-                              Login Info
+                              {t('channels.larkSetup.loginInfo')}
                             </Button>
                           </Flexbox>
                         </Card>
@@ -596,12 +606,12 @@ export function ChannelsPage() {
                             setCreateBotProgressStep(0);
                             setCreateBotProgressOpen(true);
                             const stepInterval = setInterval(() => {
-                              setCreateBotProgressStep((s) => Math.min(s + 1, CREATE_BOT_STEPS.length - 1));
+                              setCreateBotProgressStep((s) => Math.min(s + 1, CREATE_BOT_STEPS_COUNT - 1));
                             }, 3000);
                             try {
-                              const res = await api.oauthSimulateLarkCreateBotSession(form.getFieldValue('name') || 'My Lark Bot');
+                              const res = await api.oauthSimulateLarkCreateBotSession(form.getFieldValue('name') || t('channels.type.lark.namePlaceholder'));
                               clearInterval(stepInterval);
-                              setCreateBotProgressStep(CREATE_BOT_STEPS.length);
+                              setCreateBotProgressStep(CREATE_BOT_STEPS_COUNT);
                               if (res.status === 'success' && res.bot) {
                                 load();
                                 if (res.channel_id) {
@@ -610,7 +620,7 @@ export function ChannelsPage() {
                                 setTimeout(() => {
                                   setCreateBotProgressOpen(false);
                                   setDrawerOpen(false);
-                                  message.success('Bot created');
+                                  message.success(t('channels.toast.botCreated'));
                                 }, 600);
                               }
                             } catch (err: any) {
@@ -618,8 +628,8 @@ export function ChannelsPage() {
                               const msg = err?.message || '';
                               setCreateBotProgressError(
                                 msg.includes('no stored') || msg.includes('stored session')
-                                  ? 'No session cache. Scan QR once to save session, then create without QR.'
-                                  : msg || 'Create failed. Please scan QR.',
+                                  ? t('channels.progress.noSessionError')
+                                  : msg || t('channels.progress.defaultError'),
                               );
                             } finally {
                               setCreatingBot(false);
@@ -632,7 +642,7 @@ export function ChannelsPage() {
                         type="primary"
                         size="large"
                       >
-                        {hasLarkSimulate ? 'Create Bot (No QR)' : 'Create via Lark QR Login'}
+                        {hasLarkSimulate ? t('channels.larkSetup.createBotNoQR') : t('channels.larkSetup.createViaQR')}
                       </Button>
                       {hasLarkSimulate && (
                         <Button
@@ -641,30 +651,30 @@ export function ChannelsPage() {
                           style={{ padding: 0, marginTop: 8, display: 'block' }}
                           onClick={() => setLarkQRModalOpen(true)}
                         >
-                          Or create via QR
+                          {t('channels.larkSetup.orCreateViaQR')}
                         </Button>
                       )}
                       <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 12, lineHeight: 1.5 }}>
                         {hasLarkSimulate
-                          ? 'Use logged-in session to create bot. If no session, you will be prompted to scan QR.'
-                          : 'Scan QR with Lark app to create a new bot and auto-fill App ID/Secret.'}
+                          ? t('channels.larkSetup.hintWithSession')
+                          : t('channels.larkSetup.hintWithoutSession')}
                       </Text>
                     </div>
                   ),
                 },
                 {
                   key: 'bind',
-                  label: 'Bind Existing',
+                  label: t('channels.larkSetup.tabBind'),
                   children: (
                     <div style={{ paddingTop: 8 }}>
                       <Alert
                         type="info"
                         showIcon
                         style={{ marginBottom: 16 }}
-                        message="Bot Connection"
+                        message={t('channels.form.alertBotConnection')}
                         description={getTypeInfo('lark').desc}
                       />
-                      {(CONFIG_FIELDS.lark || []).map((field) => (
+                      {(configFields.lark || []).map((field) => (
                         <Form.Item
                           key={field.key}
                           name={field.key}
@@ -690,10 +700,10 @@ export function ChannelsPage() {
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
-                message={getTypeInfo(channelType).isBot ? 'Bot Connection' : 'Outbound Webhook'}
+                message={getTypeInfo(channelType).isBot ? t('channels.form.alertBotConnection') : t('channels.form.alertOutboundWebhook')}
                 description={getTypeInfo(channelType).desc}
               />
-              {(CONFIG_FIELDS[channelType] || []).map((field) => (
+              {(configFields[channelType] || []).map((field) => (
                 <Form.Item
                   key={field.key}
                   name={field.key}
@@ -713,7 +723,7 @@ export function ChannelsPage() {
 
           <Divider style={{ margin: '12px 0' }} />
           <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'pre-line' }}>
-            <strong>Setup Guide:</strong>{'\n'}{getTypeInfo(channelType).setupGuide}
+            <strong>{t('channels.form.setupGuide')}</strong>{'\n'}{getTypeInfo(channelType).setupGuide}
           </Text>
         </Form>
       </Drawer>
@@ -725,7 +735,7 @@ export function ChannelsPage() {
             {getTypeInfo(detailChannel.type).icon}
             <span>{detailChannel.name}</span>
           </Flexbox>
-        ) : 'Channel Details'}
+        ) : t('channels.detail.title')}
         open={!!detailChannel}
         onClose={() => setDetailChannel(null)}
         size="large"
@@ -733,7 +743,7 @@ export function ChannelsPage() {
           <Space>
             <Button icon={<Settings2 size={14} />} onClick={() => {
               if (detailChannel) { handleEdit(detailChannel); setDetailChannel(null); }
-            }}>Edit</Button>
+            }}>{t('channels.detail.editButton')}</Button>
           </Space>
         )}
       >
@@ -760,7 +770,7 @@ export function ChannelsPage() {
         open={larkQRModalOpen}
         onClose={() => setLarkQRModalOpen(false)}
         intent="bot"
-        appName={form.getFieldValue('name') || 'My Lark Bot'}
+        appName={form.getFieldValue('name') || t('channels.type.lark.namePlaceholder')}
         onSuccess={(result) => {
           if (result.bot) {
             setLarkQRModalOpen(false);
@@ -788,7 +798,7 @@ export function ChannelsPage() {
 
       {/* Send Message Drawer (webhook only) */}
       <Drawer
-        title={`Send to ${sendDrawer?.name || ''}`}
+        title={t('channels.sendDrawer.title', { name: sendDrawer?.name || '' })}
         open={!!sendDrawer}
         onClose={() => setSendDrawer(null)}
         size="default"
@@ -798,7 +808,7 @@ export function ChannelsPage() {
             rows={6}
             value={sendText}
             onChange={(e) => setSendText(e.target.value)}
-            placeholder="Type a message to send..."
+            placeholder={t('channels.sendDrawer.placeholder')}
           />
           <Button
             type="primary"
@@ -807,7 +817,7 @@ export function ChannelsPage() {
             onClick={handleSend}
             disabled={!sendText.trim()}
           >
-            Send Message
+            {t('channels.sendDrawer.sendButton')}
           </Button>
         </Flexbox>
       </Drawer>
@@ -834,6 +844,10 @@ function ChannelDetailPanel({
   onRefresh: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation('channels');
+  const channelTypes = getChannelTypes(t);
+  const getTypeInfo = (type: string): ChannelTypeInfo =>
+    channelTypes.find((ct) => ct.value === type) || channelTypes[0];
   const info = getTypeInfo(ch.type);
   const botConnected = ch.botStatus?.connected;
   const cfg = parseConfig(ch);
@@ -846,7 +860,7 @@ function ChannelDetailPanel({
           <Flexbox horizontal align="center" justify="space-between">
             <Flexbox horizontal align="center" gap={8}>
               <Badge status={botConnected ? 'success' : 'default'} />
-              <Text strong>{botConnected ? 'Connected' : ch.type === 'lark' ? 'Incomplete' : 'Disconnected'}</Text>
+              <Text strong>{botConnected ? t('channels.detail.botStatus.connected') : ch.type === 'lark' ? t('channels.detail.botStatus.incomplete') : t('channels.detail.botStatus.disconnected')}</Text>
               {ch.botStatus?.botName && <Text type="secondary">@{ch.botStatus.botName}</Text>}
             </Flexbox>
             <Space>
@@ -857,10 +871,10 @@ function ChannelDetailPanel({
                 loading={togglingBot === ch.id}
                 onClick={() => onToggleBot(ch)}
               >
-                {botConnected ? 'Stop' : ch.type === 'lark' ? 'Continue setup' : 'Start'}
+                {botConnected ? t('channels.detail.botAction.stop') : ch.type === 'lark' ? t('channels.detail.botAction.continueSetup') : t('channels.detail.botAction.start')}
               </Button>
               <Button size="small" icon={<Zap size={14} />} loading={testingId === ch.id}
-                onClick={() => onTest(ch.id)}>Test</Button>
+                onClick={() => onTest(ch.id)}>{t('channels.detail.botAction.test')}</Button>
             </Space>
           </Flexbox>
           {ch.botStatus?.error && (
@@ -877,36 +891,36 @@ function ChannelDetailPanel({
         items={[
           {
             key: 'messages',
-            label: <Flexbox horizontal align="center" gap={4}><MessageSquare size={13} /> Messages</Flexbox>,
+            label: <Flexbox horizontal align="center" gap={4}><MessageSquare size={13} /> {t('channels.detail.tab.messages')}</Flexbox>,
             children: <MessageLogPanel channelId={ch.id} />,
           },
           {
             key: 'stats',
-            label: <Flexbox horizontal align="center" gap={4}><BarChart3 size={13} /> Stats</Flexbox>,
+            label: <Flexbox horizontal align="center" gap={4}><BarChart3 size={13} /> {t('channels.detail.tab.stats')}</Flexbox>,
             children: <ChannelStatsPanel channelId={ch.id} />,
           },
           {
             key: 'info',
-            label: <Flexbox horizontal align="center" gap={4}><Hash size={13} /> Info</Flexbox>,
+            label: <Flexbox horizontal align="center" gap={4}><Hash size={13} /> {t('channels.detail.tab.info')}</Flexbox>,
             children: (
               <Flexbox gap={12} style={{ paddingTop: 8 }}>
                 <Descriptions column={1} size="small" bordered>
-                  <Descriptions.Item label="ID">{ch.id}</Descriptions.Item>
-                  <Descriptions.Item label="Type">
+                  <Descriptions.Item label={t('channels.detail.info.id')}>{ch.id}</Descriptions.Item>
+                  <Descriptions.Item label={t('channels.detail.info.type')}>
                     <Tag color={info.color}>{info.label}</Tag>
-                    {info.isBot ? <Tag>Bidirectional Bot</Tag> : <Tag>Outbound Only</Tag>}
+                    {info.isBot ? <Tag>{t('channels.type.bidirectional')}</Tag> : <Tag>{t('channels.type.outboundOnly')}</Tag>}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Enabled">
+                  <Descriptions.Item label={t('channels.detail.info.enabled')}>
                     <Switch size="small" checked={ch.enabled}
                       onChange={async (v) => {
                         await api.updateChannel(ch.id, { enabled: v });
                         onRefresh();
                       }} />
                   </Descriptions.Item>
-                  <Descriptions.Item label="Created">{new Date(ch.createdAt).toLocaleString()}</Descriptions.Item>
-                  <Descriptions.Item label="Updated">{new Date(ch.updatedAt).toLocaleString()}</Descriptions.Item>
+                  <Descriptions.Item label={t('channels.detail.info.created')}>{new Date(ch.createdAt).toLocaleString()}</Descriptions.Item>
+                  <Descriptions.Item label={t('channels.detail.info.updated')}>{new Date(ch.updatedAt).toLocaleString()}</Descriptions.Item>
                 </Descriptions>
-                <Card size="small" title="Configuration">
+                <Card size="small" title={t('channels.detail.info.configuration')}>
                   {Object.entries(cfg).map(([key, val]) => {
                     const isSecret = key.toLowerCase().includes('secret') || key.toLowerCase().includes('token');
                     return (
@@ -918,8 +932,8 @@ function ChannelDetailPanel({
                   })}
                 </Card>
                 {info.isBot && <SendTestCard channelId={ch.id} connected={!!botConnected} />}
-                <Popconfirm title="Delete this channel?" onConfirm={onDelete}>
-                  <Button danger icon={<Trash2 size={14} />} block>Delete Channel</Button>
+                <Popconfirm title={t('channels.confirm.deleteChannel')} onConfirm={onDelete}>
+                  <Button danger icon={<Trash2 size={14} />} block>{t('channels.detail.info.deleteChannel')}</Button>
                 </Popconfirm>
               </Flexbox>
             ),
@@ -934,6 +948,7 @@ function ChannelDetailPanel({
 
 function MessageLogPanel({ channelId }: { channelId: string }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('channels');
   const [events, setEvents] = useState<ChannelEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -959,9 +974,9 @@ function MessageLogPanel({ channelId }: { channelId: string }) {
     return (
       <Flexbox align="center" justify="center" gap={8} style={{ padding: '40px 0' }}>
         <Inbox size={32} style={{ color: token.colorTextQuaternary }} />
-        <Text type="secondary">No messages yet</Text>
+        <Text type="secondary">{t('channels.messages.empty.title')}</Text>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          Send a message to the bot to see the conversation log here.
+          {t('channels.messages.empty.description')}
         </Text>
       </Flexbox>
     );
@@ -971,9 +986,9 @@ function MessageLogPanel({ channelId }: { channelId: string }) {
     <Flexbox gap={0} style={{ paddingTop: 4 }}>
       {/* Summary */}
       <Flexbox horizontal justify="space-between" align="center" style={{ marginBottom: 8 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>{total} messages total</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>{t('channels.messages.total', { count: total })}</Text>
         <Button size="small" icon={<RefreshCw size={12} />} onClick={() => load(page)} loading={loading}>
-          Refresh
+          {t('channels.messages.refresh')}
         </Button>
       </Flexbox>
 
@@ -1030,7 +1045,7 @@ function MessageLogPanel({ channelId }: { channelId: string }) {
                     color={isInbound ? 'blue' : isFailed ? 'red' : 'green'}
                     style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}
                   >
-                    {isInbound ? 'IN' : 'OUT'}
+                    {isInbound ? t('channels.messages.directionIn') : t('channels.messages.directionOut')}
                   </Tag>
                   {ev.senderName && (
                     <Text strong style={{ fontSize: 12 }}>{ev.senderName}</Text>
@@ -1062,7 +1077,7 @@ function MessageLogPanel({ channelId }: { channelId: string }) {
                         fontSize: 12,
                       }}
                     >
-                      {isExpanded ? ' [collapse]' : '... [expand]'}
+                      {isExpanded ? t('channels.messages.collapse') : t('channels.messages.expand')}
                     </span>
                   )}
                 </Text>
@@ -1077,7 +1092,7 @@ function MessageLogPanel({ channelId }: { channelId: string }) {
                   )}
                   {ev.sessionId && (
                     <Text type="secondary" style={{ fontSize: 11 }}>
-                      session: {ev.sessionId.slice(0, 20)}...
+                      {t('channels.messages.sessionPrefix', { sessionId: ev.sessionId.slice(0, 20) })}
                     </Text>
                   )}
                   {ev.error && (
@@ -1093,11 +1108,11 @@ function MessageLogPanel({ channelId }: { channelId: string }) {
       {/* Pagination */}
       {total > limit && (
         <Flexbox horizontal justify="center" gap={8} style={{ marginTop: 12 }}>
-          <Button size="small" disabled={page === 0} onClick={() => load(page - 1)}>Previous</Button>
+          <Button size="small" disabled={page === 0} onClick={() => load(page - 1)}>{t('channels.messages.pagination.previous')}</Button>
           <Text type="secondary" style={{ fontSize: 12, lineHeight: '24px' }}>
-            Page {page + 1} of {Math.ceil(total / limit)}
+            {t('channels.messages.pagination.pageInfo', { current: page + 1, total: Math.ceil(total / limit) })}
           </Text>
-          <Button size="small" disabled={(page + 1) * limit >= total} onClick={() => load(page + 1)}>Next</Button>
+          <Button size="small" disabled={(page + 1) * limit >= total} onClick={() => load(page + 1)}>{t('channels.messages.pagination.next')}</Button>
         </Flexbox>
       )}
     </Flexbox>
@@ -1108,6 +1123,7 @@ function MessageLogPanel({ channelId }: { channelId: string }) {
 
 function ChannelStatsPanel({ channelId }: { channelId: string }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('channels');
   const [stats, setStats] = useState<ChannelEventStats | null>(null);
 
   useEffect(() => {
@@ -1115,7 +1131,7 @@ function ChannelStatsPanel({ channelId }: { channelId: string }) {
   }, [channelId]);
 
   if (!stats) {
-    return <Text type="secondary" style={{ padding: 20 }}>Loading...</Text>;
+    return <Text type="secondary" style={{ padding: 20 }}>{t('channels.stats.loading')}</Text>;
   }
 
   const totalMessages = stats.totalInbound + stats.totalOutbound;
@@ -1123,15 +1139,15 @@ function ChannelStatsPanel({ channelId }: { channelId: string }) {
   return (
     <Flexbox gap={16} style={{ paddingTop: 8 }}>
       {/* Today */}
-      <Card size="small" title="Today">
+      <Card size="small" title={t('channels.stats.today')}>
         <Flexbox horizontal gap={16}>
           <Statistic
-            title={<Flexbox horizontal align="center" gap={4}><ArrowDownLeft size={12} /> Received</Flexbox>}
+            title={<Flexbox horizontal align="center" gap={4}><ArrowDownLeft size={12} /> {t('channels.stats.received')}</Flexbox>}
             value={stats.todayInbound}
             valueStyle={{ fontSize: 24, color: token.colorPrimary }}
           />
           <Statistic
-            title={<Flexbox horizontal align="center" gap={4}><ArrowUpRight size={12} /> Sent</Flexbox>}
+            title={<Flexbox horizontal align="center" gap={4}><ArrowUpRight size={12} /> {t('channels.stats.sent')}</Flexbox>}
             value={stats.todayOutbound}
             valueStyle={{ fontSize: 24, color: token.colorSuccess }}
           />
@@ -1139,16 +1155,16 @@ function ChannelStatsPanel({ channelId }: { channelId: string }) {
       </Card>
 
       {/* All time */}
-      <Card size="small" title="All Time">
+      <Card size="small" title={t('channels.stats.allTime')}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
-          <Statistic title="Total Messages" value={totalMessages} />
-          <Statistic title="Avg Response" value={stats.avgLatencyMs < 1000 ? `${stats.avgLatencyMs}ms` : `${(stats.avgLatencyMs / 1000).toFixed(1)}s`} />
-          <Statistic title="Inbound" value={stats.totalInbound} valueStyle={{ color: token.colorPrimary }} />
-          <Statistic title="Outbound" value={stats.totalOutbound} valueStyle={{ color: token.colorSuccess }} />
-          <Statistic title="Errors" value={stats.totalErrors} valueStyle={{ color: stats.totalErrors > 0 ? token.colorError : undefined }} />
+          <Statistic title={t('channels.stats.totalMessages')} value={totalMessages} />
+          <Statistic title={t('channels.stats.avgResponse')} value={stats.avgLatencyMs < 1000 ? `${stats.avgLatencyMs}ms` : `${(stats.avgLatencyMs / 1000).toFixed(1)}s`} />
+          <Statistic title={t('channels.stats.inbound')} value={stats.totalInbound} valueStyle={{ color: token.colorPrimary }} />
+          <Statistic title={t('channels.stats.outbound')} value={stats.totalOutbound} valueStyle={{ color: token.colorSuccess }} />
+          <Statistic title={t('channels.stats.errors')} value={stats.totalErrors} valueStyle={{ color: stats.totalErrors > 0 ? token.colorError : undefined }} />
           {totalMessages > 0 && (
             <Statistic
-              title="Success Rate"
+              title={t('channels.stats.successRate')}
               value={`${(((totalMessages - stats.totalErrors) / totalMessages) * 100).toFixed(1)}%`}
               valueStyle={{ color: token.colorSuccess }}
             />
@@ -1160,11 +1176,12 @@ function ChannelStatsPanel({ channelId }: { channelId: string }) {
 }
 
 function SendTestCard({ channelId, connected }: { channelId: string; connected: boolean }) {
+  const { t } = useTranslation('channels');
   const [mode, setMode] = useState<'self' | 'group'>('self');
   const [chats, setChats] = useState<ChatTarget[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
-  const [testText, setTestText] = useState('Hello from Peers Touch!');
+  const [testText, setTestText] = useState('');
   const [sending, setSending] = useState(false);
 
   const handleSend = async () => {
@@ -1174,22 +1191,22 @@ function SendTestCard({ channelId, connected }: { channelId: string; connected: 
       if (mode === 'self') {
         const p2pUsers = chats.filter((c) => c.type === 'p2p');
         if (p2pUsers.length === 0) {
-          message.warning('No known DM contacts. Send a message to the bot in Lark first, then try again.');
+          message.warning(t('channels.sendTest.noDMContacts'));
           setSending(false);
           return;
         }
         await api.sendChannelMessage(channelId, testText.trim(), undefined, p2pUsers[0].id, 'p2p');
       } else {
         if (!selectedChat) {
-          message.warning('Please select a group chat.');
+          message.warning(t('channels.sendTest.selectGroupChat'));
           setSending(false);
           return;
         }
         await api.sendChannelMessage(channelId, testText.trim(), undefined, selectedChat, 'group');
       }
-      message.success('Test message sent!');
+      message.success(t('channels.toast.testMessageSent'));
     } catch (err: unknown) {
-      message.error(`Send failed: ${err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error'}`);
+      message.error(t('channels.toast.sendFailed', { error: err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'error' }));
     } finally {
       setSending(false);
     }
@@ -1215,26 +1232,26 @@ function SendTestCard({ channelId, connected }: { channelId: string; connected: 
 
   if (!connected) {
     return (
-      <Card size="small" title={<Flexbox horizontal align="center" gap={6}><Send size={14} /> Send Test Message</Flexbox>}>
-        <Text type="secondary">Start the bot first to send test messages.</Text>
+      <Card size="small" title={<Flexbox horizontal align="center" gap={6}><Send size={14} /> {t('channels.sendTest.title')}</Flexbox>}>
+        <Text type="secondary">{t('channels.sendTest.startBotFirst')}</Text>
       </Card>
     );
   }
 
   return (
-    <Card size="small" title={<Flexbox horizontal align="center" gap={6}><Send size={14} /> Send Test Message</Flexbox>}>
+    <Card size="small" title={<Flexbox horizontal align="center" gap={6}><Send size={14} /> {t('channels.sendTest.title')}</Flexbox>}>
       <Flexbox gap={12}>
         <Select value={mode} onChange={(v) => setMode(v)} style={{ width: '100%' }}>
           <Select.Option value="self">
             <Flexbox horizontal align="center" gap={6}>
               <MessageSquare size={14} />
-              Send to myself (DM)
+              {t('channels.sendTest.modeSelf')}
             </Flexbox>
           </Select.Option>
           <Select.Option value="group">
             <Flexbox horizontal align="center" gap={6}>
               <Bot size={14} />
-              Send to a group chat
+              {t('channels.sendTest.modeGroup')}
             </Flexbox>
           </Select.Option>
         </Select>
@@ -1243,7 +1260,7 @@ function SendTestCard({ channelId, connected }: { channelId: string; connected: 
           <Alert
             type="info"
             showIcon
-            message="Send a message to the bot in Lark first to establish a DM connection."
+            message={t('channels.sendTest.dmHint')}
             style={{ fontSize: 12 }}
           />
         )}
@@ -1253,14 +1270,14 @@ function SendTestCard({ channelId, connected }: { channelId: string; connected: 
             value={selectedChat}
             onChange={setSelectedChat}
             loading={loadingChats}
-            placeholder="Select a group chat"
+            placeholder={t('channels.sendTest.groupPlaceholder')}
             style={{ width: '100%' }}
             options={groups.map((c) => ({
               value: c.id,
               label: c.name || c.id,
             }))}
             notFoundContent={
-              loadingChats ? 'Loading...' : 'No groups found. Add the bot to a group in Lark first.'
+              loadingChats ? t('channels.sendTest.groupLoadingContent') : t('channels.sendTest.groupEmptyContent')
             }
           />
         )}
@@ -1269,7 +1286,7 @@ function SendTestCard({ channelId, connected }: { channelId: string; connected: 
           rows={2}
           value={testText}
           onChange={(e) => setTestText(e.target.value)}
-          placeholder="Type a test message..."
+          placeholder={t('channels.sendTest.messagePlaceholder')}
           style={{ fontSize: 13 }}
         />
 
@@ -1281,7 +1298,7 @@ function SendTestCard({ channelId, connected }: { channelId: string; connected: 
           disabled={!testText.trim() || (mode === 'group' && !selectedChat)}
           block
         >
-          Send Test
+          {t('channels.sendTest.sendButton')}
         </Button>
       </Flexbox>
     </Card>

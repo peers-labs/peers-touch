@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import {
   Badge,
@@ -140,6 +141,7 @@ function groupMemoriesByPeriod(memories: Memory[], groupBy: TimelineGroupBy): Ar
 
 export function MemoryPage() {
   const { token } = theme.useToken();
+  const { t } = useTranslation('memory');
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
 
@@ -162,10 +164,10 @@ export function MemoryPage() {
   return (
     <Flexbox gap={0} style={{ height: '100%', overflow: 'hidden' }}>
       <PageHeader
-        title="Memory System"
-        subtitle="Browse, search, and manage agent memories across layers."
+        title={t('memory.header.title')}
+        subtitle={t('memory.header.subtitle')}
         icon={<Brain size={20} />}
-        extra={<ConfigBadge section="memory" label="Memory" />}
+        extra={<ConfigBadge section="memory" label={t('memory.header.badge')} />}
         actions={<>
           {statsLoading ? (
             <Spin size="small" />
@@ -176,7 +178,7 @@ export function MemoryPage() {
                 showZero
                 style={{ backgroundColor: token.colorPrimary }}
               >
-                <span style={{ marginRight: 8, fontSize: 13 }}>Memories</span>
+                <span style={{ marginRight: 8, fontSize: 13 }}>{t('memory.header.memoriesLabel')}</span>
               </Badge>
               <Flexbox horizontal align="center" gap={4}>
                 <Database size={14} style={{ color: token.colorTextSecondary }} />
@@ -200,7 +202,7 @@ export function MemoryPage() {
               label: (
                 <Flexbox horizontal align="center" gap={6}>
                   <Brain size={14} />
-                  Browse
+                  {t('memory.tab.browse')}
                 </Flexbox>
               ),
               children: <BrowseTab onDelete={loadStats} />,
@@ -210,7 +212,7 @@ export function MemoryPage() {
               label: (
                 <Flexbox horizontal align="center" gap={6}>
                   <Search size={14} />
-                  Search
+                  {t('memory.tab.search')}
                 </Flexbox>
               ),
               children: <SearchTab />,
@@ -220,7 +222,7 @@ export function MemoryPage() {
               label: (
                 <Flexbox horizontal align="center" gap={6}>
                   <User size={14} />
-                  Persona
+                  {t('memory.tab.persona')}
                 </Flexbox>
               ),
               children: <PersonaTab />,
@@ -230,7 +232,7 @@ export function MemoryPage() {
               label: (
                 <Flexbox horizontal align="center" gap={6}>
                   <Activity size={14} />
-                  Events
+                  {t('memory.tab.events')}
                 </Flexbox>
               ),
               children: <EventsTab />,
@@ -246,6 +248,7 @@ export function MemoryPage() {
 
 function BrowseTab({ onDelete }: { onDelete: () => void }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('memory');
   const { agents, loadAgents } = useChatStore();
   const [layer, setLayer] = useState<string | undefined>();
   const [agentFilter, setAgentFilter] = useState<string | undefined>();
@@ -290,12 +293,12 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
   const handleDelete = async (id: string) => {
     try {
       await api.deleteMemory(id);
-      message.success('Memory deleted');
+      message.success(t('memory.browse.deleteSuccess'));
       load();
       onDelete();
     } catch (err: unknown) {
       message.error(
-        err instanceof Error ? err.message : 'Failed to delete memory',
+        err instanceof Error ? err.message : t('memory.browse.deleteFailed'),
       );
     }
   };
@@ -321,11 +324,11 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
             <Flexbox horizontal align="center" gap={4}>
               <Clock size={12} style={{ color: token.colorTextTertiary }} />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {m.access_count} accesses
+                {t('memory.browse.accessCount', { count: m.access_count })}
               </Text>
             </Flexbox>
           </Flexbox>
-          <Text style={{ fontSize: 13 }}>{m.summary || '(no summary)'}</Text>
+          <Text style={{ fontSize: 13 }}>{m.summary || t('memory.browse.noSummary')}</Text>
           {expandedId === m.id && (
             <pre
               style={{
@@ -343,7 +346,7 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
           )}
         </Flexbox>
         <Popconfirm
-          title="Delete this memory?"
+          title={t('memory.browse.deleteConfirm')}
           onConfirm={(e) => {
             e?.stopPropagation();
             handleDelete(m.id);
@@ -391,7 +394,7 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
       {/* Agent + Layer filters */}
       <Flexbox horizontal gap={12} align="center" style={{ flexWrap: 'wrap' }}>
         <Select
-          placeholder="All agents"
+          placeholder={t('memory.browse.allAgents')}
           value={agentFilter}
           onChange={(v) => { setAgentFilter(v); setPage(1); }}
           allowClear
@@ -421,8 +424,8 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
           style={{ minWidth: 120 }}
           size="small"
           options={[
-            { value: 'list', label: 'List' },
-            { value: 'timeline', label: 'Timeline' },
+            { value: 'list', label: t('memory.browse.viewList') },
+            { value: 'timeline', label: t('memory.browse.viewTimeline') },
           ]}
         />
         {viewMode === 'timeline' && (
@@ -432,9 +435,9 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
             style={{ minWidth: 120 }}
             size="small"
             options={[
-              { value: 'day', label: 'By Day' },
-              { value: 'week', label: 'By Week' },
-              { value: 'month', label: 'By Month' },
+              { value: 'day', label: t('memory.browse.groupByDay') },
+              { value: 'week', label: t('memory.browse.groupByWeek') },
+              { value: 'month', label: t('memory.browse.groupByMonth') },
             ]}
           />
         )}
@@ -447,7 +450,7 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
           onClick={() => setLayer(undefined)}
           onKeyDown={(e) => handleLayerKeyDown(e, undefined)}
         >
-          All
+          {t('memory.layer.all')}
         </span>
         {LAYERS.map((l) => (
           <span
@@ -473,7 +476,7 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
         </Flexbox>
       ) : memories.length === 0 ? (
         <Empty
-          description="No memories found"
+          description={t('memory.browse.noMemories')}
           image={Empty.PRESENTED_IMAGE_SIMPLE}
         />
       ) : (
@@ -505,6 +508,7 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
 
 function SearchTab() {
   const { agents, loadAgents } = useChatStore();
+  const { t } = useTranslation('memory');
   const [query, setQuery] = useState('');
   const [agentFilter, setAgentFilter] = useState<string | undefined>();
   const [timeWindow, setTimeWindow] = useState<TimeWindowValue>('30d');
@@ -536,21 +540,21 @@ function SearchTab() {
     <Flexbox gap={16}>
       <Flexbox horizontal gap={8}>
         <AntdInput.Search
-          placeholder="Search memories..."
+          placeholder={t('memory.search.placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onSearch={handleSearch}
-          enterButton="Search"
+          enterButton={t('memory.search.button')}
           style={{ maxWidth: 400 }}
         />
         <Select
-          placeholder="All agents"
-          value={agentFilter}
-          onChange={setAgentFilter}
-          allowClear
-          onClear={() => setAgentFilter(undefined)}
-          style={{ minWidth: 150 }}
-          options={agents.map((a: Agent) => ({
+            placeholder={t('memory.search.allAgents')}
+            value={agentFilter}
+            onChange={setAgentFilter}
+            allowClear
+            onClear={() => setAgentFilter(undefined)}
+            style={{ minWidth: 150 }}
+            options={agents.map((a: Agent) => ({
             value: a.name,
             label: `${a.avatar || '🤖'} ${a.title || a.name}`,
           }))}
@@ -567,7 +571,7 @@ function SearchTab() {
           <Spin size="large" />
         </Flexbox>
       ) : results.length === 0 && query ? (
-        <Empty description="No results" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t('memory.search.noResults')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <Flexbox gap={8}>
           {results.map(({ memory, score, explain }) => (
@@ -582,7 +586,7 @@ function SearchTab() {
                     {formatDate(memory.created_at)}
                   </Text>
                 </Flexbox>
-                <Text>{memory.summary || '(no summary)'}</Text>
+                <Text>{memory.summary || t('memory.browse.noSummary')}</Text>
                 {explain && (
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {`V:${(explain.vector_score * 100).toFixed(0)}% `}
@@ -607,6 +611,7 @@ function SearchTab() {
 function PersonaTab() {
   const [persona, setPersona] = useState<Persona | null>(null);
   const [loading, setLoading] = useState(false);
+  const { t } = useTranslation('memory');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -635,19 +640,18 @@ function PersonaTab() {
   if (!persona) {
     return (
       <Empty
-        description="No persona data yet"
+        description={t('memory.persona.noData')}
         image={Empty.PRESENTED_IMAGE_SIMPLE}
       >
         <Text type="secondary" style={{ fontSize: 13 }}>
-          Persona is derived from identity-layer memories. Chat with agents to
-          build up your persona over time.
+          {t('memory.persona.noDataHint')}
         </Text>
         <Flexbox horizontal align="center" gap={8} style={{ marginTop: 12 }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            Refresh is not yet implemented — persona updates automatically.
+            {t('memory.persona.autoUpdateHint')}
           </Text>
           <Button size="small" icon={<RefreshCw size={14} />} onClick={load}>
-            Refresh
+            {t('memory.persona.refresh')}
           </Button>
         </Flexbox>
       </Empty>
@@ -656,20 +660,20 @@ function PersonaTab() {
 
   return (
     <Flexbox gap={16}>
-      <Card title="Tagline" size="small">
-        <Text>{persona.tagline || '(empty)'}</Text>
+      <Card title={t('memory.persona.tagline')} size="small">
+        <Text>{persona.tagline || t('memory.persona.empty')}</Text>
       </Card>
-      <Card title="Narrative" size="small">
+      <Card title={t('memory.persona.narrative')} size="small">
         <Text style={{ whiteSpace: 'pre-wrap' }}>
-          {persona.narrative || '(empty)'}
+          {persona.narrative || t('memory.persona.empty')}
         </Text>
       </Card>
       <Flexbox horizontal align="center" gap={8}>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          Updated: {formatDate(persona.updated_at)}
+          {t('memory.persona.updated', { time: formatDate(persona.updated_at) })}
         </Text>
         <Button size="small" icon={<RefreshCw size={14} />} onClick={load}>
-          Refresh
+          {t('memory.persona.refresh')}
         </Button>
       </Flexbox>
     </Flexbox>
@@ -680,6 +684,7 @@ function PersonaTab() {
 
 function EventsTab() {
   const { agents, loadAgents } = useChatStore();
+  const { t } = useTranslation('memory');
   const [agentFilter, setAgentFilter] = useState<string | undefined>();
   const [timeWindow, setTimeWindow] = useState<TimeWindowValue>('24h');
   const [events, setEvents] = useState<MemoryEvent[]>([]);
@@ -713,9 +718,9 @@ function EventsTab() {
     <Flexbox gap={16}>
       <Flexbox horizontal align="center" justify="space-between">
         <Flexbox horizontal align="center" gap={8}>
-          <Text type="secondary">Event log (auto-refresh every 10s)</Text>
+          <Text type="secondary">{t('memory.events.title')}</Text>
           <Select
-            placeholder="All agents"
+            placeholder={t('memory.events.allAgents')}
             value={agentFilter}
             onChange={setAgentFilter}
             allowClear
@@ -736,7 +741,7 @@ function EventsTab() {
           />
         </Flexbox>
         <Button size="small" icon={<RefreshCw size={14} />} onClick={load} loading={loading}>
-          Refresh
+          {t('memory.events.refresh')}
         </Button>
       </Flexbox>
       {loading && events.length === 0 ? (
@@ -744,7 +749,7 @@ function EventsTab() {
           <Spin size="large" />
         </Flexbox>
       ) : events.length === 0 ? (
-        <Empty description="No events yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t('memory.events.noEvents')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <Table
           size="small"
@@ -753,14 +758,14 @@ function EventsTab() {
           pagination={{ pageSize: 20 }}
           columns={[
             {
-              title: 'Type',
+              title: t('memory.events.column.type'),
               dataIndex: 'type',
               key: 'type',
               width: 120,
-              render: (t: string) => <Tag>{t}</Tag>,
+              render: (val: string) => <Tag>{val}</Tag>,
             },
             {
-              title: 'Layer',
+              title: t('memory.events.column.layer'),
               dataIndex: 'layer',
               key: 'layer',
               width: 100,
@@ -769,7 +774,7 @@ function EventsTab() {
               ),
             },
             {
-              title: 'Latency',
+              title: t('memory.events.column.latency'),
               dataIndex: 'latency_ms',
               key: 'latency_ms',
               width: 90,
@@ -777,7 +782,7 @@ function EventsTab() {
                 ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`,
             },
             {
-              title: 'Detail',
+              title: t('memory.events.column.detail'),
               key: 'detail',
               render: (_, event: MemoryEvent) => {
                 const detail = event.detail || {};
@@ -794,13 +799,13 @@ function EventsTab() {
                 }
                 return (
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    {Object.keys(detail).length > 0 ? 'has detail' : '-'}
+                    {Object.keys(detail).length > 0 ? t('memory.browse.hasDetail') : '-'}
                   </Text>
                 );
               },
             },
             {
-              title: 'Timestamp',
+              title: t('memory.events.column.timestamp'),
               dataIndex: 'timestamp',
               key: 'timestamp',
               render: (ts: string) => formatDate(ts),

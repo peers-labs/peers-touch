@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, DraggablePanel, Markdown, Dropdown, Tag, Input } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
@@ -62,6 +63,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
   } = useChatStore();
   const bottomRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const userAvatar = useUserAvatar();
   const [shareOpen, setShareOpen] = useState(false);
   const [portalView, setPortalView] = useState<'list' | 'editor'>('list');
@@ -109,7 +111,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
       agents.find((a) => a.name === selectedAgent) || {
         name: selectedAgent || 'assistant',
         title: 'Peers Touch',
-        description: 'Your default personal AI assistant.',
+        description: t('chat.welcome.defaultDescription'),
         avatar: '🤖',
         openingMessage: '',
         openingQuestions: '[]',
@@ -143,7 +145,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
         <Flexbox horizontal align="center" justify="space-between" gap={12} style={{ minWidth: 160 }}>
           <Flexbox horizontal align="center" gap={8}>
             <Maximize2 size={14} />
-            <span>Full Width</span>
+            <span>{t('chat.header.fullWidth')}</span>
           </Flexbox>
           <Switch
             size="small"
@@ -205,7 +207,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
                 }}
               >
                 Web search
-              </Tag>
+            </Tag>
             )}
           </Flexbox>
 
@@ -215,18 +217,18 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
               icon={FilePen}
               size="small"
               active={showPortal}
-              title="Notebook"
+              title={t('chat.header.notebook')}
               onClick={togglePortal}
             />
             <ActionIcon
               icon={Share2}
               size="small"
-              title="Share"
+              title={t('chat.header.share')}
               onClick={() => setShareOpen(true)}
             />
             <Dropdown menu={{ items: headerMenuItems }} trigger={['click']} placement="bottomRight">
               <div>
-                <ActionIcon icon={MoreHorizontal} size="small" title="More" />
+                <ActionIcon icon={MoreHorizontal} size="small" title={t('chat.header.more')} />
               </div>
             </Dropdown>
           </Flexbox>
@@ -314,7 +316,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
         onClose={() => setShareOpen(false)}
         sessionKey={currentSessionKey}
         messages={messages}
-        title={currentAgent?.title || 'Conversation'}
+        title={currentAgent?.title || t('chat.share.defaultTitle')}
       />
     </Flexbox>
   );
@@ -332,6 +334,7 @@ function WelcomeScreen({
   onSend: (msg: string) => void;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
 
   let questions: string[] = [];
   try {
@@ -342,7 +345,7 @@ function WelcomeScreen({
 
   const title = agent.title || agent.name;
   const avatar = agent.avatar || '🤖';
-  const welcomeText = agent.openingMessage || agent.description || 'Ask, create, or start a task.';
+  const welcomeText = agent.openingMessage || agent.description || t('chat.welcome.fallbackText');
 
   const hasTools = true;
   const hasMemory = chatConfig?.memory?.enabled;
@@ -409,13 +412,13 @@ function WelcomeScreen({
               }}
             >
               <CheckCircle size={14} style={{ color: token.colorSuccess }} />
-              <span>Activate Tools</span>
+              <span>{t('chat.welcome.activateTools')}</span>
               <Wrench size={12} style={{ color: token.colorTextTertiary }} />
-              <span style={{ color: token.colorTextDescription }}>Built-in</span>
+              <span style={{ color: token.colorTextDescription }}>{t('chat.welcome.builtIn')}</span>
               {hasMemory && (
                 <>
                   <Brain size={12} style={{ color: token.colorTextTertiary, marginLeft: 4 }} />
-                  <span style={{ color: token.colorTextDescription }}>Memory</span>
+                  <span style={{ color: token.colorTextDescription }}>{t('chat.welcome.memory')}</span>
                 </>
               )}
               <ChevronRight size={12} style={{ color: token.colorTextQuaternary, marginLeft: 'auto' }} />
@@ -467,10 +470,10 @@ function WelcomeScreen({
         </Flexbox>
       ) : (
         <Flexbox horizontal gap={10} wrap="wrap" justify="center" style={{ maxWidth: 520 }}>
-          <QuickAction icon={<FileText size={14} />} label="Read File" onClick={() => onSend('Help me read and analyze a file.')} />
-          <QuickAction icon={<Terminal size={14} />} label="Run Command" onClick={() => onSend('Help me run a shell command.')} />
-          <QuickAction icon={<Globe size={14} />} label="Web Search" onClick={() => onSend('Search the web for the latest news.')} />
-          <QuickAction icon={<Sparkles size={14} />} label="Summarize" onClick={() => onSend('Help me summarize some content.')} />
+          <QuickAction icon={<FileText size={14} />} label={t('chat.welcome.quickAction.readFile')} onClick={() => onSend(t('chat.welcome.quickAction.readFilePrompt'))} />
+          <QuickAction icon={<Terminal size={14} />} label={t('chat.welcome.quickAction.runCommand')} onClick={() => onSend(t('chat.welcome.quickAction.runCommandPrompt'))} />
+          <QuickAction icon={<Globe size={14} />} label={t('chat.welcome.quickAction.webSearch')} onClick={() => onSend(t('chat.welcome.quickAction.webSearchPrompt'))} />
+          <QuickAction icon={<Sparkles size={14} />} label={t('chat.welcome.quickAction.summarize')} onClick={() => onSend(t('chat.welcome.quickAction.summarizePrompt'))} />
         </Flexbox>
       )}
     </Flexbox>
@@ -534,6 +537,7 @@ function NotebookPanel({
   onOpenDocument: (doc: import('../services/desktop_api').NotebookDocument) => void;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
@@ -564,19 +568,19 @@ function NotebookPanel({
       >
         <Flexbox horizontal align="center" gap={8}>
           <BookOpen size={16} style={{ color: token.colorTextSecondary }} />
-          <span style={{ fontSize: 14, fontWeight: 600 }}>Notebook</span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{t('chat.notebook.title')}</span>
         </Flexbox>
         <Flexbox horizontal align="center" gap={2}>
           <ActionIcon
             icon={Plus}
             size="small"
-            title="New page"
+            title={t('chat.notebook.newPage')}
             onClick={() => setCreating(true)}
           />
           <ActionIcon
             icon={PanelRightClose}
             size="small"
-            title="Close"
+            title={t('chat.notebook.close')}
             onClick={onClose}
           />
         </Flexbox>
@@ -593,7 +597,7 @@ function NotebookPanel({
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setCreating(false); }}
-            placeholder="Page title..."
+            placeholder={t('chat.notebook.pageTitle.placeholder')}
             style={{
               flex: 1,
               border: `1px solid ${token.colorBorder}`,
@@ -611,7 +615,7 @@ function NotebookPanel({
       <Flexbox flex={1} style={{ overflow: 'auto', padding: 8 }}>
         {loading ? (
           <Flexbox align="center" justify="center" flex={1} style={{ padding: 24 }}>
-            <span style={{ color: token.colorTextDescription, fontSize: 13 }}>Loading...</span>
+            <span style={{ color: token.colorTextDescription, fontSize: 13 }}>{t('chat.notebook.loading')}</span>
           </Flexbox>
         ) : documents.length === 0 ? (
           <Flexbox align="center" justify="center" flex={1} gap={8} style={{ padding: 24 }}>
@@ -619,7 +623,7 @@ function NotebookPanel({
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
                 <span style={{ color: token.colorTextDescription, fontSize: 13 }}>
-                  No pages yet. The agent can save documents here during conversation, or you can create pages manually.
+                  {t('chat.notebook.empty')}
                 </span>
               }
             />
@@ -644,6 +648,7 @@ function DocumentItem({
   onClick: () => void;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -665,7 +670,7 @@ function DocumentItem({
       <FileText size={16} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
       <Flexbox flex={1} style={{ minWidth: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {doc.title || 'Untitled'}
+          {doc.title || t('chat.notebook.untitled')}
         </span>
         <span style={{ fontSize: 11, color: token.colorTextDescription }}>
           {new Date(doc.updated_at).toLocaleDateString()}
@@ -675,7 +680,7 @@ function DocumentItem({
         <ActionIcon
           icon={Trash2}
           size={{ blockSize: 24, size: 14 }}
-          title="Delete"
+          title={t('chat.notebook.delete')}
           onClick={(e) => { e.stopPropagation(); onDelete(doc.id); }}
           style={{ color: token.colorTextTertiary }}
         />
@@ -706,11 +711,11 @@ function DocumentEditor({
   onOpenFullPage?: (docId: string) => void;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const [preview, setPreview] = useState(false);
 
   return (
     <Flexbox flex={1} style={{ height: '100%' }}>
-      {/* Header with back + close */}
       <Flexbox
         horizontal
         align="center"
@@ -725,30 +730,30 @@ function DocumentEditor({
           <ActionIcon
             icon={ArrowLeft}
             size="small"
-            title="Back"
+            title={t('chat.editor.back')}
             onClick={onBack}
           />
-          <span style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>Document</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>{t('chat.editor.document')}</span>
         </Flexbox>
         <Flexbox horizontal align="center" gap={2}>
           <ActionIcon
             icon={Save}
             size="small"
-            title="Save"
+            title={t('chat.editor.save')}
             onClick={onSave}
           />
           {onOpenFullPage && (
             <ActionIcon
               icon={Maximize2}
               size="small"
-              title="Open Full Page"
+              title={t('chat.editor.openFullPage')}
               onClick={() => onOpenFullPage(doc.id)}
             />
           )}
           <ActionIcon
             icon={PanelRightClose}
             size="small"
-            title="Close"
+            title={t('chat.editor.close')}
             onClick={onClose}
           />
         </Flexbox>
@@ -759,7 +764,7 @@ function DocumentEditor({
         <Input
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="Document title..."
+          placeholder={t('chat.editor.titlePlaceholder')}
           variant="borderless"
           style={{ fontSize: 18, fontWeight: 600, padding: 0 }}
           onBlur={onSave}
@@ -781,7 +786,7 @@ function DocumentEditor({
             borderBottom: !preview ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
           }}
         >
-          Edit
+          {t('chat.editor.tab.edit')}
         </button>
         <button
           onClick={() => setPreview(true)}
@@ -796,7 +801,7 @@ function DocumentEditor({
             borderBottom: preview ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
           }}
         >
-          Preview
+          {t('chat.editor.tab.preview')}
         </button>
       </Flexbox>
 
@@ -804,14 +809,14 @@ function DocumentEditor({
       <Flexbox flex={1} style={{ overflow: 'auto', padding: 16, minHeight: 0 }}>
         {preview ? (
           <Markdown variant="chat" fontSize={14}>
-            {content || '*No content yet*'}
+            {content || t('chat.editor.noContent')}
           </Markdown>
         ) : (
           <textarea
             value={content}
             onChange={(e) => onContentChange(e.target.value)}
             onBlur={onSave}
-            placeholder="Write your notes here... (Markdown supported)"
+            placeholder={t('chat.editor.contentPlaceholder')}
             style={{
               width: '100%',
               height: '100%',

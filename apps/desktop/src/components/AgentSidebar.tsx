@@ -22,6 +22,7 @@ import {
 import { theme, Modal, Popover } from 'antd';
 import { Dropdown, Input, toast } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
+import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
 import type { Agent, Session } from '../services/desktop_api';
 import { api } from '../services/desktop_api';
@@ -34,7 +35,7 @@ interface AgentSidebarProps {
   onAgentChanged?: (agentName: string) => void;
 }
 
-function groupTopicsByDate(sessions: Session[]): { key: string; label: string; items: Session[] }[] {
+function groupTopicsByDate(sessions: Session[], t: (key: string) => string): { key: string; label: string; items: Session[] }[] {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today.getTime() - 86400000);
@@ -73,10 +74,10 @@ function groupTopicsByDate(sessions: Session[]): { key: string; label: string; i
   }
 
   const labelMap: Record<string, string> = {
-    today: 'Today',
-    yesterday: 'Yesterday',
-    week: 'This Week',
-    month: 'This Month',
+    today: t('agent.sidebar.dateGroup.today'),
+    yesterday: t('agent.sidebar.dateGroup.yesterday'),
+    week: t('agent.sidebar.dateGroup.thisWeek'),
+    month: t('agent.sidebar.dateGroup.thisMonth'),
   };
 
   return groupOrder.map((key) => ({
@@ -89,6 +90,7 @@ function groupTopicsByDate(sessions: Session[]): { key: string; label: string; i
 }
 
 export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, onNavigateChat, onAgentChanged }: AgentSidebarProps) {
+  const { t } = useTranslation('agent');
   const {
     agents,
     loadAgents,
@@ -170,7 +172,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       id: key,
       key,
       agent_name: agentName,
-      title: 'New Topic',
+      title: t('agent.sidebar.newTopic'),
       message_count: 0,
       created_at: now,
       updated_at: now,
@@ -207,8 +209,8 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
         (s) => (s.title || '').toLowerCase().includes(q) || s.key.toLowerCase().includes(q),
       );
     }
-    return groupTopicsByDate(filtered);
-  }, [agentSessions, topicSearch]);
+    return groupTopicsByDate(filtered, t);
+  }, [agentSessions, topicSearch, t]);
 
   const totalTopics = agentSessions.length;
 
@@ -223,6 +225,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
         onBack={() => setShowAgentPicker(false)}
         onCreate={onCreateAgent}
         token={token}
+        t={t}
       />
     );
   }
@@ -280,7 +283,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
               whiteSpace: 'nowrap',
             }}
           >
-            {currentAgent?.title || currentAgent?.name || selectedAgent || 'Default Agent'}
+            {currentAgent?.title || currentAgent?.name || selectedAgent || t('agent.sidebar.defaultAgent')}
           </span>
           <ChevronsUpDown size={14} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
         </Flexbox>
@@ -290,19 +293,19 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       <Flexbox style={{ padding: '4px 12px 8px', flexShrink: 0 }} gap={1}>
         <NavItem
           icon={<MessageSquarePlus size={16} />}
-          label="Start New Topic"
+          label={t('agent.sidebar.startNewTopic')}
           onClick={handleNewTopic}
           token={token}
         />
         <NavItem
           icon={<User size={16} />}
-          label="Agent Profile"
+          label={t('agent.sidebar.agentProfile')}
           onClick={() => currentAgent && (onNavigateProfile ? onNavigateProfile(currentAgent.name) : onEditAgent(currentAgent))}
           token={token}
         />
         <NavItem
           icon={<Search size={16} />}
-          label="Search"
+          label={t('agent.sidebar.search')}
           onClick={() => setShowSearch(!showSearch)}
           active={showSearch}
           token={token}
@@ -312,7 +315,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       {showSearch && (
         <div style={{ padding: '0 12px 8px' }}>
           <SearchBar
-            placeholder="Search topics..."
+            placeholder={t('agent.sidebar.searchTopics')}
             value={topicSearch}
             onChange={(e) => setTopicSearch(e.target.value)}
             allowClear
@@ -331,15 +334,15 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
           style={{ padding: '4px 8px', marginBottom: 2 }}
         >
           <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>
-            Topic {totalTopics > 0 ? totalTopics : ''}
+            {t('agent.sidebar.topic')} {totalTopics > 0 ? totalTopics : ''}
           </span>
         </Flexbox>
 
         {totalTopics === 0 ? (
           <NavItem
-            icon={<MessageSquarePlus size={16} />}
-            label="Start New Topic"
-            onClick={handleNewTopic}
+              icon={<MessageSquarePlus size={16} />}
+              label={t('agent.sidebar.startNewTopic')}
+              onClick={handleNewTopic}
             token={token}
             style={{ margin: '0 4px' }}
           />
@@ -354,6 +357,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
               onDeleteTopic={handleDeleteTopic}
               onReload={loadAgentTopics}
               token={token}
+              t={t}
             />
           ))
         )}
@@ -414,6 +418,7 @@ function TopicGroup({
   onDeleteTopic,
   onReload,
   token,
+  t,
 }: {
   label: string;
   topics: Session[];
@@ -422,6 +427,7 @@ function TopicGroup({
   onDeleteTopic: (key: string) => void;
   onReload: () => void;
   token: any;
+  t: (key: string, options?: Record<string, any>) => string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -461,6 +467,7 @@ function TopicGroup({
               onDelete={() => onDeleteTopic(topic.key)}
               onReload={onReload}
               token={token}
+              t={t}
             />
           ))}
         </Flexbox>
@@ -482,6 +489,7 @@ function TopicItem({
   onDelete,
   onReload,
   token,
+  t,
 }: {
   topic: Session;
   isActive: boolean;
@@ -489,6 +497,7 @@ function TopicItem({
   onDelete: () => void;
   onReload: () => void;
   token: any;
+  t: (key: string, options?: Record<string, any>) => string;
 }) {
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -519,36 +528,36 @@ function TopicItem({
       await api.renameSession(topic.key, newTitle);
       onReload();
     } catch (e: any) {
-      toast.error(e.message || 'Rename failed');
+      toast.error(e.message || t('agent.sidebar.toast.renameFailed'));
     }
   }, [renameTitle, topic.title, topic.key, onReload]);
 
   const handleSmartRename = useCallback(async () => {
     try {
-      toast.loading('Generating title...');
+      toast.loading(t('agent.sidebar.toast.generatingTitle'));
       const res = await api.smartRenameSession(topic.key);
-      toast.success(`Renamed to "${res.title}"`);
+      toast.success(t('agent.sidebar.toast.renamedTo', { title: res.title }));
       onReload();
     } catch (e: any) {
-      toast.error(e.message || 'Smart rename failed');
+      toast.error(e.message || t('agent.sidebar.toast.smartRenameFailed'));
     }
   }, [topic.key, onReload]);
 
   const handleDuplicate = useCallback(async () => {
     try {
       await api.duplicateSession(topic.key);
-      toast.success('Topic duplicated');
+      toast.success(t('agent.sidebar.toast.topicDuplicated'));
       onReload();
     } catch (e: any) {
-      toast.error(e.message || 'Duplicate failed');
+      toast.error(e.message || t('agent.sidebar.toast.duplicateFailed'));
     }
   }, [topic.key, onReload]);
 
   const handleDeleteConfirm = useCallback(() => {
     Modal.confirm({
-      title: 'Delete this topic?',
-      content: 'All messages in this topic will be permanently deleted.',
-      okText: 'Delete',
+      title: t('agent.sidebar.deleteConfirm.title'),
+      content: t('agent.sidebar.deleteConfirm.content'),
+      okText: t('agent.sidebar.menu.delete'),
       okButtonProps: { danger: true },
       centered: true,
       onOk: () => onDelete(),
@@ -556,13 +565,13 @@ function TopicItem({
   }, [onDelete]);
 
   const menuItems: MenuProps['items'] = [
-    { key: 'favorite', icon: <Star size={14} />, label: 'Favorite', disabled: true },
+    { key: 'favorite', icon: <Star size={14} />, label: t('agent.sidebar.menu.favorite'), disabled: true },
     { type: 'divider' },
-    { key: 'smart-rename', icon: <Sparkles size={14} />, label: 'Smart Rename', onClick: handleSmartRename },
-    { key: 'rename', icon: <Pencil size={14} />, label: 'Rename', onClick: handleRename },
-    { key: 'duplicate', icon: <Copy size={14} />, label: 'Duplicate', onClick: handleDuplicate },
+    { key: 'smart-rename', icon: <Sparkles size={14} />, label: t('agent.sidebar.menu.smartRename'), onClick: handleSmartRename },
+    { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.menu.rename'), onClick: handleRename },
+    { key: 'duplicate', icon: <Copy size={14} />, label: t('agent.sidebar.menu.duplicate'), onClick: handleDuplicate },
     { type: 'divider' },
-    { key: 'delete', icon: <Trash2 size={14} />, label: 'Delete', danger: true, onClick: handleDeleteConfirm },
+    { key: 'delete', icon: <Trash2 size={14} />, label: t('agent.sidebar.menu.delete'), danger: true, onClick: handleDeleteConfirm },
   ];
 
   return (
@@ -622,7 +631,7 @@ function TopicItem({
               whiteSpace: 'nowrap',
             }}
           >
-            {topic.title || 'New Topic'}
+            {topic.title || t('agent.sidebar.newTopic')}
           </span>
         </Popover>
 
@@ -656,6 +665,7 @@ function AgentPicker({
   onBack,
   onCreate,
   token,
+  t,
 }: {
   agents: Agent[];
   selectedAgent: string;
@@ -665,6 +675,7 @@ function AgentPicker({
   onBack: () => void;
   onCreate: () => void;
   token: any;
+  t: (key: string) => string;
 }) {
   const filtered = searchText
     ? agents.filter(
@@ -686,21 +697,21 @@ function AgentPicker({
           icon={ArrowLeft}
           size="small"
           onClick={onBack}
-          title="Back"
+          title={t('agent.sidebar.back')}
         />
-        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>Switch Agent</span>
+        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{t('agent.sidebar.switchAgent')}</span>
         <ActionIcon
           icon={Plus}
           size="small"
           onClick={onCreate}
-          title="Create agent"
+          title={t('agent.sidebar.createAgent')}
           style={{ background: token.colorPrimary, color: '#fff', borderRadius: 6 }}
         />
       </Flexbox>
 
       <div style={{ padding: '8px 12px' }}>
         <SearchBar
-          placeholder="Search agents..."
+          placeholder={t('agent.sidebar.searchAgents')}
           value={searchText}
           onChange={(e) => onSearchChange(e.target.value)}
           allowClear
@@ -715,7 +726,7 @@ function AgentPicker({
             flex={1}
             style={{ color: token.colorTextQuaternary, padding: 40, fontSize: 13 }}
           >
-            {searchText ? 'No matching agents' : 'No agents yet'}
+            {searchText ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
           </Flexbox>
         )}
 

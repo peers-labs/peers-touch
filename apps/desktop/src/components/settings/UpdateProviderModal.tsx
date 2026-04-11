@@ -3,6 +3,7 @@ import { Modal, Form } from 'antd';
 import { Input, TextArea, toast } from '@lobehub/ui';
 import { useProviderStore } from '../../store/provider';
 import type { ProviderDetail } from '../../services/desktop_api';
+import { useTranslation } from 'react-i18next';
 
 interface UpdateProviderModalProps {
   open: boolean;
@@ -11,6 +12,7 @@ interface UpdateProviderModalProps {
 }
 
 export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderModalProps) {
+  const { t } = useTranslation('provider');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const { updateProvider } = useProviderStore();
@@ -23,7 +25,7 @@ export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderMod
       // For now we call updateProvider which only updates api_key/base_url/enabled.
       await updateProvider(detail.id, detail.api_key, detail.base_url, detail.enabled);
       void values; // future: send name/description/logo update
-      toast.success('Provider updated');
+      toast.success(t('provider.updateProvider.updated'));
       onClose();
     } catch (e: unknown) {
       if (e instanceof Error) toast.error(e.message);
@@ -34,12 +36,12 @@ export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderMod
 
   return (
     <Modal
-      title="Edit Provider"
+      title={t('provider.updateProvider.title')}
       open={open}
       onCancel={onClose}
       onOk={handleOk}
       confirmLoading={loading}
-      okText="Update"
+      okText={t('provider.updateProvider.okText')}
       destroyOnClose
     >
       <Form
@@ -53,20 +55,20 @@ export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderMod
           logo: detail.logo || '',
         }}
       >
-        <Form.Item label="Provider ID">
+        <Form.Item label={t('provider.updateProvider.providerId')}>
           <Input value={detail.id} disabled />
         </Form.Item>
         <Form.Item
           name="name"
-          label="Provider Name"
-          rules={[{ required: true, message: 'Required' }]}
+          label={t('provider.updateProvider.providerName')}
+          rules={[{ required: true, message: t('provider.updateProvider.providerNameRequired') }]}
         >
-          <Input placeholder="Display name for the provider" />
+          <Input placeholder={t('provider.updateProvider.providerNamePlaceholder')} />
         </Form.Item>
-        <Form.Item name="description" label="Provider Description">
-          <TextArea placeholder="Provider description (optional)" rows={2} />
+        <Form.Item name="description" label={t('provider.updateProvider.providerDescription')}>
+          <TextArea placeholder={t('provider.updateProvider.providerDescPlaceholder')} rows={2} />
         </Form.Item>
-        <Form.Item name="logo" label="Provider Logo">
+        <Form.Item name="logo" label={t('provider.updateProvider.providerLogo')}>
           <Input placeholder="https://example.com/logo.png" allowClear />
         </Form.Item>
       </Form>

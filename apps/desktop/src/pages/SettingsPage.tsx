@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Tabs, Tag, Table, Button, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
 import {
@@ -19,6 +20,9 @@ import { api, type AppletInfo, type HelpCategoryGroup, type SearchProviderInfo, 
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
+import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
+import { AgentGrowthTab } from '../components/settings/AgentGrowthTab';
+import { log } from '../utils/logger';
 
 const { Title, Text } = Typography;
 
@@ -45,6 +49,7 @@ function scrollAndHighlight(id: string) {
 
 export function SettingsPage({ activeTab, highlightId, onNavConsumed }: SettingsPageProps) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
   const [currentTab, setCurrentTab] = useState(activeTab || 'providers');
 
   useEffect(() => {
@@ -85,12 +90,23 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
   // Internal tabs that remain in host code
   const localTabs = [
     {
+      key: 'growth',
+      order: 45,
+      label: (
+        <Flexbox horizontal align="center" gap={6}>
+          <ActivityIcon size={14} />
+          Agent Growth
+        </Flexbox>
+      ),
+      children: <AgentGrowthTab />,
+    },
+    {
       key: 'statistics',
       order: 50,
       label: (
         <Flexbox horizontal align="center" gap={6}>
           <BarChart3 size={14} />
-          Statistics
+          {t('settings.tab.statistics')}
         </Flexbox>
       ),
       children: <StatisticsTab />,
@@ -101,7 +117,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
       label: (
         <Flexbox horizontal align="center" gap={6}>
           <Puzzle size={14} />
-          Applets
+          {t('settings.tab.applets')}
         </Flexbox>
       ),
       children: <AppletsSettingsTab />,
@@ -112,7 +128,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
       label: (
         <Flexbox horizontal align="center" gap={6}>
           <Settings size={14} />
-          General
+          {t('settings.tab.general')}
         </Flexbox>
       ),
       children: <GeneralTab />,
@@ -123,7 +139,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
       label: (
         <Flexbox horizontal align="center" gap={6}>
           <Wrench size={14} />
-          Tools
+          {t('settings.tab.tools')}
         </Flexbox>
       ),
       children: <ToolsTab />,
@@ -134,7 +150,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
       label: (
         <Flexbox horizontal align="center" gap={6}>
           <HelpCircle size={14} />
-          Help & About
+          {t('settings.tab.help')}
         </Flexbox>
       ),
       children: <HelpTab highlightId={currentTab === 'help' ? highlightId : undefined} />,
@@ -146,7 +162,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
   return (
     <Flexbox style={{ height: '100%', overflow: 'hidden' }}>
       <PageHeader
-        title="Settings"
+        title={t('settings.title')}
         icon={<Settings size={20} style={{ color: token.colorPrimary }} />}
       />
 
@@ -166,9 +182,10 @@ function AppletsSettingsTab() {
   const [applets, setApplets] = useState<AppletInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
 
   useEffect(() => {
-    api.listApplets().then(setApplets).catch(console.error);
+    api.listApplets().then(setApplets).catch((e) => log.error('settings', 'Failed to list applets', e));
   }, []);
 
   const SettingsPanel = selected ? getAppletFrontend(selected)?.settingsPanel : undefined;
@@ -199,7 +216,7 @@ function AppletsSettingsTab() {
             onMouseEnter={(e) => { (e.currentTarget).style.background = token.colorPrimaryBg; }}
             onMouseLeave={(e) => { (e.currentTarget).style.background = 'transparent'; }}
           >
-            ← Back to Applets
+            {t('settings.applets.backToApplets')}
           </div>
         </Flexbox>
         <div style={{ flex: 1, overflow: 'auto' }}>
@@ -214,10 +231,10 @@ function AppletsSettingsTab() {
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" gap={8}>
           <Puzzle size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>Applet Settings</Title>
+          <Title level={5} style={{ margin: 0 }}>{t('settings.applets.title')}</Title>
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 13 }}>
-          Configure installed applets. Each applet may have its own settings panel.
+          {t('settings.applets.description')}
         </Text>
       </Flexbox>
 
@@ -286,7 +303,7 @@ function AppletsSettingsTab() {
                 <Text type="secondary" style={{ fontSize: 18, flexShrink: 0 }}>›</Text>
               )}
               {!hasSettings && (
-                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>No settings</Text>
+                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{t('settings.applets.noSettings')}</Text>
               )}
             </Flexbox>
           );
@@ -296,7 +313,7 @@ function AppletsSettingsTab() {
       {applets.length === 0 && (
         <Flexbox align="center" justify="center" gap={8} style={{ padding: 40 }}>
           <Puzzle size={32} style={{ color: token.colorTextQuaternary }} />
-          <Text type="secondary">No applets installed</Text>
+          <Text type="secondary">{t('settings.applets.noApplets')}</Text>
         </Flexbox>
       )}
     </Flexbox>
@@ -307,6 +324,7 @@ function AppletsSettingsTab() {
 
 function ActivityHeatmap({ activity }: { activity: { date: string; count: number }[] }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
 
   const today = new Date();
   const startDate = new Date(today);
@@ -359,7 +377,7 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
       cells.push(
         <div
           key={dateStr}
-          title={`${dateStr}: ${count} messages`}
+          title={t('settings.statistics.heatmapTooltip', { date: dateStr, count })}
           style={{
             gridColumn: w + 1,
             gridRow: day + 1,
@@ -409,10 +427,10 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
       </div>
       <Flexbox horizontal justify="space-between" align="center">
         <Text type="secondary" style={{ fontSize: 12 }}>
-          A total of {totalMessages} messages sent in the past year
+          {t('settings.statistics.heatmapTotal', { count: totalMessages })}
         </Text>
         <Flexbox horizontal align="center" gap={4}>
-          <Text type="secondary" style={{ fontSize: 10 }}>Inactive</Text>
+          <Text type="secondary" style={{ fontSize: 10 }}>{t('settings.statistics.heatmapInactive')}</Text>
           {[0, 0.25, 0.5, 0.75, 1].map((r, i) => (
             <div
               key={i}
@@ -424,7 +442,7 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
               }}
             />
           ))}
-          <Text type="secondary" style={{ fontSize: 10 }}>Active</Text>
+          <Text type="secondary" style={{ fontSize: 10 }}>{t('settings.statistics.heatmapActive')}</Text>
         </Flexbox>
       </Flexbox>
     </Flexbox>
@@ -447,6 +465,7 @@ function RankList({
   valueHeader: string;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
 
   if (!items || items.length === 0) {
     return (
@@ -467,9 +486,9 @@ function RankList({
         </Flexbox>
         <Flexbox align="center" justify="center" gap={8} style={{ padding: '24px 0' }}>
           <Layers size={32} style={{ color: token.colorTextQuaternary }} />
-          <Text type="secondary" style={{ fontSize: 12 }}>No Data</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('settings.statistics.rankNoData')}</Text>
           <Text type="secondary" style={{ fontSize: 11 }}>
-            Please accumulate more chat data to view
+            {t('settings.statistics.rankNoDataHint')}
           </Text>
         </Flexbox>
       </Flexbox>
@@ -539,15 +558,16 @@ function RankList({
 function StatisticsTab() {
   const [data, setData] = useState<StatisticsData | null>(null);
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
 
   useEffect(() => {
-    api.getStatistics().then(setData).catch(console.error);
+    api.getStatistics().then(setData).catch((e) => log.error('settings', 'Failed to load statistics', e));
   }, []);
 
   if (!data) {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 80 }}>
-        <Text type="secondary">Loading statistics...</Text>
+        <Text type="secondary">{t('settings.statistics.loading')}</Text>
       </Flexbox>
     );
   }
@@ -556,22 +576,22 @@ function StatisticsTab() {
 
   const summaryCards: { label: string; value: string | number; sub?: string; icon: React.ReactNode }[] = [
     {
-      label: 'Sessions',
+      label: t('settings.statistics.sessions'),
       value: summary.sessions,
       icon: <MessageSquare size={20} style={{ color: token.colorPrimary }} />,
     },
     {
-      label: 'Messages',
+      label: t('settings.statistics.messages'),
       value: summary.messages,
       icon: <Hash size={20} style={{ color: '#52c41a' }} />,
     },
     {
-      label: 'Total Words',
+      label: t('settings.statistics.totalWords'),
       value: summary.total_words >= 1000 ? `${(summary.total_words / 1000).toFixed(1)}K` : summary.total_words,
       icon: <Type size={20} style={{ color: '#fa8c16' }} />,
     },
     {
-      label: 'Agents',
+      label: t('settings.statistics.agents'),
       value: summary.agents,
       icon: <Bot size={20} style={{ color: '#722ed1' }} />,
     },
@@ -582,12 +602,18 @@ function StatisticsTab() {
       {/* Header with days count */}
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" gap={8}>
-          <Text strong style={{ fontSize: 16 }}>
-            This is your <span style={{ color: token.colorPrimary, fontWeight: 700, fontSize: 20 }}>{summary.days_with_us}</span> day with Peers-Touch
-          </Text>
+          <Text strong style={{ fontSize: 16 }}
+            dangerouslySetInnerHTML={{
+              __html: t('settings.statistics.daysWithUs', { days: summary.days_with_us })
+                .replace('<highlight>', `<span style="color: ${token.colorPrimary}; font-weight: 700; font-size: 20px">`)
+                .replace('</highlight>', '</span>'),
+            }}
+          />
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          First active: {summary.first_date ? new Date(summary.first_date).toLocaleDateString() : 'N/A'}
+          {t('settings.statistics.firstActive', {
+            date: summary.first_date ? new Date(summary.first_date).toLocaleDateString() : t('settings.statistics.firstActiveNA'),
+          })}
         </Text>
       </Flexbox>
 
@@ -625,7 +651,7 @@ function StatisticsTab() {
       >
         <Flexbox horizontal align="center" gap={8}>
           <ActivityIcon size={16} style={{ color: token.colorPrimary }} />
-          <Text strong style={{ fontSize: 15 }}>Activity in the past year</Text>
+          <Text strong style={{ fontSize: 15 }}>{t('settings.statistics.activityTitle')}</Text>
         </Flexbox>
         <div style={{ overflowX: 'auto' }}>
           <ActivityHeatmap activity={data.activity || []} />
@@ -635,25 +661,25 @@ function StatisticsTab() {
       {/* Rank panels */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         <RankList
-          title="Model Usage Rank"
+          title={t('settings.statistics.modelRank')}
           icon={<Cpu size={16} style={{ color: '#1890ff' }} />}
           items={data.model_rank}
-          labelHeader="Model"
-          valueHeader="Messages"
+          labelHeader={t('settings.statistics.rankLabelModel')}
+          valueHeader={t('settings.statistics.rankLabelMessages')}
         />
         <RankList
-          title="Agent Usage Rank"
+          title={t('settings.statistics.agentRank')}
           icon={<Bot size={16} style={{ color: '#722ed1' }} />}
           items={data.agent_rank}
-          labelHeader="Agent"
-          valueHeader="Messages"
+          labelHeader={t('settings.statistics.rankLabelAgent')}
+          valueHeader={t('settings.statistics.rankLabelMessages')}
         />
         <RankList
-          title="Topic Content Rank"
+          title={t('settings.statistics.topicRank')}
           icon={<Trophy size={16} style={{ color: '#fa8c16' }} />}
           items={data.topic_rank}
-          labelHeader="Topic"
-          valueHeader="Messages"
+          labelHeader={t('settings.statistics.rankLabelTopic')}
+          valueHeader={t('settings.statistics.rankLabelMessages')}
         />
       </div>
     </Flexbox>
@@ -663,6 +689,7 @@ function StatisticsTab() {
 function GeneralTab() {
   const { agents, loadAgents } = useSettingsStore();
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
 
   useEffect(() => {
     loadAgents();
@@ -679,13 +706,34 @@ function GeneralTab() {
           border: `1px solid ${token.colorBorderSecondary}`,
         }}
       >
+        <Flexbox horizontal align="center" justify="space-between">
+          <Flexbox horizontal align="center" gap={8}>
+            <Globe size={18} style={{ color: token.colorPrimary }} />
+            <Title level={5} style={{ margin: 0 }}>{t('settings.general.languageTitle')}</Title>
+          </Flexbox>
+          <LanguageSwitcher />
+        </Flexbox>
+        <Text type="secondary" style={{ fontSize: 13 }}>
+          {t('settings.general.languageDescription')}
+        </Text>
+      </Flexbox>
+
+      <Flexbox
+        gap={16}
+        style={{
+          background: token.colorBgContainer,
+          borderRadius: 12,
+          padding: 24,
+          border: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
         <Flexbox horizontal align="center" gap={8}>
           <Bot size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>Agents</Title>
+          <Title level={5} style={{ margin: 0 }}>{t('settings.general.agentsTitle')}</Title>
         </Flexbox>
 
         {agents.length === 0 ? (
-          <Text type="secondary">No agents configured. The default assistant agent will be used.</Text>
+          <Text type="secondary">{t('settings.general.noAgents')}</Text>
         ) : (
           agents.map((agent) => <AgentCard key={agent.name} agent={agent} />)
         )}
@@ -697,6 +745,7 @@ function GeneralTab() {
 function ToolsTab() {
   const { tools, loadTools } = useSettingsStore();
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
   const [searchProviders, setSearchProviders] = useState<SearchProviderInfo[]>([]);
   const [searchPrimary, setSearchPrimary] = useState('');
   const [loadingSP, setLoadingSP] = useState(true);
@@ -714,21 +763,21 @@ function ToolsTab() {
     try {
       await api.setSearchPrimary(newPrimary);
       setSearchPrimary(newPrimary);
-      message.success(newPrimary ? `Primary search engine set to ${newPrimary}` : 'Primary search engine cleared (auto-detect)');
+      message.success(newPrimary ? t('settings.tools.setPrimarySuccess', { name: newPrimary }) : t('settings.tools.clearPrimarySuccess'));
     } catch {
-      message.error('Failed to update');
+      message.error(t('settings.tools.setPrimaryFailed'));
     }
   };
 
   const toolColumns = [
     {
-      title: 'Name',
+      title: t('settings.tools.columnName'),
       dataIndex: 'name',
       key: 'name',
       render: (name: string) => <Text strong>{name}</Text>,
     },
     {
-      title: 'Category',
+      title: t('settings.tools.columnCategory'),
       dataIndex: 'category',
       key: 'category',
       render: (cat: string) => {
@@ -744,11 +793,11 @@ function ToolsTab() {
       },
     },
     {
-      title: 'Approval',
+      title: t('settings.tools.columnApproval'),
       dataIndex: 'needs_approval',
       key: 'needs_approval',
       render: (v: boolean) =>
-        v ? <Tag color="warning">Required</Tag> : <Tag color="success">Auto</Tag>,
+        v ? <Tag color="warning">{t('settings.tools.approvalRequired')}</Tag> : <Tag color="success">{t('settings.tools.approvalAuto')}</Tag>,
     },
   ];
 
@@ -767,15 +816,14 @@ function ToolsTab() {
       <Flexbox gap={16} style={sectionStyle}>
         <Flexbox horizontal align="center" gap={8}>
           <Globe size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>Search Engines</Title>
+          <Title level={5} style={{ margin: 0 }}>{t('settings.tools.searchEnginesTitle')}</Title>
           <Tag color={configuredCount > 0 ? 'success' : 'default'}>
-            {configuredCount} / {searchProviders.length} configured
+            {t('settings.tools.searchEnginesConfigured', { configured: configuredCount, total: searchProviders.length })}
           </Tag>
         </Flexbox>
 
         <Text type="secondary" style={{ fontSize: 13 }}>
-          Search engines are configured via environment variables. Set the corresponding API key to enable a provider.
-          The primary provider is tried first; if it fails, others are used as fallback.
+          {t('settings.tools.searchEnginesDescription')}
         </Text>
 
         {loadingSP ? (
@@ -799,9 +847,9 @@ function ToolsTab() {
                 <Flexbox horizontal align="center" gap={8}>
                   <Text strong style={{ fontSize: 13, textTransform: 'capitalize' }}>{p.name}</Text>
                   {p.available ? (
-                    <Tag color="success" style={{ margin: 0 }}>Active</Tag>
+                    <Tag color="success" style={{ margin: 0 }}>{t('settings.tools.searchActive')}</Tag>
                   ) : (
-                    <Tag style={{ margin: 0 }}>Not configured</Tag>
+                    <Tag style={{ margin: 0 }}>{t('settings.tools.searchNotConfigured')}</Tag>
                   )}
                 </Flexbox>
                 <Flexbox horizontal align="center" gap={8}>
@@ -811,7 +859,7 @@ function ToolsTab() {
                       type={searchPrimary === p.name ? 'primary' : 'default'}
                       onClick={() => handleSetPrimary(p.name)}
                     >
-                      {searchPrimary === p.name ? '★ Primary' : 'Set Primary'}
+                      {searchPrimary === p.name ? t('settings.tools.primaryLabel') : t('settings.tools.setPrimary')}
                     </Button>
                   )}
                 </Flexbox>
@@ -825,7 +873,7 @@ function ToolsTab() {
       <Flexbox gap={16} style={sectionStyle}>
         <Flexbox horizontal align="center" gap={8}>
           <Wrench size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>Tools ({tools.length})</Title>
+          <Title level={5} style={{ margin: 0 }}>{t('settings.tools.toolsTitle', { count: tools.length })}</Title>
         </Flexbox>
 
         <Table
@@ -861,12 +909,13 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
   const [groups, setGroups] = useState<HelpCategoryGroup[]>([]);
   const [activeKeys, setActiveKeys] = useState<string[]>([]);
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
 
   useEffect(() => {
     api.getHelp().then((g) => {
       setGroups(g);
       setActiveKeys(g.map((gr) => gr.category.id));
-    }).catch(console.error);
+    }).catch((e) => log.error('settings', 'Failed to load help', e));
   }, []);
 
   // When highlightId changes, ensure the category containing it is expanded
@@ -896,11 +945,11 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
       >
         <Flexbox horizontal align="center" gap={8}>
           <Sparkles size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>Peers-Touch</Title>
-          <Tag style={{ fontSize: 11 }}>dev</Tag>
+          <Title level={5} style={{ margin: 0 }}>{t('settings.help.aboutTitle')}</Title>
+          <Tag style={{ fontSize: 11 }}>{t('settings.help.aboutTag')}</Tag>
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 13 }}>
-          Your personal AI assistant with file operations, shell commands, web search, multi-agent orchestration, long-term memory, and extensible agent applets.
+          {t('settings.help.aboutDescription')}
         </Text>
       </Flexbox>
 
@@ -989,11 +1038,11 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
         <Flexbox horizontal align="center" gap={6}>
           <Puzzle size={14} style={{ color: token.colorTextSecondary }} />
           <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>
-            EXTENSION POINT
+            {t('settings.help.extensionPointTitle')}
           </Text>
         </Flexbox>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          Agent Applets can declare help entries in their manifest. When installed, their documentation will automatically appear in the relevant categories above.
+          {t('settings.help.extensionPointDescription')}
         </Text>
       </Flexbox>
 
@@ -1005,35 +1054,36 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
 
 function DangerZoneResetOnboarding() {
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
   const [loading, setLoading] = useState(false);
 
   const handleReset = () => {
     Modal.confirm({
-      title: '重新进入登录页面',
+      title: t('settings.danger.confirmTitle'),
       icon: <AlertTriangle size={20} style={{ color: token.colorError }} />,
       content: (
         <Flexbox gap={8}>
-          <Text>将清除以下状态：</Text>
+          <Text>{t('settings.danger.confirmContent')}</Text>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li>当前登录会话</li>
-            <li>OAuth 连接信息</li>
+            <li>{t('settings.danger.confirmItem.session')}</li>
+            <li>{t('settings.danger.confirmItem.oauth')}</li>
           </ul>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            Provider、模型、偏好等配置保留。确定继续？
+            {t('settings.danger.confirmNote')}
           </Text>
         </Flexbox>
       ),
-      okText: '确定',
-      cancelText: '取消',
+      okText: t('settings.danger.confirmOk'),
+      cancelText: t('settings.danger.confirmCancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
         setLoading(true);
         try {
           await api.resetOnboarding();
-          message.success('已重置，即将刷新页面');
+          message.success(t('settings.danger.resetSuccess'));
           window.location.reload();
         } catch (e) {
-          message.error(e instanceof Error ? e.message : '重置失败');
+          message.error(e instanceof Error ? e.message : t('settings.danger.resetFailed'));
         } finally {
           setLoading(false);
         }
@@ -1053,10 +1103,10 @@ function DangerZoneResetOnboarding() {
     >
       <Flexbox horizontal align="center" gap={8}>
         <AlertTriangle size={16} style={{ color: token.colorError }} />
-        <Text strong style={{ color: token.colorError }}>危险操作</Text>
+        <Text strong style={{ color: token.colorError }}>{t('settings.danger.title')}</Text>
       </Flexbox>
       <Text type="secondary" style={{ fontSize: 13 }}>
-        退出登录并返回登录页面。
+        {t('settings.danger.description')}
       </Text>
       <Button
         danger
@@ -1064,7 +1114,7 @@ function DangerZoneResetOnboarding() {
         loading={loading}
         onClick={handleReset}
       >
-        退出登录
+        {t('settings.danger.logoutButton')}
       </Button>
     </Flexbox>
   );
@@ -1079,6 +1129,7 @@ function AgentCard({
   const [desc, setDesc] = useState(agent.description);
   const { updateAgent } = useSettingsStore();
   const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
 
   const handleSave = async () => {
     await updateAgent(agent.name, { description: desc });
@@ -1098,25 +1149,25 @@ function AgentCard({
       <Flexbox horizontal justify="space-between" align="center">
         <Flexbox horizontal gap={8} align="center">
           <Text strong style={{ fontSize: 15 }}>{agent.name}</Text>
-          <Tag>{agent.model || 'default'}</Tag>
+          <Tag>{agent.model || t('settings.agent.defaultModel')}</Tag>
         </Flexbox>
         {editing ? (
           <Flexbox horizontal gap={4}>
-            <Button type="primary" size="small" onClick={handleSave}>Save</Button>
-            <Button size="small" onClick={() => setEditing(false)}>Cancel</Button>
+            <Button type="primary" size="small" onClick={handleSave}>{t('settings.agent.save')}</Button>
+            <Button size="small" onClick={() => setEditing(false)}>{t('settings.agent.cancel')}</Button>
           </Flexbox>
         ) : (
-          <Button size="small" onClick={() => setEditing(true)}>Edit</Button>
+          <Button size="small" onClick={() => setEditing(true)}>{t('settings.agent.edit')}</Button>
         )}
       </Flexbox>
       {editing ? (
         <Input
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
-          placeholder="Agent description"
+          placeholder={t('settings.agent.descriptionPlaceholder')}
         />
       ) : (
-        <Text type="secondary">{agent.description || 'No description'}</Text>
+        <Text type="secondary">{agent.description || t('settings.agent.noDescription')}</Text>
       )}
     </Flexbox>
   );

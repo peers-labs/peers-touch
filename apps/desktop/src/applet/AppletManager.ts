@@ -1,5 +1,6 @@
 import { parseAppletIndexV2, parseAppletInfoV2, type AppletDiagnostic } from './schema'
 import { type AppletInfo } from './types'
+import { log } from '../utils/logger'
 
 export type { AppletInfo } from './types'
 
@@ -180,10 +181,7 @@ class AppletManager {
 
   private printDiagnostics(scope: string, issues: string[]): void {
     if (issues.length === 0) return
-    console.error(`[AppletManager] ${scope}`)
-    issues.forEach((issue) => {
-      console.error(`[AppletManager]   - ${issue}`)
-    })
+    log.error('AppletManager', scope, issues)
   }
 
   private compareSemver(left: string, right: string): number {

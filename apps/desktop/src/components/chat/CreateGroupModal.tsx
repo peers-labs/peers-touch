@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input } from '@lobehub/ui';
 import { theme, Modal, Typography } from 'antd';
@@ -21,6 +22,7 @@ interface Props {
 
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const { sessions, loadGroups } = useSocialChatStore();
 
   const [searchText, setSearchText] = useState('');
@@ -30,7 +32,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
   const contacts: { did: string; name: string }[] = useMemo(() => {
     return sessions.map((s: FriendChatSession) => ({
       did: s.participantBDid,
-      name: s.participantBDid || 'Unknown',
+      name: s.participantBDid || t('chat.social.sessionList.unknown'),
     }));
   }, [sessions]);
 
@@ -77,19 +79,19 @@ export function CreateGroupModal({ open, onClose }: Props) {
 
   return (
     <Modal
-      title="Start Group Chat"
+      title={t('chat.social.createGroup.title')}
       open={open}
       onCancel={handleClose}
       footer={
         <Flexbox horizontal justify="flex-end" gap={8}>
-          <Button onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleClose}>{t('chat.social.createGroup.cancel')}</Button>
           <Button
             type="primary"
             disabled={selectedDids.size === 0}
             loading={creating}
             onClick={handleFinish}
           >
-            Finish
+            {t('chat.social.createGroup.finish')}
           </Button>
         </Flexbox>
       }
@@ -99,7 +101,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
       <Flexbox gap={12}>
         <Input
           prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
-          placeholder="Search contacts..."
+          placeholder={t('chat.social.createGroup.searchContacts')}
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           allowClear
@@ -114,7 +116,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         >
           {filteredContacts.length === 0 ? (
             <Text type="secondary" style={{ textAlign: 'center', padding: 24, fontSize: 13 }}>
-              No contacts found
+              {t('chat.social.createGroup.noContacts')}
             </Text>
           ) : (
             filteredContacts.map((contact) => {

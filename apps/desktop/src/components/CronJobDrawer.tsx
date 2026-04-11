@@ -17,39 +17,9 @@ import { Sparkles, Terminal, Bot, ChevronDown } from 'lucide-react';
 import { ModelSelect } from './ModelSelect';
 import type { ModelRef } from '../services/desktop_api';
 import { api, type CronJob, type CronJobCreate, type Agent, type Channel, type AvailableModel, type ChatTarget } from '../services/desktop_api';
+import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
-
-/* ──────────────────────────────────────────────────────────────────
-   Cron-adapted schedule selector
-   Provides visual selectors for minute, hour, day-of-week, month
-   plus quick templates and raw expression editing.
-   ────────────────────────────────────────────────────────────────── */
-
-const DAYS_OF_WEEK = [
-  { label: 'Mon', value: 1 },
-  { label: 'Tue', value: 2 },
-  { label: 'Wed', value: 3 },
-  { label: 'Thu', value: 4 },
-  { label: 'Fri', value: 5 },
-  { label: 'Sat', value: 6 },
-  { label: 'Sun', value: 0 },
-];
-
-const MONTHS = [
-  { label: 'Jan', value: 1 }, { label: 'Feb', value: 2 }, { label: 'Mar', value: 3 },
-  { label: 'Apr', value: 4 }, { label: 'May', value: 5 }, { label: 'Jun', value: 6 },
-  { label: 'Jul', value: 7 }, { label: 'Aug', value: 8 }, { label: 'Sep', value: 9 },
-  { label: 'Oct', value: 10 }, { label: 'Nov', value: 11 }, { label: 'Dec', value: 12 },
-];
-
-const CRON_TEMPLATES = [
-  { label: 'Every hour', expr: '0 * * * *' },
-  { label: 'Every day 9:00', expr: '0 9 * * *' },
-  { label: 'Weekdays 9:00', expr: '0 9 * * 1-5' },
-  { label: 'Every Monday', expr: '0 9 * * 1' },
-  { label: 'Every month 1st', expr: '0 9 1 * *' },
-];
 
 
 function parseCronFields(expr: string) {
@@ -99,7 +69,33 @@ interface CronScheduleSelectorProps {
 }
 
 function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps) {
+  const { t } = useTranslation('cron');
   const fields = parseCronFields(cronExpr || '0 * * * *');
+
+  const DAYS_OF_WEEK = [
+    { label: t('cron.drawer.cron.dayMon'), value: 1 },
+    { label: t('cron.drawer.cron.dayTue'), value: 2 },
+    { label: t('cron.drawer.cron.dayWed'), value: 3 },
+    { label: t('cron.drawer.cron.dayThu'), value: 4 },
+    { label: t('cron.drawer.cron.dayFri'), value: 5 },
+    { label: t('cron.drawer.cron.daySat'), value: 6 },
+    { label: t('cron.drawer.cron.daySun'), value: 0 },
+  ];
+
+  const MONTHS = [
+    { label: 'Jan', value: 1 }, { label: 'Feb', value: 2 }, { label: 'Mar', value: 3 },
+    { label: 'Apr', value: 4 }, { label: 'May', value: 5 }, { label: 'Jun', value: 6 },
+    { label: 'Jul', value: 7 }, { label: 'Aug', value: 8 }, { label: 'Sep', value: 9 },
+    { label: 'Oct', value: 10 }, { label: 'Nov', value: 11 }, { label: 'Dec', value: 12 },
+  ];
+
+  const CRON_TEMPLATES = [
+    { label: t('cron.drawer.cron.templateEveryHour'), expr: '0 * * * *' },
+    { label: t('cron.drawer.cron.templateDailyAt9'), expr: '0 9 * * *' },
+    { label: t('cron.drawer.cron.templateWeekdays9'), expr: '0 9 * * 1-5' },
+    { label: t('cron.drawer.cron.templateEveryMonday'), expr: '0 9 * * 1' },
+    { label: t('cron.drawer.cron.templateMonthly1st'), expr: '0 9 1 * *' },
+  ];
 
   const updateField = (key: keyof typeof fields, value: string) => {
     onChange(buildCronExpr({ ...fields, [key]: value }));
@@ -126,12 +122,12 @@ function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps)
       </Flexbox>
 
       <Flexbox horizontal gap={12} align="center">
-        <Text style={{ width: 60, fontSize: 12, flexShrink: 0 }}>Time</Text>
+        <Text style={{ width: 60, fontSize: 12, flexShrink: 0 }}>{t('cron.drawer.cron.fieldTime')}</Text>
         <Select
           mode="multiple"
           maxTagCount={3}
           style={{ flex: 1 }}
-          placeholder="Hour (*)"
+          placeholder={t('cron.drawer.cron.fieldHourPlaceholder')}
           value={hourValues === 'all' ? [] : hourValues}
           onChange={(vals: number[]) => updateField('hour', buildFieldFromValues(vals.length ? vals : 'all', 0, 23))}
           options={Array.from({ length: 24 }, (_, i) => ({
@@ -146,7 +142,7 @@ function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps)
           mode="multiple"
           maxTagCount={2}
           style={{ flex: 1 }}
-          placeholder="Minute (*)"
+          placeholder={t('cron.drawer.cron.fieldMinutePlaceholder')}
           value={minuteValues === 'all' ? [] : minuteValues}
           onChange={(vals: number[]) => updateField('minute', buildFieldFromValues(vals.length ? vals : 'all', 0, 59))}
           options={[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => ({
@@ -159,7 +155,7 @@ function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps)
       </Flexbox>
 
       <Flexbox horizontal gap={12} align="center">
-        <Text style={{ width: 60, fontSize: 12, flexShrink: 0 }}>Days</Text>
+        <Text style={{ width: 60, fontSize: 12, flexShrink: 0 }}>{t('cron.drawer.cron.fieldDays')}</Text>
         <Checkbox.Group
           value={dowValues === 'all' ? DAYS_OF_WEEK.map((d) => d.value) : dowValues}
           onChange={(vals) => {
@@ -174,12 +170,12 @@ function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps)
       </Flexbox>
 
       <Flexbox horizontal gap={12} align="center">
-        <Text style={{ width: 60, fontSize: 12, flexShrink: 0 }}>Months</Text>
+        <Text style={{ width: 60, fontSize: 12, flexShrink: 0 }}>{t('cron.drawer.cron.fieldMonths')}</Text>
         <Select
           mode="multiple"
           maxTagCount={3}
           style={{ flex: 1 }}
-          placeholder="All months"
+          placeholder={t('cron.drawer.cron.fieldMonthsPlaceholder')}
           value={monthValues === 'all' ? [] : monthValues}
           onChange={(vals: number[]) => updateField('month', buildFieldFromValues(vals.length ? vals : 'all', 1, 12))}
           options={MONTHS}
@@ -189,13 +185,13 @@ function CronScheduleSelector({ cronExpr, onChange }: CronScheduleSelectorProps)
       </Flexbox>
 
       <Flexbox horizontal gap={12} align="center">
-        <Text style={{ width: 60, fontSize: 12, flexShrink: 0 }}>Expr</Text>
+        <Text style={{ width: 60, fontSize: 12, flexShrink: 0 }}>{t('cron.drawer.cron.fieldExpr')}</Text>
         <Input
           size="small"
           value={cronExpr}
           onChange={(e) => onChange(e.target.value)}
           style={{ fontFamily: 'monospace', fontSize: 12 }}
-          placeholder="* * * * *"
+          placeholder={t('cron.drawer.cron.fieldExprPlaceholder')}
         />
       </Flexbox>
     </Flexbox>
@@ -268,6 +264,7 @@ interface CronJobDrawerProps {
 }
 
 export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDrawerProps) {
+  const { t } = useTranslation('cron');
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [aiParsing, setAiParsing] = useState(false);
@@ -414,9 +411,9 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
       if (result.scheduleKind) parsed.push('schedule');
       if (result.name) parsed.push('name');
       if (result.agentPrompt) parsed.push('task');
-      message.success(`Parsed: ${parsed.join(', ') || 'schedule'}`);
+      message.success(t('cron.drawer.ai.parseSuccess', { fields: parsed.join(', ') || 'schedule' }));
     } catch (err: any) {
-      message.error('Parse failed: ' + err.message);
+      message.error(t('cron.drawer.ai.parseFailed', { message: err.message }));
     } finally {
       setAiParsing(false);
     }
@@ -427,7 +424,7 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
       const values = await form.validateFields();
 
       if (values.deliveryMode === 'channel' && values.deliveryChannelId && !deliveryTargetId) {
-        message.error('Please select a delivery target (group or user).');
+        message.error(t('cron.drawer.field.deliveryTargetSelectError'));
         return;
       }
 
@@ -465,10 +462,10 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
 
       if (editingJob) {
         await api.updateCronJob(editingJob.id, data);
-        message.success('Job updated');
+        message.success(t('cron.drawer.jobUpdated'));
       } else {
         await api.createCronJob(data);
-        message.success('Job created');
+        message.success(t('cron.drawer.jobCreated'));
       }
       onSaved();
     } catch (err: any) {
@@ -481,19 +478,19 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
 
   return (
     <Drawer
-      title={editingJob ? 'Edit Job' : 'New Job'}
+      title={editingJob ? t('cron.drawer.titleEdit') : t('cron.drawer.titleCreate')}
       open={open}
       onClose={onClose}
       size="default"
       extra={
         <Button type="primary" loading={saving} onClick={handleSubmit}>
-          {editingJob ? 'Save' : 'Add job'}
+          {editingJob ? t('cron.drawer.saveButton') : t('cron.drawer.addButton')}
         </Button>
       }
     >
       <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 16 }}>
-        {editingJob ? 'Edit a scheduled wakeup or agent run.' : 'Create a scheduled wakeup or agent run.'}
-        {' '}* Required
+        {editingJob ? t('cron.drawer.descriptionEdit') : t('cron.drawer.descriptionCreate')}
+        {' '}{t('cron.drawer.required')}
       </Text>
 
       {/* AI Schedule Parser */}
@@ -509,12 +506,12 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
           <Sparkles size={16} style={{ marginTop: 4, color: '#7c3aed', flexShrink: 0 }} />
           <Flexbox gap={8} style={{ flex: 1 }}>
             <Text style={{ fontSize: 12, fontWeight: 500 }}>
-              Describe your schedule in natural language
+              {t('cron.drawer.ai.title')}
             </Text>
             <Flexbox horizontal gap={8}>
               <Input
                 size="small"
-                placeholder='e.g. "every weekday at 9am" or "每天下午3点"'
+                placeholder={t('cron.drawer.ai.placeholder')}
                 value={aiInput}
                 onChange={(e) => setAiInput(e.target.value)}
                 onPressEnter={handleAiParse}
@@ -527,7 +524,7 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                 onClick={handleAiParse}
                 disabled={!aiInput.trim()}
               >
-                Parse
+                {t('cron.drawer.ai.parseButton')}
               </Button>
             </Flexbox>
           </Flexbox>
@@ -536,34 +533,34 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
 
       <Form form={form} layout="vertical" size="middle">
         {/* ── Section 1: Basics ── */}
-        <SectionCard title="Basics" description="Name it, choose the assistant, and set enabled state.">
+        <SectionCard title={t('cron.drawer.section.basics')} description={t('cron.drawer.section.basicsDesc')}>
           <Flexbox horizontal gap={12}>
             <Form.Item
               name="name"
-              label="Name"
-              rules={[{ required: true, message: 'Name is required' }]}
+              label={t('cron.drawer.field.name')}
+              rules={[{ required: true, message: t('cron.drawer.field.nameRequired') }]}
               style={{ flex: 1, marginBottom: 12 }}
             >
-              <Input placeholder="Morning brief" />
+              <Input placeholder={t('cron.drawer.field.namePlaceholder')} />
             </Form.Item>
-            <Form.Item name="description" label="Description" style={{ flex: 1, marginBottom: 12 }}>
-              <Input placeholder="Optional context for this job" />
+            <Form.Item name="description" label={t('cron.drawer.field.description')} style={{ flex: 1, marginBottom: 12 }}>
+              <Input placeholder={t('cron.drawer.field.descriptionPlaceholder')} />
             </Form.Item>
           </Flexbox>
 
           <Flexbox horizontal gap={12} align="flex-end">
             <Form.Item
               name="agentName"
-              label="Agent"
+              label={t('cron.drawer.field.agent')}
               style={{ flex: 1, marginBottom: 0 }}
-              extra={<Text type="secondary" style={{ fontSize: 11 }}>Which assistant personality runs this job.</Text>}
+              extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.agentHint')}</Text>}
             >
               <Select
                 options={agents.map((a) => ({
                   label: (
                     <Flexbox horizontal align="center" gap={8}>
                       <span style={{ fontSize: 16 }}>{a.avatar || '🤖'}</span>
-                      <span>{a.title || a.name}{a.isDefault ? ' (default)' : ''}</span>
+                      <span>{a.title || a.name}{a.isDefault ? ` ${t('cron.drawer.field.defaultSuffix')}` : ''}</span>
                     </Flexbox>
                   ),
                   value: a.name,
@@ -572,19 +569,19 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
               />
             </Form.Item>
             <Form.Item name="enabled" label="" valuePropName="checked" style={{ marginBottom: 0, paddingBottom: 22 }}>
-              <Switch checkedChildren="Enabled" unCheckedChildren="Disabled" defaultChecked />
+              <Switch checkedChildren={t('cron.drawer.field.enabled')} unCheckedChildren={t('cron.drawer.field.disabled')} defaultChecked />
             </Form.Item>
           </Flexbox>
         </SectionCard>
 
         {/* ── Section 2: Schedule ── */}
-        <SectionCard title="Schedule" description="Control when this job runs.">
-          <Form.Item name="scheduleKind" label="Schedule" style={{ marginBottom: 12 }}>
+        <SectionCard title={t('cron.drawer.section.schedule')} description={t('cron.drawer.section.scheduleDesc')}>
+          <Form.Item name="scheduleKind" label={t('cron.drawer.field.scheduleKind')} style={{ marginBottom: 12 }}>
             <Select
               options={[
-                { label: 'Every (interval)', value: 'interval' },
-                { label: 'Cron expression', value: 'cron' },
-                { label: 'At (one-time)', value: 'once' },
+                { label: t('cron.drawer.field.scheduleInterval'), value: 'interval' },
+                { label: t('cron.drawer.field.scheduleCron'), value: 'cron' },
+                { label: t('cron.drawer.field.scheduleOnce'), value: 'once' },
               ]}
               onChange={(val) => setScheduleKind(val)}
             />
@@ -594,18 +591,18 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
             <Flexbox horizontal gap={8} style={{ marginBottom: 12 }}>
               <Form.Item
                 name="intervalValue"
-                label="Every"
+                label={t('cron.drawer.field.every')}
                 style={{ flex: 1, marginBottom: 0 }}
                 rules={[{ required: true }]}
               >
                 <InputNumber min={1} max={999} style={{ width: '100%' }} />
               </Form.Item>
-              <Form.Item name="intervalUnit" label="Unit" style={{ width: 120, marginBottom: 0 }}>
+              <Form.Item name="intervalUnit" label={t('cron.drawer.field.unit')} style={{ width: 120, marginBottom: 0 }}>
                 <Select
                   options={[
-                    { label: 'Minutes', value: 'minutes' },
-                    { label: 'Hours', value: 'hours' },
-                    { label: 'Days', value: 'days' },
+                    { label: t('cron.drawer.field.unitMinutes'), value: 'minutes' },
+                    { label: t('cron.drawer.field.unitHours'), value: 'hours' },
+                    { label: t('cron.drawer.field.unitDays'), value: 'days' },
                   ]}
                 />
               </Form.Item>
@@ -619,17 +616,17 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
           )}
 
           {scheduleKind === 'once' && (
-            <Form.Item name="runAt" label="Run at (ISO 8601)" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
-              <Input placeholder="2025-12-31T09:00:00Z" />
+            <Form.Item name="runAt" label={t('cron.drawer.field.runAt')} rules={[{ required: true }]} style={{ marginBottom: 12 }}>
+              <Input placeholder={t('cron.drawer.field.runAtPlaceholder')} />
             </Form.Item>
           )}
 
           {scheduleKind !== 'interval' && (
-            <Form.Item name="timezone" label="Timezone" style={{ marginBottom: 0 }}>
+            <Form.Item name="timezone" label={t('cron.drawer.field.timezone')} style={{ marginBottom: 0 }}>
               <Select
                 allowClear
                 showSearch
-                placeholder="UTC (default)"
+                placeholder={t('cron.drawer.field.timezonePlaceholder')}
                 options={[
                   { label: 'UTC', value: '' },
                   { label: 'Asia/Shanghai', value: 'Asia/Shanghai' },
@@ -645,15 +642,15 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
         </SectionCard>
 
         {/* ── Section 3: Execution ── */}
-        <SectionCard title="Execution" description="Choose what this job should do.">
-          <Form.Item name="execKind" label="What should run" style={{ marginBottom: 12 }}>
+        <SectionCard title={t('cron.drawer.section.execution')} description={t('cron.drawer.section.executionDesc')}>
+          <Form.Item name="execKind" label={t('cron.drawer.field.whatShouldRun')} style={{ marginBottom: 12 }}>
             <Segmented
               block
               options={[
                 {
                   label: (
                     <Flexbox horizontal align="center" gap={6} style={{ padding: '2px 0' }}>
-                      <Bot size={14} /> Run agent task
+                      <Bot size={14} /> {t('cron.drawer.field.execAgent')}
                     </Flexbox>
                   ),
                   value: 'agent',
@@ -661,7 +658,7 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                 {
                   label: (
                     <Flexbox horizontal align="center" gap={6} style={{ padding: '2px 0' }}>
-                      <Terminal size={14} /> Shell command
+                      <Terminal size={14} /> {t('cron.drawer.field.execShell')}
                     </Flexbox>
                   ),
                   value: 'shell',
@@ -675,14 +672,14 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
             <>
               <Form.Item
                 name="agentPrompt"
-                label="Assistant task prompt"
-                rules={[{ required: true, message: 'Prompt is required' }]}
-                extra={<Text type="secondary" style={{ fontSize: 11 }}>The agent will execute this prompt with full tool access.</Text>}
+                label={t('cron.drawer.field.promptLabel')}
+                rules={[{ required: true, message: t('cron.drawer.field.promptRequired') }]}
+                extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.promptHint')}</Text>}
                 style={{ marginBottom: 12 }}
               >
                 <TextArea
                   rows={4}
-                  placeholder="Check my GitHub repos for new issues and summarize them"
+                  placeholder={t('cron.drawer.field.promptPlaceholder')}
                 />
               </Form.Item>
 
@@ -707,7 +704,7 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                       const m = availableModels.find((m) => m.id === modelId);
                       if (m) handleModelChange({ provider: m.provider_id, model: m.id });
                     }}
-                    placeholder="Use Model Service default"
+                    placeholder={t('cron.drawer.field.modelPlaceholder')}
                   />
                 </Form.Item>
               </Flexbox>
@@ -717,13 +714,13 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
           {execKind === 'shell' && (
             <Form.Item
               name="shellCmd"
-              label="Command"
-              rules={[{ required: true, message: 'Command is required' }]}
+              label={t('cron.drawer.field.commandLabel')}
+              rules={[{ required: true, message: t('cron.drawer.field.commandRequired') }]}
               style={{ marginBottom: 0 }}
             >
               <TextArea
                 rows={3}
-                placeholder="find /tmp -mtime +7 -delete"
+                placeholder={t('cron.drawer.field.commandPlaceholder')}
                 style={{ fontFamily: 'monospace', fontSize: 13 }}
               />
             </Form.Item>
@@ -743,35 +740,35 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
           }}
           items={[{
             key: 'advanced',
-            label: <Text strong style={{ fontSize: 13 }}>Advanced</Text>,
+            label: <Text strong style={{ fontSize: 13 }}>{t('cron.drawer.section.advanced')}</Text>,
             children: (
               <Flexbox gap={4}>
                 <Text type="secondary" style={{ fontSize: 11, marginBottom: 8 }}>
-                  Optional overrides for auto-cleanup and scheduling behavior.
+                  {t('cron.drawer.advancedDesc')}
                 </Text>
 
                 <Form.Item name="deleteAfterRun" valuePropName="checked" style={{ marginBottom: 8 }}>
                   <Checkbox>
                     <Flexbox>
-                      <Text style={{ fontSize: 13 }}>Delete after run</Text>
+                      <Text style={{ fontSize: 13 }}>{t('cron.drawer.field.deleteAfterRun')}</Text>
                       <Text type="secondary" style={{ fontSize: 11 }}>
-                        Best for one-shot reminders that should auto-clean up.
+                        {t('cron.drawer.field.deleteAfterRunHint')}
                       </Text>
                     </Flexbox>
                   </Checkbox>
                 </Form.Item>
 
                 <Flexbox style={{ marginTop: 8 }}>
-                  <Text strong style={{ fontSize: 13, marginBottom: 4 }}>Delivery</Text>
+                  <Text strong style={{ fontSize: 13, marginBottom: 4 }}>{t('cron.drawer.field.deliveryTitle')}</Text>
                   <Text type="secondary" style={{ fontSize: 11, marginBottom: 8 }}>
-                    Send job results or failure alerts to a channel (Telegram, Lark, Slack, Webhook).
+                    {t('cron.drawer.field.deliveryDesc')}
                   </Text>
                 </Flexbox>
 
-                <Form.Item name="deliveryMode" label="Result Delivery" style={{ marginBottom: 8 }}>
+                <Form.Item name="deliveryMode" label={t('cron.drawer.field.resultDelivery')} style={{ marginBottom: 8 }}>
                   <Select>
-                    <Select.Option value="none">None (store in run history only)</Select.Option>
-                    <Select.Option value="channel">Send to channel</Select.Option>
+                    <Select.Option value="none">{t('cron.drawer.field.deliveryNone')}</Select.Option>
+                    <Select.Option value="channel">{t('cron.drawer.field.deliverySendToChannel')}</Select.Option>
                   </Select>
                 </Form.Item>
 
@@ -779,9 +776,9 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                   {({ getFieldValue }) =>
                     getFieldValue('deliveryMode') === 'channel' ? (
                       <>
-                        <Form.Item name="deliveryChannelId" label="Delivery Channel" style={{ marginBottom: 8 }}>
+                        <Form.Item name="deliveryChannelId" label={t('cron.drawer.field.deliveryChannel')} style={{ marginBottom: 8 }}>
                           <Select
-                            placeholder="Select a channel"
+                            placeholder={t('cron.drawer.field.deliveryChannelPlaceholder')}
                             allowClear
                             options={channels.filter((c) => c.enabled).map((c) => ({
                               value: c.id,
@@ -797,18 +794,18 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                         </Form.Item>
 
                         <Form.Item
-                          label="Delivery Target"
+                          label={t('cron.drawer.field.deliveryTarget')}
                           style={{ marginBottom: 8 }}
                           required
                           help={
                             !deliveryTargetId && !loadingTargets
-                              ? 'Required — select a specific group or user to deliver to.'
+                              ? t('cron.drawer.field.deliveryTargetRequired')
                               : undefined
                           }
                           validateStatus={!deliveryTargetId && !loadingTargets ? 'error' : undefined}
                         >
                           <Select
-                            placeholder={loadingTargets ? 'Loading targets...' : 'Select a group or user'}
+                            placeholder={loadingTargets ? t('cron.drawer.field.deliveryTargetLoading') : t('cron.drawer.field.deliveryTargetPlaceholder')}
                             loading={loadingTargets}
                             value={deliveryTargetId || undefined}
                             onChange={(val) => {
@@ -823,9 +820,9 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                           />
                         </Form.Item>
 
-                        <Form.Item name="failureChannelId" label="Failure Alert Channel (optional)" style={{ marginBottom: 8 }}>
+                        <Form.Item name="failureChannelId" label={t('cron.drawer.field.failureChannel')} style={{ marginBottom: 8 }}>
                           <Select
-                            placeholder="Same as delivery channel if empty"
+                            placeholder={t('cron.drawer.field.failureChannelPlaceholder')}
                             allowClear
                             options={channels.filter((c) => c.enabled).map((c) => ({
                               value: c.id,

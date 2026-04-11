@@ -1,0 +1,53 @@
+{
+  "applet.page.title": "智能体应用",
+  "applet.page.subtitle": "通过可插拔的应用扩展 Peers-Touch —— 每个应用都是独立的智能体，拥有自己的界面、工具和知识。",
+  "applet.page.empty": "尚未安装任何应用。",
+
+  "applet.card.active": "已启用",
+  "applet.card.inactive": "未启用",
+  "applet.card.deactivate": "停用",
+  "applet.card.activate": "启用",
+  "applet.card.lastUsed": "2 小时前使用",
+  "applet.card.open": "打开",
+  "applet.card.by": "作者：{{author}}",
+
+  "applet.toast.deactivated": "应用已停用",
+  "applet.toast.activated": "应用已启用",
+  "applet.toast.operationFailed": "操作失败",
+  "applet.toast.failedToActivate": "启用失败",
+  "applet.toast.noPage": "该应用暂无专属页面",
+
+  "applet.cap.search": "搜索",
+  "applet.cap.tools": "工具",
+  "applet.cap.help": "帮助",
+  "applet.cap.agents": "智能体",
+
+  "applet.perm.network": "网络",
+  "applet.perm.llm": "LLM",
+  "applet.perm.files": "文件",
+  "applet.perm.write": "写入",
+  "applet.perm.shell": "Shell",
+  "applet.perm.db": "数据库",
+  "applet.perm.secrets": "密钥",
+
+  "applet.runtime.title": "应用",
+  "applet.runtime.notFound": "未找到应用「{{id}}」，请先构建 packages/applets。",
+  "applet.runtime.diagnostic": "诊断 {{index}}：{{issue}}",
+  "applet.runtime.unpin": "取消固定",
+  "applet.runtime.pin": "固定",
+  "applet.runtime.source": "来源：/applets-dist/{{id}}",
+  "applet.runtime.running": "运行中",
+  "applet.runtime.close": "关闭",
+
+  "applet.example.title": "应用运行时示例",
+  "applet.example.alertTitle": "应用运行时",
+  "applet.example.alertDesc": "此页面演示如何从本地 applets-dist 目录加载和运行应用。",
+  "applet.example.description": "应用运行时允许你在桌面客户端中运行轻量级应用，由 Lynx 跨平台渲染引擎驱动。应用从本地 applets-dist 目录加载。",
+  "applet.example.scan": "扫描应用",
+  "applet.example.closeApplet": "关闭应用",
+  "applet.example.available": "可用应用（{{count}}）",
+  "applet.example.open": "打开",
+  "applet.example.author": "作者：{{author}}",
+  "applet.example.loaded.title": "应用已加载",
+  "applet.example.loaded.desc": "应用已成功加载，你可以在下方进行交互。"
+}

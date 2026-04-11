@@ -1,0 +1,14 @@
+{
+  "search.hero.title": "Search Peers Touch",
+  "search.hero.subtitle": "Search conversations, tools, help, providers — or ask AI",
+  "search.input.placeholder": "Search anything...",
+
+  "search.tab.all": "All",
+  "search.tab.aiAnswer": "AI Answer",
+
+  "search.result.noResults": "No results found",
+  "search.result.showAll": "Show all {{source}} results...",
+  "search.result.sources": "Sources",
+
+  "search.ai.title": "AI Answer"
+}

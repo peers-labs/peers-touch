@@ -45,7 +45,7 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 fn internal_error() -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::InternalError,
-        "failed to access model config store",
+        "error.modelConfig.storeAccessFailed",
         None,
     )
 }

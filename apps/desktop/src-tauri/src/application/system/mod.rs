@@ -158,7 +158,7 @@ pub fn open_external_url(input: ExternalUrlInput) -> AppResult<StubPayload> {
     if let Err(err) = command.spawn() {
         return AppResult::fail(
             ErrorCode::InternalError,
-            format!("failed to open url: {err}"),
+            "error.system.openUrlFailed",
             None,
         );
     }
@@ -212,7 +212,7 @@ pub fn onboarding_reset() -> AppResult<StubPayload> {
             Err(err) => {
                 return AppResult::fail(
                     ErrorCode::InternalError,
-                    format!("failed to resolve reset file path: {err:?}"),
+                    "error.system.resetPathResolveFailed",
                     None,
                 )
             }
@@ -221,7 +221,7 @@ pub fn onboarding_reset() -> AppResult<StubPayload> {
             if let Err(err) = fs::remove_file(&path) {
                 return AppResult::fail(
                     ErrorCode::InternalError,
-                    format!("failed to clear reset file {}: {err}", path.display()),
+                    "error.system.resetFileClearFailed",
                     None,
                 );
             }
@@ -292,7 +292,7 @@ pub fn logs_tail(input: LogsTailInput) -> AppResult<StubPayload> {
 
     let log_dir = match storage::app_file_path("desktop", StorageKind::Logs, &[]) {
         Ok(p) => p,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, format!("Failed to resolve logs dir: {e}"), None),
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.system.logsDirResolveFailed", None),
     };
 
     let mut log_files: Vec<_> = fs::read_dir(&log_dir)
@@ -441,7 +441,7 @@ pub fn visitor_online() -> AppResult<StubPayload> {
 pub fn context_snapshot_get(input: Option<ContextSnapshotGetInput>) -> AppResult<StubPayload> {
     let mut snapshot = match global_context_state().lock() {
         Ok(v) => v.clone(),
-        Err(_) => return AppResult::fail(ErrorCode::InternalError, "context lock failed", None),
+        Err(_) => return AppResult::fail(ErrorCode::InternalError, "error.system.contextLockFailed", None),
     };
     if let Ok(account_state) = auth_identity::read_state() {
         let active = match account_state.active_account_id {
@@ -494,7 +494,7 @@ pub fn context_action_dispatch(input: ContextActionDispatchInput) -> AppResult<S
     }
     let mut state = match global_context_state().lock() {
         Ok(v) => v,
-        Err(_) => return AppResult::fail(ErrorCode::InternalError, "context lock failed", None),
+        Err(_) => return AppResult::fail(ErrorCode::InternalError, "error.system.contextLockFailed", None),
     };
     let payload = input.payload.unwrap_or_else(|| json!({}));
     if input.action == "set_runtime_state" {
@@ -521,13 +521,13 @@ pub fn context_action_dispatch(input: ContextActionDispatchInput) -> AppResult<S
     } else {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            format!("unsupported action: {}", input.action),
+            "error.system.unsupportedAction",
             None,
         );
     }
     state["meta"]["updatedAt"] = json!(now_ms());
     if let Err(err) = persist_global_context_state(&state) {
-        return AppResult::fail(ErrorCode::InternalError, err, None);
+        return AppResult::fail(ErrorCode::InternalError, "error.system.contextPersistFailed", None);
     }
     success_payload(
         "context_action_dispatch",
@@ -542,7 +542,7 @@ pub fn context_action_dispatch(input: ContextActionDispatchInput) -> AppResult<S
 pub fn context_capabilities() -> AppResult<StubPayload> {
     let state = match global_context_state().lock() {
         Ok(v) => v,
-        Err(_) => return AppResult::fail(ErrorCode::InternalError, "context lock failed", None),
+        Err(_) => return AppResult::fail(ErrorCode::InternalError, "error.system.contextLockFailed", None),
     };
     success_payload(
         "context_capabilities",
@@ -556,7 +556,7 @@ pub fn context_capabilities() -> AppResult<StubPayload> {
 pub fn context_health() -> AppResult<StubPayload> {
     let state = match global_context_state().lock() {
         Ok(v) => v,
-        Err(_) => return AppResult::fail(ErrorCode::InternalError, "context lock failed", None),
+        Err(_) => return AppResult::fail(ErrorCode::InternalError, "error.system.contextLockFailed", None),
     };
     let app_state = state["runtime"]["appState"].as_str().unwrap_or("unknown");
     let network_online = state["network"]["online"].as_bool().unwrap_or(true);

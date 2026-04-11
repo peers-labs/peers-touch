@@ -21,7 +21,7 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 fn internal_error() -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::InternalError,
-        "failed to access provider store",
+        "error.provider.storeAccessFailed",
         None,
     )
 }
@@ -179,8 +179,8 @@ pub fn model_add(scope: Option<&str>, input: ProviderModelAddInput) -> AppResult
             }
             success_payload("model_add", json!({ "ok": true, "model_id": model_id }))
         }
-        Ok(Err(ErrorCode::Conflict)) => AppResult::fail(ErrorCode::Conflict, "model already exists", None),
-        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "provider not found", None),
+        Ok(Err(ErrorCode::Conflict)) => AppResult::fail(ErrorCode::Conflict, "error.models.alreadyExists", None),
+        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
         Err(_) => internal_error(),
     }
 }
@@ -211,8 +211,8 @@ pub fn model_update(scope: Option<&str>, input: ProviderModelUpdateInput) -> App
             }
             success_payload("model_update", json!({ "ok": true }))
         }
-        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "model not found", None),
-        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "provider not found", None),
+        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "error.models.notFound", None),
+        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
         Err(_) => internal_error(),
     }
 }
@@ -251,8 +251,8 @@ pub fn model_delete(scope: Option<&str>, input: ProviderModelDeleteInput) -> App
             }
             success_payload("model_delete", json!({ "ok": true }))
         }
-        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "model not found", None),
-        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "provider not found", None),
+        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "error.models.notFound", None),
+        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
         Err(_) => internal_error(),
     }
 }
@@ -273,7 +273,7 @@ pub fn model_fetch_remote(scope: Option<&str>, input: ProviderModelFetchInput) -
         Err(_) => return internal_error(),
     };
     let Some(provider) = provider else {
-        return AppResult::fail(ErrorCode::NotFound, "provider not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None);
     };
     let input_api_key = input
         .data
@@ -341,8 +341,8 @@ pub fn model_toggle(scope: Option<&str>, input: ProviderModelToggleInput) -> App
             }
             success_payload("model_toggle", json!({ "ok": true }))
         }
-        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "model not found", None),
-        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "provider not found", None),
+        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "error.models.notFound", None),
+        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
         Err(_) => internal_error(),
     }
 }
@@ -372,7 +372,7 @@ pub fn model_toggle_all(scope: Option<&str>, input: ProviderModelToggleAllInput)
             }
             success_payload("model_toggle_all", json!({ "ok": true }))
         }
-        Ok(Err(())) => AppResult::fail(ErrorCode::NotFound, "provider not found", None),
+        Ok(Err(())) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
         Err(_) => internal_error(),
     }
 }

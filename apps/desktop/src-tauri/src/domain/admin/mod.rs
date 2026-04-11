@@ -81,7 +81,5 @@ pub fn emit_audit(
         AdminCapability::ExecuteAction => "admin_execute_action",
     };
     let actor = actor_id.unwrap_or("anonymous");
-    println!(
-        "{{\"request_id\":\"{request_id}\",\"command\":\"{capability_name}\",\"actor\":\"{actor}\",\"outcome\":\"{outcome}\"}}"
-    );
+    tracing::info!(request_id = %request_id, command = %capability_name, actor = %actor, outcome = %outcome, "admin audit log");
 }

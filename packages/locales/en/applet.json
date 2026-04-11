@@ -1,0 +1,53 @@
+{
+  "applet.page.title": "Agent Applets",
+  "applet.page.subtitle": "Extend Peers-Touch with pluggable applets — each is a self-contained agent with its own UI, tools, and knowledge.",
+  "applet.page.empty": "No applets installed yet.",
+
+  "applet.card.active": "Active",
+  "applet.card.inactive": "Inactive",
+  "applet.card.deactivate": "Deactivate",
+  "applet.card.activate": "Activate",
+  "applet.card.lastUsed": "Last used 2 hours ago",
+  "applet.card.open": "Open",
+  "applet.card.by": "by {{author}}",
+
+  "applet.toast.deactivated": "Applet deactivated",
+  "applet.toast.activated": "Applet activated",
+  "applet.toast.operationFailed": "Operation failed",
+  "applet.toast.failedToActivate": "Failed to activate",
+  "applet.toast.noPage": "This applet does not have a dedicated page yet",
+
+  "applet.cap.search": "Search",
+  "applet.cap.tools": "Tools",
+  "applet.cap.help": "Help",
+  "applet.cap.agents": "Agents",
+
+  "applet.perm.network": "Network",
+  "applet.perm.llm": "LLM",
+  "applet.perm.files": "Files",
+  "applet.perm.write": "Write",
+  "applet.perm.shell": "Shell",
+  "applet.perm.db": "DB",
+  "applet.perm.secrets": "Secrets",
+
+  "applet.runtime.title": "Applet",
+  "applet.runtime.notFound": "Applet \"{{id}}\" not found. Please build packages/applets first.",
+  "applet.runtime.diagnostic": "Diagnostic {{index}}: {{issue}}",
+  "applet.runtime.unpin": "Unpin",
+  "applet.runtime.pin": "Pin",
+  "applet.runtime.source": "Source: /applets-dist/{{id}}",
+  "applet.runtime.running": "Running",
+  "applet.runtime.close": "Close",
+
+  "applet.example.title": "Applet Runtime Example",
+  "applet.example.alertTitle": "Applet Runtime",
+  "applet.example.alertDesc": "This page demonstrates how to load and run Applet from local applets-dist directory.",
+  "applet.example.description": "The Applet runtime allows you to run lightweight applications within the desktop client, powered by the Lynx cross-platform rendering engine. Applets are loaded from the local applets-dist directory.",
+  "applet.example.scan": "Scan Applets",
+  "applet.example.closeApplet": "Close Applet",
+  "applet.example.available": "Available Applets ({{count}})",
+  "applet.example.open": "Open",
+  "applet.example.author": "Author: {{author}}",
+  "applet.example.loaded.title": "Applet Loaded",
+  "applet.example.loaded.desc": "The applet has been loaded successfully. You can interact with it below."
+}

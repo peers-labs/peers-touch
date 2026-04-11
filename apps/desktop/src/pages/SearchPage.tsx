@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { SearchBar, Tag } from '@lobehub/ui';
 import { Empty, Spin, Typography, theme } from 'antd';
@@ -123,6 +124,7 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
 
   const [inputValue, setInputValue] = useState(query);
   const SOURCE_TABS_ENABLED = true;
+  const { t } = useTranslation('search');
 
   const allGroups: SearchSourceGroup[] = useMemo(() => {
     return sources
@@ -206,7 +208,7 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
         label: (
           <SearchTabLabel
             icon={<Search size={14} />}
-            label="All"
+            label={t('search.tab.all')}
             count={query ? totalAllCount : undefined}
             loading={query ? isAnySourceLoading : false}
             active={activeSource === 'all'}
@@ -235,7 +237,7 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
       label: (
         <SearchTabLabel
           icon={<Sparkles size={14} />}
-          label="AI Answer"
+          label={t('search.tab.aiAnswer')}
           loading={aiLoading}
           active={activeSource === 'ai'}
         />
@@ -243,7 +245,7 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
     });
 
     return items;
-  }, [SOURCE_TABS_ENABLED, sources, activeSource, sourceResults, loadingPerSource, query, totalAllCount, isAnySourceLoading, aiLoading]);
+  }, [SOURCE_TABS_ENABLED, sources, activeSource, sourceResults, loadingPerSource, query, totalAllCount, isAnySourceLoading, aiLoading, t]);
 
   return (
     <Flexbox flex={1} height="100%" style={{ overflow: 'auto' }}>
@@ -275,17 +277,17 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
               <Bot size={32} color="#fff" />
             </div>
             <Title level={3} style={{ margin: 0 }}>
-              Search Peers Touch
+              {t('search.hero.title')}
             </Title>
             <Text type="secondary">
-              Search conversations, tools, help, providers — or ask AI
+              {t('search.hero.subtitle')}
             </Text>
           </Flexbox>
         )}
 
         <div style={{ width: '100%', maxWidth: 680 }}>
           <SearchBar
-            placeholder="Search anything..."
+            placeholder={t('search.input.placeholder')}
             value={inputValue}
             enableShortKey
             shortKey="mod+k"
@@ -310,21 +312,21 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
               scrollbarWidth: 'none',
             }}
           >
-            {tabItems.map((t) => (
+            {tabItems.map((tab) => (
               <div
-                key={t.key}
-                onClick={() => handleTabChange(t.key)}
+                key={tab.key}
+                onClick={() => handleTabChange(tab.key)}
                 style={{
                   padding: '8px 14px',
                   cursor: 'pointer',
                   fontSize: 13,
-                  color: activeSource === t.key ? token.colorPrimary : token.colorTextSecondary,
-                  borderBottom: activeSource === t.key ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
+                  color: activeSource === tab.key ? token.colorPrimary : token.colorTextSecondary,
+                  borderBottom: activeSource === tab.key ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
                   transition: 'all 0.15s',
                   flexShrink: 0,
                 }}
               >
-                {t.label}
+                {tab.label}
               </div>
             ))}
           </Flexbox>
@@ -398,7 +400,7 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
             && sourceResults[activeSource]!.length === 0;
         })() && (
           <Empty
-            description="No results found"
+            description={t('search.result.noResults')}
             style={{ marginTop: 48 }}
           />
         )}
@@ -419,6 +421,7 @@ function SourceGroupCard({
   onShowMore: () => void;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('search');
   return (
     <Flexbox gap={8}>
       <Flexbox horizontal align="center" gap={8} style={{ padding: '4px 0' }}>
@@ -442,7 +445,7 @@ function SourceGroupCard({
             textAlign: 'left',
           }}
         >
-          Show all {group.source.name} results...
+          {t('search.result.showAll', { source: group.source.name })}
         </button>
       )}
     </Flexbox>
@@ -517,6 +520,7 @@ function AIAnswerPanel({
   onNavigate?: (url: string) => void;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('search');
   return (
     <Flexbox gap={16}>
       <div
@@ -529,7 +533,7 @@ function AIAnswerPanel({
       >
         <Flexbox horizontal align="center" gap={8} style={{ marginBottom: 12 }}>
           <Sparkles size={18} style={{ color: token.colorPrimary }} />
-          <Text strong style={{ color: token.colorPrimary }}>AI Answer</Text>
+          <Text strong style={{ color: token.colorPrimary }}>{t('search.ai.title')}</Text>
         </Flexbox>
         <div
           style={{ fontSize: 14, lineHeight: 1.7, color: token.colorText }}
@@ -539,7 +543,7 @@ function AIAnswerPanel({
 
       {sources.length > 0 && (
         <Flexbox gap={8}>
-          <Text type="secondary" style={{ fontSize: 12 }}>Sources</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('search.result.sources')}</Text>
           {sources.map((s, i) => (
             <Flexbox
               key={i}

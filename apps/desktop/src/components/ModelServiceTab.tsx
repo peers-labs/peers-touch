@@ -13,49 +13,21 @@ import { Alert, toast } from '@lobehub/ui';
 import { Typography, theme } from 'antd';
 import { api, type ModelServiceConfig, type ModelRef, type AvailableModel } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
+import { useTranslation } from 'react-i18next';
 
 const { Title, Text } = Typography;
 
-interface SlotDef {
-  key: keyof ModelServiceConfig;
-  title: string;
-  description: string;
-}
-
-const SLOTS: SlotDef[] = [
-  {
-    key: 'default',
-    title: 'Default Agent Settings',
-    description: 'Default model used when creating a new Agent or when no model is specified.',
-  },
-  {
-    key: 'topicNaming',
-    title: 'Topic Auto-Naming Agent',
-    description: 'Model designated for automatic topic renaming.',
-  },
-  {
-    key: 'translation',
-    title: 'Message Translation Agent',
-    description: 'Specify the model used for translation.',
-  },
-  {
-    key: 'historyCompress',
-    title: 'Conversation History Compression Agent',
-    description: 'Specify the model used to compress conversation history.',
-  },
-  {
-    key: 'cronDefault',
-    title: 'Cron Job Default Agent',
-    description: 'Default model for scheduled cron job agent tasks.',
-  },
-  {
-    key: 'agentRouter',
-    title: 'Agent Proxy Router',
-    description: 'Model used by Agent Proxy to intelligently route requests to the best-fit agent.',
-  },
+const SLOT_KEYS: (keyof ModelServiceConfig)[] = [
+  'default',
+  'topicNaming',
+  'translation',
+  'historyCompress',
+  'cronDefault',
+  'agentRouter',
 ];
 
 export function ModelServiceTab() {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [config, setConfig] = useState<ModelServiceConfig>({});
   const [models, setModels] = useState<AvailableModel[]>([]);
@@ -84,7 +56,7 @@ export function ModelServiceTab() {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         const body = ref.provider || ref.model ? ref : null;
-        api.setModelConfig(key, body).catch(() => toast.error('Failed to save'));
+        api.setModelConfig(key, body).catch(() => toast.error(t('provider.modelService.failedToSave')));
       }, 500);
 
       return next;
@@ -94,7 +66,7 @@ export function ModelServiceTab() {
   if (loading) {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 40 }}>
-        <Text type="secondary">Loading model configuration...</Text>
+        <Text type="secondary">{t('provider.modelService.loading')}</Text>
       </Flexbox>
     );
   }
@@ -103,39 +75,39 @@ export function ModelServiceTab() {
 
   return (
     <Flexbox gap={0} style={{ padding: '16px 24px', height: '100%', overflow: 'auto' }}>
-      <Title level={5} style={{ margin: '0 0 4px' }}>Model Service</Title>
+      <Title level={5} style={{ margin: '0 0 4px' }}>{t('provider.modelService.title')}</Title>
       <Text type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
-        Configure which model each scenario uses. All models are governed by Provider settings — disabling a provider invalidates its model assignments here.
+        {t('provider.modelService.desc')}
       </Text>
 
       {noModels && (
         <Alert
           type="warning"
           showIcon
-          message="No models available"
-          description="Enable at least one provider and configure its API key in the Providers tab."
+          message={t('provider.modelService.noModels')}
+          description={t('provider.modelService.noModelsDesc')}
           style={{ marginBottom: 16 }}
         />
       )}
 
       <Flexbox gap={0}>
-        {SLOTS.map((slot, i) => {
-          const ref = config[slot.key];
+        {SLOT_KEYS.map((slotKey, i) => {
+          const ref = config[slotKey];
           const isInvalid = ref?.model && !models.some(
             (m) => m.provider_id === ref.provider && m.id === ref.model
           );
 
           return (
             <Flexbox
-              key={slot.key}
+              key={slotKey}
               style={{
                 padding: '20px 24px',
                 background: token.colorBgContainer,
-                borderRadius: i === 0 ? '12px 12px 0 0' : i === SLOTS.length - 1 ? '0 0 12px 12px' : 0,
-                borderBottom: i < SLOTS.length - 1 ? `1px solid ${token.colorBorderSecondary}` : undefined,
+                borderRadius: i === 0 ? '12px 12px 0 0' : i === SLOT_KEYS.length - 1 ? '0 0 12px 12px' : 0,
+                borderBottom: i < SLOT_KEYS.length - 1 ? `1px solid ${token.colorBorderSecondary}` : undefined,
               }}
             >
-              <Text strong style={{ fontSize: 15, marginBottom: 4 }}>{slot.title}</Text>
+              <Text strong style={{ fontSize: 15, marginBottom: 4 }}>{t(`provider.modelService.slot.${slotKey}.title`)}</Text>
 
               <Flexbox
                 horizontal
@@ -145,15 +117,15 @@ export function ModelServiceTab() {
                 style={{ marginTop: 4 }}
               >
                 <Flexbox flex={1}>
-                  <Text type="secondary" style={{ fontSize: 13 }}>Model</Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{slot.description}</Text>
+                  <Text type="secondary" style={{ fontSize: 13 }}>{t('provider.modelService.modelLabel')}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t(`provider.modelService.slot.${slotKey}.desc`)}</Text>
                 </Flexbox>
 
                 <ModelSelect
                   value={ref?.model}
                   onChange={(v) => {
                     const m = models.find((m) => m.id === v);
-                    if (m) handleSlotChange(slot.key, { provider: m.provider_id, model: m.id });
+                    if (m) handleSlotChange(slotKey, { provider: m.provider_id, model: m.id });
                   }}
                   models={models}
                   showWarning={!!isInvalid}
@@ -164,7 +136,7 @@ export function ModelServiceTab() {
 
               {isInvalid && (
                 <Text type="warning" style={{ fontSize: 12, marginTop: 4 }}>
-                  ⚠ Model "{ref?.model}" from provider "{ref?.provider}" is no longer available. Please reconfigure.
+                  ⚠ {t('provider.modelService.modelInvalid', { model: ref?.model, provider: ref?.provider })}
                 </Text>
               )}
             </Flexbox>

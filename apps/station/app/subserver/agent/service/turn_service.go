@@ -1,0 +1,1234 @@
+// Change-log:
+// 2026-04-11 — Initial implementation of TurnService: Turn Loop orchestration
+//   that coordinates prompt assembly, context compression, error classification,
+//   nudge state management, and persistence.
+// 2026-04-11 — Phase 3 integration: replaced provider call / error recovery /
+//   tool dispatch placeholders with real ProviderService, CredentialPoolService,
+//   ContextReferenceService, DelegationService wiring. Added credential rotation
+//   retry loop, context reference preprocessing, and tool call iteration loop.
+// 2026-04-11 — Phase 4: integrated ToolRegistryService into processToolCalls,
+//   replacing [tool_not_implemented] placeholder with central dispatch.
+//   Implemented recursive delegation executor using scoped mini turn-loop.
+// 2026-04-11 — Phase 5: runCompression now performs Knowledge Salvage via
+//   FlushMemories() before compression, and executes an LLM call to produce
+//   an actual summary from the compression prompt. Added executeSummaryLLM().
+// 2026-04-11 — Phase 6: integrated ReviewService into Step 9 nudge evaluation.
+//   TurnService now holds a *ReviewService and delegates background review
+//   triggering to it after updating nudge counters.
+// 2026-04-11 — Phase 7: Compression Session Split and MemoryProvider lifecycle
+//   hooks. Added splitSession() to mark the old conversation as "compressed"
+//   and create a child conversation post-compression. Added memoryProvider()
+//   helper. Integrated on_turn_start, on_pre_compress, sync_turn, on_delegation
+//   hooks into the turn loop for external memory backend synchronisation.
+// 2026-04-11 — P1 Bug Fixes:
+//   (1) NudgeState data race: replaced direct field access with thread-safe
+//       IncrementTurnCounter / IncrementIterCounter methods.
+//   (2) Delegation depth guard: added Depth field to TurnConfig, reject turns
+//       exceeding MaxDelegationDepth, propagate depth to child configs.
+//   (3) ShouldFallback recovery: added FallbackModel to TurnConfig, consume
+//       ShouldFallback in providerCallWithRetry to switch model on billing /
+//       model_not_found errors.
+//   (4) ID collision: replaced all time.UnixNano IDs with crypto/rand-based
+//       generateID() across turn_service, review_service, memory_service,
+//       delegation_service, and skill_service.
+// 2026-04-11 — Growth Metrics Integration: injected GrowthMetricsService dependency,
+//   emit RecordEvent on turn completed (turn_completed), failed (turn_failed),
+//   and retried (turn_retried).
+
+package service
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	"gorm.io/gorm"
+
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
+)
+
+// ---------------------------------------------------------------------------
+// TurnConfig
+// ---------------------------------------------------------------------------
+
+// TurnConfig holds per-execution configuration for a single turn.
+type TurnConfig struct {
+	AgentID           string
+	ConversationID    string
+	Identity          string
+	AgentConfigPrompt string
+	Platform          string
+	AvailableTools    []string
+	ContextWindowSize int
+	MaxRetries        int
+	Provider          string
+	Model             string
+	FallbackModel     string // Alternate model for billing/model_not_found fallback recovery.
+	WorkspaceRoot     string
+	RotationStrategy  domain.RotationStrategy
+	Depth             int // Current delegation depth (0 = top-level).
+}
+
+// ---------------------------------------------------------------------------
+// TurnService
+// ---------------------------------------------------------------------------
+
+// TurnService orchestrates the full lifecycle of a single agent turn:
+// context reference preprocessing → prompt assembly → compression check →
+// credential lease → provider call → error recovery → tool dispatch →
+// nudge evaluation → persistence.
+type TurnService struct {
+	errorClassifier  *ErrorClassifierService
+	memoryService    *MemoryService
+	skillService     *SkillService
+	promptAssembly   *PromptAssemblyService
+	compression      *CompressionService
+	providerService  *ProviderService
+	credentialPool   *CredentialPoolService
+	contextReference *ContextReferenceService
+	delegation       *DelegationService
+	toolRegistry     *ToolRegistryService
+	reviewService    *ReviewService
+	growthMetrics    *GrowthMetricsService
+	nudgeState       *domain.NudgeState
+}
+
+func NewTurnService(
+	errorClassifier *ErrorClassifierService,
+	memoryService *MemoryService,
+	skillService *SkillService,
+	promptAssembly *PromptAssemblyService,
+	compression *CompressionService,
+	providerService *ProviderService,
+	credentialPool *CredentialPoolService,
+	contextReference *ContextReferenceService,
+	delegation *DelegationService,
+	toolRegistry *ToolRegistryService,
+	reviewService *ReviewService,
+	growthMetrics *GrowthMetricsService,
+) *TurnService {
+	return &TurnService{
+		errorClassifier:  errorClassifier,
+		memoryService:    memoryService,
+		skillService:     skillService,
+		promptAssembly:   promptAssembly,
+		compression:      compression,
+		providerService:  providerService,
+		credentialPool:   credentialPool,
+		contextReference: contextReference,
+		delegation:       delegation,
+		toolRegistry:     toolRegistry,
+		reviewService:    reviewService,
+		growthMetrics:    growthMetrics,
+		nudgeState:       domain.NewNudgeState(),
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ExecuteTurn — full turn loop
+// ---------------------------------------------------------------------------
+
+// ExecuteTurn runs the complete turn loop and returns the finished Turn domain
+// object. The loop follows these stages:
+//
+//	Step 1  — create turn record (status=running)
+//	Step 2  — persist user message
+//	Step 3  — preprocess context references (@file, @url, …)
+//	Step 4  — assemble system prompt
+//	Step 5  — load conversation messages
+//	Step 6  — check / run compression
+//	Step 7  — credential lease + provider call with error recovery loop
+//	Step 8  — tool call iteration loop (includes delegation)
+//	Step 9  — nudge state counters
+//	Step 10 — persist assistant message + complete turn
+//	Step 11 — save TurnTrace
+func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userInput string) (*domain.Turn, error) {
+
+	// Step 1 — Create turn record (status=running).
+	turnRecord, err := s.createTurnRecord(ctx, config, userInput)
+	if err != nil {
+		return nil, err
+	}
+	turnID := turnRecord.ID
+
+	trace := &domain.TurnTrace{
+		TraceID: generateID("trace"),
+		TurnID:  turnID,
+	}
+
+	// Guard: reject turns that exceed the maximum delegation depth to prevent
+	// unbounded recursive delegation chains.
+	// Fix 2026-04-11: delegation depth was never checked, allowing infinite recursion.
+	if config.Depth > domain.MaxDelegationDepth {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			fmt.Sprintf("delegation depth %d exceeds maximum %d", config.Depth, domain.MaxDelegationDepth),
+			nil)
+	}
+
+	logger.Infof(ctx, "turn started: turn_id=%s agent_id=%s conversation_id=%s",
+		turnID, config.AgentID, config.ConversationID)
+
+	// MemoryProvider hook: on_turn_start — notify external backend of new turn.
+	if mp := s.memoryProvider(); mp != nil {
+		mp.OnTurnStart(turnID, userInput)
+	}
+
+	// Step 2 — Persist user message.
+	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleUser), userInput); err != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, "failed to persist user message")
+		return nil, err
+	}
+
+	// Step 3 — Preprocess context references (@file, @folder, @url, …).
+	processedInput := userInput
+	if config.WorkspaceRoot != "" {
+		refResult, refErr := s.contextReference.Process(ctx, userInput, config.WorkspaceRoot, config.ContextWindowSize)
+		if refErr != nil {
+			logger.Warnf(ctx, "context reference processing failed (non-fatal): turn_id=%s err=%v", turnID, refErr)
+		} else if refResult != nil && refResult.Message != refResult.OriginalMessage {
+			processedInput = refResult.Message
+			logger.Infof(ctx, "context references expanded: turn_id=%s expanded=%d blocked=%d injected_tokens=%d",
+				turnID, len(refResult.Expanded), len(refResult.Blocked), refResult.InjectedTokens)
+		}
+	}
+
+	// Step 4 — Assemble system prompt.
+	assemblyResult, err := s.promptAssembly.Assemble(
+		ctx,
+		config.AgentID,
+		config.Identity,
+		config.AgentConfigPrompt,
+		config.Platform,
+		config.AvailableTools,
+		config.WorkspaceRoot,
+	)
+	if err != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, "prompt assembly failed")
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"prompt assembly failed", err)
+	}
+
+	systemPromptHash := sha256Short(assemblyResult.SystemPrompt)
+	trace.SystemPromptHash = systemPromptHash
+	trace.MemorySnapshotHash = assemblyResult.MemorySnapshotHash
+	trace.SkillIndexHash = assemblyResult.SkillIndexHash
+
+	logger.Infof(ctx, "prompt assembled: turn_id=%s prompt_hash=%s skills=%d",
+		turnID, systemPromptHash, assemblyResult.SkillCount)
+
+	// Step 5 — Load conversation messages.
+	messages, err := s.loadMessages(ctx, config.ConversationID)
+	if err != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, "failed to load conversation messages")
+		return nil, err
+	}
+
+	// Replace the last user message content with the reference-expanded version
+	// so the provider receives the enriched input.
+	if processedInput != userInput && len(messages) > 0 {
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == domain.MessageRoleUser {
+				messages[i].Content = processedInput
+				break
+			}
+		}
+	}
+
+	// Step 6 — Check / run compression.
+	estimatedTokens := s.compression.EstimateTokens(messages)
+	shouldCompress := s.compression.ShouldCompress(estimatedTokens, config.ContextWindowSize)
+
+	logger.Infof(ctx, "compression check: turn_id=%s tokens=%d window=%d should_compress=%v",
+		turnID, estimatedTokens, config.ContextWindowSize, shouldCompress)
+
+	if shouldCompress {
+		messages, err = s.runCompression(ctx, config, turnID, trace, assemblyResult, messages)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Step 7 — Credential lease + provider call with error recovery loop.
+	assistantResponse, providerCalls, err := s.providerCallWithRetry(
+		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
+	)
+	if err != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, fmt.Sprintf("provider call failed after retries: %v", err))
+		return nil, err
+	}
+	trace.ProviderCalls = providerCalls
+
+	// Step 8 — Tool call iteration loop.
+	toolIterations, err := s.processToolCalls(
+		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages, &assistantResponse,
+	)
+	if err != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, fmt.Sprintf("tool call processing failed: %v", err))
+		return nil, err
+	}
+
+	// Step 9 — Update nudge state counters and trigger background review.
+	// Fix 2026-04-11: use thread-safe accessor methods to avoid data race with
+	// the background review goroutine that resets these counters concurrently.
+	s.nudgeState.IncrementTurnCounter()
+	s.nudgeState.IncrementIterCounter(toolIterations)
+
+	if s.reviewService != nil {
+		s.reviewService.CheckAndTriggerReview(
+			ctx,
+			s.nudgeState,
+			turnID,
+			config.ConversationID,
+			config.AgentID,
+			config.Provider,
+			config.Model,
+			messages,
+			false,
+		)
+	}
+
+	if s.nudgeState.ShouldTriggerMemoryReview() {
+		trace.ReviewTriggered = true
+	}
+	if s.nudgeState.ShouldTriggerSkillReview() {
+		trace.ReviewTriggered = true
+	}
+
+	// Step 10 — Persist assistant message and update turn status.
+	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleAssistant), assistantResponse); err != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, "failed to persist assistant message")
+		return nil, err
+	}
+
+	if err := s.completeTurn(ctx, turnID, assistantResponse, toolIterations); err != nil {
+		return nil, err
+	}
+
+	// MemoryProvider hook: sync_turn — persist this turn to external backend.
+	if mp := s.memoryProvider(); mp != nil {
+		if syncErr := mp.SyncTurn(userInput, assistantResponse); syncErr != nil {
+			logger.Warnf(ctx, "MemoryProvider.SyncTurn failed (non-fatal): turn_id=%s err=%v", turnID, syncErr)
+		}
+	}
+
+	// Step 11 — Save TurnTrace.
+	if err := s.saveTurnTrace(ctx, trace); err != nil {
+		logger.Errorf(ctx, "failed to save turn trace (non-fatal): turn_id=%s err=%v", turnID, err)
+	}
+
+	now := time.Now()
+	turn := &domain.Turn{
+		TurnID:         turnID,
+		ConversationID: config.ConversationID,
+		AgentID:        config.AgentID,
+		UserInput:      userInput,
+		FinalResponse:  assistantResponse,
+		ToolIterations: toolIterations,
+		Status:         domain.TurnStatusCompleted,
+		StartedAt:      turnRecord.StartedAt,
+		EndedAt:        &now,
+	}
+
+	logger.Infof(ctx, "turn completed: turn_id=%s iterations=%d", turnID, toolIterations)
+
+	if s.growthMetrics != nil {
+		s.growthMetrics.RecordEvent(ctx, config.AgentID, EventTurnCompleted, CategoryTurn, turnID, fmt.Sprintf("iterations=%d", toolIterations), "success")
+	}
+
+	// Update skill usage stats for skills loaded during this turn.
+	if len(trace.SkillsLoaded) > 0 && s.skillService != nil {
+		s.skillService.RecordSkillUsage(ctx, config.AgentID, trace.SkillsLoaded, true)
+	}
+
+	return turn, nil
+}
+
+// ---------------------------------------------------------------------------
+// runCompression — encapsulates the full compression sub-flow
+// ---------------------------------------------------------------------------
+
+func (s *TurnService) runCompression(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	trace *domain.TurnTrace,
+	assemblyResult *PromptAssemblyResult,
+	messages []domain.Message,
+) ([]domain.Message, error) {
+
+	trace.CompressionTriggered = true
+
+	// MemoryProvider hook: on_pre_compress — let external backend archive before eviction.
+	if mp := s.memoryProvider(); mp != nil {
+		if notifyErr := mp.OnPreCompress(messages); notifyErr != nil {
+			logger.Warnf(ctx, "compression: MemoryProvider.OnPreCompress failed (non-fatal): turn_id=%s err=%v", turnID, notifyErr)
+		}
+	}
+
+	// Step 1 — Knowledge Salvage: flush important context to memory before compression.
+	// 2026-04-11 — Fix: pass config.Provider instead of relying on hardcoded "openai"
+	//   inside FlushMemories, so flush works with any configured provider type.
+	if flushErr := s.memoryService.FlushMemories(ctx, config.AgentID, messages, s.providerService, s.credentialPool, s.toolRegistry, config.Provider); flushErr != nil {
+		logger.Warnf(ctx, "compression: flush_memories failed (non-fatal): turn_id=%s err=%v", turnID, flushErr)
+	} else {
+		logger.Infof(ctx, "compression: flush_memories completed, turn_id=%s", turnID)
+	}
+
+	// Step 2 — Execute compression (prune + split + build summary prompt).
+	compResult, compErr := s.compression.Compress(ctx, messages, config.ContextWindowSize)
+	if compErr != nil {
+		logger.Errorf(ctx, "compression failed: turn_id=%s err=%v", turnID, compErr)
+		_ = s.failTurn(ctx, config.AgentID, turnID, "context compression failed")
+		return nil, errcode.New(errcode.AgentCompressionFailed, http.StatusInternalServerError,
+			"context compression failed", compErr)
+	}
+
+	trace.CompressionBefore = compResult.TokensBefore
+	trace.CompressionAfter = compResult.TokensAfter
+
+	// Step 3 — Execute LLM summary call if summary prompt was generated.
+	if compResult.Summary != "" {
+		summaryText, summaryErr := s.executeSummaryLLM(ctx, config, compResult.Summary)
+		if summaryErr != nil {
+			logger.Warnf(ctx, "compression: summary LLM call failed (non-fatal): turn_id=%s err=%v", turnID, summaryErr)
+		} else {
+			// Prepend summary as a system message to the compressed messages.
+			summaryMsg := domain.Message{
+				MessageID: generateID("summary"),
+				Role:      domain.MessageRoleSystem,
+				Content:   summaryText,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+			compResult.Messages = append([]domain.Message{summaryMsg}, compResult.Messages...)
+
+			logger.Infof(ctx, "compression: summary generated, turn_id=%s summary_len=%d", turnID, len(summaryText))
+		}
+	}
+
+	messages = compResult.Messages
+
+	logger.Infof(ctx, "compression applied: turn_id=%s before=%d after=%d pruned=%v",
+		turnID, compResult.TokensBefore, compResult.TokensAfter, compResult.WasPruned)
+
+	// Rebuild system prompt with fresh snapshot after compression.
+	freshAssembly, freshErr := s.promptAssembly.Assemble(
+		ctx,
+		config.AgentID,
+		config.Identity,
+		config.AgentConfigPrompt,
+		config.Platform,
+		config.AvailableTools,
+		config.WorkspaceRoot,
+	)
+	if freshErr != nil {
+		logger.Warnf(ctx, "post-compression prompt reassembly failed: turn_id=%s err=%v", turnID, freshErr)
+	} else {
+		*assemblyResult = *freshAssembly
+		trace.MemorySnapshotHash = freshAssembly.MemorySnapshotHash
+		trace.SkillIndexHash = freshAssembly.SkillIndexHash
+	}
+
+	// Step 4 — Session Split: mark old conversation as compressed, create
+	// a child conversation linked via parent_session_id.
+	oldConvID := config.ConversationID
+	newConvID, splitErr := s.splitSession(ctx, config)
+	if splitErr != nil {
+		logger.Warnf(ctx, "compression: session split failed (non-fatal): turn_id=%s err=%v", turnID, splitErr)
+	} else {
+		config.ConversationID = newConvID
+		logger.Infof(ctx, "compression: session split completed, turn_id=%s old_conv=%s new_conv=%s", turnID, oldConvID, newConvID)
+	}
+
+	return messages, nil
+}
+
+// ---------------------------------------------------------------------------
+// executeSummaryLLM — produce actual summary text from a summary prompt
+// ---------------------------------------------------------------------------
+
+// executeSummaryLLM leases a credential and calls the LLM to generate a
+// concise summary from the given summary prompt. The summary prompt is
+// produced by CompressionService.Compress and contains the conversation
+// text to summarize along with formatting instructions.
+func (s *TurnService) executeSummaryLLM(ctx context.Context, config *TurnConfig, summaryPrompt string) (string, error) {
+	credential, err := s.credentialPool.Lease(ctx, config.Provider, domain.RotationRoundRobin)
+	if err != nil {
+		return "", fmt.Errorf("no credential for summary: %w", err)
+	}
+	defer s.credentialPool.Release(ctx, credential.CredentialID)
+
+	resp, err := s.providerService.Call(ctx, &ProviderCallRequest{
+		ProviderID:   credential.CredentialID,
+		Model:        config.Model,
+		SystemPrompt: "You are a summarization assistant. Produce a concise structured summary.",
+		Messages: []domain.Message{{
+			Role:    domain.MessageRoleUser,
+			Content: summaryPrompt,
+		}},
+		ProviderType: config.Provider,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Content, nil
+}
+
+// ---------------------------------------------------------------------------
+// memoryProvider — accessor for the external MemoryProvider (may be nil)
+// ---------------------------------------------------------------------------
+
+// memoryProvider returns the external MemoryProvider if one is attached, or nil.
+func (s *TurnService) memoryProvider() domain.MemoryProvider {
+	return s.memoryService.GetMemoryProvider()
+}
+
+// ---------------------------------------------------------------------------
+// splitSession — compression session split
+// ---------------------------------------------------------------------------
+
+// splitSession marks the current conversation as "compressed" and creates a
+// new child conversation linked via ParentID. This implements Session Split
+// from the architecture spec (Session Split -> Rebuild System Prompt).
+func (s *TurnService) splitSession(ctx context.Context, config *TurnConfig) (string, error) {
+	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
+	if err != nil {
+		return "", fmt.Errorf("split session: db access failed: %w", err)
+	}
+
+	// Mark the old conversation as compressed.
+	if err := db.Model(&persistence.Conversation{}).
+		Where("id = ?", config.ConversationID).
+		Updates(map[string]interface{}{
+			"status":     "compressed",
+			"updated_at": time.Now(),
+		}).Error; err != nil {
+		return "", fmt.Errorf("split session: failed to mark old conversation: %w", err)
+	}
+
+	// Create a new child conversation inheriting the parent's settings.
+	newID := generateID("conv")
+	parentID := config.ConversationID
+	newConv := persistence.Conversation{
+		ID:         newID,
+		AgentID:    config.AgentID,
+		UserID:     "",
+		Title:      "Continued (post-compression)",
+		ProviderID: config.Provider,
+		Status:     "active",
+		ParentID:   &parentID,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	if err := db.Create(&newConv).Error; err != nil {
+		return "", fmt.Errorf("split session: failed to create child conversation: %w", err)
+	}
+
+	return newID, nil
+}
+
+// ---------------------------------------------------------------------------
+// providerCallWithRetry — credential rotation + error recovery loop
+// ---------------------------------------------------------------------------
+
+// providerCallWithRetry performs the LLM provider call with a retry loop that
+// integrates error classification, credential rotation, compression fallback,
+// and model fallback. Returns the assistant response text and all provider
+// call records for trace logging.
+func (s *TurnService) providerCallWithRetry(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	trace *domain.TurnTrace,
+	systemPrompt string,
+	messages []domain.Message,
+) (string, []domain.ProviderCallRecord, error) {
+
+	maxRetries := config.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+
+	var providerCalls []domain.ProviderCallRecord
+
+	// Recover any cooled-down credentials before starting the retry loop.
+	if recovered, _ := s.credentialPool.RecoverCooledDown(ctx); recovered > 0 {
+		logger.Infof(ctx, "credential recovery: %d credentials restored before provider call", recovered)
+	}
+
+	strategy := config.RotationStrategy
+	if strategy == "" {
+		strategy = domain.RotationRoundRobin
+	}
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+
+		// Lease a credential for the provider.
+		credential, leaseErr := s.credentialPool.Lease(ctx, config.Provider, strategy)
+		if leaseErr != nil {
+			logger.Errorf(ctx, "credential lease failed: turn_id=%s attempt=%d err=%v",
+				turnID, attempt, leaseErr)
+
+			// If no credential is available on a retry, it's fatal.
+			if attempt > 0 {
+				return "", providerCalls, errcode.New(errcode.AgentCredentialFailed,
+					http.StatusServiceUnavailable, "no credentials available after rotation", leaseErr)
+			}
+			return "", providerCalls, leaseErr
+		}
+
+		logger.Infof(ctx, "credential leased: turn_id=%s attempt=%d credential_id=%s",
+			turnID, attempt, credential.CredentialID)
+
+		callStart := time.Now()
+
+		resp, callErr := s.providerService.Call(ctx, &ProviderCallRequest{
+			ProviderID:   credential.CredentialID,
+			Model:        config.Model,
+			SystemPrompt: systemPrompt,
+			Messages:     messages,
+			ProviderType: config.Provider,
+		})
+
+		callDuration := time.Since(callStart)
+
+		// Build provider call record for trace regardless of outcome.
+		callRecord := domain.ProviderCallRecord{
+			Provider:     config.Provider,
+			Model:        config.Model,
+			Latency:      callDuration,
+			CredentialID: credential.CredentialID,
+		}
+
+		if resp != nil {
+			callRecord.InputTokens = resp.InputTokens
+			callRecord.OutputTokens = resp.OutputTokens
+			callRecord.CacheHit = resp.CacheHit
+			if resp.Model != "" {
+				callRecord.Model = resp.Model
+			}
+		}
+		providerCalls = append(providerCalls, callRecord)
+
+		// Release credential (no-op today, future distributed lock support).
+		_ = s.credentialPool.Release(ctx, credential.CredentialID)
+
+		// Success path.
+		if callErr == nil && resp != nil {
+			logger.Infof(ctx, "provider call success: turn_id=%s attempt=%d model=%s input=%d output=%d latency=%s",
+				turnID, attempt, resp.Model, resp.InputTokens, resp.OutputTokens, callDuration)
+			return resp.Content, providerCalls, nil
+		}
+
+		// Error classification and recovery decision.
+		classified := s.errorClassifier.Classify(
+			callErr,
+			config.Provider,
+			config.Model,
+			s.compression.EstimateTokens(messages),
+			config.ContextWindowSize,
+		)
+		trace.ErrorClassified = append(trace.ErrorClassified, *classified)
+
+		logger.Warnf(ctx, "provider call failed: turn_id=%s attempt=%d reason=%s retryable=%v",
+			turnID, attempt, classified.Reason.String(), classified.Retryable)
+
+		if attempt > 0 && s.growthMetrics != nil {
+			s.growthMetrics.RecordEvent(ctx, config.AgentID, EventTurnRetried, CategoryTurn, turnID, fmt.Sprintf("attempt=%d reason=%s", attempt, classified.Reason.String()), "retry")
+		}
+
+		// Recovery: mark credential based on error type.
+		if classified.ShouldRotateCredential {
+			if classified.Reason == domain.FailoverReasonAuth || classified.Reason == domain.FailoverReasonBilling {
+				_ = s.credentialPool.MarkExhausted(ctx, credential.CredentialID, classified.HTTPStatus)
+			} else {
+				_ = s.credentialPool.MarkError(ctx, credential.CredentialID)
+			}
+		}
+
+		// Recovery: trigger compression on context overflow.
+		if classified.ShouldCompress && !trace.CompressionTriggered {
+			logger.Infof(ctx, "error recovery: triggering compression, turn_id=%s", turnID)
+			compResult, compErr := s.compression.Compress(ctx, messages, config.ContextWindowSize)
+			if compErr == nil {
+				trace.CompressionTriggered = true
+				trace.CompressionBefore = compResult.TokensBefore
+				trace.CompressionAfter = compResult.TokensAfter
+				messages = compResult.Messages
+			} else {
+				logger.Errorf(ctx, "error recovery compression failed: turn_id=%s err=%v", turnID, compErr)
+			}
+		}
+
+		// Recovery: fallback to alternate model on billing/model_not_found errors.
+		// Fix 2026-04-11: ShouldFallback was classified but never acted on,
+		// causing billing and model_not_found errors to exhaust retries instead
+		// of switching to the configured fallback model.
+		if classified.ShouldFallback && config.FallbackModel != "" && config.Model != config.FallbackModel {
+			logger.Infof(ctx, "error recovery: falling back to model %s, turn_id=%s reason=%s",
+				config.FallbackModel, turnID, classified.Reason.String())
+			config.Model = config.FallbackModel
+		}
+
+		// Non-retryable errors terminate the loop immediately.
+		if !classified.Retryable && !classified.ShouldCompress && !classified.ShouldRotateCredential && !classified.ShouldFallback {
+			return "", providerCalls, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+				fmt.Sprintf("non-retryable provider error: %s", classified.Reason.String()), callErr)
+		}
+	}
+
+	return "", providerCalls, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+		fmt.Sprintf("provider call exhausted %d retries", maxRetries), nil)
+}
+
+// ---------------------------------------------------------------------------
+// processToolCalls — tool call iteration loop
+// ---------------------------------------------------------------------------
+
+// maxToolIterations is the hard upper bound on tool call rounds per turn
+// to prevent infinite loops from adversarial or buggy tool responses.
+const maxToolIterations = 25
+
+// processToolCalls parses tool_calls from the assistant response, executes
+// them (including delegation), appends results as tool-role messages,
+// re-invokes the provider, and loops until the assistant stops producing
+// tool calls. The final assistant response is updated in-place via the
+// responsePtr parameter.
+func (s *TurnService) processToolCalls(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	trace *domain.TurnTrace,
+	systemPrompt string,
+	messages []domain.Message,
+	responsePtr *string,
+) (int, error) {
+
+	iterations := 0
+
+	for iterations < maxToolIterations {
+
+		// Parse tool calls from the current assistant response.
+		toolCalls := s.parseToolCalls(*responsePtr)
+		if len(toolCalls) == 0 {
+			break
+		}
+
+		iterations++
+		logger.Infof(ctx, "tool iteration %d: turn_id=%s tool_count=%d", iterations, turnID, len(toolCalls))
+
+		for _, tc := range toolCalls {
+			callStart := time.Now()
+
+			var toolResult string
+			var toolErr error
+
+			// Build per-call metadata for tool handlers.
+			meta := &domain.ToolCallMeta{
+				AgentID:        config.AgentID,
+				ConversationID: config.ConversationID,
+				TurnID:         turnID,
+				Platform:       config.Platform,
+				WorkspaceRoot:  config.WorkspaceRoot,
+			}
+
+			// Delegation: handle delegate_task via DelegationService with
+			// recursive mini turn-loop executor.
+			if tc.ToolName == "delegate_task" {
+				toolResult, toolErr = s.executeDelegation(ctx, turnID, tc, config)
+			} else {
+				// Central dispatch via ToolRegistryService.
+				result := s.toolRegistry.Dispatch(ctx, meta, tc.ToolName, tc.Arguments)
+				toolResult = result.Content
+				if result.IsError {
+					toolErr = fmt.Errorf("%s", result.Content)
+				}
+			}
+
+			callDuration := time.Since(callStart)
+
+			resultContent := toolResult
+			if toolErr != nil {
+				resultContent = fmt.Sprintf("[tool_error] %s: %v", tc.ToolName, toolErr)
+				logger.Warnf(ctx, "tool call failed: turn_id=%s tool=%s err=%v", turnID, tc.ToolName, toolErr)
+			}
+
+		// Track skills loaded for growth attribution.
+		if tc.ToolName == "skill_view" && toolErr == nil {
+			var viewArgs struct {
+				Name string `json:"name"`
+			}
+			if json.Unmarshal([]byte(tc.Arguments), &viewArgs) == nil && viewArgs.Name != "" {
+				alreadyTracked := false
+				for _, s := range trace.SkillsLoaded {
+					if s == viewArgs.Name {
+						alreadyTracked = true
+						break
+					}
+				}
+				if !alreadyTracked {
+					trace.SkillsLoaded = append(trace.SkillsLoaded, viewArgs.Name)
+				}
+			}
+		}
+
+		// Record the tool call in trace.
+		trace.ToolCalls = append(trace.ToolCalls, domain.ToolCallRecord{
+			ToolName:  tc.ToolName,
+			Arguments: tc.Arguments,
+			Result:    resultContent,
+			Duration:  callDuration,
+		})
+
+			// Persist tool result as a tool-role message.
+			toolMsg := fmt.Sprintf("[%s] %s", tc.ToolName, resultContent)
+			if persistErr := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleTool), toolMsg); persistErr != nil {
+				logger.Errorf(ctx, "failed to persist tool message: turn_id=%s tool=%s err=%v", turnID, tc.ToolName, persistErr)
+			}
+
+			// Append to in-memory message list for the next provider call.
+			messages = append(messages, domain.Message{
+				MessageID:      generateID("msg"),
+				ConversationID: config.ConversationID,
+				TurnID:         turnID,
+				Role:           domain.MessageRoleTool,
+				Content:        toolMsg,
+				CreatedAt:      time.Now(),
+				UpdatedAt:      time.Now(),
+			})
+		}
+
+		// Re-invoke the provider with tool results appended.
+		nextResponse, _, reCallErr := s.providerCallWithRetry(
+			ctx, config, turnID, trace, systemPrompt, messages,
+		)
+		if reCallErr != nil {
+			logger.Errorf(ctx, "provider re-call failed after tool iteration %d: turn_id=%s err=%v",
+				iterations, turnID, reCallErr)
+			return iterations, reCallErr
+		}
+
+		*responsePtr = nextResponse
+	}
+
+	if iterations >= maxToolIterations {
+		logger.Warnf(ctx, "tool iteration hard limit reached: turn_id=%s iterations=%d", turnID, iterations)
+	}
+
+	return iterations, nil
+}
+
+// ---------------------------------------------------------------------------
+// executeDelegation — dispatch delegate_task tool calls
+// ---------------------------------------------------------------------------
+
+func (s *TurnService) executeDelegation(
+	ctx context.Context,
+	turnID string,
+	tc toolCallEntry,
+	config *TurnConfig,
+) (string, error) {
+
+	var task domain.DelegationTask
+	if err := json.Unmarshal([]byte(tc.Arguments), &task); err != nil {
+		return "", fmt.Errorf("invalid delegation task payload: %w", err)
+	}
+
+	// Fix 2026-04-11: propagate incremented depth to prevent infinite recursion.
+	task.Depth = config.Depth + 1
+	task.ParentTurnID = turnID
+
+	// Recursive executor: runs a scoped mini turn-loop for each child task.
+	// The child inherits the parent's provider/model settings but receives a
+	// restricted toolset and incremented depth counter.
+	executor := func(execCtx context.Context, t *domain.DelegationTask, toolset []string) (*domain.DelegationResult, error) {
+
+		childConfig := &TurnConfig{
+			AgentID:           config.AgentID,
+			ConversationID:    fmt.Sprintf("%s_child_%s", config.ConversationID, t.TaskID),
+			Identity:          config.Identity,
+			AgentConfigPrompt: config.AgentConfigPrompt,
+			Platform:          config.Platform,
+			AvailableTools:    toolset,
+			ContextWindowSize: config.ContextWindowSize,
+			MaxRetries:        config.MaxRetries,
+			Provider:          config.Provider,
+			Model:             config.Model,
+			FallbackModel:     config.FallbackModel,
+			WorkspaceRoot:     config.WorkspaceRoot,
+			RotationStrategy:  config.RotationStrategy,
+			Depth:             config.Depth + 1,
+		}
+
+		childInput := fmt.Sprintf("You are a delegated sub-agent. Your task:\n\n%s\n\n"+
+			"Available tools: %v\n"+
+			"Complete this task and return a concise summary of results.",
+			t.Description, toolset)
+
+		startedAt := time.Now()
+
+		childTurn, err := s.ExecuteTurn(execCtx, childConfig, childInput)
+		if err != nil {
+			return nil, fmt.Errorf("child turn failed: %w", err)
+		}
+
+		endedAt := time.Now()
+		return &domain.DelegationResult{
+			TaskID:          t.TaskID,
+			ParentTurnID:    t.ParentTurnID,
+			TaskDescription: t.Description,
+			ChildToolset:    toolset,
+			Status:          domain.DelegationStatusCompleted,
+			ResultSummary:   childTurn.FinalResponse,
+			ToolIterations:  childTurn.ToolIterations,
+			StartedAt:       startedAt,
+			EndedAt:         &endedAt,
+		}, nil
+	}
+
+	results, err := s.delegation.Execute(ctx, turnID, []domain.DelegationTask{task}, config.AvailableTools, executor)
+	if err != nil {
+		return "", err
+	}
+
+	// MemoryProvider hook: on_delegation — record delegation context in external backend.
+	if mp := s.memoryProvider(); mp != nil {
+		for _, r := range results {
+			_ = mp.OnDelegation(r.TaskDescription, r.ResultSummary)
+		}
+	}
+
+	resultJSON, _ := json.Marshal(results)
+	return string(resultJSON), nil
+}
+
+// ---------------------------------------------------------------------------
+// toolCallEntry / parseToolCalls — extract tool calls from assistant response
+// ---------------------------------------------------------------------------
+
+type toolCallEntry struct {
+	ToolName  string
+	Arguments string
+}
+
+// parseToolCalls attempts to extract structured tool calls from the assistant
+// response. The format follows the convention:
+//
+//	<tool_call>{"name":"tool_name","arguments":{...}}</tool_call>
+//
+// Returns an empty slice if no tool calls are found.
+func (s *TurnService) parseToolCalls(response string) []toolCallEntry {
+	var calls []toolCallEntry
+
+	const openTag = "<tool_call>"
+	const closeTag = "</tool_call>"
+
+	remaining := response
+	for {
+		startIdx := len(remaining) - len(remaining)
+		_ = startIdx
+
+		openIdx := indexOf(remaining, openTag)
+		if openIdx < 0 {
+			break
+		}
+
+		closeIdx := indexOf(remaining[openIdx:], closeTag)
+		if closeIdx < 0 {
+			break
+		}
+
+		jsonStr := remaining[openIdx+len(openTag) : openIdx+closeIdx]
+
+		var parsed struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+
+		if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil && parsed.Name != "" {
+			calls = append(calls, toolCallEntry{
+				ToolName:  parsed.Name,
+				Arguments: string(parsed.Arguments),
+			})
+		}
+
+		remaining = remaining[openIdx+closeIdx+len(closeTag):]
+	}
+
+	return calls
+}
+
+// indexOf returns the index of substr in s, or -1 if not found.
+func indexOf(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}
+
+// ---------------------------------------------------------------------------
+// Helper: createTurnRecord
+// ---------------------------------------------------------------------------
+
+func (s *TurnService) createTurnRecord(ctx context.Context, config *TurnConfig, userInput string) (*persistence.AgentTurn, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	record := &persistence.AgentTurn{
+		ID:             generateID("turn"),
+		ConversationID: config.ConversationID,
+		AgentID:        config.AgentID,
+		UserInput:      &userInput,
+		ToolIterations: 0,
+		Status:         string(domain.TurnStatusRunning),
+		StartedAt:      now,
+	}
+
+	if err := db.WithContext(ctx).Create(record).Error; err != nil {
+		logger.Errorf(ctx, "failed to create turn record: agent_id=%s err=%v", config.AgentID, err)
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to create turn record", err)
+	}
+
+	return record, nil
+}
+
+// ---------------------------------------------------------------------------
+// Helper: persistMessage
+// ---------------------------------------------------------------------------
+
+func (s *TurnService) persistMessage(ctx context.Context, conversationID, turnID, role, content string) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	msg := &persistence.AgentMessage{
+		ID:             generateID("msg"),
+		ConversationID: conversationID,
+		TurnID:         &turnID,
+		Role:           role,
+		Content:        &content,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+
+	if err := db.WithContext(ctx).Create(msg).Error; err != nil {
+		logger.Errorf(ctx, "failed to persist message: conversation_id=%s role=%s err=%v",
+			conversationID, role, err)
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to persist message", err)
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Helper: loadMessages
+// ---------------------------------------------------------------------------
+
+func (s *TurnService) loadMessages(ctx context.Context, conversationID string) ([]domain.Message, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []persistence.AgentMessage
+	if err := db.WithContext(ctx).
+		Where("conversation_id = ?", conversationID).
+		Order("created_at ASC").
+		Find(&rows).Error; err != nil {
+		logger.Errorf(ctx, "failed to load messages: conversation_id=%s err=%v", conversationID, err)
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to load conversation messages", err)
+	}
+
+	messages := make([]domain.Message, 0, len(rows))
+	for _, row := range rows {
+		m := domain.Message{
+			MessageID:      row.ID,
+			ConversationID: row.ConversationID,
+			Role:           domain.MessageRole(row.Role),
+			ReasoningJSON:  row.ReasoningJSON,
+			ToolCallsJSON:  row.ToolCallsJSON,
+			MetadataJSON:   row.MetadataJSON,
+			ErrorJSON:      row.ErrorJSON,
+			CreatedAt:      row.CreatedAt,
+			UpdatedAt:      row.UpdatedAt,
+		}
+
+		if row.TurnID != nil {
+			m.TurnID = *row.TurnID
+		}
+		if row.ModelName != nil {
+			m.ModelName = *row.ModelName
+		}
+		if row.Content != nil {
+			m.Content = *row.Content
+		}
+
+		messages = append(messages, m)
+	}
+
+	return messages, nil
+}
+
+// ---------------------------------------------------------------------------
+// Helper: saveTurnTrace
+// ---------------------------------------------------------------------------
+
+func (s *TurnService) saveTurnTrace(ctx context.Context, trace *domain.TurnTrace) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	skillsJSON, _ := json.Marshal(trace.SkillsLoaded)
+	toolCallsJSON, _ := json.Marshal(trace.ToolCalls)
+	providerCallsJSON, _ := json.Marshal(trace.ProviderCalls)
+	errorsJSON, _ := json.Marshal(trace.ErrorClassified)
+	delegationJSON, _ := json.Marshal(trace.DelegationResults)
+
+	record := &persistence.TurnTrace{
+		ID:                   trace.TraceID,
+		TurnID:               trace.TurnID,
+		SkillsLoaded:         skillsJSON,
+		ToolCalls:            toolCallsJSON,
+		ProviderCalls:        providerCallsJSON,
+		ReviewTriggered:      trace.ReviewTriggered,
+		ErrorsClassified:     errorsJSON,
+		CompressionTriggered: trace.CompressionTriggered,
+		DelegationResults:    delegationJSON,
+	}
+
+	if trace.SystemPromptHash != "" {
+		record.SystemPromptHash = &trace.SystemPromptHash
+	}
+	if trace.MemorySnapshotHash != "" {
+		record.MemorySnapshotHash = &trace.MemorySnapshotHash
+	}
+	if trace.SkillIndexHash != "" {
+		record.SkillIndexHash = &trace.SkillIndexHash
+	}
+	if trace.CompressionTriggered {
+		record.CompressionBefore = &trace.CompressionBefore
+		record.CompressionAfter = &trace.CompressionAfter
+	}
+
+	if err := db.WithContext(ctx).Create(record).Error; err != nil {
+		logger.Errorf(ctx, "failed to save turn trace: turn_id=%s err=%v", trace.TurnID, err)
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to save turn trace", err)
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Helper: completeTurn
+// ---------------------------------------------------------------------------
+
+func (s *TurnService) completeTurn(ctx context.Context, turnID, finalResponse string, toolIterations int) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	result := db.WithContext(ctx).
+		Model(&persistence.AgentTurn{}).
+		Where("id = ?", turnID).
+		Updates(map[string]interface{}{
+			"status":          string(domain.TurnStatusCompleted),
+			"final_response":  finalResponse,
+			"tool_iterations": toolIterations,
+			"ended_at":        now,
+		})
+
+	if result.Error != nil {
+		logger.Errorf(ctx, "failed to complete turn: turn_id=%s err=%v", turnID, result.Error)
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to update turn status", result.Error)
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Helper: failTurn
+// ---------------------------------------------------------------------------
+
+func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, reason string) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	result := db.WithContext(ctx).
+		Model(&persistence.AgentTurn{}).
+		Where("id = ?", turnID).
+		Updates(map[string]interface{}{
+			"status":         string(domain.TurnStatusFailed),
+			"final_response": reason,
+			"ended_at":       now,
+		})
+
+	if result.Error != nil {
+		logger.Errorf(ctx, "failed to mark turn as failed: turn_id=%s err=%v", turnID, result.Error)
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to mark turn as failed", result.Error)
+	}
+
+	logger.Warnf(ctx, "turn failed: turn_id=%s reason=%s", turnID, reason)
+
+	if s.growthMetrics != nil {
+		s.growthMetrics.RecordEvent(ctx, agentID, EventTurnFailed, CategoryTurn, turnID, reason, "failure")
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Internal: getDB
+// ---------------------------------------------------------------------------
+
+func (s *TurnService) getDB(ctx context.Context) (*gorm.DB, error) {
+	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
+	if err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to open agent db", err)
+	}
+	return db, nil
+}
+
+// generateID creates a unique identifier with the given prefix (e.g. "turn", "msg", "trace").
+// Uses crypto/rand to avoid collisions under concurrent requests.
+// Fix 2026-04-11: replaced time.UnixNano-based IDs which collide under concurrent requests.
+func generateID(prefix string) string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%s_%x", prefix, b)
+}
+
+// sha256Short returns the first 16 hex characters of the SHA-256 digest.
+func sha256Short(data string) string {
+	h := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(h[:8])
+}

@@ -70,8 +70,8 @@ impl SkillStore {
             skills: vec![SkillRecord {
                 id: "skill-1".to_string(),
                 identifier: "web-search".to_string(),
-                name: "Web Search".to_string(),
-                description: "Search from web".to_string(),
+                name: "i18n:skills.webSearch.name".to_string(),
+                description: "i18n:skills.webSearch.description".to_string(),
                 enabled: true,
                 content: "name: Web Search".to_string(),
                 created_at: "2026-01-01T00:00:00.000Z".to_string(),
@@ -101,7 +101,7 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 fn internal_error() -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::InternalError,
-        "failed to access skill store",
+        "error.skills.storeAccessFailed",
         None,
     )
 }
@@ -166,7 +166,7 @@ pub fn skills_get(input: SkillIdInput) -> AppResult<StubPayload> {
     if let Some(skill) = guard.skills.iter().find(|item| item.id == id) {
         return success_payload("skills_get", skill.detail_json());
     }
-    AppResult::fail(ErrorCode::NotFound, "skill not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.skills.notFound", None)
 }
 
 pub fn skills_get_builtin(input: BuiltinSkillIdInput) -> AppResult<StubPayload> {
@@ -248,7 +248,7 @@ pub fn skills_update(input: SkillUpdateInput) -> AppResult<StubPayload> {
         skill.updated_at = "2026-03-24T00:00:00.000Z".to_string();
         return success_payload("skills_update", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "skill not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.skills.notFound", None)
 }
 
 pub fn skills_delete(input: SkillIdInput) -> AppResult<StubPayload> {
@@ -277,5 +277,5 @@ pub fn skills_toggle(input: SkillToggleInput) -> AppResult<StubPayload> {
         skill.enabled = input.enabled;
         return success_payload("skills_toggle", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "skill not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.skills.notFound", None)
 }

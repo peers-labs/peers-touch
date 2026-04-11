@@ -49,11 +49,13 @@ import {
 } from 'lucide-react';
 import { theme, Divider, Popconfirm, Slider, Switch, Modal, Tabs, Empty, Progress } from 'antd';
 import { Tag, toast } from '@lobehub/ui';
+import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
 import { ModelProviderSelect } from './ModelProviderSelect';
 import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/desktop_api';
 import { SkillAppletPopoverContent } from './SkillAppletSelector';
 import { estimateTokenCount } from 'tokenx';
+import { log } from '../utils/logger';
 
 function Action({
   icon, title, onClick, disabled, active, color, style,
@@ -86,6 +88,7 @@ function Action({
 // ── Model Detail Panel (LobeChat-style) ──────────────────────────────
 
 function ModelDetailPanel({ modelId }: { modelId: string }) {
+  const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const { availableModels, selectedAgent, agents } = useChatStore();
   const model = availableModels.find((m) => m.id === modelId);
@@ -135,10 +138,10 @@ function ModelDetailPanel({ modelId }: { modelId: string }) {
       <Flexbox horizontal align="center" justify="space-between" style={{ padding: '6px 0' }}>
         <Flexbox horizontal align="center" gap={6}>
           <div style={{ width: 3, height: 12, borderRadius: 2, background: '#1677ff' }} />
-          <span style={{ fontSize: 12, fontWeight: 500, color: token.colorTextSecondary }}>Context Length</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: token.colorTextSecondary }}>{t('chat.model.contextLength')}</span>
         </Flexbox>
         <span style={{ fontSize: 13, fontWeight: 600 }}>
-          {contextWindow > 0 ? `${formatTokens(contextWindow)} tokens` : '∞'}
+          {contextWindow > 0 ? String(t('chat.model.tokensUnit', { count: formatTokens(contextWindow) } as any)) : '∞'}
         </span>
       </Flexbox>
 
@@ -147,14 +150,14 @@ function ModelDetailPanel({ modelId }: { modelId: string }) {
       {/* Model Config */}
       <Flexbox horizontal align="center" gap={6} style={{ padding: '6px 0 4px' }}>
         <div style={{ width: 3, height: 12, borderRadius: 2, background: '#52c41a' }} />
-        <span style={{ fontSize: 12, fontWeight: 500, color: token.colorTextSecondary }}>Model Config</span>
+        <span style={{ fontSize: 12, fontWeight: 500, color: token.colorTextSecondary }}>{t('chat.model.config')}</span>
       </Flexbox>
       <Flexbox gap={8} style={{ padding: '2px 0 4px' }}>
         {[
-          { label: 'Temperature', key: 'temperature', min: 0, max: 2, step: 0.1, def: 0.6 },
-          { label: 'Top P', key: 'top_p', min: 0, max: 1, step: 0.05, def: 1 },
-          { label: 'Frequency Penalty', key: 'frequency_penalty', min: -2, max: 2, step: 0.1, def: 0 },
-          { label: 'Presence Penalty', key: 'presence_penalty', min: -2, max: 2, step: 0.1, def: 0 },
+          { label: t('chat.model.temperature'), key: 'temperature', min: 0, max: 2, step: 0.1, def: 0.6 },
+          { label: t('chat.model.topP'), key: 'top_p', min: 0, max: 1, step: 0.05, def: 1 },
+          { label: t('chat.model.frequencyPenalty'), key: 'frequency_penalty', min: -2, max: 2, step: 0.1, def: 0 },
+          { label: t('chat.model.presencePenalty'), key: 'presence_penalty', min: -2, max: 2, step: 0.1, def: 0 },
         ].map(({ label, key, min, max, step, def }) => (
           <Flexbox key={key} gap={0}>
             <Flexbox horizontal justify="space-between" align="center">
@@ -173,7 +176,7 @@ function ModelDetailPanel({ modelId }: { modelId: string }) {
         ))}
 
         <Flexbox horizontal justify="space-between" align="center">
-          <span style={{ fontSize: 12, color: token.colorText }}>Context Compression</span>
+          <span style={{ fontSize: 12, color: token.colorText }}>{t('chat.model.contextCompression')}</span>
           <Switch
             size="small"
             checked={chatConfig.enableContextCompression ?? false}
@@ -188,6 +191,7 @@ function ModelDetailPanel({ modelId }: { modelId: string }) {
 // ── Search Controls (Off / Auto / Model built-in) ────────────────────
 
 function SearchControls() {
+  const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const { enabledAppletIds, toggleApplet } = useChatStore();
   const isEnabled = enabledAppletIds.includes('web-search');
@@ -216,8 +220,8 @@ function SearchControls() {
       >
         <GlobeOff size={20} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 500 }}>Off</div>
-          <div style={{ fontSize: 12, color: token.colorTextDescription }}>Disable web access.</div>
+          <div style={{ fontSize: 14, fontWeight: 500 }}>{t('chat.search.off')}</div>
+          <div style={{ fontSize: 12, color: token.colorTextDescription }}>{t('chat.search.offDesc')}</div>
         </div>
       </div>
 
@@ -235,8 +239,8 @@ function SearchControls() {
       >
         <Sparkles size={20} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 500 }}>Auto</div>
-          <div style={{ fontSize: 12, color: token.colorTextDescription }}>Search the web automatically when needed.</div>
+          <div style={{ fontSize: 14, fontWeight: 500 }}>{t('chat.search.auto')}</div>
+          <div style={{ fontSize: 12, color: token.colorTextDescription }}>{t('chat.search.autoDesc')}</div>
         </div>
       </div>
 
@@ -247,7 +251,7 @@ function SearchControls() {
           <Flexbox horizontal align="center" justify="space-between" style={{ padding: '6px 12px' }}>
             <Flexbox horizontal align="center" gap={8}>
               <Globe size={18} style={{ color: token.colorTextSecondary }} />
-              <span style={{ fontSize: 13 }}>Use model built-in web search</span>
+              <span style={{ fontSize: 13 }}>{t('chat.search.useModelSearch')}</span>
             </Flexbox>
             <Switch size="small" checked={useModelSearch} onChange={setUseModelSearch} />
           </Flexbox>
@@ -285,6 +289,7 @@ function useTokenCount(input: string): number {
 // ── History Controls (persisted to agent chatConfig) ─────────────────
 
 function HistoryControls() {
+  const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const { selectedAgent, updateAgentConfig, getCurrentAgentChatConfig } = useChatStore();
   const chatConfig = getCurrentAgentChatConfig();
@@ -304,14 +309,14 @@ function HistoryControls() {
   return (
     <Flexbox gap={12} style={{ padding: 12, minWidth: 240 }}>
       <Flexbox horizontal align="center" justify="space-between">
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Limit History Messages</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>{t('chat.history.limitMessages')}</span>
         <Switch size="small" checked={enabled}
           onChange={(v) => { setEnabled(v); save(v, count); }}
         />
       </Flexbox>
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" justify="space-between">
-          <span style={{ fontSize: 12, color: token.colorTextSecondary }}>Message count</span>
+          <span style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('chat.history.messageCount')}</span>
           <span style={{ fontSize: 12, color: token.colorTextDescription }}>{enabled ? count : '∞'}</span>
         </Flexbox>
         <Slider min={1} max={50} step={1} value={count} onChange={(v) => { setCount(v); save(enabled, v); }}
@@ -325,6 +330,7 @@ function HistoryControls() {
 // ── Memory Controls (persisted to agent chatConfig.memory) ───────────
 
 function MemoryControls() {
+  const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const { selectedAgent, updateAgentConfig, getCurrentAgentChatConfig } = useChatStore();
   const chatConfig = getCurrentAgentChatConfig();
@@ -346,14 +352,14 @@ function MemoryControls() {
     {
       value: false,
       icon: CircleOff,
-      label: 'Disable Memory Tool',
-      desc: 'AI will not search, create, or update memories in this conversation.',
+      label: t('chat.memory.disableTitle'),
+      desc: t('chat.memory.disableDesc'),
     },
     {
       value: true,
       icon: BrainCircuit,
-      label: 'Enable Memory Tool',
-      desc: 'Allow AI to actively search and manage your memories during conversation.',
+      label: t('chat.memory.enableTitle'),
+      desc: t('chat.memory.enableDesc'),
     },
   ];
 
@@ -400,16 +406,16 @@ function MemoryControls() {
           <Divider style={{ margin: 0 }} />
           <Flexbox horizontal align="center" gap={16} style={{ padding: 8 }}>
             <Flexbox style={{ minWidth: 100, flex: 1 }} gap={4}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: token.colorText }}>Aggressiveness</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: token.colorText }}>{t('chat.memory.aggressiveness')}</span>
               <span style={{ fontSize: 11, color: token.colorTextDescription, lineHeight: 1.4 }}>
-                Control how aggressively the AI retrieves and updates memory.
+                {t('chat.memory.aggressivenessDesc')}
               </span>
             </Flexbox>
             <Flexbox style={{ flex: 1, minWidth: 160 }}>
               <Slider
                 min={0} max={2} step={1}
                 value={effortIndex >= 0 ? effortIndex : 1}
-                marks={{ 0: 'Low', 1: 'Medium', 2: 'High' }}
+                marks={{ 0: t('chat.memory.low'), 1: t('chat.memory.medium'), 2: t('chat.memory.high') }}
                 tooltip={{ open: false }}
                 onChange={(v) => setMemory({ effort: effortLevels[v], enabled: true })}
               />
@@ -426,6 +432,7 @@ function MemoryControls() {
 // model-dependent, sourced from the model registry via availableModels.
 
 function TokenDisplay({ inputText }: { inputText: string }) {
+  const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const { messages, availableModels, selectedModel, defaultModel, agents, selectedAgent } = useChatStore();
 
@@ -454,12 +461,12 @@ function TokenDisplay({ inputText }: { inputText: string }) {
 
   const popoverContent = (
     <Flexbox gap={8} style={{ padding: 12, minWidth: 240 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>Context Usage</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>{t('chat.token.contextUsage')}</div>
       <Progress percent={pct} size="small" strokeColor={overloaded ? token.colorError : pct > 80 ? token.colorWarning : token.colorPrimary} showInfo={false} />
 
-      {[{ label: 'System Prompt', value: systemTokens, color: '#7265e6' },
-        { label: 'Chat Messages', value: chatsTokens, color: '#1677ff' },
-        { label: 'Current Input', value: inputTokens, color: '#52c41a' }].map((item) => (
+      {[{ label: t('chat.token.systemPrompt'), value: systemTokens, color: '#7265e6' },
+        { label: t('chat.token.chatMessages'), value: chatsTokens, color: '#1677ff' },
+        { label: t('chat.token.currentInput'), value: inputTokens, color: '#52c41a' }].map((item) => (
         <Flexbox key={item.label} horizontal align="center" justify="space-between">
           <Flexbox horizontal align="center" gap={6}>
             <div style={{ width: 8, height: 8, borderRadius: 4, background: item.color, flexShrink: 0 }} />
@@ -473,12 +480,12 @@ function TokenDisplay({ inputText }: { inputText: string }) {
 
       <Divider style={{ margin: '4px 0' }} />
       <Flexbox horizontal align="center" justify="space-between">
-        <span style={{ fontSize: 12, fontWeight: 500 }}>Total Used</span>
+        <span style={{ fontSize: 12, fontWeight: 500 }}>{t('chat.token.totalUsed')}</span>
         <span style={{ fontSize: 12, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{totalTokens.toLocaleString()}</span>
       </Flexbox>
       <Flexbox horizontal align="center" justify="space-between">
         <span style={{ fontSize: 12, color: overloaded ? token.colorError : token.colorTextSecondary }}>
-          {overloaded ? 'Overloaded' : 'Remaining'}
+          {overloaded ? t('chat.token.overloaded') : t('chat.token.remaining')}
         </span>
         <span style={{ fontSize: 12, color: overloaded ? token.colorError : token.colorSuccess, fontVariantNumeric: 'tabular-nums' }}>
           {overloaded ? `-${(totalTokens - contextWindow).toLocaleString()}` : remaining.toLocaleString()}
@@ -538,6 +545,7 @@ function TokenDisplay({ inputText }: { inputText: string }) {
 function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
   open: boolean; onClose: () => void; onNavigateSkillSettings: () => void;
 }) {
+  const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const [skills, setSkills] = useState<SkillListItem[]>([]);
   const [builtins, setBuiltins] = useState<BuiltinSkillInfo[]>([]);
@@ -622,15 +630,15 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
     }
     setSelectedSkillId(id);
     if (isBuiltin) {
-      setPreviewContent('Built-in skills are loaded from the skills/ directory.');
+      setPreviewContent(t('chat.skills.builtinHint'));
       return;
     }
     setPreviewLoading(true);
     try {
       const detail = await api.getSkill(id);
-      setPreviewContent(detail.content || 'No content.');
+      setPreviewContent(detail.content || t('chat.skills.noContent'));
     } catch {
-      setPreviewContent('Failed to load skill content.');
+      setPreviewContent(t('chat.skills.loadFailed'));
     }
     setPreviewLoading(false);
   }, [selectedSkillId]);
@@ -643,11 +651,11 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
       onCancel={() => { onClose(); setSelectedSkillId(null); }}
       title={
         <Flexbox horizontal align="center" justify="space-between" style={{ paddingRight: 24 }}>
-          <span>Skills</span>
+          <span>{t('chat.skills.title')}</span>
           <ActionIcon
             icon={Settings2}
             size="small"
-            title="Skill Settings"
+            title={t('chat.skills.settings')}
             onClick={() => { onClose(); onNavigateSkillSettings(); }}
           />
         </Flexbox>
@@ -673,7 +681,7 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search skills by name, keywords, or content..."
+                placeholder={t('chat.skills.searchPlaceholder')}
                 style={{
                   border: 'none', outline: 'none', flex: 1, fontSize: 13,
                   background: 'transparent', color: token.colorText,
@@ -696,12 +704,12 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
             items={[
               {
                 key: 'builtin',
-                label: `Built-in (${filteredBuiltins.length})`,
+                label: t('chat.skills.tab.builtin', { count: filteredBuiltins.length }),
                 children: (
                   <div style={{ overflow: 'auto', flex: 1, maxHeight: 360, paddingBottom: 8 }}>
                     <Flexbox gap={4}>
                       {filteredBuiltins.length === 0 && !loading && (
-                        <Empty description={searchQuery ? 'No matching built-in skills' : 'No built-in skills'} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                        <Empty description={searchQuery ? t('chat.skills.builtinNoMatch') : t('chat.skills.builtinEmpty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
                       )}
                       {filteredBuiltins.map((s) => (
                         <Flexbox
@@ -734,12 +742,12 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
               },
               {
                 key: 'custom',
-                label: `Custom (${filteredSkills.length})`,
+                label: t('chat.skills.tab.custom', { count: filteredSkills.length }),
                 children: (
                   <div style={{ overflow: 'auto', flex: 1, maxHeight: 360, paddingBottom: 8 }}>
                     <Flexbox gap={4}>
                       {filteredSkills.length === 0 && !loading && (
-                        <Empty description={searchQuery ? 'No matching custom skills' : 'No custom skills. Import from Settings.'} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                        <Empty description={searchQuery ? t('chat.skills.customNoMatch') : t('chat.skills.customEmpty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
                       )}
                       {filteredSkills.map((s) => (
                         <Flexbox
@@ -783,7 +791,7 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
               padding: '12px 16px', flexShrink: 0,
               borderBottom: `1px solid ${token.colorBorderSecondary}`,
             }}>
-              <span style={{ fontSize: 14, fontWeight: 600 }}>Preview</span>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{t('chat.skills.preview')}</span>
               <X
                 size={14}
                 style={{ color: token.colorTextTertiary, cursor: 'pointer' }}
@@ -792,7 +800,7 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
             </Flexbox>
             <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
               {previewLoading ? (
-                <div style={{ color: token.colorTextDescription, fontSize: 13 }}>Loading...</div>
+                <div style={{ color: token.colorTextDescription, fontSize: 13 }}>{t('chat.skills.loading')}</div>
               ) : (
                 <Markdown>{previewContent}</Markdown>
               )}
@@ -807,22 +815,23 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
 // ── TypoBar ──────────────────────────────────────────────────────────
 
 function TypoBar({ onInsert }: { onInsert: (prefix: string, suffix: string, block?: boolean) => void }) {
+  const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const items = [
-    { icon: <Bold size={16} />, title: 'Bold', p: '**', s: '**' },
-    { icon: <Italic size={16} />, title: 'Italic', p: '*', s: '*' },
-    { icon: <Underline size={16} />, title: 'Underline', p: '<u>', s: '</u>' },
-    { icon: <Strikethrough size={16} />, title: 'Strikethrough', p: '~~', s: '~~' },
+    { icon: <Bold size={16} />, title: t('chat.typoBar.bold'), p: '**', s: '**' },
+    { icon: <Italic size={16} />, title: t('chat.typoBar.italic'), p: '*', s: '*' },
+    { icon: <Underline size={16} />, title: t('chat.typoBar.underline'), p: '<u>', s: '</u>' },
+    { icon: <Strikethrough size={16} />, title: t('chat.typoBar.strikethrough'), p: '~~', s: '~~' },
   ];
   const lists = [
-    { icon: <List size={16} />, title: 'Bullet list', p: '- ', s: '', b: true },
-    { icon: <ListOrdered size={16} />, title: 'Numbered list', p: '1. ', s: '', b: true },
-    { icon: <ListChecks size={16} />, title: 'Task list', p: '- [ ] ', s: '', b: true },
+    { icon: <List size={16} />, title: t('chat.typoBar.bulletList'), p: '- ', s: '', b: true },
+    { icon: <ListOrdered size={16} />, title: t('chat.typoBar.numberedList'), p: '1. ', s: '', b: true },
+    { icon: <ListChecks size={16} />, title: t('chat.typoBar.taskList'), p: '- [ ] ', s: '', b: true },
   ];
   const code = [
-    { icon: <Quote size={16} />, title: 'Blockquote', p: '> ', s: '', b: true },
-    { icon: <Code size={16} />, title: 'Inline code', p: '`', s: '`' },
-    { icon: <SquareCode size={16} />, title: 'Code block', p: '```\n', s: '\n```', b: true },
+    { icon: <Quote size={16} />, title: t('chat.typoBar.blockquote'), p: '> ', s: '', b: true },
+    { icon: <Code size={16} />, title: t('chat.typoBar.inlineCode'), p: '`', s: '`' },
+    { icon: <SquareCode size={16} />, title: t('chat.typoBar.codeBlock'), p: '```\n', s: '\n```', b: true },
   ];
   return (
     <Flexbox horizontal align="center" gap={2} style={{
@@ -871,6 +880,7 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
 
   const [modelOpen, setModelOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -899,7 +909,7 @@ export function ChatInput({
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      toast.warning('Speech recognition is not supported in this browser. Try Chrome or Edge.');
+      toast.warning(t('chat.input.voice.unsupported'));
       return;
     }
 
@@ -918,11 +928,11 @@ export function ChatInput({
     };
 
     recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
+      log.error('chat', 'Speech recognition error', { error: event.error });
       setIsRecording(false);
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       if (event.error === 'not-allowed') {
-        toast.error('Microphone access denied. Please allow microphone access in browser settings.');
+        toast.error(t('chat.input.voice.micDenied'));
       }
     };
 
@@ -1070,7 +1080,7 @@ export function ChatInput({
             onKeyDown={handleKeyDown} onInput={handleInput} onPaste={handlePaste}
             onCompositionStart={() => { isComposingRef.current = true; }}
             onCompositionEnd={() => { isComposingRef.current = false; }}
-            placeholder={customPlaceholder || "Ask, create, or start a task... Press ⌘ ↵ to insert a line break"}
+            placeholder={customPlaceholder || t('chat.input.placeholder')}
             rows={compact ? 1 : 2}
             style={{
               width: '100%', resize: 'none', border: 'none', borderRadius: 0,
@@ -1117,7 +1127,7 @@ export function ChatInput({
                     return (
                       <Popover key="search" open={searchOpen} onOpenChange={setSearchOpen} placement="topLeft" content={<SearchControls />} styles={{ content: { padding: 0 } }}>
                         <div>
-                          <Action icon={isWebSearchEnabled ? <Globe size={20} /> : <GlobeOff size={20} />} title="Web Search" active={isWebSearchEnabled}
+                          <Action icon={isWebSearchEnabled ? <Globe size={20} /> : <GlobeOff size={20} />} title={t('chat.input.webSearch')} active={isWebSearchEnabled}
                             color={isWebSearchEnabled ? token.colorInfo : undefined} onClick={() => setSearchOpen(!searchOpen)} disabled={isStreaming} />
                         </div>
                       </Popover>
@@ -1126,7 +1136,7 @@ export function ChatInput({
                     return (
                       <Popover key="memory" open={memoryOpen} onOpenChange={setMemoryOpen} placement="topLeft" content={<MemoryControls />} styles={{ content: { padding: 0 } }}>
                         <div>
-                          <Action icon={memoryEnabled ? <BrainCircuit size={20} /> : <Brain size={20} />} title={memoryEnabled ? 'Memory (on)' : 'Memory (off)'}
+                          <Action icon={memoryEnabled ? <BrainCircuit size={20} /> : <Brain size={20} />} title={memoryEnabled ? t('chat.input.memoryOn') : t('chat.input.memoryOff')}
                             active={memoryEnabled} color={memoryEnabled ? token.colorInfo : undefined} onClick={() => setMemoryOpen(!memoryOpen)} disabled={isStreaming} />
                         </div>
                       </Popover>
@@ -1135,13 +1145,13 @@ export function ChatInput({
                     return (
                       <span key="upload">
                         <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
-                        <Action icon={<Paperclip size={20} />} title="Upload File" onClick={() => fileInputRef.current?.click()} disabled={isStreaming} />
+                        <Action icon={<Paperclip size={20} />} title={t('chat.input.uploadFile')} onClick={() => fileInputRef.current?.click()} disabled={isStreaming} />
                       </span>
                     );
                   case 'voice':
                     return (
                       <Action key="voice" icon={isRecording ? <MicOff size={20} /> : <Mic size={20} />}
-                        title={isRecording ? `Recording... ${recordingTime}s (click to stop)` : 'Voice input'}
+                        title={isRecording ? t('chat.input.voiceRecording', { seconds: recordingTime }) : t('chat.input.voiceInput')}
                         onClick={handleVoiceInput} disabled={isStreaming} active={isRecording} color={isRecording ? token.colorError : undefined} />
                     );
                   case 'tools':
@@ -1149,7 +1159,7 @@ export function ChatInput({
                       <Popover key="tools" open={toolsOpen} onOpenChange={setToolsOpen} placement="topLeft"
                         content={<SkillAppletPopoverContent onClose={() => setToolsOpen(false)} onNavigateSkills={() => { setToolsOpen(false); setSkillsDialogOpen(true); }} onNavigateApplets={() => { setToolsOpen(false); onNavigateApplets?.(); }} />}
                         styles={{ content: { padding: 0, minWidth: 300, maxWidth: 340 } }}>
-                        <div><Action icon={<Blocks size={20} />} title="Tools & Skills" onClick={() => setToolsOpen(!toolsOpen)} disabled={isStreaming} /></div>
+                        <div><Action icon={<Blocks size={20} />} title={t('chat.input.toolsAndSkills')} onClick={() => setToolsOpen(!toolsOpen)} disabled={isStreaming} /></div>
                       </Popover>
                     );
                   case 'divider':
@@ -1157,23 +1167,23 @@ export function ChatInput({
                   case 'more':
                     return collapseOpen ? (
                       <span key="more" style={{ display: 'contents' }}>
-                        <Action icon={<TypeIcon size={20} />} title={showTypoBar ? 'Hide formatting' : 'Show formatting'} active={showTypoBar} onClick={() => setShowTypoBar(!showTypoBar)} />
+                        <Action icon={<TypeIcon size={20} />} title={showTypoBar ? t('chat.input.hideFormatting') : t('chat.input.showFormatting')} active={showTypoBar} onClick={() => setShowTypoBar(!showTypoBar)} />
                         <Popover open={historyOpen} onOpenChange={setHistoryOpen} placement="topLeft" content={<HistoryControls />} styles={{ content: { padding: 0 } }}>
                           <div>
                             <Action icon={historyEnabled ? <Timer size={20} /> : <TimerOff size={20} />}
-                              title={historyEnabled ? `History (${chatConfig.historyCount ?? 20} msgs)` : 'History (unlimited)'}
+                              title={historyEnabled ? t('chat.input.historyLimited', { count: chatConfig.historyCount ?? 20 }) : t('chat.input.historyUnlimited')}
                               onClick={() => setHistoryOpen(!historyOpen)} />
                           </div>
                         </Popover>
                         <Action icon={hasActiveTopic ? <MessageSquarePlus size={20} /> : <GalleryVerticalEnd size={20} />}
-                          title={hasActiveTopic ? 'New Topic' : 'Save Topic'} onClick={() => saveCurrentTopic()} disabled={isStreaming || !hasActiveTopic} />
-                        <Popconfirm title="Clear all messages in this session?" onConfirm={() => useChatStore.getState().sendMessage('/clear')} okText="Clear" cancelText="Cancel" placement="top">
-                          <div><Action icon={<Eraser size={20} />} title="Clear Messages" disabled={isStreaming} /></div>
+                          title={hasActiveTopic ? t('chat.input.newTopic') : t('chat.input.saveTopic')} onClick={() => saveCurrentTopic()} disabled={isStreaming || !hasActiveTopic} />
+                        <Popconfirm title={t('chat.input.clearConfirm')} onConfirm={() => useChatStore.getState().sendMessage('/clear')} okText={t('chat.input.clearAction')} cancelText={t('chat.input.cancelAction')} placement="top">
+                          <div><Action icon={<Eraser size={20} />} title={t('chat.input.clearMessages')} disabled={isStreaming} /></div>
                         </Popconfirm>
-                        <Action icon={<ChevronDown size={16} />} title="Collapse" onClick={() => setCollapseOpen(false)} style={{ width: 24 }} />
+                        <Action icon={<ChevronDown size={16} />} title={t('chat.input.collapse')} onClick={() => setCollapseOpen(false)} style={{ width: 24 }} />
                       </span>
                     ) : (
-                      <Action key="more" icon={<ChevronRight size={16} />} title="More actions" onClick={() => setCollapseOpen(true)} style={{ width: 24 }} />
+                      <Action key="more" icon={<ChevronRight size={16} />} title={t('chat.input.moreActions')} onClick={() => setCollapseOpen(true)} style={{ width: 24 }} />
                     );
                   default:
                     return null;
@@ -1185,9 +1195,9 @@ export function ChatInput({
             <Flexbox horizontal align="center" gap={8}>
               {rightActions.includes('token') && <TokenDisplay inputText={input} />}
               {isStreaming ? (
-                <ActionIcon icon={Square} onClick={stopStreaming} title="Stop" size={{ blockSize: 36, size: 20 }} style={{ background: token.colorError, color: '#fff', borderRadius: 12 }} />
+                <ActionIcon icon={Square} onClick={stopStreaming} title={t('chat.input.stop')} size={{ blockSize: 36, size: 20 }} style={{ background: token.colorError, color: '#fff', borderRadius: 12 }} />
               ) : (
-                <ActionIcon icon={Send} onClick={handleSend} disabled={!hasContent} title="Send" size={{ blockSize: 36, size: 20 }}
+                <ActionIcon icon={Send} onClick={handleSend} disabled={!hasContent} title={t('chat.input.send')} size={{ blockSize: 36, size: 20 }}
                   style={{ background: hasContent ? token.colorPrimary : token.colorFillSecondary, color: hasContent ? '#fff' : token.colorTextQuaternary, borderRadius: 12 }}
                 />
               )}

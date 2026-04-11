@@ -10,6 +10,7 @@ import { Drawer, Input, Button, TextArea } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { api, type Agent, type AgentCreate } from '../services/desktop_api';
 import { useChatStore } from '../store/chat';
+import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
@@ -23,6 +24,7 @@ interface AgentSettingsDrawerProps {
 }
 
 export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: AgentSettingsDrawerProps) {
+  const { t } = useTranslation('agent');
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState('🤖');
@@ -76,7 +78,7 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
           openingQuestions: JSON.stringify(questionsArray),
           pinned: values.pinned,
         });
-        message.success('Agent updated');
+        message.success(t('agent.drawer.toast.updated'));
       } else {
         const data: AgentCreate = {
           name: values.name,
@@ -91,7 +93,7 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
           pinned: values.pinned || false,
         };
         await api.createAgent(data);
-        message.success('Agent created');
+        message.success(t('agent.drawer.toast.created'));
       }
       loadAgents();
       onSaved();
@@ -107,19 +109,19 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
 
   return (
     <Drawer
-      title={editingAgent ? 'Agent Profile' : 'Create Agent'}
+      title={editingAgent ? t('agent.drawer.titleEdit') : t('agent.drawer.titleCreate')}
       open={open}
       onClose={onClose}
       size="default"
       extra={
         <Button type="primary" loading={saving} onClick={handleSubmit}>
-          {editingAgent ? 'Save' : 'Create'}
+          {editingAgent ? t('agent.drawer.save') : t('agent.drawer.create')}
         </Button>
       }
     >
       <Form form={form} layout="vertical" size="middle">
         {/* Avatar picker */}
-        <Form.Item label="Avatar">
+        <Form.Item label={t('agent.drawer.avatar')}>
           <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
             {AVATAR_OPTIONS.map((emoji) => (
               <div
@@ -149,35 +151,35 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
         {!editingAgent && (
           <Form.Item
             name="name"
-            label="Name (slug)"
+            label={t('agent.drawer.nameSlug')}
             rules={[
-              { required: true, message: 'Name is required' },
-              { pattern: /^[a-z][a-z0-9-]*$/, message: 'Lowercase letters, numbers, hyphens only' },
+              { required: true, message: t('agent.drawer.nameRequired') },
+              { pattern: /^[a-z][a-z0-9-]*$/, message: t('agent.drawer.namePattern') },
             ]}
-            extra="Unique identifier. Cannot be changed after creation."
+            extra={t('agent.drawer.nameExtra')}
           >
             <Input placeholder="my-agent" />
           </Form.Item>
         )}
 
         {/* Display name */}
-        <Form.Item name="title" label="Display Name" rules={[{ required: true }]}>
+        <Form.Item name="title" label={t('agent.drawer.displayName')} rules={[{ required: true }]}>
           <Input placeholder="My Custom Agent" />
         </Form.Item>
 
-        <Form.Item name="description" label="Description">
-          <Input placeholder="A brief description of what this agent does" />
+        <Form.Item name="description" label={t('agent.drawer.description')}>
+          <Input placeholder={t('agent.drawer.descriptionPlaceholder')} />
         </Form.Item>
 
         {/* System Prompt */}
         <Form.Item
           name="systemPrompt"
-          label="System Prompt"
-          extra="The agent's personality, instructions, and behavior. Leave empty to use the default."
+          label={t('agent.drawer.systemPrompt')}
+          extra={t('agent.drawer.systemPromptExtra')}
         >
           <TextArea
             rows={6}
-            placeholder="You are a helpful assistant that..."
+            placeholder={t('agent.drawer.systemPromptPlaceholder')}
             style={{ fontFamily: 'monospace', fontSize: 13 }}
           />
         </Form.Item>
@@ -185,33 +187,32 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
         {/* Model */}
         <Form.Item
           name="model"
-          label="Model Override"
-          extra="Leave empty to use the system default model."
+          label={t('agent.drawer.modelOverride')}
+          extra={t('agent.drawer.modelOverrideExtra')}
         >
-          <Input placeholder="e.g. gpt-4o, claude-sonnet-4-20250514" />
+          <Input placeholder={t('agent.drawer.modelOverridePlaceholder')} />
         </Form.Item>
 
         {/* Tools Profile */}
-        <Form.Item name="toolsProfile" label="Tool Access">
+        <Form.Item name="toolsProfile" label={t('agent.drawer.toolAccess')}>
           <Select
             options={[
-              { label: 'Standard (file, shell, web, memory)', value: 'standard' },
-              { label: 'Minimal (no shell, no file write)', value: 'minimal' },
-              { label: 'All tools', value: 'all' },
+              { label: t('agent.drawer.toolAccess.standard'), value: 'standard' },
+              { label: t('agent.drawer.toolAccess.minimal'), value: 'minimal' },
+              { label: t('agent.drawer.toolAccess.all'), value: 'all' },
             ]}
           />
         </Form.Item>
 
-        {/* Opening Message */}
-        <Form.Item name="openingMessage" label="Welcome Message">
-          <Input placeholder="Hi! How can I help you today?" />
+        <Form.Item name="openingMessage" label={t('agent.drawer.welcomeMessage')}>
+          <Input placeholder={t('agent.drawer.welcomeMessagePlaceholder')} />
         </Form.Item>
 
         {/* Opening Questions */}
         <Form.Item
           name="openingQuestions"
-          label="Suggested Questions"
-          extra="One per line. Shown as quick-action buttons on the welcome screen."
+          label={t('agent.drawer.suggestedQuestions')}
+          extra={t('agent.drawer.suggestedQuestionsExtra')}
         >
           <TextArea rows={3} placeholder={"Help me write code\nSearch the web\nAnalyze a file"} />
         </Form.Item>
@@ -219,8 +220,8 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
         {/* Pinned */}
         <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 16 }}>
           <Flexbox>
-            <Text style={{ fontSize: 14 }}>Pin to sidebar</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>Keep this agent at the top of the list</Text>
+            <Text style={{ fontSize: 14 }}>{t('agent.drawer.pinToSidebar')}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{t('agent.drawer.pinToSidebarDesc')}</Text>
           </Flexbox>
           <Form.Item name="pinned" valuePropName="checked" style={{ marginBottom: 0 }}>
             <Switch />
@@ -229,7 +230,7 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
 
         {isBuiltIn && (
           <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-            This is a built-in agent. You can customize it but cannot delete it.
+            {t('agent.drawer.builtInNote')}
           </Text>
         )}
       </Form>

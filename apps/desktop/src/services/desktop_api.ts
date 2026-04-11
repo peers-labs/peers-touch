@@ -4,10 +4,6 @@ import type { Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
 import {
-  ActorListSchema,
-  ActorProfileSchema,
-} from '../gen/proto/domain/actor/actor_pb';
-import {
   GetSessionsResponseSchema,
   CreateSessionResponseSchema,
   GetMessagesResponseSchema,
@@ -90,31 +86,6 @@ export type {
 } from '../gen/proto/domain/chat/group_chat_pb';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
-const WEB_OAUTH_CONNECTIONS_KEY = 'pt.desktop.web.oauth.connections';
-const WEB_ACCOUNT_STATE_KEY = 'pt.desktop.web.account.identity.state';
-
-interface OAuthWebProviderConfig {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  color: string;
-  category: string;
-  enabled: boolean;
-  status: string;
-  has_credentials: boolean;
-  callback_url: string;
-  environments: Array<{
-    id: string;
-    name: string;
-    authorize_url: string;
-    token_url: string;
-    userinfo_url?: string;
-    default: boolean;
-  }>;
-}
-
-let oauthWebProviderConfigCache: OAuthWebProviderConfig[] | null = null;
 
 export type RustErrorCode =
   | 'NOT_IMPLEMENTED'
@@ -171,55 +142,6 @@ async function invokeRustCommand<TInput, TData>(
   }
 }
 
-function readWebAccountState(): AccountIdentityState {
-  try {
-    const raw = localStorage.getItem(WEB_ACCOUNT_STATE_KEY);
-    if (!raw) return { accounts: [] };
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.accounts)) return { accounts: [] };
-    return {
-      active_account_id: typeof parsed.active_account_id === 'string' ? parsed.active_account_id : undefined,
-      accounts: parsed.accounts as AccountIdentity[],
-    };
-  } catch {
-    return { accounts: [] };
-  }
-}
-
-function writeWebAccountState(state: AccountIdentityState) {
-  try {
-    localStorage.setItem(WEB_ACCOUNT_STATE_KEY, JSON.stringify(state));
-  } catch {}
-}
-
-function upsertWebAccountFromOAuth(input: AccountUpsertOAuthInput): AccountIdentityState {
-  const state = readWebAccountState();
-  const accountId = `${input.provider}:${input.provider_user_id}`;
-  const now = new Date().toISOString();
-  const nextName = input.name || input.provider_user_id;
-  const idx = state.accounts.findIndex((item) => item.id === accountId);
-  const existing = idx >= 0 ? state.accounts[idx] : undefined;
-  const next: AccountIdentity = {
-    id: accountId,
-    provider: input.provider,
-    provider_user_id: input.provider_user_id,
-    name: nextName,
-    email: input.email || '',
-    avatar_url: input.avatar_url || '',
-    profile_url: input.profile_url || '',
-    created_at: existing?.created_at || input.created_at || now,
-    last_login_at: now,
-  };
-  if (idx >= 0) {
-    state.accounts[idx] = next;
-  } else {
-    state.accounts.push(next);
-  }
-  state.active_account_id = accountId;
-  writeWebAccountState(state);
-  return state;
-}
-
 export class AuthCommandException extends Error {
   code: RustErrorCode;
   details?: Record<string, any>;
@@ -235,8 +157,8 @@ export class AuthCommandException extends Error {
 async function invokeAuthCommand<TInput>(
   command: string,
   input?: TInput,
-): Promise<TauriStubPayload> {
-  const response = await invokeRustCommand<TInput, TauriStubPayload>(command, input);
+): Promise<AuthSessionResponse> {
+  const response = await invokeRustCommand<TInput, AuthSessionResponse>(command, input);
   if (!response.ok || !response.data) {
     throw new AuthCommandException(
       response.error ?? {
@@ -274,39 +196,6 @@ async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   throw new Error(response.error?.message || `${command} failed`);
 }
 
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-}
-
-function readWebOAuthConnections(): OAuth2Connection[] {
-  try {
-    const raw = localStorage.getItem(WEB_OAUTH_CONNECTIONS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed as OAuth2Connection[];
-  } catch {
-    return [];
-  }
-}
-
-function writeWebOAuthConnections(connections: OAuth2Connection[]) {
-  try {
-    localStorage.setItem(WEB_OAUTH_CONNECTIONS_KEY, JSON.stringify(connections));
-  } catch {}
-}
-
-function upsertWebOAuthConnection(next: OAuth2Connection) {
-  const list = readWebOAuthConnections();
-  const idx = list.findIndex((item) => item.provider_id === next.provider_id);
-  if (idx >= 0) {
-    list[idx] = next;
-  } else {
-    list.push(next);
-  }
-  writeWebOAuthConnections(list);
-}
-
 function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
   const url = new URL(urlText);
   const provider = url.searchParams.get('provider') || '';
@@ -327,97 +216,6 @@ function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
     profile_url: url.searchParams.get('profile_url') || undefined,
     expires_at: url.searchParams.get('expires_at') || undefined,
   };
-}
-
-function cleanOAuthCallbackParams(urlText: string): string {
-  const cleanUrl = new URL(urlText);
-  const keys = [
-    'provider',
-    'provider_user_id',
-    'username',
-    'display_name',
-    'created_at',
-    'createdAt',
-    'register_time',
-    'avatar_url',
-    'email',
-    'profile_url',
-    'expires_at',
-  ];
-  keys.forEach((key) => cleanUrl.searchParams.delete(key));
-  return cleanUrl.toString();
-}
-
-function consumeOAuthCallbackFromLocation() {
-  if (typeof window === 'undefined') return;
-  const payload = parseOAuthCallbackFromUrl(window.location.href);
-  if (!payload) return;
-  const provider = payload.provider;
-  const providerUserId = payload.provider_user_id;
-  const now = new Date().toISOString();
-  upsertWebOAuthConnection({
-    provider_id: provider,
-    provider_name: provider.charAt(0).toUpperCase() + provider.slice(1),
-    user_id: providerUserId,
-    user_name: payload.username || payload.display_name || providerUserId,
-    email: payload.email || '',
-    avatar_url: payload.avatar_url || '',
-    profile_url: payload.profile_url || '',
-    connected_at: now,
-    expires_at: payload.expires_at || new Date(Date.now() + 3600 * 1000).toISOString(),
-    scopes: [],
-    status: 'active',
-  });
-  upsertWebAccountFromOAuth({
-    provider,
-    provider_user_id: providerUserId,
-    name: payload.username || payload.display_name || providerUserId,
-    created_at: payload.created_at,
-    email: payload.email || undefined,
-    avatar_url: payload.avatar_url || undefined,
-    profile_url: payload.profile_url || undefined,
-  });
-  window.history.replaceState({}, '', cleanOAuthCallbackParams(window.location.href));
-}
-
-async function loadWebOAuthProviderConfigs(): Promise<OAuthWebProviderConfig[]> {
-  if (oauthWebProviderConfigCache) return oauthWebProviderConfigCache;
-  const res = await fetch(`${BASE_URL}/oauth/providers`, { cache: 'no-cache' });
-  if (!res.ok) {
-    throw new Error(`backend oauth providers api unavailable: ${res.status}`);
-  }
-  const payload = await res.json();
-  const list = Array.isArray(payload) ? payload : payload.providers;
-  if (!Array.isArray(list)) {
-    throw new Error('backend oauth providers payload invalid');
-  }
-  oauthWebProviderConfigCache = list;
-  return oauthWebProviderConfigCache;
-}
-
-function webOAuthProviderCatalog(
-  providers: OAuthWebProviderConfig[],
-  connections: OAuth2Connection[],
-): OAuth2ProviderSummary[] {
-  const isConnected = (providerId: string) =>
-    connections.some((item) => item.provider_id === providerId && item.status === 'active');
-  return providers
-    .filter((item) => item.enabled !== false)
-    .map((item) => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      icon: item.icon,
-      color: item.color,
-      category: item.category,
-      builtin: true,
-      enabled: item.enabled,
-      status: item.status,
-      has_credentials: item.has_credentials,
-      connected: isConnected(item.id),
-      callback_url: item.callback_url,
-      environments: item.environments,
-    }));
 }
 
 export interface Session {
@@ -1061,11 +859,6 @@ export interface AccountIdentity {
   last_login_at: string;
 }
 
-interface AccountIdentityState {
-  active_account_id?: string;
-  accounts: AccountIdentity[];
-}
-
 export interface SearchProviderInfo {
   name: string;
   available: boolean;
@@ -1251,6 +1044,16 @@ export interface TauriStubPayload {
   status: string;
 }
 
+export interface AuthSessionResponse {
+  command: string;
+  status: string;
+  actor_id?: string;
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  login_method?: string;
+}
+
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
 export interface AuthLoginInput {
@@ -1324,8 +1127,45 @@ export interface TimelineActionInput {
 
 export interface ProfileUpdateInput {
   display_name?: string;
-  bio?: string;
-  location?: string;
+  note?: string;
+  avatar?: string;
+  header?: string;
+  region?: string;
+  timezone?: string;
+  tags?: string[];
+  links?: AccountProfileLink[];
+}
+
+export interface AccountProfileLink {
+  label: string;
+  url: string;
+}
+
+export interface AccountProfile {
+  id: string;
+  username: string;
+  acct: string;
+  display_name: string;
+  note: string;
+  url: string;
+  avatar: string;
+  header: string;
+  locked: boolean;
+  created_at: string;
+  statuses_count: number;
+  following_count: number;
+  followers_count: number;
+  region: string;
+  timezone: string;
+  tags: string[];
+  links: AccountProfileLink[];
+  default_visibility: string;
+  manually_approves_followers: boolean;
+  message_permission: string;
+  auto_expire_days: number;
+  peers_touch: {
+    network_id: string;
+  };
 }
 
 export interface ProfilePrivacyInput {
@@ -1905,16 +1745,28 @@ export const api = {
     invokeRustCommand<TimelineActionInput, TauriStubPayload>('timeline_repost', input),
 
   profileGet: () =>
-    invokeRustCommand<void, TauriStubPayload>('profile_get'),
+    invokeRustDataFromStatus<void, AccountProfile>('profile_get'),
 
   profileUpdate: (input: ProfileUpdateInput) =>
-    invokeRustCommand<ProfileUpdateInput, TauriStubPayload>('profile_update', input),
+    invokeRustDataFromStatus<ProfileUpdateInput, AccountProfile>('profile_update', input),
 
   profileUploadAvatar: (input: FileUploadInput) =>
     invokeRustCommand<FileUploadInput, TauriStubPayload>('profile_upload_avatar', input),
 
   profileUploadHeader: (input: FileUploadInput) =>
     invokeRustCommand<FileUploadInput, TauriStubPayload>('profile_upload_header', input),
+
+  profileUploadAvatarOss: (input: FileUploadInput) =>
+    invokeRustDataFromStatus<FileUploadInput, AccountProfile>('profile_upload_avatar_oss', input),
+
+  profileUploadHeaderOss: (input: FileUploadInput) =>
+    invokeRustDataFromStatus<FileUploadInput, AccountProfile>('profile_upload_header_oss', input),
+
+  pickImageFile: () =>
+    invokeRustDataFromStatus<void, string>('pick_image_file'),
+
+  accountSyncAvatar: (avatarUrl: string) =>
+    invokeRustCommand<{ avatar_url: string }, TauriStubPayload>('account_sync_avatar', { avatar_url: avatarUrl }),
 
   profileUpdatePrivacy: (input: ProfilePrivacyInput) =>
     invokeRustCommand<ProfilePrivacyInput, TauriStubPayload>('profile_update_privacy', input),
@@ -2189,38 +2041,16 @@ export const api = {
     invokeRustDataFromStatus<PreferencesSetInput, { ok: boolean }>('preferences_set', { prefs }),
 
   accountList: () =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<void, { accounts: AccountIdentity[]; active_account_id?: string }>('account_list')
-      : Promise.resolve(readWebAccountState()),
+    invokeRustDataFromStatus<void, { accounts: AccountIdentity[]; active_account_id?: string }>('account_list'),
 
   accountGetActive: () =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<void, { account: AccountIdentity | null }>('account_get_active').then((r) => r.account)
-      : Promise.resolve((() => {
-          const state = readWebAccountState();
-          return state.accounts.find((item) => item.id === state.active_account_id) || null;
-        })()),
+    invokeRustDataFromStatus<void, { account: AccountIdentity | null }>('account_get_active').then((r) => r.account),
 
   accountSwitch: (id: string) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<AccountIdInput, { ok: boolean }>('account_switch', { id })
-      : (async () => {
-          const state = readWebAccountState();
-          if (!state.accounts.some((item) => item.id === id)) {
-            throw new Error('account not found');
-          }
-          state.active_account_id = id;
-          writeWebAccountState(state);
-          return { ok: true };
-        })(),
+    invokeRustDataFromStatus<AccountIdInput, { ok: boolean }>('account_switch', { id }),
 
   accountUpsertOAuth: (input: AccountUpsertOAuthInput) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<AccountUpsertOAuthInput, { ok: boolean; active_account_id: string }>('account_upsert_oauth', input)
-      : Promise.resolve((() => {
-          const state = upsertWebAccountFromOAuth(input);
-          return { ok: true, active_account_id: state.active_account_id || '' };
-        })()),
+    invokeRustDataFromStatus<AccountUpsertOAuthInput, { ok: boolean; active_account_id: string }>('account_upsert_oauth', input),
 
   // Notebook / Documents
   listDocuments: (topicId: string) =>
@@ -2553,79 +2383,26 @@ export const api = {
 
   // OAuth2
   oauth2ListProviders: () =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<void, OAuth2ProviderSummary[]>('oauth2_list_providers')
-      : (async () => {
-          consumeOAuthCallbackFromLocation();
-          const providers = await loadWebOAuthProviderConfigs();
-          const connections = readWebOAuthConnections();
-          return webOAuthProviderCatalog(providers, connections);
-        })(),
+    invokeRustDataFromStatus<void, OAuth2ProviderSummary[]>('oauth2_list_providers'),
 
   oauth2GetProvider: (id: string) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<OAuthIdInput, OAuth2ProviderDetail>('oauth2_get_provider', { id })
-      : (async () => {
-          const providers = await loadWebOAuthProviderConfigs();
-          const p = providers.find((item) => item.id === id);
-          if (!p) throw new Error('provider not found');
-          const env = p.environments?.find((item) => item.default) || p.environments?.[0];
-          if (!env) throw new Error('provider environment not configured');
-          return {
-            id: p.id,
-            name: p.name,
-            description: p.description || `${p.name} OAuth2 provider`,
-            icon: p.icon || '',
-            color: p.color || '',
-            category: p.category || 'other',
-            builtin: true,
-            enabled: p.enabled !== false,
-            oauth2: {
-              authorize_url: env.authorize_url,
-              token_url: env.token_url,
-              userinfo_url: env.userinfo_url,
-              scopes: [],
-              pkce: false,
-            },
-          } as OAuth2ProviderDetail;
-        })(),
+    invokeRustDataFromStatus<OAuthIdInput, OAuth2ProviderDetail>('oauth2_get_provider', { id }),
 
   oauth2GetCredentialInfo: (id: string) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<OAuthIdInput, { client_id: string; secret_masked: string; source: string; yaml_has_conf: boolean }>(
-          'oauth2_get_credential_info',
-          { id },
-        )
-      : Promise.resolve({ client_id: '', secret_masked: '****', source: 'web', yaml_has_conf: true }),
+    invokeRustDataFromStatus<OAuthIdInput, { client_id: string; secret_masked: string; source: string; yaml_has_conf: boolean }>(
+      'oauth2_get_credential_info',
+      { id },
+    ),
 
   oauth2SetCredentials: (id: string, clientId: string, clientSecret: string) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<OAuthSetCredentialsInput, { status: string }>('oauth2_set_credentials', {
-          id,
-          client_id: clientId,
-          client_secret: clientSecret,
-        })
-      : Promise.resolve({ status: 'ok' }),
+    invokeRustDataFromStatus<OAuthSetCredentialsInput, { status: string }>('oauth2_set_credentials', {
+      id,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
 
   oauth2Authorize: (id: string, environment?: string, returnTo?: string) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<OAuthAuthorizeInput, { auth_url: string }>('oauth2_authorize', { id, environment, return_to: returnTo })
-      : (async () => {
-          const providers = await loadWebOAuthProviderConfigs();
-          const p = providers.find((item) => item.id === id);
-          if (!p) throw new Error('provider not found');
-          if ((p.status || 'active') === 'coming_soon') throw new Error('provider developing');
-        const callbackUrl =
-          p.callback_url ||
-          (id === 'github' || id === 'google'
-            ? `https://peers-touch.vercel.app/api/oauth/${id}/callback`
-            : '');
-        if (!callbackUrl) throw new Error('provider callback_url missing');
-          const resolvedReturnTo = returnTo || (typeof window !== 'undefined' ? window.location.href : '');
-        const startUrl = callbackUrl.replace(/\/callback(\?.*)?$/, '/start');
-          const authUrl = `${startUrl}?site_id=default&return_to=${encodeURIComponent(resolvedReturnTo)}`;
-          return { auth_url: authUrl };
-        })(),
+    invokeRustDataFromStatus<OAuthAuthorizeInput, { auth_url: string }>('oauth2_authorize', { id, environment, return_to: returnTo }),
 
   oauth2StartLoopback: (id: string, environment?: string) =>
     invokeRustDataFromStatus<OAuthLoopbackStartInput, { auth_url: string; session_id: string }>(
@@ -2645,48 +2422,19 @@ export const api = {
     ),
 
   oauth2HandleCallback: (input: OAuthCallbackInput) =>
-    isTauriRuntime()
-      ? (async () => {
-          const result = await invokeRustDataFromStatus<OAuthCallbackInput, { status: string }>('oauth2_handle_callback', input);
-          await api.accountUpsertOAuth({
-            provider: input.provider,
-            provider_user_id: input.provider_user_id,
-            name: input.username || input.display_name || input.provider_user_id,
-            created_at: input.created_at,
-            email: input.email || undefined,
-            avatar_url: input.avatar_url || undefined,
-            profile_url: input.profile_url || undefined,
-          });
-          return result;
-        })()
-      : (async () => {
-          const provider = input.provider;
-          const providerUserId = input.provider_user_id;
-          const now = new Date().toISOString();
-          upsertWebOAuthConnection({
-            provider_id: provider,
-            provider_name: provider.charAt(0).toUpperCase() + provider.slice(1),
-            user_id: providerUserId,
-            user_name: input.username || input.display_name || providerUserId,
-            email: input.email || '',
-            avatar_url: input.avatar_url || '',
-            profile_url: input.profile_url || '',
-            connected_at: now,
-            expires_at: input.expires_at || new Date(Date.now() + 3600 * 1000).toISOString(),
-            scopes: [],
-            status: 'active',
-          });
-          upsertWebAccountFromOAuth({
-            provider,
-            provider_user_id: providerUserId,
-            name: input.username || input.display_name || providerUserId,
-            created_at: input.created_at,
-            email: input.email || undefined,
-            avatar_url: input.avatar_url || undefined,
-            profile_url: input.profile_url || undefined,
-          });
-          return { status: 'ok' };
-        })(),
+    (async () => {
+      const result = await invokeRustDataFromStatus<OAuthCallbackInput, { status: string }>('oauth2_handle_callback', input);
+      await api.accountUpsertOAuth({
+        provider: input.provider,
+        provider_user_id: input.provider_user_id,
+        name: input.username || input.display_name || input.provider_user_id,
+        created_at: input.created_at,
+        email: input.email || undefined,
+        avatar_url: input.avatar_url || undefined,
+        profile_url: input.profile_url || undefined,
+      });
+      return result;
+    })(),
 
   oauth2ConsumeCallbackFromUrl: async (urlText: string) => {
     const payload = parseOAuthCallbackFromUrl(urlText);
@@ -2699,65 +2447,25 @@ export const api = {
   },
 
   oauth2ListConnections: () =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<void, OAuth2Connection[]>('oauth2_list_connections')
-      : (async () => {
-          consumeOAuthCallbackFromLocation();
-          return readWebOAuthConnections();
-        })(),
+    invokeRustDataFromStatus<void, OAuth2Connection[]>('oauth2_list_connections'),
 
   oauth2GetConnection: (id: string) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<OAuthIdInput, OAuth2Connection>('oauth2_get_connection', { id })
-      : (async () => {
-          const item = readWebOAuthConnections().find((conn) => conn.provider_id === id);
-          if (!item) throw new Error('connection not found');
-          return item;
-        })(),
+    invokeRustDataFromStatus<OAuthIdInput, OAuth2Connection>('oauth2_get_connection', { id }),
 
   oauth2Disconnect: (id: string) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_disconnect', { id })
-      : (async () => {
-          const list = readWebOAuthConnections().filter((conn) => conn.provider_id !== id);
-          writeWebOAuthConnections(list);
-          return { status: 'ok' };
-        })(),
+    invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_disconnect', { id }),
 
   oauth2RefreshToken: (id: string) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_refresh_token', { id })
-      : (async () => {
-          const list = readWebOAuthConnections();
-          const idx = list.findIndex((conn) => conn.provider_id === id);
-          if (idx < 0) throw new Error('connection not found');
-          list[idx] = {
-            ...list[idx],
-            expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
-            status: 'active',
-          };
-          writeWebOAuthConnections(list);
-          return { status: 'ok' };
-        })(),
+    invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_refresh_token', { id }),
 
   oauth2CallResource: (id: string, resource: string, params?: Record<string, string>) =>
     invokeRustDataFromStatus<OAuthResourceInput, unknown>('oauth2_call_resource', { id, resource, params }),
 
   oauth2Reload: () =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<void, { status: string }>('oauth2_reload')
-      : Promise.resolve({ status: 'ok' }),
+    invokeRustDataFromStatus<void, { status: string }>('oauth2_reload'),
 
   oauth2GetPage: (id: string) =>
-    isTauriRuntime()
-      ? invokeRustDataFromStatus<OAuthIdInput, { provider: OAuth2ProviderDetail; has_credentials: boolean }>('oauth2_get_page', { id })
-      : (async () => {
-          const provider = await api.oauth2GetProvider(id);
-          return {
-            provider,
-            has_credentials: true,
-          };
-        })(),
+    invokeRustDataFromStatus<OAuthIdInput, { provider: OAuth2ProviderDetail; has_credentials: boolean }>('oauth2_get_page', { id }),
 
   oauthSimulateLarkStart: (opts?: { create_bot?: boolean; app_name?: string }) =>
     invokeRustDataFromStatus<OAuthSimulateStartInput, SimulateLoginStart>('oauth_simulate_lark_start', opts || {}),
@@ -3182,4 +2890,153 @@ export function streamChat(
   })();
 
   return controller;
+}
+
+export const executeAgentTurn = streamChat;
+
+// ---------------------------------------------------------------------------
+// Agent Growth APIs
+// ---------------------------------------------------------------------------
+
+export interface GrowthSnapshot {
+  agent_id: string;
+  total_memories: number;
+  total_skills: number;
+  total_reviews: number;
+  total_turns: number;
+  positive_feedback: number;
+  negative_feedback: number;
+  feedback_ratio: number;
+  error_rate: number;
+  growth_score: number;
+  growth_verdict: string;
+  window_start: string;
+  window_end: string;
+}
+
+export interface MemoryItem {
+  id: string;
+  agent_id: string;
+  target: string;
+  content: string;
+  source: string;
+  is_frozen: boolean;
+  trust_score: number;
+  retrieval_count: number;
+  helpful_count: number;
+  harmful_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillItem {
+  id: string;
+  agent_id: string;
+  name: string;
+  description: string;
+  category: string;
+  trust_level: string;
+  scan_verdict: string;
+  enabled: boolean;
+  version: number;
+  view_count: number;
+  apply_count: number;
+  patch_count: number;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export async function getAgentGrowthSnapshot(agentId: string): Promise<GrowthSnapshot> {
+  const result = await invokeRustDataFromStatus<{ agent_id: string }, GrowthSnapshot>(
+    'agent_growth_snapshot',
+    { agent_id: agentId },
+  );
+  return result;
+}
+
+export async function getAgentMemories(agentId: string): Promise<MemoryItem[]> {
+  const result = await invokeRustDataFromStatus<{ agent_id: string }, MemoryItem[]>(
+    'agent_memory_list',
+    { agent_id: agentId },
+  );
+  return result;
+}
+
+export async function getAgentSkills(agentId: string): Promise<SkillItem[]> {
+  const result = await invokeRustDataFromStatus<{ agent_id: string }, SkillItem[]>(
+    'agent_skill_list',
+    { agent_id: agentId },
+  );
+  return result;
+}
+
+export async function submitAgentFeedback(
+  agentId: string,
+  turnId: string,
+  conversationId: string,
+  signal: 'positive' | 'negative',
+  comment?: string,
+): Promise<void> {
+  await invokeRustDataFromStatus('agent_submit_feedback', {
+    agent_id: agentId,
+    turn_id: turnId,
+    conversation_id: conversationId,
+    signal,
+    comment: comment ?? null,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Agent Scheduler (Autonomous Learning)
+// ---------------------------------------------------------------------------
+
+export interface SchedulerJobInfo {
+  kind: string;
+  agent_id: string;
+  enabled: boolean;
+  interval: string;
+  last_run_at: string | null;
+  last_status: string | null;
+  run_count: number;
+}
+
+export interface SchedulerStatusResponse {
+  running: boolean;
+  jobs: SchedulerJobInfo[];
+  started_at: string | null;
+}
+
+export async function startAgentScheduler(
+  agentId: string,
+  reviewIntervalMinutes?: number,
+  dogfoodIntervalMinutes?: number,
+): Promise<void> {
+  await invokeRustDataFromStatus('agent_scheduler_start', {
+    agent_id: agentId,
+    review_interval_minutes: reviewIntervalMinutes ?? 120,
+    dogfood_interval_minutes: dogfoodIntervalMinutes ?? 360,
+  });
+}
+
+export async function stopAgentScheduler(): Promise<void> {
+  await invokeRustDataFromStatus('agent_scheduler_stop', {});
+}
+
+export async function getAgentSchedulerStatus(): Promise<SchedulerStatusResponse> {
+  return invokeRustDataFromStatus<object, SchedulerStatusResponse>(
+    'agent_scheduler_status',
+    {},
+  );
+}
+
+export async function addAgentSchedulerJob(
+  kind: string,
+  agentId: string,
+  intervalMinutes?: number,
+): Promise<void> {
+  await invokeRustDataFromStatus('agent_scheduler_add_job', {
+    kind,
+    agent_id: agentId,
+    interval_minutes: intervalMinutes ?? 60,
+  });
 }

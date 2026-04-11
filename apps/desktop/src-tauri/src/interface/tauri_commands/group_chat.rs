@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::error::{AppResult, ErrorCode};
 use crate::application::chat_storage;
 use crate::infrastructure::station_client;
@@ -18,22 +19,22 @@ use reqwest::Method;
 use serde_json::{json, Value};
 use tauri::State;
 
-fn token_from_state(state: &State<AppState>) -> Result<String, AppResult<StubPayload>> {
+fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<StubPayload>> {
     let guard = state.session.lock().map_err(|_| {
-        AppResult::fail(ErrorCode::InternalError, "failed to access session state", None)
+        AppResult::fail(ErrorCode::InternalError, "error.auth.sessionLockFailed", None)
     })?;
     let token = guard.token.clone().unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "authentication required",
+            "error.auth.authenticationRequired",
             None,
         ));
     }
     Ok(token)
 }
 
-fn actor_id_from_state(state: &State<AppState>) -> Option<String> {
+fn actor_id_from_state(state: &State<'_, Arc<AppState>>) -> Option<String> {
     state
         .session
         .lock()
@@ -41,7 +42,7 @@ fn actor_id_from_state(state: &State<AppState>) -> Option<String> {
         .and_then(|guard| guard.actor_id.clone())
 }
 
-fn user_scope_from_state(state: &State<AppState>) -> String {
+fn user_scope_from_state(state: &State<'_, Arc<AppState>>) -> String {
     let actor_id = actor_id_from_state(state);
     resolve_user_scope(actor_id.as_deref())
 }
@@ -50,7 +51,7 @@ fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, 
     let client = match Client::builder().build() {
         Ok(client) => client,
         Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "failed to create http client", Some(json!({"reason": error.to_string()}))));
+            return Err(AppResult::fail(ErrorCode::InternalError, "error.station.httpClientFailed", Some(json!({"reason": error.to_string()}))));
         }
     };
     let mut req = client
@@ -65,7 +66,7 @@ fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, 
     let response = match req.send() {
         Ok(response) => response,
         Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "station request failed", Some(json!({"reason": error.to_string()}))));
+            return Err(AppResult::fail(ErrorCode::InternalError, "error.station.requestFailed", Some(json!({"reason": error.to_string()}))));
         }
     };
     if !response.status().is_success() {
@@ -77,13 +78,13 @@ fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, 
             409 => ErrorCode::Conflict,
             _ => ErrorCode::InternalError,
         };
-        return Err(AppResult::fail(code, "station request failed", Some(json!({"status": response.status().as_u16()}))));
+        return Err(AppResult::fail(code, "error.station.requestFailed", Some(json!({"status": response.status().as_u16()}))));
     }
     match response.json::<Value>() {
         Ok(data) => Ok(data),
         Err(error) => Err(AppResult::fail(
             ErrorCode::InternalError,
-            "invalid station response",
+            "error.station.invalidResponse",
             Some(json!({"reason": error.to_string()})),
         )),
     }
@@ -143,7 +144,7 @@ fn filter_incremental_messages(payload: &Value, cursor: Option<&str>) -> (Value,
 }
 
 #[tauri::command]
-pub fn group_chat_list_groups(input: GroupChatListInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_list_groups(input: GroupChatListInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -160,13 +161,13 @@ pub fn group_chat_list_groups(input: GroupChatListInput, state: State<AppState>)
 }
 
 #[tauri::command]
-pub fn group_chat_list_messages(input: GroupChatListMessagesInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_list_messages(input: GroupChatListMessagesInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
     if input.group_ulid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.groupChat.groupUlidRequired", None);
     }
     let mut query = vec![
         ("group_ulid", input.group_ulid),
@@ -185,7 +186,7 @@ pub fn group_chat_list_messages(input: GroupChatListMessagesInput, state: State<
 }
 
 #[tauri::command]
-pub fn group_chat_send_message(input: GroupChatSendInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_send_message(input: GroupChatSendInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -213,7 +214,7 @@ pub fn group_chat_send_message(input: GroupChatSendInput, state: State<AppState>
 }
 
 #[tauri::command]
-pub fn group_chat_unread_count(input: GroupChatUnreadInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_unread_count(input: GroupChatUnreadInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -230,7 +231,7 @@ pub fn group_chat_unread_count(input: GroupChatUnreadInput, state: State<AppStat
 }
 
 #[tauri::command]
-pub fn group_chat_mark_read(input: GroupChatMarkReadInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_mark_read(input: GroupChatMarkReadInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -251,7 +252,7 @@ pub fn group_chat_mark_read(input: GroupChatMarkReadInput, state: State<AppState
 #[tauri::command]
 pub fn group_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "query is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.queryRequired", None);
     }
     let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
     let items = match chat_storage::search_group_messages("__default__", input.query.as_str(), limit) {
@@ -259,7 +260,7 @@ pub fn group_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPay
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "local search failed",
+                "error.chat.localSearchFailed",
                 Some(json!({ "reason": reason })),
             );
         }
@@ -268,9 +269,9 @@ pub fn group_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPay
 }
 
 #[tauri::command]
-pub fn group_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "query is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.queryRequired", None);
     }
     let user_scope = user_scope_from_state(&state);
     let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
@@ -279,7 +280,7 @@ pub fn group_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "local search failed",
+                "error.chat.localSearchFailed",
                 Some(json!({ "reason": reason })),
             );
         }
@@ -288,74 +289,74 @@ pub fn group_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<
 }
 
 #[tauri::command]
-pub fn group_chat_set_cursor_scoped(input: ChatScopeCursorSetInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_set_cursor_scoped(input: ChatScopeCursorSetInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let user_scope = user_scope_from_state(&state);
     if input.scope.trim().is_empty() || input.cursor.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "scope and cursor are required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.scopeAndCursorRequired", None);
     }
     if let Err(reason) = chat_storage::set_scope_cursor(user_scope.as_str(), input.scope.as_str(), input.cursor.as_str()) {
-        return AppResult::fail(ErrorCode::InternalError, "set cursor failed", Some(json!({"reason": reason})));
+        return AppResult::fail(ErrorCode::InternalError, "error.chat.setCursorFailed", Some(json!({"reason": reason})));
     }
     to_stub("group_chat_set_cursor_scoped", json!({"ok": true}))
 }
 
 #[tauri::command]
-pub fn group_chat_get_cursor_scoped(input: ChatScopeCursorGetInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_get_cursor_scoped(input: ChatScopeCursorGetInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let user_scope = user_scope_from_state(&state);
     if input.scope.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "scope is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.scopeRequired", None);
     }
     let cursor = match chat_storage::get_scope_cursor(user_scope.as_str(), input.scope.as_str()) {
         Ok(cursor) => cursor,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "get cursor failed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "error.chat.getCursorFailed", Some(json!({"reason": reason})));
         }
     };
     to_stub("group_chat_get_cursor_scoped", json!({"cursor": cursor}))
 }
 
 #[tauri::command]
-pub fn group_chat_get_key_version_scoped(state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_get_key_version_scoped(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let user_scope = user_scope_from_state(&state);
     let key_version = match chat_storage::get_chat_key_version(user_scope.as_str()) {
         Ok(version) => version,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "get key version failed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "error.chat.getKeyVersionFailed", Some(json!({"reason": reason})));
         }
     };
     to_stub("group_chat_get_key_version_scoped", json!({"key_version": key_version}))
 }
 
 #[tauri::command]
-pub fn group_chat_rotate_key_scoped(input: ChatKeyRotateInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_rotate_key_scoped(input: ChatKeyRotateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     if input.next_version <= 0 {
-        return AppResult::fail(ErrorCode::InvalidArgument, "next_version must be positive", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.nextVersionPositive", None);
     }
     let user_scope = user_scope_from_state(&state);
     let key_version = match chat_storage::rotate_chat_key(user_scope.as_str(), input.next_version) {
         Ok(version) => version,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "rotate key failed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "error.chat.rotateKeyFailed", Some(json!({"reason": reason})));
         }
     };
     to_stub("group_chat_rotate_key_scoped", json!({"key_version": key_version}))
 }
 
 #[tauri::command]
-pub fn group_chat_sync_from_station_scoped(input: GroupChatSyncInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_sync_from_station_scoped(input: GroupChatSyncInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
     if input.group_ulid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.groupChat.groupUlidRequired", None);
     }
     let user_scope = user_scope_from_state(&state);
     let scope_key = format!("group:{}", input.group_ulid);
     let cursor = match chat_storage::get_scope_cursor(user_scope.as_str(), scope_key.as_str()) {
         Ok(cursor) => cursor,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "get cursor failed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "error.chat.getCursorFailed", Some(json!({"reason": reason})));
         }
     };
     let page_limit = input.limit.unwrap_or(100);
@@ -405,7 +406,7 @@ pub fn group_chat_sync_from_station_scoped(input: GroupChatSyncInput, state: Sta
 }
 
 #[tauri::command]
-pub fn group_chat_create_group(input: GroupChatCreateGroupInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_create_group(input: GroupChatCreateGroupInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -422,7 +423,7 @@ pub fn group_chat_create_group(input: GroupChatCreateGroupInput, state: State<Ap
         Method::POST, "/group-chat/create", &token, None, Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.groupChat.createGroupFailed", None),
     };
 
     let group_json = match resp.group {
@@ -440,7 +441,7 @@ pub fn group_chat_create_group(input: GroupChatCreateGroupInput, state: State<Ap
 }
 
 #[tauri::command]
-pub fn group_chat_leave_group(input: GroupChatLeaveGroupInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_leave_group(input: GroupChatLeaveGroupInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -454,7 +455,7 @@ pub fn group_chat_leave_group(input: GroupChatLeaveGroupInput, state: State<AppS
         Method::POST, "/group-chat/leave", &token, None, Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.groupChat.leaveGroupFailed", None),
     };
 
     to_stub("group_chat_leave_group", json!({ "success": resp.success }))
@@ -466,14 +467,14 @@ pub fn group_chat_leave_group(input: GroupChatLeaveGroupInput, state: State<AppS
 
 /// Get a single group's detail by its ULID.
 #[tauri::command]
-pub fn group_chat_get_group(input: GroupUlidInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_get_group(input: GroupUlidInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
 
     let query = vec![("group_ulid", input.group_ulid)];
-    let data = match request_json(Method::GET, "/group-chat/group", &token, Some(&query), None) {
+    let data = match request_json(Method::GET, "/group-chat/info", &token, Some(&query), None) {
         Ok(data) => data,
         Err(error) => return error,
     };
@@ -483,15 +484,15 @@ pub fn group_chat_get_group(input: GroupUlidInput, state: State<AppState>) -> Ap
 
 /// Update a group's name / description.
 #[tauri::command]
-pub fn group_chat_update_group(input: GroupUpdateInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_update_group(input: GroupUpdateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
 
     let data = match request_json(
-        Method::POST,
-        "/group-chat/group/update",
+        Method::PUT,
+        "/group-chat/update",
         &token,
         None,
         Some(json!({
@@ -509,7 +510,7 @@ pub fn group_chat_update_group(input: GroupUpdateInput, state: State<AppState>) 
 
 /// Invite members to a group.
 #[tauri::command]
-pub fn group_chat_invite_to_group(input: GroupInviteInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_invite_to_group(input: GroupInviteInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -517,12 +518,12 @@ pub fn group_chat_invite_to_group(input: GroupInviteInput, state: State<AppState
 
     let data = match request_json(
         Method::POST,
-        "/group-chat/group/invite",
+        "/group-chat/invite",
         &token,
         None,
         Some(json!({
             "group_ulid": input.group_ulid,
-            "member_dids": input.member_dids,
+            "invitee_dids": input.member_dids,
         })),
     ) {
         Ok(data) => data,
@@ -534,7 +535,7 @@ pub fn group_chat_invite_to_group(input: GroupInviteInput, state: State<AppState
 
 /// Join a group (optionally via invitation).
 #[tauri::command]
-pub fn group_chat_join_group(input: GroupJoinInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_join_group(input: GroupJoinInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -542,7 +543,7 @@ pub fn group_chat_join_group(input: GroupJoinInput, state: State<AppState>) -> A
 
     let data = match request_json(
         Method::POST,
-        "/group-chat/group/join",
+        "/group-chat/join",
         &token,
         None,
         Some(json!({
@@ -559,7 +560,7 @@ pub fn group_chat_join_group(input: GroupJoinInput, state: State<AppState>) -> A
 
 /// List members of a group.
 #[tauri::command]
-pub fn group_chat_get_members(input: GroupMembersInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_get_members(input: GroupMembersInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -571,7 +572,7 @@ pub fn group_chat_get_members(input: GroupMembersInput, state: State<AppState>) 
         ("offset", input.offset.unwrap_or(0).to_string()),
     ];
 
-    let data = match request_json(Method::GET, "/group-chat/group/members", &token, Some(&query), None) {
+    let data = match request_json(Method::GET, "/group-chat/members", &token, Some(&query), None) {
         Ok(data) => data,
         Err(error) => return error,
     };
@@ -581,7 +582,7 @@ pub fn group_chat_get_members(input: GroupMembersInput, state: State<AppState>) 
 
 /// Remove a member from a group.
 #[tauri::command]
-pub fn group_chat_remove_member(input: GroupRemoveMemberInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_remove_member(input: GroupRemoveMemberInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -589,12 +590,12 @@ pub fn group_chat_remove_member(input: GroupRemoveMemberInput, state: State<AppS
 
     let data = match request_json(
         Method::POST,
-        "/group-chat/group/remove-member",
+        "/group-chat/member/remove",
         &token,
         None,
         Some(json!({
             "group_ulid": input.group_ulid,
-            "member_did": input.member_did,
+            "actor_did": input.member_did,
         })),
     ) {
         Ok(data) => data,
@@ -606,7 +607,7 @@ pub fn group_chat_remove_member(input: GroupRemoveMemberInput, state: State<AppS
 
 /// Recall (withdraw) a message in a group.
 #[tauri::command]
-pub fn group_chat_recall_message(input: GroupMessageActionInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_recall_message(input: GroupMessageActionInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -631,7 +632,7 @@ pub fn group_chat_recall_message(input: GroupMessageActionInput, state: State<Ap
 
 /// Delete a message in a group.
 #[tauri::command]
-pub fn group_chat_delete_message(input: GroupMessageActionInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_delete_message(input: GroupMessageActionInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -656,7 +657,7 @@ pub fn group_chat_delete_message(input: GroupMessageActionInput, state: State<Ap
 
 /// Search messages within a group.
 #[tauri::command]
-pub fn group_chat_search_messages(input: GroupSearchMessagesInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_search_messages(input: GroupSearchMessagesInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -678,15 +679,15 @@ pub fn group_chat_search_messages(input: GroupSearchMessagesInput, state: State<
 
 /// Update the current user's nickname in a group.
 #[tauri::command]
-pub fn group_chat_update_nickname(input: GroupUpdateNicknameInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_update_nickname(input: GroupUpdateNicknameInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
 
     let data = match request_json(
-        Method::POST,
-        "/group-chat/group/nickname",
+        Method::PUT,
+        "/group-chat/member/nickname",
         &token,
         None,
         Some(json!({
@@ -703,7 +704,7 @@ pub fn group_chat_update_nickname(input: GroupUpdateNicknameInput, state: State<
 
 /// Get the current user's settings for a group.
 #[tauri::command]
-pub fn group_chat_get_settings(input: GroupUlidInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_get_settings(input: GroupUlidInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -711,7 +712,7 @@ pub fn group_chat_get_settings(input: GroupUlidInput, state: State<AppState>) ->
 
     let query = vec![("group_ulid", input.group_ulid)];
 
-    let data = match request_json(Method::GET, "/group-chat/group/settings", &token, Some(&query), None) {
+    let data = match request_json(Method::GET, "/group-chat/my-settings", &token, Some(&query), None) {
         Ok(data) => data,
         Err(error) => return error,
     };
@@ -721,15 +722,15 @@ pub fn group_chat_get_settings(input: GroupUlidInput, state: State<AppState>) ->
 
 /// Update the current user's settings for a group.
 #[tauri::command]
-pub fn group_chat_update_settings(input: GroupUpdateMySettingsInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_update_settings(input: GroupUpdateMySettingsInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
 
     let data = match request_json(
-        Method::POST,
-        "/group-chat/group/settings",
+        Method::PUT,
+        "/group-chat/my-settings",
         &token,
         None,
         Some(json!({
@@ -746,7 +747,7 @@ pub fn group_chat_update_settings(input: GroupUpdateMySettingsInput, state: Stat
 
 /// Retrieve offline messages for a group.
 #[tauri::command]
-pub fn group_chat_get_offline_messages(input: GroupOfflineMessagesInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_get_offline_messages(input: GroupOfflineMessagesInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -767,7 +768,7 @@ pub fn group_chat_get_offline_messages(input: GroupOfflineMessagesInput, state: 
 
 /// Acknowledge (mark as received) offline messages for a group.
 #[tauri::command]
-pub fn group_chat_ack_offline_messages(input: GroupAckOfflineInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_ack_offline_messages(input: GroupAckOfflineInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
@@ -792,7 +793,7 @@ pub fn group_chat_ack_offline_messages(input: GroupAckOfflineInput, state: State
 
 /// Get group-chat statistics (unread counts, member counts, etc.).
 #[tauri::command]
-pub fn group_chat_get_stats(state: State<AppState>) -> AppResult<StubPayload> {
+pub fn group_chat_get_stats(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,

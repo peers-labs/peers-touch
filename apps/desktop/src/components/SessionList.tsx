@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, SearchBar } from '@lobehub/ui';
 import { Plus, Trash2, MessageSquare } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
 import { useState } from 'react';
 import { theme } from 'antd';
@@ -11,6 +12,7 @@ export function SessionList() {
     useChatStore();
   const [search, setSearch] = useState('');
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
 
   useEffect(() => {
     loadSessions();
@@ -33,7 +35,7 @@ export function SessionList() {
         gap={8}
       >
         <SearchBar
-          placeholder="Search sessions..."
+          placeholder={t('chat.session.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           allowClear
@@ -42,7 +44,7 @@ export function SessionList() {
         <ActionIcon
           icon={Plus}
           onClick={newSession}
-          title="New session"
+          title={t('chat.session.newSession')}
           style={{
             background: token.colorPrimary,
             color: '#fff',
@@ -59,7 +61,7 @@ export function SessionList() {
             flex={1}
             style={{ color: token.colorTextQuaternary, padding: 40, fontSize: 13 }}
           >
-            {search ? 'No matching sessions' : 'No sessions yet. Start a new chat!'}
+            {search ? t('chat.session.noMatch') : t('chat.session.empty')}
           </Flexbox>
         )}
         {filtered.map((s) => {
@@ -111,7 +113,7 @@ export function SessionList() {
                   e.stopPropagation();
                   deleteSession(s.key);
                 }}
-                title="Delete"
+                title={t('chat.session.delete')}
                 style={{ opacity: 0.5 }}
               />
             </Flexbox>

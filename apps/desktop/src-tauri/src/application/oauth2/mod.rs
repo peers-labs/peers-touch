@@ -6,6 +6,7 @@ use crate::contracts::{
     OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
     OAuthLoopbackStartInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
 };
+use crate::infrastructure::i18n::I18nService;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -118,7 +119,7 @@ fn save_oauth_callback(input: OAuthCallbackInput, ts: Option<String>, sig: Optio
         return Err(invalid_argument("provider is required"));
     }
     if get_provider(provider_id).is_none() {
-        return Err(AppResult::fail(ErrorCode::NotFound, "provider not found", None));
+        return Err(AppResult::fail(ErrorCode::NotFound, "error.oauth2.providerNotFound", None));
     }
     if input.provider_user_id.trim().is_empty() {
         return Err(invalid_argument("provider_user_id is required"));
@@ -563,7 +564,7 @@ pub fn oauth2_get_provider(input: OAuthIdInput) -> AppResult<StubPayload> {
         return invalid_argument("id is required");
     }
     let Some(p) = get_provider(input.id.trim()) else {
-        return AppResult::fail(ErrorCode::NotFound, "provider not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.oauth2.providerNotFound", None);
     };
     success_payload(
         "oauth2_get_provider",
@@ -618,7 +619,7 @@ pub fn oauth2_set_credentials(input: OAuthSetCredentialsInput) -> AppResult<Stub
         return invalid_argument("client_id is required");
     }
     if get_provider(input.id.trim()).is_none() {
-        return AppResult::fail(ErrorCode::NotFound, "provider not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.oauth2.providerNotFound", None);
     }
     try_cmd!(write_credentials(
         input.id.trim(),
@@ -634,10 +635,10 @@ pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
     }
     let provider_id = input.id.trim();
     let Some(provider) = get_provider(provider_id) else {
-        return AppResult::fail(ErrorCode::NotFound, "provider not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.oauth2.providerNotFound", None);
     };
     if provider.status == "coming_soon" {
-        return AppResult::fail(ErrorCode::Conflict, "provider developing", None);
+        return AppResult::fail(ErrorCode::Conflict, "error.oauth2.providerDeveloping", None);
     }
     let env = input.environment.unwrap_or_else(|| "prod".to_string());
     let return_to = input
@@ -656,16 +657,16 @@ pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
     )
 }
 
-pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPayload> {
+pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput, i18n: I18nService) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
     let provider_id = input.id.trim();
     let Some(provider) = get_provider(provider_id) else {
-        return AppResult::fail(ErrorCode::NotFound, "provider not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.oauth2.providerNotFound", None);
     };
     if provider.status == "coming_soon" {
-        return AppResult::fail(ErrorCode::Conflict, "provider developing", None);
+        return AppResult::fail(ErrorCode::Conflict, "error.oauth2.providerDeveloping", None);
     }
 
     let listener = match TcpListener::bind("127.0.0.1:0") {
@@ -706,6 +707,11 @@ pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPa
                 .to_string();
             let callback_url = format!("http://127.0.0.1:{port}{path}");
             let params = parse_query_params(&path);
+            let lang = params
+                .get("lang")
+                .or_else(|| params.get("locale"))
+                .cloned()
+                .unwrap_or_else(|| "en".to_string());
             let request_session_id = params.get("session_id").cloned().unwrap_or_default();
             let provider = params.get("provider").cloned().unwrap_or_default();
             let provider_user_id = params.get("provider_user_id").cloned().unwrap_or_default();
@@ -718,7 +724,7 @@ pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPa
                     Some(callback_url.clone()),
                     Some("session id mismatch".to_string()),
                 );
-                message = "回调会话不匹配，请返回应用重试。".to_string();
+                message = i18n.resolve_key(&lang, "oauth", "oauth.callback.sessionMismatch");
             } else if provider.is_empty() || provider_user_id.is_empty() {
                 update_loopback_session(
                     &session_id_for_thread,
@@ -726,7 +732,7 @@ pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPa
                     Some(callback_url.clone()),
                     Some("missing provider callback fields".to_string()),
                 );
-                message = "授权回调缺少必要字段，请重试授权。".to_string();
+                message = i18n.resolve_key(&lang, "oauth", "oauth.callback.missingFields");
             } else if provider != provider_id_for_thread {
                 update_loopback_session(
                     &session_id_for_thread,
@@ -734,7 +740,7 @@ pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPa
                     Some(callback_url.clone()),
                     Some("provider mismatch".to_string()),
                 );
-                message = "授权提供方不匹配，请重试。".to_string();
+                message = i18n.resolve_key(&lang, "oauth", "oauth.callback.providerMismatch");
             } else {
                 match save_oauth_callback(OAuthCallbackInput {
                     provider,
@@ -759,7 +765,7 @@ pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPa
                             None,
                         );
                         ok = true;
-                        message = "登录已完成，你可以回到 Peers Touch Desktop。".to_string();
+                        message = i18n.resolve_key(&lang, "oauth", "oauth.callback.loginComplete");
                     }
                     Err(err) => {
                         let err_message = err
@@ -773,14 +779,19 @@ pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPa
                             Some(callback_url.clone()),
                             Some(err_message),
                         );
-                        message = "应用处理登录状态失败，请返回应用重试。".to_string();
+                        message = i18n.resolve_key(&lang, "oauth", "oauth.callback.saveFailed");
                     }
                 }
             }
-            let title = if ok { "登录已完成" } else { "登录未完成" };
+            let title = if ok {
+                i18n.resolve_key(&lang, "oauth", "oauth.callback.titleSuccess")
+            } else {
+                i18n.resolve_key(&lang, "oauth", "oauth.callback.titleFailed")
+            };
+            let auto_close_hint = i18n.resolve_key(&lang, "oauth", "oauth.callback.autoCloseHint");
             let body = format!(
-                "<!doctype html><html><head><meta charset=\"utf-8\"><title>Peers Touch</title></head><body style=\"font-family:system-ui,-apple-system,sans-serif;padding:24px\"><h3>{}</h3><p>{}</p><p style=\"color:#666\">本页面会尝试自动关闭，若未关闭可直接手动关闭。</p><script>setTimeout(function(){{window.close();}},1200);</script></body></html>",
-                title, message
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>Peers Touch</title></head><body style=\"font-family:system-ui,-apple-system,sans-serif;padding:24px\"><h3>{}</h3><p>{}</p><p style=\"color:#666\">{}</p><script>setTimeout(function(){{window.close();}},1200);</script></body></html>",
+                title, message, auto_close_hint
             );
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -882,7 +893,7 @@ pub fn oauth2_get_connection(input: OAuthIdInput) -> AppResult<StubPayload> {
     let map = try_cmd!(read_connections());
     let id = input.id.trim();
     let Some(conn) = map.get(id) else {
-        return AppResult::fail(ErrorCode::NotFound, "connection not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.oauth2.connectionNotFound", None);
     };
     success_payload(
         "oauth2_get_connection",
@@ -919,7 +930,7 @@ pub fn oauth2_refresh_token(input: OAuthIdInput) -> AppResult<StubPayload> {
     let id = input.id.trim();
     let mut map = try_cmd!(read_connections());
     let Some(conn) = map.get_mut(id) else {
-        return AppResult::fail(ErrorCode::NotFound, "connection not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.oauth2.connectionNotFound", None);
     };
     let now = chrono_like_now_unix();
     let new_expires = unix_to_rfc3339(now + 3600);
@@ -956,7 +967,7 @@ pub fn oauth2_get_page(input: OAuthIdInput) -> AppResult<StubPayload> {
     }
     let provider_id = input.id.trim();
     let Some(p) = get_provider(provider_id) else {
-        return AppResult::fail(ErrorCode::NotFound, "provider not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.oauth2.providerNotFound", None);
     };
     let (client_id, _, yaml_has_conf) = try_cmd!(read_credentials(provider_id));
     success_payload(

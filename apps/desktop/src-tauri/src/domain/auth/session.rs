@@ -19,12 +19,12 @@ pub enum AuthDomainError {
 pub fn validate_login_input(account: &str, password: &str) -> Result<(), AuthDomainError> {
     if account.trim().is_empty() {
         return Err(AuthDomainError::InvalidArgument(
-            "account is required".to_string(),
+            "error.auth.accountRequired".to_string(),
         ));
     }
     if password.trim().is_empty() {
         return Err(AuthDomainError::InvalidArgument(
-            "password is required".to_string(),
+            "error.auth.passwordRequired".to_string(),
         ));
     }
     Ok(())
@@ -42,7 +42,7 @@ pub fn from_station_response(actor_id: String, token: String) -> AuthSession {
 pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     let token = token.trim();
     if token.is_empty() {
-        return Err(AuthDomainError::Unauthorized("missing token".to_string()));
+        return Err(AuthDomainError::Unauthorized("error.auth.tokenMissing".to_string()));
     }
 
     let parts: Vec<&str> = token.split('.').collect();
@@ -54,7 +54,7 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
         });
     }
 
-    Err(AuthDomainError::Unauthorized("invalid token: station login required".to_string()))
+    Err(AuthDomainError::Unauthorized("error.auth.tokenInvalid".to_string()))
 }
 
 fn now_epoch_seconds() -> u64 {

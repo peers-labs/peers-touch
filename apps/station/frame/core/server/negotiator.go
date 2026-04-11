@@ -36,23 +36,35 @@ func (n *ContentNegotiator) GetRequestSerializer(contentType string) Serializer 
 	}
 }
 
-// GetResponseSerializer returns the appropriate serializer based on request Content-Type
-// For typed handlers, we use the same format for response as request
-func (n *ContentNegotiator) GetResponseSerializer(contentType string, responseType Serializer) Serializer {
-	// If Content-Type indicates protobuf, use protobuf for response
+// GetResponseSerializer determines response serializer using HTTP content negotiation.
+//
+// Priority:
+//   1. If the request Content-Type is protobuf → ProtoSerializer (binary protobuf)
+//   2. If the request Content-Type is JSON (or empty/unknown) and the response type
+//      is a proto.Message → ProtoJSONSerializer (protojson-encoded JSON)
+//   3. Otherwise → the default JSONSerializer
+//
+// This ensures that a JSON client always receives valid JSON even when the
+// handler returns proto.Message values, and protobuf clients receive binary.
+func (n *ContentNegotiator) GetResponseSerializer(contentType string, responseTypeSerializer Serializer) Serializer {
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	if idx := strings.Index(contentType, ";"); idx != -1 {
 		contentType = strings.TrimSpace(contentType[:idx])
 	}
-	
+
 	if contentType == "application/protobuf" || contentType == "application/x-protobuf" {
 		return &ProtoSerializer{}
 	}
-	
-	// Otherwise use the serializer determined by response type
-	if responseType != nil {
-		return responseType
+
+	// Non-protobuf request: if the response type is proto.Message, use ProtoJSONSerializer
+	// so that protojson produces correct JSON field names & well-known type handling.
+	if _, isProto := responseTypeSerializer.(*ProtoSerializer); isProto {
+		return &ProtoJSONSerializer{}
 	}
-	
+
+	if responseTypeSerializer != nil {
+		return responseTypeSerializer
+	}
+
 	return n.defaultSerializer
 }

@@ -6,10 +6,12 @@ import { Input, Button, TextArea, InputPassword, toast } from '@lobehub/ui';
 import { Search, Plus, Brain } from 'lucide-react';
 import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
+import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
 export function ProviderMenu() {
+  const { t } = useTranslation('provider');
   const { providers, selectedId, loadProviders, selectProvider, createProvider } = useProviderStore();
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -75,7 +77,7 @@ export function ProviderMenu() {
       <Flexbox horizontal gap={6}>
         <Input
           prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
-          placeholder="Search providers..."
+          placeholder={t('provider.menu.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           allowClear
@@ -86,7 +88,7 @@ export function ProviderMenu() {
           icon={<Plus size={14} />}
           size="small"
           onClick={() => setShowCreate(true)}
-          title="Add Custom Provider"
+          title={t('provider.menu.addCustomProvider')}
           style={{ borderRadius: 8, flexShrink: 0 }}
         />
       </Flexbox>
@@ -95,7 +97,7 @@ export function ProviderMenu() {
         {enabledList.length > 0 && (
           <>
             <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, padding: '8px 14px 2px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Enabled
+              {t('provider.menu.enabled')}
             </Text>
             {enabledList.map(renderItem)}
           </>
@@ -103,7 +105,7 @@ export function ProviderMenu() {
         {disabledList.length > 0 && (
           <>
             <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, padding: '12px 14px 2px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Disabled
+              {t('provider.menu.disabled')}
             </Text>
             {disabledList.map(renderItem)}
           </>
@@ -140,6 +142,7 @@ function CreateProviderModal({
   onClose: () => void;
   onCreate: (data: { id: string; name: string; description?: string; logo?: string; base_url: string; api_key?: string }) => Promise<void>;
 }) {
+  const { t } = useTranslation('provider');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
@@ -148,7 +151,7 @@ function CreateProviderModal({
       const values = await form.validateFields();
       setLoading(true);
       await onCreate(values);
-      toast.success('Provider created');
+      toast.success(t('provider.menu.created'));
       form.resetFields();
       onClose();
     } catch (e: unknown) {
@@ -163,7 +166,7 @@ function CreateProviderModal({
       title={
         <Flexbox horizontal gap={8} align="center">
           <Brain size={18} />
-          <span>Create Custom AI Provider</span>
+          <span>{t('provider.menu.createTitle')}</span>
         </Flexbox>
       }
       open={open}
@@ -177,56 +180,56 @@ function CreateProviderModal({
           onClick={handleOk}
           style={{ borderRadius: 8 }}
         >
-          Create
+          {t('provider.menu.createBtn')}
         </Button>
       }
       destroyOnClose
       width={520}
     >
       <Form form={form} layout="horizontal" labelCol={{ span: 8 }} wrapperCol={{ span: 16 }} style={{ marginTop: 8 }}>
-        <SectionTitle>Basic Information</SectionTitle>
+        <SectionTitle>{t('provider.menu.basicInfo')}</SectionTitle>
 
         <Form.Item
           name="id"
-          label="Provider ID"
+          label={t('provider.menu.providerId')}
           rules={[
-            { required: true, message: 'Required' },
-            { pattern: /^[\d_a-z-]+$/, message: 'Only lowercase letters, numbers, hyphens allowed' },
+            { required: true, message: t('provider.menu.providerIdRequired') },
+            { pattern: /^[\d_a-z-]+$/, message: t('provider.menu.providerIdPattern') },
           ]}
           extra={
             <Text type="secondary" style={{ fontSize: 12 }}>
-              Unique identifier for the service provider, which cannot be modified after creation
+              {t('provider.menu.providerIdExtra')}
             </Text>
           }
         >
-          <Input placeholder="Suggested all lowercase, e.g., openai, cann..." variant="filled" />
+          <Input placeholder={t('provider.menu.providerIdPlaceholder')} variant="filled" />
         </Form.Item>
 
-        <Form.Item name="name" label="Provider Name">
-          <Input placeholder="Please enter the display name of the provider" variant="filled" />
+        <Form.Item name="name" label={t('provider.menu.providerName')}>
+          <Input placeholder={t('provider.menu.providerNamePlaceholder')} variant="filled" />
         </Form.Item>
 
-        <Form.Item name="description" label="Provider Description">
-          <TextArea placeholder="Provider description (optional)" rows={3} variant="filled" />
+        <Form.Item name="description" label={t('provider.menu.providerDescription')}>
+          <TextArea placeholder={t('provider.menu.providerDescPlaceholder')} rows={3} variant="filled" />
         </Form.Item>
 
-        <Form.Item name="logo" label="Provider Logo">
+        <Form.Item name="logo" label={t('provider.menu.providerLogo')}>
           <Input placeholder="https://example.com/logo.png" variant="filled" allowClear />
         </Form.Item>
 
-        <SectionTitle>Configuration Information</SectionTitle>
+        <SectionTitle>{t('provider.menu.configInfo')}</SectionTitle>
 
         <Form.Item
           name="base_url"
-          label="Proxy URL"
-          rules={[{ required: true, message: 'Required' }]}
+          label={t('provider.menu.proxyUrl')}
+          rules={[{ required: true, message: t('provider.menu.proxyUrlRequired') }]}
         >
           <Input placeholder="https://your-proxy-url.com/v1" variant="filled" />
         </Form.Item>
 
-        <Form.Item name="api_key" label="API Key">
+        <Form.Item name="api_key" label={t('provider.menu.apiKey')}>
           <InputPassword
-            placeholder="Please enter your API Key"
+            placeholder={t('provider.menu.apiKeyPlaceholder')}
             variant="filled"
             autoComplete="new-password"
           />

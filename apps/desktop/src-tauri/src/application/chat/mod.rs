@@ -42,7 +42,7 @@ impl ChatStore {
             Conversation {
                 id: conversation_id,
                 agent_id: "assistant".to_string(),
-                title: "General".to_string(),
+                title: "i18n:chat.conversation.general".to_string(),
                 model: None,
                 unread_count: 1,
                 last_message_id: Some(first_message_id),
@@ -66,7 +66,7 @@ impl ChatStore {
             .or_insert_with(|| Conversation {
                 id: conversation_id.to_string(),
                 agent_id: agent_id.to_string(),
-                title: "New Chat".to_string(),
+                title: "i18n:chat.conversation.new".to_string(),
                 model: None,
                 unread_count: 0,
                 last_message_id: None,
@@ -290,7 +290,7 @@ pub fn chat_mark_read(input: ChatMarkReadInput) -> AppResult<StubPayload> {
     };
     let messages = match guard.messages.get_mut(&conversation_id) {
         Some(messages) => messages,
-        None => return AppResult::fail(ErrorCode::NotFound, "conversation not found", None),
+        None => return AppResult::fail(ErrorCode::NotFound, "error.chat.conversationNotFound", None),
     };
     let mut found = false;
     for message in messages.iter_mut() {
@@ -300,7 +300,7 @@ pub fn chat_mark_read(input: ChatMarkReadInput) -> AppResult<StubPayload> {
         }
     }
     if !found {
-        return AppResult::fail(ErrorCode::NotFound, "message not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.chat.messageNotFound", None);
     }
     let unread_count = messages.iter().filter(|item| !item.read).count() as u32;
     if let Some(conversation) = guard.conversations.get_mut(&conversation_id) {
@@ -384,7 +384,7 @@ pub fn chat_duplicate_conversation(input: ChatConversationInput) -> AppResult<St
     };
     let source_conversation = match guard.conversations.get(&source_id).cloned() {
         Some(conversation) => conversation,
-        None => return AppResult::fail(ErrorCode::NotFound, "conversation not found", None),
+        None => return AppResult::fail(ErrorCode::NotFound, "error.chat.conversationNotFound", None),
     };
     let now = chat::now_ms();
     let duplicated_id = format!("{}-copy-{}", source_id, now);
@@ -518,7 +518,7 @@ pub fn chat_delete_message(input: ChatMessageInput) -> AppResult<StubPayload> {
             json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
         );
     }
-    AppResult::fail(ErrorCode::NotFound, "message not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.chat.messageNotFound", None)
 }
 
 pub fn chat_update_message(input: ChatUpdateMessageInput) -> AppResult<StubPayload> {
@@ -563,7 +563,7 @@ pub fn chat_update_message(input: ChatUpdateMessageInput) -> AppResult<StubPaylo
             json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
         );
     }
-    AppResult::fail(ErrorCode::NotFound, "message not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.chat.messageNotFound", None)
 }
 
 pub fn chat_stop(input: ChatConversationInput) -> AppResult<StubPayload> {
@@ -599,16 +599,16 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
         provider_id
     };
     if provider_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "provider_id is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.provider.providerIdRequired", None);
     }
     let provider_data = match provider_state::with_provider_store(None, |store| {
         store.providers.iter().find(|p| p.id == provider_id).cloned()
     }) {
         Ok(Some(provider)) => provider,
-        _ => return AppResult::fail(ErrorCode::NotFound, "provider not found", None),
+        _ => return AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
     };
     if !provider_data.enabled {
-        return AppResult::fail(ErrorCode::InvalidArgument, "provider is disabled", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.provider.disabled", None);
     }
     let api_key = serde_json::from_str::<serde_json::Value>(&provider_data.key_vaults)
         .ok()
@@ -617,7 +617,7 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
     let config: serde_json::Value = serde_json::from_str(&provider_data.config_json).unwrap_or_default();
     let base_url = config.get("base_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
     if base_url.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "provider base_url not configured", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.provider.baseUrlRequired", None);
     }
     let provider_protocol = config.get("protocol").and_then(|v| v.as_str()).map(String::from);
     let model_id = input.model.as_deref().unwrap_or("").trim().to_string();
@@ -627,7 +627,7 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
         model_id
     };
     if model_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "model is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.provider.modelRequired", None);
     }
     let model_record = provider_data.models.iter().find(|m| m.id == model_id);
     let effective_protocol = provider_remote::resolve_model_protocol(
@@ -700,7 +700,7 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
             tracing::error!(command = "chat_completion_once", session_id = %session_id, model = %model_id, error = %err, "Completion failed");
             AppResult::fail(
                 ErrorCode::InternalError,
-                &format!("completion failed: {}", err),
+                "error.chat.completionFailed",
                 Some(json!({ "provider_id": provider_id, "model": model_id })),
             )
         }
