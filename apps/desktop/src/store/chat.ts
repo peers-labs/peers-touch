@@ -2,11 +2,10 @@ import { create } from 'zustand';
 import { log } from '../utils/logger';
 import {
   api,
-  streamChat,
+  executeAgentTurn,
   type Message,
   type Session,
   type StreamEvent,
-  type ChatImageInput,
   type UploadResult,
   type AvailableModel,
   type Agent,
@@ -548,13 +547,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const readyImages = pendingImages.filter((p) => !p.uploading && p.dataUrl);
     const imageUrls = readyImages.map((p) => p.servingUrl || p.previewUrl);
 
-    const chatImages: ChatImageInput[] = readyImages.map((p) => ({
-      data_url: p.dataUrl!,
-      mime_type: p.mimeType,
-      url: p.servingUrl,
-      filename: p.filename,
-    }));
-
     const userMsg: ChatMessage = {
       id: tempId(),
       role: 'user',
@@ -585,7 +577,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const assistantId = assistantMsg.id;
 
-    const controller = streamChat(
+    const controller = executeAgentTurn(
       content,
       currentSessionKey,
       selectedAgent || 'assistant',
@@ -666,7 +658,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().syncMessages();
         get().loadSessions();
       },
-      chatImages.length > 0 ? chatImages : undefined,
       modelOverride,
       selectedProviderId || undefined,
     );
@@ -734,7 +725,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const assistantId = assistantMsg.id;
 
-    const controller = streamChat(
+    const controller = executeAgentTurn(
       userMsg.content,
       currentSessionKey,
       selectedAgent || 'assistant',
@@ -794,7 +785,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().syncMessages();
         get().loadSessions();
       },
-      userMsg.images?.map((url) => ({ data_url: url, mime_type: 'image/png' })),
       modelOverride,
       selectedProviderId || undefined,
     );

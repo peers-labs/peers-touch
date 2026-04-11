@@ -7,6 +7,7 @@ import type { OAuth2ProviderSummary } from '../../services/desktop_api';
 import { api } from '../../services/desktop_api';
 import { useOAuth2Store } from '../../store/oauth2';
 import { PlatformLogo } from '../common/PlatformLogo';
+import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
@@ -23,6 +24,7 @@ function CredentialsModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [saving, setSaving] = useState(false);
@@ -47,26 +49,26 @@ function CredentialsModal({
 
   const handleSave = async () => {
     if (!clientId.trim()) {
-      toast.error('Client ID is required');
+      toast.error(t('provider.oauth.card.clientIdRequired'));
       return;
     }
     if (source === 'none' && !clientSecret.trim()) {
-      toast.error('Client Secret is required for first-time configuration');
+      toast.error(t('provider.oauth.card.clientSecretFirstTime'));
       return;
     }
     if (!clientSecret.trim() && source !== 'none') {
-      toast.info('No changes — secret was not updated');
+      toast.info(t('provider.oauth.card.clientSecretNoChange'));
       onClose();
       return;
     }
     setSaving(true);
     try {
       await api.oauth2SetCredentials(provider.id, clientId.trim(), clientSecret.trim());
-      toast.success('Credentials saved');
+      toast.success(t('provider.oauth.card.credentials.saved'));
       await loadAll();
       onClose();
     } catch (err: any) {
-      toast.error(`Failed: ${err.message}`);
+      toast.error(t('provider.oauth.card.credentialsFailed', { error: err.message }));
     } finally {
       setSaving(false);
     }
@@ -74,23 +76,23 @@ function CredentialsModal({
 
   return (
     <Modal
-      title={`Configure ${provider.name}`}
+      title={t('provider.oauth.card.configureTitle', { name: provider.name })}
       open={open}
       onCancel={onClose}
       onOk={handleSave}
       confirmLoading={saving}
-      okText="Save"
+      okText={t('provider.oauth.card.saveBtn')}
       destroyOnClose
     >
       <Flexbox gap={16} style={{ paddingBlock: 12 }}>
         <Text type="secondary" style={{ fontSize: 13 }}>
-          Register Peers Touch as an OAuth2 client with {provider.name}.
+          {t('provider.oauth.card.registerDesc', { name: provider.name })}
         </Text>
 
         {provider.callback_url && (
           <Flexbox gap={4}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              Redirect URI (register this with {provider.name}):
+              {t('provider.oauth.card.redirectUri', { name: provider.name })}:
             </Text>
             <AntdInput.Search
               readOnly
@@ -99,7 +101,7 @@ function CredentialsModal({
               size="small"
               onSearch={() => {
                 navigator.clipboard.writeText(provider.callback_url);
-                toast.success('Copied');
+                toast.success(t('provider.oauth.card.copied'));
               }}
               styles={{ input: { fontSize: 12, fontFamily: 'monospace' } }}
             />
@@ -112,8 +114,7 @@ function CredentialsModal({
             showIcon
             message={
               <span style={{ fontSize: 12 }}>
-                Currently using credentials from config file (<code>~/.peers-touch/oauth2/{provider.id}.yml</code>).
-                Saving here will override the config file values.
+                {t('provider.oauth.card.yamlInfo', { id: provider.id })}
               </span>
             }
             style={{ borderRadius: 8 }}
@@ -126,8 +127,7 @@ function CredentialsModal({
             showIcon
             message={
               <span style={{ fontSize: 12 }}>
-                Config file also has credentials. The values saved here take priority.
-                Remove them from YAML if no longer needed.
+                {t('provider.oauth.card.yamlConflict')}
               </span>
             }
             style={{ borderRadius: 8 }}
@@ -135,26 +135,26 @@ function CredentialsModal({
         )}
 
         <Flexbox gap={4}>
-          <Text strong style={{ fontSize: 12 }}>Client ID</Text>
+          <Text strong style={{ fontSize: 12 }}>{t('provider.oauth.card.clientId')}</Text>
           <Input
             value={clientId}
             onChange={e => setClientId(e.target.value)}
-            placeholder="Enter client_id"
+            placeholder={t('provider.oauth.card.clientIdPlaceholder')}
             disabled={loading}
           />
         </Flexbox>
 
         <Flexbox gap={4}>
-          <Text strong style={{ fontSize: 12 }}>Client Secret</Text>
+          <Text strong style={{ fontSize: 12 }}>{t('provider.oauth.card.clientSecret')}</Text>
           <InputPassword
             value={clientSecret}
             onChange={e => setClientSecret(e.target.value)}
-            placeholder={source !== 'none' ? 'Re-enter to update' : 'Enter client_secret'}
+            placeholder={source !== 'none' ? t('provider.oauth.card.clientSecretUpdatePlaceholder') : t('provider.oauth.card.clientSecretPlaceholder')}
             disabled={loading}
           />
           {source !== 'none' && !clientSecret && (
             <Text type="secondary" style={{ fontSize: 11 }}>
-              Secret is stored encrypted. Re-enter to change it, or leave blank to keep the existing one.
+              {t('provider.oauth.card.clientSecretEncrypted')}
             </Text>
           )}
         </Flexbox>
@@ -164,6 +164,7 @@ function CredentialsModal({
 }
 
 export function OAuth2ProviderCard({ provider }: Props) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [credModalOpen, setCredModalOpen] = useState(false);
 
@@ -176,15 +177,15 @@ export function OAuth2ProviderCard({ provider }: Props) {
       display: 'inline-flex', alignItems: 'center', gap: 4, lineHeight: 1,
     }}>
       <Clock size={11} style={{ flexShrink: 0 }} />
-      Coming Soon
+      {t('provider.oauth.card.comingSoon')}
     </Tag>
   ) : hasCreds ? (
     <Tag color="success" style={{ margin: 0, fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
       <Check size={11} />
-      Configured
+      {t('provider.oauth.card.configured')}
     </Tag>
   ) : (
-    <Tag style={{ margin: 0, fontSize: 11 }}>Not Configured</Tag>
+    <Tag style={{ margin: 0, fontSize: 11 }}>{t('provider.oauth.card.notConfigured')}</Tag>
   );
 
   return (
@@ -232,9 +233,9 @@ export function OAuth2ProviderCard({ provider }: Props) {
         {!isComingSoon && (
           <Flexbox horizontal gap={8}>
             {hasCreds ? (
-              <Tooltip title="Edit credentials">
+              <Tooltip title={t('provider.oauth.card.editCredentials')}>
                 <Button size="small" icon={<Settings2 size={14} />} onClick={() => setCredModalOpen(true)}>
-                  Edit
+                  {t('provider.oauth.card.edit')}
                 </Button>
               </Tooltip>
             ) : (
@@ -244,7 +245,7 @@ export function OAuth2ProviderCard({ provider }: Props) {
                 icon={<Settings2 size={14} />}
                 onClick={() => setCredModalOpen(true)}
               >
-                Configure
+                {t('provider.oauth.card.configure')}
               </Button>
             )}
           </Flexbox>

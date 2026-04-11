@@ -12,6 +12,10 @@ import (
 // BaseServer is the base server for all servers.
 // It helps to run the common logic for all servers, including start/stop server,
 // key-loading, sub-servers, wrapper loading, etc.
+//
+// Change History:
+// - 2026-04-10: Populate Options.SubserverInstances in init() so that any
+//   subserver can discover its siblings via server.GetOptions() at Start time.
 type BaseServer struct {
 	opts *Options
 
@@ -92,6 +96,10 @@ func (b *BaseServer) init(opts ...option.Option) error {
 
 		// append the sub server to the map
 		b.subServers[sub.Name()] = sub
+
+		// Publish the instance into Options so sibling subservers can
+		// discover each other via server.GetOptions().SubserverInstances.
+		b.opts.SubserverInstances[sub.Name()] = sub
 
 		// then append the sub server's handlers to the main server
 		for _, handler := range sub.Handlers() {

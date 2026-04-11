@@ -77,7 +77,7 @@ pub fn account_switch(input: AccountIdInput) -> AppResult<StubPayload> {
     }
     let mut state = try_cmd!(auth_identity::read_state().map_err(internal_error));
     if !state.accounts.iter().any(|item| item.id == input.id) {
-        return AppResult::fail(ErrorCode::NotFound, "account not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.account.notFound", None);
     }
     state.active_account_id = Some(input.id);
     try_cmd!(auth_identity::write_state(&state).map_err(internal_error));

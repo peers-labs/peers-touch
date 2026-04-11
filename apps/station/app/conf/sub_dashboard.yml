@@ -1,0 +1,10 @@
+peers:
+  dashboard:
+    enable: true
+    local_only: true
+    jwt_secret: ""
+    session_ttl: "24h"
+    super_user:
+      username: "peers"
+      password: "peers"
+    allowed_dids: []

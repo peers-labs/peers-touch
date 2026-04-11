@@ -2,10 +2,34 @@ import { StrictMode, Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@lobehub/ui';
 import { log } from './utils/logger';
-import App from './App';
-import SharePage from './pages/SharePage';
-import './modules';
+import { initI18n } from './i18n';
 import './index.css';
+
+// ── Browser Dev Gateway ──
+// When running outside Tauri WebView (e.g. Chrome), patch
+// __TAURI_INTERNALS__ so that invoke() routes through the
+// Rust HTTP gateway at 127.0.0.1:3030.
+if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
+  const GATEWAY = 'http://127.0.0.1:3030';
+  (window as any).__TAURI_INTERNALS__ = {
+    invoke: async (cmd: string, args?: Record<string, unknown>) => {
+      const res = await fetch(GATEWAY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd, args: args ?? {} }),
+      });
+      if (!res.ok) throw new Error(`Gateway ${res.status}: ${await res.text()}`);
+      return res.json();
+    },
+    transformCallback: (callback?: (response: unknown) => void) => {
+      const id = crypto.randomUUID();
+      if (callback) (window as any)[`_${id}`] = callback;
+      return id;
+    },
+    convertFileSrc: (path: string) => path,
+    metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
+  };
+}
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -34,25 +58,38 @@ window.addEventListener('unhandledrejection', (e) => {
   log.error('app', 'Unhandled rejection', { reason: String(e.reason) });
 });
 
-function Root() {
-  const path = window.location.pathname;
-  const shareMatch = path.match(/^\/share\/s\/([A-Za-z0-9]+)$/);
-  if (shareMatch) {
-    return <SharePage token={shareMatch[1]} />;
+async function bootstrap() {
+  const [{ default: App }, { default: SharePage }] = await Promise.all([
+    import('./App'),
+    import('./pages/SharePage'),
+  ]);
+
+  await initI18n();
+
+  function Root() {
+    const path = window.location.pathname;
+    const shareMatch = path.match(/^\/share\/s\/([A-Za-z0-9]+)$/);
+    if (shareMatch) {
+      return <SharePage token={shareMatch[1]} />;
+    }
+    return <App />;
   }
-  return <App />;
+
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <Root />
+        </ThemeProvider>
+      </ErrorBoundary>
+    </StrictMode>,
+  );
+
+  if (typeof window.__PT_BOOT_READY__ === 'function') {
+    window.__PT_BOOT_READY__();
+  }
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <ThemeProvider>
-        <Root />
-      </ThemeProvider>
-    </ErrorBoundary>
-  </StrictMode>,
-);
-
-if (typeof window.__PT_BOOT_READY__ === 'function') {
-  window.__PT_BOOT_READY__();
-}
+bootstrap().catch((err) => {
+  log.error('app', 'Bootstrap failed', { error: String(err) });
+});

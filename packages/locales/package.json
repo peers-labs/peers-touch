@@ -1,0 +1,9 @@
+{
+  "name": "@peers-touch/locales",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./types": "./types.ts",
+    "./metadata.json": "./metadata.json"
+  }
+}

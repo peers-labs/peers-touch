@@ -102,8 +102,19 @@ pub struct TimelineActionInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileUpdateInput {
     pub display_name: Option<String>,
-    pub bio: Option<String>,
-    pub location: Option<String>,
+    pub note: Option<String>,
+    pub avatar: Option<String>,
+    pub header: Option<String>,
+    pub region: Option<String>,
+    pub timezone: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub links: Option<Vec<ProfileLinkInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileLinkInput {
+    pub label: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

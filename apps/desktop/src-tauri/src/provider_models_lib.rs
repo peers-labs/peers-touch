@@ -5,6 +5,8 @@ pub mod state;
 pub(crate) use interface::contracts;
 
 pub mod infrastructure {
+    #[path = "i18n/mod.rs"]
+    pub mod i18n;
     #[path = "storage/mod.rs"]
     pub mod storage;
     #[path = "station_client.rs"]

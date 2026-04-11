@@ -1,11 +1,12 @@
 use crate::error::AppResult;
 use crate::contracts::{
-    ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput,
-    ChatMessageInput, ChatRenameConversationInput, ChatSendMessageInput,
+    AgentExecuteTurnInput, ChatCompletionInput, ChatConversationInput, ChatListMessagesInput,
+    ChatMarkReadInput, ChatMessageInput, ChatRenameConversationInput, ChatSendMessageInput,
     ChatSetConversationModelInput, ChatUpdateMessageInput, StubPayload,
 };
 
 use crate::application::chat as application_chat;
+use crate::application::agent_turn as application_agent_turn;
 
 #[tauri::command]
 pub fn chat_list_conversations() -> AppResult<StubPayload> {
@@ -67,14 +68,18 @@ pub fn chat_stop(input: ChatConversationInput) -> AppResult<StubPayload> {
     application_chat::chat_stop(input)
 }
 
+#[deprecated(note = "Use agent_execute_turn instead. This command will be removed in a future release.")]
 #[tauri::command]
-pub async fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload> {
-    match tauri::async_runtime::spawn_blocking(move || application_chat::chat_completion_once(input)).await {
-        Ok(result) => result,
-        Err(_) => AppResult::fail(
-            crate::error::ErrorCode::InternalError,
-            "chat completion task panicked",
-            None,
-        ),
-    }
+pub fn chat_completion_once(_input: ChatCompletionInput) -> AppResult<StubPayload> {
+    tracing::warn!(
+        command = "chat_completion_once",
+        "DEPRECATED: chat_completion_once called, use agent_execute_turn instead"
+    );
+    AppResult::fail(
+        crate::error::ErrorCode::InternalError,
+        "error.chat.deprecated",
+        Some(serde_json::json!({
+            "message": "chat_completion_once is deprecated. Use agent_execute_turn instead."
+        })),
+    )
 }

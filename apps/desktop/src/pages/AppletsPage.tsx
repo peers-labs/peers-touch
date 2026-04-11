@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Tag, Tooltip, toast } from '@lobehub/ui';
 import { Typography, Spin, Badge, theme } from 'antd';
@@ -55,26 +56,27 @@ function getAppletIcon(name?: string) {
   };
 }
 
-const CAP_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
-  search: { label: 'Search', icon: <Search size={11} /> },
-  tools: { label: 'Tools', icon: <Wrench size={11} /> },
-  help: { label: 'Help', icon: <HelpCircle size={11} /> },
-  agents: { label: 'Agents', icon: <Bot size={11} /> },
+const CAP_LABELS: Record<string, { labelKey: string; icon: React.ReactNode }> = {
+  search: { labelKey: 'applet.cap.search', icon: <Search size={11} /> },
+  tools: { labelKey: 'applet.cap.tools', icon: <Wrench size={11} /> },
+  help: { labelKey: 'applet.cap.help', icon: <HelpCircle size={11} /> },
+  agents: { labelKey: 'applet.cap.agents', icon: <Bot size={11} /> },
 };
 
-const PERM_LABELS: Record<string, { label: string; color: string }> = {
-  network: { label: 'Network', color: 'blue' },
-  llm: { label: 'LLM', color: 'purple' },
-  'file:read': { label: 'Files', color: 'green' },
-  'file:write': { label: 'Write', color: 'orange' },
-  shell: { label: 'Shell', color: 'red' },
-  database: { label: 'DB', color: 'cyan' },
-  secrets: { label: 'Secrets', color: 'gold' },
+const PERM_LABELS: Record<string, { labelKey: string; color: string }> = {
+  network: { labelKey: 'applet.perm.network', color: 'blue' },
+  llm: { labelKey: 'applet.perm.llm', color: 'purple' },
+  'file:read': { labelKey: 'applet.perm.files', color: 'green' },
+  'file:write': { labelKey: 'applet.perm.write', color: 'orange' },
+  shell: { labelKey: 'applet.perm.shell', color: 'red' },
+  database: { labelKey: 'applet.perm.db', color: 'cyan' },
+  secrets: { labelKey: 'applet.perm.secrets', color: 'gold' },
 };
 
 import { hasPage } from '../applets/registry';
 
 export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
+  const { t } = useTranslation('applet');
   const [applets, setApplets] = useState<AppletInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const { token } = theme.useToken();
@@ -98,16 +100,16 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
     try {
       if (currentStatus === 'active') {
         await api.deactivateApplet(id);
-        toast.success('Applet deactivated');
+        toast.success(t('applet.toast.deactivated'));
       } else {
         await api.activateApplet(id);
-        toast.success('Applet activated');
+        toast.success(t('applet.toast.activated'));
       }
       loadApplets();
     } catch (e: any) {
-      toast.error(e.message || 'Operation failed');
+      toast.error(e.message || t('applet.toast.operationFailed'));
     }
-  }, [loadApplets]);
+  }, [loadApplets, t]);
 
   const handleOpen = useCallback(async (id: string, currentStatus: string) => {
     if (currentStatus !== 'active') {
@@ -115,16 +117,16 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
         await api.activateApplet(id);
         loadApplets();
       } catch (e: any) {
-        toast.error(e.message || 'Failed to activate');
+        toast.error(e.message || t('applet.toast.failedToActivate'));
         return;
       }
     }
     if (hasPage(id) && onNavigate) {
       onNavigate(`applet:${id}`);
     } else {
-      toast.info('This applet does not have a dedicated page yet');
+      toast.info(t('applet.toast.noPage'));
     }
-  }, [loadApplets, onNavigate]);
+  }, [loadApplets, onNavigate, t]);
 
   if (loading) {
     return (
@@ -137,8 +139,8 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   return (
     <Flexbox style={{ height: '100%', overflow: 'auto' }}>
       <PageHeader
-        title="Agent Applets"
-        subtitle="Extend Agent Box with pluggable applets — each is a self-contained agent with its own UI, tools, and knowledge."
+        title={t('applet.page.title')}
+        subtitle={t('applet.page.subtitle')}
         icon={<Blocks size={20} />}
       />
 
@@ -173,7 +175,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
             }}
           >
             <Blocks size={48} strokeWidth={1} />
-            <Text type="secondary">No applets installed yet.</Text>
+            <Text type="secondary">{t('applet.page.empty')}</Text>
           </Flexbox>
         )}
       </div>
@@ -190,6 +192,7 @@ function AppletCard({
   onToggle: () => void;
   onOpen: () => void;
 }) {
+  const { t } = useTranslation('applet');
   const { token } = theme.useToken();
   const { manifest, status } = info;
   const iconData = getAppletIcon(manifest.icon);
@@ -266,18 +269,18 @@ function AppletCard({
                         color: isActive ? token.colorSuccess : token.colorTextQuaternary,
                       }}
                     >
-                      {isActive ? 'Active' : 'Inactive'}
+                      {isActive ? t('applet.card.active') : t('applet.card.inactive')}
                     </Text>
                   }
                 />
               </Flexbox>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                by {manifest.author}
+                {t('applet.card.by', { author: manifest.author })}
               </Text>
             </Flexbox>
 
             {/* Toggle button */}
-            <Tooltip title={isActive ? 'Deactivate' : 'Activate'}>
+            <Tooltip title={isActive ? t('applet.card.deactivate') : t('applet.card.activate')}>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -332,7 +335,7 @@ function AppletCard({
                   }}
                 >
                   {capMeta.icon}
-                  {capMeta.label}
+                  {t(capMeta.labelKey)}
                 </Tag>
               );
             })}
@@ -358,7 +361,7 @@ function AppletCard({
                   }}
                 >
                   {perm === 'network' ? <Wifi size={10} /> : <Shield size={10} />}
-                  {permMeta.label}
+                  {t(permMeta.labelKey)}
                 </Tag>
               );
             })}
@@ -377,7 +380,7 @@ function AppletCard({
             <Flexbox horizontal align="center" gap={6}>
               <Clock size={12} style={{ color: token.colorTextQuaternary }} />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                Last used 2 hours ago
+                {t('applet.card.lastUsed')}
               </Text>
             </Flexbox>
 
@@ -396,7 +399,7 @@ function AppletCard({
                 cursor: 'pointer',
               }}
             >
-              Open
+              {t('applet.card.open')}
               <ChevronRight size={14} />
             </Flexbox>
           </Flexbox>

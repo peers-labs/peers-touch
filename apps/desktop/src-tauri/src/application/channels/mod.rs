@@ -24,7 +24,7 @@ impl ChannelStore {
                 id: "channel-1".to_string(),
                 data: json!({
                     "id":"channel-1",
-                    "name":"Default Channel",
+                    "name":"i18n:channels.default.title",
                     "type":"webhook",
                     "config":"{}",
                     "enabled":true
@@ -54,7 +54,7 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 fn internal_error() -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::InternalError,
-        "failed to access channels store",
+        "error.channels.storeAccessFailed",
         None,
     )
 }
@@ -84,7 +84,7 @@ pub fn channels_get(input: ChannelIdInput) -> AppResult<StubPayload> {
     if let Some(channel) = guard.channels.iter().find(|item| item.id == id) {
         return success_payload("channels_get", channel.data.clone());
     }
-    AppResult::fail(ErrorCode::NotFound, "channel not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.channels.notFound", None)
 }
 
 pub fn channels_create(input: ChannelCreateInput) -> AppResult<StubPayload> {
@@ -140,7 +140,7 @@ pub fn channels_update(input: ChannelUpdateInput) -> AppResult<StubPayload> {
         }
         return success_payload("channels_update", channel.data.clone());
     }
-    AppResult::fail(ErrorCode::NotFound, "channel not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.channels.notFound", None)
 }
 
 pub fn channels_delete(input: ChannelIdInput) -> AppResult<StubPayload> {

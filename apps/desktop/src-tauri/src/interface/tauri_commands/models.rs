@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
     ProviderModelAddInput, ProviderModelDeleteInput, ProviderModelFetchInput,
@@ -7,11 +8,11 @@ use crate::application::models as application_models;
 use crate::state::AppState;
 use tauri::State;
 
-fn resolve_scope_from_state(state: &State<AppState>) -> Result<Option<String>, AppResult<StubPayload>> {
+fn resolve_scope_from_state(state: &State<'_, Arc<AppState>>) -> Result<Option<String>, AppResult<StubPayload>> {
     let guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "failed to access session state",
+            "error.auth.sessionLockFailed",
             None,
         )
     })?;
@@ -48,7 +49,7 @@ fn model_toggle_all_for_scope(scope: Option<&str>, input: ProviderModelToggleAll
 }
 
 #[tauri::command]
-pub fn model_add(input: ProviderModelAddInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn model_add(input: ProviderModelAddInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -57,7 +58,7 @@ pub fn model_add(input: ProviderModelAddInput, state: State<AppState>) -> AppRes
 }
 
 #[tauri::command]
-pub fn model_update(input: ProviderModelUpdateInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn model_update(input: ProviderModelUpdateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -66,7 +67,7 @@ pub fn model_update(input: ProviderModelUpdateInput, state: State<AppState>) -> 
 }
 
 #[tauri::command]
-pub fn model_delete(input: ProviderModelDeleteInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn model_delete(input: ProviderModelDeleteInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -75,7 +76,7 @@ pub fn model_delete(input: ProviderModelDeleteInput, state: State<AppState>) -> 
 }
 
 #[tauri::command]
-pub fn model_fetch_remote(input: ProviderModelFetchInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn model_fetch_remote(input: ProviderModelFetchInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -84,7 +85,7 @@ pub fn model_fetch_remote(input: ProviderModelFetchInput, state: State<AppState>
 }
 
 #[tauri::command]
-pub fn model_toggle(input: ProviderModelToggleInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn model_toggle(input: ProviderModelToggleInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -93,7 +94,7 @@ pub fn model_toggle(input: ProviderModelToggleInput, state: State<AppState>) -> 
 }
 
 #[tauri::command]
-pub fn model_toggle_all(input: ProviderModelToggleAllInput, state: State<AppState>) -> AppResult<StubPayload> {
+pub fn model_toggle_all(input: ProviderModelToggleAllInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state) {
         Ok(scope) => scope,
         Err(error) => return error,

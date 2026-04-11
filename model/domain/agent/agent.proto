@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+enum TurnStatus {
+  TURN_STATUS_UNSPECIFIED = 0;
+  TURN_STATUS_RUNNING = 1;
+  TURN_STATUS_COMPLETED = 2;
+  TURN_STATUS_FAILED = 3;
+  TURN_STATUS_INTERRUPTED = 4;
+}
+
+message Turn {
+  string turn_id = 1;
+  string conversation_id = 2;
+  string agent_id = 3;
+  string user_input = 4;
+  string final_response = 5;
+  int32 tool_iterations = 6;
+  TurnStatus status = 7;
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp ended_at = 9;
+}
+
+message ToolCallRecord {
+  string tool_name = 1;
+  string arguments = 2;
+  string result = 3;
+  int64 duration_ms = 4;
+}
+
+message ProviderCallRecord {
+  string provider = 1;
+  string model = 2;
+  int32 input_tokens = 3;
+  int32 output_tokens = 4;
+  int64 latency_ms = 5;
+  bool cache_hit = 6;
+  string credential_id = 7;
+}
+
+message TurnTrace {
+  string trace_id = 1;
+  string turn_id = 2;
+  string system_prompt_hash = 3;
+  string memory_snapshot_hash = 4;
+  string skill_index_hash = 5;
+  repeated string skills_loaded = 6;
+  repeated ToolCallRecord tool_calls = 7;
+  repeated ProviderCallRecord provider_calls = 8;
+  bool review_triggered = 9;
+  repeated ClassifiedErrorEvent errors_classified = 10;
+  CompressionEvent compression_event = 11;
+  repeated DelegationResult delegation_results = 12;
+}
+
+enum FailoverReason {
+  FAILOVER_REASON_UNSPECIFIED = 0;
+  FAILOVER_REASON_AUTH = 1;
+  FAILOVER_REASON_AUTH_PERMANENT = 2;
+  FAILOVER_REASON_BILLING = 3;
+  FAILOVER_REASON_RATE_LIMIT = 4;
+  FAILOVER_REASON_OVERLOADED = 5;
+  FAILOVER_REASON_SERVER_ERROR = 6;
+  FAILOVER_REASON_TIMEOUT = 7;
+  FAILOVER_REASON_CONTEXT_OVERFLOW = 8;
+  FAILOVER_REASON_PAYLOAD_TOO_LARGE = 9;
+  FAILOVER_REASON_MODEL_NOT_FOUND = 10;
+  FAILOVER_REASON_FORMAT_ERROR = 11;
+  FAILOVER_REASON_THINKING_SIGNATURE = 12;
+  FAILOVER_REASON_LONG_CONTEXT_TIER = 13;
+  FAILOVER_REASON_UNKNOWN = 14;
+}
+
+message ClassifiedErrorEvent {
+  FailoverReason reason = 1;
+  bool retryable = 2;
+  bool should_compress = 3;
+  bool should_rotate_credential = 4;
+  bool should_fallback = 5;
+  string provider = 6;
+  string model = 7;
+  int32 http_status = 8;
+  string error_code = 9;
+  string error_message = 10;
+  google.protobuf.Timestamp classified_at = 11;
+}
+
+message CompressionEvent {
+  bool triggered = 1;
+  int32 tokens_before = 2;
+  int32 tokens_after = 3;
+  string new_conversation_id = 4;
+}
+
+enum DelegationStatus {
+  DELEGATION_STATUS_UNSPECIFIED = 0;
+  DELEGATION_STATUS_COMPLETED = 1;
+  DELEGATION_STATUS_FAILED = 2;
+  DELEGATION_STATUS_TIMEOUT = 3;
+}
+
+message DelegationResult {
+  string task_id = 1;
+  string parent_turn_id = 2;
+  string task_description = 3;
+  repeated string child_toolset = 4;
+  DelegationStatus status = 5;
+  string result_summary = 6;
+  int32 tool_iterations = 7;
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp ended_at = 9;
+}
+
+message Conversation {
+  string conversation_id = 1;
+  string agent_id = 2;
+  string user_id = 3;
+  string title = 4;
+  string description = 5;
+  string provider_id = 6;
+  string model_name = 7;
+  string status = 8;
+  string parent_id = 9;
+  string config_json = 10;
+  map<string, string> meta = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+enum MessageRole {
+  MESSAGE_ROLE_UNSPECIFIED = 0;
+  MESSAGE_ROLE_SYSTEM = 1;
+  MESSAGE_ROLE_USER = 2;
+  MESSAGE_ROLE_ASSISTANT = 3;
+  MESSAGE_ROLE_TOOL = 4;
+}
+
+message AgentMessage {
+  string message_id = 1;
+  string conversation_id = 2;
+  string turn_id = 3;
+  string model_name = 4;
+  MessageRole role = 5;
+  string content = 6;
+  string reasoning_json = 7;
+  string tool_calls_json = 8;
+  string metadata_json = 9;
+  string error_json = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message ExecuteTurnRequest {
+  string conversation_id = 1;
+  string agent_id = 2;
+  string user_input = 3;
+  bool stream = 4;
+  optional string model_override = 5;
+  optional string provider_override = 6;
+}
+
+message ExecuteTurnResponse {
+  Turn turn = 1;
+  TurnTrace trace = 2;
+  AgentMessage response_message = 3;
+}

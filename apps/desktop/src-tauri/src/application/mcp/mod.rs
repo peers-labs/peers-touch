@@ -25,8 +25,8 @@ impl McpStore {
                 enabled: true,
                 data: json!({
                     "name": "default-mcp",
-                    "title": "Default MCP",
-                    "description": "Builtin MCP server",
+                    "title": "i18n:mcp.default.title",
+                    "description": "i18n:mcp.default.description",
                     "version": "1.0.0",
                     "type": "stdio",
                     "command": "mcp-server",
@@ -71,7 +71,7 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 }
 
 fn internal_error() -> AppResult<StubPayload> {
-    AppResult::fail(ErrorCode::InternalError, "failed to access mcp store", None)
+    AppResult::fail(ErrorCode::InternalError, "error.mcp.storeAccessFailed", None)
 }
 
 pub fn mcp_list_servers() -> AppResult<StubPayload> {
@@ -116,7 +116,7 @@ pub fn mcp_get_server(input: McpNameInput) -> AppResult<StubPayload> {
         }
         return success_payload("mcp_get_server", data);
     }
-    AppResult::fail(ErrorCode::NotFound, "server not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.mcp.serverNotFound", None)
 }
 
 pub fn mcp_create_server(input: McpCreateInput) -> AppResult<StubPayload> {
@@ -164,7 +164,7 @@ pub fn mcp_update_server(input: McpUpdateInput) -> AppResult<StubPayload> {
         item.data = input.data;
         return success_payload("mcp_update_server", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "server not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.mcp.serverNotFound", None)
 }
 
 pub fn mcp_delete_server(input: McpNameInput) -> AppResult<StubPayload> {
@@ -197,7 +197,7 @@ pub fn mcp_toggle_server(input: McpToggleInput) -> AppResult<StubPayload> {
         item.enabled = input.enabled;
         return success_payload("mcp_toggle_server", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "server not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.mcp.serverNotFound", None)
 }
 
 pub fn mcp_test_server(input: McpNameInput) -> AppResult<StubPayload> {

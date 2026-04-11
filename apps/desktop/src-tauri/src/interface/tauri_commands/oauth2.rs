@@ -1,8 +1,12 @@
+use std::sync::Arc;
+use tauri::State;
+
 use crate::error::AppResult;
 use crate::contracts::{
     OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
     OAuthLoopbackStartInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
 };
+use crate::state::AppState;
 
 use crate::application::oauth2 as application_oauth2;
 
@@ -72,8 +76,11 @@ pub fn oauth2_get_page(input: OAuthIdInput) -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput) -> AppResult<StubPayload> {
-    application_oauth2::oauth2_start_loopback(input)
+pub fn oauth2_start_loopback(
+    state: State<'_, Arc<AppState>>,
+    input: OAuthLoopbackStartInput,
+) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_start_loopback(input, state.i18n.clone())
 }
 
 #[tauri::command]

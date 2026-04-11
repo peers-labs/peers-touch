@@ -9,6 +9,7 @@ import {
 import { Flexbox } from 'react-layout-kit';
 import { Send, Square, RotateCw } from 'lucide-react';
 import { theme } from 'antd';
+import { useTranslation } from 'react-i18next';
 
 interface MessageComposerProps {
   onSend: (text: string) => void;
@@ -29,7 +30,7 @@ export function MessageComposer({
   onSend,
   loading,
   onStop,
-  placeholder = 'Type a message...',
+  placeholder,
   disabled,
   toolbar,
   header,
@@ -39,6 +40,7 @@ export function MessageComposer({
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
 
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
@@ -90,7 +92,7 @@ export function MessageComposer({
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
         onInput={handleInput}
-        placeholder={placeholder}
+        placeholder={placeholder || t('chat.composer.placeholder')}
         rows={1}
         disabled={disabled}
         style={{
@@ -119,7 +121,7 @@ export function MessageComposer({
           {loading && onStop ? (
             <button
               onClick={onStop}
-              title="Stop"
+              title={t('chat.composer.stop')}
               style={{
                 width: 36,
                 height: 36,
@@ -140,7 +142,7 @@ export function MessageComposer({
             <button
               onClick={handleSend}
               disabled={!canSend}
-              title="Send"
+              title={t('chat.composer.send')}
               style={{
                 width: 36,
                 height: 36,

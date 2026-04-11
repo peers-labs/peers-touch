@@ -8,6 +8,20 @@ pub struct StubPayload {
     pub status: String,
 }
 
+/// Rich auth response payload carrying actor identity fields.
+/// Used by all auth commands so the frontend can populate user context
+/// immediately after login / session-restore without an extra round-trip.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthSessionPayload {
+    pub command: String,
+    pub status: String,
+    pub actor_id: Option<String>,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub avatar_url: Option<String>,
+    pub login_method: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthLoginInput {
     pub account: String,
@@ -204,8 +218,19 @@ pub struct TimelineActionInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileUpdateInput {
     pub display_name: Option<String>,
-    pub bio: Option<String>,
-    pub location: Option<String>,
+    pub note: Option<String>,
+    pub avatar: Option<String>,
+    pub header: Option<String>,
+    pub region: Option<String>,
+    pub timezone: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub links: Option<Vec<ProfileLinkInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileLinkInput {
+    pub label: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -643,6 +668,20 @@ pub struct AgentDuplicateInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSearchInput {
     pub q: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentExecuteTurnInput {
+    pub conversation_id: String,
+    pub agent_id: String,
+    pub user_input: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub identity: Option<String>,
+    pub platform: Option<String>,
+    pub workspace_root: Option<String>,
+    pub context_window_size: Option<u32>,
+    pub max_retries: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

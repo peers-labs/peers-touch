@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button } from '@lobehub/ui';
 import { Divider, theme, Typography } from 'antd';
 import { X, Search, BarChart3, LogOut, Ban, UserPlus } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import { api } from '../../services/desktop_api';
+import { log } from '../../utils/logger';
 import type { GroupMember } from '../../gen/proto/domain/chat/group_chat_pb';
 
 const { Text, Title } = Typography;
@@ -42,6 +44,7 @@ function MemberItem({ member }: { member: GroupMember }) {
 
 export function ChatDetailPanel() {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers,
@@ -63,7 +66,7 @@ export function ChatDetailPanel() {
   const subtitle = (() => {
     if (activeTab === 'friend') return '';
     const g = groups.find((g) => g.ulid === activeUlid);
-    return g?.description || `${g?.memberCount || 0} members`;
+    return g?.description || t('chat.social.detail.membersCount', { count: g?.memberCount || 0 });
   })();
 
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
@@ -93,7 +96,7 @@ export function ChatDetailPanel() {
           flexShrink: 0,
         }}
       >
-        <Text strong style={{ fontSize: 15 }}>Details</Text>
+        <Text strong style={{ fontSize: 15 }}>{t('chat.social.detail.title')}</Text>
         <Button
           type="text"
           icon={<X size={16} />}
@@ -128,9 +131,9 @@ export function ChatDetailPanel() {
         <>
           <Flexbox style={{ padding: '12px 16px' }} gap={4}>
             <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 4 }}>
-              <Text strong style={{ fontSize: 13 }}>Members ({members.length})</Text>
-              <Button type="link" size="small" style={{ fontSize: 12, padding: 0 }} onClick={() => console.log('See all members')}>
-                See all
+              <Text strong style={{ fontSize: 13 }}>{t('chat.social.detail.members', { count: members.length })}</Text>
+              <Button type="link" size="small" style={{ fontSize: 12, padding: 0 }} onClick={() => log.info('chat', 'See all members clicked')}>
+                {t('chat.social.detail.seeAll')}
               </Button>
             </Flexbox>
             {members.slice(0, 5).map((m) => (
@@ -142,9 +145,9 @@ export function ChatDetailPanel() {
               block
               size="small"
               style={{ marginTop: 4 }}
-              onClick={() => console.log('Add member')}
+              onClick={() => log.info('chat', 'Add member clicked')}
             >
-              Add Member
+              {t('chat.social.detail.addMember')}
             </Button>
           </Flexbox>
           <Divider style={{ margin: '0 16px', minWidth: 'auto', width: 'auto' }} />
@@ -157,9 +160,9 @@ export function ChatDetailPanel() {
           icon={<Search size={16} />}
           style={{ justifyContent: 'flex-start', height: 36 }}
           block
-          onClick={() => console.log('Search in conversation')}
+          onClick={() => log.info('chat', 'Search in conversation clicked')}
         >
-          Search in Conversation
+          {t('chat.social.detail.searchInConversation')}
         </Button>
         <Button
           type="text"
@@ -167,7 +170,7 @@ export function ChatDetailPanel() {
           style={{ justifyContent: 'flex-start', height: 36 }}
           block
         >
-          Chat Statistics
+          {t('chat.social.detail.chatStatistics')}
         </Button>
       </Flexbox>
 
@@ -187,23 +190,23 @@ export function ChatDetailPanel() {
                   await api.groupChatLeaveGroup(activeUlid);
                   setShowDetail(false);
                 } catch (e) {
-                  console.error('leave group failed', e);
+                  log.error('chat', 'leave group failed', e);
                 }
               }
             }}
           >
-            Leave Group
-          </Button>
-        ) : (
-          <Button
-            type="text"
-            danger
-            icon={<Ban size={16} />}
-            style={{ justifyContent: 'flex-start', height: 36 }}
-            block
-            onClick={() => console.log('Block user')}
-          >
-            Block User
+            {t('chat.social.detail.leaveGroup')}
+        </Button>
+      ) : (
+        <Button
+          type="text"
+          danger
+          icon={<Ban size={16} />}
+          style={{ justifyContent: 'flex-start', height: 36 }}
+          block
+          onClick={() => log.info('chat', 'Block user clicked')}
+        >
+          {t('chat.social.detail.blockUser')}
           </Button>
         )}
       </Flexbox>

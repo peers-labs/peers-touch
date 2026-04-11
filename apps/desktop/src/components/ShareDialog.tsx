@@ -3,6 +3,7 @@ import { Modal, Tabs, theme } from 'antd';
 import { Button, toast } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { Copy, Link, FileText, Download, Check, Link2Off } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../services/desktop_api';
 import type { ChatMessage } from '../store/chat';
 
@@ -41,6 +42,7 @@ function generateMarkdown(messages: ChatMessage[], title?: string): string {
 
 export function ShareDialog({ open, onClose, sessionKey, messages, title }: ShareDialogProps) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('share');
   const [copied, setCopied] = useState(false);
   const [shareLink, setShareLink] = useState('');
   const [sharing, setSharing] = useState(false);
@@ -52,7 +54,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
   const handleCopyText = useCallback(() => {
     navigator.clipboard.writeText(markdownText).then(() => {
       setCopied(true);
-      toast.success('Conversation copied as Markdown');
+      toast.success(t('share.toast.copiedMarkdown'));
       setTimeout(() => setCopied(false), 2000);
     });
   }, [markdownText]);
@@ -74,7 +76,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
       const url = `${window.location.origin}/share/s/${result.share_id}`;
       setShareLink(url);
     } catch {
-      toast.error('Failed to create share link');
+      toast.error(t('share.toast.createFailed'));
     } finally {
       setSharing(false);
     }
@@ -83,7 +85,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
   const handleCopyLink = useCallback(() => {
     navigator.clipboard.writeText(shareLink).then(() => {
       setLinkCopied(true);
-      toast.success('Link copied');
+      toast.success(t('share.toast.linkCopied'));
       setTimeout(() => setLinkCopied(false), 2000);
     });
   }, [shareLink]);
@@ -93,9 +95,9 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
     try {
       await api.deleteShare(sessionKey);
       setShareLink('');
-      toast.success('Share link revoked');
+      toast.success(t('share.toast.linkRevoked'));
     } catch {
-      toast.error('Failed to revoke link');
+      toast.error(t('share.toast.revokeFailed'));
     } finally {
       setRevoking(false);
     }
@@ -105,7 +107,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
     <Modal
       open={open}
       onCancel={onClose}
-      title="Share Conversation"
+      title={t('share.title')}
       footer={null}
       width={520}
     >
@@ -116,7 +118,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
             label: (
               <Flexbox horizontal align="center" gap={6}>
                 <FileText size={14} />
-                <span>Text</span>
+                <span>{t('share.tab.text')}</span>
               </Flexbox>
             ),
             children: (
@@ -138,7 +140,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
                   }}
                 >
                   {markdownText.slice(0, 2000)}
-                  {markdownText.length > 2000 && '\n\n... (truncated preview)'}
+                  {markdownText.length > 2000 && '\n\n... ' + t('share.truncatedPreview')}
                 </div>
                 <Flexbox horizontal gap={8}>
                   <Button
@@ -146,13 +148,13 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
                     onClick={handleCopyText}
                     type={copied ? 'default' : 'primary'}
                   >
-                    {copied ? 'Copied' : 'Copy Markdown'}
+                    {copied ? t('share.action.copied') : t('share.action.copyMarkdown')}
                   </Button>
                   <Button
                     icon={<Download size={14} />}
                     onClick={handleDownload}
                   >
-                    Download .md
+                    {t('share.action.downloadMd')}
                   </Button>
                 </Flexbox>
               </Flexbox>
@@ -163,13 +165,13 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
             label: (
               <Flexbox horizontal align="center" gap={6}>
                 <Link size={14} />
-                <span>Link</span>
+                <span>{t('share.tab.link')}</span>
               </Flexbox>
             ),
             children: (
               <Flexbox gap={12}>
                 <p style={{ color: token.colorTextSecondary, fontSize: 13, margin: 0 }}>
-                  Create a shareable link that anyone with the URL can view.
+                  {t('share.link.description')}
                 </p>
                 {!shareLink ? (
                   <Button
@@ -178,7 +180,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
                     loading={sharing}
                     icon={<Link size={14} />}
                   >
-                    {sharing ? 'Creating...' : 'Create Share Link'}
+                    {sharing ? t('share.action.creating') : t('share.action.createShareLink')}
                   </Button>
                 ) : (
                   <Flexbox gap={8}>
@@ -212,7 +214,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
                         icon={linkCopied ? <Check size={12} /> : <Copy size={12} />}
                         onClick={handleCopyLink}
                       >
-                        {linkCopied ? 'Copied' : 'Copy'}
+                        {linkCopied ? t('share.action.copied') : t('share.action.copy')}
                       </Button>
                     </Flexbox>
                     <Button
@@ -222,7 +224,7 @@ export function ShareDialog({ open, onClose, sessionKey, messages, title }: Shar
                       onClick={handleRevokeLink}
                       loading={revoking}
                     >
-                      Revoke Link
+                      {t('share.action.revokeLink')}
                     </Button>
                   </Flexbox>
                 )}

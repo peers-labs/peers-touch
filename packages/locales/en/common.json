@@ -1,0 +1,50 @@
+{
+  "agent.default.title": "Default Agent",
+
+  "channels.default.title": "Default Channel",
+
+  "chat.conversation.general": "General",
+  "chat.conversation.new": "New Chat",
+
+  "common.action.add": "Add",
+  "common.action.back": "Back",
+  "common.action.cancel": "Cancel",
+  "common.action.close": "Close",
+  "common.action.confirm": "Confirm",
+  "common.action.copy": "Copy",
+  "common.action.delete": "Delete",
+  "common.action.done": "Done",
+  "common.action.edit": "Edit",
+  "common.action.retry": "Retry",
+  "common.action.save": "Save",
+  "common.action.search": "Search",
+  "common.action.send": "Send",
+
+  "common.configBadge.customized": "Customized",
+  "common.configBadge.customizedLabel": "customized",
+  "common.configBadge.default": "Default",
+  "common.configBadge.defaultHint": "Default values come from config.yml. Go to Settings to modify or reset.",
+  "common.configBadge.defaultLabel": "default",
+  "common.configBadge.modifiedFields": "The following fields have been modified via Settings:",
+  "common.configBadge.usingDefaults": "Using config file defaults. Go to Settings → {{section}} to customize.",
+
+  "common.state.empty": "Nothing here yet",
+  "common.state.error": "Something went wrong",
+  "common.state.loading": "Loading...",
+  "common.state.noData": "No Data",
+
+  "common.time.hoursAgo": "{{count}} hours ago",
+  "common.time.justNow": "Just now",
+  "common.time.minutesAgo": "{{count}} minutes ago",
+  "common.time.today": "Today",
+  "common.time.yesterday": "Yesterday",
+
+  "cron.dailyBrief.description": "Daily summary",
+  "cron.dailyBrief.name": "Daily Brief",
+
+  "mcp.default.description": "Builtin MCP server",
+  "mcp.default.title": "Default MCP",
+
+  "skills.webSearch.description": "Search from web",
+  "skills.webSearch.name": "Web Search"
+}

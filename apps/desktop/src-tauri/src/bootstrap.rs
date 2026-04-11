@@ -1,5 +1,6 @@
 use tracing_appender::non_blocking::WorkerGuard;
 
+use crate::infrastructure::i18n::I18nService;
 use crate::infrastructure::logger;
 use crate::infrastructure::storage::{self, StorageKind, StorageLayout};
 use crate::state::AppState;
@@ -28,8 +29,14 @@ pub fn run() -> BootstrapResult {
 
     tracing::info!(log_dir = %log_dir, "Logger initialized");
 
+    let config_dir = layout.dirs.get(&StorageKind::Config)
+        .cloned()
+        .unwrap_or_else(|| layout.root.join("config"));
+    let i18n = I18nService::new(&config_dir);
+    tracing::info!("I18nService initialized");
+
     let result = BootstrapResult {
-        app_state: AppState::new(layout),
+        app_state: AppState::new(layout, i18n),
         _log_guard: log_guard,
     };
 

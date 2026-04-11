@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, TextArea, Tooltip } from '@lobehub/ui';
 import { Spin, theme, Typography, Empty } from 'antd';
@@ -123,6 +124,7 @@ function ReplyBlock({ replyToUlid, messages, isOwn }: { replyToUlid: string; mes
 
 export function ChatMessageArea() {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid, messages, loading,
     sessions, groups, loadMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
@@ -148,7 +150,7 @@ export function ChatMessageArea() {
   const subtitle = (() => {
     if (activeTab === 'friend') return '';
     const g = groups.find((g) => g.ulid === activeUlid);
-    return g ? `${g.memberCount} members` : '';
+    return g ? t('chat.social.detail.membersCount', { count: g.memberCount }) : '';
   })();
 
   useEffect(() => {
@@ -197,7 +199,7 @@ export function ChatMessageArea() {
     return (
       <Flexbox flex={1} align="center" justify="center" gap={12} style={{ background: token.colorBgContainer }}>
         <Inbox size={48} style={{ color: token.colorTextQuaternary }} />
-        <Text type="secondary">Select a conversation to start chatting</Text>
+        <Text type="secondary">{t('chat.social.messageArea.selectConversation')}</Text>
       </Flexbox>
     );
   }
@@ -246,10 +248,10 @@ export function ChatMessageArea() {
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
-          <Tooltip title="Coming soon">
+          <Tooltip title={t('chat.social.messageArea.comingSoon')}>
             <Button type="text" icon={<Phone size={16} />} disabled style={{ width: 32, height: 32 }} />
           </Tooltip>
-          <Tooltip title="Coming soon">
+          <Tooltip title={t('chat.social.messageArea.comingSoon')}>
             <Button type="text" icon={<Video size={16} />} disabled style={{ width: 32, height: 32 }} />
           </Tooltip>
           <Button type="text" icon={<Search size={16} />} style={{ width: 32, height: 32 }} />
@@ -264,7 +266,7 @@ export function ChatMessageArea() {
           </Flexbox>
         ) : currentMessages.length === 0 ? (
           <Flexbox align="center" justify="center" flex={1}>
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No messages yet" />
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.messageArea.noMessages')} />
           </Flexbox>
         ) : (
           currentMessages.map((msg) => {
@@ -401,7 +403,7 @@ export function ChatMessageArea() {
           >
             <Flexbox style={{ minWidth: 0, flex: 1 }}>
               <Text style={{ fontSize: 11, color: token.colorPrimary, fontWeight: 500 }}>
-                Replying to
+                {t('chat.social.messageArea.replyingTo')}
               </Text>
               <Text ellipsis type="secondary" style={{ fontSize: 12 }}>
                 {replyingMsg.content}
@@ -413,7 +415,7 @@ export function ChatMessageArea() {
               onClick={() => setReplyToUlid(null)}
               style={{ fontSize: 12, color: token.colorTextSecondary }}
             >
-              Cancel
+              {t('chat.social.messageArea.cancel')}
             </Button>
           </Flexbox>
         )}
@@ -433,7 +435,7 @@ export function ChatMessageArea() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
+            placeholder={t('chat.social.messageArea.placeholder')}
             autoSize={{ minRows: 1, maxRows: 4 }}
             style={{ flex: 1 }}
             disabled={sending}

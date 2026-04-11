@@ -1,0 +1,50 @@
+{
+  "agent.default.title": "默认智能体",
+
+  "channels.default.title": "默认频道",
+
+  "chat.conversation.general": "通用对话",
+  "chat.conversation.new": "新对话",
+
+  "common.action.add": "添加",
+  "common.action.back": "返回",
+  "common.action.cancel": "取消",
+  "common.action.close": "关闭",
+  "common.action.confirm": "确认",
+  "common.action.copy": "复制",
+  "common.action.delete": "删除",
+  "common.action.done": "完成",
+  "common.action.edit": "编辑",
+  "common.action.retry": "重试",
+  "common.action.save": "保存",
+  "common.action.search": "搜索",
+  "common.action.send": "发送",
+
+  "common.configBadge.customized": "已自定义",
+  "common.configBadge.customizedLabel": "已自定义",
+  "common.configBadge.default": "默认",
+  "common.configBadge.defaultHint": "默认值来自 config.yml，前往设置进行修改或重置。",
+  "common.configBadge.defaultLabel": "默认",
+  "common.configBadge.modifiedFields": "以下字段已通过设置修改：",
+  "common.configBadge.usingDefaults": "正在使用配置文件的默认值。前往设置 → {{section}} 进行自定义。",
+
+  "common.state.empty": "这里空空如也",
+  "common.state.error": "出错了",
+  "common.state.loading": "加载中...",
+  "common.state.noData": "暂无数据",
+
+  "common.time.hoursAgo": "{{count}} 小时前",
+  "common.time.justNow": "刚刚",
+  "common.time.minutesAgo": "{{count}} 分钟前",
+  "common.time.today": "今天",
+  "common.time.yesterday": "昨天",
+
+  "cron.dailyBrief.description": "每日摘要",
+  "cron.dailyBrief.name": "每日简报",
+
+  "mcp.default.description": "内置 MCP 服务器",
+  "mcp.default.title": "默认 MCP",
+
+  "skills.webSearch.description": "从网络搜索",
+  "skills.webSearch.name": "网络搜索"
+}

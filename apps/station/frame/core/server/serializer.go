@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -64,8 +65,36 @@ func isProtoMessage(t reflect.Type) bool {
 	return reflect.PtrTo(t).Implements(protoMessageType)
 }
 
-// GetSerializerForType returns the appropriate serializer for a given type
-// Returns ProtoSerializer if type implements proto.Message, otherwise JSONSerializer
+// ProtoJSONSerializer serializes proto.Message values to JSON using protojson,
+// which respects proto field naming conventions and handles well-known types.
+// For non-proto values it falls back to standard encoding/json.
+type ProtoJSONSerializer struct{}
+
+var protoJSONMarshalOpts = protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}
+var protoJSONUnmarshalOpts = protojson.UnmarshalOptions{DiscardUnknown: true}
+
+func (s *ProtoJSONSerializer) Marshal(v interface{}) ([]byte, error) {
+	if msg, ok := v.(proto.Message); ok {
+		return protoJSONMarshalOpts.Marshal(msg)
+	}
+	return json.Marshal(v)
+}
+
+func (s *ProtoJSONSerializer) Unmarshal(data []byte, v interface{}) error {
+	if msg, ok := v.(proto.Message); ok {
+		return protoJSONUnmarshalOpts.Unmarshal(data, msg)
+	}
+	return json.Unmarshal(data, v)
+}
+
+func (s *ProtoJSONSerializer) ContentType() string {
+	return "application/json"
+}
+
+// GetSerializerForType returns the appropriate serializer for a given type.
+// Returns ProtoSerializer if type implements proto.Message, otherwise JSONSerializer.
+// NOTE: This is used as the *default* response serializer at handler registration time.
+// The ContentNegotiator may override it at runtime based on request Content-Type.
 func GetSerializerForType(t reflect.Type) Serializer {
 	if isProtoMessage(t) {
 		return &ProtoSerializer{}

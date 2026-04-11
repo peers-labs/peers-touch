@@ -3,15 +3,14 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::infrastructure::station_client;
 use crate::application::oauth2 as application_oauth2;
-use crate::contracts::{AuthLoginInput, AuthValidateTokenInput, StubPayload};
+use crate::contracts::{AuthLoginInput, AuthSessionPayload, AuthValidateTokenInput};
 use crate::state::{AppState, SessionState};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
-use tauri::State;
 
-pub fn auth_login(input: AuthLoginInput, state: &State<AppState>) -> AppResult<StubPayload> {
+pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSessionPayload> {
     if let Err(error) = validate_login_input(&input.account, &input.password) {
         return map_domain_error(error);
     }
@@ -19,12 +18,12 @@ pub fn auth_login(input: AuthLoginInput, state: &State<AppState>) -> AppResult<S
     let body = json!({ "email": input.account, "password": input.password });
     let resp = match station_client::post_json_no_auth("/actor/login", body) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::Unauthorized, &e, None),
+        Err(e) => return AppResult::fail(ErrorCode::Unauthorized, "error.auth.loginFailed", Some(json!({ "detail": e.to_string() }))),
     };
 
     let data = match resp.get("data") {
         Some(d) => d,
-        None => return AppResult::fail(ErrorCode::Unauthorized, "unexpected response from station", None),
+        None => return AppResult::fail(ErrorCode::Unauthorized, "error.auth.unexpectedResponse", None),
     };
 
     let token = data
@@ -33,42 +32,72 @@ pub fn auth_login(input: AuthLoginInput, state: &State<AppState>) -> AppResult<S
         .unwrap_or_default()
         .to_string();
     if token.is_empty() {
-        return AppResult::fail(ErrorCode::Unauthorized, "no token in station response", None);
+        return AppResult::fail(ErrorCode::Unauthorized, "error.auth.noToken", None);
     }
 
+    // Extract actor identity from the station response
     let actor_id = data
         .pointer("/actor/id")
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
 
-    let session = from_station_response(actor_id, token);
+    let name = data
+        .pointer("/actor/name")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let email_str = data
+        .pointer("/actor/email")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let avatar = data
+        .pointer("/actor/icon")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let session = from_station_response(actor_id.clone(), token);
     if let Err(error) = write_session(state, &session) {
         return error;
     }
     if let Err(error) = persist_session(&session) {
         return error;
     }
-    AppResult::success(StubPayload {
+
+    AppResult::success(AuthSessionPayload {
         command: "auth_login".to_string(),
         status: "authenticated".to_string(),
+        actor_id: Some(actor_id),
+        name: Some(name),
+        email: Some(email_str),
+        avatar_url: Some(avatar),
+        login_method: Some("password".to_string()),
     })
 }
 
-pub fn auth_logout(state: &State<AppState>) -> AppResult<StubPayload> {
+pub fn auth_logout(state: &AppState) -> AppResult<AuthSessionPayload> {
     if let Err(error) = clear_session(state) {
         return error;
     }
     if let Err(error) = clear_persisted_session() {
         return error;
     }
-    AppResult::success(StubPayload {
+    AppResult::success(AuthSessionPayload {
         command: "auth_logout".to_string(),
         status: "logged_out".to_string(),
+        actor_id: None,
+        name: None,
+        email: None,
+        avatar_url: None,
+        login_method: None,
     })
 }
 
-pub fn auth_restore_session(state: &State<AppState>) -> AppResult<StubPayload> {
+pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
     let mut snapshot = match read_session(state) {
         Ok(snapshot) => snapshot,
         Err(error) => return error,
@@ -76,22 +105,8 @@ pub fn auth_restore_session(state: &State<AppState>) -> AppResult<StubPayload> {
     if snapshot.token.is_none() {
         snapshot = read_persisted_session().unwrap_or(snapshot);
     }
-    if snapshot.token.is_none() {
-        if let Some((actor_id, token)) = application_oauth2::read_station_session() {
-            snapshot = SessionState {
-                actor_id: Some(actor_id),
-                token: Some(token),
-            };
-        }
-    }
-    if snapshot.token.is_none() {
-        if let Some((actor_id, token)) = application_oauth2::try_bridge_from_connections() {
-            snapshot = SessionState {
-                actor_id: Some(actor_id),
-                token: Some(token),
-            };
-        }
-    }
+
+    // Restore only from memory or disk. No OAuth bridge fallback.
     let token = match snapshot.token {
         Some(token) => token,
         None => {
@@ -114,16 +129,21 @@ pub fn auth_restore_session(state: &State<AppState>) -> AppResult<StubPayload> {
     if let Err(error) = persist_session(&session) {
         return error;
     }
-    AppResult::success(StubPayload {
+    AppResult::success(AuthSessionPayload {
         command: "auth_restore_session".to_string(),
         status: "restored".to_string(),
+        actor_id: Some(session.actor_id.clone()),
+        name: None,
+        email: None,
+        avatar_url: None,
+        login_method: None,
     })
 }
 
 pub fn auth_validate_token(
     input: AuthValidateTokenInput,
-    state: &State<AppState>,
-) -> AppResult<StubPayload> {
+    state: &AppState,
+) -> AppResult<AuthSessionPayload> {
     let token = match input.token {
         Some(token) if !token.trim().is_empty() => token,
         _ => {
@@ -155,17 +175,22 @@ pub fn auth_validate_token(
     if let Err(error) = persist_session(&session) {
         return error;
     }
-    AppResult::success(StubPayload {
+    AppResult::success(AuthSessionPayload {
         command: "auth_validate_token".to_string(),
         status: "valid".to_string(),
+        actor_id: Some(session.actor_id.clone()),
+        name: None,
+        email: None,
+        avatar_url: None,
+        login_method: None,
     })
 }
 
-fn read_session(state: &State<AppState>) -> Result<SessionState, AppResult<StubPayload>> {
+fn read_session(state: &AppState) -> Result<SessionState, AppResult<AuthSessionPayload>> {
     let guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "failed to access session state",
+            "error.auth.sessionLockFailed",
             Some(json!({ "reason": "session_lock_failed" })),
         )
     })?;
@@ -176,13 +201,13 @@ fn read_session(state: &State<AppState>) -> Result<SessionState, AppResult<StubP
 }
 
 fn write_session(
-    state: &State<AppState>,
+    state: &AppState,
     session: &AuthSession,
-) -> Result<(), AppResult<StubPayload>> {
+) -> Result<(), AppResult<AuthSessionPayload>> {
     let mut guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "failed to update session state",
+            "error.auth.sessionLockFailed",
             Some(json!({ "reason": "session_lock_failed" })),
         )
     })?;
@@ -191,11 +216,11 @@ fn write_session(
     Ok(())
 }
 
-fn clear_session(state: &State<AppState>) -> Result<(), AppResult<StubPayload>> {
+fn clear_session(state: &AppState) -> Result<(), AppResult<AuthSessionPayload>> {
     let mut guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "failed to clear session state",
+            "error.auth.sessionLockFailed",
             Some(json!({ "reason": "session_lock_failed" })),
         )
     })?;
@@ -210,13 +235,13 @@ struct PersistedSession {
     token: String,
 }
 
-fn persist_session(session: &AuthSession) -> Result<(), AppResult<StubPayload>> {
+fn persist_session(session: &AuthSession) -> Result<(), AppResult<AuthSessionPayload>> {
     let file_path = persisted_session_file();
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).map_err(|_| {
             AppResult::fail(
                 ErrorCode::InternalError,
-                "failed to persist session",
+                "error.auth.sessionPersistFailed",
                 Some(json!({ "reason": "session_directory_create_failed" })),
             )
         })?;
@@ -228,14 +253,14 @@ fn persist_session(session: &AuthSession) -> Result<(), AppResult<StubPayload>> 
     .map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "failed to encode session",
+            "error.auth.sessionPersistFailed",
             Some(json!({ "reason": "session_serialize_failed" })),
         )
     })?;
     storage::write_string_atomic(&file_path, &payload).map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "failed to persist session",
+            "error.auth.sessionPersistFailed",
             Some(json!({ "reason": "session_write_failed" })),
         )
     })
@@ -251,7 +276,7 @@ fn read_persisted_session() -> Option<SessionState> {
     })
 }
 
-fn clear_persisted_session() -> Result<(), AppResult<StubPayload>> {
+fn clear_persisted_session() -> Result<(), AppResult<AuthSessionPayload>> {
     let file_path = persisted_session_file();
     if !file_path.exists() {
         return Ok(());
@@ -259,7 +284,7 @@ fn clear_persisted_session() -> Result<(), AppResult<StubPayload>> {
     fs::remove_file(file_path).map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "failed to clear persisted session",
+            "error.auth.sessionClearFailed",
             Some(json!({ "reason": "session_remove_failed" })),
         )
     })
@@ -276,7 +301,7 @@ fn persisted_session_file() -> PathBuf {
     )
 }
 
-fn map_domain_error(error: AuthDomainError) -> AppResult<StubPayload> {
+fn map_domain_error(error: AuthDomainError) -> AppResult<AuthSessionPayload> {
     match error {
         AuthDomainError::InvalidArgument(message) => AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -290,26 +315,26 @@ fn map_domain_error(error: AuthDomainError) -> AppResult<StubPayload> {
     }
 }
 
-fn unauthorized(message: impl Into<String>, details: serde_json::Value) -> AppResult<StubPayload> {
+fn unauthorized(message: impl Into<String>, details: serde_json::Value) -> AppResult<AuthSessionPayload> {
     AppResult::fail(ErrorCode::Unauthorized, message, Some(details))
 }
 
 /// Load the Station JWT that was persisted by `save_oauth_callback`
 /// (via the oauth-bridge call) and write it into AppState so the BFF
 /// session is immediately active without requiring an app restart.
-pub fn ensure_station_session(state: &State<AppState>) -> AppResult<StubPayload> {
+pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload> {
     let (actor_id, token) = match application_oauth2::read_station_session() {
         Some(pair) => pair,
         None => {
             return AppResult::fail(
                 ErrorCode::NotFound,
-                "no station session found",
+                "error.auth.sessionNotFound",
                 Some(json!({ "command": "ensure_station_session", "reason": "session_missing" })),
             )
         }
     };
 
-    let session = from_station_response(actor_id, token);
+    let session = from_station_response(actor_id.clone(), token);
     if let Err(error) = write_session(state, &session) {
         return error;
     }
@@ -317,8 +342,13 @@ pub fn ensure_station_session(state: &State<AppState>) -> AppResult<StubPayload>
         return error;
     }
 
-    AppResult::success(StubPayload {
+    AppResult::success(AuthSessionPayload {
         command: "ensure_station_session".to_string(),
         status: "ok".to_string(),
+        actor_id: Some(actor_id),
+        name: None,
+        email: None,
+        avatar_url: None,
+        login_method: Some("oauth".to_string()),
     })
 }

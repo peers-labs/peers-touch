@@ -1,4 +1,5 @@
 pub mod auth_identity;
+pub mod i18n;
 pub mod local_chat_store;
 pub mod logger;
 pub mod p2p;

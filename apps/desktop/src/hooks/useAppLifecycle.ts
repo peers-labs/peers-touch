@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSessionStore } from '../store/session';
 import { useOAuth2Store } from '../store/oauth2';
+import { useAccountIdentityStore } from '../store/accountIdentity';
 import { globalContext } from '../kernel/global-context';
 import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
 
@@ -20,31 +22,35 @@ export function useAppLifecycle(): AppLifecycle {
     }
   }, [state]);
 
+  // Restore session from BFF and load OAuth connections in parallel.
+  // Identity comes from the SessionStore (single source of truth),
+  // not from OAuth connections.
   useEffect(() => {
-    const store = useOAuth2Store.getState();
+    const session = useSessionStore.getState();
+    const oauth2 = useOAuth2Store.getState();
+
     Promise.all([
-      store.restoreSession().catch(() => {}),
-      store.loadAll().catch(() => {}),
+      session.restoreSession().catch(() => {}),
+      oauth2.loadAll().catch(() => {}),
     ]).then(() => {
-      const { authenticated, connections } = useOAuth2Store.getState();
-      if (authenticated) {
-        const active = connections.find(
-          (c) => c.status === 'active' && c.user_id && c.user_id !== 'unknown',
-        );
-        if (active) {
-          setRestoredUser({
-            name: active.user_name || active.user_id || 'User',
-            email: active.email || '',
-            avatar: active.avatar_url,
-          });
-        }
+      const { currentUser, authenticated } = useSessionStore.getState();
+      if (authenticated && currentUser) {
+        setRestoredUser({
+          name: currentUser.name || 'User',
+          email: currentUser.email || '',
+          avatar: currentUser.avatarUrl,
+        });
       }
       setDataReady(true);
     });
   }, []);
 
+  // When login completes:
+  // 1. Refresh accountIdentity and OAuth connections for the current user
+  // 2. Transition to ready state
   const completeLogin = useCallback(() => {
-    useOAuth2Store.getState().loadAll();
+    useAccountIdentityStore.getState().load().catch(() => {});
+    useOAuth2Store.getState().loadAll().catch(() => {});
     setState('ready');
   }, []);
 

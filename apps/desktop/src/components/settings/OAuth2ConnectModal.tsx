@@ -6,6 +6,7 @@ import { LogIn, CheckCircle2, XCircle } from 'lucide-react';
 import type { OAuth2ProviderSummary } from '../../services/desktop_api';
 import { useOAuth2Store } from '../../store/oauth2';
 import { PlatformLogo } from '../common/PlatformLogo';
+import { useTranslation } from 'react-i18next';
 import { log } from '../../utils/logger';
 
 const { Text, Title } = Typography;
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Props) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const { startAuth, connections } = useOAuth2Store();
   const [authState, setAuthState] = useState<AuthState>('idle');
@@ -48,13 +50,13 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
         setAuthState('success');
       } else {
         setAuthState('error');
-        setError('登录未完成，请重试。');
+        setError(t('provider.oauth.connect.loginIncomplete'));
       }
     } catch (err: any) {
       setAuthState('error');
-      setError(err?.message || '登录失败，请重试。');
+      setError(err?.message || t('provider.oauth.connect.loginFailed'));
     }
-  }, [provider, startAuth]);
+  }, [provider, startAuth, t]);
 
   if (!provider) return null;
 
@@ -74,10 +76,10 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
             </Flexbox>
             <Flexbox gap={4} align="center">
               <Title level={5} style={{ margin: 0 }}>
-                使用 {provider.name} 登录
+                {t('provider.oauth.connect.loginWith', { name: provider.name })}
               </Title>
               <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
-                点击后将前往 {provider.name} 完成授权。
+                {t('provider.oauth.connect.clickToAuth', { name: provider.name })}
               </Text>
             </Flexbox>
             <Button
@@ -88,7 +90,7 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
               disabled={!canSignIn}
               style={{ background: canSignIn ? provider.color : undefined, width: '100%' }}
             >
-              使用 {provider.name} 登录
+              {t('provider.oauth.connect.loginBtn', { name: provider.name })}
             </Button>
           </Flexbox>
         );
@@ -99,10 +101,10 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
             <Spin size="large" />
             <Flexbox gap={4} align="center">
               <Title level={5} style={{ margin: 0 }}>
-                等待完成登录...
+                {t('provider.oauth.connect.waitingTitle')}
               </Title>
               <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
-                请在新打开的窗口完成授权。
+                {t('provider.oauth.connect.waitingDesc')}
               </Text>
             </Flexbox>
           </Flexbox>
@@ -114,11 +116,11 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
           <Result
             status="success"
             icon={<CheckCircle2 size={48} color={token.colorSuccess} />}
-            title="登录成功"
-            subTitle={conn ? `欢迎你，${conn.user_name || conn.user_id}` : '账号已授权'}
+            title={t('provider.oauth.connect.successTitle')}
+            subTitle={conn ? t('provider.oauth.connect.welcomeUser', { name: conn.user_name || conn.user_id }) : t('provider.oauth.connect.accountAuthorized')}
             extra={
               <Button type="primary" onClick={onSuccess}>
-                Done
+                {t('provider.oauth.connect.doneBtn')}
               </Button>
             }
           />
@@ -130,16 +132,16 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
           <Result
             status="error"
             icon={<XCircle size={48} color={token.colorError} />}
-            title="登录失败"
+            title={t('provider.oauth.connect.failedTitle')}
             subTitle={error}
             extra={
               <Flexbox horizontal gap={8} justify="center">
-                <Button onClick={onCancel}>取消</Button>
+                <Button onClick={onCancel}>{t('provider.oauth.connect.cancelBtn')}</Button>
                 <Button
                   type="primary"
                   onClick={handleSignIn}
                 >
-                  重试
+                  {t('provider.oauth.connect.retryBtn')}
                 </Button>
               </Flexbox>
             }

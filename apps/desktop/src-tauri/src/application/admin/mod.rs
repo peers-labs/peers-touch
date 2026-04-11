@@ -14,7 +14,7 @@ fn current_access_context(state: &AppState) -> Result<AccessContext, AppResult<S
         }),
         Err(_) => Err(AppResult::fail(
             ErrorCode::InternalError,
-            "failed to access session state",
+            "error.auth.sessionLockFailed",
             None,
         )),
     }
@@ -36,7 +36,7 @@ fn ensure_admin(
     );
     Err(AppResult::fail(
         ErrorCode::Forbidden,
-        "admin capability required",
+        "error.admin.capabilityRequired",
         Some(serde_json::json!({ "requestId": request_id })),
     ))
 }
@@ -83,8 +83,8 @@ pub fn admin_network_probe(
         );
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            message,
-            Some(serde_json::json!({ "requestId": request_id })),
+            "error.admin.invalidProbeTarget",
+            Some(serde_json::json!({ "requestId": request_id, "detail": message })),
         );
     }
     emit_audit(
@@ -120,8 +120,8 @@ pub fn admin_execute_action(
         );
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            message,
-            Some(serde_json::json!({ "requestId": request_id })),
+            "error.admin.invalidAction",
+            Some(serde_json::json!({ "requestId": request_id, "detail": message })),
         );
     }
     emit_audit(

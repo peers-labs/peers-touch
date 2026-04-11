@@ -25,7 +25,7 @@ impl AgentStore {
                 data: json!({
                     "id":"agent-1",
                     "name":"assistant",
-                    "title":"Default Agent",
+                    "title":"i18n:agent.default.title",
                     "description":"",
                     "avatar":"🤖",
                     "scope":"general"
@@ -56,7 +56,7 @@ fn internal_error() -> AppResult<StubPayload> {
     tracing::error!("Failed to acquire agents store lock");
     AppResult::fail(
         ErrorCode::InternalError,
-        "failed to access agents store",
+        "error.agent.storeAccessFailed",
         None,
     )
 }
@@ -86,7 +86,7 @@ pub fn agents_get(input: AgentIdInput) -> AppResult<StubPayload> {
     if let Some(agent) = guard.agents.iter().find(|item| item.id == input.id) {
         return success_payload("agents_get", agent.data.clone());
     }
-    AppResult::fail(ErrorCode::NotFound, "agent not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.agent.notFound", None)
 }
 
 pub fn agents_create(input: AgentCreateInput) -> AppResult<StubPayload> {
@@ -124,7 +124,7 @@ pub fn agents_update(input: AgentUpdateInput) -> AppResult<StubPayload> {
         agent.data = data.clone();
         return success_payload("agents_update", data);
     }
-    AppResult::fail(ErrorCode::NotFound, "agent not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.agent.notFound", None)
 }
 
 pub fn agents_delete(input: AgentIdInput) -> AppResult<StubPayload> {
@@ -165,7 +165,7 @@ pub fn agents_duplicate(input: AgentDuplicateInput) -> AppResult<StubPayload> {
         });
         return success_payload("agents_duplicate", data);
     }
-    AppResult::fail(ErrorCode::NotFound, "agent not found", None)
+    AppResult::fail(ErrorCode::NotFound, "error.agent.notFound", None)
 }
 
 pub fn agents_search(input: AgentSearchInput) -> AppResult<StubPayload> {
@@ -209,7 +209,7 @@ pub fn agents_list_sessions(input: AgentIdInput) -> AppResult<StubPayload> {
             .and_then(Value::as_str)
             .unwrap_or("assistant")
             .to_string(),
-        None => return AppResult::fail(ErrorCode::NotFound, "agent not found", None),
+        None => return AppResult::fail(ErrorCode::NotFound, "error.agent.notFound", None),
     };
     drop(guard);
     let sessions = crate::application::chat::list_conversations_by_agent(&agent_name);

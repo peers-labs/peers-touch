@@ -3,6 +3,7 @@ import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, SearchBar } from '@lobehub/ui';
 import { Plus, Pin, Trash2, MessageSquare, ChevronRight, Settings2 } from 'lucide-react';
 import { theme, Popconfirm } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
 import type { Agent, Session } from '../services/desktop_api';
 import { api } from '../services/desktop_api';
@@ -27,6 +28,7 @@ export function AgentList({ onCreateAgent, onEditAgent }: AgentListProps) {
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
   const [agentSessions, setAgentSessions] = useState<Session[]>([]);
   const { token } = theme.useToken();
+  const { t } = useTranslation('agent');
 
   useEffect(() => {
     loadAgents();
@@ -92,7 +94,7 @@ export function AgentList({ onCreateAgent, onEditAgent }: AgentListProps) {
         gap={8}
       >
         <SearchBar
-          placeholder="Search agents..."
+          placeholder={t('agent.list.searchAgents')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           allowClear
@@ -101,7 +103,7 @@ export function AgentList({ onCreateAgent, onEditAgent }: AgentListProps) {
         <ActionIcon
           icon={Plus}
           onClick={onCreateAgent}
-          title="Create agent"
+          title={t('agent.list.createAgent')}
           style={{
             background: token.colorPrimary,
             color: '#fff',
@@ -119,7 +121,7 @@ export function AgentList({ onCreateAgent, onEditAgent }: AgentListProps) {
             flex={1}
             style={{ color: token.colorTextQuaternary, padding: 40, fontSize: 13 }}
           >
-            {search ? 'No matching agents' : 'No agents yet'}
+            {search ? t('agent.list.noMatchingAgents') : t('agent.list.noAgentsYet')}
           </Flexbox>
         )}
 
@@ -194,6 +196,7 @@ function AgentItem({
   token: any;
 }) {
   const [hovered, setHovered] = useState(false);
+  const { t } = useTranslation('agent');
 
   return (
     <div style={{ marginBottom: 2 }}>
@@ -269,22 +272,22 @@ function AgentItem({
             <ActionIcon
               icon={Settings2}
               size={{ blockSize: 24, size: 13 }}
-              title="Agent settings"
+              title={t('agent.list.agentSettings')}
               onClick={(e: React.MouseEvent) => { e.stopPropagation(); onEdit(); }}
               style={{ color: token.colorTextTertiary }}
             />
             {!agent.isDefault && (
               <Popconfirm
-                title="Delete this agent?"
+                title={t('agent.list.deleteConfirm.title')}
                 onConfirm={(e) => onDelete(e as unknown as React.MouseEvent)}
-                okText="Delete"
-                cancelText="Cancel"
+                okText={t('agent.list.deleteConfirm.ok')}
+                cancelText={t('agent.list.deleteConfirm.cancel')}
               >
                 <div onClick={(e) => e.stopPropagation()}>
                   <ActionIcon
                     icon={Trash2}
                     size={{ blockSize: 24, size: 13 }}
-                    title="Delete"
+                    title={t('agent.list.deleteConfirm.ok')}
                     style={{ color: token.colorTextTertiary }}
                   />
                 </div>
@@ -361,7 +364,7 @@ function AgentItem({
                 whiteSpace: 'nowrap',
                 color: token.colorText,
               }}>
-                {s.title || 'New Topic'}
+                {s.title || t('agent.list.newTopic')}
               </span>
               <span style={{ color: token.colorTextQuaternary, fontSize: 11, flexShrink: 0 }}>
                 {s.message_count}

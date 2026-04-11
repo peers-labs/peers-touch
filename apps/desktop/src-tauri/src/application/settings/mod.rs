@@ -103,7 +103,7 @@ fn apply_side_effect(
             let mut guard = state.settings.lock().map_err(|_| {
                 AppResult::fail(
                     ErrorCode::InternalError,
-                    "failed to apply settings side effect",
+                    "error.settings.sideEffectFailed",
                     Some(json!({ "command": "settings", "key": "theme", "reason": "settings_lock_failed" })),
                 )
             })?;
@@ -114,7 +114,7 @@ fn apply_side_effect(
             let mut guard = state.settings.lock().map_err(|_| {
                 AppResult::fail(
                     ErrorCode::InternalError,
-                    "failed to apply settings side effect",
+                    "error.settings.sideEffectFailed",
                     Some(json!({ "command": "settings", "key": "locale", "reason": "settings_lock_failed" })),
                 )
             })?;
@@ -136,22 +136,22 @@ fn storage_error_to_result(command: &str, error: StorageError) -> AppResult<Stub
     match error {
         StorageError::ResolveFailed(message) => AppResult::fail(
             ErrorCode::InternalError,
-            "failed to resolve settings storage path",
+            "error.settings.storageResolveFailed",
             Some(json!({ "command": command, "reason": "resolve_failed", "source": message })),
         ),
         StorageError::ReadFailed(message) => AppResult::fail(
             ErrorCode::InternalError,
-            "failed to read settings",
+            "error.settings.storageReadFailed",
             Some(json!({ "command": command, "reason": "read_failed", "source": message })),
         ),
         StorageError::WriteFailed(message) => AppResult::fail(
             ErrorCode::Conflict,
-            "failed to write settings",
+            "error.settings.storageWriteFailed",
             Some(json!({ "command": command, "reason": "write_failed", "source": message })),
         ),
         StorageError::KeyError(key_error) => AppResult::fail(
             ErrorCode::InternalError,
-            "key provider error",
+            "error.settings.keyProviderError",
             Some(json!({
                 "command": command,
                 "reason": "key_error",

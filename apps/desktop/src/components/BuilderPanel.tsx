@@ -14,8 +14,9 @@ import {
 import { useChatStore, type ChatMessage } from '../store/chat';
 import { MessageBubble } from './MessageBubble';
 import { ModelProviderSelect } from './ModelProviderSelect';
-import { streamChat, type Agent, type Session } from '../services/desktop_api';
+import { executeAgentTurn, type Agent, type Session } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
+import { useTranslation } from 'react-i18next';
 
 export interface BuilderPanelProps {
   agentName: string;
@@ -96,6 +97,7 @@ export function BuilderPanel({
   disabled = false,
   disabledMessage,
 }: BuilderPanelProps) {
+  const { t } = useTranslation('agent');
   const { token } = theme.useToken();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -163,7 +165,7 @@ export function BuilderPanel({
     const modelOverride = selectedModel && selectedModel !== defaultModel ? selectedModel : undefined;
     let assistantContent = '';
     let modelName = modelOverride || '';
-    const controller = streamChat(
+    const controller = executeAgentTurn(
       text,
       scopedSessionKey,
       currentAgent,
@@ -193,7 +195,6 @@ export function BuilderPanel({
         setLoading(false);
         abortRef.current = null;
       },
-      [],
       modelOverride,
       selectedProviderId || undefined,
     );
@@ -277,14 +278,14 @@ export function BuilderPanel({
               popupMatchSelectWidth={280}
               style={{ flex: 1, minWidth: 0 }}
               variant="borderless"
-              placeholder="Select topic..."
+              placeholder={t('agent.builder.selectTopic')}
               allowClear
               onClear={() => {
                 setSessionKey('');
                 setMessages([]);
               }}
               options={[
-                { value: `${scope}:${currentAgent}`, label: `💬 Default` },
+                { value: `${scope}:${currentAgent}`, label: `💬 ${t('agent.builder.defaultTopic')}` },
                 ...topicOptions.map((s: Session) => ({
                   value: s.key,
                   label: `# ${s.title || s.key}`,
@@ -375,7 +376,7 @@ export function BuilderPanel({
                 }
               }}
               disabled={disabled}
-              placeholder={disabled ? (disabledMessage || 'Disabled') : 'Ask, create, or start a task...'}
+              placeholder={disabled ? (disabledMessage || t('agent.builder.disabled')) : t('agent.builder.placeholder')}
               rows={3}
               style={{
                 width: '100%',
@@ -435,7 +436,7 @@ export function BuilderPanel({
                 </Popover>
                 <div
                   onClick={() => setSearchEnabled(!searchEnabled)}
-                  title={searchEnabled ? 'Web search ON' : 'Web search OFF'}
+                  title={searchEnabled ? t('agent.builder.searchOn') : t('agent.builder.searchOff')}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -458,7 +459,7 @@ export function BuilderPanel({
                     icon={Square}
                     size="small"
                     onClick={handleStop}
-                    title="Stop"
+                    title={t('common.action.stop', { ns: 'common' })}
                     style={{ background: token.colorError, color: '#fff', borderRadius: 10 }}
                   />
                 ) : (
@@ -467,7 +468,7 @@ export function BuilderPanel({
                     size="small"
                     onClick={handleSend}
                     disabled={!input.trim()}
-                    title="Send"
+                    title={t('common.action.send', { ns: 'common' })}
                     style={{
                       background: input.trim() ? token.colorPrimary : token.colorFillSecondary,
                       color: input.trim() ? '#fff' : token.colorTextQuaternary,

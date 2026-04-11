@@ -31,6 +31,7 @@ import { useChatStore } from '../store/chat';
 import MessageCard, { type CardData } from './MessageCard';
 import { parseDeepLink } from '../utils/deeplink';
 import { EVENT, eventBus } from '../kernel/events';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   message: ChatMessage;
@@ -92,6 +93,7 @@ function MiniButton({
 function ToolCallItem({ tool }: { tool: ToolCallInfo }) {
   const [expanded, setExpanded] = useState(false);
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
 
   return (
     <div style={{ borderRadius: 6, overflow: 'hidden' }}>
@@ -135,7 +137,7 @@ function ToolCallItem({ tool }: { tool: ToolCallInfo }) {
         }}>
           {tool.args && (
             <div style={{ marginBottom: 4 }}>
-              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>Arguments</div>
+              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.arguments')}</div>
               <pre style={{
                 margin: 0,
                 padding: '4px 8px',
@@ -151,7 +153,7 @@ function ToolCallItem({ tool }: { tool: ToolCallInfo }) {
           )}
           {tool.result && (
             <div>
-              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>Result</div>
+              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.result')}</div>
               <pre style={{
                 margin: 0,
                 padding: '4px 8px',
@@ -174,12 +176,13 @@ function ToolCallItem({ tool }: { tool: ToolCallInfo }) {
 function ToolCallsBlock({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
   const [expanded, setExpanded] = useState(false);
   const { token } = theme.useToken();
-  const pendingCount = toolCalls.filter((t) => t.pending).length;
+  const { t } = useTranslation('chat');
+  const pendingCount = toolCalls.filter((tc) => tc.pending).length;
   const doneCount = toolCalls.length - pendingCount;
 
   const summary = pendingCount > 0
-    ? `Using ${toolCalls.length} tool${toolCalls.length > 1 ? 's' : ''}…`
-    : `Used ${doneCount} tool${doneCount > 1 ? 's' : ''}`;
+    ? t('chat.message.toolCall.using', { count: toolCalls.length })
+    : t('chat.message.toolCall.used', { count: doneCount });
 
   return (
     <div style={{
@@ -227,6 +230,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -275,7 +279,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
     }
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      toast.success('Copied');
+      toast.success(t('chat.message.toast.copied'));
       setTimeout(() => setCopied(false), 2000);
     });
   }, [message.content, message.toolCalls]);
@@ -310,34 +314,34 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
 
   const handleSaveToNotebook = useCallback(() => {
     saveMessageToNotebook(message);
-    toast.success('Saved to notebook');
+    toast.success(t('chat.message.toast.savedToNotebook'));
   }, [saveMessageToNotebook, message]);
 
   const assistantMoreMenu: MenuProps['items'] = [
-    { key: 'edit', icon: <Edit size={14} />, label: 'Edit', onClick: handleStartEdit },
-    { key: 'copy', icon: <Copy size={14} />, label: 'Copy', onClick: handleCopy },
+    { key: 'edit', icon: <Edit size={14} />, label: t('chat.message.action.edit'), onClick: handleStartEdit },
+    { key: 'copy', icon: <Copy size={14} />, label: t('chat.message.action.copy'), onClick: handleCopy },
     {
       key: 'collapse',
       icon: collapsed ? <ChevronsUpDown size={14} /> : <ChevronsDownUp size={14} />,
-      label: collapsed ? 'Expand Message' : 'Collapse Message',
+      label: collapsed ? t('chat.message.action.expandMessage') : t('chat.message.action.collapseMessage'),
       onClick: () => setCollapsed(!collapsed),
     },
     { type: 'divider' },
-    { key: 'save-notebook', icon: <BookOpen size={14} />, label: 'Save to Notebook', onClick: handleSaveToNotebook },
-    { key: 'share', icon: <Share2 size={14} />, label: 'Share' },
+    { key: 'save-notebook', icon: <BookOpen size={14} />, label: t('chat.message.action.saveToNotebook'), onClick: handleSaveToNotebook },
+    { key: 'share', icon: <Share2 size={14} />, label: t('chat.message.action.share') },
     { type: 'divider' },
-    { key: 'regenerate', icon: <RotateCcw size={14} />, label: 'Regenerate', onClick: handleRegenerate },
-    { key: 'del-regen', icon: <ListRestart size={14} />, label: 'Del & Regenerate', onClick: handleDelAndRegenerate },
-    { key: 'delete', icon: <Trash2 size={14} />, label: 'Delete', danger: true, onClick: handleDelete },
+    { key: 'regenerate', icon: <RotateCcw size={14} />, label: t('chat.message.action.regenerate'), onClick: handleRegenerate },
+    { key: 'del-regen', icon: <ListRestart size={14} />, label: t('chat.message.action.delAndRegenerate'), onClick: handleDelAndRegenerate },
+    { key: 'delete', icon: <Trash2 size={14} />, label: t('chat.message.action.delete'), danger: true, onClick: handleDelete },
   ];
 
   const userMoreMenu: MenuProps['items'] = [
-    { key: 'edit', icon: <Edit size={14} />, label: 'Edit', onClick: handleStartEdit },
-    { key: 'copy', icon: <Copy size={14} />, label: 'Copy', onClick: handleCopy },
-    { key: 'save-notebook', icon: <BookOpen size={14} />, label: 'Save to Notebook', onClick: handleSaveToNotebook },
+    { key: 'edit', icon: <Edit size={14} />, label: t('chat.message.action.edit'), onClick: handleStartEdit },
+    { key: 'copy', icon: <Copy size={14} />, label: t('chat.message.action.copy'), onClick: handleCopy },
+    { key: 'save-notebook', icon: <BookOpen size={14} />, label: t('chat.message.action.saveToNotebook'), onClick: handleSaveToNotebook },
     { type: 'divider' },
-    { key: 'regenerate', icon: <RotateCcw size={14} />, label: 'Regenerate', onClick: handleRegenerate },
-    { key: 'delete', icon: <Trash2 size={14} />, label: 'Delete', danger: true, onClick: handleDelete },
+    { key: 'regenerate', icon: <RotateCcw size={14} />, label: t('chat.message.action.regenerate'), onClick: handleRegenerate },
+    { key: 'delete', icon: <Trash2 size={14} />, label: t('chat.message.action.delete'), danger: true, onClick: handleDelete },
   ];
 
   // Card-type messages: schema-driven rendering
@@ -406,8 +410,8 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
               transition: 'opacity 0.2s',
             }}
           >
-            <MiniButton icon={copied ? <Check size={14} /> : <Copy size={14} />} title="Copy" onClick={handleCopy} />
-            <MiniButton icon={<Trash2 size={14} />} title="Delete" onClick={handleDelete} />
+            <MiniButton icon={copied ? <Check size={14} /> : <Copy size={14} />} title={t('chat.message.action.copy')} onClick={handleCopy} />
+            <MiniButton icon={<Trash2 size={14} />} title={t('chat.message.action.delete')} onClick={handleDelete} />
           </div>
         </Flexbox>
       </Flexbox>
@@ -566,7 +570,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
                     color: token.colorText, cursor: 'pointer', fontSize: 12,
                   }}
                 >
-                  Cancel
+                  {t('chat.message.edit.cancel')}
                 </button>
                 <button
                   onClick={handleSaveEdit}
@@ -576,7 +580,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
                     cursor: 'pointer', fontSize: 12,
                   }}
                 >
-                  Save
+                  {t('chat.message.edit.save')}
                 </button>
               </Flexbox>
             </Flexbox>
@@ -668,16 +672,16 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
           {!isUser && (
             <MiniButton
               icon={speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
-              title={speaking ? 'Stop reading' : 'Read aloud'}
+              title={speaking ? t('chat.message.action.stopReading') : t('chat.message.action.readAloud')}
               onClick={handleReadAloud}
             />
           )}
-          <MiniButton icon={<RotateCcw size={14} />} title="Regenerate" onClick={handleRegenerate} />
-          <MiniButton icon={<Edit size={14} />} title="Edit" onClick={handleStartEdit} />
-          <MiniButton icon={copied ? <Check size={14} /> : <Copy size={14} />} title="Copy" onClick={handleCopy} />
+          <MiniButton icon={<RotateCcw size={14} />} title={t('chat.message.action.regenerate')} onClick={handleRegenerate} />
+          <MiniButton icon={<Edit size={14} />} title={t('chat.message.action.edit')} onClick={handleStartEdit} />
+          <MiniButton icon={copied ? <Check size={14} /> : <Copy size={14} />} title={t('chat.message.action.copy')} onClick={handleCopy} />
           <Dropdown menu={{ items: isUser ? userMoreMenu : assistantMoreMenu }} trigger={['click']} placement={isUser ? 'bottomRight' : 'bottomLeft'}>
             <div>
-              <MiniButton icon={<MoreHorizontal size={14} />} title="More" onClick={() => {}} />
+              <MiniButton icon={<MoreHorizontal size={14} />} title={t('chat.message.action.more')} onClick={() => {}} />
             </div>
           </Dropdown>
         </div>

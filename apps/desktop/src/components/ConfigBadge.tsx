@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Popover, Typography, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { CircleDot, HelpCircle } from 'lucide-react';
@@ -11,13 +12,9 @@ interface ConfigBadgeProps {
   label?: string;
 }
 
-/**
- * Shows a small dot + help icon indicating whether a config section
- * is using defaults or has been customized via Settings.
- * Place in PageHeader's `extra` slot.
- */
 export function ConfigBadge({ section, label }: ConfigBadgeProps) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('common');
   const [data, setData] = useState<Record<string, ConfigFieldMeta> | null>(null);
 
   useEffect(() => {
@@ -32,12 +29,12 @@ export function ConfigBadge({ section, label }: ConfigBadgeProps) {
   const content = (
     <Flexbox gap={8} style={{ maxWidth: 280 }}>
       <Text strong style={{ fontSize: 13 }}>
-        {label || section} — {isCustom ? 'Customized' : 'Default'}
+        {label || section} — {isCustom ? t('common.configBadge.customized') : t('common.configBadge.default')}
       </Text>
       {isCustom ? (
         <>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            The following fields have been modified via Settings:
+            {t('common.configBadge.modifiedFields')}
           </Text>
           {customFields.map(([field, meta]) => (
             <Flexbox key={field} horizontal align="center" justify="space-between" gap={8}>
@@ -46,12 +43,12 @@ export function ConfigBadge({ section, label }: ConfigBadgeProps) {
             </Flexbox>
           ))}
           <Text type="secondary" style={{ fontSize: 11 }}>
-            Default values come from config.yml. Go to Settings to modify or reset.
+            {t('common.configBadge.defaultHint')}
           </Text>
         </>
       ) : (
         <Text type="secondary" style={{ fontSize: 12 }}>
-          Using config file defaults. Go to Settings → {label || section} to customize.
+          {t('common.configBadge.usingDefaults', { section: label || section })}
         </Text>
       )}
     </Flexbox>
@@ -77,7 +74,7 @@ export function ConfigBadge({ section, label }: ConfigBadgeProps) {
             color: isCustom ? token.colorPrimary : token.colorTextQuaternary,
           }}
         >
-          {isCustom ? 'customized' : 'default'}
+          {isCustom ? t('common.configBadge.customizedLabel') : t('common.configBadge.defaultLabel')}
         </Text>
         <HelpCircle size={10} style={{ color: token.colorTextQuaternary }} />
       </Flexbox>

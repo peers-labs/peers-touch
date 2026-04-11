@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Blocks, Pin, PinOff } from 'lucide-react';
 import { Empty, Spin, theme, Typography } from 'antd';
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
+  const { t } = useTranslation('applet');
   const { token } = theme.useToken();
   const [loading, setLoading] = useState(true);
   const [exists, setExists] = useState(false);
@@ -55,12 +57,12 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   if (!exists) {
     return (
       <Flexbox style={{ height: '100%' }}>
-        <PageHeader title="Applet" icon={<Blocks size={20} />} />
+        <PageHeader title={t('applet.runtime.title')} icon={<Blocks size={20} />} />
         <Flexbox align="center" justify="center" style={{ flex: 1 }}>
           <Empty
             description={[
-              `Applet "${appletId}" 未找到，请先构建 packages/applets`,
-              ...diagnostics.map((issue, index) => `诊断 ${index + 1}: ${issue}`),
+              t('applet.runtime.notFound', { id: appletId }),
+              ...diagnostics.map((issue, index) => t('applet.runtime.diagnostic', { index: index + 1, issue })),
             ].join('\n')}
           />
         </Flexbox>
@@ -83,7 +85,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
                 onClick={onPin}
                 icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
               >
-                {pinned ? 'Unpin' : 'Pin'}
+                {pinned ? t('applet.runtime.unpin') : t('applet.runtime.pin')}
               </Button>
             )}
           </Flexbox>
@@ -91,7 +93,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
       />
       <Flexbox style={{ flex: 1, padding: 16 }} gap={8}>
         <Text type="secondary" style={{ fontSize: 12, color: token.colorTextTertiary }}>
-          Source: /applets-dist/{appletId}
+          {t('applet.runtime.source', { id: appletId })}
         </Text>
         <LynxContainer appletId={appletId} height="100%" />
       </Flexbox>

@@ -15,7 +15,8 @@
 bash tooling/scripts/ide-setup.sh
 ```
 
-> 脚本会将 `docs/.ide/rules/`、`docs/.ide/documents/`、`docs/.ide/specs/` 以及 `docs/.ide/scoped/` 下的内容分发至对应 IDE 工作区。
+> 脚本会将 `docs/.ide/documents/`、`docs/.ide/specs/` 以及 `docs/.ide/scoped/` 下的内容分发至对应 IDE 工作区。
+> AI 助手全局规则已迁移至 `AGENTS.md` + `docs/.agent/*.md`。
 
 ---
 
@@ -186,16 +187,10 @@ docs/
 
 版本管理的 IDE 配置文件，通过 `tooling/scripts/ide-setup.sh` 导出到各 IDE 工作区。
 
-### 7.1 `.ide/rules/` — AI 助手规则
+### 7.1 `.ide/rules/` — (已迁移)
 
-全局适用的 AI 辅助编码规则。
-
-| 文件 | 说明 |
-|------|------|
-| `bug_fix_rules.md` | Bug 修复规则：禁止补丁式修复，要求根因分析 |
-| `code_generation.md` | 代码生成规则：生成前须确认架构和目录 |
-| `thinking.md` | 思考规则：合理性优先于最小变更 |
-| `*.yml` | Station 相关的结构化规则（字段顺序、日志行、Options 字段等） |
+> ⚠️ 此目录下的规则文件已全部迁移至 `AGENTS.md` + `docs/.agent/*.md` 体系，原文件已删除。
+> 详见根目录 [`AGENTS.md`](../../AGENTS.md) 及 [`docs/.agent/`](../docs/.agent/)。
 
 ### 7.2 `.ide/documents/` — AI 参考文档
 
