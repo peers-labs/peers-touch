@@ -2,412 +2,498 @@
 
 > **Multi-Platform Internationalization Architecture**
 >
-> Created: 2026-04-09 | Status: Draft
+> Created: 2026-04-09 | Updated: 2026-04-11 | Status: **Landed**
 
 ---
 
-## 1. 现状分析
+## 1. 架构总览
 
-### 1.1 各端 i18n 现状
+Peers-Touch i18n 架构已完成基础设施搭建和前端全量迁移，形成以下核心能力：
 
-| 端 | 现状 | 问题 |
-|---|------|------|
-| **Desktop (React/TS)** | `i18next` + `react-i18next` 已安装，**但零使用**。所有文案硬编码在 JSX 中，中英混杂。 | 无法切换语言；新增文案随意，中英混用严重。 |
-| **Desktop (Rust/Tauri)** | 错误消息全部硬编码英文字符串（如 `"account is required"`）。 | 前端显示的错误信息无法国际化。 |
-| **Station (Go)** | 错误消息硬编码在 Go 代码中，5+ 种不同错误返回格式并存。 | 无国际化能力；客户端无法翻译 Station 返回的错误。 |
-
-### 1.2 核心矛盾
-
-1. **无统一翻译源**：无标准化的翻译资源管理。
-2. **错误码与文案耦合**：Station 直接返回英文 message，客户端无法本地化。
-3. **中英混杂**：Desktop 页面中文英文混用，无统一规范。
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| **翻译源管理** | ✅ Landed | `packages/locales/` 16 个 namespace × 2 语言，metadata.json 版本管理 |
+| **Runtime FS Loading** | ✅ Landed | Rust I18nService 部署 + 扫描 → Tauri Command → 前端异步加载 |
+| **Desktop 全量 i18n** | ✅ Landed | 54 个文件、174+ `useTranslation` 调用，覆盖全部 13 个页面及组件 |
+| **Rust Error Key** | 🔄 进行中 | `AppResult::fail()` message 统一为 i18n key，invoke 层自动翻译 |
+| **语言切换** | ✅ Landed | LoginPage + Settings General 均有 LanguageSwitcher |
+| **社区语言包** | ✅ Landed | config/i18n/ 支持用户自行放置社区翻译目录 |
+| **后端 i18n** | ⏳ 规划中 | 种子数据 i18n、OAuth2 HTML 页面、Go Dashboard error_key |
 
 ---
 
 ## 2. 设计原则
 
-1. **翻译源集中管理** — 所有翻译资源统一放在 `locales/` 目录下，按 namespace 分文件。
-2. **错误码驱动，文案客户端负责** — Station/Rust 只返回 `ErrorCode`，客户端负责将 code 映射为本地化文案。
-3. **按命名空间组织** — 翻译 key 按 `namespace.feature.context` 三段式组织，支持按需加载。
-4. **TypeSafe** — 通过 TypeScript 类型约束，确保引用不存在的 key 在开发期被发现。
+1. **翻译源集中管理** — 所有翻译资源统一放在 `packages/locales/` 下，按 namespace 分文件，通过 Rust 部署到运行时目录。
+2. **错误码驱动，文案客户端负责** — Station 只返回 `ErrorCode` 数字码，Rust 层只返回 i18n error key，客户端负责翻译。
+3. **错误 i18n 必须在 invoke 层自动闭环** — `desktop_api.ts` 的 invoke 层自动调用 `resolveError()`，消费方无需关心 i18n。
+4. **keySeparator: false — 点号是 key 的一部分，不是层级分隔符** — `"auth.login.title"` 是一个完整的 flat key 字符串，i18next 不做层级解析。
+5. **按命名空间组织** — 翻译 key 按 `namespace.feature.context` 三段式命名约定，支持按需加载。
+6. **TypeSafe** — 通过 TypeScript `CustomTypeOptions` 声明约束 namespace 和 returnNull 行为。
 
 ---
 
 ## 3. 整体架构
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      LOCALE SOURCE (JSON)                            │
-│                                                                       │
-│  locales/                                                             │
-│  ├── en/                         ← Master language                    │
-│  │   ├── common.json             ← Shared: buttons, labels, time     │
-│  │   ├── auth.json               ← Auth module                       │
-│  │   ├── chat.json               ← Chat module                       │
-│  │   ├── settings.json           ← Settings module                   │
-│  │   ├── social.json             ← Social module                     │
-│  │   ├── applets.json            ← Applet system                     │
-│  │   └── errors.json             ← ErrorCode → message mapping       │
-│  └── zh-CN/                                                           │
-│      └── ... (same structure)                                         │
-│                                                                       │
-└─────────────────────────────────────────────────────────────────────┘
-                          │
-                    Build-time import
-                          │
-                          ▼
-                   ┌───────────┐
-                   │  Desktop   │
-                   │  React/TS  │
-                   │            │
-                   │ i18next +  │
-                   │ react-i18n │
-                   │ ext        │
-                   │ t('key')   │
-                   └──────┬─────┘
-                          │
-          ┌───────────────┼───────────────┐
-          │               │               │
-          ▼               ▼               ▼
-    ┌──────────┐   ┌──────────┐   ┌──────────┐
-    │  UI Text  │   │  Error   │   │  Station  │
-    │  t(key)   │   │  Resolve │   │  ErrorCode│
-    │  直接翻译  │   │  code →  │   │  → 本地   │
-    │           │   │  message │   │  翻译     │
-    └──────────┘   └──────────┘   └──────────┘
+packages/locales/ (source of truth)
+  ├── en/                (16 namespaces)
+  ├── zh-CN/             (16 namespaces)
+  └── metadata.json      (version + language metadata)
+        │
+        │ Rust I18nService.deploy_builtin_packs()
+        │ (version-based: only deploys when version changes)
+        │
+        ▼
+config/i18n/ (runtime directory)
+  ├── en/
+  ├── zh-CN/
+  ├── {community packs}/
+  ├── metadata.json
+  └── README.md
+        │
+        │ Rust I18nService.load_resources()
+        │ (scans all directories, discovers languages)
+        │
+        ▼
+Tauri Command: i18n_load_resources
+        │
+        ▼
+Frontend: initI18n() → i18next.init({ resources, keySeparator: false })
+        │
+        ├── UI Text: t('namespace.key') via useTranslation hook
+        ├── Class Components: <Translation> render prop (ErrorBoundary)
+        ├── Module Constants: Factory function pattern getXxx(t)
+        └── Error Display: invoke 层自动 resolveError() → 消费方零改动
 ```
+
+### 数据流详解
+
+1. **App 启动（Rust）** — `main.rs` setup 阶段调用 `state.i18n.deploy_builtin_packs(&resource_dir)`，将 `packages/locales/` 或 Tauri bundled resources 部署到 `config/i18n/`。部署基于 `metadata.json` 的 `version` 字段比较，版本相同则跳过 IO。
+
+2. **前端初始化** — `main.tsx` 的 `bootstrap()` 调用 `await initI18n()`（在 React render 之前），通过 Tauri command `i18n_load_resources` 获取所有翻译资源。
+
+3. **i18next 就绪** — 以 `{ resources, keySeparator: false }` 初始化 i18next 实例，整个 React 树可用。
 
 ---
 
-## 4. 翻译源：统一 JSON 格式
+## 4. 翻译源
 
 ### 4.1 目录结构
 
 ```
-locales/                          ← 项目根目录下
-├── en/                           ← English (master)
-│   ├── common.json               ← Common UI: buttons, labels, time
-│   ├── auth.json                 ← Auth: login, register, session
-│   ├── chat.json                 ← Chat: messages, sessions
-│   ├── settings.json             ← Settings page
-│   ├── social.json               ← Social features
-│   ├── applets.json              ← Applet system
-│   └── errors.json               ← ErrorCode mapping
-├── zh-CN/                        ← Simplified Chinese
-│   └── ... (same structure)
-└── _meta/
-    └── supported.json            ← Supported languages registry
+packages/locales/                       ← @peers-touch/locales 包
+├── en/                                 ← English (master)
+│   ├── agent.json
+│   ├── applet.json
+│   ├── auth.json
+│   ├── channels.json
+│   ├── chat.json
+│   ├── common.json
+│   ├── cron.json
+│   ├── errors.json
+│   ├── layout.json
+│   ├── memory.json
+│   ├── notes.json
+│   ├── provider.json
+│   ├── search.json
+│   ├── settings.json
+│   ├── share.json
+│   └── tts.json
+├── zh-CN/                              ← 简体中文 (同结构)
+│   └── ... (16 files)
+├── metadata.json                       ← 版本 + 语言元信息
+├── types.ts                            ← TypeScript namespace 类型
+└── package.json                        ← @peers-touch/locales
 ```
 
-### 4.2 命名规范
+### 4.2 16 个 Namespace
 
-翻译 key 采用**点分三段式**：`namespace.feature.context`
+| Namespace | 职责 |
+|-----------|------|
+| `common` | 通用 UI：按钮、标签、时间、状态 |
+| `auth` | 登录、注册、Session 管理 |
+| `errors` | ErrorCode 映射 + 通用错误文案 + ErrorBoundary |
+| `settings` | 设置页面各 Tab |
+| `chat` | AI 聊天、会话管理 |
+| `channels` | Bot/Webhook 频道 |
+| `memory` | 记忆系统 |
+| `notes` | 笔记系统 |
+| `cron` | 定时任务 |
+| `search` | 搜索功能 |
+| `agent` | Agent 管理、Builder |
+| `applet` | 小程序系统 |
+| `share` | 分享功能 |
+| `layout` | 全局布局、导航、用户面板 |
+| `provider` | 模型服务商、模型选择、Skills |
+| `tts` | 语音合成 / 语音识别设置 |
+
+### 4.3 metadata.json 格式
 
 ```json
-// locales/en/auth.json
+{
+  "version": "0.2.0",
+  "en": {
+    "name": "English",
+    "nativeName": "English",
+    "namespaces": ["agent", "applet", "auth", "channels", "chat", "common", "cron", "errors", "layout", "memory", "notes", "provider", "search", "settings", "share", "tts"]
+  },
+  "zh-CN": {
+    "name": "Chinese (Simplified)",
+    "nativeName": "简体中文",
+    "namespaces": ["agent", "applet", "auth", "channels", "chat", "common", "cron", "errors", "layout", "memory", "notes", "provider", "search", "settings", "share", "tts"]
+  }
+}
+```
+
+`version` 字段用于 Rust 部署时的版本比较。每次翻译内容更新后递增版本号，确保 App 更新时重新部署。
+
+### 4.4 Key 格式
+
+采用 **Flat key with dots** 格式，配合 `keySeparator: false`：
+
+```json
+// packages/locales/en/auth.json
 {
   "auth.login.title": "Welcome",
   "auth.login.subtitle": "Sign in to your account to continue",
-  "auth.login.tab.quick": "Quick Login",
-  "auth.login.tab.email": "Email Login",
-  "auth.login.email.placeholder": "Email address",
-  "auth.login.password.placeholder": "Password",
   "auth.login.submit": "Sign In",
   "auth.login.continueWith": "Continue with {{provider}}",
-  "auth.login.waiting": "Waiting for authorization...",
-  "auth.login.waitingHint": "Please complete authorization in the new window",
-  "auth.login.success": "Login successful",
-  "auth.login.successWelcome": "Welcome, {{name}}",
-  "auth.login.failed": "Login failed",
-  "auth.login.incomplete": "Login incomplete, please retry.",
-  "auth.login.startAuth": "Start Login",
-  "auth.login.loginWith": "Sign in with {{provider}}",
-  "auth.login.redirectHint": "You will be redirected to {{provider}} for authorization",
-  "auth.welcomeBack.title": "Welcome back,",
-  "auth.welcomeBack.switchAccount": "Switch Account",
-  "auth.welcomeBack.continue": "Continue"
+  "auth.welcomeBack.title": "Welcome back,"
 }
 ```
 
-```json
-// locales/en/common.json
-{
-  "common.action.cancel": "Cancel",
-  "common.action.confirm": "Confirm",
-  "common.action.retry": "Retry",
-  "common.action.save": "Save",
-  "common.action.edit": "Edit",
-  "common.action.delete": "Delete",
-  "common.action.done": "Done",
-  "common.action.back": "Back",
-  "common.state.loading": "Loading...",
-  "common.state.noData": "No Data",
-  "common.time.today": "Today",
-  "common.time.yesterday": "Yesterday"
-}
-```
+Key 中的 `.` 是命名约定，**不是 i18next 层级分隔符**。i18next 以 `keySeparator: false` 运行，将整个字符串视为单一 key。
 
-```json
-// locales/en/errors.json
-{
-  "error.10001": "Invalid resource format",
-  "error.10003": "Invalid username",
-  "error.10004": "Invalid email",
-  "error.10005": "Invalid password",
-  "error.10006": "Account already exists",
-  "error.10008": "Account not found",
-  "error.10009": "Invalid credentials",
-  "error.20001": "Unauthorized, please login again",
-  "error.20002": "Invalid request",
-  "error.20008": "Server error, please try again later",
-  "error.auth.accountRequired": "Account is required",
-  "error.auth.passwordRequired": "Password is required",
-  "error.auth.tokenMissing": "Session expired, please login again",
-  "error.auth.tokenInvalid": "Session invalid, please login again",
-  "error.generic": "An error occurred: {{message}}",
-  "error.network": "Network error, please check your connection",
-  "error.unknown": "An unknown error occurred"
-}
-```
-
-### 4.3 变量插值
+### 4.5 变量插值
 
 使用 i18next 标准语法 `{{var}}`：
 
 ```
 Simple:       "Hello, {{name}}"
-Plural:       "You have {{count}} message(s)"
+Plural:       "{{count}} messages"
+Fallback:     "An error occurred: {{message}}"
 ```
 
 ---
 
 ## 5. 各层消费方案
 
-### 5.1 Desktop (React + i18next)
+### 5.1 Desktop React (前端)
 
-Desktop 已安装 `i18next@^23` 和 `react-i18next@^14`，直接启用。
+#### 资源加载：Runtime via Tauri Command
 
-#### 目录结构
-
-```
-apps/desktop/src/
-├── i18n/
-│   ├── index.ts                  ← i18next init config
-│   ├── error-resolver.ts         ← ErrorCode → localized message
-│   └── types.ts                  ← TypeScript key type definitions
-```
-
-#### 初始化
+Desktop 是 Tauri App，**不走 Vite dev server 加载资源**。翻译资源通过 Rust 从文件系统读取，经 Tauri IPC 传递给前端。
 
 ```typescript
-// apps/desktop/src/i18n/index.ts
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
+// apps/desktop/src/i18n/index.ts — 核心初始化
+export async function initI18n() {
+  const result = await invoke<RustCommandResult<I18nResources>>('i18n_load_resources');
 
-// JSON files imported at build time (vite handles JSON import)
-import enCommon from '../../../locales/en/common.json';
-import enAuth from '../../../locales/en/auth.json';
-import enChat from '../../../locales/en/chat.json';
-import enSettings from '../../../locales/en/settings.json';
-import enErrors from '../../../locales/en/errors.json';
-import enSocial from '../../../locales/en/social.json';
-import enApplets from '../../../locales/en/applets.json';
+  // ... error handling ...
 
-import zhCommon from '../../../locales/zh-CN/common.json';
-import zhAuth from '../../../locales/zh-CN/auth.json';
-import zhChat from '../../../locales/zh-CN/chat.json';
-import zhSettings from '../../../locales/zh-CN/settings.json';
-import zhErrors from '../../../locales/zh-CN/errors.json';
-import zhSocial from '../../../locales/zh-CN/social.json';
-import zhApplets from '../../../locales/zh-CN/applets.json';
+  const { languages, resources } = result.data;
+  availableLanguages = languages;
+  const lng = detectLanguage(languages.map(l => l.code));
 
-const resources = {
-  en: {
-    common: enCommon,
-    auth: enAuth,
-    chat: enChat,
-    settings: enSettings,
-    errors: enErrors,
-    social: enSocial,
-    applets: enApplets,
-  },
-  'zh-CN': {
-    common: zhCommon,
-    auth: zhAuth,
-    chat: zhChat,
-    settings: zhSettings,
-    errors: zhErrors,
-    social: zhSocial,
-    applets: zhApplets,
-  },
-};
-
-i18n.use(initReactI18next).init({
-  resources,
-  lng: localStorage.getItem('peers-touch-lang')
-    || (navigator.language.startsWith('zh') ? 'zh-CN' : 'en'),
-  fallbackLng: 'en',
-  defaultNS: 'common',
-  ns: ['common', 'auth', 'chat', 'settings', 'errors', 'social', 'applets'],
-  interpolation: {
-    escapeValue: false,     // React already escapes
-  },
-});
-
-export default i18n;
+  await i18n.use(initReactI18next).init({
+    resources,
+    lng,
+    fallbackLng: 'en',
+    defaultNS: 'common',
+    keySeparator: false,           // ← 点号不分层
+    interpolation: { escapeValue: false },
+  });
+  return i18n;
+}
 ```
 
-#### 组件使用
+在 `main.tsx` 中，`initI18n()` 在 React render 之前被 `await`：
+
+```typescript
+// apps/desktop/src/main.tsx
+async function bootstrap() {
+  const [{ default: App }, { default: SharePage }] = await Promise.all([
+    import('./App'),
+    import('./pages/SharePage'),
+  ]);
+
+  await initI18n();     // ← i18n 就绪后再 render
+
+  createRoot(document.getElementById('root')!).render(/* ... */);
+}
+```
+
+#### 三种消费模式
+
+**模式 1: `useTranslation` Hook** — 函数组件标准用法（占 95%+）
 
 ```tsx
 import { useTranslation } from 'react-i18next';
 
 function LoginPage() {
   const { t } = useTranslation('auth');
-
   return (
     <>
       <h2>{t('auth.login.title')}</h2>
-      <p>{t('auth.login.subtitle')}</p>
       <button>{t('auth.login.submit')}</button>
     </>
   );
 }
 ```
 
-#### 错误码本地化
+**模式 2: `<Translation>` Render Prop** — Class 组件（ErrorBoundary）
 
-```typescript
-// apps/desktop/src/i18n/error-resolver.ts
-import i18n from './index';
+```tsx
+// apps/desktop/src/components/ErrorBoundary.tsx
+import { Translation } from 'react-i18next';
 
-/**
- * Resolve an error code (from Station or Rust) to a localized message.
- * Falls back to the raw message if no translation key exists.
- */
-export function resolveError(code: number | string, fallbackMessage?: string): string {
-  const key = `error.${code}`;
-  const resolved = i18n.t(key, { ns: 'errors', defaultValue: '' });
-  if (resolved && resolved !== key) return resolved;
-  if (fallbackMessage) {
-    return i18n.t('error.generic', { ns: 'errors', message: fallbackMessage });
+export class ErrorBoundary extends Component<...> {
+  render() {
+    if (this.state.error) {
+      return (
+        <Translation ns="errors">
+          {(t) => (
+            <div>
+              <h2>{t('error.boundary.title')}</h2>
+              <p>{t('error.boundary.description')}</p>
+              <button onClick={this.handleRestart}>
+                {t('error.boundary.restart')}
+              </button>
+            </div>
+          )}
+        </Translation>
+      );
+    }
+    return this.props.children;
   }
-  return i18n.t('error.unknown', { ns: 'errors' });
 }
 ```
 
-#### 语言切换
+**模式 3: Factory Function** — 模块级常量
 
-```typescript
-import i18n from '../i18n';
+当 Select options 等常量需要 i18n 时，定义接收 `TFunction` 的工厂函数，在组件内调用：
 
-function changeLanguage(lang: string) {
-  i18n.changeLanguage(lang);
-  localStorage.setItem('peers-touch-lang', lang);
+```tsx
+// apps/desktop/src/modules/tts/index.tsx
+import type { TFunction } from 'i18next';
+
+function getTtsProviderOptions(t: TFunction) {
+  return [
+    { value: 'browser', label: t('tts.provider.browser') },
+    { value: 'edge',    label: t('tts.provider.edge') },
+    { value: 'openai',  label: t('tts.provider.openai') },
+  ];
+}
+
+// 在组件内：
+function TTSSettings() {
+  const { t } = useTranslation('tts');
+  return <Select options={getTtsProviderOptions(t)} />;
 }
 ```
 
-### 5.2 Desktop Rust 层 (Tauri)
+### 5.2 Desktop Rust 层 (Tauri) — Rust message 字段统一为 i18n Error Key
 
-**核心策略：Rust 只负责返回 ErrorCode，不负责 message 翻译。**
+#### 架构决策
 
-当前 Rust 层的 `AppResult::fail()` 携带 `message: String`，这些 message 是英文硬编码。
-改造方向：
+**Rust `AppResult::fail()` 的 message 字段必须是 `errors.json` 中的 i18n key**，不允许硬编码人类可读的英文消息。
 
 ```rust
-// Before (current)
-AppResult::fail(ErrorCode::InvalidArgument, "account is required".to_string(), None)
+// ✅ Correct — message 是 i18n key
+AppResult::fail(ErrorCode::InvalidArgument, "error.auth.accountRequired", None)
 
-// After (target)
-// message 字段变为 error_key，前端用它查翻译
-AppResult::fail(ErrorCode::InvalidArgument, "error.auth.accountRequired".to_string(), None)
+// ❌ Wrong — 硬编码英文消息
+AppResult::fail(ErrorCode::InvalidArgument, "account is required", None)
 ```
 
-**渐进策略**：不需要一步到位改所有。先在前端做兼容：
-- 如果 `message` 字段能匹配到 `errors.json` 中的 key → 显示翻译
-- 否则 → 直接显示 message 原文
+#### 前端 invoke 层自动闭环
 
-这样可以逐步将 Rust 中的硬编码 message 替换为 i18n key，无需一次性全改。
+`desktop_api.ts` 中所有 invoke 封装函数在抛出错误前自动调用 `resolveError()`，消费方代码**无需关心 i18n**：
+
+```
+Rust: AppResult::fail("error.auth.accountRequired")
+  → Tauri IPC
+  → invokeRustCommand 返回 { ok: false, error: { message: "error.auth.accountRequired" } }
+  → invokeRustDataFromStatus:
+      const rawMsg = response.error?.message;
+      const localizedMsg = resolveError(rawMsg);    // → "Account is required"
+      throw new Error(localizedMsg);
+  → 消费方: catch(err) → message.error(err.message)  // 直接显示本地化文本
+```
+
+三个 invoke 层封装均已接入：
+
+| 封装函数 | resolveError 接入点 |
+|----------|---------------------|
+| `invokeRustDataFromStatus` | `throw new Error(resolveError(rawMsg))` |
+| `invokeRustProto` | `throw new Error(resolveError(rawMsg))` |
+| `AuthCommandException` | `super(resolveError(error.message))` |
+
+这是一个**干净的架构边界**：Rust 负责返回语义化的 error key，前端 invoke 层负责翻译，消费方完全透明。
 
 ### 5.3 Station (Go)
 
-**核心策略：Station 只返回 ErrorCode 数字码，message 字段为英文 fallback，客户端用 code 查本地翻译。**
+**核心策略：Station 只返回 ErrorCode 数字码，客户端负责翻译。**
 
-Station 当前已有 protobuf `ErrorCode` 枚举（10001-30017），客户端收到错误响应后：
+Station 通过 protobuf `ErrorCode` 枚举（10001–30017）返回错误码，客户端收到后：
 
 ```typescript
-// Desktop error handling
 function handleStationError(response: ErrorResponse) {
   const localizedMessage = resolveError(response.code, response.message);
   message.error(localizedMessage);
 }
 ```
 
-Station 侧**无需改动**——只需确保所有错误响应携带 `ErrorCode` 数字码即可。
-`errors.json` 中通过 `"error.{code}"` 映射翻译。
+`errors.json` 中通过 `"error.{code}"` 映射：
+
+```json
+{
+  "error.10001": "Invalid resource format",
+  "error.10008": "Account not found",
+  "error.20001": "Unauthorized, please login again"
+}
+```
+
+Station 侧无需 i18n 改动。Touch framework 已有 `ErrorResponse` 结构体携带 `ErrorCode`。
+
+**Dashboard jsonError 扩展**（规划中）：新增 `error_key` 字符串字段供 Desktop 客户端直接使用 i18n key。
+
+### 5.4 Rust I18nService 架构
+
+`I18nService` 位于 Rust 基础设施层（`src/infrastructure/i18n/mod.rs`），作为 `AppState` 的成员被所有 Tauri command 共享。
+
+```rust
+pub struct I18nService {
+    i18n_root: PathBuf,   // config_dir/i18n/
+}
+```
+
+#### 核心方法
+
+| 方法 | 职责 |
+|------|------|
+| `new(config_dir)` | 初始化，解析 `{config_dir}/i18n/` 路径 |
+| `deploy_builtin_packs(resource_dir)` | 版本比较部署：source metadata.json version ≠ deployed version → 重新部署 en/ + zh-CN/；相同则跳过（快速路径） |
+| `load_resources()` | 扫描 config/i18n/ 所有子目录，发现全部语言（含社区包），加载所有 namespace JSON，返回 `I18nResources` |
+| `resolve_key(lang, ns, key)` | **规划中** — Rust 侧文本解析，用于 OAuth2 HTML 页面等需要 Rust 直接生成本地化文本的场景 |
+
+#### 源目录解析
+
+```
+Production:  Tauri resource_dir/i18n/        ← bundled resources
+Dev mode:    CARGO_MANIFEST_DIR → ../../.. → packages/locales/
+```
+
+`resolve_source_dir()` 先检查 bundled 目录是否存在；不存在则通过 `CARGO_MANIFEST_DIR` 逆向查找 monorepo 根目录下的 `packages/locales/`，实现开发时零配置热更新。
+
+#### 社区语言包
+
+用户在 `config/i18n/` 下放置新的语言目录（如 `ja/`、`ko/`），`load_resources()` 会自动发现。内置语言包（en/、zh-CN/）由 App 管理，社区包永远不被覆盖。
+
+### 5.5 种子数据 i18n 约定（规划中）
+
+种子数据（Default Agent、New Chat 等）使用 `i18n:` 前缀约定：
+
+```json
+{
+  "title": "i18n:agent.default.title",
+  "description": "i18n:agent.default.description"
+}
+```
+
+前端渲染逻辑：
+
+```typescript
+function renderTitle(title: string, t: TFunction): string {
+  if (title.startsWith('i18n:')) {
+    return t(title.slice(5));   // strip "i18n:" prefix, pass to t()
+  }
+  return title;                 // user-created data, show as-is
+}
+```
+
+此约定区分「系统预设数据」（需要 i18n）和「用户创建数据」（原样显示）。
+
+### 5.6 OAuth2 HTML 页面 i18n（规划中）
+
+OAuth2 loopback callback 在 Rust 层直接生成 HTML 页面返回给浏览器。需要本地化的场景：
+
+- 授权成功提示页
+- 授权失败提示页
+- 重定向等待页
+
+实现方案：
+
+1. 新增 `oauth.json` namespace（en/ + zh-CN/）
+2. `I18nService` 新增 `resolve_key(lang, ns, key)` 方法
+3. OAuth2 handler 从 `I18nService` 获取本地化字符串，注入 HTML 模板
 
 ---
 
 ## 6. ErrorCode 国际化策略
 
-### 6.1 错误码层次
+### 6.1 错误码三层体系
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ Layer 1: Protobuf ErrorCode (Station ↔ Client 通信)       │
-│   - 10001-10010: Actor/WellKnown                          │
-│   - 20001-20008: Request/Auth                             │
-│   - 30001-30017: Post/Comment                             │
-│   - 映射在 errors.json: "error.10001" → 翻译文案           │
-├──────────────────────────────────────────────────────────┤
-│ Layer 2: Desktop AppError.code (Tauri Command → Frontend) │
-│   - InvalidArgument, Unauthorized, Forbidden...           │
-│   - message 字段逐步替换为 i18n key                        │
-│   - 映射在 errors.json: "error.auth.xxx" → 翻译文案        │
-├──────────────────────────────────────────────────────────┤
-│ Layer 3: Validation Message (纯客户端)                     │
-│   - 表单验证、输入校验                                      │
-│   - 直接用 t('auth.login.xxx') 获取翻译                    │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ Layer 1: Protobuf ErrorCode (Station ↔ Client 通信)               │
+│   - 10001-10010: Actor/WellKnown                                  │
+│   - 20001-20008: Request/Auth                                     │
+│   - 30001-30017: Post/Comment                                     │
+│   - 映射: errors.json "error.10001" → 翻译文案                     │
+├──────────────────────────────────────────────────────────────────┤
+│ Layer 2: Desktop AppError (Tauri Command → Frontend)              │
+│   - AppResult::fail() message 字段已统一为 i18n key                │
+│   - 如 "error.auth.accountRequired", "error.storage.readFailed"  │
+│   - invoke 层 resolveError() 自动翻译                              │
+├──────────────────────────────────────────────────────────────────┤
+│ Layer 3: Validation Message (纯客户端)                             │
+│   - 表单验证、输入校验                                              │
+│   - 直接用 t('auth.login.xxx') 获取翻译                            │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 前端统一错误展示
+### 6.2 Invoke 层自动解析架构
+
+```
+Rust:
+  AppResult::fail(ErrorCode::InvalidArgument, "error.auth.accountRequired", None)
+    │
+    ▼ Tauri IPC serialization
+Frontend (desktop_api.ts):
+  invokeRustCommand ← { ok: false, error: { code: "INVALID_ARGUMENT", message: "error.auth.accountRequired" } }
+    │
+    ▼ invokeRustDataFromStatus / invokeRustProto / AuthCommandException
+  resolveError("error.auth.accountRequired")
+    │
+    ▼ i18n.t("error.auth.accountRequired", { ns: "errors" })
+  → "Account is required" (en) / "请填写账户" (zh-CN)
+    │
+    ▼ throw new Error("Account is required")
+Consumer:
+  catch(err) → message.error(err.message)   // 自动显示本地化文本，零改动
+```
+
+### 6.3 resolveError 实现
 
 ```typescript
-// apps/desktop/src/utils/error-display.ts
-import { message as antdMessage } from 'antd';
-import { resolveError } from '../i18n/error-resolver';
+// apps/desktop/src/i18n/error-resolver.ts
+export function resolveError(code: number | string, fallbackMessage?: string): string {
+  const key = `error.${code}`;
+  const resolved = i18n.t(key, { ns: 'errors', defaultValue: '' });
 
-interface StationError {
-  code?: number;
-  message?: string;
-}
+  if (resolved && resolved !== key) return resolved;
 
-interface AppError {
-  code?: string;
-  message?: string;
-}
-
-export function showError(error: StationError | AppError | Error | string) {
-  let text: string;
-
-  if (typeof error === 'string') {
-    text = resolveError(error);
-  } else if (error instanceof Error) {
-    text = error.message;
-  } else if (typeof error.code === 'number') {
-    // Station protobuf ErrorCode
-    text = resolveError(error.code, error.message);
-  } else if (typeof error.code === 'string') {
-    // Tauri AppError
-    text = resolveError(error.message || error.code);
-  } else {
-    text = error.message || resolveError('unknown');
+  if (fallbackMessage) {
+    return i18n.t('error.generic', { ns: 'errors', message: fallbackMessage });
   }
 
-  antdMessage.error(text);
+  return i18n.t('error.unknown', { ns: 'errors' });
 }
 ```
+
+解析优先级：精确 key 匹配 → generic fallback with message → unknown fallback。
 
 ---
 
@@ -416,31 +502,35 @@ export function showError(error: StationError | AppError | Error | string) {
 ### 7.1 语言检测优先级
 
 ```
-1. 用户手动设置（持久化在 localStorage）
-2. 系统语言（navigator.language）
-3. Fallback: en
+1. 用户手动设置（持久化在 localStorage: 'peers-touch-lang'）
+2. navigator.language 精确匹配
+3. navigator.language 前缀匹配（zh-* → zh-CN）
+4. Fallback: en
 ```
 
-### 7.2 支持语言注册
+### 7.2 语言元信息
 
-```json
-// locales/_meta/supported.json
-{
-  "languages": [
-    { "code": "en", "name": "English", "nativeName": "English" },
-    { "code": "zh-CN", "name": "Chinese (Simplified)", "nativeName": "简体中文" }
-  ],
-  "default": "en"
+语言列表从 `metadata.json` 解析，通过 `load_resources()` 返回的 `LanguageInfo` 提供给前端：
+
+```typescript
+export interface LanguageInfo {
+  code: string;           // "en", "zh-CN"
+  name: string | null;    // "English", "Chinese (Simplified)"
+  native_name: string | null;  // "English", "简体中文"
+  namespaces: string[];   // namespace 列表
 }
 ```
 
-### 7.3 Desktop 语言设置 UI
+### 7.3 LanguageSwitcher 组件
 
-在 Settings → General 中新增 Language 选项：
+`LanguageSwitcher` 组件已在以下位置使用：
+
+- **LoginPage** — 页面右上角
+- **SettingsPage** — General Tab
 
 ```
 ┌─────────────────────────────────┐
-│  🌐 Language                     │
+│  🌐 English          ▾         │
 │  ┌───────────────────────────┐  │
 │  │ English          ✓        │  │
 │  │ 简体中文                   │  │
@@ -448,7 +538,7 @@ export function showError(error: StationError | AppError | Error | string) {
 └─────────────────────────────────┘
 ```
 
-切换立即生效（i18next.changeLanguage），无需重启。
+切换调用 `changeLanguage(lang)` → `i18n.changeLanguage()` + `localStorage.setItem()`，立即生效无需重启。
 
 ---
 
@@ -457,9 +547,10 @@ export function showError(error: StationError | AppError | Error | string) {
 ### 8.1 新增文案
 
 ```
-1. 在 locales/en/{namespace}.json 中添加 key + English text
-2. 在 locales/zh-CN/{namespace}.json 中添加对应中文翻译
+1. 在 packages/locales/en/{namespace}.json 中添加 key + English text
+2. 在 packages/locales/zh-CN/{namespace}.json 中添加对应中文翻译
 3. 在代码中使用 t('namespace.feature.context') 引用
+4. 如需新增 namespace，更新 metadata.json 中对应语言的 namespaces 数组
 ```
 
 ### 8.2 Key 命名规范
@@ -472,100 +563,174 @@ Examples:
   auth.login.title              — 登录页标题
   chat.session.empty            — 会话列表空态
   settings.general.language     — 设置页语言选项
-  error.10001                   — ErrorCode 翻译
-  error.auth.accountRequired    — Auth 领域错误
+  error.10001                   — Station ErrorCode 翻译
+  error.auth.accountRequired    — Rust 层 Auth 领域错误
+  error.boundary.title          — ErrorBoundary 崩溃页
+  tts.provider.browser          — TTS 模块设置选项
 ```
 
-规则：
-- 全小写，用 `.` 分隔层级
-- camelCase 仅用于多单词 context 段（如 `welcomeBack`、`switchAccount`）
-- 避免缩写（`btn` → `button`，`msg` → `message`），但约定俗成的除外
-- 参数用 `{{paramName}}`
+**keySeparator: false** — key 中的点号是命名约定，不是 i18next 层级分隔。`t('auth.login.title')` 查找的是 JSON 中 `"auth.login.title"` 这个完整 key。
 
-### 8.3 禁止事项
+规则：
+- 全小写，用 `.` 分隔语义段
+- camelCase 仅用于多单词 context 段（如 `welcomeBack`、`switchAccount`）
+- 避免缩写（`btn` → `button`，`msg` → `message`），约定俗成的除外
+- 变量用 `{{paramName}}`
+
+### 8.3 Factory Function 模式
+
+当 Select options、Table columns 等模块级常量需要 i18n 时，使用工厂函数：
+
+```typescript
+function getXxxOptions(t: TFunction) {
+  return [
+    { value: 'a', label: t('xxx.option.a') },
+    { value: 'b', label: t('xxx.option.b') },
+  ];
+}
+```
+
+在组件内调用 `getXxxOptions(t)` 确保每次 render 获取最新语言。
+
+### 8.4 Class 组件 `<Translation>` 模式
+
+Class 组件无法使用 Hook，使用 `<Translation>` render prop：
+
+```tsx
+import { Translation } from 'react-i18next';
+
+<Translation ns="errors">
+  {(t) => <p>{t('error.boundary.description')}</p>}
+</Translation>
+```
+
+### 8.5 禁止事项
 
 1. **禁止在 JSX/TSX 中直接写用户可见文本字符串**
-2. **禁止在 Rust 层返回面向用户的 message（应返回 error key）**
+2. **禁止在 Rust 层返回人类可读的英文错误消息，必须返回 i18n key** — 如 `"error.auth.accountRequired"` 而非 `"account is required"`
 3. **禁止在 Station Go 代码中返回国际化文案（只返回 ErrorCode）**
+4. **禁止使用 console/print 调试语句，只使用域内 logger**
 
 ---
 
-## 9. Desktop 落地计划
+## 9. 落地状态
 
-### Phase 1: 基础设施搭建
+### Phase 1: 基础设施搭建 ✅ Complete
 
-- [ ] 创建 `locales/` 目录，建立 en / zh-CN 两个语言
-- [ ] 创建 namespace JSON 文件（common, auth, chat, settings, errors, social, applets）
-- [ ] 实现 `apps/desktop/src/i18n/index.ts` — i18next 初始化
-- [ ] 实现 `apps/desktop/src/i18n/error-resolver.ts` — 错误码翻译
-- [ ] 在 `main.tsx` 中引入 i18n 初始化
+- ✅ `packages/locales/` 目录，en / zh-CN 两个语言，16 个 namespace
+- ✅ `metadata.json` 版本管理（当前 v0.2.0）
+- ✅ Rust `I18nService` — deploy_builtin_packs + load_resources
+- ✅ Tauri command `i18n_load_resources`
+- ✅ `apps/desktop/src/i18n/index.ts` — runtime 异步加载
+- ✅ `apps/desktop/src/i18n/error-resolver.ts` — resolveError
+- ✅ `main.tsx` 中 `await initI18n()` 在 React render 前执行
 
-### Phase 2: 页面迁移（高优先级页面）
+### Phase 2: 前端全量迁移 ✅ Complete
 
-- [ ] `LoginPage.tsx` — 中英混杂最严重，优先迁移
-- [ ] `SettingsPage.tsx` — 包含大量 label、tab 名称
-- [ ] `ChatPage.tsx` — 核心功能页
-- [ ] 通用组件 `PageHeader`, `ErrorBoundary`, `SplashScreen` 等
+- ✅ 全部 13 个页面迁移（LoginPage, SettingsPage, ChatPage, SearchPage, MemoryPage, NotesPage, CronPage, ChannelsPage, AppletsPage, AppletRuntimePage, AppletExample, AgentProfilePage, SharePage）
+- ✅ 全部组件迁移（54 个文件、174+ useTranslation 调用）
+- ✅ ErrorBoundary — `<Translation>` render prop 模式
+- ✅ TTS Module — Factory function 模式 `getTtsProviderOptions(t)`
+- ✅ 各 Settings Tab 组件全量 i18n
 
-### Phase 3: 错误信息国际化
+### Phase 3: Rust Error Key 统一 🔄 In Progress
 
-- [ ] 梳理所有 Rust `AppResult::fail()` 的 message 字段
-- [ ] 建立 `errors.json` 完整 mapping
-- [ ] 前端 error handler 统一走 `resolveError()`
+- ✅ `desktop_api.ts` invoke 层三个封装均接入 `resolveError()`
+- ✅ `AuthCommandException` 构造时自动 resolveError
+- 🔄 Rust `AppResult::fail()` message 字段逐步替换为 i18n key
+- 🔄 `errors.json` 持续扩充错误 key 覆盖
 
-### Phase 4: 语言设置 UI
+### Phase 4: 语言设置 UI ✅ Complete
 
-- [ ] Settings → General 增加语言切换组件
-- [ ] 语言偏好持久化到 localStorage
-- [ ] 验证切换后所有页面即时更新
+- ✅ `LanguageSwitcher` 组件实现
+- ✅ LoginPage 右上角语言切换
+- ✅ Settings General 语言切换
+- ✅ 语言偏好持久化到 localStorage
+- ✅ 切换后即时生效
+
+### Phase 5: 后端 i18n ⏳ Planned
+
+- ⏳ 种子数据 `i18n:` 前缀约定
+- ⏳ OAuth2 HTML 页面 — `I18nService.resolve_key()` + `oauth.json` namespace
+- ⏳ Go Dashboard jsonError 新增 `error_key` 字段
+- ⏳ Rust 侧 `resolve_key(lang, ns, key)` 方法
 
 ---
 
 ## 10. 文件清单
 
-本方案落地后，项目新增/修改的文件列表：
+### 翻译源（packages/locales/）
 
 ```
-New files:
-  locales/en/common.json
-  locales/en/auth.json
-  locales/en/chat.json
-  locales/en/settings.json
-  locales/en/social.json
-  locales/en/applets.json
-  locales/en/errors.json
-  locales/zh-CN/common.json
-  locales/zh-CN/auth.json
-  locales/zh-CN/chat.json
-  locales/zh-CN/settings.json
-  locales/zh-CN/social.json
-  locales/zh-CN/applets.json
-  locales/zh-CN/errors.json
-  locales/_meta/supported.json
-  apps/desktop/src/i18n/index.ts
-  apps/desktop/src/i18n/error-resolver.ts
-  apps/desktop/src/i18n/types.ts            (optional: key type gen)
+packages/locales/
+├── en/
+│   ├── agent.json           ├── applet.json         ├── auth.json
+│   ├── channels.json        ├── chat.json           ├── common.json
+│   ├── cron.json            ├── errors.json         ├── layout.json
+│   ├── memory.json          ├── notes.json          ├── provider.json
+│   ├── search.json          ├── settings.json       ├── share.json
+│   └── tts.json
+├── zh-CN/
+│   └── ... (同 en/ 结构，16 files)
+├── metadata.json
+├── types.ts
+└── package.json
+```
 
-Modified files:
-  apps/desktop/src/main.tsx                 (import i18n init)
-  apps/desktop/src/pages/LoginPage.tsx      (t() migration)
-  apps/desktop/src/pages/SettingsPage.tsx   (t() migration + language UI)
-  apps/desktop/src/pages/ChatPage.tsx       (t() migration)
-  ... (all pages/components with hardcoded text)
+### 前端 i18n 模块（apps/desktop/src/i18n/）
+
+```
+apps/desktop/src/i18n/
+├── index.ts                 ← initI18n(), changeLanguage(), getAvailableLanguages()
+├── error-resolver.ts        ← resolveError()
+└── types.d.ts               ← i18next CustomTypeOptions 声明
+```
+
+### Rust 基础设施（apps/desktop/src-tauri/）
+
+```
+apps/desktop/src-tauri/src/
+├── infrastructure/i18n/
+│   └── mod.rs               ← I18nService struct
+├── interface/tauri_commands/
+│   └── i18n.rs              ← i18n_load_resources command
+└── main.rs                  ← setup 阶段调用 deploy_builtin_packs
+```
+
+### 前端消费文件（54 files, 174+ useTranslation calls）
+
+```
+apps/desktop/src/
+├── main.tsx                          ← await initI18n()
+├── components/
+│   ├── ErrorBoundary.tsx             ← <Translation> render prop
+│   ├── common/LanguageSwitcher.tsx   ← 语言切换组件
+│   ├── ChatInput.tsx, SessionList.tsx, AgentList.tsx, ...
+│   ├── settings/AccountTab.tsx, ProviderDetail.tsx, ProviderMenu.tsx, ...
+│   └── chat/ChatSessionList.tsx, ChatMessageArea.tsx, ...
+├── pages/
+│   ├── LoginPage.tsx, SettingsPage.tsx, ChatPage.tsx, ...
+│   └── SearchPage.tsx, MemoryPage.tsx, NotesPage.tsx, ...
+└── modules/
+    └── tts/index.tsx                 ← Factory function pattern
 ```
 
 ---
 
-## 附录: 技术选型理由
+## 附录: 关键架构决策
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| Desktop i18n 库 | i18next + react-i18next | 已安装；生态成熟；namespace 支持好 |
-| 翻译资源格式 | JSON | i18next 原生支持；Vite 可直接 import |
-| 翻译 key 风格 | 点分层级 | 清晰表达归属；i18next 天然支持 |
-| Station 策略 | 不做 i18n，只返回 ErrorCode | 服务端不应关心展示语言 |
-| Rust 策略 | message 渐进替换为 error key | 兼容现状，逐步迁移 |
+| **i18n 库** | i18next + react-i18next | 已安装；生态成熟；namespace 支持好；支持 Hook / render prop / HOC 多种消费模式 |
+| **翻译资源格式** | JSON flat keys | i18next 原生支持；`keySeparator: false` 避免嵌套结构歧义 |
+| **Runtime FS Loading** | Tauri Command 加载，非 Vite import | Tauri Desktop 运行时无 Vite dev server；需要支持社区语言包动态发现；Rust 层可做版本管理 |
+| **keySeparator: false** | 点号是 key 命名约定 | 避免 i18next 将 `auth.login.title` 解析为嵌套结构 `{ auth: { login: { title } } }`；flat key 结构更简单、JSON 更易维护、避免 TypeScript 类型过深问题 |
+| **Factory Function 模式** | `getXxxOptions(t: TFunction)` | 模块级常量（如 Select options）不能在组件外调用 Hook，工厂函数延迟到 render 时执行，确保语言切换后立即更新 |
+| **Station 策略** | 只返回 ErrorCode，不做 i18n | 服务端不应关心展示语言；ErrorCode 是稳定的接口契约 |
+| **Rust Error Key 策略** | message 字段统一为 i18n key | 干净的架构边界——Rust 返回语义化 key，前端 invoke 层自动翻译，消费方零改动。非"渐进替换"，而是明确的架构规范 |
+| **Invoke 层自动闭环** | desktop_api.ts resolveError() | 所有 Rust error 在 invoke 封装层被翻译后才抛出，上层消费方 `catch(err) → message.error(err.message)` 自动显示本地化文本 |
+| **版本化部署** | metadata.json version 比较 | 避免每次启动都进行文件 IO；版本不同时才重新部署；社区语言包永不被覆盖 |
 
 ---
 
-*本文档描述 Peers-Touch Desktop 多语言架构的设计方案。经评审确认后进入实施阶段。*
+*本文档描述 Peers-Touch Desktop 多语言架构的已落地实现及后续规划。最后更新: 2026-04-11。*

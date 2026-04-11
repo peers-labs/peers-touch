@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, type Agent, type ToolInfo } from '../services/desktop_api';
+import { log } from '../utils/logger';
 
 interface SettingsState {
   agents: Agent[];
@@ -29,7 +30,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         }
       }
     } catch (e) {
-      console.error('Failed to load agents:', e);
+      log.error('settings', 'Failed to load agents', e);
     }
   },
 
@@ -38,7 +39,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       const tools = await api.listTools();
       set({ tools });
     } catch (e) {
-      console.error('Failed to load tools:', e);
+      log.error('settings', 'Failed to load tools', e);
     }
   },
 
@@ -57,7 +58,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       const updated = await api.listAgents();
       set({ agents: updated });
     } catch (e) {
-      console.error('Failed to update agent:', e);
+      log.error('settings', 'Failed to update agent', e);
     }
   },
 }));

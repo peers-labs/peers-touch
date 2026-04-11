@@ -110,3 +110,16 @@ fn unix_to_rfc3339(sec: i64) -> String {
     dt.format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
 }
+
+/// Update the avatar URL for the currently active account identity.
+/// Called after uploading a new avatar to Station, so the sidebar avatar stays in sync.
+pub fn update_active_avatar(avatar_url: &str) -> Result<(), String> {
+    let mut state = read_state()?;
+    if let Some(active_id) = &state.active_account_id {
+        if let Some(account) = state.accounts.iter_mut().find(|a| &a.id == active_id) {
+            account.avatar_url = avatar_url.to_string();
+            write_state(&state)?;
+        }
+    }
+    Ok(())
+}

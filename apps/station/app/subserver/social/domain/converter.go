@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -47,12 +48,12 @@ func (c *PostConverter) DBToProto(ctx context.Context, dbPost *db.Post, viewerID
 			AvatarUrl:   dbPost.Author.Icon,
 		}
 		if dbPost.Author.Icon == "" {
-			fmt.Printf("DEBUG: Post %d author %d (%s) has empty Icon field\n", dbPost.ID, dbPost.Author.ID, dbPost.Author.PreferredUsername)
+			logger.Debugf(ctx, "Post %d author %d (%s) has empty Icon field", dbPost.ID, dbPost.Author.ID, dbPost.Author.PreferredUsername)
 		} else {
-			fmt.Printf("DEBUG: Post %d author %d (%s) Icon=%s\n", dbPost.ID, dbPost.Author.ID, dbPost.Author.PreferredUsername, dbPost.Author.Icon)
+			logger.Debugf(ctx, "Post %d author %d (%s) Icon=%s", dbPost.ID, dbPost.Author.ID, dbPost.Author.PreferredUsername, dbPost.Author.Icon)
 		}
 	} else {
-		fmt.Printf("DEBUG: Post %d has nil Author\n", dbPost.ID)
+		logger.Debugf(ctx, "Post %d has nil Author", dbPost.ID)
 	}
 
 	if viewerID > 0 {

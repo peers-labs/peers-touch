@@ -35,6 +35,8 @@ pub struct Actor {
     pub is_following: bool,
     #[prost(uint64, tag = "9")]
     pub actor_id: u64,
+    #[prost(string, tag = "10")]
+    pub avatar: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UserLink {

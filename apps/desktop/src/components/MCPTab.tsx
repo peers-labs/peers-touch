@@ -9,11 +9,13 @@ import {
   Plus, Trash2, Play,
   CheckCircle, XCircle,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api, type MCPServerItem, type MCPServerRecord } from '../services/desktop_api';
 
 const { Text, Title } = Typography;
 
 export function MCPTab() {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [servers, setServers] = useState<MCPServerItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,7 +40,7 @@ export function MCPTab() {
     try {
       await api.toggleMCPServer(name, enabled);
       setServers((prev) => prev.map((s) => s.name === name ? { ...s, enabled } : s));
-      message.success(enabled ? 'Server enabled' : 'Server disabled');
+      message.success(enabled ? t('provider.mcp.serverEnabled') : t('provider.mcp.serverDisabled'));
     } catch (e: any) {
       message.error(e.message);
     }
@@ -48,7 +50,7 @@ export function MCPTab() {
     try {
       await api.deleteMCPServer(name);
       setServers((prev) => prev.filter((s) => s.name !== name));
-      message.success('Server deleted');
+      message.success(t('provider.mcp.serverDeleted'));
     } catch (e: any) {
       message.error(e.message);
     }
@@ -58,9 +60,9 @@ export function MCPTab() {
     try {
       const result = await api.testMCPServer(name);
       if (result.ok) {
-        message.success(`Connected! ${result.tools?.length || 0} tools available`);
+        message.success(t('provider.mcp.testPassed', { count: result.tools?.length || 0 }));
       } else {
-        message.error(`Connection failed: ${result.error}`);
+        message.error(t('provider.mcp.testFailed', { error: result.error }));
       }
     } catch (e: any) {
       message.error(e.message);
@@ -71,9 +73,9 @@ export function MCPTab() {
     <Flexbox style={{ padding: 24, height: '100%', overflow: 'auto' }} gap={24}>
       <Flexbox horizontal justify="space-between" align="center">
         <Flexbox>
-          <Title level={5} style={{ margin: 0 }}>MCP Servers</Title>
+          <Title level={5} style={{ margin: 0 }}>{t('provider.mcp.title')}</Title>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            Manage Model Context Protocol server connections
+            {t('provider.mcp.subtitle')}
           </Text>
         </Flexbox>
         <Button
@@ -81,7 +83,7 @@ export function MCPTab() {
           icon={<Plus size={14} />}
           onClick={() => setAddModal(true)}
         >
-          Add Server
+          {t('provider.mcp.addServer')}
         </Button>
       </Flexbox>
 
@@ -90,7 +92,7 @@ export function MCPTab() {
           <Spin />
         </Flexbox>
       ) : servers.length === 0 ? (
-        <Empty description="No MCP servers configured" />
+        <Empty description={t('provider.mcp.noServers')} />
       ) : (
         <Flexbox gap={12}>
           {servers.map((srv) => (
@@ -139,6 +141,7 @@ function MCPServerCard({
   onDetail: () => void;
   token: any;
 }) {
+  const { t } = useTranslation('provider');
   const [testing, setTesting] = useState(false);
 
   const handleTest = async () => {
@@ -180,10 +183,10 @@ function MCPServerCard({
         <Flexbox horizontal gap={8} align="center">
           {server.toolCount > 0 && (
             <Tag color="green" style={{ margin: 0 }}>
-              {server.toolCount} tools
+              {t('provider.mcp.tools', { count: server.toolCount })}
             </Tag>
           )}
-          <Tooltip title="Test connection">
+          <Tooltip title={t('provider.mcp.testConnection')}>
             <Button
               type="text"
               size="small"
@@ -192,7 +195,7 @@ function MCPServerCard({
               onClick={handleTest}
             />
           </Tooltip>
-          <Tooltip title={server.enabled ? 'Disable' : 'Enable'}>
+          <Tooltip title={server.enabled ? t('provider.mcp.disable') : t('provider.mcp.enable')}>
             <Switch
               size="small"
               checked={server.enabled}
@@ -200,7 +203,7 @@ function MCPServerCard({
             />
           </Tooltip>
           <Popconfirm
-            title="Delete this server?"
+            title={t('provider.mcp.deleteConfirm')}
             onConfirm={() => onDelete(server.name)}
           >
             <Button type="text" size="small" danger icon={<Trash2 size={14} />} />
@@ -218,6 +221,7 @@ function AddMCPServerModal({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const [name, setName] = useState('');
   const [title, setTitle] = useState('');
   const [type, setType] = useState<'stdio' | 'http'>('stdio');
@@ -229,15 +233,15 @@ function AddMCPServerModal({
 
   const handleOk = async () => {
     if (!name.trim()) {
-      message.warning('Name is required');
+      message.warning(t('provider.mcp.add.nameRequired'));
       return;
     }
     if (type === 'stdio' && !command.trim()) {
-      message.warning('Command is required for stdio transport');
+      message.warning(t('provider.mcp.add.commandRequired'));
       return;
     }
     if (type === 'http' && !url.trim()) {
-      message.warning('URL is required for HTTP transport');
+      message.warning(t('provider.mcp.add.urlRequired'));
       return;
     }
 
@@ -256,7 +260,7 @@ function AddMCPServerModal({
         args: parsedArgs,
         url: url.trim(),
       });
-      message.success(`Server "${name}" added`);
+      message.success(t('provider.mcp.add.success', { name }));
       onDone();
     } catch (e: any) {
       message.error(e.message);
@@ -267,34 +271,34 @@ function AddMCPServerModal({
 
   return (
     <Modal
-      title="Add MCP Server"
+      title={t('provider.mcp.add.title')}
       open
       onCancel={onCancel}
       onOk={handleOk}
       confirmLoading={loading}
-      okText="Add"
+      okText={t('common.action.add', { ns: 'common' })}
       width={560}
     >
       <Flexbox gap={12} style={{ paddingBlock: 12 }}>
         <Input
-          placeholder="Server name (unique identifier)"
+          placeholder={t('provider.mcp.add.namePlaceholder')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
         />
         <Input
-          placeholder="Display title (optional)"
+          placeholder={t('provider.mcp.add.titlePlaceholder')}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
         <Input
-          placeholder="Description (optional)"
+          placeholder={t('provider.mcp.add.descPlaceholder')}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
 
         <Flexbox horizontal gap={8} align="center">
-          <Text style={{ width: 80 }}>Transport:</Text>
+          <Text style={{ width: 80 }}>{t('provider.mcp.add.transport')}</Text>
           <Select
             value={type}
             onChange={setType}
@@ -309,19 +313,19 @@ function AddMCPServerModal({
         {type === 'stdio' ? (
           <>
             <Input
-              placeholder="Command (e.g. npx, uvx, node)"
+              placeholder={t('provider.mcp.add.commandPlaceholder')}
               value={command}
               onChange={(e) => setCommand(e.target.value)}
             />
             <Input
-              placeholder="Arguments (space-separated, e.g. -y @modelcontextprotocol/server-filesystem)"
+              placeholder={t('provider.mcp.add.argsPlaceholder')}
               value={args}
               onChange={(e) => setArgs(e.target.value)}
             />
           </>
         ) : (
           <Input
-            placeholder="HTTP endpoint URL"
+            placeholder={t('provider.mcp.add.urlPlaceholder')}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
           />
@@ -338,6 +342,7 @@ function MCPServerDetailModal({
   name: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [server, setServer] = useState<MCPServerRecord | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; tools?: string[]; error?: string } | null>(null);
@@ -370,9 +375,9 @@ function MCPServerDetailModal({
       footer={
         <Flexbox horizontal gap={8} justify="flex-end">
           <Button onClick={handleTest} loading={testing} icon={<Play size={14} />}>
-            Test Connection
+            {t('provider.mcp.testConnection')}
           </Button>
-          <Button onClick={onClose}>Close</Button>
+          <Button onClick={onClose}>{t('common.action.close', { ns: 'common' })}</Button>
         </Flexbox>
       }
     >
@@ -381,7 +386,7 @@ function MCPServerDetailModal({
           <Tag color={server.type === 'stdio' ? 'purple' : 'cyan'}>{server.type}</Tag>
           {server.version && <Tag>v{server.version}</Tag>}
           <Tag color={server.enabled ? 'green' : 'default'}>
-            {server.enabled ? 'Enabled' : 'Disabled'}
+            {server.enabled ? t('provider.mcp.detail.enabled') : t('provider.mcp.detail.disabled')}
           </Tag>
         </Flexbox>
 
@@ -402,23 +407,23 @@ function MCPServerDetailModal({
           {server.type === 'stdio' ? (
             <>
               <Text style={{ fontSize: 12 }}>
-                <Text strong>Command: </Text>{server.command}
+                <Text strong>{t('provider.mcp.detail.command')}</Text>{server.command}
               </Text>
               {server.args?.length > 0 && (
                 <Text style={{ fontSize: 12 }}>
-                  <Text strong>Args: </Text>{server.args.join(' ')}
+                  <Text strong>{t('provider.mcp.detail.args')}</Text>{server.args.join(' ')}
                 </Text>
               )}
               {Object.keys(server.env || {}).length > 0 && (
                 <Text style={{ fontSize: 12 }}>
-                  <Text strong>Env: </Text>
+                  <Text strong>{t('provider.mcp.detail.env')}</Text>
                   {Object.entries(server.env).map(([k, v]) => `${k}=${v}`).join(', ')}
                 </Text>
               )}
             </>
           ) : (
             <Text style={{ fontSize: 12 }}>
-              <Text strong>URL: </Text>{server.url}
+              <Text strong>{t('provider.mcp.detail.url')}</Text>{server.url}
             </Text>
           )}
         </Flexbox>
@@ -440,14 +445,14 @@ function MCPServerDetailModal({
               )}
               <Text strong>
                 {testResult.ok
-                  ? `Connected (${testResult.tools?.length || 0} tools)`
-                  : 'Connection failed'}
+                  ? t('provider.mcp.connected', { count: testResult.tools?.length || 0 })
+                  : t('provider.mcp.connectionFailed')}
               </Text>
             </Flexbox>
             {testResult.ok && testResult.tools && testResult.tools.length > 0 && (
               <Flexbox horizontal gap={4} wrap="wrap" style={{ marginTop: 4 }}>
-                {testResult.tools.map((t) => (
-                  <Tag key={t} style={{ fontSize: 11 }}>{t}</Tag>
+                {testResult.tools.map((tool) => (
+                  <Tag key={tool} style={{ fontSize: 11 }}>{tool}</Tag>
                 ))}
               </Flexbox>
             )}

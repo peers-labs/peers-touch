@@ -10,16 +10,33 @@ mod interface;
 mod model;
 mod state;
 
-use interface::tauri_commands::{account, actor, admin, agents, applets, auth, channels, chat, cron, friend_chat, frontend_log, group_chat, mcp, memory, model_config, models, notebook, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
+use std::sync::Arc;
+use tauri::Manager;
+use interface::tauri_commands::{account, actor, admin, agent_turn, agents, applets, auth, channels, chat, cron, friend_chat, frontend_log, group_chat, i18n, mcp, memory, model_config, models, notebook, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
 
 fn main() {
     let ctx = bootstrap::run();
 
     tracing::info!("Launching Tauri application");
 
+    let app_state = Arc::new(ctx.app_state);
+
+    #[cfg(debug_assertions)]
+    interface::http_gateway::start(Arc::clone(&app_state));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
-        .manage(ctx.app_state)
+        .manage(app_state)
+        .setup(|app| {
+            let resource_dir = app.path()
+                .resource_dir()
+                .expect("[setup] Failed to resolve resource directory");
+            let state = app.state::<Arc<state::AppState>>();
+            if let Err(e) = state.i18n.deploy_builtin_packs(&resource_dir) {
+                tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             interface::tauri_commands::meta_contract_version,
             frontend_log::frontend_log,
@@ -30,6 +47,7 @@ fn main() {
             auth::auth_restore_session,
             auth::auth_validate_token,
             auth::ensure_station_session,
+            i18n::i18n_load_resources,
             settings::settings_get,
             settings::settings_set,
             settings::settings_reset,
@@ -54,7 +72,11 @@ fn main() {
             profile::profile_update,
             profile::profile_upload_avatar,
             profile::profile_upload_header,
+            profile::profile_upload_avatar_oss,
+            profile::profile_upload_header_oss,
+            profile::pick_image_file,
             profile::profile_update_privacy,
+            profile::account_sync_avatar,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,
@@ -80,6 +102,15 @@ fn main() {
             agents::agents_duplicate,
             agents::agents_search,
             agents::agents_list_sessions,
+            agent_turn::agent_execute_turn,
+            agent_growth::agent_growth_snapshot,
+            agent_growth::agent_memory_list,
+            agent_growth::agent_skill_list,
+            agent_growth::agent_submit_feedback,
+            agent_scheduler::agent_scheduler_start,
+            agent_scheduler::agent_scheduler_stop,
+            agent_scheduler::agent_scheduler_status,
+            agent_scheduler::agent_scheduler_add_job,
             tools::tools_list,
             tools::tools_search_providers,
             tools::tools_set_search_primary,

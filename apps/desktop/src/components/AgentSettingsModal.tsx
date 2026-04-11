@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Modal,
   Select,
@@ -90,6 +91,7 @@ function SliderWithToggle({
 }
 
 export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSettingsModalProps) {
+  const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('info');
@@ -164,25 +166,25 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
         chatConfig: JSON.stringify(chatConfig),
         params: JSON.stringify(finalParams),
       });
-      message.success('Settings saved');
+      message.success(t('agent.settings.saved'));
       onSaved(updated);
     } catch (err: any) {
-      message.error(err.message || 'Failed to save');
+      message.error(err.message || t('agent.settings.failedToSave'));
     } finally {
       setSaving(false);
     }
-  }, [agent, title, description, avatar, bgColor, tags, openingMessage, openingQuestions, chatConfig, params, enabledParams, onSaved]);
+  }, [agent, title, description, avatar, bgColor, tags, openingMessage, openingQuestions, chatConfig, params, enabledParams, onSaved, t]);
 
   const addQuestion = useCallback(() => {
     const q = newQuestion.trim();
     if (!q) return;
     if (openingQuestions.includes(q)) {
-      message.warning('Question already exists');
+      message.warning(t('agent.settings.opening.questionExists'));
       return;
     }
     setOpeningQuestions((prev) => [...prev, q]);
     setNewQuestion('');
-  }, [newQuestion, openingQuestions]);
+  }, [newQuestion, openingQuestions, t]);
 
   const removeQuestion = useCallback((idx: number) => {
     setOpeningQuestions((prev) => prev.filter((_, i) => i !== idx));
@@ -194,14 +196,14 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
       label: (
         <Flexbox horizontal align="center" gap={6}>
           <User size={14} />
-          Agent Info
+          {t('agent.settings.tab.info')}
         </Flexbox>
       ),
       children: (
         <Flexbox gap={16} style={{ padding: '8px 0' }}>
           {/* Avatar */}
           <Flexbox gap={6}>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>Avatar</span>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.info.avatar')}</span>
             <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
               {AVATAR_OPTIONS.map((emoji) => (
                 <div
@@ -224,7 +226,7 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
 
           {/* Background Color */}
           <Flexbox gap={6}>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>Background Color</span>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.info.bgColor')}</span>
             <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
               {COLOR_SWATCHES.map((color) => (
                 <div
@@ -244,24 +246,24 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
 
           {/* Name */}
           <Flexbox gap={4}>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>Name</span>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Agent name" />
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.info.name')}</span>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('agent.settings.info.namePlaceholder')} />
           </Flexbox>
 
           {/* Description */}
           <Flexbox gap={4}>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>Agent Description</span>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A brief description" />
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.info.description')}</span>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('agent.settings.info.descriptionPlaceholder')} />
           </Flexbox>
 
           {/* Tags */}
           <Flexbox gap={4}>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>Tags</span>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.info.tags')}</span>
             <Select
               mode="tags"
               value={tags}
               onChange={setTags}
-              placeholder="Add tags..."
+              placeholder={t('agent.settings.info.tagsPlaceholder')}
               style={{ width: '100%' }}
               tokenSeparators={[',']}
             />
@@ -274,30 +276,30 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
       label: (
         <Flexbox horizontal align="center" gap={6}>
           <MessageSquare size={14} />
-          Opening Settings
+          {t('agent.settings.tab.opening')}
         </Flexbox>
       ),
       children: (
         <Flexbox gap={16} style={{ padding: '8px 0' }}>
           {/* Opening Message */}
           <Flexbox gap={4}>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>Opening Message</span>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.opening.message')}</span>
             <span style={{ fontSize: 12, color: token.colorTextDescription }}>
-              Shown when a user starts a new conversation with this agent.
+              {t('agent.settings.opening.messageDesc')}
             </span>
             <TextArea
               value={openingMessage}
               onChange={(e) => setOpeningMessage(e.target.value)}
               rows={4}
-              placeholder="Hi! How can I help you today?"
+              placeholder={t('agent.settings.opening.messagePlaceholder')}
             />
           </Flexbox>
 
           {/* Opening Questions */}
           <Flexbox gap={4}>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>Suggested Questions</span>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.opening.questions')}</span>
             <span style={{ fontSize: 12, color: token.colorTextDescription }}>
-              Quick-action buttons on the welcome screen.
+              {t('agent.settings.opening.questionsDesc')}
             </span>
             <Flexbox gap={6}>
               {openingQuestions.map((q, i) => (
@@ -326,7 +328,7 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
                 <Input
                   value={newQuestion}
                   onChange={(e) => setNewQuestion(e.target.value)}
-                  placeholder="Add a question..."
+                  placeholder={t('agent.settings.opening.questionPlaceholder')}
                   onPressEnter={addQuestion}
                   style={{ flex: 1 }}
                 />
@@ -342,7 +344,7 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
       label: (
         <Flexbox horizontal align="center" gap={6}>
           <Settings2 size={14} />
-          Chat Preferences
+          {t('agent.settings.tab.chat')}
         </Flexbox>
       ),
       children: (
@@ -350,8 +352,8 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
           {/* Streaming */}
           <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 12 }}>
             <Flexbox>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>Streaming</span>
-              <span style={{ fontSize: 12, color: token.colorTextDescription }}>Stream responses token by token</span>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.chat.streaming')}</span>
+              <span style={{ fontSize: 12, color: token.colorTextDescription }}>{t('agent.settings.chat.streamingDesc')}</span>
             </Flexbox>
             <Switch
               checked={chatConfig.enableStreaming !== false}
@@ -362,8 +364,8 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
           {/* History Count */}
           <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 12 }}>
             <Flexbox>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>History Count Limit</span>
-              <span style={{ fontSize: 12, color: token.colorTextDescription }}>Limit conversation history sent to the model</span>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.chat.historyCount')}</span>
+              <span style={{ fontSize: 12, color: token.colorTextDescription }}>{t('agent.settings.chat.historyCountDesc')}</span>
             </Flexbox>
             <Switch
               checked={chatConfig.enableHistoryCount ?? false}
@@ -393,8 +395,8 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
           {/* Context Compression */}
           <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 12 }}>
             <Flexbox>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>Context Compression</span>
-              <span style={{ fontSize: 12, color: token.colorTextDescription }}>Compress long conversations to stay within context window</span>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.chat.contextCompression')}</span>
+              <span style={{ fontSize: 12, color: token.colorTextDescription }}>{t('agent.settings.chat.contextCompressionDesc')}</span>
             </Flexbox>
             <Switch
               checked={chatConfig.enableContextCompression ?? false}
@@ -405,8 +407,8 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
           {/* Search Mode */}
           <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 12 }}>
             <Flexbox>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>Search Mode</span>
-              <span style={{ fontSize: 12, color: token.colorTextDescription }}>When to use web search</span>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.chat.searchMode')}</span>
+              <span style={{ fontSize: 12, color: token.colorTextDescription }}>{t('agent.settings.chat.searchModeDesc')}</span>
             </Flexbox>
             <Select
               value={chatConfig.searchMode ?? 'off'}
@@ -414,9 +416,9 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
               style={{ width: 120 }}
               size="small"
               options={[
-                { value: 'off', label: 'Off' },
-                { value: 'auto', label: 'Auto' },
-                { value: 'on', label: 'Always' },
+                { value: 'off', label: t('agent.settings.chat.searchMode.off') },
+                { value: 'auto', label: t('agent.settings.chat.searchMode.auto') },
+                { value: 'on', label: t('agent.settings.chat.searchMode.always') },
               ]}
             />
           </Flexbox>
@@ -426,8 +428,8 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
           {/* Memory */}
           <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 12 }}>
             <Flexbox>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>Memory</span>
-              <span style={{ fontSize: 12, color: token.colorTextDescription }}>Remember important information across conversations</span>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.chat.memory')}</span>
+              <span style={{ fontSize: 12, color: token.colorTextDescription }}>{t('agent.settings.chat.memoryDesc')}</span>
             </Flexbox>
             <Switch
               checked={chatConfig.memory?.enabled ?? false}
@@ -436,16 +438,16 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
           </Flexbox>
           {chatConfig.memory?.enabled && (
             <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 12, paddingLeft: 16 }}>
-              <span style={{ fontSize: 13, color: token.colorTextSecondary }}>Memory Effort</span>
+              <span style={{ fontSize: 13, color: token.colorTextSecondary }}>{t('agent.settings.chat.memoryEffort')}</span>
               <Select
                 value={chatConfig.memory?.effort ?? 'medium'}
                 onChange={(v) => setChatConfig((c) => ({ ...c, memory: { ...c.memory, enabled: true, effort: v } }))}
                 style={{ width: 120 }}
                 size="small"
                 options={[
-                  { value: 'low', label: 'Low' },
-                  { value: 'medium', label: 'Medium' },
-                  { value: 'high', label: 'High' },
+                  { value: 'low', label: t('agent.settings.chat.memoryEffort.low') },
+                  { value: 'medium', label: t('agent.settings.chat.memoryEffort.medium') },
+                  { value: 'high', label: t('agent.settings.chat.memoryEffort.high') },
                 ]}
               />
             </Flexbox>
@@ -458,14 +460,14 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
       label: (
         <Flexbox horizontal align="center" gap={6}>
           <Cpu size={14} />
-          Model Settings
+          {t('agent.settings.tab.model')}
         </Flexbox>
       ),
       children: (
         <Flexbox gap={4} style={{ padding: '8px 0' }}>
           <SliderWithToggle
-            label="Temperature"
-            description="Controls randomness. Lower = more focused, higher = more creative."
+            label={t('agent.settings.model.temperature')}
+            description={t('agent.settings.model.temperatureDesc')}
             value={params.temperature}
             checked={enabledParams.temperature ?? false}
             onToggle={(v) => {
@@ -478,8 +480,8 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
             step={0.1}
           />
           <SliderWithToggle
-            label="Top P"
-            description="Nucleus sampling. Controls diversity of output."
+            label={t('agent.settings.model.topP')}
+            description={t('agent.settings.model.topPDesc')}
             value={params.top_p}
             checked={enabledParams.top_p ?? false}
             onToggle={(v) => {
@@ -492,8 +494,8 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
             step={0.1}
           />
           <SliderWithToggle
-            label="Frequency Penalty"
-            description="Penalizes frequently used tokens."
+            label={t('agent.settings.model.frequencyPenalty')}
+            description={t('agent.settings.model.frequencyPenaltyDesc')}
             value={params.frequency_penalty}
             checked={enabledParams.frequency_penalty ?? false}
             onToggle={(v) => {
@@ -506,8 +508,8 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
             step={0.1}
           />
           <SliderWithToggle
-            label="Presence Penalty"
-            description="Penalizes tokens that have appeared at all."
+            label={t('agent.settings.model.presencePenalty')}
+            description={t('agent.settings.model.presencePenaltyDesc')}
             value={params.presence_penalty}
             checked={enabledParams.presence_penalty ?? false}
             onToggle={(v) => {
@@ -520,8 +522,8 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
             step={0.1}
           />
           <SliderWithToggle
-            label="Max Tokens"
-            description="Maximum number of tokens in the response."
+            label={t('agent.settings.model.maxTokens')}
+            description={t('agent.settings.model.maxTokensDesc')}
             value={params.max_tokens}
             checked={enabledParams.max_tokens ?? false}
             onToggle={(v) => {
@@ -539,7 +541,7 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
   ], [
     avatar, bgColor, title, description, tags, token,
     openingMessage, openingQuestions, newQuestion, addQuestion, removeQuestion,
-    chatConfig, params, enabledParams,
+    chatConfig, params, enabledParams, t,
   ]);
 
   return (
@@ -550,14 +552,14 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
       title={
         <Flexbox horizontal align="center" gap={8}>
           <span style={{ fontSize: 20 }}>{avatar}</span>
-          <span>{title || agent?.name || 'Agent Settings'}</span>
+          <span>{title || agent?.name || t('agent.settings.title')}</span>
         </Flexbox>
       }
       footer={
         <Flexbox horizontal justify="flex-end" gap={8}>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.action.cancel', { ns: 'common' })}</Button>
           <Button type="primary" loading={saving} onClick={handleSave}>
-            Save
+            {t('common.action.save', { ns: 'common' })}
           </Button>
         </Flexbox>
       }

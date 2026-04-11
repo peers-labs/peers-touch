@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox, Center } from 'react-layout-kit';
 import { ActionIcon, Markdown, toast } from '@lobehub/ui';
 import { theme, Input, Empty, Spin, Popconfirm, Divider } from 'antd';
@@ -40,6 +41,7 @@ interface NotesPageProps {
 
 function EditorToolbar({ onInsert }: { onInsert: (prefix: string, suffix: string, block?: boolean) => void }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('notes');
   const [hovered, setHovered] = useState<string | null>(null);
 
   const btn = (key: string, icon: ReactNode, title: string, p: string, s: string, b?: boolean) => (
@@ -71,18 +73,18 @@ function EditorToolbar({ onInsert }: { onInsert: (prefix: string, suffix: string
         flexShrink: 0,
       }}
     >
-      {btn('bold', <Bold size={15} />, 'Bold', '**', '**')}
-      {btn('italic', <Italic size={15} />, 'Italic', '*', '*')}
-      {btn('underline', <Underline size={15} />, 'Underline', '<u>', '</u>')}
-      {btn('strike', <Strikethrough size={15} />, 'Strikethrough', '~~', '~~')}
+      {btn('bold', <Bold size={15} />, t('notes.toolbar.bold'), '**', '**')}
+      {btn('italic', <Italic size={15} />, t('notes.toolbar.italic'), '*', '*')}
+      {btn('underline', <Underline size={15} />, t('notes.toolbar.underline'), '<u>', '</u>')}
+      {btn('strike', <Strikethrough size={15} />, t('notes.toolbar.strikethrough'), '~~', '~~')}
       <Divider type="vertical" style={{ margin: '0 2px', height: 16 }} />
-      {btn('ul', <List size={15} />, 'Bullet list', '- ', '', true)}
-      {btn('ol', <ListOrdered size={15} />, 'Numbered list', '1. ', '', true)}
-      {btn('task', <ListChecks size={15} />, 'Task list', '- [ ] ', '', true)}
+      {btn('ul', <List size={15} />, t('notes.toolbar.bulletList'), '- ', '', true)}
+      {btn('ol', <ListOrdered size={15} />, t('notes.toolbar.numberedList'), '1. ', '', true)}
+      {btn('task', <ListChecks size={15} />, t('notes.toolbar.taskList'), '- [ ] ', '', true)}
       <Divider type="vertical" style={{ margin: '0 2px', height: 16 }} />
-      {btn('quote', <Quote size={15} />, 'Blockquote', '> ', '', true)}
-      {btn('code', <Code size={15} />, 'Inline code', '`', '`')}
-      {btn('codeblock', <SquareCode size={15} />, 'Code block', '```\n', '\n```', true)}
+      {btn('quote', <Quote size={15} />, t('notes.toolbar.blockquote'), '> ', '', true)}
+      {btn('code', <Code size={15} />, t('notes.toolbar.inlineCode'), '`', '`')}
+      {btn('codeblock', <SquareCode size={15} />, t('notes.toolbar.codeBlock'), '```\n', '\n```', true)}
     </Flexbox>
   );
 }
@@ -97,6 +99,7 @@ function NoteCard({
   onClick: () => void;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('notes');
   const [hovered, setHovered] = useState(false);
 
   const snippet = useMemo(() => {
@@ -142,10 +145,10 @@ function NoteCard({
           whiteSpace: 'nowrap',
         }}
       >
-        {doc.title || 'Untitled'}
+        {doc.title || t('notes.sidebar.untitled')}
       </div>
       {snippet && (
-        <div
+          <div
           style={{
             fontSize: 12,
             lineHeight: 1.6,
@@ -189,6 +192,7 @@ function NoteCard({
 
 export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('notes');
 
   // Document list state
   const [documents, setDocuments] = useState<NotebookDocumentWithTopic[]>([]);
@@ -225,7 +229,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
       const docs = await api.listAllDocuments();
       setDocuments(docs);
     } catch {
-      toast.error('Failed to load documents');
+      toast.error(t('notes.toast.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -321,7 +325,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
           setEditTitle(full.title);
           setEditContent(full.content);
         } catch {
-          toast.error('Failed to load document');
+          toast.error(t('notes.toast.loadDocFailed'));
         }
       }
       setDirty(false);
@@ -349,7 +353,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
       );
       setDirty(false);
     } catch {
-      toast.error('Failed to save');
+      toast.error(t('notes.toast.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -376,7 +380,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
   }, [handleSave]);
 
   const handleCreateDoc = useCallback(async () => {
-    const title = newDocTitle.trim() || 'Untitled';
+    const title = newDocTitle.trim() || t('notes.sidebar.untitled');
     try {
       const doc = await api.createDocument('_notes', title, '', 'note');
       const newDoc = { ...doc, topic_id: '_notes', topic_title: '', agent_id: '' } as NotebookDocumentWithTopic;
@@ -387,7 +391,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
       setEditContent('');
       setDirty(false);
     } catch {
-      toast.error('Failed to create document');
+      toast.error(t('notes.toast.createFailed'));
     }
   }, [newDocTitle]);
 
@@ -402,7 +406,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
           setEditContent('');
         }
       } catch {
-        toast.error('Failed to delete');
+        toast.error(t('notes.toast.deleteFailed'));
       }
     },
     [selectedDocId],
@@ -477,8 +481,8 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
       >
         {/* Header + toolbar */}
         <Flexbox horizontal align="center" justify="space-between" style={{ padding: '16px 16px 8px', flexShrink: 0 }}>
-          <span style={{ fontSize: 16, fontWeight: 600, color: token.colorText }}>Notes</span>
-          <ActionIcon icon={Plus} size="small" title="New Note" onClick={handleCreateDoc} />
+          <span style={{ fontSize: 16, fontWeight: 600, color: token.colorText }}>{t('notes.sidebar.title')}</span>
+          <ActionIcon icon={Plus} size="small" title={t('notes.sidebar.newNote')} onClick={handleCreateDoc} />
         </Flexbox>
 
         {/* Search */}
@@ -497,7 +501,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search notes..."
+              placeholder={t('notes.sidebar.searchPlaceholder')}
               style={{
                 border: 'none',
                 outline: 'none',
@@ -520,7 +524,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
             value={newDocTitle}
             onChange={(e) => setNewDocTitle(e.target.value)}
             onPressEnter={handleCreateDoc}
-            placeholder="New note title..."
+            placeholder={t('notes.sidebar.newNoteTitlePlaceholder')}
             suffix={
               <Plus size={14} style={{ cursor: 'pointer', color: token.colorTextSecondary }} onClick={handleCreateDoc} />
             }
@@ -535,7 +539,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
             </Center>
           ) : displayDocs.length === 0 ? (
             <Empty
-              description={searchQuery ? 'No matching notes' : 'No notes yet'}
+              description={searchQuery ? t('notes.sidebar.noMatchingNotes') : t('notes.sidebar.noNotesYet')}
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               style={{ padding: 24 }}
             />
@@ -572,7 +576,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {doc.title || 'Untitled'}
+                      {doc.title || t('notes.sidebar.untitled')}
                     </div>
                     <Flexbox horizontal align="center" gap={4}>
                       <span style={{ fontSize: 11, color: token.colorTextDescription }}>{formatDate(doc.updated_at)}</span>
@@ -582,13 +586,13 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
                     </Flexbox>
                   </Flexbox>
                   <Popconfirm
-                    title="Delete this note?"
+                    title={t('notes.sidebar.deleteConfirm')}
                     onConfirm={(e) => {
                       e?.stopPropagation();
                       handleDeleteDoc(doc.id);
                     }}
-                    okText="Delete"
-                    cancelText="Cancel"
+                    okText={t('notes.sidebar.deleteOk')}
+                    cancelText={t('notes.sidebar.deleteCancel')}
                   >
                     <Trash2
                       size={14}
@@ -611,7 +615,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
             {/* Top 80%: Recent Note cards (masonry) */}
             <div style={{ flex: 4, overflow: 'auto', padding: '24px 32px 0' }}>
               <div style={{ marginBottom: 16 }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: token.colorText }}>Recent Notes</span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: token.colorText }}>{t('notes.home.recentNotes')}</span>
               </div>
               {loading ? (
                 <Center style={{ padding: 40 }}>
@@ -622,7 +626,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
                   <Flexbox align="center" gap={12}>
                     <FileText size={40} style={{ color: token.colorTextQuaternary, opacity: 0.4 }} />
                     <span style={{ fontSize: 13, color: token.colorTextDescription }}>
-                      No notes yet. Create one from the sidebar or save from a chat.
+                      {t('notes.home.noNotesHint')}
                     </span>
                   </Flexbox>
                 </Center>
@@ -652,7 +656,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
               }}
             >
               <span style={{ fontSize: 13, color: token.colorTextQuaternary, opacity: 0.5 }}>
-                Extension area — coming soon
+                {t('notes.home.extensionArea')}
               </span>
             </Flexbox>
           </Flexbox>
@@ -677,38 +681,38 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
                 <ActionIcon
                   icon={ArrowLeft}
                   size={{ blockSize: 32, size: 16 }}
-                  title="Back to Notes"
+                  title={t('notes.editor.backToNotes')}
                   onClick={handleBackToHome}
                 />
                 <Divider type="vertical" style={{ margin: '0 2px', height: 18 }} />
                 <ActionIcon
                   icon={previewMode ? Edit : Eye}
                   size={{ blockSize: 32, size: 16 }}
-                  title={previewMode ? 'Edit' : 'Preview'}
+                  title={previewMode ? t('notes.editor.edit') : t('notes.editor.preview')}
                   onClick={() => setPreviewMode(!previewMode)}
                 />
                 <ActionIcon
                   icon={Save}
                   size={{ blockSize: 32, size: 16 }}
-                  title="Save"
+                  title={t('notes.editor.save')}
                   loading={saving}
                   onClick={handleSave}
                 />
-                {dirty && <span style={{ fontSize: 11, color: token.colorWarning, marginLeft: 2 }}>Unsaved</span>}
+                {dirty && <span style={{ fontSize: 11, color: token.colorWarning, marginLeft: 2 }}>{t('notes.editor.unsaved')}</span>}
               </Flexbox>
               <Flexbox horizontal align="center" gap={4} style={{ height: '100%' }}>
                 {selectedDoc?.topic_id && selectedDoc.topic_id !== '_notes' && selectedDoc.topic_id !== '_pages' && (
                   <ActionIcon
                     icon={MessageSquare}
                     size={{ blockSize: 32, size: 16 }}
-                    title="Open linked chat"
+                    title={t('notes.editor.openLinkedChat')}
                     onClick={() => onNavigateChat?.(selectedDoc.topic_id)}
                   />
                 )}
                 <ActionIcon
                   icon={showCopilot ? PanelRightClose : PanelRightOpen}
                   size={{ blockSize: 32, size: 16 }}
-                  title={showCopilot ? 'Close Copilot' : 'Open Copilot'}
+                  title={showCopilot ? t('notes.editor.closeCopilot') : t('notes.editor.openCopilot')}
                   onClick={() => setShowCopilot(!showCopilot)}
                 />
               </Flexbox>
@@ -722,7 +726,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
                   setEditTitle(e.target.value);
                   handleAutoSave();
                 }}
-                placeholder="Untitled"
+                placeholder={t('notes.editor.titlePlaceholder')}
                 style={{
                   width: '100%',
                   border: 'none',
@@ -740,7 +744,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               {previewMode ? (
                 <div style={{ flex: 1, overflow: 'auto', padding: '12px 24px 24px' }}>
-                  <Markdown fontSize={14}>{editContent || '*No content yet*'}</Markdown>
+                  <Markdown fontSize={14}>{editContent || t('notes.editor.noContent')}</Markdown>
                 </div>
               ) : (
                 <>
@@ -752,7 +756,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
                       setEditContent(e.target.value);
                       handleAutoSave();
                     }}
-                    placeholder="Start writing in Markdown..."
+                    placeholder={t('notes.editor.contentPlaceholder')}
                     style={{
                       flex: 1,
                       width: '100%',
@@ -780,13 +784,13 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
         <BuilderPanel
           agentName={copilotAgentName}
           scope="note_copilot"
-          welcomeTitle="Note Copilot"
-          welcomeDescription="Ask the AI about your note. It can help you write, edit, or understand the content."
+          welcomeTitle={t('notes.copilot.title')}
+          welcomeDescription={t('notes.copilot.description')}
           welcomeAvatar="🤖"
           suggestQuestions={[
-            'Summarize this note',
-            'Improve the writing style',
-            'Translate to English',
+            t('notes.copilot.suggest.summarize'),
+            t('notes.copilot.suggest.improve'),
+            t('notes.copilot.suggest.translate'),
           ]}
           contextPayload={copilotContextPayload}
           expand={showCopilot}

@@ -23,7 +23,7 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 fn internal_error() -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::InternalError,
-        "failed to access provider store",
+        "error.provider.storeAccessFailed",
         None,
     )
 }
@@ -61,7 +61,7 @@ pub fn provider_get(scope: Option<&str>, input: ProviderIdInput) -> AppResult<St
             .map(ProviderRecord::to_json)
     }) {
         Ok(Some(provider)) => success_payload("provider_get", json!({ "provider": provider })),
-        Ok(None) => AppResult::fail(ErrorCode::NotFound, "provider not found", None),
+        Ok(None) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
         Err(_) => internal_error(),
     }
 }
@@ -94,7 +94,7 @@ pub fn provider_update(scope: Option<&str>, input: ProviderUpdateInput) -> AppRe
             }
             success_payload("provider_update", json!({ "provider": provider }))
         }
-        Ok(None) => AppResult::fail(ErrorCode::NotFound, "provider not found", None),
+        Ok(None) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
         Err(_) => internal_error(),
     }
 }
@@ -238,7 +238,7 @@ pub fn provider_apply_preset(scope: Option<&str>, input: ProviderIdInput) -> App
         return invalid_argument("id is required");
     }
     let Some(seed) = find_seeded_provider(id) else {
-        return AppResult::fail(ErrorCode::NotFound, "preset provider not found", None);
+        return AppResult::fail(ErrorCode::NotFound, "error.provider.presetNotFound", None);
     };
     match with_provider_store(scope, |store| {
         if let Some(existing) = store.providers.iter_mut().find(|p| p.id == id) {

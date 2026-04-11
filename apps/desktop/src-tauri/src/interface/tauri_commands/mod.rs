@@ -1,5 +1,8 @@
 pub mod account;
 pub mod actor;
+pub mod agent_growth;
+pub mod agent_scheduler;
+pub mod agent_turn;
 pub mod admin;
 pub mod agents;
 pub mod applets;
@@ -10,6 +13,7 @@ pub mod cron;
 pub mod friend_chat;
 pub mod frontend_log;
 pub mod group_chat;
+pub mod i18n;
 pub mod mcp;
 pub mod memory;
 pub mod model_config;
@@ -34,7 +38,7 @@ use crate::contracts::CONTRACT_VERSION;
 pub fn not_implemented(command: &str) -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::NotImplemented,
-        "command not implemented",
+        "error.command.notImplemented",
         Some(serde_json::json!({ "command": command })),
     )
 }

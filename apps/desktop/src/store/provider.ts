@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, type ProviderListItem, type ProviderDetail } from '../services/desktop_api';
+import { log } from '../utils/logger';
 
 interface ProviderState {
   providers: ProviderListItem[];
@@ -36,7 +37,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
         get().selectProvider(providers[0].id);
       }
     } catch (e) {
-      console.error('Failed to load providers:', e);
+      log.error('provider', 'Failed to load providers', e);
     }
   },
 
@@ -51,7 +52,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
         set({ detail, loading: false });
       }
     } catch (e) {
-      console.error('Failed to load provider detail:', e);
+      log.error('provider', 'Failed to load provider detail', e);
       if (get().selectedId === id) {
         set({ loading: false });
       }

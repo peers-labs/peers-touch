@@ -200,3 +200,48 @@ where
 
     Ok(result)
 }
+
+/// Upload a local file to Station OSS via multipart/form-data POST.
+pub(crate) fn upload_multipart(
+    path: &str,
+    token: &str,
+    file_path: &str,
+) -> Result<serde_json::Value, String> {
+    let url = format!("{}{}", station_base_url(), path);
+    tracing::info!(path = %path, file = %file_path, "→ station (multipart upload)");
+
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+
+    let form = reqwest::blocking::multipart::Form::new()
+        .file("file", file_path)
+        .map_err(|e| format!("failed to open file for upload: {}", e))?;
+
+    let resp = client
+        .post(&url)
+        .bearer_auth(token)
+        .multipart(form)
+        .send()
+        .map_err(|e| {
+            let elapsed = start.elapsed().as_millis();
+            tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR (multipart)");
+            format!("upload request failed: {}", e)
+        })?;
+
+    let status = resp.status();
+    let elapsed = start.elapsed().as_millis();
+
+    let result: serde_json::Value = resp.json().map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station JSON_ERROR (multipart)");
+        format!("decode json response failed: {}", e)
+    })?;
+
+    if !status.is_success() {
+        let msg = result.get("error").and_then(|v| v.as_str()).unwrap_or("unknown error");
+        tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station FAIL (multipart)");
+        return Err(format!("station returned {}: {}", status.as_u16(), msg));
+    }
+
+    tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (multipart)");
+    Ok(result)
+}

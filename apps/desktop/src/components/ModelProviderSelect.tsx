@@ -6,6 +6,7 @@ import { Tooltip } from '@lobehub/ui';
 import { Divider, theme } from 'antd';
 import { useChatStore } from '../store/chat';
 import type { AvailableModel } from '../services/desktop_api';
+import { useTranslation } from 'react-i18next';
 
 interface ModelProviderSelectProps {
   models?: AvailableModel[];
@@ -28,6 +29,7 @@ export function ModelProviderSelect({
   onClose,
   onNavigateSettings,
 }: ModelProviderSelectProps) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const { availableModels, defaultModel, loadModels } = useChatStore();
   const [searchQuery, setSearchQuery] = useState('');
@@ -75,7 +77,7 @@ export function ModelProviderSelect({
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search models..."
+            placeholder={t('provider.modelSelect.searchPlaceholder')}
             autoFocus
             style={{
               border: 'none', outline: 'none', flex: 1, fontSize: 13,
@@ -143,13 +145,13 @@ export function ModelProviderSelect({
                 </div>
                 <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
                   {m.vision && (
-                    <Tooltip title="Vision"><Eye size={13} style={{ color: token.colorTextQuaternary }} /></Tooltip>
+                    <Tooltip title={t('provider.model.capability.vision')}><Eye size={13} style={{ color: token.colorTextQuaternary }} /></Tooltip>
                   )}
                   {m.function_call && (
-                    <Tooltip title="Tool Use"><Wrench size={13} style={{ color: token.colorTextQuaternary }} /></Tooltip>
+                    <Tooltip title={t('provider.model.capability.toolUse')}><Wrench size={13} style={{ color: token.colorTextQuaternary }} /></Tooltip>
                   )}
                   {m.reasoning && (
-                    <Tooltip title="Deep Thinking"><Sparkles size={13} style={{ color: token.colorTextQuaternary }} /></Tooltip>
+                    <Tooltip title={t('provider.model.capability.deepThinking')}><Sparkles size={13} style={{ color: token.colorTextQuaternary }} /></Tooltip>
                   )}
                   {m.context_window > 0 && (
                     <span style={{ fontSize: 11, color: token.colorTextQuaternary, fontVariantNumeric: 'tabular-nums', marginLeft: 2 }}>
@@ -166,7 +168,7 @@ export function ModelProviderSelect({
         ))}
         {filteredModels.length === 0 && (
           <div style={{ padding: 16, color: token.colorTextDescription, textAlign: 'center', fontSize: 13 }}>
-            {searchQuery ? 'No models match your search' : 'No models available. Configure a provider first.'}
+            {searchQuery ? t('provider.modelSelect.noMatch') : t('provider.modelSelect.noModels')}
           </div>
         )}
       </div>
@@ -201,7 +203,7 @@ export function ModelProviderSelect({
             <div style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Settings size={18} />
             </div>
-            <div style={{ flex: 1, fontSize: 13 }}>Manage Provider</div>
+            <div style={{ flex: 1, fontSize: 13 }}>{t('provider.modelSelect.manageProvider')}</div>
             <ChevronRight size={16} style={{ opacity: 0.5 }} />
           </div>
         </>

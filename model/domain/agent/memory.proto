@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+message MemoryItem {
+  string memory_id = 1;
+  string agent_id = 2;
+  string target = 3;
+  string content = 4;
+  string source_turn_id = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message MemorySnapshot {
+  string agent_id = 1;
+  string memory_content = 2;
+  string user_content = 3;
+  google.protobuf.Timestamp captured_at = 4;
+}
+
+message ListMemoriesRequest {
+  string agent_id = 1;
+  string target = 2;
+}
+
+message ListMemoriesResponse {
+  repeated MemoryItem items = 1;
+}
+
+message GetMemorySnapshotRequest {
+  string agent_id = 1;
+}
+
+message GetMemorySnapshotResponse {
+  MemorySnapshot snapshot = 1;
+}
+
+message WriteMemoryRequest {
+  string agent_id = 1;
+  string target = 2;
+  string action = 3;
+  string content = 4;
+  string old_content = 5;
+  string source_turn_id = 6;
+}
+
+message WriteMemoryResponse {
+  MemoryItem item = 1;
+  bool success = 2;
+  string message = 3;
+}

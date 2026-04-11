@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useTranslation } from 'react-i18next';
 import {
   api,
   type BuiltinSkillInfo,
@@ -26,6 +27,7 @@ import {
 const { Text, Title, Paragraph } = Typography;
 
 export function SkillsTab() {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [skills, setSkills] = useState<SkillListItem[]>([]);
   const [builtins, setBuiltins] = useState<BuiltinSkillInfo[]>([]);
@@ -64,7 +66,7 @@ export function SkillsTab() {
     try {
       await api.deleteSkill(id);
       setSkills((prev) => prev.filter((s) => s.id !== id));
-      message.success('Skill deleted');
+      message.success(t('provider.skills.deleted'));
     } catch (e: any) {
       message.error(e.message);
     }
@@ -72,9 +74,9 @@ export function SkillsTab() {
 
   const handleImportDone = (result: SkillImportResult | SkillImportBatchResult) => {
     if ('imported' in result) {
-      message.success(`Imported ${result.total} skill(s) from ${result.kind}`);
+      message.success(t('provider.skills.importedBatch', { total: result.total, kind: result.kind }));
     } else {
-      message.success(result.isNew ? `Skill "${result.name}" imported` : `Skill "${result.name}" updated`);
+      message.success(result.isNew ? t('provider.skills.importedSingle', { name: result.name }) : t('provider.skills.updatedSingle', { name: result.name }));
     }
     setImportModal(null);
     loadSkills();
@@ -140,11 +142,11 @@ export function SkillsTab() {
                     icon={<FolderOpen size={14} />}
                     onClick={handleOpenDir}
                   >
-                    Open Local Directory
+                    {t('provider.skills.openLocalDir')}
                   </Button>
                 </Flexbox>
                 {filteredInstalled.length === 0 && !loading && (
-                  <Empty description="No installed skills yet" />
+                  <Empty description={t('provider.skills.noInstalled')} />
                 )}
                 {filteredInstalled.map((s) => (
                   <SkillCard
@@ -165,7 +167,7 @@ export function SkillsTab() {
             children: (
               <Flexbox gap={12}>
                 {filteredBuiltins.length === 0 && !loading && (
-                  <Empty description="No built-in skills" />
+                  <Empty description={t('provider.skills.noBuiltin')} />
                 )}
                 {filteredBuiltins.map((s) => (
                   <Card
@@ -180,13 +182,13 @@ export function SkillsTab() {
                         <Flexbox>
                           <Text strong>{s.name}</Text>
                           <Text type="secondary" style={{ fontSize: 12 }}>
-                            {s.description || 'Built-in skill'}
+                            {s.description || t('provider.skills.builtInSkill')}
                           </Text>
                         </Flexbox>
                       </Flexbox>
                       <Flexbox horizontal gap={4}>
-                        {s.useCount > 0 && <Tag color="gold">used {s.useCount}</Tag>}
-                        <Tag color="blue">built-in</Tag>
+                        {s.useCount > 0 && <Tag color="gold">{t('provider.skills.usedCount', { count: s.useCount })}</Tag>}
+                        <Tag color="blue">{t('provider.skills.builtInTag')}</Tag>
                         {s.keywords.slice(0, 3).map((kw) => (
                           <Tag key={kw} style={{ fontSize: 11 }}>{kw}</Tag>
                         ))}
@@ -199,7 +201,7 @@ export function SkillsTab() {
           },
           {
             key: 'market',
-            label: 'Market',
+            label: t('provider.skills.tab.market'),
             children: <MarketTab onInstalled={loadSkills} />,
           },
         ]}
@@ -238,6 +240,7 @@ export function SkillsTab() {
 // ────────────────────────────────────────────────────────
 
 function MarketTab({ onInstalled }: { onInstalled: () => void }) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [markets, setMarkets] = useState<MarketSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -262,10 +265,10 @@ function MarketTab({ onInstalled }: { onInstalled: () => void }) {
     <Flexbox gap={16}>
       <Flexbox horizontal justify="space-between" align="center">
         <Text type="secondary">
-          Browse skill collections from configured repositories.
+          {t('provider.skills.market.browseDesc')}
         </Text>
         <Button icon={<Plus size={14} />} onClick={() => setAddModal(true)} size="small">
-          Add Market
+          {t('provider.skills.market.addMarket')}
         </Button>
       </Flexbox>
 
@@ -294,7 +297,7 @@ function MarketTab({ onInstalled }: { onInstalled: () => void }) {
         ))}
         {!loading && markets.length === 0 && (
           <Empty
-            description="No markets configured"
+            description={t('provider.skills.market.noMarkets')}
             style={{ gridColumn: '1 / -1' }}
           />
         )}
@@ -329,6 +332,7 @@ function MarketCard({
   onClick: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const [syncing, setSyncing] = useState(false);
 
   const handleSync = async (e: React.MouseEvent) => {
@@ -336,7 +340,7 @@ function MarketCard({
     setSyncing(true);
     try {
       const result = await api.syncSkillMarket(market.id);
-      message.success(`Synced: ${result.total} skill(s) found`);
+      message.success(t('provider.skills.market.synced', { total: result.total }));
     } catch (err: any) {
       message.error(err.message);
     } finally {
@@ -375,18 +379,18 @@ function MarketCard({
               <Text strong style={{ fontSize: 14 }}>{market.name}</Text>
               <Flexbox horizontal gap={6} align="center" style={{ marginTop: 2 }}>
                 <Tag color={market.synced ? 'green' : 'default'}>
-                  {market.synced ? '已同步' : '未同步'}
+                  {market.synced ? t('provider.skills.market.syncedStatus') : t('provider.skills.market.notSynced')}
                 </Tag>
                 {market.synced && (
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    {market.skillCount} 个 skill
+                    {t('provider.skills.market.skillCount', { count: market.skillCount })}
                   </Text>
                 )}
               </Flexbox>
             </Flexbox>
           </Flexbox>
           <Flexbox horizontal gap={4}>
-            <Tooltip title="Sync">
+            <Tooltip title={t('provider.skills.market.sync')}>
               <Button
                 type="text"
                 size="small"
@@ -395,7 +399,7 @@ function MarketCard({
                 onClick={handleSync}
               />
             </Tooltip>
-            <Popconfirm title="Remove this market?" onConfirm={(e) => { e?.stopPropagation(); onDelete(); }}>
+            <Popconfirm title={t('provider.skills.market.removeConfirm')} onConfirm={(e) => { e?.stopPropagation(); onDelete(); }}>
               <Button
                 type="text"
                 size="small"
@@ -434,6 +438,7 @@ function AddMarketModal({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
   const [branch, setBranch] = useState('main');
@@ -448,14 +453,14 @@ function AddMarketModal({
 
   const handleOk = async () => {
     if (!url.trim()) {
-      message.warning('Git 地址必填');
+      message.warning(t('provider.skills.market.add.urlRequired'));
       return;
     }
     setLoading(true);
     try {
       const br = branch === 'custom' ? branchCustom.trim() || 'main' : branch;
       await api.addSkillMarketSource(url.trim(), name.trim() || undefined, br || undefined);
-      message.success('Market 已添加并拉取');
+      message.success(t('provider.skills.market.add.success'));
       onDone();
     } catch (e: any) {
       message.error(e.message);
@@ -466,30 +471,30 @@ function AddMarketModal({
 
   return (
     <Modal
-      title="添加 Skill Market"
+      title={t('provider.skills.market.add.title')}
       open
       onCancel={onCancel}
       onOk={handleOk}
       confirmLoading={loading}
-      okText="添加并拉取"
+      okText={t('provider.skills.market.add.ok')}
     >
       <Flexbox gap={12} style={{ paddingBlock: 12 }}>
         <Text type="secondary">
-          配置 Git 仓库地址，系统将使用 git clone 拉取到本地。私有仓库需提前配置 SSH 或 credential，拉取失败时请申请访问权限。
+          {t('provider.skills.market.add.desc')}
         </Text>
         <Input
-          placeholder="Git 地址 (https://... 或 git@...)"
+          placeholder={t('provider.skills.market.add.urlPlaceholder')}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           autoFocus
         />
         <Input
-          placeholder="Market 名称（默认取 URL 最后一段）"
+          placeholder={t('provider.skills.market.add.namePlaceholder')}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         <Flexbox gap={8}>
-          <Text type="secondary" style={{ fontSize: 12 }}>分支</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.skills.market.add.branch')}</Text>
           <Flexbox horizontal gap={8}>
             <Select
               value={branch}
@@ -498,12 +503,12 @@ function AddMarketModal({
               options={[
                 { value: 'main', label: 'main' },
                 { value: 'master', label: 'master' },
-                { value: 'custom', label: '自定义' },
+                { value: 'custom', label: t('provider.skills.market.add.custom') },
               ]}
             />
             {branch === 'custom' && (
               <Input
-                placeholder="输入分支名"
+                placeholder={t('provider.skills.market.add.branchPlaceholder')}
                 value={branchCustom}
                 onChange={(e) => setBranchCustom(e.target.value)}
                 style={{ flex: 1 }}
@@ -529,6 +534,7 @@ function MarketBrowserDialog({
   onClose: () => void;
   onInstalled: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [skills, setSkills] = useState<MarketSkillEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -554,7 +560,7 @@ function MarketBrowserDialog({
     setInstalling(entry.filePath);
     try {
       await api.installMarketSkill(market.id, entry.filePath);
-      message.success(`"${entry.name}" installed`);
+      message.success(t('provider.skills.market.installSuccess', { name: entry.name }));
       onInstalled();
       loadSkills();
     } catch (e: any) {
@@ -579,7 +585,7 @@ function MarketBrowserDialog({
             <Flexbox>
               <Text strong>{market.name}</Text>
               <Text type="secondary" style={{ fontSize: 11 }}>
-                {skills.length} skill(s) available
+                {t('provider.skills.market.skillsAvailable', { count: skills.length })}
               </Text>
             </Flexbox>
           </Flexbox>
@@ -592,7 +598,7 @@ function MarketBrowserDialog({
         <Flexbox gap={16}>
           <Input
             prefix={<Search size={14} />}
-            placeholder="Search skills by name or keyword, press Enter to search..."
+            placeholder={t('provider.skills.market.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onPressEnter={loadSkills}
@@ -641,7 +647,7 @@ function MarketBrowserDialog({
                   </Flexbox>
                   <Flexbox horizontal gap={8} align="center" style={{ flexShrink: 0 }}>
                     {entry.installed ? (
-                      <Tag color="green">Installed</Tag>
+                      <Tag color="green">{t('provider.skills.market.installed')}</Tag>
                     ) : (
                       <Button
                         type="text"
@@ -689,6 +695,7 @@ function MarketSkillDetailModal({
   onInstall: () => void;
   installing: boolean;
 }) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [detail, setDetail] = useState<MarketSkillDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -733,15 +740,15 @@ function MarketSkillDetailModal({
             <Flexbox horizontal justify="space-between" align="center">
               <Text strong style={{ fontSize: 18 }}>{skillData.name}</Text>
               {entry.installed ? (
-                <Tag color="green" style={{ fontSize: 13 }}>Installed</Tag>
-              ) : (
-                <Button
-                  type="primary"
-                  icon={<Download size={14} />}
-                  onClick={onInstall}
-                  loading={installing}
-                >
-                  Install
+                <Tag color="green" style={{ fontSize: 13 }}>{t('provider.skills.market.installed')}</Tag>
+            ) : (
+              <Button
+                type="primary"
+                icon={<Download size={14} />}
+                onClick={onInstall}
+                loading={installing}
+              >
+                {t('provider.skills.market.install')}
                 </Button>
               )}
             </Flexbox>
@@ -761,7 +768,7 @@ function MarketSkillDetailModal({
             label: (
               <Flexbox horizontal gap={6} align="center">
                 <BookOpen size={14} />
-                <span>Overview</span>
+                <span>{t('provider.skills.detail.overview')}</span>
               </Flexbox>
             ),
             children: loading ? (
@@ -791,7 +798,8 @@ function MarketSkillDetailModal({
 }
 
 function MarketSkillOverview({ detail }: { detail: MarketSkillDetail | null; token?: any }) {
-  if (!detail) return <Empty description="Loading..." />;
+  const { t } = useTranslation('provider');
+  if (!detail) return <Empty description={t('common.state.loading', { ns: 'common' })} />;
 
   const sections = parseSkillProtocol(detail.content);
 
@@ -808,7 +816,7 @@ function MarketSkillOverview({ detail }: { detail: MarketSkillDetail | null; tok
         <>
           <Divider style={{ margin: '8px 0' }} />
           <Flexbox gap={4}>
-            <Text strong style={{ fontSize: 12 }}>Developed by</Text>
+            <Text strong style={{ fontSize: 12 }}>{t('provider.skills.detail.developedBy')}</Text>
             <Flexbox horizontal gap={6} align="center">
               <Text>{detail.author}</Text>
               {detail.authorUrl && (
@@ -822,16 +830,16 @@ function MarketSkillOverview({ detail }: { detail: MarketSkillDetail | null; tok
       )}
 
       <Divider style={{ margin: '8px 0' }} />
-      <Text strong style={{ fontSize: 12 }}>Details</Text>
+      <Text strong style={{ fontSize: 12 }}>{t('provider.skills.detail.details')}</Text>
       <Descriptions column={2} size="small" bordered={false}>
         {detail.version && (
-          <Descriptions.Item label="Version">{detail.version}</Descriptions.Item>
+          <Descriptions.Item label={t('provider.skills.detail.version')}>{detail.version}</Descriptions.Item>
         )}
         {detail.license && (
-          <Descriptions.Item label="License">{detail.license}</Descriptions.Item>
+          <Descriptions.Item label={t('provider.skills.detail.license')}>{detail.license}</Descriptions.Item>
         )}
         {detail.author && (
-          <Descriptions.Item label="Author">{detail.author}</Descriptions.Item>
+          <Descriptions.Item label={t('provider.skills.detail.author')}>{detail.author}</Descriptions.Item>
         )}
       </Descriptions>
 
@@ -846,7 +854,8 @@ function MarketSkillOverview({ detail }: { detail: MarketSkillDetail | null; tok
 }
 
 function MarketSkillContent({ detail, token }: { detail: MarketSkillDetail | null; token: any }) {
-  if (!detail) return <Empty description="Loading..." />;
+  const { t } = useTranslation('provider');
+  if (!detail) return <Empty description={t('common.state.loading', { ns: 'common' })} />;
 
   return (
     <Flexbox gap={12} style={{ paddingBottom: 24 }}>
@@ -886,6 +895,7 @@ function SkillCard({
   onDetail: () => void;
   token: any;
 }) {
+  const { t } = useTranslation('provider');
   const sourceColors: Record<string, string> = {
     url: 'cyan',
     github: 'purple',
@@ -925,7 +935,7 @@ function SkillCard({
           ))}
           {skill.useCount > 0 && (
             <Tag color="gold" style={{ margin: 0 }}>
-              used {skill.useCount}
+              {t('provider.skills.usedCount', { count: skill.useCount })}
             </Tag>
           )}
           <Tag color={sourceColors[skill.source] || 'default'} style={{ margin: 0 }}>
@@ -938,7 +948,7 @@ function SkillCard({
               onChange={(checked) => onToggle(skill.id, checked)}
             />
           </Tooltip>
-          <Popconfirm title="Delete this skill?" onConfirm={() => onDelete(skill.id)}>
+          <Popconfirm title={t('provider.skills.deleteConfirm')} onConfirm={() => onDelete(skill.id)}>
             <Button type="text" size="small" danger icon={<Trash2 size={14} />} />
           </Popconfirm>
         </Flexbox>
@@ -954,6 +964,7 @@ function ImportFromAddressModal({
   onDone: (r: SkillImportResult | SkillImportBatchResult) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const [address, setAddress] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -972,21 +983,21 @@ function ImportFromAddressModal({
 
   return (
     <Modal
-      title="Import Skill from URL / Git"
+      title={t('provider.skills.import.title')}
       open
       onCancel={onCancel}
       onOk={handleOk}
       confirmLoading={loading}
-      okText="Import"
+      okText={t('provider.skills.import.ok')}
     >
       <Flexbox gap={12} style={{ paddingBlock: 12 }}>
         <Text type="secondary">
-          1. SKILL.md direct link (raw file address)
+          {t('provider.skills.import.desc1')}
           <br />
-          2. Git repository address. Supports git/http. Please ensure you have pull access locally.
+          {t('provider.skills.import.desc2')}
         </Text>
         <Input
-          placeholder="https://code.byted.org/org/repo.git or git@code.byted.org:org/repo.git"
+          placeholder={t('provider.skills.import.placeholder')}
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           onPressEnter={handleOk}
@@ -1004,6 +1015,7 @@ function ImportZipModal({
   onDone: (r: SkillImportResult) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState<SkillZipValidation | null>(null);
   const [progress, setProgress] = useState(0);
@@ -1052,24 +1064,24 @@ function ImportZipModal({
 
   return (
     <Modal
-      title="Upload Skill ZIP"
+      title={t('provider.skills.zip.title')}
       open
       onCancel={onCancel}
       footer={
         <Flexbox horizontal justify="flex-end" gap={8}>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCancel}>{t('provider.skills.zip.cancel')}</Button>
           <Button loading={loading} onClick={handleValidate} disabled={!file || stage === 'importing'}>
-            Validate
+            {t('provider.skills.zip.validate')}
           </Button>
           <Button type="primary" loading={loading} onClick={handleImport} disabled={!validation?.valid || stage !== 'ready'}>
-            Import
+            {t('provider.skills.zip.import')}
           </Button>
         </Flexbox>
       }
     >
       <Flexbox gap={12} style={{ paddingBlock: 12 }}>
         <Text type="secondary">
-          ZIP 结构要求：根目录或单层目录下仅包含一个 SKILL.md，内容需符合标准 frontmatter + markdown body。
+          {t('provider.skills.zip.desc')}
         </Text>
         <Upload
           accept=".zip"
@@ -1088,16 +1100,16 @@ function ImportZipModal({
             setProgress(0);
           }}
         >
-          <Button icon={<UploadIcon size={14} />}>Select ZIP</Button>
+          <Button icon={<UploadIcon size={14} />}>{t('provider.skills.zip.selectZip')}</Button>
         </Upload>
-        {file && <Text type="secondary">Selected: {file.name}</Text>}
+        {file && <Text type="secondary">{t('provider.skills.zip.selected', { name: file.name })}</Text>}
         {(stage === 'validating' || stage === 'ready' || stage === 'importing') && (
           <Progress percent={progress} status={validation?.valid === false ? 'exception' : 'active'} />
         )}
         {validation && (
           <Alert
             type={validation.valid ? 'success' : 'error'}
-            message={validation.valid ? `Validated: ${validation.skillName || validation.skillPath}` : validation.error || 'Invalid zip format'}
+            message={validation.valid ? t('provider.skills.zip.validated', { name: validation.skillName || validation.skillPath }) : validation.error || t('provider.skills.zip.invalidFormat')}
           />
         )}
       </Flexbox>
@@ -1112,6 +1124,7 @@ function CreateSkillModal({
   onDone: (r: SkillImportResult) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const [name, setName] = useState('');
   const [content, setContent] = useState(`---
 name: my-skill
@@ -1138,23 +1151,23 @@ Your skill instructions here...
 
   return (
     <Modal
-      title="Create Custom Skill"
+      title={t('provider.skills.createModal.title')}
       open
       onCancel={onCancel}
       onOk={handleOk}
       confirmLoading={loading}
-      okText="Create"
+      okText={t('provider.skills.createModal.ok')}
       width={640}
     >
       <Flexbox gap={12} style={{ paddingBlock: 12 }}>
         <Input
-          placeholder="Skill name"
+          placeholder={t('provider.skills.createModal.namePlaceholder')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
         />
         <Text type="secondary" style={{ fontSize: 12 }}>
-          Use SKILL.md format: YAML frontmatter (name, description, keywords, etc.) followed by Markdown body.
+          {t('provider.skills.createModal.formatDesc')}
         </Text>
         <TextArea
           rows={14}
@@ -1174,6 +1187,7 @@ function SkillDetailBoard({
   detail: { kind: 'installed' | 'builtin'; key: string };
   onClose: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [skill, setSkill] = useState<any>(null);
   const [editing, setEditing] = useState(false);
@@ -1194,7 +1208,7 @@ function SkillDetailBoard({
   const handleSave = async () => {
     try {
       await api.updateSkill(detail.key, { content });
-      message.success('Skill updated');
+      message.success(t('provider.skills.detail.updated'));
       setEditing(false);
     } catch (e: any) {
       message.error(e.message);
@@ -1212,12 +1226,12 @@ function SkillDetailBoard({
       footer={
         editing && canEdit ? (
           <Flexbox horizontal gap={8} justify="flex-end">
-            <Button onClick={() => setEditing(false)}>Cancel</Button>
-            <Button type="primary" onClick={handleSave}>Save</Button>
+            <Button onClick={() => setEditing(false)}>{t('provider.skills.detail.cancel')}</Button>
+            <Button type="primary" onClick={handleSave}>{t('provider.skills.detail.save')}</Button>
           </Flexbox>
         ) : (
           <Button onClick={() => setEditing(true)} icon={<Edit size={14} />} disabled={!canEdit}>
-            Edit Content
+            {t('provider.skills.detail.editContent')}
           </Button>
         )
       }
@@ -1237,7 +1251,7 @@ function SkillDetailBoard({
 
         {skill.keywords?.length > 0 && (
           <Flexbox horizontal gap={4} wrap="wrap">
-            <Text type="secondary" style={{ fontSize: 12 }}>Keywords: </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.skills.detail.keywords')}</Text>
             {skill.keywords.map((kw: string) => (
               <Tag key={kw} style={{ fontSize: 11 }}>{kw}</Tag>
             ))}
@@ -1260,23 +1274,24 @@ function SkillDetailBoard({
 }
 
 function SkillProtocolPreview({ content, token }: { content: string; token: any }) {
+  const { t } = useTranslation('provider');
   const sections = parseSkillProtocol(content);
   return (
     <Flexbox gap={12}>
       <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
-        <Text strong>Manifest</Text>
+        <Text strong>{t('provider.skills.detail.manifest')}</Text>
         <div className="selectable" style={{ marginTop: 8, fontFamily: 'monospace', whiteSpace: 'pre-wrap', fontSize: 12 }}>
-          {sections.frontmatter || 'No frontmatter'}
+          {sections.frontmatter || t('provider.skills.detail.noFrontmatter')}
         </div>
       </Card>
       <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
-        <Text strong>Content</Text>
+        <Text strong>{t('provider.skills.detail.content')}</Text>
         <div className="selectable" style={{ marginTop: 8, maxHeight: 360, overflow: 'auto' }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{sections.body || ''}</ReactMarkdown>
         </div>
       </Card>
       <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
-        <Text strong>Raw Protocol</Text>
+        <Text strong>{t('provider.skills.detail.rawProtocol')}</Text>
         <div className="selectable" style={{ marginTop: 8, maxHeight: 220, overflow: 'auto', fontFamily: 'monospace', whiteSpace: 'pre-wrap', fontSize: 12 }}>
           {content}
         </div>

@@ -16,7 +16,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social"
 
-	_ "github.com/peers-labs/peers-touch/station/app/subserver/ai_chat"
+	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard"
+
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
 
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
@@ -43,6 +44,7 @@ func main() {
 		server.WithSubServer("social", social.NewSocialSubServer),
 		server.WithSubServer("activitypub", activitypub.NewActivityPubSubServer),
 		server.WithSubServer("mastodon", mastodon.NewMastodonSubServer),
+		server.WithSubServer("dashboard", dashboard.NewDashboardSubServer),
 	)
 	if err != nil {
 		panic(err)

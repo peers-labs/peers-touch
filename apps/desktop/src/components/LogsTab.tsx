@@ -3,7 +3,9 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Input, Tag } from '@lobehub/ui';
 import { Switch, theme, Typography, Empty, Checkbox } from 'antd';
 import { RefreshCw, Download, Pause, Play, Search, FileText, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../services/desktop_api';
+import { log } from '../utils/logger';
 
 const { Text, Title } = Typography;
 
@@ -116,6 +118,7 @@ function parseLogLine(line: string): LogEntry {
 }
 
 export function LogsTab() {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [cursor, setCursor] = useState<number>(-1);
@@ -176,7 +179,7 @@ export function LogsTab() {
       cursorRef.current = res.cursor;
       setCursor(res.cursor);
     } catch (err) {
-      console.error(err);
+      log.error('LogsTab', 'Failed to load logs', err);
     } finally {
       loadingRef.current = false;
     }
@@ -263,13 +266,13 @@ export function LogsTab() {
             <Flexbox gap={4}>
                 <Flexbox horizontal align="center" gap={8}>
                     <FileText size={18} style={{ color: token.colorPrimary }} />
-                    <Title level={5} style={{ margin: 0 }}>System Logs</Title>
+                    <Title level={5} style={{ margin: 0 }}>{t('provider.logs.title')}</Title>
                 </Flexbox>
-                <Text type="secondary" style={{ fontSize: 12 }}>Live tail of application logs (JSONL/Logfmt)</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.logs.description')}</Text>
             </Flexbox>
             <Flexbox gap={8} horizontal>
                  <Input 
-                    placeholder="Filter logs..." 
+                    placeholder={t('provider.logs.filterPlaceholder')} 
                     prefix={<Search size={14} />} 
                     value={filterText}
                     onChange={e => setFilterText(e.target.value)}
@@ -280,16 +283,16 @@ export function LogsTab() {
                     icon={paused ? <Play size={14} /> : <Pause size={14} />} 
                     onClick={() => setPaused(!paused)}
                  >
-                    {paused ? 'Resume' : 'Pause'}
+                    {paused ? t('provider.logs.resume') : t('provider.logs.pause')}
                  </Button>
-                 <Button icon={<RefreshCw size={14} />} onClick={() => fetchLogs(true)}>Refresh</Button>
-                 <Button icon={<Download size={14} />} onClick={handleExport}>Export Visible</Button>
+                 <Button icon={<RefreshCw size={14} />} onClick={() => fetchLogs(true)}>{t('provider.logs.refresh')}</Button>
+                 <Button icon={<Download size={14} />} onClick={handleExport}>{t('provider.logs.export')}</Button>
                  <Button icon={<Trash2 size={14} />} danger onClick={() => setEntries([])} />
             </Flexbox>
         </Flexbox>
 
         <Flexbox horizontal gap={12} align="center">
-            <Text style={{ fontSize: 12, marginRight: 8 }}>Levels:</Text>
+            <Text style={{ fontSize: 12, marginRight: 8 }}>{t('provider.logs.levels')}:</Text>
             <Flexbox gap={8} horizontal style={{ flexWrap: 'wrap' }}>
                 {LEVELS.map(lvl => (
                     <Checkbox 
@@ -302,7 +305,7 @@ export function LogsTab() {
                 ))}
             </Flexbox>
             <Button size="small" onClick={onlyWarningsAndAbove}>
-              Only Warnings+
+              {t('provider.logs.onlyWarnings')}
             </Button>
         </Flexbox>
 
@@ -322,7 +325,7 @@ export function LogsTab() {
             }}
         >
             {filteredEntries.length === 0 ? (
-                <Empty description={<span style={{color: '#666'}}>No logs found</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{marginTop: 40}} />
+                <Empty description={<span style={{color: '#666'}}>{t('provider.logs.noLogs')}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{marginTop: 40}} />
             ) : (
                 filteredEntries.map((e, i) => (
                     <div key={i} style={{ 
@@ -353,11 +356,11 @@ export function LogsTab() {
         
         <Flexbox horizontal justify="space-between" align="center">
              <Text type="secondary" style={{ fontSize: 11 }}>
-                Showing {filteredEntries.length} of {entries.length} entries.
+                {t('provider.logs.showing', { filtered: filteredEntries.length, total: entries.length })}
              </Text>
              <Flexbox gap={16} horizontal>
                 <Flexbox horizontal align="center" gap={8}>
-                    <Text style={{ fontSize: 12 }}>Auto-follow</Text>
+                    <Text style={{ fontSize: 12 }}>{t('provider.logs.autoFollow')}</Text>
                     <Switch size="small" checked={autoFollow} onChange={setAutoFollow} />
                 </Flexbox>
              </Flexbox>

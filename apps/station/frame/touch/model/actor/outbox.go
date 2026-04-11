@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	o "github.com/peers-labs/peers-touch/station/frame/object"
 	ap "github.com/peers-labs/peers-touch/station/frame/vendors/activitypub"
 )
@@ -70,8 +71,7 @@ func (o *Outbox) SendActivity(ctx context.Context, activity *o.Activity) error {
 	// Notify listeners that activity was sent
 	for _, listener := range o.listeners {
 		if err := listener.OnActivitySent(ctx, activity); err != nil {
-			// Log error but don't fail the send operation
-			fmt.Printf("Outbox listener error: %v\n", err)
+			logger.Errorf(ctx, "outbox OnActivitySent listener error: %v", err)
 		}
 	}
 
@@ -93,8 +93,7 @@ func (o *Outbox) QueueActivity(ctx context.Context, activity *o.Activity) error 
 	// Notify listeners that activity was queued
 	for _, listener := range o.listeners {
 		if err := listener.OnActivityQueued(ctx, activity); err != nil {
-			// Log error but don't fail the queue operation
-			fmt.Printf("Outbox listener error: %v\n", err)
+			logger.Errorf(ctx, "outbox OnActivityQueued listener error: %v", err)
 		}
 	}
 

@@ -14,7 +14,6 @@ import (
 	registryNative "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	"github.com/peers-labs/peers-touch/station/frame/core/util/log"
 )
 
 // Init initialises options. Additionally, it calls cmd.Init
@@ -30,7 +29,7 @@ func (s *native) Init(ctx context.Context, opts ...option.Option) error {
 		for _, f := range s.opts.BeforeInit {
 			err := f(s.opts)
 			if err != nil {
-				log.Fatalf("init peers err: %s", err)
+				logger.Fatalf(ctx, "init peers err: %s", err)
 			}
 		}
 	}
@@ -50,7 +49,7 @@ func (s *native) Init(ctx context.Context, opts ...option.Option) error {
 
 	// begin init
 	if err := s.initComponents(ctx); err != nil {
-		log.Fatalf("init peers' components err: %s", err)
+		logger.Fatalf(ctx, "init peers' components err: %s", err)
 	}
 
 	return nil

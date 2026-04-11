@@ -8,6 +8,7 @@ import { OAuth2ConnectModal } from '../settings/OAuth2ConnectModal';
 import type { OAuth2Connection, OAuth2ProviderSummary } from '../../services/desktop_api';
 import { PlatformLogo } from '../common/PlatformLogo';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
@@ -41,6 +42,7 @@ function SignedInAccountCard({
   onRefresh: () => void;
   onSignOut: () => void;
 }) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const providerColor = provider.color || token.colorPrimary;
   const isExpired = connection.status === 'expired';
@@ -99,7 +101,7 @@ function SignedInAccountCard({
               color={isExpired ? 'error' : 'success'}
               style={{ margin: 0, fontSize: 11, lineHeight: '18px', padding: '0 6px' }}
             >
-              {isExpired ? 'Expired' : 'Active'}
+              {isExpired ? t('provider.oauth.tab.expired') : t('provider.oauth.tab.active')}
             </Tag>
           </Flexbox>
           <Text type="secondary" style={{ fontSize: 12 }} ellipsis>
@@ -108,7 +110,7 @@ function SignedInAccountCard({
           </Text>
           {isSimulate && (
             <Text type="secondary" style={{ fontSize: 11 }}>
-              Simulated Login Session
+              {t('provider.oauth.tab.simulatedSession')}
             </Text>
           )}
         </Flexbox>
@@ -119,7 +121,7 @@ function SignedInAccountCard({
           <Flexbox horizontal align="center" gap={4}>
             <Clock size={12} style={{ color: token.colorTextQuaternary }} />
             <Text type="secondary" style={{ fontSize: 11 }}>
-              Authorized {formatDate(connection.connected_at)}
+              {t('provider.oauth.tab.authorized', { date: formatDate(connection.connected_at) })}
             </Text>
           </Flexbox>
         )}
@@ -130,7 +132,7 @@ function SignedInAccountCard({
               type="secondary"
               style={{ fontSize: 11, color: isExpired ? token.colorError : undefined }}
             >
-              {isExpired ? 'Expired' : 'Refresh'} {formatDate(connection.expires_at)}
+              {isExpired ? t('provider.oauth.tab.expired') : t('provider.oauth.tab.refresh')} {formatDate(connection.expires_at)}
             </Text>
           </Flexbox>
         )}
@@ -153,18 +155,18 @@ function SignedInAccountCard({
 
       <Flexbox horizontal gap={8} style={{ paddingTop: 2 }}>
         {!isSimulate && (
-          <Tooltip title="Refresh token">
+          <Tooltip title={t('provider.oauth.tab.refreshToken')}>
             <Button size="small" icon={<RefreshCw size={14} />} onClick={onRefresh} />
           </Tooltip>
         )}
         <Popconfirm
-          title="Sign out from this platform?"
-          description="Your authorization will be revoked. You can sign in again later."
+          title={t('provider.oauth.tab.signOutConfirm')}
+          description={t('provider.oauth.tab.signOutDesc')}
           onConfirm={onSignOut}
-          okText="Sign Out"
-          cancelText="Cancel"
+          okText={t('provider.oauth.tab.signOutBtn')}
+          cancelText={t('common.action.cancel', { ns: 'common' })}
         >
-          <Button size="small" danger icon={<Unlink size={14} />}>Sign Out</Button>
+          <Button size="small" danger icon={<Unlink size={14} />}>{t('provider.oauth.tab.signOutBtn')}</Button>
         </Popconfirm>
       </Flexbox>
     </Flexbox>
@@ -180,6 +182,7 @@ function UnsignedAccountCard({
   onSignIn: () => void;
   signInLabel?: string;
 }) {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const providerColor = provider.color || token.colorPrimary;
 
@@ -209,7 +212,7 @@ function UnsignedAccountCard({
         </Flexbox>
         <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
           <Text strong style={{ fontSize: 14 }}>{provider.name}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>使用 {provider.name} 登录</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.oauth.tab.loginWith', { name: provider.name })}</Text>
         </Flexbox>
         <Button
           size="small"
@@ -218,7 +221,7 @@ function UnsignedAccountCard({
           onClick={onSignIn}
           style={{ background: providerColor, flexShrink: 0 }}
         >
-          {signInLabel || `使用${provider.name}登录`}
+          {signInLabel || t('provider.oauth.tab.loginWith', { name: provider.name })}
         </Button>
       </Flexbox>
     </Flexbox>
@@ -238,6 +241,7 @@ export function OAuthAccountLoginPanel({
   compactWhenSignedIn = false,
   showSectionTitle = true,
 }: Props) {
+  const { t } = useTranslation('provider');
   const { providers, connections, loadAll, disconnect, refreshToken } = useOAuth2Store();
   const [signInProvider, setSignInProvider] = useState<OAuth2ProviderSummary | null>(null);
   const [showAllProviders, setShowAllProviders] = useState(false);
@@ -281,18 +285,18 @@ export function OAuthAccountLoginPanel({
   const handleSignOut = async (id: string) => {
     try {
       await disconnect(id);
-      toast.success('Signed out');
+      toast.success(t('provider.oauth.tab.signedOut'));
     } catch (err: any) {
-      toast.error(`Sign out failed: ${err.message}`);
+      toast.error(t('provider.oauth.tab.signOutFailed', { error: err.message }));
     }
   };
 
   const handleRefresh = async (id: string) => {
     try {
       await refreshToken(id);
-      toast.success('Token refreshed');
+      toast.success(t('provider.oauth.tab.tokenRefreshed'));
     } catch (err: any) {
-      toast.error(`Refresh failed: ${err.message}`);
+      toast.error(t('provider.oauth.tab.refreshFailed', { error: err.message }));
     }
   };
 
@@ -300,23 +304,23 @@ export function OAuthAccountLoginPanel({
     <Flexbox gap={16} style={{ flexShrink: 0 }}>
       {showDescription && (
         <Text type="secondary" style={{ fontSize: 12 }}>
-          请选择一种方式登录，你也可以稍后补充资料。
+          {t('provider.oauth.login.chooseLogin')}
         </Text>
       )}
 
       <Flexbox gap={10}>
-        {showSectionTitle && <Text strong style={{ fontSize: 14, paddingLeft: 2 }}>账号登录</Text>}
+        {showSectionTitle && <Text strong style={{ fontSize: 14, paddingLeft: 2 }}>{t('provider.oauth.login.title')}</Text>}
         {compactWhenSignedIn && hasActiveConnection && !showAllProviders && (
           <Flexbox horizontal justify="end">
             <Button size="small" onClick={() => setShowAllProviders(true)}>
-              Switch Account
+              {t('provider.oauth.login.switchAccount')}
             </Button>
           </Flexbox>
         )}
         {compactWhenSignedIn && hasActiveConnection && showAllProviders && (
           <Flexbox horizontal justify="end">
             <Button size="small" onClick={() => setShowAllProviders(false)}>
-              Back
+              {t('provider.oauth.login.back')}
             </Button>
           </Flexbox>
         )}
@@ -342,7 +346,7 @@ export function OAuthAccountLoginPanel({
                 key={provider.id}
                 provider={provider}
                 onSignIn={() => handleSignIn(provider)}
-                signInLabel={conn ? 'Re-connect' : 'Sign in'}
+                signInLabel={conn ? t('provider.oauth.tab.reconnect') : t('provider.oauth.tab.signIn')}
               />
             );
           })}

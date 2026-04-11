@@ -25,16 +25,17 @@ import {
   api,
   type ConfigFieldMeta,
 } from '../../services/desktop_api';
+import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
 type SectionData = Record<string, ConfigFieldMeta>;
 
-function SourceBadge({ meta }: { meta: ConfigFieldMeta }) {
+function SourceBadge({ meta, t }: { meta: ConfigFieldMeta; t: (key: string, opts?: Record<string, unknown>) => string }) {
   const { token } = theme.useToken();
   const isCustom = meta.source === 'custom';
   return (
-    <Tooltip title={isCustom ? `Customized. Default: ${JSON.stringify(meta.default)}` : 'Config file default'}>
+    <Tooltip title={isCustom ? t('provider.memory.customizedDefault', { value: JSON.stringify(meta.default) }) : t('provider.memory.configDefault')}>
       <CircleDot size={12} style={{ color: isCustom ? token.colorPrimary : token.colorTextQuaternary, cursor: 'help' }} />
     </Tooltip>
   );
@@ -48,6 +49,7 @@ interface EmbeddingOption {
 }
 
 export function MemorySettingsTab() {
+  const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [memoryData, setMemoryData] = useState<SectionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -94,7 +96,7 @@ export function MemorySettingsTab() {
         tuning_enabled: mem.tuning_enabled?.value ?? false,
       });
     } catch {
-      message.error('Failed to load config');
+      message.error(t('provider.memory.failedToLoad'));
     } finally {
       setLoading(false);
     }
@@ -111,9 +113,9 @@ export function MemorySettingsTab() {
       const values = { ...memoryForm.getFieldsValue() };
       if (values.storage !== 'postgres') delete values.postgres_dsn;
       await api.setConfigSection('memory', values);
-      message.success('Memory config saved. Restart to apply.');
+      message.success(t('provider.memory.savedRestart'));
       await load();
-    } catch { message.error('Failed to save'); }
+    } catch { message.error(t('provider.memory.failedToSave')); }
     finally { setSaving(false); }
   };
 
@@ -125,9 +127,9 @@ export function MemorySettingsTab() {
           if (memoryData[field].source === 'custom') await api.resetConfigField('memory', field);
         }
       }
-      message.success('Reset to defaults. Restart to apply.');
+      message.success(t('provider.memory.resetDefaults'));
       await load();
-    } catch { message.error('Failed to reset'); }
+    } catch { message.error(t('provider.memory.failedToReset')); }
     finally { setSaving(false); }
   };
 
@@ -137,10 +139,10 @@ export function MemorySettingsTab() {
     }
     if (value !== currentEmbedding) {
       Modal.confirm({
-        title: 'Embedding Model Change',
-        content: 'Switching embedding model will invalidate all existing memory vectors. A full re-embedding will be required. Continue?',
-        okText: 'Continue',
-        cancelText: 'Cancel',
+        title: t('provider.memory.embeddingChangeTitle'),
+        content: t('provider.memory.embeddingChangeContent'),
+        okText: t('provider.memory.embeddingChangeContinue'),
+        cancelText: t('common.action.cancel', { ns: 'common' }),
         okButtonProps: { danger: true },
         onCancel: () => {
           memoryForm.setFieldValue('embedding_model', currentEmbedding);
@@ -151,11 +153,11 @@ export function MemorySettingsTab() {
 
   const handleTestPg = async () => {
     const dsn = memoryForm.getFieldValue('postgres_dsn');
-    if (!dsn) { message.warning('Enter a PostgreSQL DSN first'); return; }
+    if (!dsn) { message.warning(t('provider.memory.enterDsnFirst')); return; }
     setPgTesting(true);
     setPgTestResult(null);
     try { setPgTestResult(await api.testPostgresConnection(dsn)); }
-    catch { setPgTestResult({ ok: false, error: 'Request failed' }); }
+    catch { setPgTestResult({ ok: false, error: t('provider.memory.requestFailed') }); }
     finally { setPgTesting(false); }
   };
 
@@ -180,32 +182,32 @@ export function MemorySettingsTab() {
         <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 16 }}>
           <Flexbox horizontal align="center" gap={8}>
             <Database size={16} style={{ color: token.colorPrimary }} />
-            <Text strong style={{ fontSize: 15 }}>Memory</Text>
-            {hasAnyCustom(memoryData) && <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>customized</Tag>}
+            <Text strong style={{ fontSize: 15 }}>{t('provider.memory.memory')}</Text>
+            {hasAnyCustom(memoryData) && <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('provider.memory.customized')}</Tag>}
           </Flexbox>
           <Flexbox horizontal gap={6}>
             {hasAnyCustom(memoryData) && (
-              <Button size="small" icon={<RotateCcw size={12} />} onClick={handleResetSection} loading={saving}>Reset</Button>
+              <Button size="small" icon={<RotateCcw size={12} />} onClick={handleResetSection} loading={saving}>{t('provider.memory.reset')}</Button>
             )}
-            <Button size="small" type="primary" onClick={handleSaveMemory} loading={saving}>Save</Button>
+            <Button size="small" type="primary" onClick={handleSaveMemory} loading={saving}>{t('provider.memory.save')}</Button>
           </Flexbox>
         </Flexbox>
 
         <Form form={memoryForm} layout="vertical" size="small" style={{ flex: 1 }}>
           <Form.Item name="enabled" valuePropName="checked" label={
-            <Flexbox horizontal align="center" gap={6}><span>Enable Memory System</span>{memoryData?.enabled && <SourceBadge meta={memoryData.enabled} />}</Flexbox>
+            <Flexbox horizontal align="center" gap={6}><span>{t('provider.memory.enableMemory')}</span>{memoryData?.enabled && <SourceBadge meta={memoryData.enabled} t={t} />}</Flexbox>
           }><Switch /></Form.Item>
 
           <Form.Item name="embedding_model" label={
             <Flexbox horizontal align="center" gap={6}>
-              <span>Embedding Model</span>
-              <Tooltip title="Select an embedding model from your configured providers. Models with type 'embedding' will appear here.">
+              <span>{t('provider.memory.embeddingModel')}</span>
+              <Tooltip title={t('provider.memory.embeddingModelTooltip')}>
                 <HelpCircle size={12} style={{ color: token.colorTextQuaternary }} />
               </Tooltip>
             </Flexbox>
           }>
             <Select
-              placeholder={noEmbeddingAvailable ? 'No embedding models available' : 'Select embedding model'}
+              placeholder={noEmbeddingAvailable ? t('provider.memory.noEmbeddingAvailable') : t('provider.memory.selectEmbedding')}
               allowClear
               disabled={noEmbeddingAvailable}
               onChange={handleEmbeddingModelChange}
@@ -218,7 +220,7 @@ export function MemorySettingsTab() {
                   </Flexbox>
                 ),
               }))}
-              notFoundContent={<Text type="secondary" style={{ fontSize: 12 }}>No embedding models found in your providers</Text>}
+              notFoundContent={<Text type="secondary" style={{ fontSize: 12 }}>{t('provider.memory.noEmbeddingFound')}</Text>}
             />
           </Form.Item>
 
@@ -228,8 +230,8 @@ export function MemorySettingsTab() {
               showIcon
               icon={<Zap size={14} />}
               style={{ marginBottom: 12, fontSize: 12 }}
-              message="Full-Text Search Mode"
-              description="No embedding models configured. Memory retrieval will use keyword-based full-text search (FTS). To enable semantic search, add a provider with an embedding model in Settings → Providers."
+              message={t('provider.memory.ftsMode')}
+              description={t('provider.memory.ftsDesc')}
             />
           )}
 
@@ -238,44 +240,44 @@ export function MemorySettingsTab() {
               type="warning"
               showIcon
               style={{ marginBottom: 12, fontSize: 12 }}
-              message="No embedding model selected"
-              description="Memory retrieval will fall back to keyword-based full-text search. Select an embedding model above to enable semantic search."
+              message={t('provider.memory.noEmbeddingSelected')}
+              description={t('provider.memory.noEmbeddingSelectedDesc')}
             />
           )}
 
           <Form.Item name="tuning_enabled" valuePropName="checked" label={
             <Flexbox horizontal align="center" gap={6}>
-              <span>调优</span>
-              {memoryData?.tuning_enabled && <SourceBadge meta={memoryData.tuning_enabled} />}
-              <Tooltip title="开启后会持久化 memory 命中过程（检索命中摘要与评分），用于调优分析。">
+              <span>{t('provider.memory.tuning')}</span>
+              {memoryData?.tuning_enabled && <SourceBadge meta={memoryData.tuning_enabled} t={t} />}
+              <Tooltip title={t('provider.memory.tuningTooltip')}>
                 <HelpCircle size={12} style={{ color: token.colorTextQuaternary }} />
               </Tooltip>
             </Flexbox>
           }><Switch /></Form.Item>
 
           <Form.Item name="storage" label={
-            <Flexbox horizontal align="center" gap={6}><span>Storage Backend</span>{memoryData?.storage && <SourceBadge meta={memoryData.storage} />}</Flexbox>
+            <Flexbox horizontal align="center" gap={6}><span>{t('provider.memory.storageBackend')}</span>{memoryData?.storage && <SourceBadge meta={memoryData.storage} t={t} />}</Flexbox>
           }>
             <Select options={[
-              { value: 'sqlite', label: 'SQLite (zero-config)' },
-              { value: 'postgres', label: 'PostgreSQL + pgvector' },
+              { value: 'sqlite', label: t('provider.memory.storageSqlite') },
+              { value: 'postgres', label: t('provider.memory.storagePostgres') },
             ]} />
           </Form.Item>
 
           {storageValue === 'postgres' && (
             <>
               <Form.Item name="postgres_dsn" label={
-                <Flexbox horizontal align="center" gap={6}><span>Connection String</span>{memoryData?.postgres_dsn && <SourceBadge meta={memoryData.postgres_dsn} />}</Flexbox>
+                <Flexbox horizontal align="center" gap={6}><span>{t('provider.memory.connectionString')}</span>{memoryData?.postgres_dsn && <SourceBadge meta={memoryData.postgres_dsn} t={t} />}</Flexbox>
               }>
-                <TextArea rows={2} placeholder="postgres://user:pass@host:5432/db?sslmode=disable" style={{ fontFamily: 'monospace', fontSize: 12 }} />
+                <TextArea rows={2} placeholder={t('provider.memory.connectionPlaceholder')} style={{ fontFamily: 'monospace', fontSize: 12 }} />
               </Form.Item>
               <Flexbox horizontal gap={8} align="center" style={{ marginBottom: 12 }}>
-                <Button size="small" icon={<Zap size={12} />} onClick={handleTestPg} loading={pgTesting}>Test</Button>
+                <Button size="small" icon={<Zap size={12} />} onClick={handleTestPg} loading={pgTesting}>{t('provider.memory.test')}</Button>
                 {pgTestResult && (pgTestResult.ok ? (
                   <Flexbox horizontal align="center" gap={4}>
                     <CheckCircle2 size={14} style={{ color: token.colorSuccess }} />
-                    <Text style={{ fontSize: 12, color: token.colorSuccess }}>Connected{pgTestResult.has_pgvector ? ' · pgvector OK' : ''}</Text>
-                    {!pgTestResult.has_pgvector && <Tag color="warning" style={{ fontSize: 10 }}>pgvector missing</Tag>}
+                    <Text style={{ fontSize: 12, color: token.colorSuccess }}>{t('provider.memory.connected')}{pgTestResult.has_pgvector ? t('provider.memory.pgvectorOk') : ''}</Text>
+                    {!pgTestResult.has_pgvector && <Tag color="warning" style={{ fontSize: 10 }}>{t('provider.memory.pgvectorMissing')}</Tag>}
                   </Flexbox>
                 ) : (
                   <Flexbox horizontal align="center" gap={4}>
@@ -284,18 +286,18 @@ export function MemorySettingsTab() {
                   </Flexbox>
                 ))}
               </Flexbox>
-              <Alert type="warning" showIcon style={{ marginBottom: 12, fontSize: 12 }} message="No data migration" description="Switching backend does not migrate existing memories." />
+              <Alert type="warning" showIcon style={{ marginBottom: 12, fontSize: 12 }} message={t('provider.memory.noMigration')} description={t('provider.memory.noMigrationDesc')} />
             </>
           )}
 
           <Flexbox horizontal gap={16}>
             <Form.Item name="vector_weight" label={
-              <Flexbox horizontal align="center" gap={6}><span>Vector Weight</span>{memoryData?.vector_weight && <SourceBadge meta={memoryData.vector_weight} />}</Flexbox>
+              <Flexbox horizontal align="center" gap={6}><span>{t('provider.memory.vectorWeight')}</span>{memoryData?.vector_weight && <SourceBadge meta={memoryData.vector_weight} t={t} />}</Flexbox>
             } style={{ flex: 1 }}>
               <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="keyword_weight" label={
-              <Flexbox horizontal align="center" gap={6}><span>Keyword Weight</span>{memoryData?.keyword_weight && <SourceBadge meta={memoryData.keyword_weight} />}</Flexbox>
+              <Flexbox horizontal align="center" gap={6}><span>{t('provider.memory.keywordWeight')}</span>{memoryData?.keyword_weight && <SourceBadge meta={memoryData.keyword_weight} t={t} />}</Flexbox>
             } style={{ flex: 1 }}>
               <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
             </Form.Item>
@@ -304,7 +306,7 @@ export function MemorySettingsTab() {
       </div>
 
       <Text type="secondary" style={{ fontSize: 12, maxWidth: 640 }}>
-        Changes require a restart to take effect.
+        {t('provider.memory.restartNote')}
       </Text>
     </Flexbox>
   );

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { EmojiPicker } from '@lobehub/ui';
 import {
@@ -41,6 +42,7 @@ interface AgentProfilePageProps {
 // ── Tab: Scheduled Tasks ─────────────────────────────────────────────
 
 function CronTab({ agentName, onNavigateCron }: { agentName: string; onNavigateCron?: () => void }) {
+  const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,13 +63,13 @@ function CronTab({ agentName, onNavigateCron }: { agentName: string; onNavigateC
     <Flexbox style={{ flex: 1, padding: 2 }}>
       <Flexbox horizontal justify="flex-end" style={{ flexShrink: 0, paddingBottom: 8 }}>
         <Button size="small" icon={<Plus size={14} />} onClick={onNavigateCron}>
-          Add Task
+          {t('agent.cron.addTask')}
         </Button>
       </Flexbox>
       <Flexbox style={{ flex: 1, overflow: 'auto' }}>
         {jobs.length === 0 ? (
           <span style={{ fontSize: 13, color: token.colorTextDescription, padding: '16px 0' }}>
-            No scheduled tasks for this agent.
+            {t('agent.cron.noTasks')}
           </span>
         ) : (
           <Flexbox gap={6}>
@@ -91,7 +93,7 @@ function CronTab({ agentName, onNavigateCron }: { agentName: string; onNavigateC
                 <span style={{ flex: 1, fontSize: 13, color: token.colorText }}>{job.name}</span>
                 <Tag>{job.scheduleKind || job.schedule_kind || 'cron'}</Tag>
                 <Tag color={job.enabled ? 'green' : 'default'}>
-                  {job.enabled ? 'Active' : 'Paused'}
+                  {job.enabled ? t('agent.cron.active') : t('agent.cron.paused')}
                 </Tag>
               </Flexbox>
             ))}
@@ -114,6 +116,7 @@ const LAYER_COLORS: Record<string, string> = {
 };
 
 function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string }) {
+  const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const [memories, setMemories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,7 +138,7 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
       })
       .catch((err) => {
         setMemories([]);
-        setLoadError(err?.message || 'Failed to load memories');
+        setLoadError(err?.message || t('agent.memory.loadFailed'));
       })
       .finally(() => setLoading(false));
   }, [agentName, agentId]);
@@ -157,7 +160,7 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
     return (
       <Flexbox style={{ flex: 1, padding: 2 }}>
         <span style={{ fontSize: 13, color: token.colorTextDescription, padding: '16px 0' }}>
-          Loading memory brain...
+          {t('agent.memory.loading')}
         </span>
       </Flexbox>
     );
@@ -171,7 +174,7 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
           color={!selectedLayer ? 'blue' : undefined}
           onClick={() => setSelectedLayer('')}
         >
-          All ({memories.length})
+          {t('agent.memory.all')} ({memories.length})
         </Tag>
         {LAYERS.map((l) => (
           <Tag
@@ -191,8 +194,8 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
               {loadError
                 ? loadError
                 : memories.length === 0
-                ? 'No memories for this agent yet.'
-                : 'No memories in this layer.'}
+                ? t('agent.memory.noMemories')
+                : t('agent.memory.noMemoriesInLayer')}
             </span>
           </Flexbox>
         ) : (
@@ -214,7 +217,7 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
                   </Tag>
                   {m.access_count > 0 && (
                     <span style={{ fontSize: 11, color: token.colorTextDescription }}>
-                      accessed {m.access_count}x
+                      {t('agent.memory.accessCount', { count: m.access_count })}
                     </span>
                   )}
                   <span
@@ -243,10 +246,10 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
 
 type ProfileTab = 'prompt' | 'cron' | 'memories';
 
-const TABS: { key: ProfileTab; label: string; icon: ReactNode }[] = [
-  { key: 'prompt', label: 'Prompt', icon: null },
-  { key: 'cron', label: 'Scheduled Tasks', icon: <Clock size={13} /> },
-  { key: 'memories', label: 'Memories', icon: <Brain size={13} /> },
+const TAB_KEYS: { key: ProfileTab; labelKey: string; icon: ReactNode }[] = [
+  { key: 'prompt', labelKey: 'agent.profile.tab.prompt', icon: null },
+  { key: 'cron', labelKey: 'agent.profile.tab.scheduledTasks', icon: <Clock size={13} /> },
+  { key: 'memories', labelKey: 'agent.profile.tab.memories', icon: <Brain size={13} /> },
 ];
 
 export function AgentProfilePage({
@@ -257,6 +260,7 @@ export function AgentProfilePage({
   onNavigateSkills,
   onNavigateApplets,
 }: AgentProfilePageProps) {
+  const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const { agents, availableModels, loadAgents, loadModels } = useChatStore();
 
@@ -302,7 +306,7 @@ export function AgentProfilePage({
         setPromptDirty(false);
         loadAgents();
       } catch (err: any) {
-        antMessage.error(err.message || 'Failed to save');
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
       }
     },
     [agent, loadAgents],
@@ -340,7 +344,7 @@ export function AgentProfilePage({
         }
         loadAgents();
       } catch (err: any) {
-        antMessage.error(err.message || 'Failed to update model');
+        antMessage.error(err.message || t('agent.profile.failedToUpdateModel'));
       }
     },
     [agent, availableModels, loadAgents],
@@ -353,7 +357,7 @@ export function AgentProfilePage({
         await api.updateAgent(agent.id, { avatar: emoji });
         loadAgents();
       } catch (err: any) {
-        antMessage.error(err.message || 'Failed to update avatar');
+        antMessage.error(err.message || t('agent.profile.failedToUpdateAvatar'));
       }
     },
     [agent, loadAgents],
@@ -371,10 +375,10 @@ export function AgentProfilePage({
   if (!agent) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%' }}>
-        <Empty description="Agent not found" />
+        <Empty description={t('agent.profile.notFound')} />
         {onBack && (
           <Button type="link" onClick={onBack}>
-            Go back
+            {t('agent.profile.goBack')}
           </Button>
         )}
       </Flexbox>
@@ -447,7 +451,7 @@ export function AgentProfilePage({
                       color="blue"
                       style={{ alignSelf: 'flex-start', marginTop: 4, fontSize: 11 }}
                     >
-                      Built-in
+                      {t('agent.profile.builtIn')}
                     </Tag>
                   )}
                 </Flexbox>
@@ -465,7 +469,7 @@ export function AgentProfilePage({
                   models={availableModels}
                   value={agent.model || undefined}
                   onChange={handleModelChange}
-                  placeholder="Default model"
+                  placeholder={t('agent.profile.defaultModel')}
                   size="middle"
                   style={{ minWidth: 220 }}
                 />
@@ -476,7 +480,7 @@ export function AgentProfilePage({
                   style={{ color: token.colorTextSecondary }}
                   onClick={() => setSettingsOpen(true)}
                 >
-                  Advanced Settings
+                  {t('agent.profile.advancedSettings')}
                 </Button>
               </Flexbox>
 
@@ -495,7 +499,7 @@ export function AgentProfilePage({
                   icon={<Play size={14} />}
                   onClick={() => onStartChat(agent.name)}
                 >
-                  Start Conversation
+                  {t('agent.profile.startConversation')}
                 </Button>
               </div>
             </div>
@@ -504,7 +508,7 @@ export function AgentProfilePage({
 
             {/* ── Tab bar (no font-weight change to prevent wobble) ── */}
             <div style={{ display: 'flex', gap: 0, flexShrink: 0 }}>
-              {TABS.map((tab) => (
+              {TAB_KEYS.map((tab) => (
                 <div
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
@@ -525,7 +529,7 @@ export function AgentProfilePage({
                   }}
                 >
                   {tab.icon}
-                  {tab.label}
+                  {t(tab.labelKey)}
                 </div>
               ))}
             </div>
@@ -548,7 +552,7 @@ export function AgentProfilePage({
                     value={systemPrompt}
                     onChange={handlePromptChange}
                     onBlur={handlePromptBlur}
-                    placeholder="You are a helpful assistant that..."
+                    placeholder={t('agent.profile.promptPlaceholder')}
                     style={{
                       flex: 1,
                       width: '100%',
@@ -579,8 +583,7 @@ export function AgentProfilePage({
                       flexShrink: 0,
                     }}
                   >
-                    The agent&apos;s personality, instructions, and behavior. This is sent as
-                    the system message at the start of every conversation.
+                    {t('agent.profile.promptHelp')}
                   </span>
                 </Flexbox>
               )}
@@ -599,13 +602,13 @@ export function AgentProfilePage({
       <BuilderPanel
         agentName="agent-builder"
         scope="agent_builder"
-        welcomeTitle="Agent Builder"
-        welcomeDescription="Tell me your use case. Writing, coding, or data analysis &mdash; anything works. You own the goal and standards; I'll break it down into collaborative, runnable Agents."
+        welcomeTitle={t('agent.builder.title')}
+        welcomeDescription={t('agent.builder.description')}
         welcomeAvatar="🏗️"
         suggestQuestions={[
-          'Help me design a customer support agent',
-          'Create a code review assistant',
-          'Build a research analyst agent',
+          t('agent.builder.suggest.customerSupport'),
+          t('agent.builder.suggest.codeReview'),
+          t('agent.builder.suggest.researchAnalyst'),
         ]}
         contextPayload={{
           target_agent_id: agent.id,
