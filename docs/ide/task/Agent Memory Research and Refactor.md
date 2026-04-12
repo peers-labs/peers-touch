@@ -36,21 +36,21 @@ memory 相关问题补齐
 
 ---
 
-## 1. [docs/client/mobile/base.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/base.md)
+## 1. [docs/client/mobile/base.md](../../../docs/client/mobile/base.md)
 
 此文件多处提及 Memory（记忆管理），都是作为**业务功能模块**出现，而非系统内存概念：
 
-- **项目结构中**：Android 和 iOS 的 `features/` 目录下均有独立的 `memory/` 模块，注释为"记忆管理"（[Android 第83行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/base.md#L83)、[iOS 第140行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/base.md#L140)）。
+- **项目结构中**：Android 和 iOS 的 `features/` 目录下均有独立的 `memory/` 模块，注释为"记忆管理"（[Android 第83行](../../../docs/client/mobile/base.md#L83)、[iOS 第140行](../../../docs/client/mobile/base.md#L140)）。
 
-- **同步协议表格中**（[第259-266行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/base.md#L259-L266)）：Memory 模块的同步内容为"用户记忆条目"，同步方向为 `Station ↔ Mobile / Desktop`，即记忆数据的真源在 Station，各端双向同步。
+- **同步协议表格中**（[第259-266行](../../../docs/client/mobile/base.md#L259-L266)）：Memory 模块的同步内容为"用户记忆条目"，同步方向为 `Station ↔ Mobile / Desktop`，即记忆数据的真源在 Station，各端双向同步。
 
-- **功能模块清单中**（[第292行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/base.md#L292)）：Memory 模块的说明为"用户记忆条目管理（AI 上下文增强）"，Desktop 对应模块为 `memory`。这表明 Memory 功能的核心用途是管理用户的记忆条目，用于**增强 AI 对话上下文**。
+- **功能模块清单中**（[第292行](../../../docs/client/mobile/base.md#L292)）：Memory 模块的说明为"用户记忆条目管理（AI 上下文增强）"，Desktop 对应模块为 `memory`。这表明 Memory 功能的核心用途是管理用户的记忆条目，用于**增强 AI 对话上下文**。
 
 ---
 
-## 2. [docs/client/desktop/global-context-kernel.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/global-context-kernel.md)
+## 2. [docs/client/desktop/global-context-kernel.md](../../../docs/client/desktop/global-context-kernel.md)
 
-此文件仅有一处与 Memory 相关，出现在 **§10.4 业务层影响矩阵 D 段**（[第422行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/global-context-kernel.md#L422)）：
+此文件仅有一处与 Memory 相关，出现在 **§10.4 业务层影响矩阵 D 段**（[第422行](../../../docs/client/desktop/global-context-kernel.md#L422)）：
 
 > **D. 文件传输与任务域**
 > - 影响模块：上传/传输相关页面与 store（含 **Channels/Memory 里的上传路径**）
@@ -61,9 +61,9 @@ memory 相关问题补齐
 
 ---
 
-## 3. [docs/architecture/station-desktop-scope-boundary.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/station-desktop-scope-boundary.md)
+## 3. [docs/architecture/boundaries/station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md)
 
-此文件仅有一处提及 Memory，出现在 **§5 功能分配清单表格**中（[第48行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/station-desktop-scope-boundary.md#L48)）：
+此文件仅有一处提及 Memory，出现在 **§5 功能分配清单表格**中（[第48行](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md#L48)）：
 
 > | Skills/Cron/Channels/MCP/**Memory** | 维护业务配置、运行状态、审计 | 提供管理台交互、状态可视化 | **Station** | 大体有实现，语义需复核 | 分域定义契约版本，避免"同名异义" |
 
@@ -76,13 +76,13 @@ memory 相关问题补齐
 
 ---
 
-## 4. [docs/global/architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/architecture.md)
+## 4. [docs/global/architecture.md](../../../docs/global/architecture.md)
 
 此文件**完全不包含任何关于 memory 的内容**。该文件描述的是 Peers-Touch 的三层架构总览（Client Layer、Model Layer、Station Layer），涵盖数据流模式、安全架构、网络拓扑和部署架构等，但没有提及 memory 模块或内存管理相关概念。
 
 ---
 
-## 5. [docs/global/domain-model.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/domain-model.md)
+## 5. [docs/global/domain-model.md](../../../docs/global/domain-model.md)
 
 此文件**完全不包含任何关于 memory 的内容**。该文件描述的是 Proto-First 数据模型架构规范，包括 `.proto` 文件的定义规则、生成工作流、现有领域模型清单等。在现有的领域模型列表中（actor、ai_box、core 等），并未列出 memory 相关的 proto 定义。
 
@@ -110,7 +110,7 @@ memory 相关问题补齐
 
 ### 1. AgentSettingsDrawer.tsx — 无直接 memory 配置
 
-[AgentSettingsDrawer.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/AgentSettingsDrawer.tsx) 中 **没有任何直接的 memory 配置项**。唯一间接相关的是 Tool Access 选择器中的标签文本提及了 "memory"：
+[AgentSettingsDrawer.tsx](../../../apps/desktop/src/components/AgentSettingsDrawer.tsx) 中 **没有任何直接的 memory 配置项**。唯一间接相关的是 Tool Access 选择器中的标签文本提及了 "memory"：
 
 ```typescript
 // 第 201 行
@@ -123,7 +123,7 @@ memory 相关问题补齐
 
 ### 2. AgentSettingsModal.tsx — 包含 Memory 配置 UI
 
-[AgentSettingsModal.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/AgentSettingsModal.tsx) 在 "Chat Preferences" 标签页中包含了完整的 memory 配置，位于 [第 430-456 行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/AgentSettingsModal.tsx#L430-L456)：
+[AgentSettingsModal.tsx](../../../apps/desktop/src/components/AgentSettingsModal.tsx) 在 "Chat Preferences" 标签页中包含了完整的 memory 配置，位于 [第 430-456 行](../../../apps/desktop/src/components/AgentSettingsModal.tsx#L430-L456)：
 
 ```typescript
 {/* Memory */}
@@ -164,9 +164,9 @@ memory 相关问题补齐
 
 ### 3. ChatInput.tsx — 包含 Memory 控制面板和工具栏按钮
 
-[ChatInput.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/ChatInput.tsx) 中有大量 memory 相关代码，主要分布在三个部分：
+[ChatInput.tsx](../../../apps/desktop/src/components/ChatInput.tsx) 中有大量 memory 相关代码，主要分布在三个部分：
 
-#### 3a. MemoryControls 组件（[第 326-421 行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/ChatInput.tsx#L326-L421)）
+#### 3a. MemoryControls 组件（[第 326-421 行](../../../apps/desktop/src/components/ChatInput.tsx#L326-L421)）
 
 这是一个完整的 Memory 控制面板，作为 Popover 内容展示：
 
@@ -197,7 +197,7 @@ function MemoryControls() {
 - 启用后显示 **Aggressiveness（积极性）** 滑块，对应 `low` / `medium` / `high` 三级
 - 通过 `updateAgentConfig` 实时持久化到 agent 的 `chatConfig.memory` 字段
 
-#### 3b. Memory 状态读取（[第 949-951 行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/ChatInput.tsx#L949-L951)）
+#### 3b. Memory 状态读取（[第 949-951 行](../../../apps/desktop/src/components/ChatInput.tsx#L949-L951)）
 
 ```typescript
 const chatConfig = getCurrentAgentChatConfig();
@@ -206,7 +206,7 @@ const memoryEnabled = chatConfig.memory?.enabled ?? false;
 
 从当前 agent 的 chatConfig 中读取 memory 是否启用。
 
-#### 3c. Memory 工具栏按钮（[第 1124-1132 行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/ChatInput.tsx#L1124-L1132)）
+#### 3c. Memory 工具栏按钮（[第 1124-1132 行](../../../apps/desktop/src/components/ChatInput.tsx#L1124-L1132)）
 
 ```typescript
 case 'memory':
@@ -229,7 +229,7 @@ case 'memory':
 - 点击弹出 `MemoryControls` Popover
 - 流式输出时禁用该按钮
 
-#### 3d. Memory 作为默认工具栏 Action（[第 843-846 行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/ChatInput.tsx#L843-L846)）
+#### 3d. Memory 作为默认工具栏 Action（[第 843-846 行](../../../apps/desktop/src/components/ChatInput.tsx#L843-L846)）
 
 ```typescript
 export type ActionKey = 'model' | 'search' | 'memory' | 'upload' | 'voice' | 'tools' | 'divider' | 'more' | 'token';
@@ -239,7 +239,7 @@ export const DEFAULT_LEFT_ACTIONS: ActionKey[] = ['model', 'search', 'memory', '
 
 `memory` 被列为默认左侧工具栏动作的第三个，位于 model 和 search 之后。
 
-#### 3e. memoryOpen 状态管理（[第 879 行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/ChatInput.tsx#L879) 和 [第 968 行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/ChatInput.tsx#L968)）
+#### 3e. memoryOpen 状态管理（[第 879 行](../../../apps/desktop/src/components/ChatInput.tsx#L879) 和 [第 968 行](../../../apps/desktop/src/components/ChatInput.tsx#L968)）
 
 ```typescript
 const [memoryOpen, setMemoryOpen] = useState(false);
@@ -264,7 +264,7 @@ Memory 配置的数据结构为 `chatConfig.memory`，包含两个字段：
 
 两个文件都有相同的 7 个结构体。让我读取它们的完整定义。
 
-以下是对 [desktop_api.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts) 中所有 Memory 相关类型定义和 API 函数的完整报告。我已确认结果是全面且完整的。
+以下是对 [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts) 中所有 Memory 相关类型定义和 API 函数的完整报告。我已确认结果是全面且完整的。
 
 ---
 
@@ -272,7 +272,7 @@ Memory 配置的数据结构为 `chatConfig.memory`，包含两个字段：
 
 ### 1. Memory（核心记忆实体）
 
-[Memory](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1158-L1171)
+[Memory](../../../apps/desktop/src/services/desktop_api.ts#L1158-L1171)
 
 ```typescript
 export interface Memory {
@@ -293,7 +293,7 @@ export interface Memory {
 
 ### 2. Persona（用户画像）
 
-[Persona](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1173-L1177)
+[Persona](../../../apps/desktop/src/services/desktop_api.ts#L1173-L1177)
 
 ```typescript
 export interface Persona {
@@ -305,7 +305,7 @@ export interface Persona {
 
 ### 3. MemoryStats（记忆统计）
 
-[MemoryStats](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1179-L1183)
+[MemoryStats](../../../apps/desktop/src/services/desktop_api.ts#L1179-L1183)
 
 ```typescript
 export interface MemoryStats {
@@ -317,7 +317,7 @@ export interface MemoryStats {
 
 ### 4. ScoredMemory（带评分的记忆）
 
-[ScoredMemory](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1185-L1197)
+[ScoredMemory](../../../apps/desktop/src/services/desktop_api.ts#L1185-L1197)
 
 ```typescript
 export interface ScoredMemory {
@@ -337,7 +337,7 @@ export interface ScoredMemory {
 
 ### 5. MemoryTimeFilter（时间筛选器）
 
-[MemoryTimeFilter](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1199-L1203)
+[MemoryTimeFilter](../../../apps/desktop/src/services/desktop_api.ts#L1199-L1203)
 
 ```typescript
 export interface MemoryTimeFilter {
@@ -349,7 +349,7 @@ export interface MemoryTimeFilter {
 
 ### 6. MemoryEvent（记忆事件）
 
-[MemoryEvent](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1205-L1215)
+[MemoryEvent](../../../apps/desktop/src/services/desktop_api.ts#L1205-L1215)
 
 ```typescript
 export interface MemoryEvent {
@@ -367,7 +367,7 @@ export interface MemoryEvent {
 
 ### 7. ExportData（导出数据结构）
 
-[ExportData](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1217-L1222)
+[ExportData](../../../apps/desktop/src/services/desktop_api.ts#L1217-L1222)
 
 ```typescript
 export interface ExportData {
@@ -380,7 +380,7 @@ export interface ExportData {
 
 ### 8. ImportResult（导入结果）
 
-[ImportResult](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1224-L1229)
+[ImportResult](../../../apps/desktop/src/services/desktop_api.ts#L1224-L1229)
 
 ```typescript
 export interface ImportResult {
@@ -393,7 +393,7 @@ export interface ImportResult {
 
 ### 9. AgentMemoryConfig（Agent 记忆配置）
 
-[AgentMemoryConfig](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L442-L445)
+[AgentMemoryConfig](../../../apps/desktop/src/services/desktop_api.ts#L442-L445)
 
 ```typescript
 export interface AgentMemoryConfig {
@@ -402,7 +402,7 @@ export interface AgentMemoryConfig {
 }
 ```
 
-该类型被 [AgentChatConfig](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L447-L459) 中的 `memory?: AgentMemoryConfig` 字段引用。
+该类型被 [AgentChatConfig](../../../apps/desktop/src/services/desktop_api.ts#L447-L459) 中的 `memory?: AgentMemoryConfig` 字段引用。
 
 ---
 
@@ -410,7 +410,7 @@ export interface AgentMemoryConfig {
 
 ### 10. MemoryIdInput
 
-[MemoryIdInput](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1577-L1579)
+[MemoryIdInput](../../../apps/desktop/src/services/desktop_api.ts#L1577-L1579)
 
 ```typescript
 export interface MemoryIdInput {
@@ -420,7 +420,7 @@ export interface MemoryIdInput {
 
 ### 11. MemoryListInput
 
-[MemoryListInput](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1581-L1583)
+[MemoryListInput](../../../apps/desktop/src/services/desktop_api.ts#L1581-L1583)
 
 ```typescript
 export interface MemoryListInput {
@@ -430,7 +430,7 @@ export interface MemoryListInput {
 
 ### 12. MemorySearchInput
 
-[MemorySearchInput](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1585-L1593)
+[MemorySearchInput](../../../apps/desktop/src/services/desktop_api.ts#L1585-L1593)
 
 ```typescript
 export interface MemorySearchInput {
@@ -446,7 +446,7 @@ export interface MemorySearchInput {
 
 ### 13. MemoryEventsInput
 
-[MemoryEventsInput](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1595-L1597)
+[MemoryEventsInput](../../../apps/desktop/src/services/desktop_api.ts#L1595-L1597)
 
 ```typescript
 export interface MemoryEventsInput {
@@ -456,7 +456,7 @@ export interface MemoryEventsInput {
 
 ### 14. MemoryExportInput
 
-[MemoryExportInput](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1599-L1601)
+[MemoryExportInput](../../../apps/desktop/src/services/desktop_api.ts#L1599-L1601)
 
 ```typescript
 export interface MemoryExportInput {
@@ -466,7 +466,7 @@ export interface MemoryExportInput {
 
 ### 15. MemoryImportInput
 
-[MemoryImportInput](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1603-L1606)
+[MemoryImportInput](../../../apps/desktop/src/services/desktop_api.ts#L1603-L1606)
 
 ```typescript
 export interface MemoryImportInput {
@@ -477,7 +477,7 @@ export interface MemoryImportInput {
 
 ### 16. MemoryPersonaInput
 
-[MemoryPersonaInput](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1608-L1610)
+[MemoryPersonaInput](../../../apps/desktop/src/services/desktop_api.ts#L1608-L1610)
 
 ```typescript
 export interface MemoryPersonaInput {
@@ -489,7 +489,7 @@ export interface MemoryPersonaInput {
 
 ## 三、Memory 相关 API 函数签名
 
-所有 Memory API 函数定义在 [desktop_api.ts 第 2753-2802 行](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L2753-L2802) 的 `// ── Memory API ──` 区块中：
+所有 Memory API 函数定义在 [desktop_api.ts 第 2753-2802 行](../../../apps/desktop/src/services/desktop_api.ts#L2753-L2802) 的 `// ── Memory API ──` 区块中：
 
 ### 1. listMemories — 列出记忆
 
@@ -635,8 +635,8 @@ reEmbed: () => Promise<{ ok: boolean; reembedded_count: number }>
 
 两个文件中的定义**完全一致**（重复定义），分别位于：
 
-- [contracts.rs:L478-L518](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/contracts.rs#L478-L518)
-- [interface/contracts/mod.rs:L365-L405](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/interface/contracts/mod.rs#L365-L405)
+- [contracts.rs:L478-L518](../../../apps/desktop/src-tauri/src/contracts.rs#L478-L518)
+- [interface/contracts/mod.rs:L365-L405](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L365-L405)
 
 所有结构体均派生 `#[derive(Debug, Clone, Serialize, Deserialize)]`。以下是 7 个结构体的完整定义：
 
@@ -738,9 +738,9 @@ pub struct MemoryPersonaInput {
 
 | 文件 | 内容 |
 |------|------|
-| [mobile/base.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/base.md) | Memory 作为业务功能模块出现在 `features/memory/` 目录，描述为"用户记忆条目管理（AI 上下文增强）"，同步方向 Station ↔ Mobile/Desktop |
-| [station-desktop-scope-boundary.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/station-desktop-scope-boundary.md) | Memory 真源（SoT）在 Station，Desktop 仅做管理台交互，"大体有实现，语义需复核" |
-| [global-context-kernel.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/global-context-kernel.md) | 仅提到 Memory 模块的文件上传路径需纳入全局任务编排 |
+| [mobile/base.md](../../../docs/client/mobile/base.md) | Memory 作为业务功能模块出现在 `features/memory/` 目录，描述为"用户记忆条目管理（AI 上下文增强）"，同步方向 Station ↔ Mobile/Desktop |
+| [station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md) | Memory 真源（SoT）在 Station，Desktop 仅做管理台交互，"大体有实现，语义需复核" |
+| [global-context-kernel.md](../../../docs/client/desktop/global-context-kernel.md) | 仅提到 Memory 模块的文件上传路径需纳入全局任务编排 |
 | `global/architecture.md` | ❌ 无 memory 相关 |
 | `global/domain-model.md` | ❌ 无 memory proto 定义 |
 
@@ -759,13 +759,13 @@ pub struct MemoryPersonaInput {
 
 | 层 | 文件 | 说明 |
 |----|------|------|
-| **模块注册** | [memory.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/modules/memory.ts) | 注册为独立模块，含页面+设置面板+侧边栏入口 |
-| **主页面** | [MemoryPage.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/MemoryPage.tsx) | 完整的 4 Tab 页面（Browse/Search/Persona/Events），功能丰富 |
-| **设置面板** | [MemorySettingsTab.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/MemorySettingsTab.tsx) | Memory 配置（存储后端/权重/维度）+ Embedding 配置（provider/model） |
-| **Agent 配置** | [AgentSettingsModal.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/AgentSettingsModal.tsx#L430-L456) | 每个 Agent 的 memory 开关 + effort 等级 |
-| **聊天工具栏** | [ChatInput.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/ChatInput.tsx#L326-L421) | Memory 控制 Popover（启用/禁用 + Aggressiveness 滑块） |
-| **Agent 详情页** | [AgentProfilePage.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/AgentProfilePage.tsx#L106-L241) | Memories Tab：展示 Agent 的记忆列表（按层过滤） |
-| **API 层** | [desktop_api.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1158-L1229) | 完整的 11 个 Memory API + 8 个核心类型定义 |
+| **模块注册** | [memory.ts](../../../apps/desktop/src/modules/memory.ts) | 注册为独立模块，含页面+设置面板+侧边栏入口 |
+| **主页面** | [MemoryPage.tsx](../../../apps/desktop/src/pages/MemoryPage.tsx) | 完整的 4 Tab 页面（Browse/Search/Persona/Events），功能丰富 |
+| **设置面板** | [MemorySettingsTab.tsx](../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx) | Memory 配置（存储后端/权重/维度）+ Embedding 配置（provider/model） |
+| **Agent 配置** | [AgentSettingsModal.tsx](../../../apps/desktop/src/components/AgentSettingsModal.tsx#L430-L456) | 每个 Agent 的 memory 开关 + effort 等级 |
+| **聊天工具栏** | [ChatInput.tsx](../../../apps/desktop/src/components/ChatInput.tsx#L326-L421) | Memory 控制 Popover（启用/禁用 + Aggressiveness 滑块） |
+| **Agent 详情页** | [AgentProfilePage.tsx](../../../apps/desktop/src/pages/AgentProfilePage.tsx#L106-L241) | Memories Tab：展示 Agent 的记忆列表（按层过滤） |
+| **API 层** | [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1158-L1229) | 完整的 11 个 Memory API + 8 个核心类型定义 |
 
 **Memory 五层模型**（前端已定义）：
 - `identity` — 用户身份信息
@@ -786,9 +786,9 @@ interface AgentMemoryConfig {
 
 | 层 | 文件 | 说明 |
 |----|------|------|
-| **命令层** | [tauri_commands/memory.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs) | 11 个 Tauri 命令入口 |
-| **应用层** | [application/memory/mod.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/memory/mod.rs) | ⚠️ **全部是 Stub 实现！** 返回空数据/mock 数据 |
-| **契约层** | [contracts.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/contracts.rs#L478-L518) | 7 个 Input 结构体（与 `interface/contracts/mod.rs` 重复定义） |
+| **命令层** | [tauri_commands/memory.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs) | 11 个 Tauri 命令入口 |
+| **应用层** | [application/memory/mod.rs](../../../apps/desktop/src-tauri/src/application/memory/mod.rs) | ⚠️ **全部是 Stub 实现！** 返回空数据/mock 数据 |
+| **契约层** | [contracts.rs](../../../apps/desktop/src-tauri/src/contracts.rs#L478-L518) | 7 个 Input 结构体（与 `interface/contracts/mod.rs` 重复定义） |
 
 **关键问题**：Rust 后端的 memory 全部是 stub，没有真实的存储、向量检索、embedding 计算逻辑。
 
@@ -887,9 +887,9 @@ Now let me look at the existing AI chat subserver for patterns:
 
 | 文件路径 | 说明 |
 |---|---|
-| [station-desktop-scope-boundary.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/station-desktop-scope-boundary.md) | Station Desktop 范围边界 |
-| [unified-handler-architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/unified-handler-architecture.md) | 统一 Handler 架构 |
-| [storage/unified-runtime-storage-architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/storage/unified-runtime-storage-architecture.md) | 统一运行时存储架构 |
+| [station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md) | Station Desktop 范围边界 |
+| [unified-handler-architecture.md](../../../docs/architecture/runtime/unified-handler-architecture.md) | 统一 Handler 架构 |
+| [storage/unified-runtime-storage-architecture.md](../../../docs/architecture/storage/unified-runtime-storage-architecture.md) | 统一运行时存储架构 |
 
 共 **3 个文件**，其中 `storage/` 子目录下有 1 个存储架构文档。
 
@@ -901,12 +901,12 @@ Now let me look at the existing AI chat subserver for patterns:
 
 | 文件路径 | 说明 |
 |---|---|
-| [architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/architecture.md) | 全局架构 |
-| [coding-standards.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/coding-standards.md) | 编码标准 |
-| [domain-model.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/domain-model.md) | 领域模型 |
-| [first-principles.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/first-principles.md) | 第一性原理 |
-| [project-identity.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/project-identity.md) | 项目身份 |
-| [workflow.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/workflow.md) | 工作流 |
+| [architecture.md](../../../docs/global/architecture.md) | 全局架构 |
+| [coding-standards.md](../../../docs/global/coding-standards.md) | 编码标准 |
+| [domain-model.md](../../../docs/global/domain-model.md) | 领域模型 |
+| [first-principles.md](../../../docs/global/first-principles.md) | 第一性原理 |
+| [project-identity.md](../../../docs/global/project-identity.md) | 项目身份 |
+| [workflow.md](../../../docs/global/workflow.md) | 工作流 |
 
 共 **6 个文件**。
 
@@ -918,13 +918,13 @@ Now let me look at the existing AI chat subserver for patterns:
 
 | 文件路径 | 说明 |
 |---|---|
-| [api-documentation.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/station/api-documentation.md) | API 文档 |
-| [app-layer.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/station/app-layer.md) | App 层 |
-| [base.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/station/base.md) | 基础说明 |
-| [frame-layer.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/station/frame-layer.md) | Frame 层 |
-| [go-standards.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/station/go-standards.md) | Go 编码标准 |
-| [lib-usage.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/station/lib-usage.md) | 库使用规范 |
-| [subserver-standard.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/station/subserver-standard.md) | 子服务标准 |
+| [api-documentation.md](../../../docs/station/api-documentation.md) | API 文档 |
+| [app-layer.md](../../../docs/station/app-layer.md) | App 层 |
+| [base.md](../../../docs/station/base.md) | 基础说明 |
+| [frame-layer.md](../../../docs/station/frame-layer.md) | Frame 层 |
+| [go-standards.md](../../../docs/station/go-standards.md) | Go 编码标准 |
+| [lib-usage.md](../../../docs/station/lib-usage.md) | 库使用规范 |
+| [subserver-standard.md](../../../docs/station/subserver-standard.md) | 子服务标准 |
 
 共 **7 个文件**。
 
@@ -952,7 +952,7 @@ Now let me look at the existing AI chat subserver for patterns:
 
 ### 一、所有 Subserver 列表
 
-[subserver 目录](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver) 下共有 **10 个子服务器**：
+[subserver 目录](../../../apps/station/app/subserver) 下共有 **10 个子服务器**：
 
 | 子服务器 | 说明 |
 |---------|------|
@@ -974,7 +974,7 @@ Now let me look at the existing AI chat subserver for patterns:
 
 #### 1. `server.Subserver` 接口
 
-定义在 [subserver.go](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/frame/core/server/subserver.go#L26-L57)：
+定义在 [subserver.go](../../../apps/station/frame/core/server/subserver.go#L26-L57)：
 
 ```go
 type Subserver interface {
@@ -991,7 +991,7 @@ type Subserver interface {
 
 #### 2. `SubserverPlugin` 接口
 
-定义在 [plugin.go](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/frame/core/plugin/plugin.go#L72-L81)：
+定义在 [plugin.go](../../../apps/station/frame/core/plugin/plugin.go#L72-L81)：
 
 ```go
 type SubserverPlugin interface {
@@ -1004,7 +1004,7 @@ type SubserverPlugin interface {
 
 #### 3. 插件全局注册表
 
-定义在 [peer.go](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/frame/core/plugin/peer.go)：
+定义在 [peer.go](../../../apps/station/frame/core/plugin/peer.go)：
 
 ```go
 var SubserverPlugins = map[string]SubserverPlugin{}
@@ -1059,7 +1059,7 @@ ai_chat/
 
 #### 关键实现流程
 
-**1. 插件注册（`init()` 时机）** — [plugin.go](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/plugin.go)
+**1. 插件注册（`init()` 时机）** — [plugin.go](../../../apps/station/app/subserver/ai_chat/plugin.go)
 
 ```go
 func init() {
@@ -1070,7 +1070,7 @@ func init() {
 
 通过 `pconf` 标签从配置文件中读取 `peers.node.server.subserver.ai-chat.enabled` 来决定是否启用。
 
-**2. Subserver 初始化** — [aichat.go](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/aichat.go#L32-L69)
+**2. Subserver 初始化** — [aichat.go](../../../apps/station/app/subserver/ai_chat/aichat.go#L32-L69)
 
 `Init()` 方法负责：
 - 应用 Options
@@ -1079,7 +1079,7 @@ func init() {
 - 初始化默认 Ollama Provider
 - 初始化 JWT 认证 Wrapper
 
-**3. 路由注册** — [aichat.go Handlers()](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/aichat.go#L104-L242)
+**3. 路由注册** — [aichat.go Handlers()](../../../apps/station/app/subserver/ai_chat/aichat.go#L104-L242)
 
 使用 `server.NewTypedHandler()` 注册类型安全的 HTTP 端点，每个端点都带有 `logIDWrapper` 和 `jwtWrapper` 中间件。共注册了 **14 个 API 端点**：
 
@@ -1119,7 +1119,7 @@ HTTP Request
     → 请求/响应的 ProtoBuf 定义
 ```
 
-**5. 错误处理** — [error.go](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/errcode/error.go) + [error_mapper.go](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/handler/error_mapper.go)
+**5. 错误处理** — [error.go](../../../apps/station/app/subserver/ai_chat/errcode/error.go) + [error_mapper.go](../../../apps/station/app/subserver/ai_chat/handler/error_mapper.go)
 
 使用自定义 `BizError` 包含业务错误码、HTTP 状态码和原因，在 handler 层通过 `toHandlerError()` 统一转换为框架的 `HandlerError`。
 
@@ -1163,7 +1163,7 @@ HTTP Request
 
 现在我已经深入理解了项目的所有架构约定，开始撰写 Memory 架构设计文档。
 
-架构设计文档已写入 [agent-memory-architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/agent-memory-architecture.md)。
+架构设计文档已写入 [agent-memory-architecture.md](../../../docs/architecture/agent/agent-memory-architecture.md)。
 
 ---
 
@@ -1220,7 +1220,7 @@ HTTP Request
 
 ### 原有模型（你的代码中已有的）
 
-你现有代码 [desktop_api.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1158-L1171) 定义的五层是：
+你现有代码 [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1158-L1171) 定义的五层是：
 
 ```typescript
 layer: 'identity' | 'context' | 'experience' | 'preference' | 'activity'
@@ -1313,13 +1313,13 @@ layer: 'identity' | 'context' | 'experience' | 'preference' | 'activity'
 
 这在三个位置被定义：
 
-**位置 1** — [MemoryPage.tsx:L45](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/MemoryPage.tsx#L45)
+**位置 1** — [MemoryPage.tsx:L45](../../../apps/desktop/src/pages/MemoryPage.tsx#L45)
 
 ```typescript
 const LAYERS = ['identity', 'context', 'experience', 'preference', 'activity'] as const;
 ```
 
-**位置 2** — [desktop_api.ts:L1158-L1161](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1158-L1161)（Memory 接口类型定义）
+**位置 2** — [desktop_api.ts:L1158-L1161](../../../apps/desktop/src/services/desktop_api.ts#L1158-L1161)（Memory 接口类型定义）
 
 ```typescript
 export interface Memory {
@@ -1329,13 +1329,13 @@ export interface Memory {
 }
 ```
 
-**位置 3** — [AgentProfilePage.tsx:L108](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/AgentProfilePage.tsx#L108)
+**位置 3** — [AgentProfilePage.tsx:L108](../../../apps/desktop/src/pages/AgentProfilePage.tsx#L108)
 
 ```typescript
 const LAYERS = ['identity', 'context', 'experience', 'preference', 'activity'];
 ```
 
-各层的 UI 颜色映射在 [MemoryPage.tsx:L46-L52](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/MemoryPage.tsx#L46-L52)：
+各层的 UI 颜色映射在 [MemoryPage.tsx:L46-L52](../../../apps/desktop/src/pages/MemoryPage.tsx#L46-L52)：
 
 ```typescript
 const LAYER_COLORS: Record<string, string> = {
@@ -1351,7 +1351,7 @@ const LAYER_COLORS: Record<string, string> = {
 
 ### 2. 架构文档中的五层模型（设计层面）
 
-[agent-memory-architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/agent-memory-architecture.md) 中定义的五层记忆模型与前端实际使用的名称 **存在差异**：
+[agent-memory-architecture.md](../../../docs/architecture/agent/agent-memory-architecture.md) 中定义的五层记忆模型与前端实际使用的名称 **存在差异**：
 
 | 架构文档中的设计名称 | Proto 枚举值 | 前端实际使用的名称 |
 |---|---|---|
@@ -1365,7 +1365,7 @@ const LAYER_COLORS: Record<string, string> = {
 
 ### 3. Proto 定义（设计阶段，尚未实际生成代码）
 
-架构文档中包含了完整的 Protobuf 定义（[agent-memory-architecture.md:L288-L295](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/agent-memory-architecture.md#L288-L295)）：
+架构文档中包含了完整的 Protobuf 定义（[agent-memory-architecture.md:L288-L295](../../../docs/architecture/agent/agent-memory-architecture.md#L288-L295)）：
 
 ```protobuf
 enum MemoryLayer {
@@ -1440,7 +1440,7 @@ LobeHub 的 Memory 系统确实是 **五层**，通过数据库表和 API 明确
 
 ### 你的代码完全一致
 
-你 [desktop_api.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L1160) 中定义的：
+你 [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1160) 中定义的：
 
 ```typescript
 layer: 'identity' | 'context' | 'experience' | 'preference' | 'activity'
@@ -1450,7 +1450,7 @@ layer: 'identity' | 'context' | 'experience' | 'preference' | 'activity'
 
 ### LobeHub 的检索 Top-K 配置也一致
 
-LobeHub 在 [userMemory.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/const/src/userMemory.ts#L5-L16) 中：
+LobeHub 在 [userMemory.ts](../../../external/lobehub/packages/const/src/userMemory.ts#L5-L16) 中：
 
 ```typescript
 export const DEFAULT_SEARCH_USER_MEMORY_TOP_K = {
@@ -1567,7 +1567,7 @@ export const MEMORY_SEARCH_TOP_K_LIMITS = {
 
 所有 schema 文件位于 `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/memory-user-memory/src/schemas/` 目录下。
 
-#### 0. 通用 Schema — [common.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/memory-user-memory/src/schemas/common.ts)
+#### 0. 通用 Schema — [common.ts](../../../external/lobehub/packages/memory-user-memory/src/schemas/common.ts)
 
 ```typescript
 export const MemoryTypeSchema = z.nativeEnum(TypesEnum);
@@ -1578,7 +1578,7 @@ export const MemoryTypeSchema = z.nativeEnum(TypesEnum);
 
 ---
 
-#### 1. ContextMemoryItemSchema — [context.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/memory-user-memory/src/schemas/context.ts)
+#### 1. ContextMemoryItemSchema — [context.ts](../../../external/lobehub/packages/memory-user-memory/src/schemas/context.ts)
 
 ```typescript
 export const ContextMemoryItemSchema = z.object({
@@ -1611,7 +1611,7 @@ export const ContextMemoryItemSchema = z.object({
 
 ---
 
-#### 2. ExperienceMemoryItemSchema — [experience.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/memory-user-memory/src/schemas/experience.ts)
+#### 2. ExperienceMemoryItemSchema — [experience.ts](../../../external/lobehub/packages/memory-user-memory/src/schemas/experience.ts)
 
 ```typescript
 export const ExperienceMemoryItemSchema = z.object({
@@ -1642,7 +1642,7 @@ export const ExperienceMemoryItemSchema = z.object({
 
 ---
 
-#### 3. ActivityMemoryItemSchema — [activity.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/memory-user-memory/src/schemas/activity.ts)
+#### 3. ActivityMemoryItemSchema — [activity.ts](../../../external/lobehub/packages/memory-user-memory/src/schemas/activity.ts)
 
 ```typescript
 export const ActivityMemoryItemSchema = z.object({
@@ -1676,7 +1676,7 @@ export const ActivityMemoryItemSchema = z.object({
 
 ---
 
-#### 4. AddIdentityActionSchema — [identity.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/memory-user-memory/src/schemas/identity.ts)
+#### 4. AddIdentityActionSchema — [identity.ts](../../../external/lobehub/packages/memory-user-memory/src/schemas/identity.ts)
 
 ```typescript
 export const AddIdentityActionSchema = z.object({
@@ -1707,7 +1707,7 @@ export const AddIdentityActionSchema = z.object({
 
 ---
 
-#### 5. PreferenceMemoryItemSchema — [preference.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/memory-user-memory/src/schemas/preference.ts)
+#### 5. PreferenceMemoryItemSchema — [preference.ts](../../../external/lobehub/packages/memory-user-memory/src/schemas/preference.ts)
 
 ```typescript
 export const PreferenceMemoryItemSchema = z.object({
@@ -1741,7 +1741,7 @@ export const PreferenceMemoryItemSchema = z.object({
 
 ### 二、UserMemoryInjector — 记忆如何注入系统 Prompt
 
-文件: [UserMemoryInjector.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/context-engine/src/providers/UserMemoryInjector.ts)
+文件: [UserMemoryInjector.ts](../../../external/lobehub/packages/context-engine/src/providers/UserMemoryInjector.ts)
 
 `UserMemoryInjector` 继承自 `BaseFirstUserContentProvider`，在第一条用户消息之前注入记忆。核心逻辑非常简单：
 
@@ -1756,7 +1756,7 @@ protected buildContent(_context: PipelineContext): string | null {
 }
 ```
 
-实际的格式化在 [promptUserMemory](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/prompts/src/prompts/userMemory/index.ts#L146-L208)（`@lobechat/prompts` 包）中完成，输出 XML 格式：
+实际的格式化在 [promptUserMemory](../../../external/lobehub/packages/prompts/src/prompts/userMemory/index.ts#L146-L208)（`@lobechat/prompts` 包）中完成，输出 XML 格式：
 
 ```xml
 <user_memory>
@@ -1782,7 +1782,7 @@ protected buildContent(_context: PipelineContext): string | null {
 </user_memory>
 ```
 
-**注入的 UserMemoryData 接口**（在 [prompts/userMemory/index.ts:L38-L44](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/prompts/src/prompts/userMemory/index.ts#L38-L44)）:
+**注入的 UserMemoryData 接口**（在 [prompts/userMemory/index.ts:L38-L44](../../../external/lobehub/packages/prompts/src/prompts/userMemory/index.ts#L38-L44)）:
 
 ```typescript
 export interface UserMemoryData {
@@ -1802,7 +1802,7 @@ export interface UserMemoryData {
 
 所有 SQL 迁移文件位于 `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/migrations/`。
 
-#### 1. `user_memories` 表 — [0037](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/migrations/0037_add_user_memory.sql) + [0040](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/migrations/0040_improve_user_memory_field.sql) + [0061](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/migrations/0061_add_document_and_memory_index.sql)
+#### 1. `user_memories` 表 — [0037](../../../external/lobehub/packages/database/migrations/0037_add_user_memory.sql) + [0040](../../../external/lobehub/packages/database/migrations/0040_improve_user_memory_field.sql) + [0061](../../../external/lobehub/packages/database/migrations/0061_add_document_and_memory_index.sql)
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -1912,7 +1912,7 @@ export interface UserMemoryData {
 
 注：`context_id`, `labels`, `extracted_labels`, `extracted_scopes` 列在 0040 迁移中被删除。
 
-#### 6. `user_memories_activities` 表 — [0070](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/migrations/0070_add_user_memory_activities.sql)
+#### 6. `user_memories_activities` 表 — [0070](../../../external/lobehub/packages/database/migrations/0070_add_user_memory_activities.sql)
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -2134,7 +2134,7 @@ Now let me find the key constants and the `ModelRuntime.embeddings` implementati
 
 ### 1. 核心 UI 组件 -- MemorySettingsTab.tsx
 
-**文件路径**: [MemorySettingsTab.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/MemorySettingsTab.tsx)
+**文件路径**: [MemorySettingsTab.tsx](../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx)
 
 这是 embedding 配置与展示的**主界面**，以双栏卡片布局呈现：左卡是 Memory 配置，右卡是 Embedding 配置。
 
@@ -2149,7 +2149,7 @@ interface EmbeddingStatus {
 }
 ```
 
-[状态声明](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/MemorySettingsTab.tsx#L57-L65):
+[状态声明](../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx#L57-L65):
 
 ```typescript
 const [embeddingData, setEmbeddingData] = useState<SectionData | null>(null);
@@ -2163,7 +2163,7 @@ const [resolvedEmb, setResolvedEmb] = useState<{
 
 #### 1.2 数据加载逻辑
 
-[load 函数](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/MemorySettingsTab.tsx#L76-L113) 并行调用三个 API：
+[load 函数](../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx#L76-L113) 并行调用三个 API：
 
 ```typescript
 const [mem, emb, catalog] = await Promise.all([
@@ -2181,7 +2181,7 @@ api.getEmbeddingStatus().then(setEmbeddingStatus).catch(() => {});
 
 #### 1.3 保存 Embedding 配置（含模型变更警告）
 
-[handleSaveEmbedding](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/MemorySettingsTab.tsx#L165-L200):
+[handleSaveEmbedding](../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx#L165-L200):
 
 ```typescript
 const handleSaveEmbedding = async () => {
@@ -2204,7 +2204,7 @@ const handleSaveEmbedding = async () => {
 
 #### 1.4 Re-embed 功能
 
-[handleReEmbed](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/MemorySettingsTab.tsx#L204-L213):
+[handleReEmbed](../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx#L204-L213):
 
 ```typescript
 const handleReEmbed = async () => {
@@ -2221,7 +2221,7 @@ const handleReEmbed = async () => {
 
 #### 1.5 Embedding 卡片 UI
 
-[Embedding 卡片区域](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/MemorySettingsTab.tsx#L332-L422) 包含三个部分：
+[Embedding 卡片区域](../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx#L332-L422) 包含三个部分：
 
 - **"Currently In Use" 信息框**：显示当前生效的 provider、model、dimensions、vector_count
 - **Provider/Model 表单**：Select 下拉选择 provider 和 model，provider 变更时清空 model
@@ -2229,7 +2229,7 @@ const handleReEmbed = async () => {
 
 #### 1.6 Memory 卡中的 embedding_dimensions 字段
 
-[embedding_dimensions 表单项](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/MemorySettingsTab.tsx#L320-L329)：
+[embedding_dimensions 表单项](../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx#L320-L329)：
 
 ```typescript
 <Form.Item name="embedding_dimensions" label={
@@ -2248,11 +2248,11 @@ const handleReEmbed = async () => {
 
 ### 2. API 服务层 -- desktop_api.ts
 
-**文件路径**: [desktop_api.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts)
+**文件路径**: [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 #### 2.1 类型定义
 
-[EmbeddingModelInfo](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L3005-L3010):
+[EmbeddingModelInfo](../../../apps/desktop/src/services/desktop_api.ts#L3005-L3010):
 
 ```typescript
 export interface EmbeddingModelInfo {
@@ -2263,7 +2263,7 @@ export interface EmbeddingModelInfo {
 }
 ```
 
-[ConfigFieldMeta](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L2999-L3003):
+[ConfigFieldMeta](../../../apps/desktop/src/services/desktop_api.ts#L2999-L3003):
 
 ```typescript
 export interface ConfigFieldMeta {
@@ -2275,7 +2275,7 @@ export interface ConfigFieldMeta {
 
 #### 2.2 Embedding 相关 API 方法
 
-[getEmbeddingStatus](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L2816-L2817):
+[getEmbeddingStatus](../../../apps/desktop/src/services/desktop_api.ts#L2816-L2817):
 
 ```typescript
 getEmbeddingStatus: () =>
@@ -2284,14 +2284,14 @@ getEmbeddingStatus: () =>
   }>('memory_embedding_status'),
 ```
 
-[reEmbed](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L2819-L2820):
+[reEmbed](../../../apps/desktop/src/services/desktop_api.ts#L2819-L2820):
 
 ```typescript
 reEmbed: () =>
   invokeRustDataFromStatus<void, { ok: boolean; reembedded_count: number }>('memory_reembed'),
 ```
 
-[listEmbeddingModels](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L2860-L2865):
+[listEmbeddingModels](../../../apps/desktop/src/services/desktop_api.ts#L2860-L2865):
 
 ```typescript
 listEmbeddingModels: () =>
@@ -2302,7 +2302,7 @@ listEmbeddingModels: () =>
   }>('embedding_models_list'),
 ```
 
-[getConfigSection / setConfigSection / resetConfigField](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts#L2845-L2852)（通用，用于 `'embedding'` 和 `'memory'` section）:
+[getConfigSection / setConfigSection / resetConfigField](../../../apps/desktop/src/services/desktop_api.ts#L2845-L2852)（通用，用于 `'embedding'` 和 `'memory'` section）:
 
 ```typescript
 getConfigSection: (section: string) =>
@@ -2335,7 +2335,7 @@ resetConfigField: (section: string, field: string) =>
 
 ### 3. 模块注册 -- memory.ts
 
-**文件路径**: [memory.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/modules/memory.ts)
+**文件路径**: [memory.ts](../../../apps/desktop/src/modules/memory.ts)
 
 ```typescript
 import { Brain } from 'lucide-react';
@@ -2360,17 +2360,17 @@ registerModule({
 
 ### 4. ProviderDetail.tsx 中的 Embedding 引用
 
-**文件路径**: [ProviderDetail.tsx](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/ProviderDetail.tsx)
+**文件路径**: [ProviderDetail.tsx](../../../apps/desktop/src/components/settings/ProviderDetail.tsx)
 
 在模型列表的 Tab 页和模型类型 Select 中，`embedding` 作为模型类型之一出现：
 
-[Tabs 中的 Embedding 标签](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/ProviderDetail.tsx#L582):
+[Tabs 中的 Embedding 标签](../../../apps/desktop/src/components/settings/ProviderDetail.tsx#L582):
 
 ```typescript
 { key: 'embedding', label: <span><Zap size={14} ... />Embedding ({modelTypeCounts.embedding ?? 0})</span> },
 ```
 
-[模型类型 Select 选项](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/settings/ProviderDetail.tsx#L929):
+[模型类型 Select 选项](../../../apps/desktop/src/components/settings/ProviderDetail.tsx#L929):
 
 ```typescript
 { value: 'embedding', label: 'Embedding (embedding)' },
@@ -2382,8 +2382,8 @@ registerModule({
 
 ### 5. 无实质关联的文件
 
-- [deeplink.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/utils/deeplink.ts#L6) — 注释中 "embed a deep link"，与 embedding 功能无关
-- [ai_models_pb.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/gen/proto/domain/ai_chat/ai_models_pb.ts#L69) — protobuf 生成代码中 `type` 字段注释提及 `text-embedding`，仅为类型枚举说明
+- [deeplink.ts](../../../apps/desktop/src/utils/deeplink.ts#L6) — 注释中 "embed a deep link"，与 embedding 功能无关
+- [ai_models_pb.ts](../../../apps/desktop/src/gen/proto/domain/ai_chat/ai_models_pb.ts#L69) — protobuf 生成代码中 `type` 字段注释提及 `text-embedding`，仅为类型枚举说明
 
 ---
 
@@ -2428,20 +2428,20 @@ Tauri invoke → Rust 后端命令
 
 #### 1. Proto 模型中的类型标注（仅为字符串标记，非功能代码）
 
-在 [ai_models.pb.go:37](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/model/ai_models.pb.go#L37) 中，`AiModel` 的 `Type` 字段注释提到了 `text-embedding`：
+在 [ai_models.pb.go:37](../../../apps/station/app/subserver/ai_chat/model/ai_models.pb.go#L37) 中，`AiModel` 的 `Type` 字段注释提到了 `text-embedding`：
 
 ```go
 Type string `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"` // 模型类型 (e.g., 'chat', 'text-embedding')
 ```
 
-对应 proto 定义在 [ai_models.proto:20](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/model/domain/ai_chat/ai_models.proto#L20)。
+对应 proto 定义在 [ai_models.proto:20](../../../model/domain/ai_chat/ai_models.proto#L20)。
 
 **性质**：这只是一个字符串字段的注释说明，表明模型类型**可以**为 `text-embedding`，但没有任何代码逻辑去处理这个类型。
 
 #### 2. 设计文档中的规划
 
-- [README_design.zh.md:9](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/README_design.zh.md#L9) 提到：`数据库: PostgreSQL (支持pgvector插件用于RAG)`
-- [agent-memory-architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/agent-memory-architecture.md) 是一份非常详尽的架构设计文档，规划了整个 Memory 子服务，包括：
+- [README_design.zh.md:9](../../../apps/station/app/subserver/ai_chat/README_design.zh.md#L9) 提到：`数据库: PostgreSQL (支持pgvector插件用于RAG)`
+- [agent-memory-architecture.md](../../../docs/architecture/agent/agent-memory-architecture.md) 是一份非常详尽的架构设计文档，规划了整个 Memory 子服务，包括：
   - pgvector 向量索引表 `touch_memory_vector` (设计文档 L730-L741)
   - Embedding 引擎封装 `embedding/embedder.go` (设计文档 L586)
   - 混合检索算法：向量语义检索 + 关键词检索 + 时间衰减 (设计文档 L776-L832)
@@ -2491,7 +2491,7 @@ Type string `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"` // �
 
 #### 5. ai_chat 子服务中的 Embedding 集成 -- 零集成
 
-查看 [chat_service.go](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/service/chat_service.go) 的完整实现：
+查看 [chat_service.go](../../../apps/station/app/subserver/ai_chat/service/chat_service.go) 的完整实现：
 
 - `completeWithProvider()` (L218-L257) 仅支持调用 **chat completion** API（Ollama `/api/chat` 和 OpenAI `/v1/chat/completions`）
 - 没有任何 embedding 模型调用
@@ -2513,7 +2513,7 @@ Type string `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"` // �
 | **RAG/语义检索** | 不存在 |
 | **设计文档完备度** | 非常完整（`agent-memory-architecture.md` 有 Proto 定义、DB 设计、检索算法、实施路线） |
 
-**结论**：`apps/station/` 中 embedding/vector 相关功能处于 **"已有详尽架构设计，但代码实现为零"** 的状态。当前 `ai_chat` 子服务仅实现了基础的 chat completion 流程，所有 embedding 模型调用、pgvector 向量存储、语义检索、记忆提取/注入的功能均需从零开发。设计文档 [agent-memory-architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/agent-memory-architecture.md) 中的 Phase 1-4 实施路线尚未启动。
+**结论**：`apps/station/` 中 embedding/vector 相关功能处于 **"已有详尽架构设计，但代码实现为零"** 的状态。当前 `ai_chat` 子服务仅实现了基础的 chat completion 流程，所有 embedding 模型调用、pgvector 向量存储、语义检索、记忆提取/注入的功能均需从零开发。设计文档 [agent-memory-architecture.md](../../../docs/architecture/agent/agent-memory-architecture.md) 中的 Phase 1-4 实施路线尚未启动。
 
 ## User
 继续
@@ -2549,7 +2549,7 @@ Type string `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"` // �
 
 ### 1. 应用层 — Memory 模块（Stub 函数）
 
-文件：[application/memory/mod.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/memory/mod.rs)
+文件：[application/memory/mod.rs](../../../apps/desktop/src-tauri/src/application/memory/mod.rs)
 
 包含两个 embedding 相关的 stub 函数：
 
@@ -2586,7 +2586,7 @@ pub fn memory_reembed() -> AppResult<StubPayload> {
 
 ### 2. 接口层 — Memory Tauri Commands
 
-文件：[interface/tauri_commands/memory.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs)
+文件：[interface/tauri_commands/memory.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs)
 
 两个 Tauri command handler 直接透传到 application 层：
 
@@ -2612,7 +2612,7 @@ pub fn memory_reembed() -> AppResult<StubPayload> {
 
 ### 3. 应用层 — System 模块（embedding_models_list + config_test_postgres 含 pgvector）
 
-文件：[application/system/mod.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/system/mod.rs)
+文件：[application/system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs)
 
 **`config_test_postgres`** （第 372-380 行） — 包含 `has_pgvector` 字段：
 
@@ -2649,7 +2649,7 @@ pub fn embedding_models_list() -> AppResult<StubPayload> {
 
 ### 4. 接口层 — System Tauri Commands
 
-文件：[interface/tauri_commands/system.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/interface/tauri_commands/system.rs)
+文件：[interface/tauri_commands/system.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/system.rs)
 
 **`embedding_models_list`** （第 81-84 行）：
 
@@ -2673,7 +2673,7 @@ pub fn config_test_postgres(input: ConfigPostgresTestInput) -> AppResult<StubPay
 
 ### 5. main.rs — 命令注册
 
-文件：[main.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/main.rs)
+文件：[main.rs](../../../apps/desktop/src-tauri/src/main.rs)
 
 在 `tauri::Builder` 的 `invoke_handler` 中注册了三个 embedding 相关命令：
 
@@ -2685,7 +2685,7 @@ pub fn config_test_postgres(input: ConfigPostgresTestInput) -> AppResult<StubPay
 
 ### 6. Protobuf 模型定义 — AiModel.type 字段
 
-文件：[model/peers_touch.model.ai_chat.v1.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/model/peers_touch.model.ai_chat.v1.rs#L26-L28)
+文件：[model/peers_touch.model.ai_chat.v1.rs](../../../apps/desktop/src-tauri/src/model/peers_touch.model.ai_chat.v1.rs#L26-L28)
 
 ```rust
 /// 模型类型 (e.g., 'chat', 'text-embedding')
@@ -2699,7 +2699,7 @@ pub r#type: ::prost::alloc::string::String,
 
 ### 7. config_section 系列 — 无 embedding 特殊处理
 
-文件 [application/system/mod.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/system/mod.rs#L350-L363) 中的 `config_section_get` 和 `config_section_set`：
+文件 [application/system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L350-L363) 中的 `config_section_get` 和 `config_section_set`：
 
 ```rust
 pub fn config_section_get(input: ConfigSectionInput) -> AppResult<StubPayload> {
@@ -2720,7 +2720,7 @@ pub fn config_section_set(input: ConfigSectionSetInput) -> AppResult<StubPayload
 
 这两个函数接受任意 `section` 字符串（包括 `"embedding"`），但 **没有** 对 embedding section 做任何特殊处理。它们是通用 stub — `config_section_get` 无论传什么 section 都返回空对象 `{}`，`config_section_set` 无论传什么都返回 `{ "ok": true }` 并丢弃 values。
 
-Settings 模块（[application/settings/mod.rs](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/settings/mod.rs)）也 **不包含** 任何 embedding 相关代码。
+Settings 模块（[application/settings/mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs)）也 **不包含** 任何 embedding 相关代码。
 
 ---
 
@@ -2765,7 +2765,7 @@ LobeHub 中存在 **两套独立但架构相似的 embedding 管线**：
 
 ### 底层统一调用路径
 
-所有 embedding 向量最终都通过 `ModelRuntime.embeddings()` 方法生成，该方法定义在 [createRuntime.ts:L509-L515](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/model-runtime/src/core/RouterRuntime/createRuntime.ts#L509-L515)：
+所有 embedding 向量最终都通过 `ModelRuntime.embeddings()` 方法生成，该方法定义在 [createRuntime.ts:L509-L515](../../../external/lobehub/packages/model-runtime/src/core/RouterRuntime/createRuntime.ts#L509-L515)：
 
 ```typescript
 async embeddings(payload: EmbeddingsPayload, options?: EmbeddingsOptions) {
@@ -2777,7 +2777,7 @@ async embeddings(payload: EmbeddingsPayload, options?: EmbeddingsOptions) {
 }
 ```
 
-实际的 OpenAI 兼容实现位于 [openaiCompatibleFactory/index.ts:L825-L858](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/model-runtime/src/core/openaiCompatibleFactory/index.ts#L825-L858)：
+实际的 OpenAI 兼容实现位于 [openaiCompatibleFactory/index.ts:L825-L858](../../../external/lobehub/packages/model-runtime/src/core/openaiCompatibleFactory/index.ts#L825-L858)：
 
 ```typescript
 async embeddings(payload: EmbeddingsPayload, options?: EmbeddingsOptions): Promise<Embeddings[]> {
@@ -2793,7 +2793,7 @@ async embeddings(payload: EmbeddingsPayload, options?: EmbeddingsOptions): Promi
 
 ### EmbeddingsPayload 类型
 
-在 [embeddings.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/model-runtime/src/types/embeddings.ts) 中定义：
+在 [embeddings.ts](../../../external/lobehub/packages/model-runtime/src/types/embeddings.ts) 中定义：
 
 ```typescript
 export interface EmbeddingsPayload {
@@ -2809,7 +2809,7 @@ export interface EmbeddingsPayload {
 
 ### 文件 RAG 场景
 
-默认配置定义在 [knowledge.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/const/src/settings/knowledge.ts#L11-L14)：
+默认配置定义在 [knowledge.ts](../../../external/lobehub/packages/const/src/settings/knowledge.ts#L11-L14)：
 
 ```typescript
 export const DEFAULT_FILE_EMBEDDING_MODEL_ITEM: FilesConfigItem = {
@@ -2818,13 +2818,13 @@ export const DEFAULT_FILE_EMBEDDING_MODEL_ITEM: FilesConfigItem = {
 };
 ```
 
-- **默认模型**: `text-embedding-3-small` (定义在 [llm.ts:L4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/const/src/settings/llm.ts#L4))
-- **默认 Provider**: `openai` (定义在 [business/const/src/llm.ts:L1](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/business/const/src/llm.ts#L1))
+- **默认模型**: `text-embedding-3-small` (定义在 [llm.ts:L4](../../../external/lobehub/packages/const/src/settings/llm.ts#L4))
+- **默认 Provider**: `openai` (定义在 [business/const/src/llm.ts:L1](../../../external/lobehub/packages/business/const/src/llm.ts#L1))
 - **维度**: 固定 **1024**
 
 ### 用户记忆场景
 
-默认配置定义在 [userMemory.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/const/src/userMemory.ts#L27-L36)：
+默认配置定义在 [userMemory.ts](../../../external/lobehub/packages/const/src/userMemory.ts#L27-L36)：
 
 ```typescript
 export const DEFAULT_USER_MEMORY_EMBEDDING_MODEL_ITEM: UserMemoryConfigItem = {
@@ -2838,7 +2838,7 @@ export const DEFAULT_USER_MEMORY_EMBEDDING_DIMENSIONS = 1024;
 
 ### 环境变量配置
 
-在 [envs/file.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/envs/file.ts) 中：
+在 [envs/file.ts](../../../external/lobehub/src/envs/file.ts) 中：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
@@ -2856,15 +2856,15 @@ export const DEFAULT_USER_MEMORY_EMBEDDING_DIMENSIONS = 1024;
 
 **Step 1: 文件上传与切片触发**
 
-用户上传文件后，通过 [lambda/chunk.ts 的 `createParseFileTask`](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/routers/lambda/chunk.ts#L100-L111) 或 [RAGService](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/services/rag.ts#L9-L10) 前端调用触发异步切片任务。
+用户上传文件后，通过 [lambda/chunk.ts 的 `createParseFileTask`](../../../external/lobehub/src/server/routers/lambda/chunk.ts#L100-L111) 或 [RAGService](../../../external/lobehub/src/services/rag.ts#L9-L10) 前端调用触发异步切片任务。
 
 **Step 2: 异步切片**
 
-[ChunkService.asyncParseFileToChunks](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/services/chunk/index.ts#L72-L107) 创建一个 `AsyncTask`(类型 Chunking)，然后通过 async router 异步调用 [file.ts 的 parseFileToChunks](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/routers/async/file.ts#L158-L288)。
+[ChunkService.asyncParseFileToChunks](../../../external/lobehub/src/server/services/chunk/index.ts#L72-L107) 创建一个 `AsyncTask`(类型 Chunking)，然后通过 async router 异步调用 [file.ts 的 parseFileToChunks](../../../external/lobehub/src/server/routers/async/file.ts#L158-L288)。
 
 **Step 3: 切片完成后自动触发 embedding（关键）**
 
-在 [async/file.ts:L262-L263](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/routers/async/file.ts#L262-L263)：
+在 [async/file.ts:L262-L263](../../../external/lobehub/src/server/routers/async/file.ts#L262-L263)：
 
 ```typescript
 // if enable auto embedding, trigger the embedding task
@@ -2877,7 +2877,7 @@ if (fileEnv.CHUNKS_AUTO_EMBEDDING) {
 
 **Step 4: 异步 Embedding 执行**
 
-[ChunkService.asyncEmbeddingFileChunks](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/services/chunk/index.ts#L33-L67) 创建一个 `AsyncTask`(类型 Embedding)，然后调用 async router 的 [embeddingChunks](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/routers/async/file.ts#L45-L156)：
+[ChunkService.asyncEmbeddingFileChunks](../../../external/lobehub/src/server/services/chunk/index.ts#L33-L67) 创建一个 `AsyncTask`(类型 Embedding)，然后调用 async router 的 [embeddingChunks](../../../external/lobehub/src/server/routers/async/file.ts#L45-L156)：
 
 ```typescript
 // 核心 embedding 逻辑
@@ -2898,22 +2898,22 @@ await pMap(requestArray, async (chunks) => {
 
 **Step 5: 手动触发**
 
-用户也可以通过前端手动触发 embedding，调用 [RAGService.createEmbeddingChunksTask](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/services/rag.ts#L17-L19) -> [lambda/chunk.ts 的 createEmbeddingChunksTask](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/routers/lambda/chunk.ts#L88-L98)。
+用户也可以通过前端手动触发 embedding，调用 [RAGService.createEmbeddingChunksTask](../../../external/lobehub/src/services/rag.ts#L17-L19) -> [lambda/chunk.ts 的 createEmbeddingChunksTask](../../../external/lobehub/src/server/routers/lambda/chunk.ts#L88-L98)。
 
 ### 管线 B：用户记忆 Embedding
 
-触发链路完全不同，位于 [extract.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/services/memory/userMemory/extract.ts)：
+触发链路完全不同，位于 [extract.ts](../../../external/lobehub/src/server/services/memory/userMemory/extract.ts)：
 
 **Step 1: 话题提取触发**
 
 `MemoryExtractionExecutor.extractTopic()` 被 Upstash Workflow 或直接调用触发，它：
 1. 获取话题的所有对话消息
-2. 先用 embedding 搜索已有相关记忆（[listRelevantUserMemories:L1050-L1092](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/services/memory/userMemory/extract.ts#L1050-L1092)）
+2. 先用 embedding 搜索已有相关记忆（[listRelevantUserMemories:L1050-L1092](../../../external/lobehub/src/server/services/memory/userMemory/extract.ts#L1050-L1092)）
 3. 通过 `MemoryExtractionService.run()` 执行 gatekeeper 和多层提取器 (activity, context, experience, preference, identity)
 
 **Step 2: 持久化时生成向量**
 
-在 `persistExtraction` 中（[L1750-L1916](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/src/server/services/memory/userMemory/extract.ts#L1750-L1916)），对每种 layer 的提取结果调用 `generateEmbeddings`：
+在 `persistExtraction` 中（[L1750-L1916](../../../external/lobehub/src/server/services/memory/userMemory/extract.ts#L1750-L1916)），对每种 layer 的提取结果调用 `generateEmbeddings`：
 
 ```typescript
 private async generateEmbeddings(runtimes, model, texts, userId, tokenLimit) {
@@ -2939,7 +2939,7 @@ private async generateEmbeddings(runtimes, model, texts, userId, tokenLimit) {
 
 ### 4.1 文件 RAG 向量存储
 
-Schema 定义在 [rag.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/src/schemas/rag.ts)：
+Schema 定义在 [rag.ts](../../../external/lobehub/packages/database/src/schemas/rag.ts)：
 
 **`embeddings` 表** (L71-L89)：
 
@@ -2956,11 +2956,11 @@ export const embeddings = pgTable('embeddings', {
 
 关联关系：`embeddings` -> `chunks` (一对一) -> `fileChunks` -> `files`
 
-**语义搜索** 使用 `cosineDistance` 在 [ChunkModel.semanticSearch](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/src/models/chunk.ts#L139-L172) 和 [semanticSearchForChat](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/src/models/chunk.ts#L174-L220) 中实现。
+**语义搜索** 使用 `cosineDistance` 在 [ChunkModel.semanticSearch](../../../external/lobehub/packages/database/src/models/chunk.ts#L139-L172) 和 [semanticSearchForChat](../../../external/lobehub/packages/database/src/models/chunk.ts#L174-L220) 中实现。
 
 ### 4.2 用户记忆向量存储
 
-Schema 定义在 [userMemories/index.ts](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/external/lobehub/packages/database/src/schemas/userMemories/index.ts)。向量 **不是** 存在单独的 embeddings 表中，而是 **直接内嵌在各业务表的 vector 列里**：
+Schema 定义在 [userMemories/index.ts](../../../external/lobehub/packages/database/src/schemas/userMemories/index.ts)。向量 **不是** 存在单独的 embeddings 表中，而是 **直接内嵌在各业务表的 vector 列里**：
 
 | 表名 | 向量列 | 维度 | 索引类型 |
 |---|---|---|---|
@@ -3102,14 +3102,14 @@ Upstash Workflow / 用户手动触发
 
 | # | 问题 | 层级 | 代码位置 |
 |---|------|------|---------|
-| 1 | `embedding_models_list` 返回空列表 | Rust | [system/mod.rs:382-391](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/system/mod.rs#L382-L391) |
-| 2 | `memory_embedding_status` 返回 provider=none | Rust | [memory/mod.rs:91-101](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/memory/mod.rs#L91-L101) |
-| 3 | `memory_reembed` 返回 count=0 | Rust | [memory/mod.rs:103-108](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/memory/mod.rs#L103-L108) |
-| 4 | `config_section_set("embedding")` 丢弃配置 | Rust | [system/mod.rs:358-363](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/system/mod.rs#L358-L363) |
-| 5 | `config_test_postgres` 硬编码 has_pgvector=true | Rust | [system/mod.rs:372-380](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/system/mod.rs#L372-L380) |
+| 1 | `embedding_models_list` 返回空列表 | Rust | [system/mod.rs:382-391](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L382-L391) |
+| 2 | `memory_embedding_status` 返回 provider=none | Rust | [memory/mod.rs:91-101](../../../apps/desktop/src-tauri/src/application/memory/mod.rs#L91-L101) |
+| 3 | `memory_reembed` 返回 count=0 | Rust | [memory/mod.rs:103-108](../../../apps/desktop/src-tauri/src/application/memory/mod.rs#L103-L108) |
+| 4 | `config_section_set("embedding")` 丢弃配置 | Rust | [system/mod.rs:358-363](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L358-L363) |
+| 5 | `config_test_postgres` 硬编码 has_pgvector=true | Rust | [system/mod.rs:372-380](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L372-L380) |
 | 6 | Station 无 embedding API 端点 | Station | 不存在 |
 | 7 | Station 无 pgvector 依赖 | Station | go.mod 中无 pgvector-go |
-| 8 | Station ai_chat 无 embedding 调用 | Station | [chat_service.go](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/station/app/subserver/ai_chat/service/chat_service.go) 仅 chat completion |
+| 8 | Station ai_chat 无 embedding 调用 | Station | [chat_service.go](../../../apps/station/app/subserver/ai_chat/service/chat_service.go) 仅 chat completion |
 
 ### LobeHub 是怎么做的（参照）
 

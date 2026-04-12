@@ -1,128 +1,91 @@
-# Mobile (Android + iOS) — Agent Platform Rules
+# Mobile Agent Entry
 
 > Load this file when working on `apps/mobile/android/` or `apps/mobile/ios/`.
 > Parent rules: [AGENTS.md](../../AGENTS.md)
 >
-> ⚠️ `apps/mobile/flutter/` is **DEPRECATED** — do not read, modify, or reference it.
+> `apps/mobile/flutter/` is deprecated. Do not read, modify, or reference it.
 
 ---
 
-## Android (Kotlin)
+## 1. Role Of This File
 
-| Rule | Detail |
-|------|--------|
-| UI | Jetpack Compose only, no XML layouts |
-| DI | Hilt (`@HiltAndroidApp`, `@AndroidEntryPoint`, `@HiltViewModel`) |
-| Async | Coroutines + Flow, **no RxJava** |
-| Theme | Material 3 via `PeersTouchTheme` |
-| Storage | DataStore (preferences), Room (structured) |
+This file is an **Agent navigation + guardrail entry**, not the Mobile architecture or coding-standard source of truth.
 
-### Feature Module Structure
+Use it to answer:
 
-```
-feature/<name>/
-├── ui/              # Composable screens
-├── viewmodel/       # ViewModel
-├── repository/      # Data repository
-└── model/           # Data models
-```
+- Which Mobile documents must be read first
+- Which hard constraints cannot be violated
+- Which verification commands must run before completion
 
-### Logger — Timber
-
-```kotlin
-Timber.d("bridge: module %s initialized", moduleName)
-Timber.i("applet: session created for %s", appletId)
-Timber.w("network: retry attempt %d/%d", current, max)
-Timber.e(exception, "bridge: method %s.%s failed", module, method)
-```
-
-**Forbidden**: `Log.d/i/w/e` direct calls, `println()`.
-
-### Token Storage
-
-```kotlin
-val prefs = EncryptedSharedPreferences.create(
-    "peers_secure_prefs",
-    MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC),
-    context,
-    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-)
-```
-
-### Verification
-
-```bash
-cd apps/mobile/android && ./gradlew build
-```
+Do **not** use this file as the place to redefine Mobile architecture, dual-platform design, or full coding standards.
 
 ---
 
-## iOS (Swift)
+## 2. Read These Sources First
 
-| Rule | Detail |
-|------|--------|
-| UI | SwiftUI only, no UIKit (except Lynx bridge) |
-| State | `@Observable` (iOS 17+) |
-| DI | `Container.shared` manual DI pattern |
-| Async | `async/await`, no callback nesting |
-| Colors | Asset Catalog + `ColorTokens`, no hardcoded colors |
-| Routing | `NavigationPath` + `Router` |
+### Platform Sources
 
-### Logger — os.Logger
+- [Mobile Base](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/base.md)
+- [Native Dual Platform](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/native-dual-platform.md)
 
-```swift
-import os
+### Topic Sources
 
-extension Logger {
-    static let network = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "network")
-    static let bridge  = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "bridge")
-    static let applet  = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "applet")
-    static let auth    = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "auth")
-}
+- [Applet Container](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/applet-container.md)
+- [Sync Protocol](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/sync-protocol.md)
 
-Logger.network.info("Request started: \(url, privacy: .public)")
-Logger.bridge.error("Call failed: \(error.localizedDescription, privacy: .public)")
-```
+### Specification Sources
 
-**Forbidden**: `print()`, `NSLog()`.
+- [Mobile Coding Guide](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/coding-guide/mobile)
+- [Common Coding Guide](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/coding-guide/common)
 
-Note: Use `.public` for values visible in production logs, `.private` for sensitive data.
+### Global Sources
 
-### Token Storage — Keychain
+- [Project Architecture](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/architecture.md)
+- [Station/Desktop Scope Boundary](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/architecture/boundaries/station-desktop-scope-boundary.md)
 
-```swift
-let query: [String: Any] = [
-    kSecClass as String: kSecClassGenericPassword,
-    kSecAttrAccount as String: "peers_access_token",
-    kSecValueData as String: token.data(using: .utf8)!
-]
-SecItemAdd(query as CFDictionary, nil)
-```
+---
 
-### Verification
+## 3. Hard Constraints
+
+- Mobile is native dual-platform: Android uses Kotlin + Compose, iOS uses Swift + SwiftUI.
+- Do not reintroduce Flutter as an active implementation path.
+- Proto definitions come from `model/domain/`; do not create manual parallel domain models.
+- Mobile does not become its own cross-end truth source when the architecture says Station owns the truth.
+- Use platform-native secure storage; do not store tokens in plaintext.
+- Use project loggers; do not use `println()`, `print()`, direct Android `Log.*`, or ad-hoc debug output.
+
+---
+
+## 4. Verification Commands
+
+Android:
 
 ```bash
-cd apps/mobile/ios && xcodebuild -scheme PeersTouch build
+cd apps/mobile/android
+./gradlew build
+```
+
+iOS:
+
+```bash
+cd apps/mobile/ios
+xcodebuild -scheme PeersTouch build
+```
+
+Proto generation:
+
+```bash
+./tooling/scripts/proto-gen-mobile.sh
+./tooling/scripts/proto-gen-mobile.sh kotlin
+./tooling/scripts/proto-gen-mobile.sh swift
 ```
 
 ---
 
-## Shared: Applet Container
+## 5. What This File Does Not Define
 
-Mobile uses **Lynx** as the applet/mini-program container.
-- Android: native `LynxView` integration
-- iOS: same pattern via `LynxView`
-- Applets run in Lynx sandbox, communicate with host app via Bridge
+- It does not define the full Mobile module structure.
+- It does not define the full Android or iOS coding standards.
+- It does not define the full applet/runtime architecture.
 
-### Proto Generation (Mobile)
-
-```bash
-./tooling/scripts/proto-gen-mobile.sh           # All
-./tooling/scripts/proto-gen-mobile.sh kotlin     # Kotlin only
-./tooling/scripts/proto-gen-mobile.sh swift      # Swift only
-```
-
-Output:
-- Kotlin: `apps/mobile/android/app/src/main/java/`
-- Swift: `apps/mobile/ios/PeersTouch/Core/Proto/`
+If you need those answers, go to the linked source documents above.

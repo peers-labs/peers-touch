@@ -1,175 +1,157 @@
 # Peers-Touch Terminology Glossary
 
-> **Quick Reference for Key Terms**  
-> This document defines the core terminology used throughout the Peers-Touch project.
+> Quick reference for current project terminology.
+> Historical Flutter/GetX-era terms may appear in `docs/context/`, but they are not current source-of-truth terminology.
 
 ---
 
 ## Core Concepts
 
-### Actor
-A federated identity in the Peers-Touch network. Every user, group, or bot is represented as an Actor with a unique ActorID.
+### Client
+User-facing applications in the Peers-Touch system.
 
-**Related Terms**: ActorID, ActorBase, Federation
+- Desktop: `apps/desktop/`
+- Mobile: `apps/mobile/android/` and `apps/mobile/ios/`
 
-### ActorID
-The globally unique identifier for an Actor in the federated network. Format: `@handle@domain.com`
+### Model
+The shared contract layer defined by Protocol Buffers.
 
-**Example**: `@alice@peers.example.com`
-
-### Federation
-The ability for different Peers-Touch instances (stations) to communicate and share data with each other, forming a decentralized network.
-
-**Related Terms**: ActivityPub, Station
+- Source of truth: `model/domain/*.proto`
 
 ### Station
-A backend server instance that hosts Peers-Touch services. Users connect to a station, and stations federate with each other.
+The backend runtime that owns shared business truth, service boundaries, and persistence.
 
-**Directory**: `station/`
+- Current location: `apps/station/`
+
+### Actor
+A network identity or participant represented in shared contracts and Station-owned business semantics.
+
+### Federation
+Cross-station communication and interoperability across decentralized deployments.
 
 ---
 
 ## Architecture Terms
 
-### Proto / Protobuf
-Protocol Buffers - the single source of truth for all data models across Mobile, Desktop, and Station.
-
-**Location**: `model/domain/*.proto`
-
-**Key Rule**: All cross-platform models (shared between Mobile and Desktop) MUST be generated from Proto files. Manual model creation is forbidden.
-
 ### Three-Tier Architecture
-The project structure: **Client** (Mobile/Desktop) ↔ **Model** (Proto) ↔ **Station** (Backend)
+The repository-wide system shape:
 
-### GetX
-The state management, dependency injection, and routing framework used in Flutter clients.
+- Client
+- Model
+- Station
 
-**Key Rule**: All state MUST be managed by GetX Controllers. StatefulWidget is forbidden.
+### Proto / Protobuf
+The only allowed shared data model definition mechanism.
 
----
+- Define first in `model/domain/*.proto`
+- Generate into platform-specific targets
+- Do not hand-write parallel shared models
 
-## Client-Side Terms
+### Source of Truth
+The document or system layer that is allowed to define a decision boundary.
 
-### StatelessWidget
-The only allowed widget type in Peers-Touch Flutter apps. All state is managed externally by Controllers.
+- Architecture source defines allowed system relationships
+- Platform source defines how one platform implements those relationships
+- Specification source defines coding and usage rules
 
-**Forbidden**: StatefulWidget
+### Execution Plan
+A delivery-oriented document that records migration order, rollout phases, or implementation progress.
 
-### Controller
-A GetX controller that manages business logic and state for a specific feature or page.
-
-**Example**: `HomeController`, `AIChatController`
-
-### Binding
-A GetX mechanism for lazy-loading and auto-disposing Controllers.
-
-**Example**: `HomeBinding`, `AIChatBinding`
-
-### Scaffolding
-The directory structure and organization pattern for code.
-
-**Reference**: `docs/client/desktop/base.md`
-
-### Feature Module
-A self-contained business module with its own view/, controller/, model/, and binding.
-
-**Example**: `apps/desktop/src/pages/`, `apps/desktop/src/store/`
+- These belong under a domain `execution-plans/` directory, not in architecture truth documents
 
 ---
 
-## UI Terms
+## Desktop Terms
 
-### LobeChat Style
-The design philosophy and visual style that Peers-Touch UI follows, emphasizing clean, modern, and professional interfaces.
+### Desktop Web
+The TypeScript/React runtime rendered in browser or WebView.
 
-### peers_touch_ui
-The shared UI component library used by both Mobile and Desktop clients.
+### Desktop Rust
+The Rust runtime used by Desktop for local application services and gateway responsibilities.
 
-**Location**: `client/common/peers_touch_ui/`
+### Desktop App
+The Tauri host application that carries Desktop Web and Desktop Rust together in native app mode.
 
-### Lobe Tokens
-Design tokens (colors, spacing, typography) that define the visual system.
+### GlobalContext Kernel
+Desktop's cross-cutting state coordination kernel.
+
+- Shared semantics source: `docs/client/common/globalcontext.md`
+- Desktop implementation source: `docs/client/desktop/global-context-kernel.md`
+
+### Provider
+An AI provider configuration entry, including protocol, credentials, endpoint behavior, and model discovery policy.
+
+### Model Registry
+The normalized provider/model view consumed by Desktop after merging presets, local state, and future sync inputs.
 
 ---
 
-## Backend Terms
+## Mobile Terms
 
-### Frame
-The core framework layer of the Station backend.
+### Native Dual Platform
+The current Mobile mainline architecture: Android and iOS are implemented natively, not through a shared Flutter runtime.
 
-**Location**: `apps/station/frame/`
+### Applet Container
+The Mobile host runtime for Lynx-based applets and Bridge V2 integration.
+
+### Sync Protocol
+The Mobile-side contract and behavior for synchronization with Station-managed business truth.
+
+---
+
+## Station Terms
+
+### App Layer
+The Station business layer where domain capabilities and subservers live.
+
+- Location: `apps/station/app/`
+
+### Frame Layer
+The Station framework layer that provides shared runtime infrastructure.
+
+- Location: `apps/station/frame/`
 
 ### Subserver
-A modular backend service within the Station (e.g., ai_box, auth).
+A modular Station business capability unit under the app layer.
 
-**Location**: `apps/station/app/subserver/`
+- Location: `apps/station/app/subserver/`
 
-### ActivityPub
-The W3C standard protocol for federated social networking that Peers-Touch implements.
+### DDD
+Domain-driven design conventions used for Station business capabilities, especially subserver boundaries and domain ownership.
 
-### Posting
-The system for creating, storing, and federating user-generated content (posts, messages).
+---
+
+## Cross-Cutting Terms
+
+### Applet
+A packaged capability module that runs inside the Peers-Touch host environment using defined manifest and bridge contracts.
+
+### Manifest V2
+The manifest contract that describes applet metadata, permissions, targets, and loading semantics.
+
+### Bridge V2
+The applet-host interaction contract used by Desktop and Mobile applet runtimes.
+
+### i18n
+The localization architecture for user-facing strings and localized error presentation.
+
+### ADR
+Architecture Decision Record.
+
+- Historical and decision records live under `docs/context/decisions/`
 
 ---
 
 ## Network Terms
 
+### Relay
+A Station-side or infrastructure-side mediated communication path used when direct connectivity is not appropriate or not available.
+
 ### libp2p
-The peer-to-peer networking library used for direct client-to-client communication.
+The peer-to-peer networking foundation used for direct connectivity scenarios.
 
-### Mesh Network
-The peer-to-peer network topology where clients can directly connect to each other.
-
-### Network Discovery
-The process of finding nearby peers in the local network or federated network.
-
----
-
-## Development Terms
-
-### ADR (Architecture Decision Record)
-A document that captures an important architectural decision, its context, and rationale.
-
-**Location**: `docs/context/decisions/`
-
-### FEATURE_PROMPT
-A prompt document that defines the design blueprint for a specific feature module.
-
-**Example**: `docs/client/desktop/base.md`
-
-### TASK_PROMPT
-A structured template for defining a specific development task.
-
-**Template**: `docs/global/workflow.md`
-
----
-
-## Domain-Specific Terms
-
-### AI-Chat
-The AI conversation feature that provides OpenAI-compatible chat interfaces.
-
-### Provider
-An AI service provider configuration (e.g., OpenAI, local LLM).
-
-### Session
-A chat conversation session with an AI assistant.
-
-### Composer
-The multi-modal input component for creating messages (text, images, files, voice).
-
-### Circle
-A private group or community within Peers-Touch (similar to Discord servers or Telegram groups).
-
----
-
-## Storage Terms
-
-### LocalStorage
-GetStorage-based local key-value storage for non-sensitive data.
-
-### SecureStorage
-Encrypted storage for sensitive data like tokens and credentials.
+### ICE
+Interactive Connectivity Establishment related capability for candidate discovery and connectivity setup in real-time communication scenarios.
 
 ---
 
@@ -177,44 +159,48 @@ Encrypted storage for sensitive data like tokens and credentials.
 
 | Abbreviation | Full Term | Meaning |
 |--------------|-----------|---------|
-| **ADR** | Architecture Decision Record | Design decision documentation |
-| **AP** | ActivityPub | Federation protocol |
-| **DI** | Dependency Injection | GetX's service locator pattern |
-| **DTO** | Data Transfer Object | Data structure for API communication |
-| **MVP** | Minimum Viable Product | Initial feature implementation |
-| **P2P** | Peer-to-Peer | Direct client-to-client communication |
-| **Proto** | Protocol Buffers | Data model definition format |
-| **Rx** | Reactive Extensions | GetX's reactive state variables |
-| **UI** | User Interface | Visual components |
-| **UX** | User Experience | Interaction design |
+| ADR | Architecture Decision Record | Important decision record |
+| API | Application Programming Interface | Contracted service interface |
+| DDD | Domain-Driven Design | Business boundary design method |
+| DTO | Data Transfer Object | Transport-layer data structure |
+| ICE | Interactive Connectivity Establishment | Connectivity setup mechanism |
+| i18n | Internationalization | Localization architecture |
+| P2P | Peer-to-Peer | Direct node-to-node communication |
+| Proto | Protocol Buffers | Shared contract definition mechanism |
+| SoT | Source of Truth | Authoritative owner of a decision or dataset |
+| UI | User Interface | Visual interaction layer |
+| UX | User Experience | Interaction and product experience |
 
 ---
 
-## Anti-Patterns (Things to Avoid)
+## Legacy Terms
 
-### ❌ StatefulWidget
-Never use StatefulWidget. Use GetX Controllers instead.
+### GetX
+A historical Flutter-era state management and dependency pattern that may still appear in archived documents under `docs/context/`.
 
-### ❌ Relative Imports
-Never use relative imports like `import '../models/user.dart'`. Always use package imports.
+### StatefulWidget / StatelessWidget
+Historical Flutter widget terminology. These are not current project-wide client architecture rules.
 
-### ❌ Manual Models
-Never manually create model classes. Always generate from Proto files.
+### peers_touch_ui
+A historical shared UI library name that may appear in archived Flutter-era material.
 
-### ❌ Hardcoded Strings
-Never hardcode UI strings. Use the i18n system (LocaleKeys).
+---
 
-### ❌ Direct Dio Usage
-Never instantiate Dio directly. Use HttpService from peers_touch_base.
+## Guardrails
+
+- Do not treat archived terminology in `docs/context/` as current architectural truth
+- Do not treat generated model output as the source of truth
+- Do not redefine platform runtime boundaries inside glossary entries
 
 ---
 
 ## Related Documents
 
-- **Project Identity**: `docs/global/project-identity.md`
-- **Architecture**: `docs/global/architecture.md`
-- **Domain Models**: `docs/global/domain-model.md`
+- `docs/README.md`
+- `docs/global/architecture.md`
+- `docs/client/common/globalcontext.md`
+- `docs/station/base.md`
 
 ---
 
-*This glossary is a living document. Add new terms as the project evolves.*
+*This glossary tracks current terminology. Historical terms should be explicitly marked as legacy when retained.*

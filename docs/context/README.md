@@ -1,6 +1,7 @@
 # Context: Historical Context & Evolution
 
-> **Purpose**: This directory contains historical context, implementation reports, evolution history, and architecture decision records (ADRs) for the Peers-Touch project.
+> **Purpose**: This directory contains historical context, archived planning material, implementation reports, evolution history, ADRs, and proposal-stage architecture notes.
+> It is not the current architecture or platform source of truth.
 
 ---
 
@@ -8,22 +9,41 @@
 
 ```
 docs/context/
+├── architecture/           # Historical architecture proposals and draft designs
 ├── decisions/              # Architecture Decision Records (ADRs)
 ├── implementation-reports/ # Technical implementation reports
 ├── evolution/              # Development history and daily logs
-└── features/               # Feature planning and roadmaps
+└── features/               # Feature planning and archived roadmaps
 ```
 
 ---
 
 ## 📋 Contents
 
+### 🧭 Historical Architecture Notes
+
+**Location**: [`architecture/`](./architecture/)
+
+- [**GlobalContext Flutter-Era Current State**](./architecture/globalcontext-flutter-era-current-state.md)
+  - Flutter/GetX 时代的 GlobalContext 实现记录
+  - 仅用于历史追溯，不是当前共享层真源
+
+- [**Friend Chat Architecture Design**](./architecture/friend-chat-architecture.md)
+  - 历史阶段的 Friend Chat 架构提案
+  - 含阶段计划和旧目录/旧技术背景，应按历史材料阅读
+
+- [**ICE Capability Architecture Design**](./architecture/ice-capability-design.md)
+  - 历史阶段的 ICE 能力设计提案
+  - 含阶段计划和旧目录/旧技术背景，应按历史材料阅读
+
 ### 🏛️ Architecture Decision Records (ADRs)
 
 **Location**: [`decisions/`](./decisions/)
 
-- [ADR-001: Proto-First Domain Modeling](./decisions/001-proto-first-domain-modeling.md)
+- [ADR-001: Why GetX](./decisions/001-why-getx.md)
 - [ADR-002: No StatefulWidget Policy](./decisions/002-no-stateful-widget.md)
+- [ADR-003: Proto As Source](./decisions/003-proto-as-source.md)
+- [ADR-003: Social Refactor From ActivityPub](./decisions/003-social-refactor-from-activitypub.md)
 
 ### 📊 Implementation Reports
 
@@ -83,16 +103,17 @@ Add documents to `docs/context/` when:
 
 1. **Implementation Reports**: Feature is completed and stable
 2. **Evolution History**: Recording significant development milestones
-3. **ADRs**: Making architectural decisions that need documentation
+3. **ADRs**: Recording decisions, including superseded or historical ones
 4. **Feature Planning**: Feature has been planned but not yet started, or completed and archived
+5. **Proposal-Stage Architecture Notes**: Draft architecture exploration that should not be treated as current source of truth
 
 ### When NOT to Add Documents Here
 
-Keep documents in project root when:
+Keep documents out of `docs/context/` when:
 
-1. **Active Development**: Feature is currently being developed
-2. **Integration Guides**: Actively referenced by developers
-3. **Project Entry Points**: README.md, PROJECT.md
+1. **Current Source of Truth**: Architecture, platform, and coding rules that actively constrain implementation
+2. **Active Developer Entry Docs**: Project entry points and always-current navigation
+3. **Current Execution Plans**: Ongoing plans that belong under a domain's `execution-plans/`
 
 ### Archive Metadata
 
@@ -110,8 +131,9 @@ When moving documents here, add metadata at the top:
 
 - [Project Identity](../global/project-identity.md) - What is Peers-Touch?
 - [Architecture Overview](../global/architecture.md) - System architecture
-- [Prompt System Index](../meta/INDEX.md) - Complete navigation
+- [Docs Entry](../README.md) - Start here for document layering and navigation
+- [Extended Index](../meta/INDEX.md) - Complete directory index
 
 ---
 
-*Last Updated: 2025-01-05*
+*Last Updated: 2026-04-12*

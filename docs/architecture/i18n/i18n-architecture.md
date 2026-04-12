@@ -2,23 +2,23 @@
 
 > **Multi-Platform Internationalization Architecture**
 >
-> Created: 2026-04-09 | Updated: 2026-04-11 | Status: **Landed**
+> Created: 2026-04-09 | Updated: 2026-04-11
 
 ---
 
 ## 1. 架构总览
 
-Peers-Touch i18n 架构已完成基础设施搭建和前端全量迁移，形成以下核心能力：
+Peers-Touch i18n 架构围绕以下核心能力设计：
 
-| 能力 | 状态 | 说明 |
-|------|------|------|
-| **翻译源管理** | ✅ Landed | `packages/locales/` 16 个 namespace × 2 语言，metadata.json 版本管理 |
-| **Runtime FS Loading** | ✅ Landed | Rust I18nService 部署 + 扫描 → Tauri Command → 前端异步加载 |
-| **Desktop 全量 i18n** | ✅ Landed | 54 个文件、174+ `useTranslation` 调用，覆盖全部 13 个页面及组件 |
-| **Rust Error Key** | 🔄 进行中 | `AppResult::fail()` message 统一为 i18n key，invoke 层自动翻译 |
-| **语言切换** | ✅ Landed | LoginPage + Settings General 均有 LanguageSwitcher |
-| **社区语言包** | ✅ Landed | config/i18n/ 支持用户自行放置社区翻译目录 |
-| **后端 i18n** | ⏳ 规划中 | 种子数据 i18n、OAuth2 HTML 页面、Go Dashboard error_key |
+| 能力 | 说明 |
+|------|------|
+| **翻译源管理** | `packages/locales/` 统一维护 namespace 语言包与 metadata |
+| **Runtime FS Loading** | Rust `I18nService` 负责部署与扫描运行时语言资源 |
+| **Desktop 前端 i18n** | 前端通过 Tauri command 异步加载资源后再初始化 i18next |
+| **Rust Error Key** | Rust 层返回 error key，invoke 层自动翻译 |
+| **语言切换** | UI 提供运行时语言切换能力 |
+| **社区语言包** | `config/i18n/` 支持用户扩展社区语言包 |
+| **后端扩展能力** | 支持向种子数据、HTML 页面和服务端扩展场景延伸 |
 
 ---
 
@@ -30,6 +30,16 @@ Peers-Touch i18n 架构已完成基础设施搭建和前端全量迁移，形成
 4. **keySeparator: false — 点号是 key 的一部分，不是层级分隔符** — `"auth.login.title"` 是一个完整的 flat key 字符串，i18next 不做层级解析。
 5. **按命名空间组织** — 翻译 key 按 `namespace.feature.context` 三段式命名约定，支持按需加载。
 6. **TypeSafe** — 通过 TypeScript `CustomTypeOptions` 声明约束 namespace 和 returnNull 行为。
+
+---
+
+## 2.1 执行计划入口
+
+本文只定义 i18n 架构、资源组织、运行链路与扩展约定。
+
+如需查看落地状态、推进进度与后续扩展安排，请看：
+
+- `execution-plans/i18n-rollout-status.md`
 
 ---
 
@@ -357,7 +367,7 @@ function handleStationError(response: ErrorResponse) {
 
 Station 侧无需 i18n 改动。Touch framework 已有 `ErrorResponse` 结构体携带 `ErrorCode`。
 
-**Dashboard jsonError 扩展**（规划中）：新增 `error_key` 字符串字段供 Desktop 客户端直接使用 i18n key。
+**Dashboard jsonError 扩展**（可选扩展）：新增 `error_key` 字符串字段供 Desktop 客户端直接使用 i18n key。
 
 ### 5.4 Rust I18nService 架构
 
@@ -376,7 +386,7 @@ pub struct I18nService {
 | `new(config_dir)` | 初始化，解析 `{config_dir}/i18n/` 路径 |
 | `deploy_builtin_packs(resource_dir)` | 版本比较部署：source metadata.json version ≠ deployed version → 重新部署 en/ + zh-CN/；相同则跳过（快速路径） |
 | `load_resources()` | 扫描 config/i18n/ 所有子目录，发现全部语言（含社区包），加载所有 namespace JSON，返回 `I18nResources` |
-| `resolve_key(lang, ns, key)` | **规划中** — Rust 侧文本解析，用于 OAuth2 HTML 页面等需要 Rust 直接生成本地化文本的场景 |
+| `resolve_key(lang, ns, key)` | 预留 Rust 侧文本解析能力，用于 OAuth2 HTML 页面等需要 Rust 直接生成本地化文本的场景 |
 
 #### 源目录解析
 
@@ -391,7 +401,7 @@ Dev mode:    CARGO_MANIFEST_DIR → ../../.. → packages/locales/
 
 用户在 `config/i18n/` 下放置新的语言目录（如 `ja/`、`ko/`），`load_resources()` 会自动发现。内置语言包（en/、zh-CN/）由 App 管理，社区包永远不被覆盖。
 
-### 5.5 种子数据 i18n 约定（规划中）
+### 5.5 种子数据 i18n 约定
 
 种子数据（Default Agent、New Chat 等）使用 `i18n:` 前缀约定：
 
@@ -415,7 +425,7 @@ function renderTitle(title: string, t: TFunction): string {
 
 此约定区分「系统预设数据」（需要 i18n）和「用户创建数据」（原样显示）。
 
-### 5.6 OAuth2 HTML 页面 i18n（规划中）
+### 5.6 OAuth2 HTML 页面 i18n
 
 OAuth2 loopback callback 在 Rust 层直接生成 HTML 页面返回给浏览器。需要本地化的场景：
 

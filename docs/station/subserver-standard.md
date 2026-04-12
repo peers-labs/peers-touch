@@ -1,275 +1,312 @@
-# SubServer 开发标准
+# Subserver Standard
 
-## 目录结构规范
+> Station platform specification source for how a Subserver is positioned, structured, and integrated into the Station runtime.
 
+---
+
+## 1. 文档定位
+
+本文定义：
+
+- Station Subserver 在当前架构中的角色
+- Subserver 的目录结构与职责边界
+- 插件注册、生命周期、配置、路由的约束
+- Subserver 与 `frame` / `app` 的集成方式
+
+本文不定义：
+
+- 全量 Go 编码规范
+- 全量库使用手册
+- 单个业务域的详细架构
+
+继续阅读请看：
+
+- `base.md`
+- `app-layer.md`
+- `go-standards.md`
+- `lib-usage.md`
+
+---
+
+## 2. 什么是 Subserver
+
+Subserver 是 Station `app` 层中的业务能力单元。
+
+它负责：
+
+- 承载某个明确的业务域或能力域
+- 向 Station runtime 注册自己的生命周期与处理入口
+- 暴露自身 handler、service、domain、repo 等业务实现
+- 通过 `frame` 提供的能力接入配置、日志、数据库、路由与运行时基础设施
+
+它不负责：
+
+- 复写 `frame` 的基础设施能力
+- 让 `frame` 反向依赖自身业务语义
+- 将全部业务逻辑直接堆进 handler
+
+---
+
+## 3. 当前路径约束
+
+Subserver 当前主路径为：
+
+```text
+apps/station/app/subserver/<domain>/
 ```
-app/subserver/<module>/
-├── README.md              # 模块说明文档
-├── plugin.go              # 插件注册与生命周期工厂
-├── options.go             # 配置选项与依赖注入
-├── <module>.go            # SubServer 接口实现（核心逻辑）
-├── handler.go             # HTTP/Hertz 路由处理函数
-├── auth.go                # 认证与权限控制（可选）
-├── db/                    # 数据访问层（可选）
-│   ├── model/            # 数据模型定义（GORM/Proto）
-│   └── repo/             # 数据库操作封装
-└── service/               # 业务逻辑层（可选）
+
+示例（当前代码库中存在的域）：
+
+- `agent`
+- `friend_chat`
+- `group_chat`
+- `social`
+- `activitypub`
+- `dashboard`
+- `mastodon`
+
+---
+
+## 4. 推荐目录结构
+
+```text
+apps/station/app/subserver/<domain>/
+├── plugin.go                # 插件注册与工厂入口
+├── options.go               # 域级配置与 option 装配
+├── <domain>.go / subserver.go
+├── handler.go               # 或 handler/*.go
+├── service/                 # 应用服务 / 领域编排
+├── domain/                  # 领域对象、值对象、转换器（按需）
+├── db/                      # 数据访问与持久化模型（按需）
+│   ├── model/
+│   └── repo/
+└── README.md                # 域说明（按需）
 ```
 
-## 文件职责
+说明：
 
-### 1. plugin.go - 插件注册
-- 定义配置结构体（使用 `pconf` 标签）
-- 实现 `plugin.SubserverPlugin` 接口
-- 在 `init()` 中注册到 `plugin.SubserverPlugins`
-- 负责配置映射和插件工厂
+- 不是每个域都必须拥有完全相同的子目录。
+- 但职责边界必须清楚：handler 不承载完整业务规则，service 不直接扮演 transport 层。
+- 如果已经按 `handler/`, `application/`, `infrastructure/`, `domain/` 进一步细分，也应保持同样的职责约束。
+
+---
+
+## 5. 分层职责
+
+### 5.1 plugin.go
+
+负责：
+
+- 注册到 `plugin.SubserverPlugins`
+- 装配本域默认 `option.Option`
+- 提供 `New(opts ...option.Option) server.Subserver`
+
+不负责：
+
+- 承载业务逻辑
+- 直接处理 HTTP 请求
+
+### 5.2 options.go
+
+负责：
+
+- 定义域级 option 结构
+- 将配置映射为 `option.Option`
+- 提供 `WithXxx(...)` 风格配置入口
+
+### 5.3 subserver 主体文件
+
+负责：
+
+- 实现 `server.Subserver`
+- 管理生命周期状态
+- 组合 handler、service、repo 等依赖
+
+### 5.4 handler 层
+
+负责：
+
+- transport 层输入输出转换
+- 参数解析、权限前置检查、调用 service
+- 返回协议层响应
+
+不负责：
+
+- 承载复杂业务编排
+- 直接堆积跨流程状态机
+
+### 5.5 service 层
+
+负责：
+
+- 业务编排
+- 领域规则
+- 调用 repo / domain service / infrastructure
+
+### 5.6 db 层
+
+负责：
+
+- 持久化模型
+- 数据访问封装
+- 查询与事务边界配合
+
+---
+
+## 6. 生命周期约束
+
+Subserver 应实现当前 Station 运行时所要求的 `server.Subserver` 行为。
+
+典型生命周期：
+
+1. `Init`
+   - 构建资源
+   - 注入依赖
+   - 不进入持续运行任务
+2. `Start`
+   - 进入运行态
+   - 启动调度、监听、后台工作流
+3. `Stop`
+   - 优雅关闭
+   - 释放资源
+
+常见状态：
+
+- `server.StatusStopped`
+- `server.StatusStarting`
+- `server.StatusRunning`
+- `server.StatusStopping`
+- `server.StatusError`
+
+状态流转应清晰、可观测，不要静默失败。
+
+---
+
+## 7. 插件注册约束
+
+核心机制：
+
+- `plugin.SubserverPlugins["<domain>"] = ...`
+- `New(...option.Option) server.Subserver`
+
+推荐模式：
 
 ```go
-var <module>Options struct {
-    Peers struct {
-        Node struct {
-            Server struct {
-                Subserver struct {
-                    <Module> struct {
-                        Enabled bool   `pconf:"enabled"`
-                        // 其他配置字段
-                    } `pconf:"<module>"`
-                } `pconf:"subserver"`
-            } `pconf:"server"`
-        } `pconf:"node"`
-    } `pconf:"peers"`
-}
-
-type <module>Plugin struct{}
-
-func (p *<module>Plugin) Name() string { return "<module>" }
-func (p *<module>Plugin) Enabled() bool { return <module>Options.Peers.Node.Server.Subserver.<Module>.Enabled }
-func (p *<module>Plugin) Options() []option.Option {
-    return []option.Option{
-        // 返回配置选项
-    }
-}
-func (p *<module>Plugin) New(opts ...option.Option) server.Subserver {
-    opts = append(opts, p.Options()...)
-    return New(opts...)
-}
-
 func init() {
-    config.RegisterOptions(&<module>Options)
-    plugin.SubserverPlugins["<module>"] = &<module>Plugin{}
+	config.RegisterOptions(&domainOptions)
+	plugin.SubserverPlugins["<domain>"] = &domainPlugin{}
 }
 ```
 
-### 2. options.go - 配置选项
-- 定义 `<module>Options` 结构体
-- 使用 `option.NewWrapper` 创建包装器
-- 提供 `WithXxx` 函数
-- 提供 `getOptions` 辅助函数
+要求：
+
+- 注册名稳定、语义明确
+- 注册名与路径、配置项、日志上下文保持一致
+- 不使用历史遗留或临时命名污染长期域模型
+
+---
+
+## 8. 配置与依赖注入
+
+Subserver 配置应通过 `option.Option` 与配置注册机制进入运行时。
+
+推荐约束：
+
+- 在 `plugin.go` 中注册配置结构
+- 在 `options.go` 中定义域级 option 包装
+- 在 `New` / `Init` 时解析并注入到 subserver 实例
+
+数据库获取应复用统一 store 能力，例如：
 
 ```go
-type <module>Options struct {
-    DBName string
-    // 其他选项
-}
-
-var <module>Wrapper = option.NewWrapper("<module>", func(o *option.Options) *<module>Options {
-    return &<module>Options{}
-})
-
-func WithDBName(name string) option.Option {
-    return <module>Wrapper.Wrap(func(o *<module>Options) {
-        o.DBName = name
-    })
-}
-
-func getOptions(opts ...option.Option) *<module>Options {
-    o := option.GetOptions(opts...)
-    if o.Ctx().Value("<module>") == nil {
-        return &<module>Options{}
-    }
-    return o.Ctx().Value("<module>").(*<module>Options)
-}
+db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
 ```
 
-### 3. <module>.go - SubServer 实现
-- 实现 `server.Subserver` 接口
-- 必须实现所有方法：`Init`, `Start`, `Stop`, `Name`, `Type`, `Address`, `Status`, `Handlers`
-- 使用小写命名：`<module>SubServer`
-- 状态管理：`stopped` → `starting` → `running` → `stopping` → `stopped`
+不要在 Subserver 内自行发明平行数据库接入方式。
 
-```go
-type <module>SubServer struct {
-    opts   *<module>Options
-    addrs  []string
-    status server.Status
-}
+---
 
-func New(opts ...option.Option) server.Subserver {
-    o := getOptions(opts...)
-    s := &<module>SubServer{
-        opts:   o,
-        addrs:  []string{},
-        status: server.StatusStopped,
-    }
-    return s
-}
+## 9. 路由约束
 
-func (s *<module>SubServer) Init(ctx context.Context, opts ...option.Option) error {
-    s.status = server.StatusStarting
-    // 初始化逻辑
-    return nil
-}
+Subserver 路由必须避免与主服务器系统路由冲突。
 
-func (s *<module>SubServer) Start(ctx context.Context, opts ...option.Option) error {
-    s.status = server.StatusRunning
-    // 启动逻辑
-    return nil
-}
+约束：
 
-func (s *<module>SubServer) Stop(ctx context.Context) error {
-    s.status = server.StatusStopped
-    // 停止逻辑
-    return nil
-}
-
-func (s *<module>SubServer) Name() string { return "<module>" }
-func (s *<module>SubServer) Type() server.SubserverType { return server.SubserverTypeHTTP }
-func (s *<module>SubServer) Status() server.Status { return s.status }
-func (s *<module>SubServer) Address() server.SubserverAddress {
-    return server.SubserverAddress{Address: s.addrs}
-}
-```
-
-### 4. handler.go - HTTP 处理器
-- 实现 `Handlers()` 方法返回路由
-- 使用 `server.NewHandler` 创建处理器
-- **路由规范**: `/<module>/...` (使用模块名作为路径前缀,与主服务器路由区分)
-  - ✅ 正确: `/launcher/feed`, `/ai-box/provider/new`
-  - ❌ 错误: `/api/launcher/feed` (会与 Mastodon API `/api/v1/...` 混淆)
-  - ❌ 错误: `/activitypub/launcher/...` (会与 ActivityPub 主路由冲突)
-  - **主服务器路由**: `/activitypub/...`, `/api/v1/...`, `/management/...`, `/peer/...`, `/conv/...`, `/.well-known/...`
-  - **SubServer 路由**: 使用独立的模块名前缀,避免与主路由冲突
-- 使用标准 `http.HandlerFunc` 签名
-
-```go
-type <module>URL struct {
-    name string
-    path string
-}
-
-func (u <module>URL) Name() string    { return u.name }
-func (u <module>URL) Path() string    { return u.path }
-func (u <module>URL) SubPath() string { return u.path }
-
-func (s *<module>SubServer) Handlers() []server.Handler {
-    return []server.Handler{
-        server.NewHandler(
-            <module>URL{name: "<module>-endpoint", path: "/<module>/endpoint"},
-            http.HandlerFunc(s.handleEndpoint),
-            server.WithMethod(server.GET),
-        ),
-    }
-}
-
-func (s *<module>SubServer) handleEndpoint(w http.ResponseWriter, r *http.Request) {
-    ctx := r.Context()
-    // 处理逻辑
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    json.NewEncoder(w).Encode(response)
-}
-```
-
-## 架构分层
-
-1. **接口层 (handler.go)**: HTTP 请求处理
-2. **业务层 (service/)**: 业务逻辑（可选）
-3. **数据层 (db/)**: 数据访问（可选）
-4. **配置层 (plugin.go, options.go)**: 框架集成
-
-## 命名规范
-
-- 结构体：`<module>SubServer`（小写开头）
-- 插件：`<module>Plugin`
-- 配置：`<module>Options`
-- 路由：`/<module>/...` (直接使用模块名)
-- 注册名：`<module>`（小写，用连字符）
-
-## 生命周期
-
-1. **Init**: 资源构建与依赖注入，不启动后台任务
-2. **Start**: 进入运行态，启动调度/监听
-3. **Stop**: 优雅关闭，释放资源
-
-## 状态管理
-
-- `StatusStopped`: 已停止
-- `StatusStarting`: 启动中
-- `StatusRunning`: 运行中
-- `StatusStopping`: 停止中
-- `StatusError`: 错误状态
-
-## 日志规范
-
-**必须遵守** [库使用规范 - 日志库](./35-lib-usage.md#日志库-logger)
-
-关键要点：
-- 使用 `frame/core/logger`
-- 第一个参数必须是 `context.Context`
-- 关键路径记录参数与结果
-- 错误需详细记录上下文
+- Subserver 使用独立的域名前缀
+- 避免伪装成主系统 `/api/v1/...` 路由
+- 避免与 `/activitypub/...`、`/.well-known/...` 等主路径混淆
 
 示例：
-```go
-import "github.com/peers-labs/peers-touch/station/frame/core/logger"
 
-func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
-    logger.Info(ctx, "begin to initiate subserver")
-    // 详细规范请参考 35-lib-usage.md
-    return nil
-}
-```
+- 合理：`/<domain>/...`
+- 不合理：把域内路由强行挂到与主协议层冲突的公共前缀下
 
-## 配置集成
+具体协议兼容与路由文档更新，参见 Station API 文档与路由协议文档。
 
-1. 在 `plugin.go` 中定义配置结构（`pconf` 标签）
-2. 在 `init()` 中调用 `config.RegisterOptions`
-3. 在 `Options()` 方法中转换为 `option.Option`
-4. 在 `New()` 方法中合并配置
+---
 
-## 注册流程
+## 10. 日志与错误处理约束
 
-```go
-func init() {
-    // 1. 注册配置
-    config.RegisterOptions(&<module>Options)
-    
-    // 2. 注册数据库表（如需要）
-    store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
-        _ = rds.AutoMigrate(&model.YourModel{})
-    })
-    
-    // 3. 注册插件
-    plugin.SubserverPlugins["<module>"] = &<module>Plugin{}
-}
-```
+### 日志
 
-## 使用示例
+必须使用：
 
-### 配置文件 (config.yaml)
-```yaml
-peers:
-  node:
-    server:
-      subserver:
-        <module>:
-          enabled: true
-          # 其他配置
-```
+- `frame/core/logger`
 
-### 代码导入
-```go
-import _ "github.com/peers-labs/peers-touch/station/app/subserver/<module>"
-```
+要求：
 
-框架会自动加载并启动已启用的 subserver。
+- 第一个参数传 `context.Context`
+- 记录关键上下文与失败原因
+- 不使用 `fmt.Println`、标准库 `log` 直接输出业务日志
+
+### 错误处理
+
+要求：
+
+- 不吞错
+- 业务层错误带上下文
+- handler 负责把错误映射到协议层响应
+- 运行时失败要有日志和状态反馈
+
+详细规范见：
+
+- `go-standards.md`
+- `lib-usage.md`
+
+---
+
+## 11. 与当前代码现实的对齐点
+
+当前代码中可直接看到以下模式已经在使用：
+
+- `server.Subserver`
+- `plugin.SubserverPlugins`
+- `server.SubserverTypeHTTP`
+- `server.StatusStarting`
+- `store.WithRDSDBName(...)`
+- `frame/core/logger`
+
+因此本文档必须围绕这些现实能力定义规范，而不是继续沿用旧路径或旧模块示例。
+
+---
+
+## 12. 验收标准
+
+一份新的或重构后的 Subserver，如果要被认为符合规范，至少应满足：
+
+- 路径位于 `apps/station/app/subserver/<domain>/`
+- 明确区分 plugin / options / subserver / handler / service / repo 职责
+- 生命周期与状态流转清晰
+- 日志统一走 `frame/core/logger`
+- 数据库访问统一走 `store` 能力
+- 路由不与主系统保留路径冲突
+- 业务逻辑不堆进 handler
+
+---
+
+## 13. 继续阅读
+
+- [Station Base](./base.md)
+- [App Layer](./app-layer.md)
+- [Go Standards](./go-standards.md)
+- [Lib Usage](./lib-usage.md)
