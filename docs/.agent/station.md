@@ -1,121 +1,58 @@
-# Station (Go) — Agent Platform Rules
+# Station Agent Entry
 
 > Load this file when working on `apps/station/`.
 > Parent rules: [AGENTS.md](../../AGENTS.md)
 
 ---
 
-## Coding Standards
+## 1. Role Of This File
 
-| Rule | Detail |
-|------|--------|
-| Error handling | Always check errors, never `_, _ =` |
-| Context | Pass `context.Context` everywhere |
-| Proto | Use proto-generated structs, no manual models |
-| State | Dependency injection, no global state |
-| Naming | Files: `snake_case.go`, packages: lowercase single word |
+This file is an **Agent navigation + guardrail entry**, not the Station architecture or coding-standard source of truth.
 
----
+Use it to answer:
 
-## Logger
+- Which Station documents must be read first
+- Which hard constraints cannot be violated
+- Which verification commands must run before completion
 
-Use `frame/core/logger` — first argument **must** be `context.Context`.
-
-```go
-import "github.com/peers-labs/peers-touch/station/frame/core/logger"
-
-logger.Infof(ctx, "[HandleRequest] processing user %s", userID)
-```
-
-All log calls must prefix message with `[CurrentMethodName]`.
-
-### Forbidden
-
-`fmt.Println`, `log.*` (stdlib), any third-party logger direct call.
+Do **not** use this file as the place to redefine Station architecture, Subserver design, or full Go coding standards.
 
 ---
 
-## Subserver Standard (DDD)
+## 2. Read These Sources First
 
-Directory structure for `apps/station/app/subserver/<module>/`:
+### Platform Sources
 
-```
-<module>/
-├── plugin.go      # Plugin registration & lifecycle factory
-├── options.go     # Config options & DI
-├── <module>.go    # SubServer interface (Init/Start/Stop/Handlers)
-├── handler.go     # HTTP route handlers
-├── auth.go        # Auth & permissions (optional)
-├── db/            # Data access layer (optional)
-│   ├── model/
-│   └── repo/
-└── service/       # Business logic layer (optional)
-```
+- [Station Base](file://docs/station/base.md)
+- [App Layer](file://docs/station/app-layer.md)
+- [Frame Layer](file://docs/station/frame-layer.md)
+- [Subserver Standard](file://docs/station/subserver-standard.md)
 
-### Lifecycle
+### Architecture Sources
 
-```
-Init (resource build, DI) → Start (running) → Stop (graceful shutdown)
-```
+- [Project Architecture](file://docs/global/architecture.md)
+- [Station/Desktop Scope Boundary](file://docs/architecture/boundaries/station-desktop-scope-boundary.md)
+- [Unified Handler Architecture](file://docs/architecture/runtime/unified-handler-architecture.md)
 
-### State Machine
+### Specification Sources
 
-```
-stopped → starting → running → stopping → stopped
-```
-
-### Routing
-
-- Subserver: `/<module>/...` (module name prefix)
-- Main server: `/activitypub/...`, `/api/v1/...`, `/management/...`, `/.well-known/...`
-- **Never** prefix subserver routes with `/api/` — conflicts with Mastodon API.
+- [Station Coding Guide](file://docs/global/coding-guide/station)
+- [Common Coding Guide](file://docs/global/coding-guide/common)
 
 ---
 
-## Go Struct Conventions
+## 3. Hard Constraints
 
-Options structs must include `*option.Options`:
-
-```go
-type Options struct {
-    SomeField string
-    *option.Options
-}
-```
-
-Model structs must have `CreatedAt` and `UpdatedAt` as the **last two fields**:
-
-```go
-type MyModel struct {
-    ID   string
-    Name string
-    CreatedAt time.Time
-    UpdatedAt time.Time
-}
-```
+- Use proto-generated models; do not create manual parallel domain models.
+- Station business code must follow DDD/Subserver boundaries; do not collapse all logic into handlers.
+- Always pass `context.Context` through call chains where the platform standard requires it.
+- Use project logging facilities; do not use `fmt.Println`, stdlib `log.*`, or ad-hoc debug logging.
+- Do not introduce global mutable state when dependency injection or scoped state is the intended design.
+- Error handling must be explicit; do not silently swallow errors.
 
 ---
 
-## Error Handling
-
-- Domain layer: `model.NewErrorResponse(ErrorCode)` + sentinel errors
-- Framework layer: `server.BadRequest()`, `server.Unauthorized()`, `server.InternalError()`
-- Subserver BizError: module-specific `errcode.Code` mapped via `error_mapper.go`
-
-```go
-// Always wrap with context
-if err != nil {
-    return fmt.Errorf("failed to create provider name=%s: %w", name, err)
-}
-
-// Log before propagating
-logger.Errorf(ctx, "failed to sync providers: %v", err)
-return nil, toHandlerError(err)
-```
-
----
-
-## Verification
+## 4. Verification Commands
 
 ```bash
 cd apps/station
@@ -123,3 +60,13 @@ gofmt -l .
 go test ./...
 ./tooling/scripts/check-go-style.sh
 ```
+
+---
+
+## 5. What This File Does Not Define
+
+- It does not define the full Station architecture body.
+- It does not define the complete Subserver structure specification.
+- It does not define the full Go coding standard text.
+
+If you need those answers, go to the linked source documents above.

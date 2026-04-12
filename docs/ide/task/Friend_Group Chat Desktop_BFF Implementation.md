@@ -176,7 +176,7 @@ lib target (`warning` only + 1 error in `provider/state.rs`)，bin target 有 9 
 
 ## 分析结果
 
-文件 [mod.rs](file://apps/desktop/src-tauri/src/application/settings/mod.rs) 中第 135-153 行的 [storage_error_to_result](file://apps/desktop/src-tauri/src/application/settings/mod.rs#L135-L153) 函数如下：
+文件 [mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs) 中第 135-153 行的 [storage_error_to_result](../../../apps/desktop/src-tauri/src/application/settings/mod.rs#L135-L153) 函数如下：
 
 ```rust
 fn storage_error_to_result(command: &str, error: StorageError) -> AppResult<StubPayload> {
@@ -200,7 +200,7 @@ fn storage_error_to_result(command: &str, error: StorageError) -> AppResult<Stub
 }
 ```
 
-而 `StorageError` 枚举定义在 [mod.rs (infrastructure/storage)](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L15-L20) 中，已经包含了 4 个变体：
+而 `StorageError` 枚举定义在 [mod.rs (infrastructure/storage)](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L15-L20) 中，已经包含了 4 个变体：
 
 ```rust
 #[derive(Debug)]
@@ -231,7 +231,7 @@ StorageError::KeyError(key_error) => AppResult::fail(
 ),
 ```
 
-其中 `KeyProviderError` 结构体定义在 [key_management.rs](file://apps/desktop/src-tauri/src/domain/storage/key_management.rs#L28-L32)，包含 `code: KeyErrorCode`、`key_ref_hash: String`、`message: String` 三个字段，可以根据需要将这些信息放入返回的 JSON 中。
+其中 `KeyProviderError` 结构体定义在 [key_management.rs](../../../apps/desktop/src-tauri/src/domain/storage/key_management.rs#L28-L32)，包含 `code: KeyErrorCode`、`key_ref_hash: String`、`message: String` 三个字段，可以根据需要将这些信息放入返回的 JSON 中。
 
 重新编译：
 
@@ -348,29 +348,29 @@ P1 ~ P3 全部完成。汇报进展：
 ### ✅ P1: KeyProvider 错误模型细化
 | 变更 | 文件 |
 |------|------|
-| 结构化错误枚举 `KeyErrorCode` (6 种) + `KeyProviderError` | [key_management.rs](file://apps/desktop/src-tauri/src/domain/storage/key_management.rs) |
+| 结构化错误枚举 `KeyErrorCode` (6 种) + `KeyProviderError` | [key_management.rs](../../../apps/desktop/src-tauri/src/domain/storage/key_management.rs) |
 | `key_ref` 日志脱敏 → 只暴露 hash，永不泄露明文 | 同上 `sanitize_key_ref()` |
-| OS keyring 错误精确分类 `classify_keyring_error` | [key_provider.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs) |
+| OS keyring 错误精确分类 `classify_keyring_error` | [key_provider.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs) |
 | `rotate_key` 版本冲突校验 + OS store 写入失败快速失败 | 同上 |
-| `StorageError::KeyError` 变体 + `From<KeyProviderError>` | [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs) |
+| `StorageError::KeyError` 变体 + `From<KeyProviderError>` | [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs) |
 | `rotate_database_key` 事务化回滚（rekey 失败 → 回退到旧 key） | 同上 |
-| settings match 适配新变体 | [settings/mod.rs](file://apps/desktop/src-tauri/src/application/settings/mod.rs) |
+| settings match 适配新变体 | [settings/mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs) |
 
 ### ✅ P2: 加密闭环
 | 变更 | 文件 |
 |------|------|
-| `_db_key_meta` 表增加 `schema_version` 字段 | [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs) |
-| `DatabaseOpenSpec` 增加 `schema_version` 属性 | [database.rs](file://apps/desktop/src-tauri/src/domain/storage/database.rs) |
+| `_db_key_meta` 表增加 `schema_version` 字段 | [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs) |
+| `DatabaseOpenSpec` 增加 `schema_version` 属性 | [database.rs](../../../apps/desktop/src-tauri/src/domain/storage/database.rs) |
 | 迁移日志升级为 JSONL 结构化格式 (`storage-migration.jsonl`) | storage/mod.rs |
 | 日志不再泄露 key_ref 明文（只记录 domain/profile/scope/version） | 同上 |
 
 ### ✅ P3: 同步协议最终形态
 | 变更 | 文件 |
 |------|------|
-| Proto 增加 `next_cursor` 字段 | [friend_chat.proto](file://model/domain/chat/friend_chat.proto), [group_chat.proto](file://model/domain/chat/group_chat.proto) |
-| pb.go 重新生成 | [friend_chat.pb.go](file://apps/station/frame/touch/model/chat/friend_chat.pb.go), [group_chat.pb.go](file://apps/station/frame/touch/model/chat/group_chat.pb.go) |
-| Station handler `limit+1` 策略 → 真实 `has_more` + `next_cursor` | [friend_chat/handler.go](file://apps/station/app/subserver/friend_chat/handler.go), [group_chat/handler.go](file://apps/station/app/subserver/group_chat/handler.go) |
-| Desktop sync 升级为多页自动续拉循环 (`max_pages` 参数，默认 10） | [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs), [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) |
+| Proto 增加 `next_cursor` 字段 | [friend_chat.proto](../../../model/domain/chat/friend_chat.proto), [group_chat.proto](../../../model/domain/chat/group_chat.proto) |
+| pb.go 重新生成 | [friend_chat.pb.go](../../../apps/station/frame/touch/model/chat/friend_chat.pb.go), [group_chat.pb.go](../../../apps/station/frame/touch/model/chat/group_chat.pb.go) |
+| Station handler `limit+1` 策略 → 真实 `has_more` + `next_cursor` | [friend_chat/handler.go](../../../apps/station/app/subserver/friend_chat/handler.go), [group_chat/handler.go](../../../apps/station/app/subserver/group_chat/handler.go) |
+| Desktop sync 升级为多页自动续拉循环 (`max_pages` 参数，默认 10） | [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs), [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) |
 
 ### 🔲 P4: 端到端验收（待后续）
 - 多用户 scope 隔离回归
@@ -476,8 +476,8 @@ SQLCipher 真实加密已接入。改动总结：
 
 | 文件 | 变更 |
 |------|------|
-| [Cargo.toml](file://apps/desktop/src-tauri/Cargo.toml#L22) | `bundled` → `bundled-sqlcipher-vendored-openssl` |
-| [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L158-L161) | `PRAGMA key` 之后增加 `sqlite_master` 验证查询 |
+| [Cargo.toml](../../../apps/desktop/src-tauri/Cargo.toml#L22) | `bundled` → `bundled-sqlcipher-vendored-openssl` |
+| [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L158-L161) | `PRAGMA key` 之后增加 `sqlite_master` 验证查询 |
 
 ### 技术要点
 
@@ -562,13 +562,13 @@ rotate_key → PRAGMA rekey → 失败则回滚到旧密钥
 
 共 **15** 处，按文件分组如下：
 
-### 1. [timeline/mod.rs](file://apps/desktop/src-tauri/src/application/timeline/mod.rs#L1)
+### 1. [timeline/mod.rs](../../../apps/desktop/src-tauri/src/application/timeline/mod.rs#L1)
 
 ```rust
 use super::domain_timeline::{self, TimelineError};  // 第1行
 ```
 
-### 2. [settings/mod.rs](file://apps/desktop/src-tauri/src/application/settings/mod.rs#L1-L5)
+### 2. [settings/mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs#L1-L5)
 
 ```rust
 use super::domain_settings::{  // 第1行
@@ -577,13 +577,13 @@ use super::domain_settings::{  // 第1行
 use super::storage_infrastructure::{load_settings, save_settings, StorageError};  // 第5行
 ```
 
-### 3. [profile/mod.rs](file://apps/desktop/src-tauri/src/application/profile/mod.rs#L1)
+### 3. [profile/mod.rs](../../../apps/desktop/src-tauri/src/application/profile/mod.rs#L1)
 
 ```rust
 use super::domain_profile::{self, ProfileError, UploadKind};  // 第1行
 ```
 
-### 4. [chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L11-L13)
+### 4. [chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L11-L13)
 
 ```rust
 use super::domain_chat::{self, Conversation, DeliveryVia, Message};  // 第11行
@@ -591,13 +591,13 @@ use super::infrastructure_p2p;                                        // 第12�
 use super::infrastructure_realtime;                                   // 第13行
 ```
 
-### 5. [auth/service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs#L1)
+### 5. [auth/service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L1)
 
 ```rust
 use super::auth_domain::{issue_session, validate_token, AuthDomainError, AuthSession};  // 第1行
 ```
 
-### 6. [applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L1)
+### 6. [applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L1)
 
 ```rust
 use super::domain_applets::{  // 第1行
@@ -605,7 +605,7 @@ use super::domain_applets::{  // 第1行
 };
 ```
 
-### 7. [admin/mod.rs](file://apps/desktop/src-tauri/src/application/admin/mod.rs#L1)
+### 7. [admin/mod.rs](../../../apps/desktop/src-tauri/src/application/admin/mod.rs#L1)
 
 ```rust
 use super::domain_admin::{  // 第1行
@@ -613,31 +613,31 @@ use super::domain_admin::{  // 第1行
 };
 ```
 
-### 8. [provider/sync.rs](file://apps/desktop/src-tauri/src/application/provider/sync.rs#L4)
+### 8. [provider/sync.rs](../../../apps/desktop/src-tauri/src/application/provider/sync.rs#L4)
 
 ```rust
 use super::state::{compute_scope_override, with_provider_store};  // 第4行
 ```
 
-### 9. [provider/mod.rs](file://apps/desktop/src-tauri/src/application/provider/mod.rs#L299) （测试模块内）
+### 9. [provider/mod.rs](../../../apps/desktop/src-tauri/src/application/provider/mod.rs#L299) （测试模块内）
 
 ```rust
 use super::*;  // 第299行
 ```
 
-### 10. [provider/state.rs](file://apps/desktop/src-tauri/src/application/provider/state.rs#L362) （测试模块内）
+### 10. [provider/state.rs](../../../apps/desktop/src-tauri/src/application/provider/state.rs#L362) （测试模块内）
 
 ```rust
 use super::*;  // 第362行
 ```
 
-### 11. [provider/remote.rs](file://apps/desktop/src-tauri/src/application/provider/remote.rs#L317) （测试模块内）
+### 11. [provider/remote.rs](../../../apps/desktop/src-tauri/src/application/provider/remote.rs#L317) （测试模块内）
 
 ```rust
 use super::*;  // 第317行
 ```
 
-### 12. [models/mod.rs](file://apps/desktop/src-tauri/src/application/models/mod.rs#L382) （测试模块内）
+### 12. [models/mod.rs](../../../apps/desktop/src-tauri/src/application/models/mod.rs#L382) （测试模块内）
 
 ```rust
 use super::*;  // 第382行
@@ -653,14 +653,14 @@ use super::*;  // 第382行
 
 | 文件 | 行号 | 声明 |
 |------|------|------|
-| [chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L11) | 11 | `mod domain_chat;` |
-| [chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L13) | 13 | `mod infrastructure_p2p;` |
-| [chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L15) | 15 | `mod infrastructure_realtime;` |
-| [timeline.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/timeline.rs#L7) | 7 | `mod domain_timeline;` |
-| [settings.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/settings.rs#L9) | 9 | `mod domain_settings;` |
-| [profile.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs#L9) | 9 | `mod domain_profile;` |
-| [applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L11) | 11 | `mod domain_applets;` |
-| [admin.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/admin.rs#L9) | 9 | `mod domain_admin;` |
+| [chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L11) | 11 | `mod domain_chat;` |
+| [chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L13) | 13 | `mod infrastructure_p2p;` |
+| [chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L15) | 15 | `mod infrastructure_realtime;` |
+| [timeline.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/timeline.rs#L7) | 7 | `mod domain_timeline;` |
+| [settings.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/settings.rs#L9) | 9 | `mod domain_settings;` |
+| [profile.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs#L9) | 9 | `mod domain_profile;` |
+| [applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L11) | 11 | `mod domain_applets;` |
+| [admin.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/admin.rs#L9) | 9 | `mod domain_admin;` |
 
 ---
 
@@ -706,10 +706,10 @@ use super::*;  // 第382行
 
 ### 审查范围
 
-- **前端 (TS)**: [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
-- **桌面后端 (Rust)**: [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) 和 [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
-- **服务端 (Go)**: [friend_chat/handler.go](file://apps/station/app/subserver/friend_chat/handler.go) 和 [group_chat/handler.go](file://apps/station/app/subserver/group_chat/handler.go)
-- **Proto 定义**: [friend_chat.proto](file://model/domain/chat/friend_chat.proto) 和 [group_chat.proto](file://model/domain/chat/group_chat.proto)
+- **前端 (TS)**: [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
+- **桌面后端 (Rust)**: [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) 和 [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+- **服务端 (Go)**: [friend_chat/handler.go](../../../apps/station/app/subserver/friend_chat/handler.go) 和 [group_chat/handler.go](../../../apps/station/app/subserver/group_chat/handler.go)
+- **Proto 定义**: [friend_chat.proto](../../../model/domain/chat/friend_chat.proto) 和 [group_chat.proto](../../../model/domain/chat/group_chat.proto)
 
 ---
 
@@ -717,7 +717,7 @@ use super::*;  // 第382行
 
 **问题一：Rust 模块未导出、命令未注册**
 
-在 [mod.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs) 中，只有 24 个模块被导出，**不包含 `friend_chat` 和 `group_chat`**：
+在 [mod.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs) 中，只有 24 个模块被导出，**不包含 `friend_chat` 和 `group_chat`**：
 
 ```rust
 pub mod account;
@@ -726,11 +726,11 @@ pub mod admin;
 pub mod tts;
 ```
 
-在 [main.rs](file://apps/desktop/src-tauri/src/main.rs#L47-L239) 的 `invoke_handler` 中注册了约 120 个命令，**没有任何 `friend_chat_*` 或 `group_chat_*` 命令**。
+在 [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L47-L239) 的 `invoke_handler` 中注册了约 120 个命令，**没有任何 `friend_chat_*` 或 `group_chat_*` 命令**。
 
 **问题二：前端 API 层完全空白**
 
-[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1803-L2846) 的 `api` 对象中没有任何 `friend_chat` 或 `group_chat` 相关方法。
+[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1803-L2846) 的 `api` 对象中没有任何 `friend_chat` 或 `group_chat` 相关方法。
 
 ---
 
@@ -853,11 +853,11 @@ Rust 直接透传不会有问题，但前端如果要消费这些数据，需要
 
 ### 核心问题清单
 
-1. **[严重] Rust 模块未导出**: [mod.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs) 缺少 `pub mod friend_chat;` 和 `pub mod group_chat;`，导致文件虽然存在但无法编译使用。
+1. **[严重] Rust 模块未导出**: [mod.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs) 缺少 `pub mod friend_chat;` 和 `pub mod group_chat;`，导致文件虽然存在但无法编译使用。
 
-2. **[严重] main.rs 未注册命令**: [main.rs](file://apps/desktop/src-tauri/src/main.rs#L47-L239) 的 `invoke_handler` 中没有注册任何 `friend_chat::*` 或 `group_chat::*` 命令，即使模块导出了也无法从前端调用。
+2. **[严重] main.rs 未注册命令**: [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L47-L239) 的 `invoke_handler` 中没有注册任何 `friend_chat::*` 或 `group_chat::*` 命令，即使模块导出了也无法从前端调用。
 
-3. **[严重] 前端 API 层完全空白**: [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts) 没有定义任何 friend_chat / group_chat 相关的方法、Input 类型或 invoke 调用。
+3. **[严重] 前端 API 层完全空白**: [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts) 没有定义任何 friend_chat / group_chat 相关的方法、Input 类型或 invoke 调用。
 
 4. **[中等] Rust 未封装大量 Go 路由**: Go station 服务端提供了丰富的群组管理 API (create/join/leave/invite/members/settings 等共 15 个路由) 但 Rust 层未做任何封装。Friend Chat 也缺少 sync/online/offline/pending/stats 共 5 个路由。
 
@@ -982,15 +982,15 @@ src/
 
 | 子模块 | 外部依赖 | 内容性质 |
 |---|---|---|
-| [admin/mod.rs](file://apps/desktop/src-tauri/src/domain/admin/mod.rs) | `std::sync::atomic`, `std::time` | 纯领域模型 (AccessContext, AdminCapability, authorize, validate) |
-| [applets/mod.rs](file://apps/desktop/src-tauri/src/domain/applets/mod.rs) | `std::sync::atomic`, `std::time` | 纯领域模型 (AccessContext, capability 校验, audit) |
-| [auth/session.rs](file://apps/desktop/src-tauri/src/domain/auth/session.rs) | `serde::Serialize`, `std::time` | 纯领域模型 (AuthSession, issue_session, validate_token) |
-| [chat/mod.rs](file://apps/desktop/src-tauri/src/domain/chat/mod.rs) | `serde::Serialize`, `std::sync::atomic`, `std::time` | 纯领域模型 (Conversation, Message, DeliveryVia) |
-| [profile/mod.rs](file://apps/desktop/src-tauri/src/domain/profile/mod.rs#L1-L4) | `std::path::Path`, `std::sync::{LazyLock, Mutex}` | **违规**: 内含 `static PROFILE_STORE` 内存存储 + `Path::exists()` I/O |
-| [settings/mod.rs](file://apps/desktop/src-tauri/src/domain/settings/mod.rs) | `serde_json::Value` | 纯领域模型 (SettingKey, parse/validate/default) |
-| [storage/database.rs](file://apps/desktop/src-tauri/src/domain/storage/database.rs) | 无 | 纯领域模型 (EncryptionLevel, DatabaseOpenSpec) |
-| [storage/key_management.rs](file://apps/desktop/src-tauri/src/domain/storage/key_management.rs) | `std::fmt`, `std::hash` | 纯领域模型 (KeyProvider trait, KeyMaterial, KeyProviderError) |
-| [timeline/mod.rs](file://apps/desktop/src-tauri/src/domain/timeline/mod.rs#L1-L2) | `std::sync::{LazyLock, Mutex}` | **违规**: 内含 `static TIMELINE_STORE` 内存存储 + 业务逻辑 |
+| [admin/mod.rs](../../../apps/desktop/src-tauri/src/domain/admin/mod.rs) | `std::sync::atomic`, `std::time` | 纯领域模型 (AccessContext, AdminCapability, authorize, validate) |
+| [applets/mod.rs](../../../apps/desktop/src-tauri/src/domain/applets/mod.rs) | `std::sync::atomic`, `std::time` | 纯领域模型 (AccessContext, capability 校验, audit) |
+| [auth/session.rs](../../../apps/desktop/src-tauri/src/domain/auth/session.rs) | `serde::Serialize`, `std::time` | 纯领域模型 (AuthSession, issue_session, validate_token) |
+| [chat/mod.rs](../../../apps/desktop/src-tauri/src/domain/chat/mod.rs) | `serde::Serialize`, `std::sync::atomic`, `std::time` | 纯领域模型 (Conversation, Message, DeliveryVia) |
+| [profile/mod.rs](../../../apps/desktop/src-tauri/src/domain/profile/mod.rs#L1-L4) | `std::path::Path`, `std::sync::{LazyLock, Mutex}` | **违规**: 内含 `static PROFILE_STORE` 内存存储 + `Path::exists()` I/O |
+| [settings/mod.rs](../../../apps/desktop/src-tauri/src/domain/settings/mod.rs) | `serde_json::Value` | 纯领域模型 (SettingKey, parse/validate/default) |
+| [storage/database.rs](../../../apps/desktop/src-tauri/src/domain/storage/database.rs) | 无 | 纯领域模型 (EncryptionLevel, DatabaseOpenSpec) |
+| [storage/key_management.rs](../../../apps/desktop/src-tauri/src/domain/storage/key_management.rs) | `std::fmt`, `std::hash` | 纯领域模型 (KeyProvider trait, KeyMaterial, KeyProviderError) |
+| [timeline/mod.rs](../../../apps/desktop/src-tauri/src/domain/timeline/mod.rs#L1-L2) | `std::sync::{LazyLock, Mutex}` | **违规**: 内含 `static TIMELINE_STORE` 内存存储 + 业务逻辑 |
 
 ### domain 层依赖方向检查
 
@@ -1017,26 +1017,26 @@ domain 层不依赖任何上层模块，依赖方向**正确**。
 
 | 文件 | `use super::` 引用目标 | 实际引用的层 |
 |---|---|---|
-| [admin/mod.rs:1](file://apps/desktop/src-tauri/src/application/admin/mod.rs#L1-L4) | `super::domain_admin::*` | domain |
-| [applets/mod.rs:1](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L1-L3) | `super::domain_applets::*` | domain |
-| [auth/service.rs:1](file://apps/desktop/src-tauri/src/application/auth/service.rs#L1) | `super::auth_domain::*` | domain |
-| [chat/mod.rs:11-13](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L11-L13) | `super::domain_chat`, `super::infrastructure_p2p`, `super::infrastructure_realtime` | domain + infrastructure |
-| [profile/mod.rs:1](file://apps/desktop/src-tauri/src/application/profile/mod.rs#L1) | `super::domain_profile::*` | domain |
-| [settings/mod.rs:1-5](file://apps/desktop/src-tauri/src/application/settings/mod.rs#L1-L5) | `super::domain_settings::*`, `super::storage_infrastructure::*` | domain + infrastructure |
-| [timeline/mod.rs:1](file://apps/desktop/src-tauri/src/application/timeline/mod.rs#L1) | `super::domain_timeline::*` | domain |
-| [provider/sync.rs:4](file://apps/desktop/src-tauri/src/application/provider/sync.rs#L4) | `super::state::*` | 同层兄弟模块 |
+| [admin/mod.rs:1](../../../apps/desktop/src-tauri/src/application/admin/mod.rs#L1-L4) | `super::domain_admin::*` | domain |
+| [applets/mod.rs:1](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L1-L3) | `super::domain_applets::*` | domain |
+| [auth/service.rs:1](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L1) | `super::auth_domain::*` | domain |
+| [chat/mod.rs:11-13](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L11-L13) | `super::domain_chat`, `super::infrastructure_p2p`, `super::infrastructure_realtime` | domain + infrastructure |
+| [profile/mod.rs:1](../../../apps/desktop/src-tauri/src/application/profile/mod.rs#L1) | `super::domain_profile::*` | domain |
+| [settings/mod.rs:1-5](../../../apps/desktop/src-tauri/src/application/settings/mod.rs#L1-L5) | `super::domain_settings::*`, `super::storage_infrastructure::*` | domain + infrastructure |
+| [timeline/mod.rs:1](../../../apps/desktop/src-tauri/src/application/timeline/mod.rs#L1) | `super::domain_timeline::*` | domain |
+| [provider/sync.rs:4](../../../apps/desktop/src-tauri/src/application/provider/sync.rs#L4) | `super::state::*` | 同层兄弟模块 |
 
 **通过 `crate::infrastructure` 直接引用基础设施层的子模块：**
 
 | 文件 | 引用 |
 |---|---|
-| [account/mod.rs:2](file://apps/desktop/src-tauri/src/application/account/mod.rs#L2) | `crate::infrastructure::auth_identity` |
-| [auth/service.rs:3](file://apps/desktop/src-tauri/src/application/auth/service.rs#L3) | `crate::infrastructure::storage` |
-| [oauth2/mod.rs:2-3](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L2-L3) | `crate::infrastructure::auth_identity`, `crate::infrastructure::storage` |
-| [system/mod.rs:2-3](file://apps/desktop/src-tauri/src/application/system/mod.rs#L2-L3) | `crate::infrastructure::auth_identity`, `crate::infrastructure::storage` |
-| [provider/state.rs:1](file://apps/desktop/src-tauri/src/application/provider/state.rs#L1) | `crate::infrastructure::storage` |
-| [provider/sync.rs:5](file://apps/desktop/src-tauri/src/application/provider/sync.rs#L5) | `crate::infrastructure::station_client` |
-| [chat_storage.rs:1](file://apps/desktop/src-tauri/src/application/chat_storage.rs#L1) | `crate::infrastructure::local_chat_store` |
+| [account/mod.rs:2](../../../apps/desktop/src-tauri/src/application/account/mod.rs#L2) | `crate::infrastructure::auth_identity` |
+| [auth/service.rs:3](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L3) | `crate::infrastructure::storage` |
+| [oauth2/mod.rs:2-3](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L2-L3) | `crate::infrastructure::auth_identity`, `crate::infrastructure::storage` |
+| [system/mod.rs:2-3](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L2-L3) | `crate::infrastructure::auth_identity`, `crate::infrastructure::storage` |
+| [provider/state.rs:1](../../../apps/desktop/src-tauri/src/application/provider/state.rs#L1) | `crate::infrastructure::storage` |
+| [provider/sync.rs:5](../../../apps/desktop/src-tauri/src/application/provider/sync.rs#L5) | `crate::infrastructure::station_client` |
+| [chat_storage.rs:1](../../../apps/desktop/src-tauri/src/application/chat_storage.rs#L1) | `crate::infrastructure::local_chat_store` |
 
 **直接引用 interface 层 contracts 的子模块（几乎所有 application 子模块）：**
 
@@ -1053,13 +1053,13 @@ domain 层不依赖任何上层模块，依赖方向**正确**。
 
 | 子模块 | import 关键依赖 | 实现内容 |
 |---|---|---|
-| [auth_identity/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs) | `crate::infrastructure::storage`, `serde`, `std::fs` | OAuth 账户身份持久化 (JSON 文件) |
-| [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs) | `super::storage::*`, `crate::domain::storage::database`, `rusqlite` | 本地聊天记录 SQLite 存储 |
-| [p2p/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/p2p/mod.rs) | 无外部 crate 依赖 | P2P 通信模拟 (stub) |
-| [realtime/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/realtime/mod.rs) | `std::sync::atomic`, `std::sync::Mutex` | 实时通信模拟 (stub) |
-| [station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs) | `reqwest::blocking::Client`, `serde_json` | Station 远程 HTTP 客户端 |
-| [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs) | `crate::domain::storage::database`, `crate::domain::storage::key_management`, `rusqlite` | 文件存储/数据库管理核心实现 |
-| [storage/key_provider.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs) | `crate::domain::storage::key_management::*`, `keyring::Entry` | 平台密钥链实现 (macOS Keychain/Windows DPAPI) |
+| [auth_identity/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs) | `crate::infrastructure::storage`, `serde`, `std::fs` | OAuth 账户身份持久化 (JSON 文件) |
+| [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs) | `super::storage::*`, `crate::domain::storage::database`, `rusqlite` | 本地聊天记录 SQLite 存储 |
+| [p2p/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/p2p/mod.rs) | 无外部 crate 依赖 | P2P 通信模拟 (stub) |
+| [realtime/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/realtime/mod.rs) | `std::sync::atomic`, `std::sync::Mutex` | 实时通信模拟 (stub) |
+| [station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs) | `reqwest::blocking::Client`, `serde_json` | Station 远程 HTTP 客户端 |
+| [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs) | `crate::domain::storage::database`, `crate::domain::storage::key_management`, `rusqlite` | 文件存储/数据库管理核心实现 |
+| [storage/key_provider.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs) | `crate::domain::storage::key_management::*`, `keyring::Entry` | 平台密钥链实现 (macOS Keychain/Windows DPAPI) |
 
 ### infrastructure 层依赖方向检查
 
@@ -1077,7 +1077,7 @@ infrastructure 层仅依赖 domain 层，依赖方向**正确**。
 
 ### 5.1 contracts/mod.rs
 
-[contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs) -- 定义所有 DTO 输入输出结构体 (`StubPayload`, `AuthLoginInput`, `SettingsGetInput` 等)，无外部层依赖，仅依赖 `serde`。
+[contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs) -- 定义所有 DTO 输入输出结构体 (`StubPayload`, `AuthLoginInput`, `SettingsGetInput` 等)，无外部层依赖，仅依赖 `serde`。
 
 ### 5.2 tauri_commands/ 子模块清单
 
@@ -1122,9 +1122,9 @@ settings, skills, skills_market, system, timeline, tools, tts
 | `system.rs` | `application/system/mod.rs` |
 
 **不使用 `#[path]` 而直接 `use crate::` 引用跨层的模块：**
-- [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L2-L4): `crate::infrastructure::station_client`, `crate::infrastructure::storage::resolve_user_scope`, `crate::application::chat_storage`
-- [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L2-L4): 同上
-- [provider.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/provider.rs#L5): `crate::application::provider`
+- [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L2-L4): `crate::infrastructure::station_client`, `crate::infrastructure::storage::resolve_user_scope`, `crate::application::chat_storage`
+- [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L2-L4): 同上
+- [provider.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/provider.rs#L5): `crate::application::provider`
 
 ---
 
@@ -1144,8 +1144,8 @@ tauri_commands 中的 `#[path = "../../application/xxx/mod.rs"]` 实际上会把
 
 ### 问题 3: domain 层内嵌存储实现
 
-- [domain/profile/mod.rs](file://apps/desktop/src-tauri/src/domain/profile/mod.rs#L29-L30): `static PROFILE_STORE` + `Path::new(path).exists()`
-- [domain/timeline/mod.rs](file://apps/desktop/src-tauri/src/domain/timeline/mod.rs#L46-L47): `static TIMELINE_STORE`
+- [domain/profile/mod.rs](../../../apps/desktop/src-tauri/src/domain/profile/mod.rs#L29-L30): `static PROFILE_STORE` + `Path::new(path).exists()`
+- [domain/timeline/mod.rs](../../../apps/desktop/src-tauri/src/domain/timeline/mod.rs#L46-L47): `static TIMELINE_STORE`
 
 这两个模块在 domain 层内持有全局可变状态和 I/O 操作，违反了领域层应为纯模型的原则。
 
@@ -1163,7 +1163,7 @@ tauri_commands 中的 `#[path = "../../application/xxx/mod.rs"]` 实际上会把
 
 ### 问题 5: interface 层直接引用 infrastructure 层
 
-[friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L2-L4) 和 [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L2-L4) 直接引用 `crate::infrastructure::station_client` 和 `crate::infrastructure::storage`，跳过了 application 层，使 interface 层直接耦合了基础设施实现。
+[friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L2-L4) 和 [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L2-L4) 直接引用 `crate::infrastructure::station_client` 和 `crate::infrastructure::storage`，跳过了 application 层，使 interface 层直接耦合了基础设施实现。
 
 ### 问题 6: domain 层模块覆盖率不足
 
@@ -1177,7 +1177,7 @@ search, skills, skills_market, system, tools, tts
 
 ### 问题 7: `main.rs` 未声明 `mod application`
 
-[main.rs](file://apps/desktop/src-tauri/src/main.rs#L1-L7) 只声明了 `mod domain`, `mod error`, `mod infrastructure`, `mod interface`, `mod state`。`application` 模块不在 crate root 的 `mod` 声明中，它完全通过 `#[path]` 重映射机制被 `interface::tauri_commands` 间接编译。这意味着 `crate::application::xxx` 这种路径理论上不可用（除非被 `#[path]` 拉入），但实际上 `friend_chat.rs` 和 `provider.rs` 又使用了 `crate::application::*`，这暗示可能存在编译问题或隐含的 mod 声明。
+[main.rs](../../../apps/desktop/src-tauri/src/main.rs#L1-L7) 只声明了 `mod domain`, `mod error`, `mod infrastructure`, `mod interface`, `mod state`。`application` 模块不在 crate root 的 `mod` 声明中，它完全通过 `#[path]` 重映射机制被 `interface::tauri_commands` 间接编译。这意味着 `crate::application::xxx` 这种路径理论上不可用（除非被 `#[path]` 拉入），但实际上 `friend_chat.rs` 和 `provider.rs` 又使用了 `crate::application::*`，这暗示可能存在编译问题或隐含的 mod 声明。
 
 ### 问题 8: 混合使用两种跨层引用方式
 
@@ -1240,8 +1240,8 @@ bin target 的根因不是简单的"加个 mod 声明"——这背后是一个**
 
 ### 🔴 问题 3: domain 层嵌入了存储实现
 
-- [domain/profile/mod.rs](file://apps/desktop/src-tauri/src/domain/profile/mod.rs): 包含 `static PROFILE_STORE` + `Path::exists()` I/O
-- [domain/timeline/mod.rs](file://apps/desktop/src-tauri/src/domain/timeline/mod.rs): 包含 `static TIMELINE_STORE` + 完整 CRUD
+- [domain/profile/mod.rs](../../../apps/desktop/src-tauri/src/domain/profile/mod.rs): 包含 `static PROFILE_STORE` + `Path::exists()` I/O
+- [domain/timeline/mod.rs](../../../apps/desktop/src-tauri/src/domain/timeline/mod.rs): 包含 `static TIMELINE_STORE` + 完整 CRUD
 
 Domain 层应是纯模型、纯领域逻辑，不应持有全局可变状态。
 
@@ -1251,7 +1251,7 @@ Domain 层应是纯模型、纯领域逻辑，不应持有全局可变状态。
 
 ### 🟡 问题 5: interface 层直接引用 infrastructure 层
 
-[friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L2-L4) 和 [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L2-L4) 直接 `use crate::infrastructure::station_client`，跳过了 application 层。
+[friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L2-L4) 和 [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L2-L4) 直接 `use crate::infrastructure::station_client`，跳过了 application 层。
 
 > 但说明一下：**这两个文件是我们新写的**，采用了 `use crate::` 直接引用而不是 `#[path]` 反模式。这是有意为之的正确方向，但还需要进一步将 station_client 调用下沉到 application 层。
 
@@ -1383,19 +1383,19 @@ Go protobuf JSON 默认是 **camelCase**（`hasMore`、`nextCursor`），但 Rus
 
 ---
 
-### 1. [admin/mod.rs](file://apps/desktop/src-tauri/src/application/admin/mod.rs#L1)
+### 1. [admin/mod.rs](../../../apps/desktop/src-tauri/src/application/admin/mod.rs#L1)
 - **L1**: `use super::domain_admin::{...}` → `use crate::domain::admin::{...}`
 - 文件内无旧别名调用（直接导入了具体符号），无需额外替换。
 
-### 2. [applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L1)
+### 2. [applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L1)
 - **L1**: `use super::domain_applets::{...}` → `use crate::domain::applets::{...}`
 - 文件内无旧别名调用，无需额外替换。
 
-### 3. [auth/service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs#L1)
+### 3. [auth/service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L1)
 - **L1**: `use super::auth_domain::{issue_session, validate_token, AuthDomainError, AuthSession}` → `use crate::domain::auth::session::{issue_session, validate_token, AuthDomainError, AuthSession}`
 - 文件内无旧别名调用，无需额外替换。
 
-### 4. [chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L11-L13)
+### 4. [chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L11-L13)
 - **L11**: `use super::domain_chat::{self, Conversation, DeliveryVia, Message}` → `use crate::domain::chat::{self, Conversation, DeliveryVia, Message}`
 - **L12**: `use super::infrastructure_p2p` → `use crate::infrastructure::p2p`
 - **L13**: `use super::infrastructure_realtime` → `use crate::infrastructure::realtime`
@@ -1404,16 +1404,16 @@ Go protobuf JSON 默认是 **camelCase**（`hasMore`、`nextCursor`），但 Rus
   - `infrastructure_p2p::` → `p2p::`
   - `infrastructure_realtime::` → `realtime::`
 
-### 5. [profile/mod.rs](file://apps/desktop/src-tauri/src/application/profile/mod.rs#L1)
+### 5. [profile/mod.rs](../../../apps/desktop/src-tauri/src/application/profile/mod.rs#L1)
 - **L1**: `use super::domain_profile::{self, ProfileError, UploadKind}` → `use crate::domain::profile::{self, ProfileError, UploadKind}`
 - **4 处调用替换**: `domain_profile::` → `profile::`（涵盖 `get`, `update`, `update_privacy`, `upload`）
 
-### 6. [settings/mod.rs](file://apps/desktop/src-tauri/src/application/settings/mod.rs#L1-L5)
+### 6. [settings/mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs#L1-L5)
 - **L1-3**: `use super::domain_settings::{...}` → `use crate::domain::settings::{...}`
 - **L5**: `use super::storage_infrastructure::{load_settings, save_settings, StorageError}` → `use crate::infrastructure::storage::{load_settings, save_settings, StorageError}`
 - 文件内无旧别名调用，无需额外替换。
 
-### 7. [timeline/mod.rs](file://apps/desktop/src-tauri/src/application/timeline/mod.rs#L1)
+### 7. [timeline/mod.rs](../../../apps/desktop/src-tauri/src/application/timeline/mod.rs#L1)
 - **L1**: `use super::domain_timeline::{self, TimelineError}` → `use crate::domain::timeline::{self, TimelineError}`
 - **4 处调用替换**: `domain_timeline::` → `timeline::`（涵盖 `list`, `like`, `comment`, `repost`）
 
@@ -1464,34 +1464,34 @@ Go protobuf JSON 默认是 **camelCase**（`hasMore`、`nextCursor`），但 Rus
 ## 修改摘要
 
 ### 前置条件修改
-- [main.rs](file://apps/desktop/src-tauri/src/main.rs#L3): 添加 `mod application;` 声明，使 `crate::application` 路径可用
+- [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L3): 添加 `mod application;` 声明，使 `crate::application` 路径可用
 
 ### 各文件修改详情（共 22 个文件）
 
 | 文件 | 原声明 | 替换为 | 备注 |
 |------|--------|--------|------|
-| [account.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/account.rs) | `#[path] mod application_account` | `use crate::application::account as application_account` | 代码中使用 `application_account::` |
-| [admin.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/admin.rs) | `#[path] mod application_admin` + `#[path] mod domain_admin` | `use crate::application::admin as application_admin` | `domain_admin` 未使用，已清理 |
-| [agents.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs) | `#[path] mod application_agents` | `use crate::application::agents as application_agents` | |
-| [applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs) | `#[path] mod application_applets` + `#[path] mod domain_applets` | `use crate::application::applets as application_applets` | `domain_applets` 未使用，已清理 |
-| [auth.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs) | `#[path] mod auth_domain` + `#[path] mod auth_service` | `use crate::application::auth::service as auth_service` | `auth_domain` 未使用，已清理；`auth_service::` 有调用，保留别名 |
-| [channels.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/channels.rs) | `#[path] mod application_channels` | `use crate::application::channels as application_channels` | |
-| [chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs) | 4 个 `#[path]` (application_chat, domain_chat, infrastructure_p2p, infrastructure_realtime) | `use crate::application::chat as application_chat` | 后3个未使用，已清理 |
-| [cron.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/cron.rs) | `#[path] mod application_cron` | `use crate::application::cron as application_cron` | |
-| [mcp.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/mcp.rs) | `#[path] mod application_mcp` | `use crate::application::mcp as application_mcp` | |
-| [memory.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs) | `#[path] mod application_memory` | `use crate::application::memory as application_memory` | |
-| [model_config.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/model_config.rs) | `#[path] mod application_model_config` | `use crate::application::model_config as application_model_config` | |
-| [oauth2.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs) | `#[path] mod application_oauth2` | `use crate::application::oauth2 as application_oauth2` | |
-| [profile.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs) | `#[path] mod application_profile` + `#[path] mod domain_profile` | `use crate::application::profile as application_profile` | `domain_profile` 未使用，已清理 |
-| [settings.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/settings.rs) | 3 个 `#[path]` (application_settings, domain_settings, storage_infrastructure) | `use crate::application::settings as application_settings` | 后2个未使用，已清理 |
-| [skills.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/skills.rs) | `#[path] mod application_skills` | `use crate::application::skills as application_skills` | |
-| [skills_market.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/skills_market.rs) | `#[path] mod application_skills_market` | `use crate::application::skills_market as application_skills_market` | |
-| [system.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/system.rs) | `#[path] mod application_system` | `use crate::application::system as application_system` | |
-| [timeline.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/timeline.rs) | `#[path] mod application_timeline` + `#[path] mod domain_timeline` | `use crate::application::timeline as application_timeline` | `domain_timeline` 未使用，已清理 |
-| [tools.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/tools.rs) | `#[path] mod application_tools` | `use crate::application::tools as application_tools` | |
-| [search.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/search.rs) | `#[path] mod application_search` | `use crate::application::search as application_search` | |
-| [notebook.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/notebook.rs) | `#[path] mod application_notebook` | `use crate::application::notebook as application_notebook` | |
-| [tts.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/tts.rs) | `#[path] mod application_tts` | `use crate::application::tts as application_tts` | |
+| [account.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/account.rs) | `#[path] mod application_account` | `use crate::application::account as application_account` | 代码中使用 `application_account::` |
+| [admin.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/admin.rs) | `#[path] mod application_admin` + `#[path] mod domain_admin` | `use crate::application::admin as application_admin` | `domain_admin` 未使用，已清理 |
+| [agents.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs) | `#[path] mod application_agents` | `use crate::application::agents as application_agents` | |
+| [applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs) | `#[path] mod application_applets` + `#[path] mod domain_applets` | `use crate::application::applets as application_applets` | `domain_applets` 未使用，已清理 |
+| [auth.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs) | `#[path] mod auth_domain` + `#[path] mod auth_service` | `use crate::application::auth::service as auth_service` | `auth_domain` 未使用，已清理；`auth_service::` 有调用，保留别名 |
+| [channels.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/channels.rs) | `#[path] mod application_channels` | `use crate::application::channels as application_channels` | |
+| [chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs) | 4 个 `#[path]` (application_chat, domain_chat, infrastructure_p2p, infrastructure_realtime) | `use crate::application::chat as application_chat` | 后3个未使用，已清理 |
+| [cron.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/cron.rs) | `#[path] mod application_cron` | `use crate::application::cron as application_cron` | |
+| [mcp.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mcp.rs) | `#[path] mod application_mcp` | `use crate::application::mcp as application_mcp` | |
+| [memory.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs) | `#[path] mod application_memory` | `use crate::application::memory as application_memory` | |
+| [model_config.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/model_config.rs) | `#[path] mod application_model_config` | `use crate::application::model_config as application_model_config` | |
+| [oauth2.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs) | `#[path] mod application_oauth2` | `use crate::application::oauth2 as application_oauth2` | |
+| [profile.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs) | `#[path] mod application_profile` + `#[path] mod domain_profile` | `use crate::application::profile as application_profile` | `domain_profile` 未使用，已清理 |
+| [settings.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/settings.rs) | 3 个 `#[path]` (application_settings, domain_settings, storage_infrastructure) | `use crate::application::settings as application_settings` | 后2个未使用，已清理 |
+| [skills.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/skills.rs) | `#[path] mod application_skills` | `use crate::application::skills as application_skills` | |
+| [skills_market.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/skills_market.rs) | `#[path] mod application_skills_market` | `use crate::application::skills_market as application_skills_market` | |
+| [system.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/system.rs) | `#[path] mod application_system` | `use crate::application::system as application_system` | |
+| [timeline.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/timeline.rs) | `#[path] mod application_timeline` + `#[path] mod domain_timeline` | `use crate::application::timeline as application_timeline` | `domain_timeline` 未使用，已清理 |
+| [tools.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/tools.rs) | `#[path] mod application_tools` | `use crate::application::tools as application_tools` | |
+| [search.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/search.rs) | `#[path] mod application_search` | `use crate::application::search as application_search` | |
+| [notebook.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/notebook.rs) | `#[path] mod application_notebook` | `use crate::application::notebook as application_notebook` | |
+| [tts.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/tts.rs) | `#[path] mod application_tts` | `use crate::application::tts as application_tts` | |
 
 **未修改的文件**（已经使用 `use crate::` 风格）：`provider.rs`、`models.rs`、`group_chat.rs`、`friend_chat.rs`
 
@@ -1564,7 +1564,7 @@ P0-3 (TS API) 和 P1-1 (JSON case) 可以并行处理：
 
 已完成全部 24 个方法的添加。修改摘要如下：
 
-**修改文件**: [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2847-L2917)
+**修改文件**: [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2847-L2917)
 
 **修改行范围**: 第 2847 行 ~ 第 2917 行（在 `api` 对象末尾、`getOnlineCount` 之后、闭合 `};` 之前插入）
 
@@ -1610,10 +1610,10 @@ P0-3 (TS API) 和 P1-1 (JSON case) 可以并行处理：
 
 | 文件 | 位置 | 修改前 | 修改后 |
 |------|------|--------|--------|
-| [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L385) | `friend_chat_sync_from_station_scoped` | `data.get("next_cursor")` | `data.get("nextCursor")` |
-| [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L392) | `friend_chat_sync_from_station_scoped` | `data.get("has_more")` | `data.get("hasMore")` |
-| [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L379) | `group_chat_sync_from_station_scoped` | `data.get("next_cursor")` | `data.get("nextCursor")` |
-| [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L386) | `group_chat_sync_from_station_scoped` | `data.get("has_more")` | `data.get("hasMore")` |
+| [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L385) | `friend_chat_sync_from_station_scoped` | `data.get("next_cursor")` | `data.get("nextCursor")` |
+| [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L392) | `friend_chat_sync_from_station_scoped` | `data.get("has_more")` | `data.get("hasMore")` |
+| [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L379) | `group_chat_sync_from_station_scoped` | `data.get("next_cursor")` | `data.get("nextCursor")` |
+| [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L386) | `group_chat_sync_from_station_scoped` | `data.get("has_more")` | `data.get("hasMore")` |
 
 其余 `.get(...)` 调用中的字段名（`"messages"`、`"ulid"`）本身是单词，protobuf JSON 序列化后也不变，无需修改。`cargo check` 编译通过。
 
@@ -2060,17 +2060,17 @@ Now add the 17 new group chat commands at the end:
 
 ### 修改摘要
 
-#### 1. [infrastructure/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/mod.rs)
+#### 1. [infrastructure/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/mod.rs)
 新增两行模块声明：`pub mod profile_store;` 和 `pub mod timeline_store;`
 
-#### 2. [application/profile/mod.rs](file://apps/desktop/src-tauri/src/application/profile/mod.rs)
+#### 2. [application/profile/mod.rs](../../../apps/desktop/src-tauri/src/application/profile/mod.rs)
 - import 从 `crate::domain::profile::{self, ProfileError, UploadKind}` 改为 `crate::domain::profile::{ProfileError, UploadKind}` + `crate::infrastructure::profile_store`
 - 所有函数调用从 `profile::get/update/update_privacy/upload` 改为 `profile_store::get/update/update_privacy/upload`
 
-#### 3. [domain/timeline/mod.rs](file://apps/desktop/src-tauri/src/domain/timeline/mod.rs)
+#### 3. [domain/timeline/mod.rs](../../../apps/desktop/src-tauri/src/domain/timeline/mod.rs)
 移除所有存储实现代码（`TimelinePost`、`TimelineStore`、`TIMELINE_STORE` 静态变量、`list`/`like`/`comment`/`repost`/`parse_cursor`/`with_optimistic_update`/`should_fail` 函数），仅保留三个纯类型定义：`TimelineError`、`TimelineListOutcome`、`TimelineActionOutcome`
 
-#### 4. [infrastructure/timeline_store.rs](file://apps/desktop/src-tauri/src/infrastructure/timeline_store.rs) (新建)
+#### 4. [infrastructure/timeline_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/timeline_store.rs) (新建)
 从 `domain/timeline/mod.rs` 移入的全部存储实现：
 - `TimelinePost` 结构体（内部类型，非 pub）
 - `TimelineStore` 结构体 + `Default` 实现
@@ -2079,14 +2079,14 @@ Now add the 17 new group chat commands at the end:
 - 私有辅助函数：`parse_cursor`、`with_optimistic_update`、`should_fail`
 - 通过 `use crate::domain::timeline::{TimelineActionOutcome, TimelineError, TimelineListOutcome}` 引入 domain 层类型
 
-#### 5. [application/timeline/mod.rs](file://apps/desktop/src-tauri/src/application/timeline/mod.rs)
+#### 5. [application/timeline/mod.rs](../../../apps/desktop/src-tauri/src/application/timeline/mod.rs)
 - import 从 `crate::domain::timeline::{self, TimelineError}` 拆分为 `crate::domain::timeline::TimelineError` + `crate::infrastructure::timeline_store`
 - 所有函数调用从 `timeline::list/like/comment/repost` 改为 `timeline_store::list/like/comment/repost`
 
-#### 6. [domain/profile/mod.rs](file://apps/desktop/src-tauri/src/domain/profile/mod.rs)
+#### 6. [domain/profile/mod.rs](../../../apps/desktop/src-tauri/src/domain/profile/mod.rs)
 无需修改 -- 该文件此前已完成拆分，只包含纯类型定义和校验函数。
 
-#### 7. [infrastructure/profile_store.rs](file://apps/desktop/src-tauri/src/infrastructure/profile_store.rs)
+#### 7. [infrastructure/profile_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/profile_store.rs)
 无需修改 -- 该文件此前已存在，包含完整的 profile 存储实现。本次只是在 `infrastructure/mod.rs` 中补上了 `pub mod profile_store;` 声明并修改 application 层的 import 使其正确连线。
 
 Step 5: 注册新命令到 main.rs 的 invoke_handler。
@@ -2107,7 +2107,7 @@ Step 7: 运行 `cargo check` 验证编译。先看一下是否有脚本可用：
 
 ### 修改文件（6个）
 
-#### 1. [chat_storage.rs](file://apps/desktop/src-tauri/src/application/chat_storage.rs) — application 层 station_client 调用
+#### 1. [chat_storage.rs](../../../apps/desktop/src-tauri/src/application/chat_storage.rs) — application 层 station_client 调用
 
 新增 22 个函数，全部签名 `pub fn xxx(token: &str, ...) -> Result<Value, String>`：
 
@@ -2137,24 +2137,24 @@ Step 7: 运行 `cargo check` 验证编译。先看一下是否有脚本可用：
 - `group_ack_offline` — POST `/group-chat/offline-messages/ack`
 - `group_stats` — GET `/group-chat/stats`
 
-#### 2. [contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs) — Input 结构体
+#### 2. [contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs) — Input 结构体
 
 新增 10 个 `#[derive(Debug, Clone, Serialize, Deserialize)]` 结构体：
 `FriendChatSyncMessagesInput`, `GroupCreateInput`, `GroupUlidInput`, `GroupUpdateInput`, `GroupInviteInput`, `GroupRemoveMemberInput`, `GroupMessageActionInput`, `GroupSearchMessagesInput`, `GroupUpdateNicknameInput`, `GroupUpdateMySettingsInput`, `GroupAckOfflineInput`
 
-#### 3. [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) — 5 个新 tauri command
+#### 3. [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) — 5 个新 tauri command
 
 `friend_chat_sync_messages`, `friend_chat_online`, `friend_chat_offline`, `friend_chat_get_pending`, `friend_chat_stats`
 
-#### 4. [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) — 17 个新 tauri command
+#### 4. [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) — 17 个新 tauri command
 
 `group_chat_create`, `group_chat_info`, `group_chat_update`, `group_chat_invite`, `group_chat_join`, `group_chat_leave`, `group_chat_members`, `group_chat_remove_member`, `group_chat_recall_message`, `group_chat_delete_message`, `group_chat_search_messages`, `group_chat_update_nickname`, `group_chat_get_my_settings`, `group_chat_update_my_settings`, `group_chat_offline_messages`, `group_chat_ack_offline`, `group_chat_stats`
 
-#### 5. [main.rs](file://apps/desktop/src-tauri/src/main.rs) — invoke_handler 注册
+#### 5. [main.rs](../../../apps/desktop/src-tauri/src/main.rs) — invoke_handler 注册
 
 22 个新命令全部注册到 `tauri::generate_handler![]`。
 
-#### 6. [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts) — TS 前端封装
+#### 6. [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts) — TS 前端封装
 
 22 个新方法添加到 `api` 对象，通过 `invokeRustDataFromStatus` 调用对应的 Rust command，与现有风格完全一致。
 
@@ -2192,7 +2192,7 @@ Step 7: 运行 `cargo check` 验证编译。先看一下是否有脚本可用：
 
 ### `StubPayload` 定义
 
-位于 [contracts/mod.rs:L5-L9](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L5-L9)：
+位于 [contracts/mod.rs:L5-L9](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L5-L9)：
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2206,7 +2206,7 @@ pub struct StubPayload {
 
 ### `AppResult` 定义
 
-位于 [error.rs:L22-L53](file://apps/desktop/src-tauri/src/error.rs#L22-L53)：
+位于 [error.rs:L22-L53](../../../apps/desktop/src-tauri/src/error.rs#L22-L53)：
 
 ```rust
 #[derive(Debug, Clone, Serialize)]
@@ -2251,40 +2251,40 @@ impl<T: Serialize> AppResult<T> {
 
 以下按文件逐一列出关键行号和上下文：
 
-### 2.1 [application/account/mod.rs](file://apps/desktop/src-tauri/src/application/account/mod.rs)
+### 2.1 [application/account/mod.rs](../../../apps/desktop/src-tauri/src/application/account/mod.rs)
 
 - **第 3 行** — 导入：`use crate::interface::contracts::{AccountIdInput, AccountUpsertOAuthInput, StubPayload};`
 - **第 6-10 行** — `success_payload` 函数返回 `AppResult<StubPayload>`
 - **第 27 行** — `invalid_argument` 函数返回 `AppResult<StubPayload>`
 - **第 46 行** — `account_list()` 返回 `AppResult<StubPayload>`
 
-### 2.2 [application/admin/mod.rs](file://apps/desktop/src-tauri/src/application/admin/mod.rs)
+### 2.2 [application/admin/mod.rs](../../../apps/desktop/src-tauri/src/application/admin/mod.rs)
 
 - 导入并使用 `StubPayload`
 
-### 2.3 [application/agents/mod.rs](file://apps/desktop/src-tauri/src/application/agents/mod.rs)
+### 2.3 [application/agents/mod.rs](../../../apps/desktop/src-tauri/src/application/agents/mod.rs)
 
 - 导入并使用 `StubPayload`
 
-### 2.4 [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs)
+### 2.4 [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs)
 
 - **第 140 行** — `applets_list()` 返回 `AppResult<StubPayload>`
 - **第 144 行** — `applets_get()` 返回 `AppResult<StubPayload>`
 - **第 219 行** — `applets_action()` 返回 `AppResult<StubPayload>`
 - **第 238 行** — `applets_invoke()` 返回 `AppResult<StubPayload>`
 
-### 2.5 [application/auth/service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs)
+### 2.5 [application/auth/service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs)
 
 - **第 233 行** — `map_domain_error()` 返回 `AppResult<StubPayload>`
 - **第 248 行** — `unauthorized()` 返回 `AppResult<StubPayload>`
 
-### 2.6 [application/channels/mod.rs](file://apps/desktop/src-tauri/src/application/channels/mod.rs)
+### 2.6 [application/channels/mod.rs](../../../apps/desktop/src-tauri/src/application/channels/mod.rs)
 
 - **第 198 行** — `channels_stop_bot()` 返回 `AppResult<StubPayload>`
 - **第 206 行** — `channels_bot_status()` 返回 `AppResult<StubPayload>`
 - **第 220 行** — `channels_list_events()` 返回 `AppResult<StubPayload>`
 
-### 2.7 [application/chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs)
+### 2.7 [application/chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs)
 
 - **第 5 行** — 导入 `StubPayload`
 - **第 80 行** — `success_payload()` 返回 `AppResult<StubPayload>`，第 82 行构造 `StubPayload { ... }`
@@ -2293,38 +2293,38 @@ impl<T: Serialize> AppResult<T> {
 - **第 96 行** — `chat_list_conversations()` 返回 `AppResult<StubPayload>`
 - **第 128 行** — `chat_list_messages()` 返回 `AppResult<StubPayload>`
 
-### 2.8 [application/cron/mod.rs](file://apps/desktop/src-tauri/src/application/cron/mod.rs)
+### 2.8 [application/cron/mod.rs](../../../apps/desktop/src-tauri/src/application/cron/mod.rs)
 
 - 导入并使用 `StubPayload`
 
-### 2.9 [application/mcp/mod.rs](file://apps/desktop/src-tauri/src/application/mcp/mod.rs)
+### 2.9 [application/mcp/mod.rs](../../../apps/desktop/src-tauri/src/application/mcp/mod.rs)
 
 - 导入并使用 `StubPayload`
 
-### 2.10 [application/memory/mod.rs](file://apps/desktop/src-tauri/src/application/memory/mod.rs)
+### 2.10 [application/memory/mod.rs](../../../apps/desktop/src-tauri/src/application/memory/mod.rs)
 
 - **第 15 行** — `invalid_argument()` 返回 `AppResult<StubPayload>`
 - **第 19 行** — `memory_list()` 返回 `AppResult<StubPayload>`
 
-### 2.11 [application/model_config/mod.rs](file://apps/desktop/src-tauri/src/application/model_config/mod.rs)
+### 2.11 [application/model_config/mod.rs](../../../apps/desktop/src-tauri/src/application/model_config/mod.rs)
 
 - **第 34 行** — `success_payload()` 返回 `AppResult<StubPayload>`
 - **第 109 行** — `model_config_provider_references()` 返回 `AppResult<StubPayload>`
 
-### 2.12 [application/models/mod.rs](file://apps/desktop/src-tauri/src/application/models/mod.rs)
+### 2.12 [application/models/mod.rs](../../../apps/desktop/src-tauri/src/application/models/mod.rs)
 
 - **第 349 行** — `model_toggle_all()` 返回 `AppResult<StubPayload>`
 
-### 2.13 [application/notebook/mod.rs](file://apps/desktop/src-tauri/src/application/notebook/mod.rs)
+### 2.13 [application/notebook/mod.rs](../../../apps/desktop/src-tauri/src/application/notebook/mod.rs)
 
 - **第 3 行** — 导入 `StubPayload`
 - **第 7 行** — `success_payload()` 返回 `AppResult<StubPayload>`
 
-### 2.14 [application/oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs)
+### 2.14 [application/oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs)
 
 - 导入并使用 `StubPayload`
 
-### 2.15 [application/profile/mod.rs](file://apps/desktop/src-tauri/src/application/profile/mod.rs)
+### 2.15 [application/profile/mod.rs](../../../apps/desktop/src-tauri/src/application/profile/mod.rs)
 
 - **第 5 行** — 导入 `StubPayload`
 - **第 8 行** — `profile_get()` 返回 `AppResult<StubPayload>`
@@ -2336,11 +2336,11 @@ impl<T: Serialize> AppResult<T> {
 - **第 52 行** — `map_upload()` 返回 `AppResult<StubPayload>`
 - **第 71 行** — `map_error()` 返回 `AppResult<StubPayload>`
 
-### 2.16 [application/provider/mod.rs](file://apps/desktop/src-tauri/src/application/provider/mod.rs)
+### 2.16 [application/provider/mod.rs](../../../apps/desktop/src-tauri/src/application/provider/mod.rs)
 
 - **第 259 行** — `provider_list_available_models()` 返回 `AppResult<StubPayload>`
 
-### 2.17 [application/search/mod.rs](file://apps/desktop/src-tauri/src/application/search/mod.rs)
+### 2.17 [application/search/mod.rs](../../../apps/desktop/src-tauri/src/application/search/mod.rs)
 
 - **第 2 行** — 导入 `StubPayload`
 - **第 5-9 行** — `success_payload()` 返回 `AppResult<StubPayload>`
@@ -2350,7 +2350,7 @@ impl<T: Serialize> AppResult<T> {
 - **第 23 行** — `search_query()` 返回 `AppResult<StubPayload>`
 - **第 39 行** — `search_ai()` 返回 `AppResult<StubPayload>`
 
-### 2.18 [application/settings/mod.rs](file://apps/desktop/src-tauri/src/application/settings/mod.rs)
+### 2.18 [application/settings/mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs)
 
 - **第 7 行** — 导入 `StubPayload`
 - **第 12 行** — `settings_get()` 返回 `AppResult<StubPayload>`
@@ -2363,15 +2363,15 @@ impl<T: Serialize> AppResult<T> {
 - **第 127 行** — `invalid_value()` 返回 `AppResult<StubPayload>`
 - **第 135 行** — `storage_error_to_result()` 返回 `AppResult<StubPayload>`
 
-### 2.19 [application/skills/mod.rs](file://apps/desktop/src-tauri/src/application/skills/mod.rs)
+### 2.19 [application/skills/mod.rs](../../../apps/desktop/src-tauri/src/application/skills/mod.rs)
 
 - 导入并使用 `StubPayload`
 
-### 2.20 [application/skills_market/mod.rs](file://apps/desktop/src-tauri/src/application/skills_market/mod.rs)
+### 2.20 [application/skills_market/mod.rs](../../../apps/desktop/src-tauri/src/application/skills_market/mod.rs)
 
 - **第 103 行** — `skills_market_install()` 返回 `AppResult<StubPayload>`
 
-### 2.21 [application/system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs)
+### 2.21 [application/system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs)
 
 - **第 250 行** — `statistics_get()` 返回 `AppResult<StubPayload>`
 - **第 262 行** — `preferences_get()` 返回 `AppResult<StubPayload>`
@@ -2380,7 +2380,7 @@ impl<T: Serialize> AppResult<T> {
 - **第 515 行** — `context_capabilities()` 返回 `AppResult<StubPayload>`
 - **第 530 行** — `context_health()` 返回 `AppResult<StubPayload>`
 
-### 2.22 [application/timeline/mod.rs](file://apps/desktop/src-tauri/src/application/timeline/mod.rs)
+### 2.22 [application/timeline/mod.rs](../../../apps/desktop/src-tauri/src/application/timeline/mod.rs)
 
 - **第 4 行** — 导入 `StubPayload`
 - **第 6 行** — `timeline_list()` 返回 `AppResult<StubPayload>`
@@ -2393,7 +2393,7 @@ impl<T: Serialize> AppResult<T> {
 - **第 71 行** — 构造 `StubPayload { ... }`
 - **第 79 行** — `map_error()` 返回 `AppResult<StubPayload>`
 
-### 2.23 [application/tools/mod.rs](file://apps/desktop/src-tauri/src/application/tools/mod.rs)
+### 2.23 [application/tools/mod.rs](../../../apps/desktop/src-tauri/src/application/tools/mod.rs)
 
 - **第 2 行** — 导入 `StubPayload`
 - **第 5 行** — `success_payload()` 返回 `AppResult<StubPayload>`
@@ -2402,7 +2402,7 @@ impl<T: Serialize> AppResult<T> {
 - **第 28 行** — `tools_search_providers()` 返回 `AppResult<StubPayload>`
 - **第 41 行** — `tools_set_search_primary()` 返回 `AppResult<StubPayload>`
 
-### 2.24 [application/tts/mod.rs](file://apps/desktop/src-tauri/src/application/tts/mod.rs)
+### 2.24 [application/tts/mod.rs](../../../apps/desktop/src-tauri/src/application/tts/mod.rs)
 
 - 导入并使用 `StubPayload`
 
@@ -2410,128 +2410,128 @@ impl<T: Serialize> AppResult<T> {
 
 ## 3) `interface/tauri_commands/` 目录下导入或使用 `StubPayload` 的所有文件（共 27 个文件）
 
-### 3.1 [tauri_commands/account.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/account.rs)
+### 3.1 [tauri_commands/account.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/account.rs)
 
 - **第 2 行** — 导入 `StubPayload`
 - 所有 4 个命令函数（`account_list`、`account_get_active`、`account_switch`、`account_upsert_oauth`）均返回 `AppResult<StubPayload>`
 
-### 3.2 [tauri_commands/admin.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/admin.rs)
+### 3.2 [tauri_commands/admin.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/admin.rs)
 
 - **第 2 行** — 导入 `StubPayload`
 - 3 个命令函数（`admin_health`、`admin_network_probe`、`admin_execute_action`）均返回 `AppResult<StubPayload>`
 
-### 3.3 [tauri_commands/agents.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs)
+### 3.3 [tauri_commands/agents.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs)
 
 - **第 4 行** — 导入 `StubPayload`
 - 8 个命令函数均返回 `AppResult<StubPayload>`
 
-### 3.4 [tauri_commands/applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)
+### 3.4 [tauri_commands/applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)
 
 - **第 3 行** — 导入 `StubPayload`
 - 8 个命令函数均返回 `AppResult<StubPayload>`
 
-### 3.5 [tauri_commands/auth.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs)
+### 3.5 [tauri_commands/auth.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs)
 
 - **第 2 行** — 导入 `StubPayload`
 - 4 个命令函数（`auth_login`、`auth_logout`、`auth_restore_session`、`auth_validate_token`）均返回 `AppResult<StubPayload>`
 
-### 3.6 [tauri_commands/channels.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/channels.rs)
+### 3.6 [tauri_commands/channels.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/channels.rs)
 
 - 导入 `StubPayload`
 - 多个命令函数（含 `channels_stop_bot`、`channels_bot_status`、`channels_list_events`、`channels_stats`）均返回 `AppResult<StubPayload>`
 
-### 3.7 [tauri_commands/chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs)
+### 3.7 [tauri_commands/chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.8 [tauri_commands/cron.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/cron.rs)
+### 3.8 [tauri_commands/cron.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/cron.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.9 [tauri_commands/friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+### 3.9 [tauri_commands/friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.10 [tauri_commands/group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+### 3.10 [tauri_commands/group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 
 - **第 6 行** — 导入 `StubPayload`
 - **第 15 行** — `token_from_state()` 返回 `Result<String, AppResult<StubPayload>>`
 - **第 43 行** — `to_stub()` 返回 `AppResult<StubPayload>`，第 44 行构造 `StubPayload { ... }`
 - 大量命令函数（从第 51 行到第 416 行），全部返回 `AppResult<StubPayload>`，包括：`group_chat_list_groups`(L51), `group_chat_list_messages`(L60), `group_chat_send_message`(L75), `group_chat_unread_count`(L95), `group_chat_mark_read`(L104), `group_chat_local_search`(L113), `group_chat_local_search_scoped`(L132), `group_chat_set_cursor_scoped`(L152), `group_chat_get_cursor_scoped`(L164), `group_chat_get_key_version_scoped`(L179), `group_chat_rotate_key_scoped`(L191), `group_chat_sync_from_station_scoped`(L206), `group_chat_create`(L224), `group_chat_info`(L236), `group_chat_update`(L248), `group_chat_invite`(L260), `group_chat_join`(L272), `group_chat_leave`(L284), `group_chat_members`(L296), `group_chat_remove_member`(L308), `group_chat_recall_message`(L320), `group_chat_delete_message`(L332), `group_chat_search_messages`(L344), `group_chat_update_nickname`(L356), `group_chat_get_my_settings`(L368), `group_chat_update_my_settings`(L380), `group_chat_offline_messages`(L392), `group_chat_ack_offline`(L404), `group_chat_stats`(L416)
 
-### 3.11 [tauri_commands/mcp.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/mcp.rs)
+### 3.11 [tauri_commands/mcp.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mcp.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.12 [tauri_commands/memory.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs)
+### 3.12 [tauri_commands/memory.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.13 [tauri_commands/mod.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs)
+### 3.13 [tauri_commands/mod.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs)
 
 - 使用 `StubPayload`（模块级引用/re-export）
 
-### 3.14 [tauri_commands/model_config.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/model_config.rs)
+### 3.14 [tauri_commands/model_config.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/model_config.rs)
 
 - **第 3 行** — 导入 `StubPayload`
 - 5 个命令函数均返回 `AppResult<StubPayload>`
 
-### 3.15 [tauri_commands/models.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/models.rs)
+### 3.15 [tauri_commands/models.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/models.rs)
 
 - **第 4 行** — 导入 `StubPayload`
 - 多个命令函数返回 `AppResult<StubPayload>`
 
-### 3.16 [tauri_commands/notebook.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/notebook.rs)
+### 3.16 [tauri_commands/notebook.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/notebook.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.17 [tauri_commands/oauth2.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs)
+### 3.17 [tauri_commands/oauth2.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.18 [tauri_commands/profile.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs)
+### 3.18 [tauri_commands/profile.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.19 [tauri_commands/provider.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/provider.rs)
+### 3.19 [tauri_commands/provider.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/provider.rs)
 
 - 导入并使用 `StubPayload`
 - **第 108 行** — `provider_apply_preset()` 返回 `AppResult<StubPayload>`
 - **第 117 行** — `provider_list_available_models()` 返回 `AppResult<StubPayload>`
 
-### 3.20 [tauri_commands/search.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/search.rs)
+### 3.20 [tauri_commands/search.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/search.rs)
 
 - **第 2 行** — 导入 `StubPayload`
 - 4 个命令函数（`help_get`、`search_sources`、`search_query`、`search_ai`）均返回 `AppResult<StubPayload>`
 
-### 3.21 [tauri_commands/settings.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/settings.rs)
+### 3.21 [tauri_commands/settings.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/settings.rs)
 
 - **第 2 行** — 导入 `StubPayload`
 - 3 个命令函数（`settings_get`、`settings_set`、`settings_reset`）均返回 `AppResult<StubPayload>`
 
-### 3.22 [tauri_commands/skills.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/skills.rs)
+### 3.22 [tauri_commands/skills.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/skills.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.23 [tauri_commands/skills_market.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/skills_market.rs)
+### 3.23 [tauri_commands/skills_market.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/skills_market.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.24 [tauri_commands/system.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/system.rs)
+### 3.24 [tauri_commands/system.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/system.rs)
 
 - 导入 `StubPayload`
 - 大量命令函数（`system_health`、`open_external_url`、`onboarding_get`/`set`/`reset`、`wizard_get`、`config_section_get`/`set`、`config_field_reset`、`config_test_postgres`、`embedding_models_list`、`visitor_heartbeat`、`visitor_online` 等）均返回 `AppResult<StubPayload>`
 
-### 3.25 [tauri_commands/timeline.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/timeline.rs)
+### 3.25 [tauri_commands/timeline.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/timeline.rs)
 
 - 导入并使用 `StubPayload`
 
-### 3.26 [tauri_commands/tools.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/tools.rs)
+### 3.26 [tauri_commands/tools.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/tools.rs)
 
 - **第 2 行** — 导入 `StubPayload`
 - 3 个命令函数（`tools_list`、`tools_search_providers`、`tools_set_search_primary`）均返回 `AppResult<StubPayload>`
 
-### 3.27 [tauri_commands/tts.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/tts.rs)
+### 3.27 [tauri_commands/tts.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/tts.rs)
 
 - 导入并使用 `StubPayload`
 
@@ -2564,7 +2564,7 @@ impl<T: Serialize> AppResult<T> {
 
 ### 一、AppResult 的定义
 
-`AppResult` 定义在 [error.rs](file://apps/desktop/src-tauri/src/error.rs) 中：
+`AppResult` 定义在 [error.rs](../../../apps/desktop/src-tauri/src/error.rs) 中：
 
 ```rust
 #[derive(Debug, Clone, Serialize)]
@@ -2607,7 +2607,7 @@ impl<T: Serialize> AppResult<T> {
 
 几乎所有 `application/` 模块中的公共函数都以 `-> AppResult<StubPayload>` 作为返回类型。
 
-**chat/mod.rs** (27 处) - [chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs):
+**chat/mod.rs** (27 处) - [chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs):
 
 ```rust
 // 第 80 行 - 辅助函数
@@ -2637,9 +2637,9 @@ pub fn chat_set_conversation_model(input: ChatSetConversationModelInput) -> AppR
 pub fn chat_delete_message(input: ChatMessageInput) -> AppResult<StubPayload> { ... }
 ```
 
-**system/mod.rs** (45 处) - [system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs)：最多使用的模块，涵盖 health、onboarding、wizard、statistics、preferences、share、config 等大量函数。
+**system/mod.rs** (45 处) - [system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs)：最多使用的模块，涵盖 health、onboarding、wizard、statistics、preferences、share、config 等大量函数。
 
-**auth/service.rs** (25 处) - [auth/service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs):
+**auth/service.rs** (25 处) - [auth/service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs):
 
 ```rust
 pub fn auth_login(input: AuthLoginInput, state: &State<AppState>) -> AppResult<StubPayload> { ... }
@@ -2648,7 +2648,7 @@ pub fn auth_restore_session(state: &State<AppState>) -> AppResult<StubPayload> {
 pub fn auth_validate_token(input: AuthValidateTokenInput, state: &State<AppState>) -> AppResult<StubPayload> { ... }
 ```
 
-**timeline/mod.rs** (17 处) - [timeline/mod.rs](file://apps/desktop/src-tauri/src/application/timeline/mod.rs):
+**timeline/mod.rs** (17 处) - [timeline/mod.rs](../../../apps/desktop/src-tauri/src/application/timeline/mod.rs):
 
 ```rust
 pub fn timeline_list(input: TimelineListInput) -> AppResult<StubPayload> { ... }
@@ -2657,7 +2657,7 @@ pub fn timeline_comment(input: TimelineActionInput) -> AppResult<StubPayload> { 
 pub fn timeline_repost(input: TimelineActionInput) -> AppResult<StubPayload> { ... }
 ```
 
-**profile/mod.rs** (16 处) - [profile/mod.rs](file://apps/desktop/src-tauri/src/application/profile/mod.rs):
+**profile/mod.rs** (16 处) - [profile/mod.rs](../../../apps/desktop/src-tauri/src/application/profile/mod.rs):
 
 ```rust
 pub fn profile_get() -> AppResult<StubPayload> { ... }
@@ -2671,25 +2671,25 @@ pub fn profile_update_privacy(input: ProfilePrivacyInput) -> AppResult<StubPaylo
 
 | 文件 | 引用数 | 路径 |
 |------|--------|------|
-| [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs) | 33 | application/oauth2/ |
-| [models/mod.rs](file://apps/desktop/src-tauri/src/application/models/mod.rs) | 23 | application/models/ |
-| [channels/mod.rs](file://apps/desktop/src-tauri/src/application/channels/mod.rs) | 22 | application/channels/ |
-| [applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs) | 19 | application/applets/ |
-| [provider/mod.rs](file://apps/desktop/src-tauri/src/application/provider/mod.rs) | 18 | application/provider/ |
-| [skills/mod.rs](file://apps/desktop/src-tauri/src/application/skills/mod.rs) | 18 | application/skills/ |
-| [cron/mod.rs](file://apps/desktop/src-tauri/src/application/cron/mod.rs) | 18 | application/cron/ |
-| [agents/mod.rs](file://apps/desktop/src-tauri/src/application/agents/mod.rs) | 18 | application/agents/ |
-| [settings/mod.rs](file://apps/desktop/src-tauri/src/application/settings/mod.rs) | 17 | application/settings/ |
-| [mcp/mod.rs](file://apps/desktop/src-tauri/src/application/mcp/mod.rs) | 17 | application/mcp/ |
-| [memory/mod.rs](file://apps/desktop/src-tauri/src/application/memory/mod.rs) | 16 | application/memory/ |
-| [skills_market/mod.rs](file://apps/desktop/src-tauri/src/application/skills_market/mod.rs) | 16 | application/skills_market/ |
-| [admin/mod.rs](file://apps/desktop/src-tauri/src/application/admin/mod.rs) | 13 | application/admin/ |
-| [account/mod.rs](file://apps/desktop/src-tauri/src/application/account/mod.rs) | 13 | application/account/ |
-| [model_config/mod.rs](file://apps/desktop/src-tauri/src/application/model_config/mod.rs) | 12 | application/model_config/ |
-| [notebook/mod.rs](file://apps/desktop/src-tauri/src/application/notebook/mod.rs) | 11 | application/notebook/ |
-| [search/mod.rs](file://apps/desktop/src-tauri/src/application/search/mod.rs) | 9 | application/search/ |
-| [tools/mod.rs](file://apps/desktop/src-tauri/src/application/tools/mod.rs) | 8 | application/tools/ |
-| [tts/mod.rs](file://apps/desktop/src-tauri/src/application/tts/mod.rs) | 7 | application/tts/ |
+| [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs) | 33 | application/oauth2/ |
+| [models/mod.rs](../../../apps/desktop/src-tauri/src/application/models/mod.rs) | 23 | application/models/ |
+| [channels/mod.rs](../../../apps/desktop/src-tauri/src/application/channels/mod.rs) | 22 | application/channels/ |
+| [applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs) | 19 | application/applets/ |
+| [provider/mod.rs](../../../apps/desktop/src-tauri/src/application/provider/mod.rs) | 18 | application/provider/ |
+| [skills/mod.rs](../../../apps/desktop/src-tauri/src/application/skills/mod.rs) | 18 | application/skills/ |
+| [cron/mod.rs](../../../apps/desktop/src-tauri/src/application/cron/mod.rs) | 18 | application/cron/ |
+| [agents/mod.rs](../../../apps/desktop/src-tauri/src/application/agents/mod.rs) | 18 | application/agents/ |
+| [settings/mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs) | 17 | application/settings/ |
+| [mcp/mod.rs](../../../apps/desktop/src-tauri/src/application/mcp/mod.rs) | 17 | application/mcp/ |
+| [memory/mod.rs](../../../apps/desktop/src-tauri/src/application/memory/mod.rs) | 16 | application/memory/ |
+| [skills_market/mod.rs](../../../apps/desktop/src-tauri/src/application/skills_market/mod.rs) | 16 | application/skills_market/ |
+| [admin/mod.rs](../../../apps/desktop/src-tauri/src/application/admin/mod.rs) | 13 | application/admin/ |
+| [account/mod.rs](../../../apps/desktop/src-tauri/src/application/account/mod.rs) | 13 | application/account/ |
+| [model_config/mod.rs](../../../apps/desktop/src-tauri/src/application/model_config/mod.rs) | 12 | application/model_config/ |
+| [notebook/mod.rs](../../../apps/desktop/src-tauri/src/application/notebook/mod.rs) | 11 | application/notebook/ |
+| [search/mod.rs](../../../apps/desktop/src-tauri/src/application/search/mod.rs) | 9 | application/search/ |
+| [tools/mod.rs](../../../apps/desktop/src-tauri/src/application/tools/mod.rs) | 8 | application/tools/ |
+| [tts/mod.rs](../../../apps/desktop/src-tauri/src/application/tts/mod.rs) | 7 | application/tts/ |
 
 #### 2. 作为 Result<(), AppResult<StubPayload>> 的 Err 变体
 
@@ -2752,7 +2752,7 @@ fn map_domain_error(error: AuthDomainError) -> AppResult<StubPayload> { ... }
 
 大多数 tauri_commands 文件是**纯粹的代理层**，函数签名返回 `AppResult<StubPayload>`，函数体直接委托给 `application/` 层：
 
-**timeline.rs** (5 处) - [timeline.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/timeline.rs):
+**timeline.rs** (5 处) - [timeline.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/timeline.rs):
 
 ```rust
 #[tauri::command]
@@ -2765,11 +2765,11 @@ pub fn timeline_like(input: TimelineActionInput) -> AppResult<StubPayload> {
 }
 ```
 
-同理适用于：[tts.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/tts.rs)、[tools.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/tools.rs)、[system.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/system.rs)、[skills_market.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/skills_market.rs)、[skills.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/skills.rs)、[settings.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/settings.rs)、[search.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/search.rs)、[profile.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs)、[oauth2.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs)、[notebook.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/notebook.rs)、[model_config.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/model_config.rs)、[memory.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs)、[mcp.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/mcp.rs)、[cron.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/cron.rs)、[chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs)、[channels.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/channels.rs)、[auth.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs)、[applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)、[agents.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs)、[admin.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/admin.rs)、[account.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/account.rs)、[provider.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/provider.rs)、[models.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/models.rs)。
+同理适用于：[tts.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/tts.rs)、[tools.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/tools.rs)、[system.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/system.rs)、[skills_market.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/skills_market.rs)、[skills.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/skills.rs)、[settings.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/settings.rs)、[search.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/search.rs)、[profile.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs)、[oauth2.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs)、[notebook.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/notebook.rs)、[model_config.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/model_config.rs)、[memory.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs)、[mcp.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mcp.rs)、[cron.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/cron.rs)、[chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs)、[channels.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/channels.rs)、[auth.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs)、[applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)、[agents.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs)、[admin.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/admin.rs)、[account.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/account.rs)、[provider.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/provider.rs)、[models.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/models.rs)。
 
 #### 2. 包含业务逻辑的厚命令模式（group_chat.rs / friend_chat.rs）
 
-**group_chat.rs** (87 处，最多) - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) 和 **friend_chat.rs** (49 处) - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) 比较特殊，它们**直接在 tauri_commands 层内包含业务逻辑**，不委托 application 层。
+**group_chat.rs** (87 处，最多) - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) 和 **friend_chat.rs** (49 处) - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) 比较特殊，它们**直接在 tauri_commands 层内包含业务逻辑**，不委托 application 层。
 
 这两个文件中的典型用法：
 
@@ -2808,7 +2808,7 @@ friend_chat.rs 中定义了：`friend_chat_list_sessions`、`friend_chat_create_
 
 #### 3. mod.rs 中的通用工具函数
 
-[mod.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs) (5 处) 定义了全局辅助：
+[mod.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs) (5 处) 定义了全局辅助：
 
 ```rust
 pub fn not_implemented(command: &str) -> AppResult<StubPayload> {
@@ -2944,11 +2944,11 @@ after:   application → contracts  ✅ (平行)
 
 | 操作 | 文件 |
 |------|------|
-| **新建** | [src/contracts.rs](file://apps/desktop/src-tauri/src/contracts.rs) |
+| **新建** | [src/contracts.rs](../../../apps/desktop/src-tauri/src/contracts.rs) |
 | **删除** | `src/interface/contracts/mod.rs`（目录一并删除） |
-| **修改** | [main.rs](file://apps/desktop/src-tauri/src/main.rs) — 添加 `mod contracts;` |
-| **修改** | [interface/mod.rs](file://apps/desktop/src-tauri/src/interface/mod.rs) — 删除 `pub mod contracts;` |
-| **修改** | [provider_models_lib.rs](file://apps/desktop/src-tauri/src/provider_models_lib.rs) — lib target 同步更新 |
+| **修改** | [main.rs](../../../apps/desktop/src-tauri/src/main.rs) — 添加 `mod contracts;` |
+| **修改** | [interface/mod.rs](../../../apps/desktop/src-tauri/src/interface/mod.rs) — 删除 `pub mod contracts;` |
+| **修改** | [provider_models_lib.rs](../../../apps/desktop/src-tauri/src/provider_models_lib.rs) — lib target 同步更新 |
 | **批量替换** | 全局 55 处 `crate::interface::contracts` → `crate::contracts` |
 
 ### 验证结果
@@ -3024,7 +3024,7 @@ Let me verify the ChannelsPage reference and check if there's a modules registry
 
 ### 一、ChatPage 页面组件
 
-**文件**: [ChatPage.tsx](file://apps/desktop/src/pages/ChatPage.tsx) (833 行)
+**文件**: [ChatPage.tsx](../../../apps/desktop/src/pages/ChatPage.tsx) (833 行)
 
 这是主要的 **AI Agent 对话页面**，不是 friend_chat / group_chat。它：
 
@@ -3046,17 +3046,17 @@ import { parseAgentChatConfig, api } from '../services/desktop_api';
 
 | 文件 | 说明 | 是否调用 friend_chat/group_chat |
 |------|------|------|
-| [ChatInput.tsx](file://apps/desktop/src/components/ChatInput.tsx) (1207 行) | 聊天输入框，包含模型选择、搜索控制、记忆控制、语音输入、Skills 弹窗等 | **否**，仅调用 AI chat 相关 API |
-| [MessageBubble.tsx](file://apps/desktop/src/components/MessageBubble.tsx) (698 行) | 消息气泡组件，支持 Markdown 渲染、tool calls 展示、编辑、删除、regenerate | **否** |
-| [ShareDialog.tsx](file://apps/desktop/src/components/ShareDialog.tsx) (234 行) | 对话分享弹窗 | **否** |
-| [SessionList.tsx](file://apps/desktop/src/components/SessionList.tsx) | AI 会话列表 | **否** |
-| [AgentSidebar.tsx](file://apps/desktop/src/components/AgentSidebar.tsx) | Agent 侧边栏 | **否** |
+| [ChatInput.tsx](../../../apps/desktop/src/components/ChatInput.tsx) (1207 行) | 聊天输入框，包含模型选择、搜索控制、记忆控制、语音输入、Skills 弹窗等 | **否**，仅调用 AI chat 相关 API |
+| [MessageBubble.tsx](../../../apps/desktop/src/components/MessageBubble.tsx) (698 行) | 消息气泡组件，支持 Markdown 渲染、tool calls 展示、编辑、删除、regenerate | **否** |
+| [ShareDialog.tsx](../../../apps/desktop/src/components/ShareDialog.tsx) (234 行) | 对话分享弹窗 | **否** |
+| [SessionList.tsx](../../../apps/desktop/src/components/SessionList.tsx) | AI 会话列表 | **否** |
+| [AgentSidebar.tsx](../../../apps/desktop/src/components/AgentSidebar.tsx) | Agent 侧边栏 | **否** |
 
 ---
 
 ### 三、Store（状态管理）
 
-**文件**: [store/chat.ts](file://apps/desktop/src/store/chat.ts) (887 行)
+**文件**: [store/chat.ts](../../../apps/desktop/src/store/chat.ts) (887 行)
 
 这是 zustand store，管理 AI Agent 对话的全部状态。它：
 
@@ -3069,11 +3069,11 @@ import { parseAgentChatConfig, api } from '../services/desktop_api';
 
 ### 四、desktop_api 中 friend_chat / group_chat 方法定义
 
-**文件**: [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+**文件**: [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 在 `api` 对象的末尾（第 2847-2983 行），定义了大量的 friend_chat 和 group_chat 方法：
 
-**Friend Chat 方法（17 个）**: [L2847-L2932](file://apps/desktop/src/services/desktop_api.ts#L2847-L2932)
+**Friend Chat 方法（17 个）**: [L2847-L2932](../../../apps/desktop/src/services/desktop_api.ts#L2847-L2932)
 
 ```typescript
 api.friendChatListSessions(...)
@@ -3095,7 +3095,7 @@ api.friendChatGetPending()
 api.friendChatStats()
 ```
 
-**Group Chat 方法（23 个）**: [L2883-L2983](file://apps/desktop/src/services/desktop_api.ts#L2883-L2983)
+**Group Chat 方法（23 个）**: [L2883-L2983](../../../apps/desktop/src/services/desktop_api.ts#L2883-L2983)
 
 ```typescript
 api.groupChatListGroups(...)
@@ -3137,7 +3137,7 @@ api.groupChatGetStats()
 
 ### 五、路由系统
 
-**文件**: [App.tsx](file://apps/desktop/src/App.tsx) (477 行)
+**文件**: [App.tsx](../../../apps/desktop/src/App.tsx) (477 行)
 
 项目**不使用 React Router**，而是用自定义的 hash-based 路由。核心路由定义在第 40 行：
 
@@ -3156,13 +3156,13 @@ const CORE_PAGES = ['chat', 'settings', 'search', 'notes', 'agent-profile'];
 
 **没有 friend-chat 或 group-chat 的路由入口。**
 
-额外的模块目录 [modules/](file://apps/desktop/src/modules) 中也没有任何 chat 相关模块（只有 cron, channels, logs, memory, providers 等）。
+额外的模块目录 [modules/](../../../apps/desktop/src/modules) 中也没有任何 chat 相关模块（只有 cron, channels, logs, memory, providers 等）。
 
 ---
 
 ### 六、Global Context 中的 Capability 声明
 
-**文件**: [global-context/types.ts](file://apps/desktop/src/kernel/global-context/types.ts#L54-L60)
+**文件**: [global-context/types.ts](../../../apps/desktop/src/kernel/global-context/types.ts#L54-L60)
 
 ```typescript
 export interface CapabilitySlice {
@@ -3174,7 +3174,7 @@ export interface CapabilitySlice {
 }
 ```
 
-**文件**: [global-context/store.ts](file://apps/desktop/src/kernel/global-context/store.ts#L71-L76)
+**文件**: [global-context/store.ts](../../../apps/desktop/src/kernel/global-context/store.ts#L71-L76)
 
 初始值设为：
 
@@ -3194,13 +3194,13 @@ capability: {
 
 ### 七、Rust 后端注册（参考）
 
-在 [src-tauri/src/main.rs](file://apps/desktop/src-tauri/src/main.rs#L246-L276) 中，friend_chat 和 group_chat 的所有 Tauri 命令都已注册（约 30+ 个命令），说明**后端已完全实现**。
+在 [src-tauri/src/main.rs](../../../apps/desktop/src-tauri/src/main.rs#L246-L276) 中，friend_chat 和 group_chat 的所有 Tauri 命令都已注册（约 30+ 个命令），说明**后端已完全实现**。
 
 ---
 
 ### 八、测试文件
 
-**文件**: [tauri-contract.test.ts](file://apps/desktop/src/test/tauri-contract.test.ts) (153 行)
+**文件**: [tauri-contract.test.ts](../../../apps/desktop/src/test/tauri-contract.test.ts) (153 行)
 
 测试中只验证了 AI chat 相关的命令（`chat_list_messages`），**没有测试 friend_chat 或 group_chat 的命令**。
 
@@ -3236,7 +3236,7 @@ capability: {
 
 ### 1. `friend_chat.rs` — 真实调用，非 stub
 
-[friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+[friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
 
 共 **18 个 Tauri command**，全部转发到 `application::chat_storage` 模块。每个 command 都有完整的参数校验、token 提取和错误处理逻辑。具体命令包括：
 
@@ -3257,17 +3257,17 @@ capability: {
 | `friend_chat_get_pending` | `chat_storage::friend_chat_pending` | 真实（转 HTTP） |
 | `friend_chat_stats` | `chat_storage::friend_chat_stats` | 真实（转 HTTP） |
 
-**关键注意点**：虽然调用链是真实的，但所有返回值都被包装为 `StubPayload`（[to_stub 函数, 第40-45行](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L40-L45)）。`StubPayload` 的结构是 `{ command: String, status: String }`，其中 `status` 是把 Station 返回的 JSON 序列化为字符串。这意味着**前端拿到的是一个字符串化的 JSON，而不是结构化的强类型数据**。
+**关键注意点**：虽然调用链是真实的，但所有返回值都被包装为 `StubPayload`（[to_stub 函数, 第40-45行](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L40-L45)）。`StubPayload` 的结构是 `{ command: String, status: String }`，其中 `status` 是把 Station 返回的 JSON 序列化为字符串。这意味着**前端拿到的是一个字符串化的 JSON，而不是结构化的强类型数据**。
 
 ### 2. `group_chat.rs` — 真实调用，非 stub
 
-[group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+[group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 
 共 **21 个 Tauri command**，同样全部转发到 `application::chat_storage`。结构与 friend_chat 完全对称。包括群组 CRUD、成员管理、消息收发、离线消息、设置等完整功能。全部真实调用 HTTP + SQLite。
 
 ### 3. `chat.rs` — 内存 stub，无持久化
 
-[chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs)
+[chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs)
 
 共 **12 个 Tauri command**（`chat_list_conversations`, `chat_send_message`, `chat_completion_once` 等），全部转发到 `application::chat`（注意：这是不同于 `chat_storage` 的另一个模块）。
 
@@ -3279,7 +3279,7 @@ capability: {
 
 ### 1. `chat_storage.rs` — 真实实现
 
-[chat_storage.rs](file://apps/desktop/src-tauri/src/application/chat_storage.rs)
+[chat_storage.rs](../../../apps/desktop/src-tauri/src/application/chat_storage.rs)
 
 这是 friend_chat 和 group_chat 的核心业务层，共 **30+ 个公开函数**，分为两类：
 
@@ -3308,21 +3308,21 @@ pub fn send_friend_message(...) -> Result<Value, String> {
 
 **C. 增量同步逻辑（完全真实）：**
 
-[sync_friend_from_station](file://apps/desktop/src-tauri/src/application/chat_storage.rs#L185-L210) 和 [sync_group_from_station](file://apps/desktop/src-tauri/src/application/chat_storage.rs#L347-L372) 实现了完整的分页增量同步：读取游标 -> 循环拉取 -> 过滤增量 -> 写入本地 -> 更新游标 -> 检查 hasMore。
+[sync_friend_from_station](../../../apps/desktop/src-tauri/src/application/chat_storage.rs#L185-L210) 和 [sync_group_from_station](../../../apps/desktop/src-tauri/src/application/chat_storage.rs#L347-L372) 实现了完整的分页增量同步：读取游标 -> 循环拉取 -> 过滤增量 -> 写入本地 -> 更新游标 -> 检查 hasMore。
 
 ### 2. `application/chat/mod.rs` — 纯内存 stub
 
-[chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs)
+[chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs)
 
 **这是一个完整的内存模拟实现**。核心特征：
 
-- 使用 `static CHAT_STORE: OnceLock<Mutex<ChatStore>>` 做全局内存状态（[第74行](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L74)）
-- 内部的 `ChatStore` 是 `HashMap<String, Conversation>` + `HashMap<String, Vec<Message>>`（[第16-19行](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L16-L19)）
-- 启动时预填充了一个 "General" 会话和一条 "welcome" 消息（[第22-51行](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L22-L51)）
+- 使用 `static CHAT_STORE: OnceLock<Mutex<ChatStore>>` 做全局内存状态（[第74行](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L74)）
+- 内部的 `ChatStore` 是 `HashMap<String, Conversation>` + `HashMap<String, Vec<Message>>`（[第16-19行](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L16-L19)）
+- 启动时预填充了一个 "General" 会话和一条 "welcome" 消息（[第22-51行](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L22-L51)）
 - **无持久化**：重启后数据丢失
 - **无真实网络**：消息投递依赖 `p2p` 和 `realtime` 模块（均为 stub，见下文）
-- `chat_completion_once` 直接返回 `"Echo: {content}"`（[第565-571行](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L555-L572)），是硬编码的 echo 回复，**没有任何 LLM 调用**
-- `chat_stop` 直接返回 `{ stopped: true }`（[第544-553行](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L544-L553)），不做任何操作
+- `chat_completion_once` 直接返回 `"Echo: {content}"`（[第565-571行](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L555-L572)），是硬编码的 echo 回复，**没有任何 LLM 调用**
+- `chat_stop` 直接返回 `{ stopped: true }`（[第544-553行](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L544-L553)），不做任何操作
 
 ---
 
@@ -3330,40 +3330,40 @@ pub fn send_friend_message(...) -> Result<Value, String> {
 
 ### 1. `station_client.rs` — 真实 HTTP 客户端
 
-[station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs)
+[station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs)
 
-**完全真实的实现**。核心函数 `request_json`（[第13-40行](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs#L13-L40)）：
+**完全真实的实现**。核心函数 `request_json`（[第13-40行](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs#L13-L40)）：
 
 - 使用 `reqwest::blocking::Client`，15 秒超时
 - 支持 `GET/POST/PUT` 等方法、查询参数、JSON body
 - 使用 Bearer Token 认证
 - 解析响应状态码，非 2xx 返回错误
 - 将响应体解析为 `serde_json::Value`
-- Station URL 从 `PT_STATION_URL` 或 `STATION_URL` 环境变量读取，默认 `http://127.0.0.1:18080`（[第5-11行](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs#L5-L11)）
+- Station URL 从 `PT_STATION_URL` 或 `STATION_URL` 环境变量读取，默认 `http://127.0.0.1:18080`（[第5-11行](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs#L5-L11)）
 
 ### 2. `local_chat_store.rs` — 真实 SQLite 实现
 
-[local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
+[local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
 
 **完全真实的 SQLite 实现**，使用 `rusqlite` 库：
 
-- **自动迁移**：创建 `chat_messages` 表、索引、`chat_sync_cursor` 表、`chat_messages_fts` FTS5 虚拟表（[第28-54行](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L28-L54)）
-- **消息写入**：`upsert_record` 实现了 UPSERT 语义 + FTS 索引同步更新（[第56-85行](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L56-L85)）
-- **消息摄入**：`ingest_friend_payload` / `ingest_group_payload` 解析 Station JSON 并批量写入（[第87-151行](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L87-L151)）
-- **全文搜索**：`search_local` 使用 FTS5 MATCH 查询，支持按 scope 过滤（[第153-182行](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L153-L182)）
-- **游标管理**：`set_sync_cursor` / `get_sync_cursor` 实现了持久化游标的 UPSERT（[第184-208行](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L184-L208)）
-- **密钥管理**：`get_chat_key_version` / `rotate_chat_key` 委托给 storage 模块的数据库密钥基础设施（[第217-227行](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L217-L227)）
+- **自动迁移**：创建 `chat_messages` 表、索引、`chat_sync_cursor` 表、`chat_messages_fts` FTS5 虚拟表（[第28-54行](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L28-L54)）
+- **消息写入**：`upsert_record` 实现了 UPSERT 语义 + FTS 索引同步更新（[第56-85行](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L56-L85)）
+- **消息摄入**：`ingest_friend_payload` / `ingest_group_payload` 解析 Station JSON 并批量写入（[第87-151行](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L87-L151)）
+- **全文搜索**：`search_local` 使用 FTS5 MATCH 查询，支持按 scope 过滤（[第153-182行](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L153-L182)）
+- **游标管理**：`set_sync_cursor` / `get_sync_cursor` 实现了持久化游标的 UPSERT（[第184-208行](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L184-L208)）
+- **密钥管理**：`get_chat_key_version` / `rotate_chat_key` 委托给 storage 模块的数据库密钥基础设施（[第217-227行](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L217-L227)）
 - 数据库通过 `DatabaseOpenSpec::new_chat_main` 指定加密级别为 **L2**（最高级），使用平台密钥链（macOS Keychain / Windows DPAPI）管理加密密钥
 
 ### 3. `p2p/mod.rs` — 纯 stub
 
-[p2p/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/p2p/mod.rs)
+[p2p/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/p2p/mod.rs)
 
 **完全是 stub**。`send_message` 仅根据 conversation_id 是否包含 "relay"/"no-p2p" 字符串来决定成功/失败，根据 content 是否包含 "p2p_fail" 来模拟发送失败。没有任何真实的 P2P 网络实现。
 
 ### 4. `realtime/mod.rs` — 纯 stub
 
-[realtime/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/realtime/mod.rs)
+[realtime/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/realtime/mod.rs)
 
 **完全是 stub**。`ensure_connected` 总是返回 `true`；`send_relay_with_retry` 只在 retry_key 包含 "fail_once" 时模拟一次失败；`publish_chat_event` 仅 `println!` 输出日志。没有 WebSocket 或任何真实的实时通信连接。
 
@@ -3413,11 +3413,11 @@ pub fn send_friend_message(...) -> Result<Value, String> {
 
 | 层级 | 文件 | 状态 |
 |------|------|------|
-| Handler 层 | [handler.go](file://apps/station/app/subserver/friend_chat/handler.go) | **真实实现** |
-| Application 层 | [application/service.go](file://apps/station/app/subserver/friend_chat/application/service.go) | **真实实现** |
-| Infrastructure 层 | [infrastructure/repo.go](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go) | **真实实现** |
-| Domain 层 | [domain/types.go](file://apps/station/app/subserver/friend_chat/domain/types.go) | **真实实现** |
-| SubServer 入口 | [subserver.go](file://apps/station/app/subserver/friend_chat/subserver.go) | **真实实现** |
+| Handler 层 | [handler.go](../../../apps/station/app/subserver/friend_chat/handler.go) | **真实实现** |
+| Application 层 | [application/service.go](../../../apps/station/app/subserver/friend_chat/application/service.go) | **真实实现** |
+| Infrastructure 层 | [infrastructure/repo.go](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go) | **真实实现** |
+| Domain 层 | [domain/types.go](../../../apps/station/app/subserver/friend_chat/domain/types.go) | **真实实现** |
+| SubServer 入口 | [subserver.go](../../../apps/station/app/subserver/friend_chat/subserver.go) | **真实实现** |
 
 ### 2.2 Handler 层 (10 个 HTTP 端点)
 
@@ -3438,7 +3438,7 @@ server.NewTypedHandler("fc-stats", "/friend-chat/stats", server.GET, s.handleSta
 
 ### 2.3 Infrastructure/Repo 层 - 真实 DB 调用
 
-[GormRepo](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go#L54-L60) 持有 `*gorm.DB` 实例，所有方法都是真实的数据库操作：
+[GormRepo](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go#L54-L60) 持有 `*gorm.DB` 实例，所有方法都是真实的数据库操作：
 
 - **GetOrCreateSession** (L102-131)：使用 `r.db.Where("pair_key = ?", key).First(&session)` 查询，`gorm.ErrRecordNotFound` 时 `r.db.Create`
 - **AppendMessage** (L159-205)：使用 `r.db.Transaction` 执行事务 -- 创建消息记录、更新会话的 `last_message` 和 `unread_count`、写入 Outbox 事件
@@ -3462,7 +3462,7 @@ type OutboxModel struct { ... }   // 事件 Outbox 模式
 
 ### 2.4 Application/Service 层
 
-[Service](file://apps/station/app/subserver/friend_chat/application/service.go#L18-L31) 定义了 `Repository` 接口并通过依赖注入模式使用：
+[Service](../../../apps/station/app/subserver/friend_chat/application/service.go#L18-L31) 定义了 `Repository` 接口并通过依赖注入模式使用：
 
 - `SendMessageByActor`：先查会话验证参与者权限，再调用 repo
 - `ListMessagesByActor`：权限校验后查询
@@ -3472,7 +3472,7 @@ type OutboxModel struct { ... }   // 事件 Outbox 模式
 
 - **在线状态管理**：内存 map `online map[string]int64` 跟踪在线用户
 - **离线消息队列**：`pending map[string][]pendingMessage` 暂存离线消息
-- **Outbox 模式**：后台 goroutine 每 2 秒 dispatch outbox 事件 ([subserver.go L71-84](file://apps/station/app/subserver/friend_chat/subserver.go#L71-L84))
+- **Outbox 模式**：后台 goroutine 每 2 秒 dispatch outbox 事件 ([subserver.go L71-84](../../../apps/station/app/subserver/friend_chat/subserver.go#L71-L84))
 
 ---
 
@@ -3482,12 +3482,12 @@ type OutboxModel struct { ... }   // 事件 Outbox 模式
 
 | 层级 | 文件 | 状态 |
 |------|------|------|
-| Handler 层 | [handler.go](file://apps/station/app/subserver/group_chat/handler.go) | **真实实现** |
-| Service 层（双模式） | [service.go](file://apps/station/app/subserver/group_chat/service.go) | **真实实现** |
-| Application 层 | [application/service.go](file://apps/station/app/subserver/group_chat/application/service.go) | **真实实现** |
-| Models 层 | [models.go](file://apps/station/app/subserver/group_chat/models.go) | **真实实现** |
-| Domain 层 | [domain/types.go](file://apps/station/app/subserver/group_chat/domain/types.go) | **真实实现** |
-| SubServer 入口 | [subserver.go](file://apps/station/app/subserver/group_chat/subserver.go) | **真实实现** |
+| Handler 层 | [handler.go](../../../apps/station/app/subserver/group_chat/handler.go) | **真实实现** |
+| Service 层（双模式） | [service.go](../../../apps/station/app/subserver/group_chat/service.go) | **真实实现** |
+| Application 层 | [application/service.go](../../../apps/station/app/subserver/group_chat/application/service.go) | **真实实现** |
+| Models 层 | [models.go](../../../apps/station/app/subserver/group_chat/models.go) | **真实实现** |
+| Domain 层 | [domain/types.go](../../../apps/station/app/subserver/group_chat/domain/types.go) | **真实实现** |
+| SubServer 入口 | [subserver.go](../../../apps/station/app/subserver/group_chat/subserver.go) | **真实实现** |
 
 ### 3.2 Handler 层 (21 个 HTTP 端点)
 
@@ -3519,7 +3519,7 @@ type OutboxModel struct { ... }   // 事件 Outbox 模式
 
 ### 3.3 Service 层 - 双模式架构（内存 + DB）
 
-[service.go](file://apps/station/app/subserver/group_chat/service.go) 采用了**混合架构**：每个方法都有 `if s.db != nil` 分支走 DB，否则走内存 map。这是关键设计特点：
+[service.go](../../../apps/station/app/subserver/group_chat/service.go) 采用了**混合架构**：每个方法都有 `if s.db != nil` 分支走 DB，否则走内存 map。这是关键设计特点：
 
 **DB 模式的真实调用示例**（createGroup L474-518）：
 
@@ -3538,7 +3538,7 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 }
 ```
 
-**7 张 GORM Model 表**（[models.go](file://apps/station/app/subserver/group_chat/models.go)）：
+**7 张 GORM Model 表**（[models.go](../../../apps/station/app/subserver/group_chat/models.go)）：
 
 ```go
 type groupModel struct      // 群组表，含索引
@@ -3552,7 +3552,7 @@ type offlineModel struct     // 离线消息表，含索引
 
 ### 3.4 DB 启动时 Bootstrap 机制
 
-[bootstrapFromDB](file://apps/station/app/subserver/group_chat/service.go#L327-L451) 方法在初始化时从数据库加载全部数据到内存缓存：
+[bootstrapFromDB](../../../apps/station/app/subserver/group_chat/service.go#L327-L451) 方法在初始化时从数据库加载全部数据到内存缓存：
 
 ```go
 func (s *service) bootstrapFromDB() error {
@@ -3565,7 +3565,7 @@ func (s *service) bootstrapFromDB() error {
 
 ### 3.5 Application 层 - 业务规则
 
-[application/service.go](file://apps/station/app/subserver/group_chat/application/service.go) 包含完整的权限控制逻辑：
+[application/service.go](../../../apps/station/app/subserver/group_chat/application/service.go) 包含完整的权限控制逻辑：
 
 - `UpdateGroupByActor`：只有 owner(role=1) 或 admin(role=2) 可更新
 - `RemoveMemberByActor`：不能移除 owner
@@ -3578,7 +3578,7 @@ func (s *service) bootstrapFromDB() error {
 
 ### 4.1 main.go 注册入口
 
-[main.go](file://apps/station/app/main.go#L47-L56) 中明确注册了两个聊天 subserver：
+[main.go](../../../apps/station/app/main.go#L47-L56) 中明确注册了两个聊天 subserver：
 
 ```go
 err := p.Init(
@@ -3591,7 +3591,7 @@ err := p.Init(
 
 ### 4.2 框架 SubServer 挂载机制
 
-[BaseServer.init](file://apps/station/frame/core/server/server_base.go#L76-L105) 中的挂载逻辑：
+[BaseServer.init](../../../apps/station/frame/core/server/server_base.go#L76-L105) 中的挂载逻辑：
 
 ```go
 func (b *BaseServer) init(opts ...option.Option) error {
@@ -3618,18 +3618,18 @@ func (b *BaseServer) init(opts ...option.Option) error {
 
 ### 5.1 驱动注册
 
-- SQLite: [sqlite.go](file://apps/station/frame/core/plugin/store/rds/sqlite/sqlite.go) -- `store.RegisterDriver("sqlite", sqlite.Open)`
-- PostgreSQL: [postgre.go](file://apps/station/frame/core/plugin/store/rds/postgres/postgre.go) -- `store.RegisterDriver("postgres", postgres.Open)`
+- SQLite: [sqlite.go](../../../apps/station/frame/core/plugin/store/rds/sqlite/sqlite.go) -- `store.RegisterDriver("sqlite", sqlite.Open)`
+- PostgreSQL: [postgre.go](../../../apps/station/frame/core/plugin/store/rds/postgres/postgre.go) -- `store.RegisterDriver("postgres", postgres.Open)`
 
 两者都在 main.go 中通过 `_ import` 副作用导入激活。
 
 ### 5.2 Store 抽象层
 
-[store.go](file://apps/station/frame/core/store/store.go) 定义了全局 `Store` 接口和 `GetRDS()` 函数，所有 subserver 通过 `store.GetRDS(ctx)` 获取 `*gorm.DB` 实例。
+[store.go](../../../apps/station/frame/core/store/store.go) 定义了全局 `Store` 接口和 `GetRDS()` 函数，所有 subserver 通过 `store.GetRDS(ctx)` 获取 `*gorm.DB` 实例。
 
 ### 5.3 配置文件
 
-[conf/store.yml](file://apps/station/app/conf/store.yml)：
+[conf/store.yml](../../../apps/station/app/conf/store.yml)：
 
 ```yaml
 peers:
@@ -3651,7 +3651,7 @@ peers:
 
 ## 六、friend_chat_old 对比
 
-存在一个旧版本 [friend_chat_old/](file://apps/station/app/subserver/friend_chat_old/)，包含 `service/session_service.go`、`service/message_service.go`、`db/repo/session_repo.go` 等，也是真实的 GORM DB 调用实现。但 **main.go 中没有注册这个旧版本**，它已被当前的 `friend_chat` 替代。
+存在一个旧版本 [friend_chat_old/](../../../apps/station/app/subserver/friend_chat_old/)，包含 `service/session_service.go`、`service/message_service.go`、`db/repo/session_repo.go` 等，也是真实的 GORM DB 调用实现。但 **main.go 中没有注册这个旧版本**，它已被当前的 `friend_chat` 替代。
 
 ---
 
@@ -3961,7 +3961,7 @@ docs/design/
 
 ## 1. 领域层 -- Token 生成与校验
 
-### 文件: [session.rs](file://apps/desktop/src-tauri/src/domain/auth/session.rs)
+### 文件: [session.rs](../../../apps/desktop/src-tauri/src/domain/auth/session.rs)
 
 **AuthSession 结构体** (L6-L11):
 
@@ -3979,7 +3979,7 @@ pub struct AuthSession {
 const TOKEN_TTL_SECONDS: u64 = 60 * 60;
 ```
 
-**Token 签发 -- [issue_session](file://apps/desktop/src-tauri/src/domain/auth/session.rs#L19-L41)**:
+**Token 签发 -- [issue_session](../../../apps/desktop/src-tauri/src/domain/auth/session.rs#L19-L41)**:
 
 ```rust
 pub fn issue_session(account: &str, password: &str) -> Result<AuthSession, AuthDomainError> {
@@ -3994,9 +3994,9 @@ pub fn issue_session(account: &str, password: &str) -> Result<AuthSession, AuthD
 
 **[严重安全问题]** Token 格式为 `pt.{actor_id}.{expires_at}`，例如 `pt.alice.1774927099`。这是一个 **纯文本拼接、无签名、无加密的 token**。任何人只要知道用户名，就可以伪造任意有效 token。
 
-**密码不验证**: [issue_session](file://apps/desktop/src-tauri/src/domain/auth/session.rs#L19-L41) 只检查 password 是否为空 (L27-L30)，**不做任何密码验证**。只要传入非空密码，就能为任何 account 签发 token。
+**密码不验证**: [issue_session](../../../apps/desktop/src-tauri/src/domain/auth/session.rs#L19-L41) 只检查 password 是否为空 (L27-L30)，**不做任何密码验证**。只要传入非空密码，就能为任何 account 签发 token。
 
-**Token 校验 -- [validate_token](file://apps/desktop/src-tauri/src/domain/auth/session.rs#L43-L58)**:
+**Token 校验 -- [validate_token](../../../apps/desktop/src-tauri/src/domain/auth/session.rs#L43-L58)**:
 
 ```rust
 pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
@@ -4017,9 +4017,9 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
 
 ## 2. 应用层 -- Auth Service
 
-### 文件: [service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs)
+### 文件: [service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs)
 
-### 2.1 登录流程 -- [auth_login](file://apps/desktop/src-tauri/src/application/auth/service.rs#L12-L27)
+### 2.1 登录流程 -- [auth_login](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L12-L27)
 
 ```rust
 pub fn auth_login(input: AuthLoginInput, state: &State<AppState>) -> AppResult<StubPayload> {
@@ -4043,7 +4043,7 @@ pub fn auth_login(input: AuthLoginInput, state: &State<AppState>) -> AppResult<S
 
 **[重要发现]** 登录完全是本地操作，**不与 Station 后端通信**。没有任何远程身份验证。
 
-### 2.2 登出流程 -- [auth_logout](file://apps/desktop/src-tauri/src/application/auth/service.rs#L29-L40)
+### 2.2 登出流程 -- [auth_logout](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L29-L40)
 
 ```rust
 pub fn auth_logout(state: &State<AppState>) -> AppResult<StubPayload> {
@@ -4055,7 +4055,7 @@ pub fn auth_logout(state: &State<AppState>) -> AppResult<StubPayload> {
 
 仅清理内存和磁盘，**不通知 Station 服务端注销**，不撤销 token。
 
-### 2.3 会话恢复 -- [auth_restore_session](file://apps/desktop/src-tauri/src/application/auth/service.rs#L42-L76)
+### 2.3 会话恢复 -- [auth_restore_session](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L42-L76)
 
 ```rust
 pub fn auth_restore_session(state: &State<AppState>) -> AppResult<StubPayload> {
@@ -4077,7 +4077,7 @@ pub fn auth_restore_session(state: &State<AppState>) -> AppResult<StubPayload> {
 3. 用 `validate_token` 校验（仅检查格式和过期时间）
 4. 校验通过则同时更新内存和磁盘
 
-### 2.4 Token 校验命令 -- [auth_validate_token](file://apps/desktop/src-tauri/src/application/auth/service.rs#L78-L117)
+### 2.4 Token 校验命令 -- [auth_validate_token](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L78-L117)
 
 如果入参有 token 就用入参的；否则从内存中取。然后调 `validate_token` 做本地格式/过期检查。
 
@@ -4085,7 +4085,7 @@ pub fn auth_restore_session(state: &State<AppState>) -> AppResult<StubPayload> {
 
 ## 3. 状态层 -- AppState 定义
 
-### 文件: [state/mod.rs](file://apps/desktop/src-tauri/src/state/mod.rs)
+### 文件: [state/mod.rs](../../../apps/desktop/src-tauri/src/state/mod.rs)
 
 ```rust
 #[derive(Default)]
@@ -4112,7 +4112,7 @@ SessionState 仅存储两个字段:
 
 ## 4. 接口层 -- Tauri 命令处理器
 
-### 文件: [auth.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs)
+### 文件: [auth.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs)
 
 这是一层薄薄的转发层，四个命令直接委托给 `auth_service`:
 
@@ -4138,7 +4138,7 @@ pub fn auth_validate_token(input: AuthValidateTokenInput, state: State<AppState>
 
 ## 5. Token 持久化机制
 
-### 文件: [service.rs L162-L232](file://apps/desktop/src-tauri/src/application/auth/service.rs#L162-L232)
+### 文件: [service.rs L162-L232](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L162-L232)
 
 **持久化格式**: JSON 明文
 
@@ -4150,7 +4150,7 @@ struct PersistedSession {
 }
 ```
 
-**存储路径** ([persisted_session_file](file://apps/desktop/src-tauri/src/application/auth/service.rs#L223-L232)):
+**存储路径** ([persisted_session_file](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L223-L232)):
 
 ```rust
 fn persisted_session_file() -> PathBuf {
@@ -4171,10 +4171,10 @@ fn persisted_session_file() -> PathBuf {
 **[安全问题]**:
 - Token 以 **明文 JSON** 写入磁盘，**无加密**
 - 存储在 `StorageKind::Temp`（temp 目录）而非更安全的位置
-- 未使用 macOS Keychain 或任何系统安全存储（虽然 [key_provider.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs) 有 Keychain 支持，但仅用于数据库加密密钥，不用于 session token）
+- 未使用 macOS Keychain 或任何系统安全存储（虽然 [key_provider.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs) 有 Keychain 支持，但仅用于数据库加密密钥，不用于 session token）
 - 备用路径 `/tmp/` 对所有用户可读，权限更宽松
 
-**写入方式**: 使用原子写入 ([write_string_atomic](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L263-L278))，先写临时文件再 rename，可防止写入中断导致数据损坏。
+**写入方式**: 使用原子写入 ([write_string_atomic](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L263-L278))，先写临时文件再 rename，可防止写入中断导致数据损坏。
 
 ---
 
@@ -4186,7 +4186,7 @@ fn persisted_session_file() -> PathBuf {
 
 1. **无 token 自动刷新**: 没有任何后台任务、定时器或中间件来检测 token 即将过期并自动续期。
 2. **无 refresh token 概念**: `AuthSession` 和 `SessionState` 中都没有 `refresh_token` 字段。
-3. **OAuth2 的 refresh_token 是假的**: [oauth2_refresh_token](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L801-L816) 仅仅是本地更新 `expires_at`，不做任何远程 token 刷新:
+3. **OAuth2 的 refresh_token 是假的**: [oauth2_refresh_token](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L801-L816) 仅仅是本地更新 `expires_at`，不做任何远程 token 刷新:
 
 ```rust
 pub fn oauth2_refresh_token(input: OAuthIdInput) -> AppResult<StubPayload> {
@@ -4205,7 +4205,7 @@ pub fn oauth2_refresh_token(input: OAuthIdInput) -> AppResult<StubPayload> {
 
 ## 7. token_from_state 在 Chat 模块中的使用
 
-### [friend_chat.rs L12-L25](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L12-L25):
+### [friend_chat.rs L12-L25](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L12-L25):
 
 ```rust
 fn token_from_state(state: &State<AppState>) -> Result<String, AppResult<StubPayload>> {
@@ -4222,7 +4222,7 @@ fn token_from_state(state: &State<AppState>) -> Result<String, AppResult<StubPay
 }
 ```
 
-### [group_chat.rs L15-L28](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L15-L28) 中有**完全相同**的代码副本。
+### [group_chat.rs L15-L28](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L15-L28) 中有**完全相同**的代码副本。
 
 **token 使用模式 (以 friend_chat 为例)**:
 
@@ -4234,7 +4234,7 @@ pub fn friend_chat_list_sessions(input: FriendChatListInput, state: State<AppSta
 }
 ```
 
-Token 最终传递到 [station_client::request_json](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs#L13-L40) 作为 Bearer Auth:
+Token 最终传递到 [station_client::request_json](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs#L13-L40) 作为 Bearer Auth:
 
 ```rust
 pub(crate) fn request_json(
@@ -4261,7 +4261,7 @@ pub(crate) fn request_json(
 
 ## 8. OAuth2 流程
 
-### 文件: [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs)
+### 文件: [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs)
 
 OAuth2 模块与核心 auth 认证**是两个独立系统**:
 
@@ -4270,9 +4270,9 @@ OAuth2 模块与核心 auth 认证**是两个独立系统**:
 - OAuth2 连接数据存储在 `connections.json`
 - 凭证（client_id/client_secret）存储在 `{provider}.yml` 文件中
 
-**[重要发现]** OAuth2 连接信息会通过 [auth_identity::upsert_oauth](file://apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs#L53-L97) 写入 `identities.json`，但 **OAuth2 认证与主 auth session 系统之间没有任何集成**。OAuth2 登录后不会创建 auth session，也不会影响 `AppState.session`。
+**[重要发现]** OAuth2 连接信息会通过 [auth_identity::upsert_oauth](../../../apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs#L53-L97) 写入 `identities.json`，但 **OAuth2 认证与主 auth session 系统之间没有任何集成**。OAuth2 登录后不会创建 auth session，也不会影响 `AppState.session`。
 
-**Loopback 安全问题** ([oauth2_start_loopback](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L545-L696)):
+**Loopback 安全问题** ([oauth2_start_loopback](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L545-L696)):
 - session_id 格式为 `lp-{timestamp}-{counter}`，可预测
 - Loopback session 超时为 600 秒 (10 分钟)
 - 回调验证依赖 query param 中的 `session_id` 匹配
@@ -4282,7 +4282,7 @@ OAuth2 模块与核心 auth 认证**是两个独立系统**:
 
 ## 9. Station Client -- Token 如何传递给后端
 
-### 文件: [station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs)
+### 文件: [station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs)
 
 ```rust
 pub(crate) fn station_base_url() -> String {
@@ -4319,37 +4319,37 @@ pub(crate) fn request_json(
 
 | # | 问题 | 文件 | 行号 |
 |---|------|------|------|
-| C1 | **Token 无签名/无加密，可伪造** -- token 格式为 `pt.{actor_id}.{expires_at}`，任何人可构造 `pt.admin.9999999999` 通过所有校验 | [session.rs](file://apps/desktop/src-tauri/src/domain/auth/session.rs#L35) | L35 |
-| C2 | **密码不验证** -- `issue_session` 仅检查密码非空，不做身份验证 | [session.rs](file://apps/desktop/src-tauri/src/domain/auth/session.rs#L19-L41) | L19-41 |
-| C3 | **登录不调用 Station** -- 全部本地操作，无远程身份验证 | [service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs#L12-L27) | L12-27 |
+| C1 | **Token 无签名/无加密，可伪造** -- token 格式为 `pt.{actor_id}.{expires_at}`，任何人可构造 `pt.admin.9999999999` 通过所有校验 | [session.rs](../../../apps/desktop/src-tauri/src/domain/auth/session.rs#L35) | L35 |
+| C2 | **密码不验证** -- `issue_session` 仅检查密码非空，不做身份验证 | [session.rs](../../../apps/desktop/src-tauri/src/domain/auth/session.rs#L19-L41) | L19-41 |
+| C3 | **登录不调用 Station** -- 全部本地操作，无远程身份验证 | [service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L12-L27) | L12-27 |
 
 ### 高级别 (High)
 
 | # | 问题 | 文件 | 行号 |
 |---|------|------|------|
-| H1 | **Token 明文持久化到磁盘** -- JSON 明文写入 temp 目录，不用 Keychain | [service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs#L168-L197) | L168-197 |
+| H1 | **Token 明文持久化到磁盘** -- JSON 明文写入 temp 目录，不用 Keychain | [service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L168-L197) | L168-197 |
 | H2 | **无 token 刷新机制** -- 1 小时过期后必须重新登录，无 refresh token | 整个 auth 模块 | - |
-| H3 | **过期 token 不自动清理** -- `token_from_state` 不检查过期，过期 token 留在内存和磁盘 | [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L12-L25) | L12-25 |
-| H4 | **OAuth2 client_secret 明文存储** -- 写入 YAML 文件无加密 | [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L356-L366) | L356-366 |
+| H3 | **过期 token 不自动清理** -- `token_from_state` 不检查过期，过期 token 留在内存和磁盘 | [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L12-L25) | L12-25 |
+| H4 | **OAuth2 client_secret 明文存储** -- 写入 YAML 文件无加密 | [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L356-L366) | L356-366 |
 
 ### 中级别 (Medium)
 
 | # | 问题 | 文件 | 行号 |
 |---|------|------|------|
-| M1 | **登出不通知服务端** -- 不撤销 token，服务端仍认为有效 | [service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs#L29-L40) | L29-40 |
-| M2 | **token_from_state 代码重复** -- friend_chat.rs 和 group_chat.rs 有完全相同的函数副本 | [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L12-L25) / [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L15-L28) | - |
-| M3 | **SessionState 不存 expires_at** -- 无法在内存级别快速判断过期 | [state/mod.rs](file://apps/desktop/src-tauri/src/state/mod.rs#L4-L7) | L4-7 |
-| M4 | **Station 请求错误信息过于泛化** -- `"station returned {status}"` 不区分 401/403/5xx | [station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs#L35-L37) | L35-37 |
-| M5 | **OAuth2 与 auth session 未集成** -- OAuth2 登录不影响主 session | [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs) | 全文件 |
-| M6 | **HTTP 明文连接 Station** -- 非 TLS，本地回环可接受但应有配置支持 HTTPS | [station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs#L5-L11) | L5-11 |
+| M1 | **登出不通知服务端** -- 不撤销 token，服务端仍认为有效 | [service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L29-L40) | L29-40 |
+| M2 | **token_from_state 代码重复** -- friend_chat.rs 和 group_chat.rs 有完全相同的函数副本 | [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L12-L25) / [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L15-L28) | - |
+| M3 | **SessionState 不存 expires_at** -- 无法在内存级别快速判断过期 | [state/mod.rs](../../../apps/desktop/src-tauri/src/state/mod.rs#L4-L7) | L4-7 |
+| M4 | **Station 请求错误信息过于泛化** -- `"station returned {status}"` 不区分 401/403/5xx | [station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs#L35-L37) | L35-37 |
+| M5 | **OAuth2 与 auth session 未集成** -- OAuth2 登录不影响主 session | [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs) | 全文件 |
+| M6 | **HTTP 明文连接 Station** -- 非 TLS，本地回环可接受但应有配置支持 HTTPS | [station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs#L5-L11) | L5-11 |
 
 ### 低级别 (Low)
 
 | # | 问题 | 文件 |
 |---|------|------|
-| L1 | OAuth2 Loopback session_id 格式可预测 (`lp-{timestamp}-{counter}`) | [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L71-L75) |
-| L2 | 每次 Station 请求创建新 HTTP Client，无连接池 | [station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs#L20-L23) |
-| L3 | `auth_login` 返回的 StubPayload 不包含 token/actor_id/expires_at 信息给前端 | [service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs#L23-L26) |
+| L1 | OAuth2 Loopback session_id 格式可预测 (`lp-{timestamp}-{counter}`) | [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L71-L75) |
+| L2 | 每次 Station 请求创建新 HTTP Client，无连接池 | [station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs#L20-L23) |
+| L3 | `auth_login` 返回的 StubPayload 不包含 token/actor_id/expires_at 信息给前端 | [service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L23-L26) |
 
 ---
 
@@ -4406,11 +4406,11 @@ Token 过期:
 
 ## 一、services/desktop_api.ts -- 认证相关 API 方法
 
-文件路径: [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+文件路径: [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 ### 1.1 核心认证 API（4 个方法）
 
-在 [api 对象 L1803-L1814](file://apps/desktop/src/services/desktop_api.ts#L1803-L1814) 中定义了四个会话认证方法：
+在 [api 对象 L1803-L1814](../../../apps/desktop/src/services/desktop_api.ts#L1803-L1814) 中定义了四个会话认证方法：
 
 ```typescript
 authLogin: (input: AuthLoginInput) =>
@@ -4431,11 +4431,11 @@ authValidateToken: (input: AuthValidateTokenInput) =>
 - **authRestoreSession**: 无参数，调用 `auth_restore_session`（尝试从后端持久化存储恢复会话）。
 - **authValidateToken**: 接收可选的 `token`，调用 `auth_validate_token` 验证。
 
-**重要设计**: 这四个方法都使用 [invokeAuthCommand](file://apps/desktop/src/services/desktop_api.ts#L131-L145)，而非普通的 `invokeRustCommand`。差异在于 `invokeAuthCommand` 在请求失败时会抛出 [AuthCommandException](file://apps/desktop/src/services/desktop_api.ts#L119-L129)，该异常携带 `code` 字段（如 `'UNAUTHORIZED'`），用于上层精确判断认证失败原因。
+**重要设计**: 这四个方法都使用 [invokeAuthCommand](../../../apps/desktop/src/services/desktop_api.ts#L131-L145)，而非普通的 `invokeRustCommand`。差异在于 `invokeAuthCommand` 在请求失败时会抛出 [AuthCommandException](../../../apps/desktop/src/services/desktop_api.ts#L119-L129)，该异常携带 `code` 字段（如 `'UNAUTHORIZED'`），用于上层精确判断认证失败原因。
 
 ### 1.2 双运行时架构 (Tauri / Web)
 
-整个 API 层存在一个核心设计模式——通过 [isTauriRuntime()](file://apps/desktop/src/services/desktop_api.ts#L158-L160) 判断运行环境：
+整个 API 层存在一个核心设计模式——通过 [isTauriRuntime()](../../../apps/desktop/src/services/desktop_api.ts#L158-L160) 判断运行环境：
 
 ```typescript
 function isTauriRuntime(): boolean {
@@ -4448,7 +4448,7 @@ function isTauriRuntime(): boolean {
 
 ### 1.3 OAuth2 相关 API（完整列表）
 
-OAuth2 连接管理的 API 极为丰富，定义于 [L2525-L2731](file://apps/desktop/src/services/desktop_api.ts#L2525-L2731)：
+OAuth2 连接管理的 API 极为丰富，定义于 [L2525-L2731](../../../apps/desktop/src/services/desktop_api.ts#L2525-L2731)：
 
 | 方法 | 描述 | Tauri/Web 双路 |
 |------|------|----------------|
@@ -4465,7 +4465,7 @@ OAuth2 连接管理的 API 极为丰富，定义于 [L2525-L2731](file://apps/de
 
 ### 1.4 账户身份管理 API
 
-定义于 [L2161-L2193](file://apps/desktop/src/services/desktop_api.ts#L2161-L2193)：
+定义于 [L2161-L2193](../../../apps/desktop/src/services/desktop_api.ts#L2161-L2193)：
 
 | 方法 | 描述 |
 |------|------|
@@ -4480,7 +4480,7 @@ OAuth2 连接管理的 API 极为丰富，定义于 [L2525-L2731](file://apps/de
 
 ### 2.1 OAuth2 Store
 
-文件路径: [oauth2.ts](file://apps/desktop/src/store/oauth2.ts)
+文件路径: [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts)
 
 这是**核心认证状态管理**所在。状态结构：
 
@@ -4498,7 +4498,7 @@ interface OAuth2Store {
 
 关键 actions：
 
-**loginWithPassword** ([L88-L92](file://apps/desktop/src/store/oauth2.ts#L88-L92)):
+**loginWithPassword** ([L88-L92](../../../apps/desktop/src/store/oauth2.ts#L88-L92)):
 ```typescript
 loginWithPassword: async (account, password, baseUrl) => {
   await api.authLogin({ account, password, base_url: baseUrl });
@@ -4507,7 +4507,7 @@ loginWithPassword: async (account, password, baseUrl) => {
 },
 ```
 
-**restoreSession** ([L94-L112](file://apps/desktop/src/store/oauth2.ts#L94-L112)):
+**restoreSession** ([L94-L112](../../../apps/desktop/src/store/oauth2.ts#L94-L112)):
 ```typescript
 restoreSession: async () => {
   const token = readStoredToken();
@@ -4529,12 +4529,12 @@ restoreSession: async () => {
 },
 ```
 
-**validateSessionToken** ([L114-L130](file://apps/desktop/src/store/oauth2.ts#L114-L130)):
+**validateSessionToken** ([L114-L130](../../../apps/desktop/src/store/oauth2.ts#L114-L130)):
 - 接收外部 token 进行验证
 - 验证成功后将 token 持久化到 localStorage（key: `pt.desktop.auth.token`）
 - 失败时清除 token 并标记 `authenticated: false`
 
-**logoutSession** ([L132-L136](file://apps/desktop/src/store/oauth2.ts#L132-L136)):
+**logoutSession** ([L132-L136](../../../apps/desktop/src/store/oauth2.ts#L132-L136)):
 ```typescript
 logoutSession: async () => {
   await api.authLogout();
@@ -4543,13 +4543,13 @@ logoutSession: async () => {
 },
 ```
 
-**startAuth** ([L138-L201](file://apps/desktop/src/store/oauth2.ts#L138-L201)) -- OAuth2 授权流程发起：
+**startAuth** ([L138-L201](../../../apps/desktop/src/store/oauth2.ts#L138-L201)) -- OAuth2 授权流程发起：
 - Tauri 环境: 使用 Loopback 模式 (`oauth2StartLoopback`)，打开外部浏览器，每秒轮询完成状态，120 秒超时。
 - Web 环境: 使用 `window.open` 打开授权窗口，每秒检查子窗口 URL 是否带回 callback 参数。
 
 ### 2.2 Account Identity Store
 
-文件路径: [accountIdentity.ts](file://apps/desktop/src/store/accountIdentity.ts)
+文件路径: [accountIdentity.ts](../../../apps/desktop/src/store/accountIdentity.ts)
 
 ```typescript
 interface AccountIdentityStore {
@@ -4562,15 +4562,15 @@ interface AccountIdentityStore {
 }
 ```
 
-- **load()** ([L26-L48](file://apps/desktop/src/store/accountIdentity.ts#L26-L48)): 并发调用 `api.accountList()` + `api.accountGetActive()`，加载后发布 `EVENT.AUTH_IDENTITY_CHANGED` 事件。
-- **switchAccount()** ([L50-L53](file://apps/desktop/src/store/accountIdentity.ts#L50-L53)): 调用 `api.accountSwitch(id)` 后重新 load。
+- **load()** ([L26-L48](../../../apps/desktop/src/store/accountIdentity.ts#L26-L48)): 并发调用 `api.accountList()` + `api.accountGetActive()`，加载后发布 `EVENT.AUTH_IDENTITY_CHANGED` 事件。
+- **switchAccount()** ([L50-L53](../../../apps/desktop/src/store/accountIdentity.ts#L50-L53)): 调用 `api.accountSwitch(id)` 后重新 load。
 - 有单例 `loadPromise` 防止并发重复加载。
 
 ---
 
 ## 三、App.tsx -- 启动时认证状态处理
 
-文件路径: [App.tsx](file://apps/desktop/src/App.tsx)
+文件路径: [App.tsx](../../../apps/desktop/src/App.tsx)
 
 ### 3.1 App 的状态机
 
@@ -4578,7 +4578,7 @@ interface AccountIdentityStore {
 type AppState = 'loading' | 'onboarding' | 'ready';
 ```
 
-### 3.2 启动流程 ([L136-L151](file://apps/desktop/src/App.tsx#L136-L151)):
+### 3.2 启动流程 ([L136-L151](../../../apps/desktop/src/App.tsx#L136-L151)):
 
 ```typescript
 useEffect(() => {
@@ -4599,7 +4599,7 @@ useEffect(() => {
 }, []);
 ```
 
-### 3.3 Global Context Bootstrap ([L80-L82](file://apps/desktop/src/App.tsx#L80-L82)):
+### 3.3 Global Context Bootstrap ([L80-L82](../../../apps/desktop/src/App.tsx#L80-L82)):
 
 ```typescript
 useEffect(() => {
@@ -4618,9 +4618,9 @@ useEffect(() => {
 
 ### 4.1 类型定义
 
-文件路径: [types.ts](file://apps/desktop/src/kernel/global-context/types.ts)
+文件路径: [types.ts](../../../apps/desktop/src/kernel/global-context/types.ts)
 
-**IdentitySlice** ([L10-L18](file://apps/desktop/src/kernel/global-context/types.ts#L10-L18)):
+**IdentitySlice** ([L10-L18](../../../apps/desktop/src/kernel/global-context/types.ts#L10-L18)):
 ```typescript
 export interface IdentitySlice {
   userId: string | null
@@ -4634,7 +4634,7 @@ export interface IdentitySlice {
 }
 ```
 
-**SessionSlice** ([L20-L26](file://apps/desktop/src/kernel/global-context/types.ts#L20-L26)):
+**SessionSlice** ([L20-L26](../../../apps/desktop/src/kernel/global-context/types.ts#L20-L26)):
 ```typescript
 export interface SessionSlice {
   loginStatus: 'unknown' | 'authenticated' | 'unauthenticated'
@@ -4646,9 +4646,9 @@ export interface SessionSlice {
 
 ### 4.2 Pipeline 系统
 
-文件路径: [store.ts](file://apps/desktop/src/kernel/global-context/store.ts)
+文件路径: [store.ts](../../../apps/desktop/src/kernel/global-context/store.ts)
 
-**runPipeline** 方法 ([L387-L472](file://apps/desktop/src/kernel/global-context/store.ts#L387-L472)) 支持以下管道：
+**runPipeline** 方法 ([L387-L472](../../../apps/desktop/src/kernel/global-context/store.ts#L387-L472)) 支持以下管道：
 
 | Pipeline | 功能 |
 |----------|------|
@@ -4659,7 +4659,7 @@ export interface SessionSlice {
 | `network_recovery` | 网络恢复 |
 | `capability_refresh` | 刷新能力状态 |
 
-**refreshFromSources** ([L297-L315](file://apps/desktop/src/kernel/global-context/store.ts#L297-L315)):
+**refreshFromSources** ([L297-L315](../../../apps/desktop/src/kernel/global-context/store.ts#L297-L315)):
 ```typescript
 refreshFromSources: async () => {
   if (isTauriRuntime()) {
@@ -4674,7 +4674,7 @@ refreshFromSources: async () => {
 },
 ```
 
-**mapSnapshotFromStores** ([L95-L151](file://apps/desktop/src/kernel/global-context/store.ts#L95-L151)):
+**mapSnapshotFromStores** ([L95-L151](../../../apps/desktop/src/kernel/global-context/store.ts#L95-L151)):
 ```typescript
 session: {
   loginStatus: active ? 'authenticated' : 'unauthenticated',
@@ -4692,7 +4692,7 @@ session: {
 
 ### 5.1 GlobalLayout 中的 AuthStatusIndicator
 
-文件路径: [GlobalLayout.tsx L94-L162](file://apps/desktop/src/components/GlobalLayout.tsx#L94-L162)
+文件路径: [GlobalLayout.tsx L94-L162](../../../apps/desktop/src/components/GlobalLayout.tsx#L94-L162)
 
 ```typescript
 const AUTH_CHECK_INTERVAL = 120_000; // 2 分钟
@@ -4711,7 +4711,7 @@ function AuthStatusIndicator() {
 ### 5.2 实际 token 刷新
 
 OAuth2 token 的刷新只有两种方式：
-1. **手动触发**: 用户在 UI 上点击 "Refresh token" 按钮，调用 `oauth2RefreshToken(id)` ([desktop_api.ts L2697-L2711](file://apps/desktop/src/services/desktop_api.ts#L2697-L2711))。
+1. **手动触发**: 用户在 UI 上点击 "Refresh token" 按钮，调用 `oauth2RefreshToken(id)` ([desktop_api.ts L2697-L2711](../../../apps/desktop/src/services/desktop_api.ts#L2697-L2711))。
 2. **后端自行刷新**: Rust 后端可能在 token 过期前自动刷新（但前端没有任何触发机制）。
 
 **结论: 前端没有自动 token 刷新定时器或拦截器。** 没有任何代码在 token 即将过期前主动调用 refresh。
@@ -4724,7 +4724,7 @@ OAuth2 token 的刷新只有两种方式：
 
 整个前端代码中，对 `UNAUTHORIZED` 错误码的处理**只存在于** OAuth2Store 的两个方法中：
 
-[oauth2.ts L104-L108](file://apps/desktop/src/store/oauth2.ts#L104-L108):
+[oauth2.ts L104-L108](../../../apps/desktop/src/store/oauth2.ts#L104-L108):
 ```typescript
 } catch (error) {
   if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {
@@ -4738,7 +4738,7 @@ OAuth2 token 的刷新只有两种方式：
 
 ### 6.2 通用 API 调用中无 Unauthorized 处理
 
-[invokeRustCommand](file://apps/desktop/src/services/desktop_api.ts#L51-L68) 的错误处理：
+[invokeRustCommand](../../../apps/desktop/src/services/desktop_api.ts#L51-L68) 的错误处理：
 ```typescript
 async function invokeRustCommand<TInput, TData>(
   command: string, input?: TInput,
@@ -4767,7 +4767,7 @@ async function invokeRustCommand<TInput, TData>(
 
 ### 7.1 Tauri 环境 -- Loopback 模式
 
-在 [oauth2.ts startAuth L138-L171](file://apps/desktop/src/store/oauth2.ts#L138-L171) 中：
+在 [oauth2.ts startAuth L138-L171](../../../apps/desktop/src/store/oauth2.ts#L138-L171) 中：
 
 ```
 1. 调用 api.oauth2StartLoopback(providerId) -> 获取 auth_url + session_id
@@ -4780,7 +4780,7 @@ async function invokeRustCommand<TInput, TData>(
 
 ### 7.2 Web 环境 -- 弹窗模式
 
-在 [oauth2.ts L173-L201](file://apps/desktop/src/store/oauth2.ts#L173-L201) 中：
+在 [oauth2.ts L173-L201](../../../apps/desktop/src/store/oauth2.ts#L173-L201) 中：
 
 ```
 1. 调用 api.oauth2Authorize(providerId, environment, returnTo) -> 获取 auth_url
@@ -4792,7 +4792,7 @@ async function invokeRustCommand<TInput, TData>(
 
 ### 7.3 Web 环境 URL Callback 消费
 
-在 [desktop_api.ts L232-L262](file://apps/desktop/src/services/desktop_api.ts#L232-L262) 中，`consumeOAuthCallbackFromLocation()` 在页面加载时从 URL 参数中解析 OAuth 回调数据（provider、provider_user_id、email 等），然后：
+在 [desktop_api.ts L232-L262](../../../apps/desktop/src/services/desktop_api.ts#L232-L262) 中，`consumeOAuthCallbackFromLocation()` 在页面加载时从 URL 参数中解析 OAuth 回调数据（provider、provider_user_id、email 等），然后：
 1. 调用 `upsertWebOAuthConnection()` 保存连接到 localStorage
 2. 调用 `upsertWebAccountFromOAuth()` 保存账户身份到 localStorage
 3. 清理 URL 参数
@@ -4801,16 +4801,16 @@ async function invokeRustCommand<TInput, TData>(
 
 | 组件 | 文件 | 职责 |
 |------|------|------|
-| OAuthAccountLoginPanel | [OAuthAccountLoginPanel.tsx](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx) | 登录面板，展示已登录/未登录的 OAuth 账户卡片 |
-| OAuth2ConnectModal | [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx) | 登录弹窗，状态机: idle -> waiting -> success/error |
-| OAuthSignInStep | [OAuthSignInStep.tsx](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx) | Onboarding 中的 OAuth 登录步骤 |
-| OAuthLoginStep (Wizard) | [OAuthLoginStep.tsx](file://apps/desktop/src/components/wizard/steps/OAuthLoginStep.tsx) | 向导中的 OAuth 登录步骤，支持飞书模拟登录 |
-| OAuth2Tab / AuthTab | [OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx) | 设置页中的 OAuth2 管理面板 |
-| UserProfilePopover | [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx) | 用户头像弹出框，支持切换账户 |
+| OAuthAccountLoginPanel | [OAuthAccountLoginPanel.tsx](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx) | 登录面板，展示已登录/未登录的 OAuth 账户卡片 |
+| OAuth2ConnectModal | [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx) | 登录弹窗，状态机: idle -> waiting -> success/error |
+| OAuthSignInStep | [OAuthSignInStep.tsx](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx) | Onboarding 中的 OAuth 登录步骤 |
+| OAuthLoginStep (Wizard) | [OAuthLoginStep.tsx](../../../apps/desktop/src/components/wizard/steps/OAuthLoginStep.tsx) | 向导中的 OAuth 登录步骤，支持飞书模拟登录 |
+| OAuth2Tab / AuthTab | [OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx) | 设置页中的 OAuth2 管理面板 |
+| UserProfilePopover | [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx) | 用户头像弹出框，支持切换账户 |
 
 ### 7.5 事件系统
 
-[catalog.ts](file://apps/desktop/src/kernel/events/catalog.ts) 定义了认证相关事件：
+[catalog.ts](../../../apps/desktop/src/kernel/events/catalog.ts) 定义了认证相关事件：
 
 ```typescript
 export const EVENT = {
@@ -4826,7 +4826,7 @@ export const EVENT = {
 
 ### **[严重] 启动时不调用 restoreSession**
 
-[App.tsx](file://apps/desktop/src/App.tsx) 在启动时只检查 onboarding 状态，没有调用 `useOAuth2Store.getState().restoreSession()`。`restoreSession` 方法虽然存在于 OAuth2Store 中（[L94-L112](file://apps/desktop/src/store/oauth2.ts#L94-L112)），但**没有任何地方调用它**。全文搜索确认 `restoreSession` 只在定义处出现，从未被消费。
+[App.tsx](../../../apps/desktop/src/App.tsx) 在启动时只检查 onboarding 状态，没有调用 `useOAuth2Store.getState().restoreSession()`。`restoreSession` 方法虽然存在于 OAuth2Store 中（[L94-L112](../../../apps/desktop/src/store/oauth2.ts#L94-L112)），但**没有任何地方调用它**。全文搜索确认 `restoreSession` 只在定义处出现，从未被消费。
 
 这意味着 `oauth2Store.authenticated` 在整个应用生命周期中**始终为 `false`**（除非用户手动调用 `loginWithPassword`）。不过当前应用似乎并不依赖这个字段做路由守卫。
 
@@ -4878,7 +4878,7 @@ export const EVENT = {
 
 ### **[低] OAuth Loopback 轮询没有指数退避**
 
-[oauth2.ts L159](file://apps/desktop/src/store/oauth2.ts#L159) 中的 `setInterval(async () => { ... }, 1000)` 是固定 1 秒间隔轮询，没有指数退避策略，在网络不佳时会持续产生请求。
+[oauth2.ts L159](../../../apps/desktop/src/store/oauth2.ts#L159) 中的 `setInterval(async () => { ... }, 1000)` 是固定 1 秒间隔轮询，没有指数退避策略，在网络不佳时会持续产生请求。
 
 ---
 
@@ -4936,7 +4936,7 @@ OAuth 登录流程 (用户触发):
 
 ### 1.1 核心 JWT Provider
 
-文件：[jwt.go](file://apps/station/frame/core/auth/jwt.go)
+文件：[jwt.go](../../../apps/station/frame/core/auth/jwt.go)
 
 ```go
 type jwtProvider struct {
@@ -4985,7 +4985,7 @@ func (p *jwtProvider) Validate(ctx context.Context, token string) (*Subject, err
 
 ### 1.2 配置管理
 
-文件：[config.go](file://apps/station/frame/core/auth/config.go)
+文件：[config.go](../../../apps/station/frame/core/auth/config.go)
 
 ```go
 type Config struct {
@@ -5001,7 +5001,7 @@ type Config struct {
 
 ### 1.3 Provider 接口
 
-文件：[provider.go](file://apps/station/frame/core/auth/provider.go)
+文件：[provider.go](../../../apps/station/frame/core/auth/provider.go)
 
 ```go
 type Provider interface {
@@ -5014,7 +5014,7 @@ type Provider interface {
 
 ### 1.4 类型定义
 
-文件：[types.go](file://apps/station/frame/core/auth/types.go)
+文件：[types.go](../../../apps/station/frame/core/auth/types.go)
 
 ```go
 const (
@@ -5044,7 +5044,7 @@ type Token struct {
 
 ### 1.5 Context 传递
 
-文件：[context.go](file://apps/station/frame/core/auth/context.go)
+文件：[context.go](../../../apps/station/frame/core/auth/context.go)
 
 通过 `context.Value` 存取 `Subject`，提供 `WithSubject`、`GetSubject`、`MustGetSubject`、`HasSubject` 四个方法。
 
@@ -5054,7 +5054,7 @@ type Token struct {
 
 ### 2.1 HTTP 适配器
 
-文件：[adapter/http/http.go](file://apps/station/frame/core/auth/adapter/http/http.go)
+文件：[adapter/http/http.go](../../../apps/station/frame/core/auth/adapter/http/http.go)
 
 ```go
 func RequireJWT(p coreauth.Provider) func(ctx context.Context, next http.Handler) http.Handler {
@@ -5082,13 +5082,13 @@ func RequireJWT(p coreauth.Provider) func(ctx context.Context, next http.Handler
 
 ### 2.2 Hertz 适配器
 
-文件：[adapter/hertz/hertz.go](file://apps/station/frame/core/auth/adapter/hertz/hertz.go)
+文件：[adapter/hertz/hertz.go](../../../apps/station/frame/core/auth/adapter/hertz/hertz.go)
 
 同样的逻辑，适配 Hertz 框架的 `app.RequestContext`。
 
 ### 2.3 JWT Wrapper（服务层）
 
-文件：[wrapper/jwt.go](file://apps/station/frame/core/plugin/native/server/wrapper/jwt.go)
+文件：[wrapper/jwt.go](../../../apps/station/frame/core/plugin/native/server/wrapper/jwt.go)
 
 ```go
 func JWT(provider coreauth.Provider) server.Wrapper {
@@ -5098,7 +5098,7 @@ func JWT(provider coreauth.Provider) server.Wrapper {
 
 ### 2.4 路由挂载方式
 
-文件：[activitypub_handler.go](file://apps/station/frame/touch/activitypub_handler.go#L40-L50)
+文件：[activitypub_handler.go](../../../apps/station/frame/touch/activitypub_handler.go#L40-L50)
 
 ```go
 provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
@@ -5114,7 +5114,7 @@ jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 ### 3.1 OAuth2 服务端（Mastodon 兼容）
 
-文件：[subserver/oauth/oauth.go](file://apps/station/app/subserver/oauth/oauth.go)
+文件：[subserver/oauth/oauth.go](../../../apps/station/app/subserver/oauth/oauth.go)
 
 这是 Station 作为 **OAuth2 Provider**（而非 Consumer）的实现，提供 Mastodon 兼容 API。
 
@@ -5139,7 +5139,7 @@ jwtWrapper := server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
 ### 3.2 OAuth2 客户端抽象（联邦）
 
-文件：[oauth2.go](file://apps/station/frame/core/auth/oauth2.go)
+文件：[oauth2.go](../../../apps/station/frame/core/auth/oauth2.go)
 
 定义了 OAuth2 客户端接口，用于 Station 作为 **OAuth2 Consumer** 连接外部提供商：
 
@@ -5155,7 +5155,7 @@ type OAuth2Adapter interface {
 
 ### 3.3 OAuth2 数据模型
 
-文件：[db/oauth.go](file://apps/station/frame/touch/model/db/oauth.go)
+文件：[db/oauth.go](../../../apps/station/frame/touch/model/db/oauth.go)
 
 ```go
 type OAuthClient struct {
@@ -5169,7 +5169,7 @@ type OAuthToken struct {
 }
 ```
 
-文件：[db/oauth2_state.go](file://apps/station/frame/touch/model/db/oauth2_state.go) -- 外部 OAuth2 身份绑定和 Token 状态模型。
+文件：[db/oauth2_state.go](../../../apps/station/frame/touch/model/db/oauth2_state.go) -- 外部 OAuth2 身份绑定和 Token 状态模型。
 
 ---
 
@@ -5177,7 +5177,7 @@ type OAuthToken struct {
 
 ### 4.1 数据库模型
 
-文件：[db/actor.go](file://apps/station/frame/touch/model/db/actor.go)
+文件：[db/actor.go](../../../apps/station/frame/touch/model/db/actor.go)
 
 ```go
 type Actor struct {
@@ -5204,13 +5204,13 @@ type Actor struct {
 
 ### 4.2 Actor 扩展元数据
 
-文件：[db/actor_mastodon.go](file://apps/station/frame/touch/model/db/actor.go) 中的 `ActorTouchMeta`（第 12-41 行）：
+文件：[db/actor_mastodon.go](../../../apps/station/frame/touch/model/db/actor.go) 中的 `ActorTouchMeta`（第 12-41 行）：
 
 包含 `Discoverable`、`ManuallyApprovesFollowers`、`FollowersCount`、`FollowingCount`、`StatusesCount`、`Region`、`Timezone`、`Tags`、`Links`、`DefaultVisibility`、`MessagePermission`、`AutoExpireDays` 等字段。
 
 ### 4.3 Actor 在线状态
 
-文件：[db/actor_status.go](file://apps/station/frame/touch/model/db/actor_status.go)
+文件：[db/actor_status.go](../../../apps/station/frame/touch/model/db/actor_status.go)
 
 ```go
 type ActorStatus struct {
@@ -5223,15 +5223,15 @@ type ActorStatus struct {
 
 ### 4.4 Actor 查询服务
 
-文件：[actor/service.go](file://apps/station/frame/touch/actor/service.go)
+文件：[actor/service.go](../../../apps/station/frame/touch/actor/service.go)
 
 提供 `GetActorByID`、`GetActorByUsername`、`GetActorByEmail`、`GetActorByPTID`、`GetActorsByPTIDs`、`ListActors`、`SearchActors`、`ValidateActorOwnership` 等方法。
 
 ### 4.5 Proto 定义
 
-文件：[model/actor.pb.go](file://apps/station/frame/touch/model/actor.pb.go) -- API 层面的 Actor、UserLink、PeersTouchInfo、ActorProfile、UpdateProfileRequest、ActorList 等消息。
+文件：[model/actor.pb.go](../../../apps/station/frame/touch/model/actor.pb.go) -- API 层面的 Actor、UserLink、PeersTouchInfo、ActorProfile、UpdateProfileRequest、ActorList 等消息。
 
-文件：[model/actor/session.pb.go](file://apps/station/frame/touch/model/actor/session.pb.go) -- `ActorSessionSnapshot` 包含 `access_token`、`refresh_token`、`expires_at`、`roles` 等字段（主要用于客户端缓存）。
+文件：[model/actor/session.pb.go](../../../apps/station/frame/touch/model/actor/session.pb.go) -- `ActorSessionSnapshot` 包含 `access_token`、`refresh_token`、`expires_at`、`roles` 等字段（主要用于客户端缓存）。
 
 ---
 
@@ -5239,7 +5239,7 @@ type ActorStatus struct {
 
 ### 5.1 注册（SignUp）
 
-文件：[activitypub/account.go](file://apps/station/frame/touch/activitypub/account.go#L24-L112)
+文件：[activitypub/account.go](../../../apps/station/frame/touch/activitypub/account.go#L24-L112)
 
 ```go
 func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL string) error {
@@ -5257,16 +5257,16 @@ func generateHash(password string) (string, error) {
 }
 ```
 
-**密码验证规则**（文件 [validator/validation.go](file://apps/station/frame/touch/validator/validation.go#L17-L73)）：
+**密码验证规则**（文件 [validator/validation.go](../../../apps/station/frame/touch/validator/validation.go#L17-L73)）：
 - 8-20 字符
 - 必须包含数字、字母和符号三种
 - 通过正则模式验证字符范围
 
 ### 5.2 登录（Login）
 
-文件：[activitypub_handler.go](file://apps/station/frame/touch/activitypub_handler.go#L226-L299) -- HTTP Handler
+文件：[activitypub_handler.go](../../../apps/station/frame/touch/activitypub_handler.go#L226-L299) -- HTTP Handler
 
-文件：[auth/auth.go](file://apps/station/frame/touch/auth/auth.go#L157-L239) -- 核心 `LoginWithSession` 方法
+文件：[auth/auth.go](../../../apps/station/frame/touch/auth/auth.go#L157-L239) -- 核心 `LoginWithSession` 方法
 
 ```go
 func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, userAgent, deviceType string) (*SessionLoginResult, error) {
@@ -5279,7 +5279,7 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 }
 ```
 
-登录响应（[activitypub_handler.go:L281-L298](file://apps/station/frame/touch/activitypub_handler.go#L281-L298)）设置了 Session Cookie：
+登录响应（[activitypub_handler.go:L281-L298](../../../apps/station/frame/touch/activitypub_handler.go#L281-L298)）设置了 Session Cookie：
 
 ```go
 ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
@@ -5291,7 +5291,7 @@ ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", 
 
 ### 6.1 Session 存储层
 
-文件：[session/session.go](file://apps/station/frame/core/facility/session/session.go)
+文件：[session/session.go](../../../apps/station/frame/core/facility/session/session.go)
 
 ```go
 type Store interface {
@@ -5307,13 +5307,13 @@ type Session struct {
 ```
 
 三种后端实现：
-- **MemoryStore**（[session.go:L40-L114](file://apps/station/frame/core/facility/session/session.go#L40-L114)）-- 默认，进程内存
-- **LocalDiskStore**（[localdisk.go](file://apps/station/frame/core/facility/session/localdisk.go)）-- 磁盘 JSON 文件
-- **DBStore**（[db_store.go](file://apps/station/frame/core/facility/session/db_store.go)）-- 数据库持久化
+- **MemoryStore**（[session.go:L40-L114](../../../apps/station/frame/core/facility/session/session.go#L40-L114)）-- 默认，进程内存
+- **LocalDiskStore**（[localdisk.go](../../../apps/station/frame/core/facility/session/localdisk.go)）-- 磁盘 JSON 文件
+- **DBStore**（[db_store.go](../../../apps/station/frame/core/facility/session/db_store.go)）-- 数据库持久化
 
 ### 6.2 Session Kick 机制
 
-文件：[db_store.go:L203-L223](file://apps/station/frame/core/facility/session/db_store.go#L203-L223)
+文件：[db_store.go:L203-L223](../../../apps/station/frame/core/facility/session/db_store.go#L203-L223)
 
 ```go
 func (s *DBStore) CreateWithKick(ctx context.Context, sess *Session, deviceType DeviceType) (*Session, int64, error) {
@@ -5326,7 +5326,7 @@ func (s *DBStore) CreateWithKick(ctx context.Context, sess *Session, deviceType 
 
 ### 6.3 Session 验证
 
-文件：[auth/auth.go:L244-L258](file://apps/station/frame/touch/auth/auth.go#L244-L258)
+文件：[auth/auth.go:L244-L258](../../../apps/station/frame/touch/auth/auth.go#L244-L258)
 
 ```go
 func ValidateSession(ctx context.Context, sessionID string) (bool, string) {
@@ -5348,12 +5348,12 @@ func ValidateSession(ctx context.Context, sessionID string) (bool, string) {
 
 虽然代码中定义了相关接口和数据结构：
 
-- [auth/auth.go:L36-L37](file://apps/station/frame/touch/auth/auth.go#L36-L37) -- `AuthProvider` 接口定义了 `RefreshToken` 方法
-- [model/auth.pb.go](file://apps/station/frame/touch/model/auth.pb.go#L78-L87) -- `AuthTokens` proto 包含 `refresh_token` 字段
-- [model/actor/session.pb.go](file://apps/station/frame/touch/model/actor/session.pb.go#L32) -- `ActorSessionSnapshot` 包含 `refresh_token` 字段
+- [auth/auth.go:L36-L37](../../../apps/station/frame/touch/auth/auth.go#L36-L37) -- `AuthProvider` 接口定义了 `RefreshToken` 方法
+- [model/auth.pb.go](../../../apps/station/frame/touch/model/auth.pb.go#L78-L87) -- `AuthTokens` proto 包含 `refresh_token` 字段
+- [model/actor/session.pb.go](../../../apps/station/frame/touch/model/actor/session.pb.go#L32) -- `ActorSessionSnapshot` 包含 `refresh_token` 字段
 
 但实际实现中：
-- `LoginWithSession` 返回的 `RefreshToken` 始终为空字符串（[auth/auth.go:L226](file://apps/station/frame/touch/auth/auth.go#L226)）
+- `LoginWithSession` 返回的 `RefreshToken` 始终为空字符串（[auth/auth.go:L226](../../../apps/station/frame/touch/auth/auth.go#L226)）
 - 没有任何路由注册了 `/auth/refresh` 或类似端点
 - JWT Provider 没有 Refresh Token 签发逻辑
 - 整个路由表中不存在 refresh 相关的 handler
@@ -5366,7 +5366,7 @@ func ValidateSession(ctx context.Context, sessionID string) (bool, string) {
 
 **使用 bcrypt**，分布在两个位置：
 
-1. **注册时**（[account.go:L172-L174](file://apps/station/frame/touch/activitypub/account.go#L172-L174)）：
+1. **注册时**（[account.go:L172-L174](../../../apps/station/frame/touch/activitypub/account.go#L172-L174)）：
 
 ```go
 func generateHash(password string) (string, error) {
@@ -5375,13 +5375,13 @@ func generateHash(password string) (string, error) {
 }
 ```
 
-2. **登录时**（[auth/auth.go:L171](file://apps/station/frame/touch/auth/auth.go#L171)）：
+2. **登录时**（[auth/auth.go:L171](../../../apps/station/frame/touch/auth/auth.go#L171)）：
 
 ```go
 bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(credentials.Password))
 ```
 
-3. **Seed 预置用户**（[seed.go:L64](file://apps/station/frame/touch/activitypub/seed.go#L64)）：
+3. **Seed 预置用户**（[seed.go:L64](../../../apps/station/frame/touch/activitypub/seed.go#L64)）：
 
 ```go
 hash, _ := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost) // cost=10
@@ -5389,7 +5389,7 @@ hash, _ := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost) // cost=1
 
 ### 8.2 密码验证规则
 
-文件：[validator/validation.go:L17-L73](file://apps/station/frame/touch/validator/validation.go#L17-L73)
+文件：[validator/validation.go:L17-L73](../../../apps/station/frame/touch/validator/validation.go#L17-L73)
 
 - 长度 8-20
 - 必须同时包含：数字、英文字母、符号
@@ -5403,39 +5403,39 @@ hash, _ := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost) // cost=1
 
 | # | 问题 | 位置 | 说明 |
 |---|------|------|------|
-| 1 | **JWT 算法混淆攻击风险** | [jwt.go:L62](file://apps/station/frame/core/auth/jwt.go#L62) | `Validate` 的 key function 没有验证 `t.Method == jwt.SigningMethodHS256`，攻击者可能伪造使用 `none` 算法的 token |
-| 2 | **ActivityPub 私钥明文存储** | [db/actor.go:L32](file://apps/station/frame/touch/model/db/actor.go#L32) | `PrivateKey` 以 PEM 明文直接存储在数据库 `type:text` 列中，数据库泄露即全部私钥泄露 |
-| 3 | **无 Token 撤销机制** | [jwt.go:L79](file://apps/station/frame/core/auth/jwt.go#L79) | `Revoke()` 是空实现。Token 签发后 7 天内持续有效，即使用户密码被更改/账户被禁用 |
-| 4 | **JWT 7 天有效期 + 无 Refresh Token** | [config.go:L19](file://apps/station/frame/core/auth/config.go#L19) 和 [auth.go:L226](file://apps/station/frame/touch/auth/auth.go#L226) | 7 天过期 + 无法刷新 = 用户必须每周重新登录；且长生命期 Token 被盗窃后无法撤销 |
+| 1 | **JWT 算法混淆攻击风险** | [jwt.go:L62](../../../apps/station/frame/core/auth/jwt.go#L62) | `Validate` 的 key function 没有验证 `t.Method == jwt.SigningMethodHS256`，攻击者可能伪造使用 `none` 算法的 token |
+| 2 | **ActivityPub 私钥明文存储** | [db/actor.go:L32](../../../apps/station/frame/touch/model/db/actor.go#L32) | `PrivateKey` 以 PEM 明文直接存储在数据库 `type:text` 列中，数据库泄露即全部私钥泄露 |
+| 3 | **无 Token 撤销机制** | [jwt.go:L79](../../../apps/station/frame/core/auth/jwt.go#L79) | `Revoke()` 是空实现。Token 签发后 7 天内持续有效，即使用户密码被更改/账户被禁用 |
+| 4 | **JWT 7 天有效期 + 无 Refresh Token** | [config.go:L19](../../../apps/station/frame/core/auth/config.go#L19) 和 [auth.go:L226](../../../apps/station/frame/touch/auth/auth.go#L226) | 7 天过期 + 无法刷新 = 用户必须每周重新登录；且长生命期 Token 被盗窃后无法撤销 |
 
 ### 高（High）
 
 | # | 问题 | 位置 | 说明 |
 |---|------|------|------|
-| 5 | **Session Cookie 缺失安全属性** | [activitypub_handler.go:L268](file://apps/station/frame/touch/activitypub_handler.go#L268) | `Secure=false, SameSite=Disabled`，Cookie 可通过 HTTP 明文传输，且未设置 SameSite，CSRF 风险 |
+| 5 | **Session Cookie 缺失安全属性** | [activitypub_handler.go:L268](../../../apps/station/frame/touch/activitypub_handler.go#L268) | `Secure=false, SameSite=Disabled`，Cookie 可通过 HTTP 明文传输，且未设置 SameSite，CSRF 风险 |
 | 6 | **Session 与 JWT 双轨不同步** | auth/auth.go | Session 24小时过期，JWT 7天过期。Session 被 kick 或过期后，JWT 仍然有效，认证状态不一致 |
-| 7 | **OAuth2 Server 授权码流程中 `user_id` 从 query 参数传入** | [oauth.go:L61](file://apps/station/app/subserver/oauth/oauth.go#L61) | `/oauth/authorize` 端点直接从 `?user_id=` 获取用户身份，没有验证该请求是否来自已认证用户，存在授权绕过风险 |
-| 8 | **Seed 用户默认密码为 "1"** | [seed.go:L62](file://apps/station/frame/touch/activitypub/seed.go#L62) | 预置用户默认密码极其简单，且 bcrypt cost 仅为 10（低于注册时的 12） |
-| 9 | **Debug 日志打印 Authorization Header** | [http.go:L17](file://apps/station/frame/core/auth/adapter/http/http.go#L17) 和 [hertz.go:L18](file://apps/station/frame/core/auth/adapter/hertz/hertz.go#L18) | `logger.Debugf("[RequireJWT] Authorization header: %s", authHeader)` 会将完整 Bearer Token 写入日志 |
+| 7 | **OAuth2 Server 授权码流程中 `user_id` 从 query 参数传入** | [oauth.go:L61](../../../apps/station/app/subserver/oauth/oauth.go#L61) | `/oauth/authorize` 端点直接从 `?user_id=` 获取用户身份，没有验证该请求是否来自已认证用户，存在授权绕过风险 |
+| 8 | **Seed 用户默认密码为 "1"** | [seed.go:L62](../../../apps/station/frame/touch/activitypub/seed.go#L62) | 预置用户默认密码极其简单，且 bcrypt cost 仅为 10（低于注册时的 12） |
+| 9 | **Debug 日志打印 Authorization Header** | [http.go:L17](../../../apps/station/frame/core/auth/adapter/http/http.go#L17) 和 [hertz.go:L18](../../../apps/station/frame/core/auth/adapter/hertz/hertz.go#L18) | `logger.Debugf("[RequireJWT] Authorization header: %s", authHeader)` 会将完整 Bearer Token 写入日志 |
 
 ### 中（Medium）
 
 | # | 问题 | 位置 | 说明 |
 |---|------|------|------|
-| 10 | **JWT Claims 缺少 Issuer/Audience/JTI** | [jwt.go:L51](file://apps/station/frame/core/auth/jwt.go#L51) | 没有设置 `iss`、`aud`、`jti`，在多服务/多站点场景下可能导致 Token 跨域使用 |
-| 11 | **resolveActorID 每次重新创建 Provider** | [activitypub_handler.go:L520](file://apps/station/frame/touch/activitypub_handler.go#L520) | 即使中间件已经验证了 JWT，`resolveActorID` 又独立从 Header 提取 Token 并再次创建 Provider 验证 |
+| 10 | **JWT Claims 缺少 Issuer/Audience/JTI** | [jwt.go:L51](../../../apps/station/frame/core/auth/jwt.go#L51) | 没有设置 `iss`、`aud`、`jti`，在多服务/多站点场景下可能导致 Token 跨域使用 |
+| 11 | **resolveActorID 每次重新创建 Provider** | [activitypub_handler.go:L520](../../../apps/station/frame/touch/activitypub_handler.go#L520) | 即使中间件已经验证了 JWT，`resolveActorID` 又独立从 Header 提取 Token 并再次创建 Provider 验证 |
 | 12 | **HS256 对称签名** | jwt.go | 使用对称密钥意味着验证方和签发方共享同一密钥，不利于微服务架构和密钥隔离。README 中也建议升级到 RS256/ES256 |
-| 13 | **MemoryStore 存在锁竞争 bug** | [session.go:L76-L81](file://apps/station/frame/core/facility/session/session.go#L76-L81) | `Get` 方法内对 `RWMutex` 先 `RUnlock` 再 `Lock` 再 `Unlock` 再 `RLock`，存在竞态条件 |
+| 13 | **MemoryStore 存在锁竞争 bug** | [session.go:L76-L81](../../../apps/station/frame/core/facility/session/session.go#L76-L81) | `Get` 方法内对 `RWMutex` 先 `RUnlock` 再 `Lock` 再 `Unlock` 再 `RLock`，存在竞态条件 |
 | 14 | **无 logout 端点** | 全局搜索 | 没有找到任何 logout/sign-out 端点实现，用户无法主动注销 |
-| 15 | **OAuth2 Provider token 无 refresh 支持** | [oauth.go:L148-L153](file://apps/station/app/subserver/oauth/oauth.go#L148-L153) | `/oauth/token` 仅返回 access_token，不支持 refresh_token grant 类型 |
+| 15 | **OAuth2 Provider token 无 refresh 支持** | [oauth.go:L148-L153](../../../apps/station/app/subserver/oauth/oauth.go#L148-L153) | `/oauth/token` 仅返回 access_token，不支持 refresh_token grant 类型 |
 
 ### 低（Low）
 
 | # | 问题 | 位置 | 说明 |
 |---|------|------|------|
-| 16 | **用户名 base64 编码作为 PreferredUsername** | [account.go:L53](file://apps/station/frame/touch/activitypub/account.go#L53) | `ValidateName` 将用户名 base64 编码后赋值给 `PreferredUsername`，可能导致 ActivityPub 互操作问题 |
+| 16 | **用户名 base64 编码作为 PreferredUsername** | [account.go:L53](../../../apps/station/frame/touch/activitypub/account.go#L53) | `ValidateName` 将用户名 base64 编码后赋值给 `PreferredUsername`，可能导致 ActivityPub 互操作问题 |
 | 17 | **登录无速率限制/防暴力破解** | activitypub_handler.go | 登录端点没有任何速率限制、账户锁定或验证码机制 |
-| 18 | **Email 验证正则过于宽松** | [validation.go:L111](file://apps/station/frame/touch/validator/validation.go#L111) | 允许单字符 TLD（如 `a@p.t`），注释说明是为了开发/测试 |
+| 18 | **Email 验证正则过于宽松** | [validation.go:L111](../../../apps/station/frame/touch/validator/validation.go#L111) | 允许单字符 TLD（如 `a@p.t`），注释说明是为了开发/测试 |
 
 ---
 
@@ -5771,7 +5771,7 @@ Let我先快速检查几个关键文件，确保我基于最新代码给你准�
 
 #### 1. 路由端点
 
-定义在 [oauth.go](file://apps/station/app/subserver/oauth/oauth.go#L43-L50)：
+定义在 [oauth.go](../../../apps/station/app/subserver/oauth/oauth.go#L43-L50)：
 
 ```go
 server.NewHTTPHandler("oauth-providers", "/oauth/providers", server.GET, ...)
@@ -5787,7 +5787,7 @@ server.NewHTTPHandler("oauth-token", "/oauth/token", server.POST, ...)
 
 #### 2. 授权码生成（handleAuthorize）
 
-[handleAuthorize](file://apps/station/app/subserver/oauth/oauth.go#L56-L102) 流程：
+[handleAuthorize](../../../apps/station/app/subserver/oauth/oauth.go#L56-L102) 流程：
 - 接收 `client_id`、`redirect_uri`、`scope`、`state`、`user_id` 参数
 - 通过数据库查找 `OAuthClient`，验证 `redirect_uri` 和 `scope` 合法性
 - 生成 32 字节随机 authorization code，哈希后存入 `OAuthAuthCode` 表（5 分钟过期）
@@ -5795,7 +5795,7 @@ server.NewHTTPHandler("oauth-token", "/oauth/token", server.POST, ...)
 
 #### 3. Token 交换（handleToken）
 
-[handleToken](file://apps/station/app/subserver/oauth/oauth.go#L104-L154) 流程：
+[handleToken](../../../apps/station/app/subserver/oauth/oauth.go#L104-L154) 流程：
 - 仅支持 `grant_type=authorization_code`
 - 验证 `client_id` + `client_secret`（哈希比对）
 - 验证 authorization code 未使用且未过期，标记为已使用
@@ -5806,7 +5806,7 @@ server.NewHTTPHandler("oauth-token", "/oauth/token", server.POST, ...)
 
 #### 4. 数据库模型（OAuth Server 端）
 
-定义在 [db/oauth.go](file://apps/station/frame/touch/model/db/oauth.go)：
+定义在 [db/oauth.go](../../../apps/station/frame/touch/model/db/oauth.go)：
 
 | 模型 | 表用途 |
 |------|--------|
@@ -5816,11 +5816,11 @@ server.NewHTTPHandler("oauth-token", "/oauth/token", server.POST, ...)
 
 #### 5. Mastodon 应用注册
 
-在 [mastodon.go](file://apps/station/frame/touch/mastodon/mastodon.go#L91-L131) 的 `RegisterApp` 函数创建 `OAuthClient` 记录，是 Mastodon `POST /api/v1/apps` 的实现。
+在 [mastodon.go](../../../apps/station/frame/touch/mastodon/mastodon.go#L91-L131) 的 `RegisterApp` 函数创建 `OAuthClient` 记录，是 Mastodon `POST /api/v1/apps` 的实现。
 
 #### 6. Token 验证（Mastodon API）
 
-[VerifyCredentials](file://apps/station/frame/touch/mastodon/mastodon.go#L133-L153) 通过 `Authorization: Bearer <token>` 头提取 token，然后用 `access_token_hash` 在 `OAuthToken` 表中查找，找到后获取 `user_id`。
+[VerifyCredentials](../../../apps/station/frame/touch/mastodon/mastodon.go#L133-L153) 通过 `Authorization: Bearer <token>` 头提取 token，然后用 `access_token_hash` 在 `OAuthToken` 表中查找，找到后获取 `user_id`。
 
 ---
 
@@ -5830,7 +5830,7 @@ server.NewHTTPHandler("oauth-token", "/oauth/token", server.POST, ...)
 
 #### 1. 核心抽象接口
 
-定义在 [core/auth/oauth2.go](file://apps/station/frame/core/auth/oauth2.go)：
+定义在 [core/auth/oauth2.go](../../../apps/station/frame/core/auth/oauth2.go)：
 
 ```go
 type OAuth2Adapter interface {
@@ -5851,13 +5851,13 @@ type OAuth2Adapter interface {
 
 #### 2. 连接管理抽象
 
-定义在 [connections.go](file://apps/station/frame/core/auth/connections.go)：
+定义在 [connections.go](../../../apps/station/frame/core/auth/connections.go)：
 
 `ConnectionProvider` 和 `ConnectionsService` 用于管理 OAuth2 提供商的连接状态（ready/disabled/developing/error）。
 
 #### 3. 数据库模型（OAuth Client 端）
 
-定义在 [db/oauth2_state.go](file://apps/station/frame/touch/model/db/oauth2_state.go)：
+定义在 [db/oauth2_state.go](../../../apps/station/frame/touch/model/db/oauth2_state.go)：
 
 | 模型 | 表名 | 用途 |
 |------|------|------|
@@ -5867,7 +5867,7 @@ type OAuth2Adapter interface {
 
 #### 4. 配置的提供商
 
-定义在 [oauth.yml](file://apps/station/app/conf/oauth.yml)：
+定义在 [oauth.yml](../../../apps/station/app/conf/oauth.yml)：
 
 | Provider | 状态 | 回调 URL |
 |----------|------|----------|
@@ -5888,7 +5888,7 @@ type OAuth2Adapter interface {
 
 #### 1. 核心认证 Provider 接口
 
-定义在 [provider.go](file://apps/station/frame/core/auth/provider.go#L5-L10)：
+定义在 [provider.go](../../../apps/station/frame/core/auth/provider.go#L5-L10)：
 
 ```go
 type Provider interface {
@@ -5901,7 +5901,7 @@ type Provider interface {
 
 #### 2. JWT Provider 实现
 
-定义在 [jwt.go](file://apps/station/frame/core/auth/jwt.go)：
+定义在 [jwt.go](../../../apps/station/frame/core/auth/jwt.go)：
 - 使用 HS256 签名算法
 - Secret 从环境变量 `PEERS_AUTH_SECRET` 获取
 - 默认 AccessTTL 为 7 天
@@ -5909,7 +5909,7 @@ type Provider interface {
 
 #### 3. 登录流程（LoginWithSession）
 
-定义在 [touch/auth/auth.go](file://apps/station/frame/touch/auth/auth.go#L158-L240)：
+定义在 [touch/auth/auth.go](../../../apps/station/frame/touch/auth/auth.go#L158-L240)：
 
 **当前仅支持邮箱+密码登录**，流程为：
 1. 通过 email 查询 `Actor` 表
@@ -5923,8 +5923,8 @@ type Provider interface {
 #### 4. JWT 中间件
 
 两套适配器保护需要认证的路由：
-- Hertz 适配器：[hertz.go](file://apps/station/frame/core/auth/adapter/hertz/hertz.go#L15-L41)
-- HTTP 适配器：[http.go](file://apps/station/frame/core/auth/adapter/http/http.go#L13-L45)
+- Hertz 适配器：[hertz.go](../../../apps/station/frame/core/auth/adapter/hertz/hertz.go#L15-L41)
+- HTTP 适配器：[http.go](../../../apps/station/frame/core/auth/adapter/http/http.go#L13-L45)
 
 均从 `Authorization: Bearer <jwt>` 提取 JWT 并验证。
 
@@ -5939,7 +5939,7 @@ type Provider interface {
 | **OAuth2 Callback Handler** | Go 后端**不存在** callback 路由，YAML 中 callback URL 指向前端 |
 | **OAuth2 -> JWT Session** | **不存在**此代码路径；当前 `LoginWithSession` 仅支持邮箱密码登录产生 JWT |
 | **JWT 会话** | 已完整实现：HS256 签名、7天有效期、密钥轮换、Session 管理（DB 持久化 + 设备踢出） |
-| **数据库自动迁移** | 所有 6 个 OAuth 相关表均在 [automigrate.go](file://apps/station/frame/touch/model/db/automigrate.go#L15-L20) 中注册 |
+| **数据库自动迁移** | 所有 6 个 OAuth 相关表均在 [automigrate.go](../../../apps/station/frame/touch/model/db/automigrate.go#L15-L20) 中注册 |
 
 现在我已经获得了全面的信息。以下是完整的分析报告。
 
@@ -5957,7 +5957,7 @@ Desktop 端有两条 OAuth2 授权路径：**Loopback 模式**（Tauri 桌面端
 
 #### 1. Loopback 模式（Tauri 桌面端主流程）
 
-前端 `startAuth` 方法在 [oauth2.ts:L139-L175](file://apps/desktop/src/store/oauth2.ts#L139-L175) 中发起：
+前端 `startAuth` 方法在 [oauth2.ts:L139-L175](../../../apps/desktop/src/store/oauth2.ts#L139-L175) 中发起：
 
 1. 调用 `api.oauth2StartLoopback(id, environment)` 获得 `auth_url` 和 `session_id`
 2. 用 `api.openExternalUrl(auth_url)` 打开外部浏览器
@@ -5966,7 +5966,7 @@ Desktop 端有两条 OAuth2 授权路径：**Loopback 模式**（Tauri 桌面端
 
 #### 2. `oauth2_start_loopback` 在 Rust 端做了什么
 
-核心代码在 [application/oauth2/mod.rs:L545-L696](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L545-L696)：
+核心代码在 [application/oauth2/mod.rs:L545-L696](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L545-L696)：
 
 1. **绑定本地 TCP 端口**：`TcpListener::bind("127.0.0.1:0")` 随机分配端口
 2. **创建 loopback session**：状态为 `"pending"`，存入内存 `HashMap`（`LOOPBACK_SESSIONS` 静态变量）
@@ -5976,7 +5976,7 @@ Desktop 端有两条 OAuth2 授权路径：**Loopback 模式**（Tauri 桌面端
 
 #### 3. 回调到达后的处理（loopback 线程内）
 
-当 OAuth 提供方（通过中间服务器）回调到本地 TCP 端口时，[mod.rs:L582-L679](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L582-L679) 的线程执行：
+当 OAuth 提供方（通过中间服务器）回调到本地 TCP 端口时，[mod.rs:L582-L679](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L582-L679) 的线程执行：
 
 1. **读取 HTTP 请求**，解析查询参数（`session_id`, `provider`, `provider_user_id`, `username`, `email`, `avatar_url` 等）
 2. **校验 session_id** 是否匹配 → 不匹配则标记 `"failed"`
@@ -5988,7 +5988,7 @@ Desktop 端有两条 OAuth2 授权路径：**Loopback 模式**（Tauri 桌面端
 
 #### 4. `oauth2_poll_loopback` 返回 completed 后前端做什么
 
-[oauth2.ts:L155-L170](file://apps/desktop/src/store/oauth2.ts#L155-L170)：
+[oauth2.ts:L155-L170](../../../apps/desktop/src/store/oauth2.ts#L155-L170)：
 
 ```typescript
 const polled = await api.oauth2PollLoopback(session_id);
@@ -6008,9 +6008,9 @@ if (polled.completed) {
 
 #### 存储位置 1：`connections.json` 文件（OAuth 连接状态）
 
-[mod.rs:L210-L211](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L210-L211) 中定义路径为 `{app_data_dir}/desktop/oauth2/connections.json`。
+[mod.rs:L210-L211](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L210-L211) 中定义路径为 `{app_data_dir}/desktop/oauth2/connections.json`。
 
-数据结构 [OAuthConnectionState](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L40-L53)：
+数据结构 [OAuthConnectionState](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L40-L53)：
 
 ```rust
 struct OAuthConnectionState {
@@ -6032,7 +6032,7 @@ struct OAuthConnectionState {
 
 #### 存储位置 2：`identities.json` 文件（账户身份）
 
-[save_oauth_callback](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L114-L171) 在保存连接后，还调用了：
+[save_oauth_callback](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L114-L171) 在保存连接后，还调用了：
 
 ```rust
 auth_identity::upsert_oauth(
@@ -6046,7 +6046,7 @@ auth_identity::upsert_oauth(
 )
 ```
 
-这个函数在 [infrastructure/auth_identity/mod.rs:L53-L97](file://apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs#L53-L97) 中实现，将用户身份以 `{provider}:{provider_user_id}` 为 ID 存入 `{app_data_dir}/desktop/account/identities.json`，数据结构为 [AccountIdentityState](file://apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs#L7-L25)：
+这个函数在 [infrastructure/auth_identity/mod.rs:L53-L97](../../../apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs#L53-L97) 中实现，将用户身份以 `{provider}:{provider_user_id}` 为 ID 存入 `{app_data_dir}/desktop/account/identities.json`，数据结构为 [AccountIdentityState](../../../apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs#L7-L25)：
 
 ```rust
 struct AccountIdentityState {
@@ -6068,7 +6068,7 @@ struct AccountIdentity {
 
 #### 存储位置 3：内存中的 Loopback Session（临时）
 
-[LOOPBACK_SESSIONS](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L64) 是一个 `OnceLock<Mutex<HashMap<String, LoopbackSessionState>>>`，纯内存结构，用于 loopback 轮询期间的状态跟踪，过期后自动清理（pending 超 600 秒、completed/failed 超 60 秒清除）。
+[LOOPBACK_SESSIONS](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L64) 是一个 `OnceLock<Mutex<HashMap<String, LoopbackSessionState>>>`，纯内存结构，用于 loopback 轮询期间的状态跟踪，过期后自动清理（pending 超 600 秒、completed/failed 超 60 秒清除）。
 
 ---
 
@@ -6078,14 +6078,14 @@ struct AccountIdentity {
 
 分析如下：
 
-1. **`save_oauth_callback`** ([mod.rs:L114-L171](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L114-L171)) 只做两件事：
+1. **`save_oauth_callback`** ([mod.rs:L114-L171](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L114-L171)) 只做两件事：
    - 写入 `connections.json`（连接状态）
    - 写入 `identities.json`（账户身份）
    - **没有调用 `issue_session` 或任何 token 生成逻辑**
 
-2. **Auth session 系统是独立的**。Session token 的签发在 [domain/auth/session.rs:L19-L41](file://apps/desktop/src-tauri/src/domain/auth/session.rs#L19-L41) 中，通过 `issue_session(account, password)` 生成，格式为 `pt.{actor_id}.{expires_at}`，TTL 为 1 小时。这个函数**只被** `auth_login` 命令调用（即密码登录），OAuth2 流程从未调用它。
+2. **Auth session 系统是独立的**。Session token 的签发在 [domain/auth/session.rs:L19-L41](../../../apps/desktop/src-tauri/src/domain/auth/session.rs#L19-L41) 中，通过 `issue_session(account, password)` 生成，格式为 `pt.{actor_id}.{expires_at}`，TTL 为 1 小时。这个函数**只被** `auth_login` 命令调用（即密码登录），OAuth2 流程从未调用它。
 
-3. **前端 store 中 `authenticated` 状态与 OAuth 连接状态是分离的**。在 [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L26-L48) 中：
+3. **前端 store 中 `authenticated` 状态与 OAuth 连接状态是分离的**。在 [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L26-L48) 中：
    - `authenticated` 字段由 `loginWithPassword` / `restoreSession` / `validateSessionToken` 管理
    - `connections` 字段由 `loadConnections` / `startAuth` / `disconnect` 管理
    - 两者互不影响
@@ -6135,16 +6135,16 @@ struct AccountIdentity {
 
 | 层级 | 文件 | 说明 |
 |------|------|------|
-| Interface | [tauri_commands/oauth2.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs) | Tauri 命令入口，透传到 application 层 |
-| Interface | [tauri_commands/auth.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs) | Auth 相关 Tauri 命令入口 |
-| Application | [application/oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs) | OAuth2 全部业务逻辑（872行），含 loopback、回调保存、连接管理 |
-| Application | [application/auth/service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs) | 密码登录/session 管理（与 OAuth2 独立） |
-| Domain | [domain/auth/session.rs](file://apps/desktop/src-tauri/src/domain/auth/session.rs) | Session token 签发/验证（仅密码登录使用） |
-| Infrastructure | [infrastructure/auth_identity/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs) | 账户身份持久化（identities.json） |
-| Frontend | [store/oauth2.ts](file://apps/desktop/src/store/oauth2.ts) | Zustand store，管理 OAuth2 状态和 auth 状态 |
-| Frontend | [services/desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts) | API 层，封装 Tauri invoke 调用 |
-| Station (Go) | [frame/core/auth/oauth2.go](file://apps/station/frame/core/auth/oauth2.go) | 服务端 OAuth2 接口定义（Adapter、TokenStore 等） |
-| Station (Go) | [frame/touch/model/db/oauth2_state.go](file://apps/station/frame/touch/model/db/oauth2_state.go) | 服务端数据库模型（OAuth2TokenState、ConnectionState 等） |
+| Interface | [tauri_commands/oauth2.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs) | Tauri 命令入口，透传到 application 层 |
+| Interface | [tauri_commands/auth.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs) | Auth 相关 Tauri 命令入口 |
+| Application | [application/oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs) | OAuth2 全部业务逻辑（872行），含 loopback、回调保存、连接管理 |
+| Application | [application/auth/service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs) | 密码登录/session 管理（与 OAuth2 独立） |
+| Domain | [domain/auth/session.rs](../../../apps/desktop/src-tauri/src/domain/auth/session.rs) | Session token 签发/验证（仅密码登录使用） |
+| Infrastructure | [infrastructure/auth_identity/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs) | 账户身份持久化（identities.json） |
+| Frontend | [store/oauth2.ts](../../../apps/desktop/src/store/oauth2.ts) | Zustand store，管理 OAuth2 状态和 auth 状态 |
+| Frontend | [services/desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts) | API 层，封装 Tauri invoke 调用 |
+| Station (Go) | [frame/core/auth/oauth2.go](../../../apps/station/frame/core/auth/oauth2.go) | 服务端 OAuth2 接口定义（Adapter、TokenStore 等） |
+| Station (Go) | [frame/touch/model/db/oauth2_state.go](../../../apps/station/frame/touch/model/db/oauth2_state.go) | 服务端数据库模型（OAuth2TokenState、ConnectionState 等） |
 
 现在我对整体架构有了完整且最新的理解。让我给你一个清晰的解释。
 
@@ -6154,7 +6154,7 @@ struct AccountIdentity {
 
 ### 1. `auth_login` 是什么
 
-`auth_login` 是一个**邮箱+密码登录**的 BFF 命令，定义在 [service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs#L12-L27)。它的调用链：
+`auth_login` 是一个**邮箱+密码登录**的 BFF 命令，定义在 [service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L12-L27)。它的调用链：
 
 ```
 前端 loginWithPassword(account, password)
@@ -6170,7 +6170,7 @@ struct AccountIdentity {
 
 ### 2. OAuth2 登录是什么
 
-OAuth2 登录走的是另一条完全独立的链路，定义在 [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs)：
+OAuth2 登录走的是另一条完全独立的链路，定义在 [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs)：
 
 ```
 前端 startAuth(providerId)
@@ -6289,73 +6289,73 @@ OAuth2 登录走的是另一条完全独立的链路，定义在 [oauth2/mod.rs]
 
 ### 一、高度相关文档（核心主题就是认证/会话/登录）
 
-#### 1. [fix-login-navigation-with-events.md](file://docs/.ide/documents/fix-login-navigation-with-events.md)
+#### 1. [fix-login-navigation-with-events.md](../../../docs/.ide/documents/fix-login-navigation-with-events.md)
 **内容**：修复登录导航问题的架构方案文档。详细分析了 Splash -> Login 导航流中的 `logout` 事件流时序缺陷（800ms 硬编码延迟），提出了三种方案：A) 添加 Logout 完成事件流、B) Logout 返回 Completer/Future、C) 重设计 Splash 登录检查流程。核心涉及 Token 验证、Session 清除、登录导航全流程。
 
-#### 2. [globalcontext.md](file://docs/client/common/globalcontext.md)
+#### 2. [globalcontext.md](../../../docs/client/common/globalcontext.md)
 **内容**：`GlobalContext` 全局上下文架构现状文档。描述了客户端中央状态枢纽，管理 **Session（会话）**、用户画像（Profile）、多账号（Accounts）、偏好设置、**登出事件**。接口定义包含 `currentSession`（含 actorId, handle, **accessToken, refreshToken**, sessionId, baseUrl 等）、`onSessionChange`、`onLogoutRequested`、`setSession`、`switchAccount` 等核心会话管理能力。
 
-#### 3. [api-documentation.md](file://docs/station/api-documentation.md)
+#### 3. [api-documentation.md](../../../docs/station/api-documentation.md)
 **内容**：Station API 完整参考文档。包含 **JWT 认证机制** 说明（`Authorization: Bearer <jwt_token>`）、**登录接口** （`POST /activitypub/login`）、**注册接口** （`POST /activitypub/sign-up`）、**Token 获取与响应格式**（token + refresh_token + token_type）、**HTTP Signatures**（RSA-SHA256，用于联邦服务器间认证）、Mastodon 兼容 API（`GET /api/v1/accounts/verify_credentials`）。
 
-#### 4. [frame-layer.md](file://docs/station/frame-layer.md)
+#### 4. [frame-layer.md](../../../docs/station/frame-layer.md)
 **内容**：Station 核心框架层架构文档。其中 `frame/core/auth` 部分明确定义了身份验证职责：**JWT Token 解析与生成**、**权限/角色校验**、**UserContext 注入到请求上下文**。这是后端认证基础设施的核心设计。
 
-#### 5. [global-context-kernel.md](file://docs/client/desktop/global-context-kernel.md)
+#### 5. [global-context-kernel.md](../../../docs/client/desktop/global-context-kernel.md)
 **内容**：Desktop 端 GlobalContext Kernel 架构设计（Rust + TS）。明确提出了**统一管理会话、网络、账号、能力开关、任务状态**的需求，以及**生命周期编排**覆盖：**启动、登录、登出、切换用户、网络抖动恢复**。设计原则包括事件优先、生命周期可编排（幂等、可中断、可重试）。
 
 ---
 
 ### 二、中度相关文档（包含认证/会话模块的系统性架构）
 
-#### 6. [base.md（Station）](file://docs/station/base.md)
+#### 6. [base.md（Station）](../../../docs/station/base.md)
 **内容**：Station 后端基础架构文档。明确 Station 负责 **User authentication and authorization**，架构中包含 `frame/core/`（auth, config, registry）和 `app/subserver/auth/`（用户认证子服务器）。Frame 组件包括 **Auth: JWT validation, permission checks**。
 
-#### 7. [base.md（Mobile）](file://docs/client/mobile/base.md)
+#### 7. [base.md（Mobile）](../../../docs/client/mobile/base.md)
 **内容**：移动端基础架构文档。功能模块清单中定义了 **Auth 模块**（注册、登录、Token 管理、会话，对应 Desktop 的 `auth` / `account`）和 **OAuth 模块**（第三方授权管理，对应 Desktop 的 `oauth2`）。还描述了网络层的 **Auth Token 注入拦截器**、**Token 刷新（透明续期、请求排队等待）**、**Token 过期自动跳转登录**、以及启动流程 `Splash -> Auth 验证 -> 主页路由`。
 
-#### 8. [app-layer.md](file://docs/station/app-layer.md)
+#### 8. [app-layer.md](../../../docs/station/app-layer.md)
 **内容**：Station 应用层架构文档。描述了 Subserver 架构中 `auth` 子服务器的 Handler-Service-Repo 模式，并给出了 `AuthHandler.Login` 的代码示例（请求绑定 -> 调用 service.Login -> 返回响应）。
 
-#### 9. [station-desktop-scope-boundary.md](file://docs/architecture/station-desktop-scope-boundary.md)
+#### 9. [station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md)
 **内容**：Station/Desktop 职责边界架构。明确 Station Scope 包含**鉴权、权限、审计、限流、配额**；功能分配清单中 **OAuth（授权）** 一行定义：Station 管理 provider、authorize/token 语义与凭证策略，Desktop 发起登录交互、回调承接、状态展示，真源在 Station。
 
-#### 10. [subserver-standard.md](file://docs/station/subserver-standard.md)
+#### 10. [subserver-standard.md](../../../docs/station/subserver-standard.md)
 **内容**：SubServer 开发标准文档。标准目录结构中包含 `auth.go`（认证与权限控制，可选文件），定义了认证与权限在子服务器级别的实现规范。
 
-#### 11. [DEVOLOPMENT_DAILY.zh.md](file://docs/context/evolution/DEVOLOPMENT_DAILY.zh.md)
+#### 11. [DEVOLOPMENT_DAILY.zh.md](../../../docs/context/evolution/DEVOLOPMENT_DAILY.zh.md)
 **内容**：开发日报，记录了多个与认证相关的里程碑：
 - **20251204**：完成统一身份系统（PTID）核心构建，包含 Ed25519 密钥生成、IdentityService 接口、注册流程集成。
 - **20251211**：设计并启动 ActorSession 用户态管理模块（Proto 定义 + 安全存储），Token 自主刷新基础。
 - **20251216**：完成 auth 模块抽象性评审，新增 auth.Config 配置入口、DefaultMiddleware、RequireJWT 中间件注入。
 - **20251223**：记录登录态交叉问题。
 
-#### 12. [unified-handler-architecture.md](file://docs/architecture/unified-handler-architecture.md)
+#### 12. [unified-handler-architecture.md](../../../docs/architecture/runtime/unified-handler-architecture.md)
 **内容**：统一 Handler 架构设计。覆盖中间件、错误处理、参数校验、**权限控制**全流程。Handler 必须显式声明**权限要求**，框架层自动完成权限校验。
 
 ---
 
 ### 三、低度相关文档（提及认证但非核心主题）
 
-#### 13. [architecture.md（全局）](file://docs/global/architecture.md)
+#### 13. [architecture.md（全局）](../../../docs/global/architecture.md)
 **内容**：三层系统总体架构，提及 Station Layer 中 Frame 提供 Routing, **Auth**, Config, Logging。
 
-#### 14. [GLOSSARY.md](file://docs/meta/GLOSSARY.md)
+#### 14. [GLOSSARY.md](../../../docs/meta/GLOSSARY.md)
 **内容**：术语表。定义了 **Subserver**（模块化后端服务，如 auth）、**Session**（AI 对话会话）、**SecureStorage**（加密存储敏感数据如 tokens 和 credentials）。
 
-#### 15. [domain-model.md](file://docs/global/domain-model.md)
+#### 15. [domain-model.md](../../../docs/global/domain-model.md)
 **内容**：Proto-First 领域模型架构。Proto 生成产物目标包含 `apps/station/app/subserver/auth/model/`。
 
-#### 16. [first-principles.md](file://docs/global/first-principles.md)
+#### 16. [first-principles.md](../../../docs/global/first-principles.md)
 **内容**：不可违反的基线规则。L0 原则第 4 条：所有 read/write handler 必须验证 **auth/ownership checks**。
 
-#### 17. [provider-model-target-architecture.md](file://docs/client/desktop/provider-model-target-architecture.md)
+#### 17. [provider-model-target-architecture.md](../../../docs/client/desktop/provider-model-target-architecture.md)
 **内容**：Desktop Provider + Model 目标态架构。提及用户作用域设计：命令层从会话解析 `session.actor_id` 作为 scope，**未登录时回落 `__default__`**。
 
-#### 18. [unified-runtime-storage-architecture.md](file://docs/architecture/storage/unified-runtime-storage-architecture.md)
+#### 18. [unified-runtime-storage-architecture.md](../../../docs/architecture/storage/unified-runtime-storage-architecture.md)
 **内容**：统一运行时存储架构。虽然主题是存储，但涉及安全增强（加密、密钥轮换）等与凭证存储相关的设计。
 
-#### 19. [sync-protocol.md](file://docs/client/mobile/sync-protocol.md)
+#### 19. [sync-protocol.md](../../../docs/client/mobile/sync-protocol.md)
 **内容**：多端同步协议设计。虽然主题是同步，但其架构建立在认证会话的基础之上。
 
 ---
@@ -6396,7 +6396,7 @@ OAuth2 登录走的是另一条完全独立的链路，定义在 [oauth2/mod.rs]
 
 ## 更新了三份已有文档
 
-### 1. [station-desktop-scope-boundary.md](file://docs/architecture/station-desktop-scope-boundary.md) — 核心方案文档
+### 1. [station-desktop-scope-boundary.md](../../../docs/architecture/boundaries/station-desktop-scope-boundary.md) — 核心方案文档
 
 **新增内容：**
 - §5 功能分配清单：拆分出独立的 **Auth（认证/登录）** 行，与 OAuth（社交绑定）分离
@@ -6411,14 +6411,14 @@ OAuth2 登录走的是另一条完全独立的链路，定义在 [oauth2/mod.rs]
   - 10.7 实施顺序 — 6 步递进
   - 10.8 安全约束
 
-### 2. [global-context-kernel.md](file://docs/client/desktop/global-context-kernel.md) — Desktop 内核设计
+### 2. [global-context-kernel.md](../../../docs/client/desktop/global-context-kernel.md) — Desktop 内核设计
 
 **更新内容：**
 - `session` 切片定义扩展：增加 JWT token、session_id、expires_at、登录方式
 - 编排流程补充：`session_restore`（启动恢复）、`session_refresh`（自动续签）
 - 新增 **§8.0 统一登录编排示例**：密码登录 / OAuth2 登录 / Session 恢复 / 401 自动处理
 
-### 3. [api-documentation.md](file://docs/station/api-documentation.md) — Station API 参考
+### 3. [api-documentation.md](../../../docs/station/api-documentation.md) — Station API 参考
 
 **更新内容：**
 - 修正密码登录的请求/响应格式（对齐真实代码：device_type、actor 对象、session_id）
@@ -6451,8 +6451,8 @@ docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.3
 
 原型做得很好，视觉风格现代干净（蓝白色系 + Tailwind + Framer Motion），布局层次清晰。包含了两个页面：
 
-1. **Login 页**（[Login.tsx](file://docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.3/codebase/src/pages/Login.tsx)）— 登录/账号卡片/切换账号/签出状态
-2. **ChatApp 页**（[ChatApp.tsx](file://docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.3/codebase/src/pages/ChatApp.tsx)）— 四个 Tab（Messages / Contacts / Stats / Settings）+ 聊天主区 + 右侧详情面板
+1. **Login 页**（[Login.tsx](../../../docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.3/codebase/src/pages/Login.tsx)）— 登录/账号卡片/切换账号/签出状态
+2. **ChatApp 页**（[ChatApp.tsx](../../../docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.3/codebase/src/pages/ChatApp.tsx)）— 四个 Tab（Messages / Contacts / Stats / Settings）+ 聊天主区 + 右侧详情面板
 
 ### 和后端能力的对应关系
 
@@ -6554,7 +6554,7 @@ UI 组件，要使用我们的主库的，原形是另一个平台的库生成�
 
 ---
 
-### 1. [accountIdentity.ts](file://apps/desktop/src/store/accountIdentity.ts)
+### 1. [accountIdentity.ts](../../../apps/desktop/src/store/accountIdentity.ts)
 
 **用途**: 管理多账户身份（account identity）的列表和切换
 
@@ -6574,7 +6574,7 @@ interface AccountIdentityStore {
 
 ---
 
-### 2. [oauth2.ts](file://apps/desktop/src/store/oauth2.ts) — **核心 Auth/Session Store**
+### 2. [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts) — **核心 Auth/Session Store**
 
 **用途**: 管理 OAuth2 认证状态、会话登录/注销、令牌持久化
 
@@ -6613,7 +6613,7 @@ interface OAuth2Store {
 
 ---
 
-### 3. [chat.ts](file://apps/desktop/src/store/chat.ts) — **最大最复杂的 Store**
+### 3. [chat.ts](../../../apps/desktop/src/store/chat.ts) — **最大最复杂的 Store**
 
 **用途**: 管理聊天会话、消息流、图片上传、模型/Agent/Applet 选择、Notebook 门户、屏幕宽度偏好等
 
@@ -6668,7 +6668,7 @@ interface ChatState {
 
 ---
 
-### 4. [provider.ts](file://apps/desktop/src/store/provider.ts)
+### 4. [provider.ts](../../../apps/desktop/src/store/provider.ts)
 
 **用途**: 管理 AI 模型提供商（Provider）的 CRUD 和模型配置
 
@@ -6701,7 +6701,7 @@ interface ProviderState {
 
 ---
 
-### 5. [search.ts](file://apps/desktop/src/store/search.ts)
+### 5. [search.ts](../../../apps/desktop/src/store/search.ts)
 
 **用途**: 管理搜索功能（多源搜索 + AI 搜索）
 
@@ -6732,7 +6732,7 @@ interface SearchState {
 
 ---
 
-### 6. [settings.ts](file://apps/desktop/src/store/settings.ts)
+### 6. [settings.ts](../../../apps/desktop/src/store/settings.ts)
 
 **用途**: 管理设置页面的 Agent 和 Tool 配置
 
@@ -6769,7 +6769,7 @@ interface SettingsState {
 
 5. **去重加载**: `accountIdentity.ts` 和 `oauth2.ts` 都使用了模块级 `loadPromise` 变量实现请求去重（防止并发重复加载）。
 
-6. **事件总线通知**: 认证/身份相关的变更通过 `eventBus.publish()` 发布事件（`AUTH_IDENTITY_CHANGED`、`OAUTH_CONNECTIONS_CHANGED`），供 UI 组件（如 [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx)）订阅。
+6. **事件总线通知**: 认证/身份相关的变更通过 `eventBus.publish()` 发布事件（`AUTH_IDENTITY_CHANGED`、`OAUTH_CONNECTIONS_CHANGED`），供 UI 组件（如 [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx)）订阅。
 
 7. **Fire-and-forget 偏好写入**: 用户偏好设置类操作（如 `setWideScreen`、`toggleApplet` 中的 web_search）使用 `api.xxx().catch(() => {})` 模式——先更新本地状态，后台静默持久化。
 
@@ -6798,7 +6798,7 @@ interface SettingsState {
 | **LobeChat 图标** | **@lobehub/icons v5.0.1** | 提供 `ModelIcon` 等 AI 模型品牌图标 |
 | **布局工具** | **react-layout-kit v2.0.1** | 提供 `Flexbox` 布局原语，项目中几乎所有布局都使用 `Flexbox` |
 
-关键依赖来自 [package.json](file://apps/desktop/package.json)：
+关键依赖来自 [package.json](../../../apps/desktop/package.json)：
 
 ```json
 "antd": "^6.3.1",
@@ -6807,9 +6807,9 @@ interface SettingsState {
 "react-layout-kit": "^2.0.1"
 ```
 
-此外还有 workspace 包 `@peers-touch/ui-desktop`（见 [packages/ui/desktop/package.json](file://packages/ui/desktop/package.json)），目前较轻量。
+此外还有 workspace 包 `@peers-touch/ui-desktop`（见 [packages/ui/desktop/package.json](../../../packages/ui/desktop/package.json)），目前较轻量。
 
-**主题系统**：在 [main.tsx](file://apps/desktop/src/main.tsx#L3) 中使用 `@lobehub/ui` 的 `ThemeProvider` 包裹整个应用。组件内大量使用 `antd` 的 `theme.useToken()` 获取设计令牌（`token.colorPrimary`, `token.colorBgContainer`, `token.colorBorderSecondary` 等），实现一致的主题化。
+**主题系统**：在 [main.tsx](../../../apps/desktop/src/main.tsx#L3) 中使用 `@lobehub/ui` 的 `ThemeProvider` 包裹整个应用。组件内大量使用 `antd` 的 `theme.useToken()` 获取设计令牌（`token.colorPrimary`, `token.colorBgContainer`, `token.colorBorderSecondary` 等），实现一致的主题化。
 
 ---
 
@@ -6882,7 +6882,7 @@ src/components/
 
 #### 路由机制
 
-**没有使用 react-router-dom 的 Router/Routes 组件**进行路由（虽然 package.json 中有依赖）。实际采用的是**基于 hash 的手动路由**，在 [App.tsx](file://apps/desktop/src/App.tsx#L47-L56) 中通过 `window.location.hash` 解析当前页面：
+**没有使用 react-router-dom 的 Router/Routes 组件**进行路由（虽然 package.json 中有依赖）。实际采用的是**基于 hash 的手动路由**，在 [App.tsx](../../../apps/desktop/src/App.tsx#L47-L56) 中通过 `window.location.hash` 解析当前页面：
 
 ```typescript
 function getPageFromHash(): Page {
@@ -6905,7 +6905,7 @@ function getPageFromHash(): Page {
 
 #### 全局布局
 
-整体布局架构为三层嵌套，由 [GlobalLayout](file://apps/desktop/src/components/GlobalLayout.tsx#L164-L306) 提供：
+整体布局架构为三层嵌套，由 [GlobalLayout](../../../apps/desktop/src/components/GlobalLayout.tsx#L164-L306) 提供：
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -6928,7 +6928,7 @@ function getPageFromHash(): Page {
 - **GlobalLayout**：最外层壳，负责窗口边框、在线指示器（`OnlineIndicator`）、认证状态（`AuthStatusIndicator`）和窗口控制按钮（最小化/最大化/关闭）
 - **SideNav**（来自 `@lobehub/ui`）：左侧图标导航栏，包含 avatar、顶部 action icons、底部 settings icon
 - **DraggablePanel**（来自 `@lobehub/ui`）：可拖拽的 Agent 侧边栏，仅在 chat/agent-profile 页面显示
-- **PageHeader**（[PageHeader.tsx](file://apps/desktop/src/components/PageHeader.tsx)）：通用页头组件，包含 title、icon、actions
+- **PageHeader**（[PageHeader.tsx](../../../apps/desktop/src/components/PageHeader.tsx)）：通用页头组件，包含 title、icon、actions
 
 #### 页面列表
 
@@ -6936,18 +6936,18 @@ function getPageFromHash(): Page {
 
 | 页面 | 文件 | 特点 |
 |------|------|------|
-| Chat | [ChatPage.tsx](file://apps/desktop/src/pages/ChatPage.tsx) | 主聊天页，含 WelcomeScreen、MessageBubble、ChatInput、Notebook Portal |
-| Settings | [SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx) | Tabs 式设置页，混合本地 tabs + 动态注册模块 tabs |
-| Search | [SearchPage.tsx](file://apps/desktop/src/pages/SearchPage.tsx) | 搜索页 |
-| Notes | [NotesPage.tsx](file://apps/desktop/src/pages/NotesPage.tsx) | 笔记页 |
-| AgentProfile | [AgentProfilePage.tsx](file://apps/desktop/src/pages/AgentProfilePage.tsx) | Agent 详情页 |
-| Onboarding | [OnboardingPage.tsx](file://apps/desktop/src/pages/OnboardingPage.tsx) | 引导页 |
-| Share | [SharePage.tsx](file://apps/desktop/src/pages/SharePage.tsx) | 分享页（独立路由 `/share/s/:token`） |
-| Channels | [ChannelsPage.tsx](file://apps/desktop/src/pages/ChannelsPage.tsx) | 频道页（模块注册） |
-| Cron | [CronPage.tsx](file://apps/desktop/src/pages/CronPage.tsx) | 定时任务页（模块注册） |
-| Memory | [MemoryPage.tsx](file://apps/desktop/src/pages/MemoryPage.tsx) | 记忆页（模块注册） |
-| Applets | [AppletsPage.tsx](file://apps/desktop/src/pages/AppletsPage.tsx) | Applet 页 |
-| AppletRuntime | [AppletRuntimePage.tsx](file://apps/desktop/src/pages/AppletRuntimePage.tsx) | Applet 运行时页 |
+| Chat | [ChatPage.tsx](../../../apps/desktop/src/pages/ChatPage.tsx) | 主聊天页，含 WelcomeScreen、MessageBubble、ChatInput、Notebook Portal |
+| Settings | [SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx) | Tabs 式设置页，混合本地 tabs + 动态注册模块 tabs |
+| Search | [SearchPage.tsx](../../../apps/desktop/src/pages/SearchPage.tsx) | 搜索页 |
+| Notes | [NotesPage.tsx](../../../apps/desktop/src/pages/NotesPage.tsx) | 笔记页 |
+| AgentProfile | [AgentProfilePage.tsx](../../../apps/desktop/src/pages/AgentProfilePage.tsx) | Agent 详情页 |
+| Onboarding | [OnboardingPage.tsx](../../../apps/desktop/src/pages/OnboardingPage.tsx) | 引导页 |
+| Share | [SharePage.tsx](../../../apps/desktop/src/pages/SharePage.tsx) | 分享页（独立路由 `/share/s/:token`） |
+| Channels | [ChannelsPage.tsx](../../../apps/desktop/src/pages/ChannelsPage.tsx) | 频道页（模块注册） |
+| Cron | [CronPage.tsx](../../../apps/desktop/src/pages/CronPage.tsx) | 定时任务页（模块注册） |
+| Memory | [MemoryPage.tsx](../../../apps/desktop/src/pages/MemoryPage.tsx) | 记忆页（模块注册） |
+| Applets | [AppletsPage.tsx](../../../apps/desktop/src/pages/AppletsPage.tsx) | Applet 页 |
+| AppletRuntime | [AppletRuntimePage.tsx](../../../apps/desktop/src/pages/AppletRuntimePage.tsx) | Applet 运行时页 |
 
 ---
 
@@ -6957,12 +6957,12 @@ function getPageFromHash(): Page {
 
 | Store | 文件 | 职责 |
 |-------|------|------|
-| `useChatStore` | [chat.ts](file://apps/desktop/src/store/chat.ts) | **最核心的 store**：sessions、messages、streaming、model/agent 选择、图片上传、portal/notebook、宽屏模式（约 890 行） |
-| `useSettingsStore` | [settings.ts](file://apps/desktop/src/store/settings.ts) | agents 和 tools 管理、当前 agent 持久化 |
-| `useProviderStore` | [provider.ts](file://apps/desktop/src/store/provider.ts) | AI 供应商 CRUD、模型管理 |
-| `useOAuth2Store` | [oauth2.ts](file://apps/desktop/src/store/oauth2.ts) | OAuth2 授权、连接管理、登录/登出 |
-| `useSearchStore` | [search.ts](file://apps/desktop/src/store/search.ts) | 搜索状态、多源搜索、AI 搜索 |
-| `useAccountIdentityStore` | [accountIdentity.ts](file://apps/desktop/src/store/accountIdentity.ts) | 账户身份切换 |
+| `useChatStore` | [chat.ts](../../../apps/desktop/src/store/chat.ts) | **最核心的 store**：sessions、messages、streaming、model/agent 选择、图片上传、portal/notebook、宽屏模式（约 890 行） |
+| `useSettingsStore` | [settings.ts](../../../apps/desktop/src/store/settings.ts) | agents 和 tools 管理、当前 agent 持久化 |
+| `useProviderStore` | [provider.ts](../../../apps/desktop/src/store/provider.ts) | AI 供应商 CRUD、模型管理 |
+| `useOAuth2Store` | [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts) | OAuth2 授权、连接管理、登录/登出 |
+| `useSearchStore` | [search.ts](../../../apps/desktop/src/store/search.ts) | 搜索状态、多源搜索、AI 搜索 |
+| `useAccountIdentityStore` | [accountIdentity.ts](../../../apps/desktop/src/store/accountIdentity.ts) | 账户身份切换 |
 
 所有 store 都使用 `create` 从 `zustand` 导入，采用经典的 `(set, get) => ({...})` 模式，**没有使用 middleware（persist、devtools 等）**。
 
@@ -6972,7 +6972,7 @@ function getPageFromHash(): Page {
 
 项目使用 **lucide-react v0.577.0** 作为唯一的图标库。
 
-在整个项目中大量使用，例如 [ChatPage.tsx](file://apps/desktop/src/pages/ChatPage.tsx#L13-L32) 中一次导入了 18 个图标：
+在整个项目中大量使用，例如 [ChatPage.tsx](../../../apps/desktop/src/pages/ChatPage.tsx#L13-L32) 中一次导入了 18 个图标：
 
 ```typescript
 import {
@@ -6983,7 +6983,7 @@ import {
 } from 'lucide-react';
 ```
 
-[SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx#L4-L14) 中甚至定义了一个 `ICON_MAP` 用于动态图标映射：
+[SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx#L4-L14) 中甚至定义了一个 `ICON_MAP` 用于动态图标映射：
 
 ```typescript
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -7003,24 +7003,24 @@ const ICON_MAP: Record<string, LucideIcon> = {
 
 | 组件 | 文件 | 角色 |
 |------|------|------|
-| **GlobalLayout** | [GlobalLayout.tsx](file://apps/desktop/src/components/GlobalLayout.tsx) | 最外层 App Shell：窗口边框 + 侧导航插槽 + 主内容区。包含 `OnlineIndicator`（心跳在线人数）和 `AuthStatusIndicator`（OAuth 状态脉冲警告）。适配 Tauri 桌面端的自定义窗口 chrome（最小化/最大化/关闭按钮）。 |
-| **PageHeader** | [PageHeader.tsx](file://apps/desktop/src/components/PageHeader.tsx) | 通用页面标题栏：icon + title + subtitle + actions |
-| **SideNav** (来自 @lobehub/ui) | 在 [App.tsx](file://apps/desktop/src/App.tsx#L262-L349) 中使用 | LobeChat 风格的图标侧导航，支持 avatar、topActions、bottomActions |
+| **GlobalLayout** | [GlobalLayout.tsx](../../../apps/desktop/src/components/GlobalLayout.tsx) | 最外层 App Shell：窗口边框 + 侧导航插槽 + 主内容区。包含 `OnlineIndicator`（心跳在线人数）和 `AuthStatusIndicator`（OAuth 状态脉冲警告）。适配 Tauri 桌面端的自定义窗口 chrome（最小化/最大化/关闭按钮）。 |
+| **PageHeader** | [PageHeader.tsx](../../../apps/desktop/src/components/PageHeader.tsx) | 通用页面标题栏：icon + title + subtitle + actions |
+| **SideNav** (来自 @lobehub/ui) | 在 [App.tsx](../../../apps/desktop/src/App.tsx#L262-L349) 中使用 | LobeChat 风格的图标侧导航，支持 avatar、topActions、bottomActions |
 | **DraggablePanel** (来自 @lobehub/ui) | 在 App.tsx + ChatPage.tsx 中使用 | 可拖拽调整宽度的侧面板，用于 AgentSidebar 和 Notebook Portal |
-| **AgentSidebar** | [AgentSidebar.tsx](file://apps/desktop/src/components/AgentSidebar.tsx) | Agent 工作区侧边栏：agent 切换 picker + topic 列表（按日期分组）+ 搜索 |
+| **AgentSidebar** | [AgentSidebar.tsx](../../../apps/desktop/src/components/AgentSidebar.tsx) | Agent 工作区侧边栏：agent 切换 picker + topic 列表（按日期分组）+ 搜索 |
 
 ---
 
 ### 补充发现：模块注册系统
 
-项目有一个精巧的**模块自注册系统**（[modules/registry.ts](file://apps/desktop/src/modules/registry.ts)）：
+项目有一个精巧的**模块自注册系统**（[modules/registry.ts](../../../apps/desktop/src/modules/registry.ts)）：
 
 - 每个功能模块（providers, channels, cron, memory, skills, mcp, logs, tts, account, model-service, connections, applets）在自己的文件中调用 `registerModule()` 自注册
-- [modules/index.ts](file://apps/desktop/src/modules/index.ts) 统一 import 触发注册
+- [modules/index.ts](../../../apps/desktop/src/modules/index.ts) 统一 import 触发注册
 - `App.tsx` 和 `SettingsPage.tsx` 通过 `getModulesWithSidebar()`, `getModulesWithSettings()`, `getModule()` 动态读取注册表渲染 UI
 - 新增模块**零宿主代码改动**：只需写模块文件 + 在 `modules/index.ts` 中添加一行 import
 
-例如 [providers.ts](file://apps/desktop/src/modules/providers.ts) 的注册方式：
+例如 [providers.ts](../../../apps/desktop/src/modules/providers.ts) 的注册方式：
 
 ```typescript
 registerModule({
@@ -7044,13 +7044,13 @@ registerModule({
 
 该项目 **没有使用** react-router、@tanstack/react-router 或 wouter 等任何第三方路由库。它采用了**完全自定义的基于 `window.location.hash` 的路由方案**，通过 React 状态驱动页面切换。
 
-路由核心逻辑位于 [App.tsx](file://apps/desktop/src/App.tsx)。
+路由核心逻辑位于 [App.tsx](../../../apps/desktop/src/App.tsx)。
 
 ### 二、入口点结构
 
 #### 1. main.tsx — 应用入口
 
-文件：[main.tsx](file://apps/desktop/src/main.tsx)
+文件：[main.tsx](../../../apps/desktop/src/main.tsx)
 
 ```tsx
 function Root() {
@@ -7070,7 +7070,7 @@ function Root() {
 
 #### 2. App.tsx — 主应用 Shell 和路由中枢
 
-文件：[App.tsx](file://apps/desktop/src/App.tsx)
+文件：[App.tsx](../../../apps/desktop/src/App.tsx)
 
 ### 三、路由定义详解
 
@@ -7085,7 +7085,7 @@ type AppState = 'loading' | 'onboarding' | 'ready';
 
 #### 核心页面常量
 
-[CORE_PAGES 定义](file://apps/desktop/src/App.tsx#L40)：
+[CORE_PAGES 定义](../../../apps/desktop/src/App.tsx#L40)：
 
 ```typescript
 const CORE_PAGES = ['chat', 'settings', 'search', 'notes', 'agent-profile'];
@@ -7093,7 +7093,7 @@ const CORE_PAGES = ['chat', 'settings', 'search', 'notes', 'agent-profile'];
 
 #### Hash 解析逻辑
 
-[getPageFromHash](file://apps/desktop/src/App.tsx#L47-L56)：
+[getPageFromHash](../../../apps/desktop/src/App.tsx#L47-L56)：
 
 ```typescript
 function getPageFromHash(): Page {
@@ -7125,7 +7125,7 @@ URL 格式示例：
 
 #### 页面导航函数
 
-[setPage](file://apps/desktop/src/App.tsx#L94-L97)：
+[setPage](../../../apps/desktop/src/App.tsx#L94-L97)：
 
 ```typescript
 const setPage = useCallback((p: Page) => {
@@ -7142,20 +7142,20 @@ const setPage = useCallback((p: Page) => {
 
 | Page ID | Hash | 组件 | 文件 |
 |---|---|---|---|
-| `search` | `#/search` | `SearchPage` | [SearchPage.tsx](file://apps/desktop/src/pages/SearchPage.tsx) |
-| `chat` | `#/chat` | `ChatPage` | [ChatPage.tsx](file://apps/desktop/src/pages/ChatPage.tsx) |
-| `notes` | `#/notes` / `#/notes/:docId` | `NotesPage` | [NotesPage.tsx](file://apps/desktop/src/pages/NotesPage.tsx) |
-| `settings` | `#/settings` | `SettingsPage` | [SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx) |
-| `agent-profile` | `#/agent-profile/:name` | `AgentProfilePage` | [AgentProfilePage.tsx](file://apps/desktop/src/pages/AgentProfilePage.tsx) |
+| `search` | `#/search` | `SearchPage` | [SearchPage.tsx](../../../apps/desktop/src/pages/SearchPage.tsx) |
+| `chat` | `#/chat` | `ChatPage` | [ChatPage.tsx](../../../apps/desktop/src/pages/ChatPage.tsx) |
+| `notes` | `#/notes` / `#/notes/:docId` | `NotesPage` | [NotesPage.tsx](../../../apps/desktop/src/pages/NotesPage.tsx) |
+| `settings` | `#/settings` | `SettingsPage` | [SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx) |
+| `agent-profile` | `#/agent-profile/:name` | `AgentProfilePage` | [AgentProfilePage.tsx](../../../apps/desktop/src/pages/AgentProfilePage.tsx) |
 
 #### B. 模块注册页面（通过 registerModule 动态注册，有独立 page 组件）
 
 | Module ID | Hash | 组件 | Sidebar | 文件 |
 |---|---|---|---|---|
-| `channels` | `#/channels` | `ChannelsPage` | top, order 50 | [channels.ts](file://apps/desktop/src/modules/channels.ts) |
-| `cron` | `#/cron` | `CronPage` | top, order 40 | [cron.ts](file://apps/desktop/src/modules/cron.ts) |
-| `memory` | `#/memory` | `MemoryPage` | top, order 35 | [memory.ts](file://apps/desktop/src/modules/memory.ts) |
-| `applets` | `#/applets` | `AppletsPage` | top, order 30 | [applets.ts](file://apps/desktop/src/modules/applets.ts) |
+| `channels` | `#/channels` | `ChannelsPage` | top, order 50 | [channels.ts](../../../apps/desktop/src/modules/channels.ts) |
+| `cron` | `#/cron` | `CronPage` | top, order 40 | [cron.ts](../../../apps/desktop/src/modules/cron.ts) |
+| `memory` | `#/memory` | `MemoryPage` | top, order 35 | [memory.ts](../../../apps/desktop/src/modules/memory.ts) |
+| `applets` | `#/applets` | `AppletsPage` | top, order 30 | [applets.ts](../../../apps/desktop/src/modules/applets.ts) |
 
 #### C. Applet 动态页面
 
@@ -7167,33 +7167,33 @@ const setPage = useCallback((p: Page) => {
 
 | 路径 | 组件 | 文件 |
 |---|---|---|
-| `/share/s/:token`（pathname 匹配） | `SharePage` | [SharePage.tsx](file://apps/desktop/src/pages/SharePage.tsx) |
+| `/share/s/:token`（pathname 匹配） | `SharePage` | [SharePage.tsx](../../../apps/desktop/src/pages/SharePage.tsx) |
 
 #### E. 前置状态页面（Onboarding 阶段）
 
 | 状态 | 组件 | 文件 |
 |---|---|---|
-| `onboarding` (default 模式) | `OnboardingPage` | [OnboardingPage.tsx](file://apps/desktop/src/pages/OnboardingPage.tsx) |
-| `onboarding` (wizard 模式) | `WizardRenderer` | [WizardRenderer.tsx](file://apps/desktop/src/components/wizard/WizardRenderer.tsx) |
+| `onboarding` (default 模式) | `OnboardingPage` | [OnboardingPage.tsx](../../../apps/desktop/src/pages/OnboardingPage.tsx) |
+| `onboarding` (wizard 模式) | `WizardRenderer` | [WizardRenderer.tsx](../../../apps/desktop/src/components/wizard/WizardRenderer.tsx) |
 
 ### 五、Settings 页面内 Tab 路由
 
-[SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx#L46-L163) 内部使用 Ant Design `Tabs` 组件管理子页面，Tab key 由模块注册 + 本地 Tab 共同组成：
+[SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx#L46-L163) 内部使用 Ant Design `Tabs` 组件管理子页面，Tab key 由模块注册 + 本地 Tab 共同组成：
 
 **来自模块注册的 Settings Tab（按 order 排序）：**
 
 | Tab Key | Label | Order | 模块文件 |
 |---|---|---|---|
-| `providers` | Providers | 10 | [providers.ts](file://apps/desktop/src/modules/providers.ts) |
-| `models` | Model Service | 15 | [model-service.ts](file://apps/desktop/src/modules/model-service.ts) |
-| `account` | OAuth Sign-In | 20 | [account.ts](file://apps/desktop/src/modules/account.ts) |
-| `memory` | Memory & Embedding | 25 | [memory.ts](file://apps/desktop/src/modules/memory.ts) |
-| `connections` | Advanced Connections | 26 | [connections.ts](file://apps/desktop/src/modules/connections.ts)（条件注册） |
-| `skills` | Skills | 30 | [skills.ts](file://apps/desktop/src/modules/skills.ts) |
-| `mcp` | MCP | 35 | [mcp.ts](file://apps/desktop/src/modules/mcp.ts) |
-| `tts` | Voice | 35 | [tts/index.tsx](file://apps/desktop/src/modules/tts/index.tsx) |
-| `channels` | Channels | 40 | [channels.ts](file://apps/desktop/src/modules/channels.ts) |
-| `logs` | Logs | 80 | [logs.ts](file://apps/desktop/src/modules/logs.ts) |
+| `providers` | Providers | 10 | [providers.ts](../../../apps/desktop/src/modules/providers.ts) |
+| `models` | Model Service | 15 | [model-service.ts](../../../apps/desktop/src/modules/model-service.ts) |
+| `account` | OAuth Sign-In | 20 | [account.ts](../../../apps/desktop/src/modules/account.ts) |
+| `memory` | Memory & Embedding | 25 | [memory.ts](../../../apps/desktop/src/modules/memory.ts) |
+| `connections` | Advanced Connections | 26 | [connections.ts](../../../apps/desktop/src/modules/connections.ts)（条件注册） |
+| `skills` | Skills | 30 | [skills.ts](../../../apps/desktop/src/modules/skills.ts) |
+| `mcp` | MCP | 35 | [mcp.ts](../../../apps/desktop/src/modules/mcp.ts) |
+| `tts` | Voice | 35 | [tts/index.tsx](../../../apps/desktop/src/modules/tts/index.tsx) |
+| `channels` | Channels | 40 | [channels.ts](../../../apps/desktop/src/modules/channels.ts) |
+| `logs` | Logs | 80 | [logs.ts](../../../apps/desktop/src/modules/logs.ts) |
 
 **本地硬编码 Tab：**
 
@@ -7218,7 +7218,7 @@ export interface SettingsNavState {
 
 #### 1. SideNav 主导航栏
 
-位于 [App.tsx#L260-L349](file://apps/desktop/src/App.tsx#L260-L349)，使用 `@lobehub/ui` 的 `SideNav` 组件：
+位于 [App.tsx#L260-L349](../../../apps/desktop/src/App.tsx#L260-L349)，使用 `@lobehub/ui` 的 `SideNav` 组件：
 
 **固定图标（top）：**
 - Search（⌘K 快捷键）
@@ -7238,7 +7238,7 @@ export interface SettingsNavState {
 
 #### 2. AgentSidebar 二级侧边栏
 
-文件：[AgentSidebar.tsx](file://apps/desktop/src/components/AgentSidebar.tsx)
+文件：[AgentSidebar.tsx](../../../apps/desktop/src/components/AgentSidebar.tsx)
 
 仅在 `page === 'chat'` 或 `page === 'agent-profile'` 时显示，通过 `DraggablePanel` 渲染。包含：
 - Agent 选择器（下拉切换 agent）
@@ -7249,7 +7249,7 @@ export interface SettingsNavState {
 
 #### 3. Deep Link 导航
 
-文件：[deeplink.ts](file://apps/desktop/src/utils/deeplink.ts)
+文件：[deeplink.ts](../../../apps/desktop/src/utils/deeplink.ts)
 
 支持 `pt://` 和 `agentbox://` 两种 URI scheme：
 
@@ -7264,7 +7264,7 @@ pt://<resource>[/<id>[/<sub>[/<subId>]]]
 - `channels` → 跳转 channels 页面
 - `documents` → 跳转 notes 页面
 
-Deep link 通过事件总线 `EVENT.NAVIGATION_REQUESTED` 触发，在 [App.tsx#L194-L218](file://apps/desktop/src/App.tsx#L194-L218) 中处理：
+Deep link 通过事件总线 `EVENT.NAVIGATION_REQUESTED` 触发，在 [App.tsx#L194-L218](../../../apps/desktop/src/App.tsx#L194-L218) 中处理：
 
 ```typescript
 useEffect(() => eventBus.subscribe(EVENT.NAVIGATION_REQUESTED, (parsed) => {
@@ -7290,11 +7290,11 @@ useEffect(() => eventBus.subscribe(EVENT.NAVIGATION_REQUESTED, (parsed) => {
 
 #### 5. 键盘快捷键
 
-[App.tsx#L181-L189](file://apps/desktop/src/App.tsx#L181-L189)：`Cmd+K` / `Ctrl+K` → 跳转 search 页面。
+[App.tsx#L181-L189](../../../apps/desktop/src/App.tsx#L181-L189)：`Cmd+K` / `Ctrl+K` → 跳转 search 页面。
 
 ### 七、App Shell 结构
 
-[GlobalLayout](file://apps/desktop/src/components/GlobalLayout.tsx#L164-L307) 提供全局布局框架：
+[GlobalLayout](../../../apps/desktop/src/components/GlobalLayout.tsx#L164-L307) 提供全局布局框架：
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -7311,7 +7311,7 @@ useEffect(() => eventBus.subscribe(EVENT.NAVIGATION_REQUESTED, (parsed) => {
 
 ### 八、模块注册系统
 
-文件：[registry.ts](file://apps/desktop/src/modules/registry.ts)
+文件：[registry.ts](../../../apps/desktop/src/modules/registry.ts)
 
 模块通过 `registerModule()` 自注册，接口定义为：
 
@@ -7327,7 +7327,7 @@ export interface ModuleFrontend {
 }
 ```
 
-所有模块在 [modules/index.ts](file://apps/desktop/src/modules/index.ts) 统一导入触发注册。新增模块只需：
+所有模块在 [modules/index.ts](../../../apps/desktop/src/modules/index.ts) 统一导入触发注册。新增模块只需：
 1. 创建模块文件调用 `registerModule()`
 2. 在 `modules/index.ts` 中 import 即可
 
@@ -7582,9 +7582,9 @@ src-tauri/src/
 
 ### 问题 1: `friend_chat.rs` / `group_chat.rs` 违反分层，interface 层直接承担了 application 逻辑
 
-看 [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) 第 43-84 行，interface 层自己定义了 `request_json`、`token_from_state`、`filter_incremental_messages`、`extract_latest_ulid` 等函数，本质上是把 application 层的编排逻辑写在了 interface 里。`group_chat.rs` 完全一样。
+看 [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) 第 43-84 行，interface 层自己定义了 `request_json`、`token_from_state`、`filter_incremental_messages`、`extract_latest_ulid` 等函数，本质上是把 application 层的编排逻辑写在了 interface 里。`group_chat.rs` 完全一样。
 
-而 [chat_storage.rs](file://apps/desktop/src-tauri/src/application/chat_storage.rs) 也有 `sync_friend_from_station`、`filter_incremental_messages`、`extract_latest_ulid` 等**同名重复函数**。两边各实现了一份，是明显的重复。
+而 [chat_storage.rs](../../../apps/desktop/src-tauri/src/application/chat_storage.rs) 也有 `sync_friend_from_station`、`filter_incremental_messages`、`extract_latest_ulid` 等**同名重复函数**。两边各实现了一份，是明显的重复。
 
 ### 问题 2: `domain/chat/mod.rs` 是 AI Chat 的领域模型，不是 Friend/Group Chat 的
 
@@ -8154,9 +8154,9 @@ prost-types 0.14.3 没有 serde feature。让我看看实际可用的方式：
 
 ### 新建文件（5 个）
 
-**1.** [application/social_chat/mod.rs](file://apps/desktop/src-tauri/src/application/social_chat/mod.rs) — 模块声明，导出 `shared`、`friend_service`、`group_service` 三个子模块。
+**1.** [application/social_chat/mod.rs](../../../apps/desktop/src-tauri/src/application/social_chat/mod.rs) — 模块声明，导出 `shared`、`friend_service`、`group_service` 三个子模块。
 
-**2.** [application/social_chat/shared.rs](file://apps/desktop/src-tauri/src/application/social_chat/shared.rs) — 从 `friend_chat.rs` 和 `group_chat.rs` 中提取的共享工具函数：
+**2.** [application/social_chat/shared.rs](../../../apps/desktop/src-tauri/src/application/social_chat/shared.rs) — 从 `friend_chat.rs` 和 `group_chat.rs` 中提取的共享工具函数：
 
 | 函数 | 职责 |
 |------|------|
@@ -8167,23 +8167,23 @@ prost-types 0.14.3 没有 serde feature。让我看看实际可用的方式：
 
 注意：`token_from_state`、`actor_id_from_state`、`user_scope_from_state` 这三个函数依赖 `tauri::State<AppState>`，属于 interface 层的关注点，因此**未提取到 application 层**。service 函数直接接收 `token: &str`、`user_scope: &str` 等纯参数，由 interface 层负责从 state 中提取后传入。
 
-**3.** [application/social_chat/friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs) — 好友聊天业务逻辑，12 个函数：
+**3.** [application/social_chat/friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs) — 好友聊天业务逻辑，12 个函数：
 
 - `list_sessions`、`create_session`、`list_messages`、`send_message`、`ack_messages`
 - `local_search`、`local_search_scoped`
 - `set_cursor_scoped`、`get_cursor_scoped`、`get_key_version_scoped`、`rotate_key_scoped`
 - `sync_from_station_scoped`
 
-**4.** [application/social_chat/group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs) — 群聊业务逻辑，12 个函数：
+**4.** [application/social_chat/group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs) — 群聊业务逻辑，12 个函数：
 
 - `list_groups`、`list_messages`、`send_message`、`unread_count`、`mark_read`
 - `local_search`、`local_search_scoped`
 - `set_cursor_scoped`、`get_cursor_scoped`、`get_key_version_scoped`、`rotate_key_scoped`
 - `sync_from_station_scoped`
 
-**5.** [domain/social_chat/mod.rs](file://apps/desktop/src-tauri/src/domain/social_chat/mod.rs) — 领域模块声明，导出 `validation` 子模块。
+**5.** [domain/social_chat/mod.rs](../../../apps/desktop/src-tauri/src/domain/social_chat/mod.rs) — 领域模块声明，导出 `validation` 子模块。
 
-**6.** [domain/social_chat/validation.rs](file://apps/desktop/src-tauri/src/domain/social_chat/validation.rs) — 领域验证规则：
+**6.** [domain/social_chat/validation.rs](../../../apps/desktop/src-tauri/src/domain/social_chat/validation.rs) — 领域验证规则：
 
 - `validate_not_empty(field, value)` — 非空校验
 - `resolve_limit(limit, default, max)` — 分页 limit 解析与 clamp
@@ -8192,9 +8192,9 @@ prost-types 0.14.3 没有 serde feature。让我看看实际可用的方式：
 
 ### 修改文件（2 个）
 
-**7.** [application/mod.rs](file://apps/desktop/src-tauri/src/application/mod.rs) — 在 `skills_market` 和 `station_client` 之间按字母序插入 `pub mod social_chat;`
+**7.** [application/mod.rs](../../../apps/desktop/src-tauri/src/application/mod.rs) — 在 `skills_market` 和 `station_client` 之间按字母序插入 `pub mod social_chat;`
 
-**8.** [domain/mod.rs](file://apps/desktop/src-tauri/src/domain/mod.rs) — 在 `settings` 和 `storage` 之间按字母序插入 `pub mod social_chat;`
+**8.** [domain/mod.rs](../../../apps/desktop/src-tauri/src/domain/mod.rs) — 在 `settings` 和 `storage` 之间按字母序插入 `pub mod social_chat;`
 
 ### 架构设计要点
 
@@ -8276,13 +8276,13 @@ Now let me verify TypeScript compilation:
 
 **两个文件均完成了接口层瘦化重写：**
 
-**1. [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) (406 行 -> 151 行，减少 63%)**
+**1. [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) (406 行 -> 151 行，减少 63%)**
 
 - **保留**：`token_from_state`、`actor_id_from_state`、`user_scope_from_state` 三个 Tauri State 提取函数
 - **移除**：`request_json`、`to_stub`、`extract_latest_ulid`、`filter_incremental_messages` 四个重复函数（已在 `application::social_chat::shared` 中统一提供）
 - **改造**：全部 12 个 `#[tauri::command]` 函数简化为：提取 token/user_scope -> 委托 `friend_service::*` -> 用 `to_stub` 包装返回（或对 `AppResult<StubPayload>` 类型直接透传）
 
-**2. [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) (400 行 -> 151 行，减少 62%)**
+**2. [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) (400 行 -> 151 行，减少 62%)**
 
 - 同样的结构改造，全部 12 个 `#[tauri::command]` 函数委托到 `group_service::*`
 
@@ -8430,20 +8430,20 @@ npx tsc --noEmit  →  exit code 0，零错误
 
 | 层级 | 变更 | 文件 |
 |------|------|------|
-| **Proto → Model** | prost-build 从 `model/domain/chat/*.proto` 生成 Rust 类型 | [build.rs](file://apps/desktop/src-tauri/build.rs), [model/mod.rs](file://apps/desktop/src-tauri/src/model/mod.rs) |
-| **Domain** | 校验规则 (validate_not_empty, resolve_limit/offset) | [validation.rs](file://apps/desktop/src-tauri/src/domain/social_chat/validation.rs) |
-| **Application** | 共享工具 + 私聊服务 12 函数 + 群聊服务 12 函数 | [shared.rs](file://apps/desktop/src-tauri/src/application/social_chat/shared.rs), [friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs), [group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs) |
-| **Interface 瘦化** | 从 ~400 行 → ~150 行，仅做 State 提取 + 委托 | [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs), [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) |
+| **Proto → Model** | prost-build 从 `model/domain/chat/*.proto` 生成 Rust 类型 | [build.rs](../../../apps/desktop/src-tauri/build.rs), [model/mod.rs](../../../apps/desktop/src-tauri/src/model/mod.rs) |
+| **Domain** | 校验规则 (validate_not_empty, resolve_limit/offset) | [validation.rs](../../../apps/desktop/src-tauri/src/domain/social_chat/validation.rs) |
+| **Application** | 共享工具 + 私聊服务 12 函数 + 群聊服务 12 函数 | [shared.rs](../../../apps/desktop/src-tauri/src/application/social_chat/shared.rs), [friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs), [group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs) |
+| **Interface 瘦化** | 从 ~400 行 → ~150 行，仅做 State 提取 + 委托 | [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs), [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) |
 
 ### ⚛️ 前端 Desktop
 
 | 分类 | 变更 | 文件 |
 |------|------|------|
-| **API 层** | 16 个输入接口 + 4 个响应类型 + 14 个 API 方法 | [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts) |
-| **Store** | `useSocialChatStore` — sessions/groups/messages/loading 状态 + 9 个 actions | [socialChat.ts](file://apps/desktop/src/store/socialChat.ts) |
-| **组件** | 会话列表 (Friends/Groups 切换) + 消息展示+输入 | [ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx), [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx) |
-| **页面** | 社交聊天主页 | [SocialChatPage.tsx](file://apps/desktop/src/pages/SocialChatPage.tsx) |
-| **模块注册** | `registerModule('social-chat', ...)` 侧边栏入口 | [social-chat.ts](file://apps/desktop/src/modules/social-chat.ts), [index.ts](file://apps/desktop/src/modules/index.ts) |
+| **API 层** | 16 个输入接口 + 4 个响应类型 + 14 个 API 方法 | [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts) |
+| **Store** | `useSocialChatStore` — sessions/groups/messages/loading 状态 + 9 个 actions | [socialChat.ts](../../../apps/desktop/src/store/socialChat.ts) |
+| **组件** | 会话列表 (Friends/Groups 切换) + 消息展示+输入 | [ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx), [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx) |
+| **页面** | 社交聊天主页 | [SocialChatPage.tsx](../../../apps/desktop/src/pages/SocialChatPage.tsx) |
+| **模块注册** | `registerModule('social-chat', ...)` 侧边栏入口 | [social-chat.ts](../../../apps/desktop/src/modules/social-chat.ts), [index.ts](../../../apps/desktop/src/modules/index.ts) |
 
 ### 架构改善
 
@@ -8498,14 +8498,14 @@ Station 的 API **不是 gRPC**。它是一个基于 HTTP 的 REST 风格 API，
 
 Station 的 friend_chat 和 group_chat 都通过 `server.NewTypedHandler` 注册为 HTTP 路由，路径如 `/friend-chat/sessions`、`/group-chat/create`，指定了 HTTP Method（GET/POST/PUT），不存在任何 gRPC 服务注册：
 
-- [friend_chat handler.go:15-29](file://apps/station/app/subserver/friend_chat/handler.go#L15-L29) 注册了如下路由：
+- [friend_chat handler.go:15-29](../../../apps/station/app/subserver/friend_chat/handler.go#L15-L29) 注册了如下路由：
   - `POST /friend-chat/session/create`
   - `GET /friend-chat/sessions`
   - `POST /friend-chat/message/send`
   - `GET /friend-chat/messages`
   - 等等
 
-- [group_chat handler.go:15-41](file://apps/station/app/subserver/group_chat/handler.go#L15-L41) 注册了如下路由：
+- [group_chat handler.go:15-41](../../../apps/station/app/subserver/group_chat/handler.go#L15-L41) 注册了如下路由：
   - `POST /group-chat/create`
   - `GET /group-chat/list`
   - `POST /group-chat/message/send`
@@ -8513,7 +8513,7 @@ Station 的 friend_chat 和 group_chat 都通过 `server.NewTypedHandler` 注册
 
 **2. 内容协商机制 —— JSON 为默认，protobuf 为可选**
 
-[negotiator.go](file://apps/station/frame/core/server/negotiator.go) 中的 `ContentNegotiator` 实现了内容协商：
+[negotiator.go](../../../apps/station/frame/core/server/negotiator.go) 中的 `ContentNegotiator` 实现了内容协商：
 
 ```go
 func (n *ContentNegotiator) GetRequestSerializer(contentType string) Serializer {
@@ -8530,11 +8530,11 @@ func (n *ContentNegotiator) GetRequestSerializer(contentType string) Serializer 
 
 默认 serializer 是 JSON。只有当请求的 `Content-Type` 明确为 `application/protobuf` 时，才会使用 protobuf 反序列化。
 
-[typed_handler.go](file://apps/station/frame/core/server/typed_handler.go) 中的 `NewTypedHandler` 泛型函数实现了自动序列化/反序列化：
+[typed_handler.go](../../../apps/station/frame/core/server/typed_handler.go) 中的 `NewTypedHandler` 泛型函数实现了自动序列化/反序列化：
 - 请求的反序列化根据 `Content-Type` 头决定（JSON 或 protobuf）
 - 响应的序列化策略：如果请求是 protobuf 来的就回 protobuf；**但如果响应类型本身实现了 `proto.Message`，且请求未指定 Content-Type，则也会使用 protobuf**。
 
-[serializer.go:67-73](file://apps/station/frame/core/server/serializer.go#L67-L73) 中的 `GetSerializerForType` 根据类型判断：
+[serializer.go:67-73](../../../apps/station/frame/core/server/serializer.go#L67-L73) 中的 `GetSerializerForType` 根据类型判断：
 
 ```go
 func GetSerializerForType(t reflect.Type) Serializer {
@@ -8547,7 +8547,7 @@ func GetSerializerForType(t reflect.Type) Serializer {
 
 **这意味着**：由于 handler 的 Req/Resp 泛型类型是 `*chat.CreateSessionRequest` / `*chat.CreateSessionResponse` 这些 protobuf 生成的类型，`GetSerializerForType` 会返回 `ProtoSerializer` 作为 `responseSerializer`。
 
-但在 `GetResponseSerializer` 中（[negotiator.go:41-57](file://apps/station/frame/core/server/negotiator.go#L41-L57)），当请求 Content-Type 不是 protobuf 时，会使用这个 responseType（即 ProtoSerializer），**所以如果客户端发 JSON 请求（Content-Type 为 application/json），响应仍然会以 protobuf 编码返回**。
+但在 `GetResponseSerializer` 中（[negotiator.go:41-57](../../../apps/station/frame/core/server/negotiator.go#L41-L57)），当请求 Content-Type 不是 protobuf 时，会使用这个 responseType（即 ProtoSerializer），**所以如果客户端发 JSON 请求（Content-Type 为 application/json），响应仍然会以 protobuf 编码返回**。
 
 **重要发现**：这里存在一个协议不匹配的设计——BFF 发送 JSON 请求，但 Station 可能因为响应类型是 proto.Message 而返回 protobuf 编码的响应。然而 BFF 端用 `resp.json::<Value>()` 来解析响应，这意味着要么：
 1. JSON 解析恰好也能工作（因为 protobuf 的 JSON 兼容输出），或者
@@ -8561,9 +8561,9 @@ func GetSerializerForType(t reflect.Type) Serializer {
 
 我在整个 `model/domain/chat/` 目录下的所有 `.proto` 文件中搜索了 `service` 关键字，结果为零：
 
-- [chat.proto](file://model/domain/chat/chat.proto) — 只有 message 和 enum 定义（ChatSession, ChatMessage, Friend, FriendRequest 等）
-- [friend_chat.proto](file://model/domain/chat/friend_chat.proto) — 只有 message 定义（FriendChatSession, SendMessageRequest/Response 等），**无 service 定义**
-- [group_chat.proto](file://model/domain/chat/group_chat.proto) — 只有 message 定义（Group, GroupMessage, CreateGroupRequest/Response 等），**无 service 定义**
+- [chat.proto](../../../model/domain/chat/chat.proto) — 只有 message 和 enum 定义（ChatSession, ChatMessage, Friend, FriendRequest 等）
+- [friend_chat.proto](../../../model/domain/chat/friend_chat.proto) — 只有 message 定义（FriendChatSession, SendMessageRequest/Response 等），**无 service 定义**
+- [group_chat.proto](../../../model/domain/chat/group_chat.proto) — 只有 message 定义（Group, GroupMessage, CreateGroupRequest/Response 等），**无 service 定义**
 
 **结论：proto 文件仅用于定义数据模型（message types），没有 gRPC 的 service + rpc 定义。**
 
@@ -8571,7 +8571,7 @@ func GetSerializerForType(t reflect.Type) Serializer {
 
 ### 三、build.sh —— 只生成 message 代码，没有 gRPC stub
 
-[build.sh](file://model/build.sh) 完整内容 155 行，代码生成命令为：
+[build.sh](../../../model/build.sh) 完整内容 155 行，代码生成命令为：
 
 - **Dart 端**（第 92 行）：`protoc --dart_out=...` — 只生成 `.pb.dart`，没有 `--dart_grpc_out`
 - **Go 端**（第 152 行）：`protoc --go_out=...` — 只生成 `.pb.go`，**没有 `--go-grpc_out`**
@@ -8586,7 +8586,7 @@ protoc $PROTOC_GEN_GO --go_out="$GO_OUT" --go_opt=module=github.com/peers-labs/p
 
 ### 四、BFF 端如何发送请求 —— reqwest HTTP + JSON body
 
-[station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs) 是核心通信客户端，完整 40 行：
+[station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs) 是核心通信客户端，完整 40 行：
 
 ```rust
 pub(crate) fn request_json(
@@ -8617,7 +8617,7 @@ pub(crate) fn request_json(
 - **完全没有任何 protobuf 编码/解码**
 - 基础 URL 默认为 `http://127.0.0.1:18080`
 
-[friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs) 中所有函数都调用 `request_json`，传入 `serde_json::json!({...})` 构造的 JSON body。例如发送消息：
+[friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs) 中所有函数都调用 `request_json`，传入 `serde_json::json!({...})` 构造的 JSON body。例如发送消息：
 
 ```rust
 let data = request_json(
@@ -8646,7 +8646,7 @@ let data = request_json(
 
 ### 六、潜在问题
 
-Station 的 [typed_handler.go:86](file://apps/station/frame/core/server/typed_handler.go#L86) 中：
+Station 的 [typed_handler.go:86](../../../apps/station/frame/core/server/typed_handler.go#L86) 中：
 
 ```go
 respSerializer := negotiator.GetResponseSerializer(contentType, responseSerializer)
@@ -8678,7 +8678,7 @@ respSerializer := negotiator.GetResponseSerializer(contentType, responseSerializ
 **Station 端**（Go）：
 - 所有 chat handler 使用 `server.NewTypedHandler[Req, Resp]` 注册
 - 请求/响应类型都是 protobuf 生成的类型（如 `*chat.CreateSessionRequest` / `*chat.CreateSessionResponse`）
-- [negotiator.go](file://apps/station/frame/core/server/negotiator.go#L41-L58) 的 `GetResponseSerializer` 逻辑：
+- [negotiator.go](../../../apps/station/frame/core/server/negotiator.go#L41-L58) 的 `GetResponseSerializer` 逻辑：
   1. 如果请求 Content-Type 是 protobuf → 响应用 ProtoSerializer ✅
   2. **否则 → 检查 responseType，由于响应类型实现了 `proto.Message`，`GetSerializerForType` 返回 `ProtoSerializer` → 响应仍然用 protobuf 编码** ⚠️
 - 也就是说：**即使客户端发 JSON 请求，响应也会被 `proto.Marshal()` 序列化为 protobuf 二进制格式**
@@ -8755,7 +8755,7 @@ Station → BFF:  Content-Type: application/protobuf + protobuf binary  ❌ (BFF
 
 ## 一、contracts/mod.rs 中所有手写 struct 完整清单
 
-在 [interface/contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs) 中定义了 **84 个** 手写 struct。另外，在 [contracts.rs](file://apps/desktop/src-tauri/src/contracts.rs)（根级别旧文件）中存在一份 **大量重复** 的定义（这本身就是一个问题）。
+在 [interface/contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs) 中定义了 **84 个** 手写 struct。另外，在 [contracts.rs](../../../apps/desktop/src-tauri/src/contracts.rs)（根级别旧文件）中存在一份 **大量重复** 的定义（这本身就是一个问题）。
 
 按功能域分类如下：
 
@@ -9003,7 +9003,7 @@ Station → BFF:  Content-Type: application/protobuf + protobuf binary  ❌ (BFF
 
 ### 当前 Rust 中已生成的 Proto 类型
 
-[build.rs](file://apps/desktop/src-tauri/build.rs) 只编译了 **3 个 proto 文件**：
+[build.rs](../../../apps/desktop/src-tauri/build.rs) 只编译了 **3 个 proto 文件**：
 
 ```rust
 let proto_files = [
@@ -9013,7 +9013,7 @@ let proto_files = [
 ];
 ```
 
-生成在 [peers_touch.model.chat.v1.rs](file://apps/desktop/src-tauri/src/model/peers_touch.model.chat.v1.rs)，包含以下类型：
+生成在 [peers_touch.model.chat.v1.rs](../../../apps/desktop/src-tauri/src/model/peers_touch.model.chat.v1.rs)，包含以下类型：
 
 **Models:**
 `ChatSession`, `ChatMessage`, `MessageAttachment`, `Friend`, `FriendRequest`, `FriendChatSession`, `FriendChatMessage`, `FriendMessageAttachment`, `MessageEnvelope`, `OfflineMessage`, `Group`, `GroupMember`, `GroupMessage`, `GroupMessageAttachment`, `GroupInvitation`, `GroupOfflineMessage`, `SyncMessageItem`, `PendingMessageInfo`
@@ -9047,7 +9047,7 @@ let proto_files = [
 
 **没有任何 application 层文件使用 `crate::model` 中的 proto 生成类型**（通过 `use crate::model` 搜索确认为 0 个结果）。
 
-#### friend_service.rs -- [完整文件](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)
+#### friend_service.rs -- [完整文件](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)
 
 所有函数签名的返回类型都是 `Result<Value, AppResult<StubPayload>>`，使用 `json!{}` 构造请求体：
 
@@ -9060,7 +9060,7 @@ let proto_files = [
 | `ack_messages()` L107 | `json!({ "ulids", "status" })` | 应用 `MessageAckRequest` |
 | `sync_from_station_scoped()` L248 | 大量 `data.get("xxx")` 手动解析 | 应反序列化为 `GetMessagesResponse` |
 
-#### group_service.rs -- [完整文件](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs)
+#### group_service.rs -- [完整文件](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs)
 
 同样的模式：
 
@@ -9073,13 +9073,13 @@ let proto_files = [
 | `mark_read()` L106 | `json!({"group_ulid": ...})` | 应用 `MarkGroupReadRequest` |
 | `sync_from_station_scoped()` L243 | 大量 `data.get("xxx")` 手动解析 | 应反序列化为 `GetGroupMessagesResponse` |
 
-#### shared.rs -- [完整文件](file://apps/desktop/src-tauri/src/application/social_chat/shared.rs)
+#### shared.rs -- [完整文件](../../../apps/desktop/src-tauri/src/application/social_chat/shared.rs)
 
 - `request_json()` L14: 入参为 `Option<Value>`，出参为 `Result<Value, ...>`
 - `filter_incremental_messages()` L112: 操作裸 `Value`，通过 `payload.get("messages").as_array()` 手动遍历
 - `extract_latest_ulid()` L93: 通过 `item.get("ulid").as_str()` 手动取值
 
-#### models/mod.rs (Provider 模型管理) -- [完整文件](file://apps/desktop/src-tauri/src/application/models/mod.rs)
+#### models/mod.rs (Provider 模型管理) -- [完整文件](../../../apps/desktop/src-tauri/src/application/models/mod.rs)
 
 大量使用 `serde_json::Value` 的辅助函数：
 - `get_json_string_field()` L29、`get_json_bool_field()` L35、`get_json_u32_field()` L41
@@ -9094,7 +9094,7 @@ let proto_files = [
 
 ## 四、station_client.rs -- 通信层
 
-[station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs) 中的 `request_json()` 函数：
+[station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs) 中的 `request_json()` 函数：
 
 ```rust
 pub(crate) fn request_json(
@@ -9142,7 +9142,7 @@ pub(crate) fn request_json(
 
 ## 六、build.sh 完整内容
 
-[build.sh](file://model/build.sh) 负责为 **Dart** 和 **Go** 生成 proto 代码，但**不包含 Rust 生成**。Rust 的 proto 编译是通过 [build.rs](file://apps/desktop/src-tauri/build.rs) 在 Cargo 构建时完成的。
+[build.sh](../../../model/build.sh) 负责为 **Dart** 和 **Go** 生成 proto 代码，但**不包含 Rust 生成**。Rust 的 proto 编译是通过 [build.rs](../../../apps/desktop/src-tauri/build.rs) 在 Cargo 构建时完成的。
 
 关键点：
 - build.sh 为 Dart/Go 编译 `domain/` 下**所有** proto 文件（排除 `ai_box_message.proto`）
@@ -9155,7 +9155,7 @@ pub(crate) fn request_json(
 
 ### provider/state.rs 中的手写类型
 
-在 [provider/state.rs](file://apps/desktop/src-tauri/src/application/provider/state.rs) 中定义了多个手写的数据结构：
+在 [provider/state.rs](../../../apps/desktop/src-tauri/src/application/provider/state.rs) 中定义了多个手写的数据结构：
 
 | struct | 用途 | 对应 Proto |
 |---|---|---|
@@ -9168,7 +9168,7 @@ pub(crate) fn request_json(
 
 ### error.rs 中的手写类型
 
-[error.rs](file://apps/desktop/src-tauri/src/error.rs)：
+[error.rs](../../../apps/desktop/src-tauri/src/error.rs)：
 
 | struct/enum | 用途 | 对应 Proto |
 |---|---|---|
@@ -9178,7 +9178,7 @@ pub(crate) fn request_json(
 
 ### contracts.rs -- 重复文件
 
-[contracts.rs](file://apps/desktop/src-tauri/src/contracts.rs)（根级别）是 `interface/contracts/mod.rs` 的一个**旧版本/副本**，包含约 120 个重复的 struct 定义。这是一个严重的代码卫生问题。
+[contracts.rs](../../../apps/desktop/src-tauri/src/contracts.rs)（根级别）是 `interface/contracts/mod.rs` 的一个**旧版本/副本**，包含约 120 个重复的 struct 定义。这是一个严重的代码卫生问题。
 
 ---
 
@@ -9236,7 +9236,7 @@ pub(crate) fn request_json(
 
 Station 的 `NewTypedHandler` 框架设计是这样的：
 - 请求反序列化：根据 `Content-Type` 选择（JSON 或 protobuf）
-- **响应序列化：当响应类型实现了 `proto.Message` 时，不管请求是什么格式，都用 `ProtoSerializer`**（[negotiator.go:53](file://apps/station/frame/core/server/negotiator.go#L53)）
+- **响应序列化：当响应类型实现了 `proto.Message` 时，不管请求是什么格式，都用 `ProtoSerializer`**（[negotiator.go:53](../../../apps/station/frame/core/server/negotiator.go#L53)）
 
 所以当前 BFF 发 JSON 请求 → Station 能解析，但 Station 回的是 **protobuf 二进制** → BFF 用 `resp.json()` 解析 **一定失败**。
 
@@ -9303,7 +9303,7 @@ Station 的 `NewTypedHandler` 框架设计是这样的：
 
 ### 改动概览
 
-**1. [shared.rs](file://apps/desktop/src-tauri/src/application/social_chat/shared.rs)**
+**1. [shared.rs](../../../apps/desktop/src-tauri/src/application/social_chat/shared.rs)**
 
 - **移除**：`request_json`（基于 `serde_json::Value` 的 HTTP 封装）、`extract_latest_ulid`、`filter_incremental_messages`
 - **新增**：
@@ -9312,7 +9312,7 @@ Station 的 `NewTypedHandler` 框架设计是这样的：
   - `friend_session_to_json` / `friend_message_to_json` -- 将 proto 类型 `FriendChatSession` / `FriendChatMessage` 转为 `serde_json::Value`
   - `group_to_json` / `group_message_to_json` -- 将 proto 类型 `Group` / `GroupMessage` 转为 `serde_json::Value`
 
-**2. [friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)**
+**2. [friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)**
 
 - 所有 Station API 调用从 `request_json` + `serde_json::Value` 切换为 `request_proto` + 强类型 proto 请求/响应
 - `list_sessions` -> `GetSessionsRequest` / `GetSessionsResponse`
@@ -9322,7 +9322,7 @@ Station 的 `NewTypedHandler` 框架设计是这样的：
 - `ack_messages` -> `MessageAckRequest` / `MessageAckResponse`
 - `sync_from_station_scoped` 中的增量过滤逻辑从 JSON 操作改为直接在 proto 消息 Vec 上做 `.filter()` 比较 ULID
 
-**3. [group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs)**
+**3. [group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs)**
 
 - 同样的模式，所有 Station API 调用换为 proto：
 - `list_groups` -> `ListGroupsRequest` / `ListGroupsResponse`
@@ -9356,9 +9356,9 @@ Interface 层文件完全兼容——service 函数的签名没有变化，它�
 
 | 层级 | 改动前 | 改动后 |
 |------|--------|--------|
-| **Infrastructure** [station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs) | 只有 `request_json`（JSON 收发） | 新增 `request_proto<Req, Resp>`：`Content-Type: application/protobuf` + `prost::Message::encode/decode` |
-| **Application shared** [shared.rs](file://apps/desktop/src-tauri/src/application/social_chat/shared.rs) | `request_json` 包装 + JSON 工具函数 | `request_proto` 包装 + proto→JSON 转换函数（`friend_session_to_json`, `group_to_json` 等） |
-| **Application services** [friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs) / [group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs) | `json!({...})` 构造请求体 | 使用 `model::chat::*` proto 类型（如 `GetSessionsRequest`, `SendMessageRequest`） |
+| **Infrastructure** [station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs) | 只有 `request_json`（JSON 收发） | 新增 `request_proto<Req, Resp>`：`Content-Type: application/protobuf` + `prost::Message::encode/decode` |
+| **Application shared** [shared.rs](../../../apps/desktop/src-tauri/src/application/social_chat/shared.rs) | `request_json` 包装 + JSON 工具函数 | `request_proto` 包装 + proto→JSON 转换函数（`friend_session_to_json`, `group_to_json` 等） |
+| **Application services** [friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs) / [group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs) | `json!({...})` 构造请求体 | 使用 `model::chat::*` proto 类型（如 `GetSessionsRequest`, `SendMessageRequest`） |
 | **Interface** | 不需要改动 | ✅ 完全兼容（service 函数签名未变） |
 
 ### 数据流
@@ -9463,7 +9463,7 @@ Station ←(protobuf)→ Rust BFF ←(protobuf binary)→ 前端 TS
 
 ### 1. Tauri 版本
 
-**Tauri v2.0.1**（见 [Cargo.toml](file://apps/desktop/src-tauri/Cargo.toml#L15)）
+**Tauri v2.0.1**（见 [Cargo.toml](../../../apps/desktop/src-tauri/Cargo.toml#L15)）
 
 ```toml
 tauri = { version = "2.0.1", features = [] }
@@ -9475,7 +9475,7 @@ tauri = { version = "2.0.1", features = [] }
 
 ### 2. StubPayload 的结构
 
-定义在 [contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L5-L9)：
+定义在 [contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L5-L9)：
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -9489,7 +9489,7 @@ pub struct StubPayload {
 - `command`：标识命令名
 - `status`：**所有实际业务数据被序列化为 JSON 字符串后塞入此字段**
 
-前端 TS 侧的对应定义在 [desktop_api.ts:1130-1133](file://apps/desktop/src/services/desktop_api.ts#L1130-L1133)：
+前端 TS 侧的对应定义在 [desktop_api.ts:1130-1133](../../../apps/desktop/src/services/desktop_api.ts#L1130-L1133)：
 
 ```typescript
 export interface TauriStubPayload {
@@ -9502,7 +9502,7 @@ export interface TauriStubPayload {
 
 ### 3. AppResult 的结构
 
-定义在 [error.rs](file://apps/desktop/src-tauri/src/error.rs#L22-L27)：
+定义在 [error.rs](../../../apps/desktop/src-tauri/src/error.rs#L22-L27)：
 
 ```rust
 #[derive(Debug, Clone, Serialize)]
@@ -9519,7 +9519,7 @@ pub struct AppResult<T: Serialize> {
 
 ### 4. invokeRustDataFromStatus 的处理流程
 
-定义在 [desktop_api.ts:147-156](file://apps/desktop/src/services/desktop_api.ts#L147-L156)：
+定义在 [desktop_api.ts:147-156](../../../apps/desktop/src/services/desktop_api.ts#L147-L156)：
 
 ```typescript
 async function invokeRustDataFromStatus<TInput, TOut>(
@@ -9540,7 +9540,7 @@ async function invokeRustDataFromStatus<TInput, TOut>(
 3. 如果 `response.ok && response.data` 存在，则取 `response.data.status` 这个 **JSON 字符串**，用 `parseJSONSafe` 解析成目标对象 `TOut`
 4. 实际业务数据全部通过 **JSON 字符串嵌套在 `status` 字段中** 传递
 
-`parseJSONSafe` 在 [desktop_api.ts:2990-2993](file://apps/desktop/src/services/desktop_api.ts#L2990-L2993) 定义：
+`parseJSONSafe` 在 [desktop_api.ts:2990-2993](../../../apps/desktop/src/services/desktop_api.ts#L2990-L2993) 定义：
 ```typescript
 function parseJSONSafe(input?: string): Record<string, any> {
   if (!input) return {};
@@ -9578,7 +9578,7 @@ function parseJSONSafe(input?: string): Record<string, any> {
 
 ### 7. NPM 依赖（相关部分）
 
-来自 [package.json](file://apps/desktop/package.json)：
+来自 [package.json](../../../apps/desktop/package.json)：
 
 **前端目前没有任何 protobuf 相关的 npm 包。** 没有 `protobufjs`, `ts-proto`, `@protobuf-ts/*`, `google-protobuf` 或任何类似的依赖。
 
@@ -9597,7 +9597,7 @@ Rust 端的 protobuf 依赖（在 Cargo.toml 中）：
 
 ### 8. model/build.sh 内容
 
-文件位于 [model/build.sh](file://model/build.sh)。
+文件位于 [model/build.sh](../../../model/build.sh)。
 
 当前 proto 代码生成只针对 **Dart** 和 **Go** 两个目标：
 - **Dart 输出**：`client/common/peers_touch_base/lib/model`，使用 `protoc --dart_out`
@@ -9732,14 +9732,14 @@ Now rewrite `friend_service.rs`:
 
 ### 2. build.sh 编辑
 
-在 [build.sh](file://model/build.sh#L155-L189) 的 Go 生成段之后添加了 TypeScript (Protobuf-ES) 代码生成段。
+在 [build.sh](../../../model/build.sh#L155-L189) 的 Go 生成段之后添加了 TypeScript (Protobuf-ES) 代码生成段。
 
 ### 3. 生成的文件列表（共 41 个 `_pb.ts` 文件）
 
 **重点关注的 chat 模块（3 个目标文件全部存在）：**
-- [chat_pb.ts](file://apps/desktop/src/gen/proto/domain/chat/chat_pb.ts)
-- [friend_chat_pb.ts](file://apps/desktop/src/gen/proto/domain/chat/friend_chat_pb.ts)
-- [group_chat_pb.ts](file://apps/desktop/src/gen/proto/domain/chat/group_chat_pb.ts)
+- [chat_pb.ts](../../../apps/desktop/src/gen/proto/domain/chat/chat_pb.ts)
+- [friend_chat_pb.ts](../../../apps/desktop/src/gen/proto/domain/chat/friend_chat_pb.ts)
+- [group_chat_pb.ts](../../../apps/desktop/src/gen/proto/domain/chat/group_chat_pb.ts)
 
 **其余生成的文件覆盖所有 domain 子目录：**
 
@@ -9800,20 +9800,20 @@ Now let's run `cargo check` to see if everything compiles. Let me first check if
 
 ### 修改的文件
 
-**1. [shared.rs](file://apps/desktop/src-tauri/src/application/social_chat/shared.rs)**
+**1. [shared.rs](../../../apps/desktop/src-tauri/src/application/social_chat/shared.rs)**
 - 删除了所有 JSON 转换函数：`friend_session_to_json`, `friend_message_to_json`, `group_to_json`, `group_message_to_json`, `timestamp_to_string`, `to_stub`
 - `request_proto` 返回类型从 `Result<Resp, AppResult<StubPayload>>` 简化为 `Result<Resp, String>`
 - 新增 `proto_to_bytes` 辅助函数
 
-**2. [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L152-L195)**
+**2. [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L152-L195)**
 - 新增 `timestamp_to_millis` 将 `prost_types::Timestamp` 转为 i64 毫秒
 - 新增 `ingest_friend_messages_proto` 接受 `&[chat::FriendChatMessage]`
 - 新增 `ingest_group_messages_proto` 接受 `&[chat::GroupMessage]`
 
-**3. [chat_storage.rs](file://apps/desktop/src-tauri/src/application/chat_storage.rs#L22-L29)**
+**3. [chat_storage.rs](../../../apps/desktop/src-tauri/src/application/chat_storage.rs#L22-L29)**
 - 新增 `ingest_friend_messages_proto` 和 `ingest_group_messages_proto` 代理函数
 
-**4. [friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)**
+**4. [friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)**
 - `list_sessions` 返回 `Result<chat::GetSessionsResponse, String>`
 - `create_session` 返回 `Result<chat::CreateSessionResponse, String>`
 - `list_messages` 返回 `Result<chat::GetMessagesResponse, String>`
@@ -9822,7 +9822,7 @@ Now let's run `cargo check` to see if everything compiles. Let me first check if
 - 本地存储函数（`local_search`, `sync_from_station_scoped` 等）保持 `AppResult<StubPayload>`
 - 存储入库改用 `ingest_friend_messages_proto`（直接传 proto 切片，不再经过 JSON）
 
-**5. [group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs)**
+**5. [group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs)**
 - `list_groups` 返回 `Result<chat::ListGroupsResponse, String>`
 - `list_messages` 返回 `Result<chat::GetGroupMessagesResponse, String>`
 - `send_message` 返回 `Result<chat::SendGroupMessageResponse, String>`
@@ -9830,12 +9830,12 @@ Now let's run `cargo check` to see if everything compiles. Let me first check if
 - `mark_read` 返回 `Result<chat::MarkGroupReadResponse, String>`
 - 存储入库改用 `ingest_group_messages_proto`
 
-**6. [friend_chat.rs (interface)](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)**
+**6. [friend_chat.rs (interface)](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)**
 - Station 相关的 5 个命令返回 `AppResult<Vec<u8>>`，通过 `resp.encode_to_vec()` 编码
 - 本地命令保持 `AppResult<StubPayload>`
 - `token_from_state` 简化为返回 `Result<String, ()>`
 
-**7. [group_chat.rs (interface)](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)**
+**7. [group_chat.rs (interface)](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)**
 - Station 相关的 5 个命令返回 `AppResult<Vec<u8>>`
 - 本地命令保持 `AppResult<StubPayload>`
 
@@ -9923,13 +9923,13 @@ Now run tsc again:
 
 ## 变更汇总
 
-### 1. [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+### 1. [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 **新增 protobuf 基础设施：**
 - 导入 `fromBinary` 和 `Message as ProtoMessage`（从 `@bufbuild/protobuf`），`GenMessage`（从 `@bufbuild/protobuf/codegenv2`）
 - 导入所有 proto Schema 对象：`GetSessionsResponseSchema`、`CreateSessionResponseSchema`、`GetMessagesResponseSchema`、`SendMessageResponseSchema`、`MessageAckResponseSchema`（friend_chat_pb）和 `ListGroupsResponseSchema`、`GetGroupMessagesResponseSchema`、`SendGroupMessageResponseSchema`、`GetUnreadCountResponseSchema`、`MarkGroupReadResponseSchema`（group_chat_pb）
 - 类型重导出：`FriendChatSession`、`FriendChatMessage`、`Group`、`GroupMessage` 等 proto 类型供外部使用
-- 新增 [invokeRustProto](file://apps/desktop/src/services/desktop_api.ts#L195-L205) 通用函数：接收 Tauri command 返回的 `number[]`，转为 `Uint8Array`，通过 `fromBinary(schema, bytes)` 解码为强类型 proto message
+- 新增 [invokeRustProto](../../../apps/desktop/src/services/desktop_api.ts#L195-L205) 通用函数：接收 Tauri command 返回的 `number[]`，转为 `Uint8Array`，通过 `fromBinary(schema, bytes)` 解码为强类型 proto message
 
 **删除手写接口：**
 - 移除了 `FriendChatSession`、`FriendChatMessage`、`GroupInfo`、`GroupChatMessage` 四个手写响应接口（现在由 proto-gen 代码提供）
@@ -9939,7 +9939,7 @@ Now run tsc again:
 - Station-calling 方法（`friendChatListSessions`、`friendChatCreateSession`、`friendChatListMessages`、`friendChatSendMessage`、`friendChatAckMessages`、`groupChatListGroups`、`groupChatListMessages`、`groupChatSendMessage`、`groupChatUnreadCount`、`groupChatMarkRead`）全部改用 `invokeRustProto` + 对应 Schema
 - Local 方法（`friendChatLocalSearch`、`friendChatSync`、`groupChatLocalSearch`、`groupChatSync`）保持 `invokeRustDataFromStatus` 不变
 
-### 2. [socialChat.ts](file://apps/desktop/src/store/socialChat.ts)
+### 2. [socialChat.ts](../../../apps/desktop/src/store/socialChat.ts)
 
 - 导入类型从 `desktop_api` 改为直接从 proto 生成文件导入（`FriendChatSession`、`FriendChatMessage`、`Group`、`GroupMessage`）
 - `groups` 状态类型从 `GroupInfo[]` 改为 `Group[]`
@@ -9948,13 +9948,13 @@ Now run tsc again:
 - `loadMessages` 改为解构 proto response（`resp.messages`）
 - `sendFriendMessage` / `sendGroupMessage` 改为使用 proto response 的 `resp.message` 字段
 
-### 3. [ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx)
+### 3. [ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx)
 
 - 移除 `any` 类型，使用 `FriendChatSession` / `Group` proto 类型做 as 断言
 - 字段访问从 snake_case 改为 camelCase：`participant_did` -> `participantBDid`，`member_count` -> `memberCount`，`updated_at` -> `updatedAt`
 - Timestamp 转 Date 使用 `timestampDate()` 函数
 
-### 4. [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx)
+### 4. [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx)
 
 - 导入类型从 `desktop_api` 改为 proto 生成文件（`FriendChatMessage`、`GroupMessage`）
 - `isFriendMsg` 类型守卫从 `'session_ulid' in msg` 改为 `'sessionUlid' in msg`
@@ -9995,13 +9995,13 @@ proto.Marshal ──protobuf binary──→ prost::decode     proto 类型     
 
 | 层级 | 文件 | 变化 |
 |------|------|------|
-| **Proto 生成** | [build.sh](file://model/build.sh) | 新增 TS 目标 (protobuf-es)，生成 41 个 `_pb.ts` 文件 |
-| **Infrastructure** | [station_client.rs](file://apps/desktop/src-tauri/src/infrastructure/station_client.rs) | `request_proto<Req, Resp>` — protobuf 编解码 |
-| **Application** | [shared.rs](file://apps/desktop/src-tauri/src/application/social_chat/shared.rs) | 只保留 `request_proto` + `proto_to_bytes`，**删除全部 xxx_to_json** |
-| **Application** | [friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs) / [group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs) | 返回 `Result<chat::*Response, String>` proto 类型 |
-| **Interface** | [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) / [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) | Station 命令返回 `AppResult<Vec<u8>>`（proto bytes） |
-| **Frontend API** | [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts) | `invokeRustProto` + `fromBinary(Schema, bytes)` |
-| **Frontend Store** | [socialChat.ts](file://apps/desktop/src/store/socialChat.ts) | 直接使用 proto 类型 |
+| **Proto 生成** | [build.sh](../../../model/build.sh) | 新增 TS 目标 (protobuf-es)，生成 41 个 `_pb.ts` 文件 |
+| **Infrastructure** | [station_client.rs](../../../apps/desktop/src-tauri/src/infrastructure/station_client.rs) | `request_proto<Req, Resp>` — protobuf 编解码 |
+| **Application** | [shared.rs](../../../apps/desktop/src-tauri/src/application/social_chat/shared.rs) | 只保留 `request_proto` + `proto_to_bytes`，**删除全部 xxx_to_json** |
+| **Application** | [friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs) / [group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs) | 返回 `Result<chat::*Response, String>` proto 类型 |
+| **Interface** | [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) / [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) | Station 命令返回 `AppResult<Vec<u8>>`（proto bytes） |
+| **Frontend API** | [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts) | `invokeRustProto` + `fromBinary(Schema, bytes)` |
+| **Frontend Store** | [socialChat.ts](../../../apps/desktop/src/store/socialChat.ts) | 直接使用 proto 类型 |
 | **Frontend UI** | ChatSessionList / ChatMessageArea | camelCase proto 字段 + `timestampDate()` |
 
 ## User
@@ -10251,7 +10251,7 @@ ChatApp.tsx 是主体。让我完整读取它——上面只读了开头，需�
 
 ## 1. ChatApp.tsx
 
-文件路径：[ChatApp.tsx](file://docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.0/codebase/src/pages/ChatApp.tsx)
+文件路径：[ChatApp.tsx](../../../docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.0/codebase/src/pages/ChatApp.tsx)
 
 该文件共 **711 行**，是整个聊天应用的主页面组件，包含以下主要部分：
 
@@ -10987,7 +10987,7 @@ function SearchTab({ icon, label, active }: { icon: React.ReactNode, label: stri
 
 ## 2. App.tsx
 
-文件路径：[App.tsx](file://docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.0/codebase/src/App.tsx)
+文件路径：[App.tsx](../../../docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.0/codebase/src/App.tsx)
 
 该文件共 **16 行**，是应用的根组件，非常简洁：
 
@@ -11024,7 +11024,7 @@ export default App;
 
 ---
 
-## 1) [social-chat.ts](file://apps/desktop/src/modules/social-chat.ts)
+## 1) [social-chat.ts](../../../apps/desktop/src/modules/social-chat.ts)
 
 ```typescript
 import { MessageCircle } from 'lucide-react';
@@ -11042,7 +11042,7 @@ registerModule({
 
 ---
 
-## 2) [index.ts](file://apps/desktop/src/modules/index.ts)
+## 2) [index.ts](../../../apps/desktop/src/modules/index.ts)
 
 ```typescript
 /**
@@ -11070,7 +11070,7 @@ import './connections';
 
 ---
 
-## 3) [SocialChatPage.tsx](file://apps/desktop/src/pages/SocialChatPage.tsx)
+## 3) [SocialChatPage.tsx](../../../apps/desktop/src/pages/SocialChatPage.tsx)
 
 ```tsx
 import { Flexbox } from 'react-layout-kit';
@@ -11089,7 +11089,7 @@ export function SocialChatPage() {
 
 ---
 
-## 4) [ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx)
+## 4) [ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx)
 
 ```tsx
 import { useEffect } from 'react';
@@ -11209,7 +11209,7 @@ export function ChatSessionList() {
 
 ---
 
-## 5) [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx)
+## 5) [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx)
 
 ```tsx
 import { useEffect, useRef, useState } from 'react';
@@ -11377,7 +11377,7 @@ export function ChatMessageArea() {
 
 ---
 
-## 6) [socialChat.ts](file://apps/desktop/src/store/socialChat.ts)
+## 6) [socialChat.ts](../../../apps/desktop/src/store/socialChat.ts)
 
 ```typescript
 import { create } from 'zustand';
@@ -11499,7 +11499,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
 ---
 
-## 7) [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts) — 聊天相关部分
+## 7) [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts) — 聊天相关部分
 
 该文件非常大（共 3028 行）。以下提取了与聊天 (social chat / friend chat / group chat) 直接相关的部分：
 
@@ -11673,7 +11673,7 @@ async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
 
 ### 1. UI 库依赖清单
 
-来自 [package.json](file://apps/desktop/package.json) 中的 `dependencies`：
+来自 [package.json](../../../apps/desktop/package.json) 中的 `dependencies`：
 
 | 库 | 版本 | 说明 |
 |---|---|---|
@@ -11693,7 +11693,7 @@ async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
 **framer-motion 不可用。** 在 `apps/desktop/package.json` 中没有声明 `framer-motion` 依赖，且在 `apps/desktop/src` 目录下搜索无任何 `framer-motion` 的 import。该库仅出现在 `docs/` 目录下的原型代码中，不属于实际运行代码。
 
 如需动画效果，项目当前使用的是：
-- CSS `@keyframes` + `animation` 属性（参见 [GlobalLayout.tsx](file://apps/desktop/src/components/GlobalLayout.tsx#L74-L92) 中的 `auth-pulse` / `auth-gradient` 动画）
+- CSS `@keyframes` + `animation` 属性（参见 [GlobalLayout.tsx](../../../apps/desktop/src/components/GlobalLayout.tsx#L74-L92) 中的 `auth-pulse` / `auth-gradient` 动画）
 - CSS `transition` 属性（内联样式中的 `transition: 'all 0.15s'` 等）
 
 ### 3. Modal / Dialog 使用模式
@@ -11702,16 +11702,16 @@ async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
 
 | 文件 | 组件名 | 模式 |
 |---|---|---|
-| [ShareDialog.tsx](file://apps/desktop/src/components/ShareDialog.tsx) | `ShareDialog` | `Modal` + `footer={null}` + 内部 `Tabs` |
-| [AgentSettingsModal.tsx](file://apps/desktop/src/components/AgentSettingsModal.tsx) | `AgentSettingsModal` | `Modal` + 自定义 `footer`（Cancel/Save按钮）+ 左侧 `Tabs` |
-| [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx) | `OAuth2ConnectModal` | `Modal` + `footer={null}` + `centered` + 多状态渲染 |
-| [UpdateProviderModal.tsx](file://apps/desktop/src/components/settings/UpdateProviderModal.tsx) | `UpdateProviderModal` | `Modal` + `Form` + `onOk/onCancel` 标准模式 |
-| [LarkSimulateLoginModal.tsx](file://apps/desktop/src/components/settings/LarkSimulateLoginModal.tsx) | `LarkSimulateLoginModal` | `Modal` + `footer={null}` + `centered` + 多状态 |
-| [ProviderMenu.tsx](file://apps/desktop/src/components/settings/ProviderMenu.tsx) | 内联 `Modal` | `Modal` + `Form` 添加 Provider |
-| [OAuth2ProviderCard.tsx](file://apps/desktop/src/components/settings/OAuth2ProviderCard.tsx) | 内联 `Modal` | 凭证配置弹窗 |
-| [AgentSidebar.tsx](file://apps/desktop/src/components/AgentSidebar.tsx) | 内联 `Modal` | 确认删除等对话框 |
-| [SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx) | `Modal` | 设置页面中的弹窗 |
-| [ChatPage.tsx](file://apps/desktop/src/pages/ChatPage.tsx) | `Modal.confirm` | 确认删除对话等 |
+| [ShareDialog.tsx](../../../apps/desktop/src/components/ShareDialog.tsx) | `ShareDialog` | `Modal` + `footer={null}` + 内部 `Tabs` |
+| [AgentSettingsModal.tsx](../../../apps/desktop/src/components/AgentSettingsModal.tsx) | `AgentSettingsModal` | `Modal` + 自定义 `footer`（Cancel/Save按钮）+ 左侧 `Tabs` |
+| [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx) | `OAuth2ConnectModal` | `Modal` + `footer={null}` + `centered` + 多状态渲染 |
+| [UpdateProviderModal.tsx](../../../apps/desktop/src/components/settings/UpdateProviderModal.tsx) | `UpdateProviderModal` | `Modal` + `Form` + `onOk/onCancel` 标准模式 |
+| [LarkSimulateLoginModal.tsx](../../../apps/desktop/src/components/settings/LarkSimulateLoginModal.tsx) | `LarkSimulateLoginModal` | `Modal` + `footer={null}` + `centered` + 多状态 |
+| [ProviderMenu.tsx](../../../apps/desktop/src/components/settings/ProviderMenu.tsx) | 内联 `Modal` | `Modal` + `Form` 添加 Provider |
+| [OAuth2ProviderCard.tsx](../../../apps/desktop/src/components/settings/OAuth2ProviderCard.tsx) | 内联 `Modal` | 凭证配置弹窗 |
+| [AgentSidebar.tsx](../../../apps/desktop/src/components/AgentSidebar.tsx) | 内联 `Modal` | 确认删除等对话框 |
+| [SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx) | `Modal` | 设置页面中的弹窗 |
+| [ChatPage.tsx](../../../apps/desktop/src/pages/ChatPage.tsx) | `Modal.confirm` | 确认删除对话等 |
 
 **典型 Modal 编写模式**：
 
@@ -11761,7 +11761,7 @@ async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
 
 #### GlobalLayout（外壳）
 
-[GlobalLayout.tsx](file://apps/desktop/src/components/GlobalLayout.tsx#L164-L307) 是最外层布局容器，结构如下：
+[GlobalLayout.tsx](../../../apps/desktop/src/components/GlobalLayout.tsx#L164-L307) 是最外层布局容器，结构如下：
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -11781,7 +11781,7 @@ async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
 
 #### SideNav（左侧导航栏）
 
-在 [App.tsx](file://apps/desktop/src/App.tsx#L261-L385) 中组装，使用 `@lobehub/ui` 的 `SideNav` 组件：
+在 [App.tsx](../../../apps/desktop/src/App.tsx#L261-L385) 中组装，使用 `@lobehub/ui` 的 `SideNav` 组件：
 
 ```
 ┌──────────┐
@@ -11797,11 +11797,11 @@ async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
 └──────────┘
 ```
 
-- 聊天/Agent Profile 页面时，`SideNav` 右侧还会展示一个 `DraggablePanel`（可拖拽宽度 220~400px），内含 [AgentSidebar](file://apps/desktop/src/components/AgentSidebar.tsx) 组件
+- 聊天/Agent Profile 页面时，`SideNav` 右侧还会展示一个 `DraggablePanel`（可拖拽宽度 220~400px），内含 [AgentSidebar](../../../apps/desktop/src/components/AgentSidebar.tsx) 组件
 
 #### Module Registry（模块注册系统）
 
-[registry.ts](file://apps/desktop/src/modules/registry.ts) 实现了一套动态模块注册机制：
+[registry.ts](../../../apps/desktop/src/modules/registry.ts) 实现了一套动态模块注册机制：
 
 ```typescript
 interface ModuleFrontend {
@@ -11910,12 +11910,12 @@ Desktop 中确实已经包含了完整的 chat 模块，**`tsc` 和 `cargo check
 
 | 层级 | 文件 | 状态 |
 |---|---|---|
-| **模块注册** | [social-chat.ts](file://apps/desktop/src/modules/social-chat.ts) | ✅ 已注册，侧栏图标 MessageCircle |
-| **页面** | [SocialChatPage.tsx](file://apps/desktop/src/pages/SocialChatPage.tsx) | ✅ 横向布局：SessionList + MessageArea |
-| **会话列表** | [ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx) | ✅ Friends/Groups 切换 + 会话列表 |
-| **消息区** | [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx) | ✅ 消息气泡 + 输入框 + 发送 |
-| **Store** | [socialChat.ts](file://apps/desktop/src/store/socialChat.ts) | ✅ Zustand，proto 类型 |
-| **API** | [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts) | ✅ 已迁移到 `invokeRustProto` |
+| **模块注册** | [social-chat.ts](../../../apps/desktop/src/modules/social-chat.ts) | ✅ 已注册，侧栏图标 MessageCircle |
+| **页面** | [SocialChatPage.tsx](../../../apps/desktop/src/pages/SocialChatPage.tsx) | ✅ 横向布局：SessionList + MessageArea |
+| **会话列表** | [ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx) | ✅ Friends/Groups 切换 + 会话列表 |
+| **消息区** | [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx) | ✅ 消息气泡 + 输入框 + 发送 |
+| **Store** | [socialChat.ts](../../../apps/desktop/src/store/socialChat.ts) | ✅ Zustand，proto 类型 |
+| **API** | [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts) | ✅ 已迁移到 `invokeRustProto` |
 | **Proto 生成** | `gen/proto/domain/chat/` | ✅ 5 个 pb.ts 文件 |
 | **Rust BFF** | `interface/tauri_commands/{friend_chat,group_chat}.rs` | ✅ 返回 `AppResult<Vec<u8>>` |
 | **Rust Service** | `application/social_chat/{friend_service,group_service}.rs` | ✅ 全 proto |
@@ -11931,7 +11931,7 @@ Desktop 中确实已经包含了完整的 chat 模块，**`tsc` 和 `cargo check
 
 ## 📊 与 v1.0 原型的差距
 
-对比 [ChatApp.tsx](file://docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.0/codebase/src/pages/ChatApp.tsx)（711行）与当前实现，以下是主要差距：
+对比 [ChatApp.tsx](../../../docs/client/desktop/prototype/chat/私聊与群聊系统原型 v1.0/codebase/src/pages/ChatApp.tsx)（711行）与当前实现，以下是主要差距：
 
 | 功能 | 原型 v1.0 | 当前实现 |
 |---|---|---|
@@ -11984,7 +11984,7 @@ Desktop 中确实已经包含了完整的 chat 模块，**`tsc` 和 `cargo check
 
 ## 1. friend_service.rs
 
-文件路径：[friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)
+文件路径：[friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)
 
 **引入依赖：**
 ```rust
@@ -11999,7 +11999,7 @@ use super::shared::request_proto;
 
 共包含 **11 个公开函数**：
 
-### 1.1 [list_sessions](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L10-L20)
+### 1.1 [list_sessions](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L10-L20)
 ```rust
 pub fn list_sessions(
     token: &str,
@@ -12009,7 +12009,7 @@ pub fn list_sessions(
 ```
 - 构造 `GetSessionsRequest`（默认 limit=50, offset=0），通过 `request_proto` 发送 GET 请求到 `/friend-chat/sessions`。
 
-### 1.2 [create_session](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L22-L33)
+### 1.2 [create_session](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L22-L33)
 ```rust
 pub fn create_session(
     token: &str,
@@ -12018,7 +12018,7 @@ pub fn create_session(
 ```
 - 校验 `participant_did` 非空，POST 请求到 `/friend-chat/session/create`。
 
-### 1.3 [list_messages](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L35-L54)
+### 1.3 [list_messages](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L35-L54)
 ```rust
 pub fn list_messages(
     token: &str,
@@ -12031,7 +12031,7 @@ pub fn list_messages(
 - 校验 `session_ulid` 非空，GET 请求到 `/friend-chat/messages`。
 - **获取响应后额外调用** `chat_storage::ingest_friend_messages_proto` 将消息写入本地存储。
 
-### 1.4 [send_message](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L56-L79)
+### 1.4 [send_message](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L56-L79)
 ```rust
 pub fn send_message(
     token: &str,
@@ -12046,7 +12046,7 @@ pub fn send_message(
 - POST 请求到 `/friend-chat/message/send`，默认 `msg_type=1`，`attachments` 为空 vec。
 - 发送成功后，若响应中包含 `message`，也会调用 `ingest_friend_messages_proto` 存入本地。
 
-### 1.5 [ack_messages](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L81-L91)
+### 1.5 [ack_messages](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L81-L91)
 ```rust
 pub fn ack_messages(
     token: &str,
@@ -12056,14 +12056,14 @@ pub fn ack_messages(
 ```
 - POST 请求到 `/friend-chat/message/ack`，用于确认消息状态。
 
-### 1.6 [local_search](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L93-L109)
+### 1.6 [local_search](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L93-L109)
 ```rust
 pub fn local_search(query: &str, limit: Option<u32>) -> AppResult<StubPayload>
 ```
 - 使用硬编码的 `"__default__"` 作为 `user_scope`，调用 `chat_storage::search_friend_messages` 进行本地全文搜索。
 - limit 范围限制在 1~200，默认 50。
 
-### 1.7 [local_search_scoped](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L111-L131)
+### 1.7 [local_search_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L111-L131)
 ```rust
 pub fn local_search_scoped(
     user_scope: &str,
@@ -12073,7 +12073,7 @@ pub fn local_search_scoped(
 ```
 - 同 `local_search`，但接受外部传入的 `user_scope` 参数。
 
-### 1.8 [set_cursor_scoped](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L133-L156)
+### 1.8 [set_cursor_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L133-L156)
 ```rust
 pub fn set_cursor_scoped(
     user_scope: &str,
@@ -12083,25 +12083,25 @@ pub fn set_cursor_scoped(
 ```
 - 校验 `scope` 和 `cursor` 非空，调用 `chat_storage::set_scope_cursor` 设置同步游标。
 
-### 1.9 [get_cursor_scoped](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L158-L173)
+### 1.9 [get_cursor_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L158-L173)
 ```rust
 pub fn get_cursor_scoped(user_scope: &str, scope: &str) -> AppResult<StubPayload>
 ```
 - 校验 `scope` 非空，调用 `chat_storage::get_scope_cursor` 获取同步游标。
 
-### 1.10 [get_key_version_scoped](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L175-L187)
+### 1.10 [get_key_version_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L175-L187)
 ```rust
 pub fn get_key_version_scoped(user_scope: &str) -> AppResult<StubPayload>
 ```
 - 调用 `chat_storage::get_chat_key_version` 获取加密密钥版本。
 
-### 1.11 [rotate_key_scoped](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L189-L208)
+### 1.11 [rotate_key_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L189-L208)
 ```rust
 pub fn rotate_key_scoped(user_scope: &str, next_version: i32) -> AppResult<StubPayload>
 ```
 - 校验 `next_version > 0`，调用 `chat_storage::rotate_chat_key` 轮换密钥。
 
-### 1.12 [sync_from_station_scoped](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L210-L320)
+### 1.12 [sync_from_station_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L210-L320)
 ```rust
 pub fn sync_from_station_scoped(
     token: &str,
@@ -12127,13 +12127,13 @@ pub fn sync_from_station_scoped(
 
 ## 2. group_service.rs
 
-文件路径：[group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs)
+文件路径：[group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs)
 
 **引入依赖：** 与 friend_service.rs 相同。
 
 共包含 **11 个公开函数**，结构与 friend_service.rs 高度对称：
 
-### 2.1 [list_groups](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L10-L20)
+### 2.1 [list_groups](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L10-L20)
 ```rust
 pub fn list_groups(
     token: &str,
@@ -12143,7 +12143,7 @@ pub fn list_groups(
 ```
 - GET 请求到 `/group-chat/list`。
 
-### 2.2 [list_messages](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L22-L41)
+### 2.2 [list_messages](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L22-L41)
 ```rust
 pub fn list_messages(
     token: &str,
@@ -12156,7 +12156,7 @@ pub fn list_messages(
 - 校验 `group_ulid` 非空，GET 请求到 `/group-chat/messages`。
 - 响应消息同样写入本地（`ingest_group_messages_proto`）。
 
-### 2.3 [send_message](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L43-L68)
+### 2.3 [send_message](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L43-L68)
 ```rust
 pub fn send_message(
     token: &str,
@@ -12172,7 +12172,7 @@ pub fn send_message(
 - POST 请求到 `/group-chat/message/send`。比好友消息多了 `mentioned_dids` 和 `mention_all` 参数。
 - 发送成功后写入本地。
 
-### 2.4 [unread_count](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L70-L78)
+### 2.4 [unread_count](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L70-L78)
 ```rust
 pub fn unread_count(
     token: &str,
@@ -12181,7 +12181,7 @@ pub fn unread_count(
 ```
 - GET 请求到 `/group-chat/unread-count`。
 
-### 2.5 [mark_read](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L80-L89)
+### 2.5 [mark_read](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L80-L89)
 ```rust
 pub fn mark_read(
     token: &str,
@@ -12190,13 +12190,13 @@ pub fn mark_read(
 ```
 - POST 请求到 `/group-chat/mark-read`，`up_to_ulid` 为空字符串。
 
-### 2.6 [local_search](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L91-L107)
+### 2.6 [local_search](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L91-L107)
 ```rust
 pub fn local_search(query: &str, limit: Option<u32>) -> AppResult<StubPayload>
 ```
 - 使用 `"__default__"` scope，调用 `chat_storage::search_group_messages`。
 
-### 2.7 [local_search_scoped](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L109-L129)
+### 2.7 [local_search_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L109-L129)
 ```rust
 pub fn local_search_scoped(
     user_scope: &str,
@@ -12205,7 +12205,7 @@ pub fn local_search_scoped(
 ) -> AppResult<StubPayload>
 ```
 
-### 2.8 [set_cursor_scoped](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L131-L154)
+### 2.8 [set_cursor_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L131-L154)
 ```rust
 pub fn set_cursor_scoped(
     user_scope: &str,
@@ -12214,22 +12214,22 @@ pub fn set_cursor_scoped(
 ) -> AppResult<StubPayload>
 ```
 
-### 2.9 [get_cursor_scoped](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L156-L171)
+### 2.9 [get_cursor_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L156-L171)
 ```rust
 pub fn get_cursor_scoped(user_scope: &str, scope: &str) -> AppResult<StubPayload>
 ```
 
-### 2.10 [get_key_version_scoped](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L173-L185)
+### 2.10 [get_key_version_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L173-L185)
 ```rust
 pub fn get_key_version_scoped(user_scope: &str) -> AppResult<StubPayload>
 ```
 
-### 2.11 [rotate_key_scoped](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L187-L206)
+### 2.11 [rotate_key_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L187-L206)
 ```rust
 pub fn rotate_key_scoped(user_scope: &str, next_version: i32) -> AppResult<StubPayload>
 ```
 
-### 2.12 [sync_from_station_scoped](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L208-L318)
+### 2.12 [sync_from_station_scoped](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L208-L318)
 ```rust
 pub fn sync_from_station_scoped(
     token: &str,
@@ -12245,7 +12245,7 @@ pub fn sync_from_station_scoped(
 
 ## 3. chat_storage.rs
 
-文件路径：[chat_storage.rs](file://apps/desktop/src-tauri/src/application/chat_storage.rs)
+文件路径：[chat_storage.rs](../../../apps/desktop/src-tauri/src/application/chat_storage.rs)
 
 这是一个**薄代理层**（thin delegation layer），将所有调用直接转发给 `infrastructure::local_chat_store`。
 
@@ -12271,7 +12271,7 @@ pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, Strin
 
 ## 4. local_chat_store.rs
 
-文件路径：[local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
+文件路径：[local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
 
 **引入依赖：**
 ```rust
@@ -12288,7 +12288,7 @@ use serde_json::Value;
 
 ### 数据结构
 
-[LocalChatRecord](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L11-L19)：
+[LocalChatRecord](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L11-L19)：
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalChatRecord {
@@ -12303,13 +12303,13 @@ pub struct LocalChatRecord {
 
 ### 私有函数
 
-#### [open_connection](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L21-L27)
+#### [open_connection](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L21-L27)
 ```rust
 fn open_connection(user_scope: &str) -> Result<Connection, String>
 ```
 - 通过 `DatabaseOpenSpec::new_chat_main` 和 `PlatformKeyProvider` 打开加密数据库连接，然后执行 `migrate`。
 
-#### [migrate](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L29-L55)
+#### [migrate](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L29-L55)
 ```rust
 fn migrate(conn: &Connection) -> Result<(), String>
 ```
@@ -12319,20 +12319,20 @@ fn migrate(conn: &Connection) -> Result<(), String>
   - **`chat_sync_cursor`**：游标表，`scope` 为主键，含 cursor 和 updated_at。
   - **`chat_messages_fts`**：FTS5 虚拟表，仅对 `content` 字段建立全文索引，其余列标记为 UNINDEXED。
 
-#### [upsert_record](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L57-L86)
+#### [upsert_record](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L57-L86)
 ```rust
 fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String>
 ```
 - 使用 `INSERT ... ON CONFLICT DO UPDATE` 语义插入或更新主表。
 - 然后删除 FTS 表中旧记录，再重新插入 FTS 记录（保持 FTS 索引同步）。
 
-#### [timestamp_to_millis](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L154-L158)
+#### [timestamp_to_millis](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L154-L158)
 ```rust
 fn timestamp_to_millis(ts: &Option<prost_types::Timestamp>) -> i64
 ```
 - 将 protobuf 的 `Timestamp` 转为毫秒级 Unix 时间戳。
 
-#### [chrono_now](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L253-L258)
+#### [chrono_now](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L253-L258)
 ```rust
 fn chrono_now() -> i64
 ```
@@ -12340,55 +12340,55 @@ fn chrono_now() -> i64
 
 ### 公开函数
 
-#### [ingest_friend_payload](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L88-L119)
+#### [ingest_friend_payload](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L88-L119)
 ```rust
 pub fn ingest_friend_payload(user_scope: &str, payload: &Value) -> Result<(), String>
 ```
 - 从 JSON `Value` 中提取好友消息（支持 `"messages"` 数组和单条 `"message"` 对象两种格式），字段映射：`session_ulid` -> `conversation_id`，`ulid` -> `message_id`。
 
-#### [ingest_group_payload](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L121-L152)
+#### [ingest_group_payload](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L121-L152)
 ```rust
 pub fn ingest_group_payload(user_scope: &str, payload: &Value) -> Result<(), String>
 ```
 - 同上，但 scope 为 `"group"`，`group_ulid` -> `conversation_id`。
 
-#### [ingest_friend_messages_proto](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L160-L176)
+#### [ingest_friend_messages_proto](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L160-L176)
 ```rust
 pub fn ingest_friend_messages_proto(user_scope: &str, messages: &[chat::FriendChatMessage]) -> Result<(), String>
 ```
 - 从 protobuf 类型 `FriendChatMessage` 切片直接写入本地，使用 `timestamp_to_millis` 转换时间戳。
 
-#### [ingest_group_messages_proto](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L178-L194)
+#### [ingest_group_messages_proto](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L178-L194)
 ```rust
 pub fn ingest_group_messages_proto(user_scope: &str, messages: &[chat::GroupMessage]) -> Result<(), String>
 ```
 - 同上，处理 `GroupMessage` 类型。
 
-#### [search_local](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L196-L225)
+#### [search_local](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L196-L225)
 ```rust
 pub fn search_local(user_scope: &str, scope: &str, query: &str, limit: usize) -> Result<Vec<LocalChatRecord>, String>
 ```
 - 通过 FTS5 全文搜索实现。SQL 逻辑：`JOIN chat_messages m ON m.message_id = f.message_id WHERE f.scope = ?1 AND chat_messages_fts MATCH ?2 ORDER BY m.sent_at DESC LIMIT ?3`。
 
-#### [set_sync_cursor](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L227-L237)
+#### [set_sync_cursor](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L227-L237)
 ```rust
 pub fn set_sync_cursor(user_scope: &str, scope: &str, cursor: &str) -> Result<(), String>
 ```
 - `INSERT ... ON CONFLICT DO UPDATE` 语义写入游标，`updated_at` 使用 `chrono_now()`。
 
-#### [get_sync_cursor](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L239-L251)
+#### [get_sync_cursor](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L239-L251)
 ```rust
 pub fn get_sync_cursor(user_scope: &str, scope: &str) -> Result<Option<String>, String>
 ```
 - 查询游标表，返回 `Option<String>`。
 
-#### [get_chat_key_version](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L260-L264)
+#### [get_chat_key_version](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L260-L264)
 ```rust
 pub fn get_chat_key_version(user_scope: &str) -> Result<Option<i32>, String>
 ```
 - 通过 `DatabaseOpenSpec` + `PlatformKeyProvider` 调用 `get_database_key_version`。
 
-#### [rotate_chat_key](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L266-L270)
+#### [rotate_chat_key](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L266-L270)
 ```rust
 pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, String>
 ```
@@ -12424,7 +12424,7 @@ friend_service.rs / group_service.rs  (应用服务层 - 业务编排 + 远程 A
 
 ---
 
-### 1. [chat.proto](file://model/domain/chat/chat.proto)
+### 1. [chat.proto](../../../model/domain/chat/chat.proto)
 
 **Message 类型（4个）：**
 | 消息名 | 说明 |
@@ -12442,7 +12442,7 @@ friend_service.rs / group_service.rs  (应用服务层 - 业务编排 + 远程 A
 
 ---
 
-### 2. [friend_chat.proto](file://model/domain/chat/friend_chat.proto) — **重点文件**
+### 2. [friend_chat.proto](../../../model/domain/chat/friend_chat.proto) — **重点文件**
 
 **Message 类型（28个）：**
 
@@ -12483,7 +12483,7 @@ friend_service.rs / group_service.rs  (应用服务层 - 业务编排 + 远程 A
 
 ---
 
-### 3. [group_chat.proto](file://model/domain/chat/group_chat.proto)
+### 3. [group_chat.proto](../../../model/domain/chat/group_chat.proto)
 
 **Message 类型（46个）：**
 
@@ -12524,7 +12524,7 @@ friend_service.rs / group_service.rs  (应用服务层 - 业务编排 + 远程 A
 
 ---
 
-### 4. [sticker.proto](file://model/domain/chat/sticker.proto)
+### 4. [sticker.proto](../../../model/domain/chat/sticker.proto)
 
 **Message 类型（17个）：**
 `StickerPack`, `Sticker`, `UserStickerCollection`, `RecentSticker`, `ListOfficialStickerPacksRequest`, `ListOfficialStickerPacksResponse`, `GetStickerPackRequest`, `GetStickerPackResponse`, `CollectStickerPackRequest`, `CollectStickerPackResponse`, `UncollectStickerPackRequest`, `UncollectStickerPackResponse`, `GetMyStickerPacksRequest`, `GetMyStickerPacksResponse`, `RecordStickerUsageRequest`, `RecordStickerUsageResponse`, `SearchStickersRequest`, `SearchStickersResponse`, `CreateStickerPackRequest`, `CreateStickerItem`, `CreateStickerPackResponse`
@@ -12533,7 +12533,7 @@ friend_service.rs / group_service.rs  (应用服务层 - 业务编排 + 远程 A
 
 ---
 
-### 5. [announcement.proto](file://model/domain/chat/announcement.proto)
+### 5. [announcement.proto](../../../model/domain/chat/announcement.proto)
 
 **Message 类型（13个）：**
 `GroupAnnouncement`, `AnnouncementReadRecord`, `CreateAnnouncementRequest`, `CreateAnnouncementResponse`, `ListAnnouncementsRequest`, `ListAnnouncementsResponse`, `GetAnnouncementRequest`, `GetAnnouncementResponse`, `UpdateAnnouncementRequest`, `UpdateAnnouncementResponse`, `DeleteAnnouncementRequest`, `DeleteAnnouncementResponse`, `MarkAnnouncementReadRequest`, `MarkAnnouncementReadResponse`, `GetAnnouncementReadersRequest`, `GetAnnouncementReadersResponse`
@@ -12546,7 +12546,7 @@ friend_service.rs / group_service.rs  (应用服务层 - 业务编排 + 远程 A
 
 ### (1) Relay 相关消息（消息中继/转发）
 
-全部位于 [friend_chat.proto](file://model/domain/chat/friend_chat.proto)：
+全部位于 [friend_chat.proto](../../../model/domain/chat/friend_chat.proto)：
 
 - **`MessageEnvelope`** (L68-76) — 消息信封，包含 `encrypted_payload`、`signature`
 - **`RelayMessageRequest`** (L152-154) — 中继请求，封装 `MessageEnvelope`
@@ -12568,7 +12568,7 @@ friend_service.rs / group_service.rs  (应用服务层 - 业务编排 + 远程 A
 
 ### (3) Sync 相关消息
 
-全部位于 [friend_chat.proto](file://model/domain/chat/friend_chat.proto)：
+全部位于 [friend_chat.proto](../../../model/domain/chat/friend_chat.proto)：
 
 - **`SyncMessageItem`** (L163-170) — 同步消息条目
 - **`SyncMessagesRequest`** (L172-174) — 批量同步请求 (`POST /friend-chat/message/sync`)
@@ -12631,12 +12631,12 @@ infrastructure/
 
 与 chat 直接相关的文件有 **1 个**：
 
-- [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs) -- 聊天消息的本地 SQLite 存储实现
+- [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs) -- 聊天消息的本地 SQLite 存储实现
 
 与 chat 间接相关（提供数据库基础设施）的文件有 **2 个**：
 
-- [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs) -- 通用数据库打开、加密、key rotation 逻辑
-- [storage/key_provider.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs) -- 平台密钥管理（macOS Keychain / Windows DPAPI 等）
+- [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs) -- 通用数据库打开、加密、key rotation 逻辑
+- [storage/key_provider.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs) -- 平台密钥管理（macOS Keychain / Windows DPAPI 等）
 
 ---
 
@@ -12646,7 +12646,7 @@ infrastructure/
 
 #### 3.1 `chat_messages` 表
 
-**文件**: [local_chat_store.rs:31-38](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L31-L38)
+**文件**: [local_chat_store.rs:31-38](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L31-L38)
 
 ```sql
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -12673,7 +12673,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_scope_conv_sent
 
 #### 3.2 `chat_sync_cursor` 表
 
-**文件**: [local_chat_store.rs:41-45](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L41-L45)
+**文件**: [local_chat_store.rs:41-45](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L41-L45)
 
 ```sql
 CREATE TABLE IF NOT EXISTS chat_sync_cursor (
@@ -12687,7 +12687,7 @@ CREATE TABLE IF NOT EXISTS chat_sync_cursor (
 
 #### 3.3 `chat_messages_fts` 虚拟表（FTS5 全文搜索）
 
-**文件**: [local_chat_store.rs:46-52](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L46-L52)
+**文件**: [local_chat_store.rs:46-52](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L46-L52)
 
 ```sql
 CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_fts USING fts5(
@@ -12703,7 +12703,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_fts USING fts5(
 
 #### 3.4 `_db_key_meta` 内部元数据表
 
-**文件**: [storage/mod.rs:164-169](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L164-L169)
+**文件**: [storage/mod.rs:164-169](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L164-L169)
 
 ```sql
 CREATE TABLE IF NOT EXISTS _db_key_meta (
@@ -12724,31 +12724,31 @@ CREATE TABLE IF NOT EXISTS _db_key_meta (
 
 | 函数 | 文件 | 说明 |
 |-------|------|------|
-| [migrate](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L29-L55) | `local_chat_store.rs:29` | 创建 chat_messages、chat_sync_cursor、chat_messages_fts 三张表 |
-| [open_database](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L139-L182) | `storage/mod.rs:139` | 打开加密数据库并创建 _db_key_meta 表 |
-| [append_migration_log](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L304-L323) | `storage/mod.rs:304` | 追加 migration 操作日志到 `storage-migration.jsonl` |
+| [migrate](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L29-L55) | `local_chat_store.rs:29` | 创建 chat_messages、chat_sync_cursor、chat_messages_fts 三张表 |
+| [open_database](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L139-L182) | `storage/mod.rs:139` | 打开加密数据库并创建 _db_key_meta 表 |
+| [append_migration_log](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L304-L323) | `storage/mod.rs:304` | 追加 migration 操作日志到 `storage-migration.jsonl` |
 
 #### Chat 数据写入函数
 
 | 函数 | 文件 | 说明 |
 |-------|------|------|
-| [upsert_record](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L57-L86) | `local_chat_store.rs:57` | 插入/更新单条消息到 chat_messages 并同步 FTS 索引 |
-| [ingest_friend_payload](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L88-L119) | `local_chat_store.rs:88` | 从 JSON payload 解析好友消息并批量 upsert |
-| [ingest_group_payload](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L121-L152) | `local_chat_store.rs:121` | 从 JSON payload 解析群组消息并批量 upsert |
-| [ingest_friend_messages_proto](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L160-L176) | `local_chat_store.rs:160` | 从 protobuf `FriendChatMessage` 批量写入 |
-| [ingest_group_messages_proto](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L178-L194) | `local_chat_store.rs:178` | 从 protobuf `GroupMessage` 批量写入 |
+| [upsert_record](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L57-L86) | `local_chat_store.rs:57` | 插入/更新单条消息到 chat_messages 并同步 FTS 索引 |
+| [ingest_friend_payload](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L88-L119) | `local_chat_store.rs:88` | 从 JSON payload 解析好友消息并批量 upsert |
+| [ingest_group_payload](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L121-L152) | `local_chat_store.rs:121` | 从 JSON payload 解析群组消息并批量 upsert |
+| [ingest_friend_messages_proto](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L160-L176) | `local_chat_store.rs:160` | 从 protobuf `FriendChatMessage` 批量写入 |
+| [ingest_group_messages_proto](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L178-L194) | `local_chat_store.rs:178` | 从 protobuf `GroupMessage` 批量写入 |
 
 #### Chat 数据查询函数
 
 | 函数 | 文件 | 说明 |
 |-------|------|------|
-| [search_local](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L196-L225) | `local_chat_store.rs:196` | 通过 FTS5 全文搜索聊天消息 |
-| [set_sync_cursor](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L227-L237) | `local_chat_store.rs:227` | 设置同步游标 |
-| [get_sync_cursor](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L239-L251) | `local_chat_store.rs:239` | 获取同步游标 |
+| [search_local](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L196-L225) | `local_chat_store.rs:196` | 通过 FTS5 全文搜索聊天消息 |
+| [set_sync_cursor](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L227-L237) | `local_chat_store.rs:227` | 设置同步游标 |
+| [get_sync_cursor](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L239-L251) | `local_chat_store.rs:239` | 获取同步游标 |
 
 #### 应用层 Chat Storage 封装
 
-**文件**: [chat_storage.rs](file://apps/desktop/src-tauri/src/application/chat_storage.rs)
+**文件**: [chat_storage.rs](../../../apps/desktop/src-tauri/src/application/chat_storage.rs)
 
 这是应用层对 `local_chat_store` 的薄封装层，提供以下公共函数：
 - `ingest_friend_messages_proto` / `ingest_group_messages_proto` -- 消息写入
@@ -12758,7 +12758,7 @@ CREATE TABLE IF NOT EXISTS _db_key_meta (
 
 #### 数据库规格定义
 
-**文件**: [database.rs](file://apps/desktop/src-tauri/src/domain/storage/database.rs)
+**文件**: [database.rs](../../../apps/desktop/src-tauri/src/domain/storage/database.rs)
 
 `DatabaseOpenSpec::new_chat_main` 定义了聊天数据库的规格：
 - `domain`: `"chat"`
@@ -12793,7 +12793,7 @@ CREATE TABLE IF NOT EXISTS _db_key_meta (
 
 ### 1. 新版 `friend_chat` — Handler 路由
 
-文件：[handler.go](file://apps/station/app/subserver/friend_chat/handler.go#L15-L29)
+文件：[handler.go](../../../apps/station/app/subserver/friend_chat/handler.go#L15-L29)
 
 | # | 路由名称 | 路径 | 方法 |
 |---|---------|------|------|
@@ -12810,7 +12810,7 @@ CREATE TABLE IF NOT EXISTS _db_key_meta (
 
 ### 2. 新版 `friend_chat` — Service 方法
 
-文件：[service.go](file://apps/station/app/subserver/friend_chat/application/service.go)
+文件：[service.go](../../../apps/station/app/subserver/friend_chat/application/service.go)
 
 | # | 方法名 | 签名概要 |
 |---|-------|---------|
@@ -12825,7 +12825,7 @@ CREATE TABLE IF NOT EXISTS _db_key_meta (
 
 ### 3. 旧版 `friend_chat_old` — Handler 路由
 
-文件：[handler.go](file://apps/station/app/subserver/friend_chat_old/handler.go#L20-L35)
+文件：[handler.go](../../../apps/station/app/subserver/friend_chat_old/handler.go#L20-L35)
 
 | # | 路由名称 | 路径 | 方法 |
 |---|---------|------|------|
@@ -12854,7 +12854,7 @@ CREATE TABLE IF NOT EXISTS _db_key_meta (
 
 ### 1. 新版 `group_chat` — Handler 路由
 
-文件：[handler.go](file://apps/station/app/subserver/group_chat/handler.go#L15-L41)
+文件：[handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L15-L41)
 
 | # | 路由名称 | 路径 | 方法 |
 |---|---------|------|------|
@@ -12883,7 +12883,7 @@ CREATE TABLE IF NOT EXISTS _db_key_meta (
 
 ### 2. 新版 `group_chat` — Service 方法
 
-文件：[service.go](file://apps/station/app/subserver/group_chat/application/service.go)
+文件：[service.go](../../../apps/station/app/subserver/group_chat/application/service.go)
 
 | # | 方法名 | 类型 |
 |---|-------|------|
@@ -12921,7 +12921,7 @@ CREATE TABLE IF NOT EXISTS _db_key_meta (
 
 ### 3. 旧版 `group_chat_old` — Handler 路由
 
-文件：[handler.go](file://apps/station/app/subserver/group_chat_old/handler.go#L18-L50)
+文件：[handler.go](../../../apps/station/app/subserver/group_chat_old/handler.go#L18-L50)
 
 | # | 路由名称 | 路径 | 方法 |
 |---|---------|------|------|
@@ -13068,7 +13068,7 @@ apps/station/app/subserver/group_chat/        ← 新版群聊（DDD 架构）
 
 ## 1) contracts.rs — 所有 struct 定义
 
-文件实际路径为 [contracts.rs](file://apps/desktop/src-tauri/src/contracts.rs)（不是 `contracts/mod.rs`，而是单文件模块）。
+文件实际路径为 [contracts.rs](../../../apps/desktop/src-tauri/src/contracts.rs)（不是 `contracts/mod.rs`，而是单文件模块）。
 
 该文件定义了一个常量和 **80 个 struct**，全部派生 `Debug, Clone, Serialize, Deserialize`。按顺序列举如下：
 
@@ -13222,7 +13222,7 @@ pub const CONTRACT_VERSION: &str = "2026-03-24.desktop-tauri-rust.v1";
 
 ## 2) main.rs — tauri::Builder 及所有注册的 invoke_handler 命令
 
-文件路径：[main.rs](file://apps/desktop/src-tauri/src/main.rs)
+文件路径：[main.rs](../../../apps/desktop/src-tauri/src/main.rs)
 
 `tauri::Builder::default()` 配置了：
 - `.plugin(tauri_plugin_deep_link::init())`
@@ -13308,7 +13308,7 @@ pub const CONTRACT_VERSION: &str = "2026-03-24.desktop-tauri-rust.v1";
 
 ## 3) shared.rs — 所有函数
 
-文件路径：[shared.rs](file://apps/desktop/src-tauri/src/application/social_chat/shared.rs)
+文件路径：[shared.rs](../../../apps/desktop/src-tauri/src/application/social_chat/shared.rs)
 
 该文件包含 **2 个公开函数**：
 
@@ -13340,7 +13340,7 @@ pub fn proto_to_bytes<M: Message>(msg: &M) -> Vec<u8>
 
 ## 4) group_service.rs — 所有函数签名
 
-文件路径：[group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs)
+文件路径：[group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs)
 
 该文件包含 **11 个公开函数**，签名如下：
 
@@ -13526,7 +13526,7 @@ contracts.rs 不在 tauri_commands 目录下，让我查找它的位置，同时
 
 ## 变更的 3 个文件
 
-### 1. [friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L93-L131) -- 5 个新 Station API 函数
+### 1. [friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs#L93-L131) -- 5 个新 Station API 函数
 
 在 `ack_messages` 之后、`local_search` 之前新增：
 
@@ -13540,7 +13540,7 @@ contracts.rs 不在 tauri_commands 目录下，让我查找它的位置，同时
 
 所有函数均使用 `request_proto` from `super::shared`，与现有函数完全一致的模式。
 
-### 2. [contracts.rs](file://apps/desktop/src-tauri/src/contracts.rs#L787-L796) -- 2 个新契约结构体
+### 2. [contracts.rs](../../../apps/desktop/src-tauri/src/contracts.rs#L787-L796) -- 2 个新契约结构体
 
 在 `FriendChatSyncMessagesInput` 之后新增：
 
@@ -13556,7 +13556,7 @@ pub struct FriendChatPendingInput {
 }
 ```
 
-### 3. [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L99-L174) -- 5 个新 Tauri Command
+### 3. [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L99-L174) -- 5 个新 Tauri Command
 
 | 命令函数 | 输入类型 | 服务调用 |
 |----------|---------|---------|
@@ -13580,7 +13580,7 @@ pub struct FriendChatPendingInput {
 
 ### 一、修改的文件 (4 个)
 
-#### 1. [contracts.rs](file://apps/desktop/src-tauri/src/contracts.rs) -- 新增 3 个输入类型
+#### 1. [contracts.rs](../../../apps/desktop/src-tauri/src/contracts.rs) -- 新增 3 个输入类型
 
 - `GroupJoinInput` -- 加入群组所需参数 (`group_ulid`, `invitation_ulid`)
 - `GroupMembersInput` -- 获取成员列表所需参数 (`group_ulid`, `limit`, `offset`)
@@ -13588,7 +13588,7 @@ pub struct FriendChatPendingInput {
 
 已有的 `GroupCreateInput`、`GroupUlidInput`、`GroupUpdateInput`、`GroupInviteInput`、`GroupRemoveMemberInput`、`GroupMessageActionInput`、`GroupSearchMessagesInput`、`GroupUpdateNicknameInput`、`GroupUpdateMySettingsInput`、`GroupAckOfflineInput` 均直接复用。
 
-#### 2. [group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L91-L308) -- 新增 17 个 Station API 函数
+#### 2. [group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs#L91-L308) -- 新增 17 个 Station API 函数
 
 | # | 函数名 | HTTP 方法 | 端点 | Protobuf Request/Response |
 |---|--------|-----------|------|--------------------------|
@@ -13616,11 +13616,11 @@ pub struct FriendChatPendingInput {
 - `update_settings` 内部解析 JSON 字符串为 `UpdateGroupSettingsRequest` 的具体 `Option<bool>` 字段（`is_muted`、`is_pinned`、`show_member_nickname`）
 - `get_offline_messages` 和 `ack_offline_messages` 保留 `group_ulid` 参数供未来按群过滤使用
 
-#### 3. [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L99-L304) -- 新增 17 个 tauri command
+#### 3. [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L99-L304) -- 新增 17 个 tauri command
 
 每个 command 都遵循统一模式：从 `AppState` 提取 token -> 调用 `group_service` 对应函数 -> `encode_to_vec()` 返回 protobuf bytes。
 
-#### 4. [main.rs](file://apps/desktop/src-tauri/src/main.rs#L197-L226) -- 注册所有 group_chat 命令
+#### 4. [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L197-L226) -- 注册所有 group_chat 命令
 
 在 `invoke_handler` 中注册了 group_chat 模块的全部 28 个命令（5 个已有 + 17 个新增 + 6 个本地存储相关）。
 
@@ -13692,7 +13692,7 @@ Now run type check:
 
 ## 变更汇总
 
-### 文件 1: [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+### 文件 1: [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 **新增 Proto Schema 导入**
 
@@ -13709,7 +13709,7 @@ Now run type check:
 - 好友聊天：`friendChatSyncMessages`、`friendChatGoOnline`、`friendChatGoOffline`、`friendChatGetPending`、`friendChatGetStats`
 - 群聊：`groupChatCreateGroup`、`groupChatGetGroup`、`groupChatUpdateGroup`、`groupChatInviteToGroup`、`groupChatJoinGroup`、`groupChatLeaveGroup`、`groupChatGetMembers`、`groupChatRemoveMember`、`groupChatRecallMessage`、`groupChatDeleteMessage`、`groupChatSearchMessages`、`groupChatUpdateNickname`、`groupChatGetSettings`、`groupChatUpdateSettings`、`groupChatGetOfflineMessages`、`groupChatAckOfflineMessages`、`groupChatGetStats`
 
-### 文件 2: [socialChat.ts](file://apps/desktop/src/store/socialChat.ts)
+### 文件 2: [socialChat.ts](../../../apps/desktop/src/store/socialChat.ts)
 
 完全重写 store，保留所有原有 state 和 action，新增：
 
@@ -13740,18 +13740,18 @@ Now FindPeopleModal:
 
 ### 修改的文件 (4个)
 
-1. **[socialChat.ts](file://apps/desktop/src/store/socialChat.ts)** -- 新增 `showDetail`、`toggleDetail`、`setShowDetail`、`groupMembers`、`loadGroupMembers` 状态和 action
+1. **[socialChat.ts](../../../apps/desktop/src/store/socialChat.ts)** -- 新增 `showDetail`、`toggleDetail`、`setShowDetail`、`groupMembers`、`loadGroupMembers` 状态和 action
 
-2. **[SocialChatPage.tsx](file://apps/desktop/src/pages/SocialChatPage.tsx)** -- 三栏布局：SessionList(280px) + ChatArea(flex:1) + DetailPanel(320px, CSS transition 动画切换)
+2. **[SocialChatPage.tsx](../../../apps/desktop/src/pages/SocialChatPage.tsx)** -- 三栏布局：SessionList(280px) + ChatArea(flex:1) + DetailPanel(320px, CSS transition 动画切换)
 
-3. **[ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx)** -- 完整重写：
+3. **[ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx)** -- 完整重写：
    - Header: `antd Input` 搜索框 + `Dropdown` Plus 菜单 (Find People / Create Group)
    - `Segmented` 切换 Friends / Groups
    - Session 项: 36px 圆形头像(首字母) + 在线绿点 + 名称 + 最后消息预览 + 时间 + `Badge` 未读数
    - 搜索过滤逻辑 (`useMemo`)
    - 智能时间格式化 (today/yesterday/weekday/date)
 
-4. **[ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx)** -- 完整重写：
+4. **[ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx)** -- 完整重写：
    - **Chat Header**: Avatar + name + subtitle (Online / members count)；右侧 Phone, Video, Search, Info 按钮 (lucide icons)，Info 切换 Detail Panel
    - **消息气泡**: 自己靠右 (primary bg, white text, rounded-br-sm)；别人靠左 (fillSecondary bg, rounded-bl-sm)
    - 群消息显示 sender avatar + name
@@ -13765,21 +13765,21 @@ Now FindPeopleModal:
 
 ### 新建的文件 (3个)
 
-5. **[ChatDetailPanel.tsx](file://apps/desktop/src/components/chat/ChatDetailPanel.tsx)** -- 右侧详情面板 (320px)：
+5. **[ChatDetailPanel.tsx](../../../apps/desktop/src/components/chat/ChatDetailPanel.tsx)** -- 右侧详情面板 (320px)：
    - Header: "Details" + X 关闭按钮
    - Profile: 96px 大头像 + 名称 + 描述
    - 群组: Members 列表 (avatar + name)，See all 链接，Add Member 按钮
    - Actions: Search in Conversation, Chat Statistics
    - Danger: Leave Group / Block User
 
-6. **[CreateGroupModal.tsx](file://apps/desktop/src/components/chat/CreateGroupModal.tsx)** -- antd Modal：
+6. **[CreateGroupModal.tsx](../../../apps/desktop/src/components/chat/CreateGroupModal.tsx)** -- antd Modal：
    - 搜索联系人
    - 圆形 checkbox 选择 (selected = primary bg + Check icon)
    - 每个联系人: avatar + name
    - Footer: Cancel + Finish (无选中时 disabled)
    - 调用 `api.groupChatCreateGroup` 创建
 
-7. **[FindPeopleModal.tsx](file://apps/desktop/src/components/chat/FindPeopleModal.tsx)** -- antd Modal：
+7. **[FindPeopleModal.tsx](../../../apps/desktop/src/components/chat/FindPeopleModal.tsx)** -- antd Modal：
    - 搜索输入
    - 结果列表: avatar + name + "Network User" + Add 按钮
    - 调用 `api.friendChatCreateSession` 添加
@@ -13884,12 +13884,12 @@ tsc 通过了！0 错误。让我也确认 cargo check：
 
 | 文件 | 状态 | 功能 |
 |---|---|---|
-| [SocialChatPage.tsx](file://apps/desktop/src/pages/SocialChatPage.tsx) | 重写 | 三栏布局 + DetailPanel 动画切换 |
-| [ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx) | 重写 | 搜索 + Plus 菜单 + 会话列表 + 未读徽章 + 智能时间 |
-| [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx) | 重写 | Header + 气泡(引用/回复/已读回执/hover操作) + TextArea 输入 |
-| [ChatDetailPanel.tsx](file://apps/desktop/src/components/chat/ChatDetailPanel.tsx) | 新建 | 成员列表 + 操作 + 离开/屏蔽 |
-| [CreateGroupModal.tsx](file://apps/desktop/src/components/chat/CreateGroupModal.tsx) | 新建 | 联系人选择 + 创建群聊 |
-| [FindPeopleModal.tsx](file://apps/desktop/src/components/chat/FindPeopleModal.tsx) | 新建 | 搜索 + 添加联系人 |
+| [SocialChatPage.tsx](../../../apps/desktop/src/pages/SocialChatPage.tsx) | 重写 | 三栏布局 + DetailPanel 动画切换 |
+| [ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx) | 重写 | 搜索 + Plus 菜单 + 会话列表 + 未读徽章 + 智能时间 |
+| [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx) | 重写 | Header + 气泡(引用/回复/已读回执/hover操作) + TextArea 输入 |
+| [ChatDetailPanel.tsx](../../../apps/desktop/src/components/chat/ChatDetailPanel.tsx) | 新建 | 成员列表 + 操作 + 离开/屏蔽 |
+| [CreateGroupModal.tsx](../../../apps/desktop/src/components/chat/CreateGroupModal.tsx) | 新建 | 联系人选择 + 创建群聊 |
+| [FindPeopleModal.tsx](../../../apps/desktop/src/components/chat/FindPeopleModal.tsx) | 新建 | 搜索 + 添加联系人 |
 
 你可以跑起来试试了。
 
@@ -13941,7 +13941,7 @@ Rust 编译成功了！（495 个 warning 都是预存的，不影响运行）�
 
 ### 注册机制
 
-[registry.ts](file://apps/desktop/src/modules/registry.ts) 定义了一个 `Map<string, ModuleFrontend>` 作为注册表。每个功能模块通过调用 `registerModule()` 自注册。关键函数 [getModulesWithSidebar()](file://apps/desktop/src/modules/registry.ts#L68-L72) 的逻辑如下：
+[registry.ts](../../../apps/desktop/src/modules/registry.ts) 定义了一个 `Map<string, ModuleFrontend>` 作为注册表。每个功能模块通过调用 `registerModule()` 自注册。关键函数 [getModulesWithSidebar()](../../../apps/desktop/src/modules/registry.ts#L68-L72) 的逻辑如下：
 
 ```typescript
 export function getModulesWithSidebar(): ModuleFrontend[] {
@@ -13955,7 +13955,7 @@ export function getModulesWithSidebar(): ModuleFrontend[] {
 
 ### 在 App.tsx 中的渲染
 
-在 [App.tsx 第 313-324 行](file://apps/desktop/src/App.tsx#L313-L324)，动态模块被渲染在 `SideNav` 的 `topActions` 里，位于硬编码的 Search/Chat/Notes 图标**之后**：
+在 [App.tsx 第 313-324 行](../../../apps/desktop/src/App.tsx#L313-L324)，动态模块被渲染在 `SideNav` 的 `topActions` 里，位于硬编码的 Search/Chat/Notes 图标**之后**：
 
 ```tsx
 {getModulesWithSidebar()
@@ -13981,7 +13981,7 @@ export function getModulesWithSidebar(): ModuleFrontend[] {
 ### 核心状态
 
 - **state 变量**: `page` (`useState<Page>`)，类型为 `string`
-- **初始值**: 由 [getPageFromHash()](file://apps/desktop/src/App.tsx#L45-L54) 从 URL hash 解析得来
+- **初始值**: 由 [getPageFromHash()](../../../apps/desktop/src/App.tsx#L45-L54) 从 URL hash 解析得来
 
 ```typescript
 function getPageFromHash(): Page {
@@ -14005,7 +14005,7 @@ function getPageFromHash(): Page {
 
 ### 导航操作
 
-[setPage](file://apps/desktop/src/App.tsx#L92-L95) 函数同时更新 state 和 hash：
+[setPage](../../../apps/desktop/src/App.tsx#L92-L95) 函数同时更新 state 和 hash：
 
 ```typescript
 const setPage = useCallback((p: Page) => {
@@ -14014,9 +14014,9 @@ const setPage = useCallback((p: Page) => {
 }, []);
 ```
 
-浏览器后退/前进通过 `popstate` 事件监听（[第 97-106 行](file://apps/desktop/src/App.tsx#L97-L106)）同步回 state。
+浏览器后退/前进通过 `popstate` 事件监听（[第 97-106 行](../../../apps/desktop/src/App.tsx#L97-L106)）同步回 state。
 
-另外还有 deep link 支持（[第 196-220 行](file://apps/desktop/src/App.tsx#L196-L220)），通过 `eventBus` 监听 `EVENT.NAVIGATION_REQUESTED` 事件来处理 `pt://` 协议导航。
+另外还有 deep link 支持（[第 196-220 行](../../../apps/desktop/src/App.tsx#L196-L220)），通过 `eventBus` 监听 `EVENT.NAVIGATION_REQUESTED` 事件来处理 `pt://` 协议导航。
 
 ---
 
@@ -14031,11 +14031,11 @@ const setPage = useCallback((p: Page) => {
 | 硬编码 #1 | `search` | `Search` (lucide) | App.tsx 硬编码 | "Search (⌘K)" |
 | 硬编码 #2 | `chat` | `MessageSquare` (lucide) | App.tsx 硬编码 | "Agents" |
 | 硬编码 #3 | `notes` | `FileText` (lucide) | App.tsx 硬编码 | "Notes" |
-| order=30 | `applets` | `Blocks` (lucide) | [applets.ts](file://apps/desktop/src/modules/applets.ts) | "Applets" |
-| order=35 | `memory` | `Brain` (lucide) | [memory.ts](file://apps/desktop/src/modules/memory.ts) | "Memory" |
-| order=40 | `cron` | `Clock` (lucide) | [cron.ts](file://apps/desktop/src/modules/cron.ts) | "Cron Jobs" |
-| order=45 | `social-chat` | `MessageCircle` (lucide) | [social-chat.ts](file://apps/desktop/src/modules/social-chat.ts) | "Chat" |
-| order=50 | `channels` | `Send` (lucide) | [channels.ts](file://apps/desktop/src/modules/channels.ts) | "Channels" |
+| order=30 | `applets` | `Blocks` (lucide) | [applets.ts](../../../apps/desktop/src/modules/applets.ts) | "Applets" |
+| order=35 | `memory` | `Brain` (lucide) | [memory.ts](../../../apps/desktop/src/modules/memory.ts) | "Memory" |
+| order=40 | `cron` | `Clock` (lucide) | [cron.ts](../../../apps/desktop/src/modules/cron.ts) | "Cron Jobs" |
+| order=45 | `social-chat` | `MessageCircle` (lucide) | [social-chat.ts](../../../apps/desktop/src/modules/social-chat.ts) | "Chat" |
+| order=50 | `channels` | `Send` (lucide) | [channels.ts](../../../apps/desktop/src/modules/channels.ts) | "Channels" |
 | 动态 | `applet:xxx` | `Blocks` (lucide) | App.tsx 中 `pinnedApplets` 循环 | applet 的 name |
 
 ### bottomActions 区域（下方）
@@ -14062,13 +14062,13 @@ const setPage = useCallback((p: Page) => {
    ```
    只渲染 `position === 'top'` 的模块。如果某个模块注册了 `position: 'bottom'`，它实际上**不会出现在任何地方**，因为 `bottomActions` 中没有对应的动态渲染代码。
 
-3. **Applet 固定条件** — Pinned applets 从用户偏好 (`api.getPreferences()`) 中加载 `pinned_applets` 数组（[第 119-122 行](file://apps/desktop/src/App.tsx#L119-L122)），只有 pin 了的 applet 才显示在侧边栏；如果 `appletManager.getAppletInfo(appletId)` 返回 `null`，该项也会被跳过（第 327 行 `if (!info) return null`）。
+3. **Applet 固定条件** — Pinned applets 从用户偏好 (`api.getPreferences()`) 中加载 `pinned_applets` 数组（[第 119-122 行](../../../apps/desktop/src/App.tsx#L119-L122)），只有 pin 了的 applet 才显示在侧边栏；如果 `appletManager.getAppletInfo(appletId)` 返回 `null`，该项也会被跳过（第 327 行 `if (!info) return null`）。
 
 ---
 
 ## 完整侧边栏渲染代码段
 
-即 [App.tsx 第 261-385 行](file://apps/desktop/src/App.tsx#L261-L385) 的 `sideNavElement` 常量：
+即 [App.tsx 第 261-385 行](../../../apps/desktop/src/App.tsx#L261-L385) 的 `sideNavElement` 常量：
 
 ```tsx
 const sideNavElement = (
@@ -14216,7 +14216,7 @@ Please continue assisting me from where we left off.
 
 ### 1. 硬编码的 "chat" 侧边栏入口（AI Agent Chat）
 
-**文件**: [App.tsx](file://apps/desktop/src/App.tsx#L38-L38)
+**文件**: [App.tsx](../../../apps/desktop/src/App.tsx#L38-L38)
 
 这是一个**硬编码**在 `App.tsx` 中的核心页面，不通过模块注册系统，而是直接写在 `CORE_PAGES` 和侧边栏 JSX 中：
 
@@ -14224,7 +14224,7 @@ Please continue assisting me from where we left off.
 const CORE_PAGES = ['chat', 'settings', 'search', 'notes', 'agent-profile'];
 ```
 
-侧边栏图标定义在 [App.tsx:L299-L305](file://apps/desktop/src/App.tsx#L299-L305)：
+侧边栏图标定义在 [App.tsx:L299-L305](../../../apps/desktop/src/App.tsx#L299-L305)：
 
 ```typescript
 <ActionIcon
@@ -14238,13 +14238,13 @@ const CORE_PAGES = ['chat', 'settings', 'search', 'notes', 'agent-profile'];
 
 注意：这个按钮的 `title` 是 **"Agents"**（而非 "Chat"），点击后导航到 `ChatPage`，它是 AI Agent 对话功能的入口。
 
-对应页面组件渲染在 [App.tsx:L389-L410](file://apps/desktop/src/App.tsx#L389-L410)。
+对应页面组件渲染在 [App.tsx:L389-L410](../../../apps/desktop/src/App.tsx#L389-L410)。
 
 ---
 
 ### 2. 模块注册的 "social-chat" 侧边栏入口（Social Chat / 社交聊天）
 
-**文件**: [social-chat.ts](file://apps/desktop/src/modules/social-chat.ts#L1-L11)
+**文件**: [social-chat.ts](../../../apps/desktop/src/modules/social-chat.ts#L1-L11)
 
 完整内容：
 
@@ -14264,13 +14264,13 @@ registerModule({
 
 此模块通过 `registerModule()` API 注册，侧边栏标题为 **"Chat"**，排序权重 `order: 45`，位于侧边栏顶部区域。
 
-该模块在 [modules/index.ts:L11](file://apps/desktop/src/modules/index.ts#L11) 被导入触发注册：
+该模块在 [modules/index.ts:L11](../../../apps/desktop/src/modules/index.ts#L11) 被导入触发注册：
 
 ```typescript
 import './social-chat';
 ```
 
-动态渲染机制位于 [App.tsx:L313-L324](file://apps/desktop/src/App.tsx#L313-L324)，通过 `getModulesWithSidebar()` 获取已注册模块并渲染侧边栏图标：
+动态渲染机制位于 [App.tsx:L313-L324](../../../apps/desktop/src/App.tsx#L313-L324)，通过 `getModulesWithSidebar()` 获取已注册模块并渲染侧边栏图标：
 
 ```typescript
 {getModulesWithSidebar()
@@ -14287,13 +14287,13 @@ import './social-chat';
   ))}
 ```
 
-对应的页面组件渲染在 [App.tsx:L450-L457](file://apps/desktop/src/App.tsx#L450-L457)，通过 `getModule(page)` 动态加载。
+对应的页面组件渲染在 [App.tsx:L450-L457](../../../apps/desktop/src/App.tsx#L450-L457)，通过 `getModule(page)` 动态加载。
 
 ---
 
 ### 3. 模块注册基础设施
 
-**文件**: [registry.ts](file://apps/desktop/src/modules/registry.ts#L1-L72)
+**文件**: [registry.ts](../../../apps/desktop/src/modules/registry.ts#L1-L72)
 
 定义了 `registerModule()`、`getModulesWithSidebar()` 等核心函数以及 `SidebarEntry`、`ModuleFrontend` 接口。
 
@@ -14303,8 +14303,8 @@ import './social-chat';
 
 | 标识 | 侧边栏标题 | 图标 | 注册方式 | 文件 |
 |---|---|---|---|---|
-| `chat` | "Agents" | `MessageSquare` | 硬编码在 App.tsx | [App.tsx:L299-L305](file://apps/desktop/src/App.tsx#L299-L305) |
-| `social-chat` | "Chat" | `MessageCircle` | `registerModule()` 模块注册 | [social-chat.ts:L5-L11](file://apps/desktop/src/modules/social-chat.ts#L5-L11) |
+| `chat` | "Agents" | `MessageSquare` | 硬编码在 App.tsx | [App.tsx:L299-L305](../../../apps/desktop/src/App.tsx#L299-L305) |
+| `social-chat` | "Chat" | `MessageCircle` | `registerModule()` 模块注册 | [social-chat.ts:L5-L11](../../../apps/desktop/src/modules/social-chat.ts#L5-L11) |
 
 两个菜单项都出现在侧边栏中，一个是 AI Agent 对话入口（`chat`，标题 "Agents"），另一个是社交聊天入口（`social-chat`，标题 "Chat"）。
 
@@ -14361,9 +14361,9 @@ TypeScript 构建通过，无错误。
 
 | 改动 | 文件 | 说明 |
 |------|------|------|
-| 页面 ID `'chat'` → `'agent'` | [App.tsx](file://apps/desktop/src/App.tsx) | CORE_PAGES、sidebar 按钮、所有 `setPage('chat')` 导航、deep link 跳转，共 10 处 |
-| sidebar title `"Agents"` → `"Agent"` | [App.tsx](file://apps/desktop/src/App.tsx#L304) | ActionIcon 的 title |
-| 模块 ID `'social-chat'` → `'chat'` | [social-chat.ts](file://apps/desktop/src/modules/social-chat.ts) | 注册模块 ID，侧边栏显示为 "Chat" |
+| 页面 ID `'chat'` → `'agent'` | [App.tsx](../../../apps/desktop/src/App.tsx) | CORE_PAGES、sidebar 按钮、所有 `setPage('chat')` 导航、deep link 跳转，共 10 处 |
+| sidebar title `"Agents"` → `"Agent"` | [App.tsx](../../../apps/desktop/src/App.tsx#L304) | ActionIcon 的 title |
+| 模块 ID `'social-chat'` → `'chat'` | [social-chat.ts](../../../apps/desktop/src/modules/social-chat.ts) | 注册模块 ID，侧边栏显示为 "Chat" |
 
 现在侧边栏：
 - **Agent** (MessageSquare 图标) — AI Agent 对话
@@ -14616,14 +14616,14 @@ main.rs 和 service 文件没找到，让我扩大搜索范围。
 ```
 
 关键源文件：
-- 前端：[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
-- Tauri 注册：[main.rs](file://apps/desktop/src-tauri/src/main.rs)
-- Tauri friend_chat 命令：[friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
-- Tauri group_chat 命令：[group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
-- BFF friend_service：[friend_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)
-- BFF group_service：[group_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/group_service.rs)
-- Station friend_chat handler：[handler.go](file://apps/station/app/subserver/friend_chat/handler.go)
-- Station group_chat handler：[handler.go](file://apps/station/app/subserver/group_chat/handler.go)
+- 前端：[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
+- Tauri 注册：[main.rs](../../../apps/desktop/src-tauri/src/main.rs)
+- Tauri friend_chat 命令：[friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+- Tauri group_chat 命令：[group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+- BFF friend_service：[friend_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/friend_service.rs)
+- BFF group_service：[group_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/group_service.rs)
+- Station friend_chat handler：[handler.go](../../../apps/station/app/subserver/friend_chat/handler.go)
+- Station group_chat handler：[handler.go](../../../apps/station/app/subserver/group_chat/handler.go)
 
 ---
 
@@ -14734,7 +14734,7 @@ main.rs 和 service 文件没找到，让我扩大搜索范围。
 
 ### 问题 2：前端定义了 Input 类型但未暴露 API
 
-以下 TypeScript 接口在 [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1799-L1816) 中定义了，但 `api` 对象中没有对应方法：
+以下 TypeScript 接口在 [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1799-L1816) 中定义了，但 `api` 对象中没有对应方法：
 
 - `ChatScopeCursorSetInput` (L1804-L1807)
 - `ChatScopeCursorGetInput` (L1809-L1811)
@@ -14763,7 +14763,7 @@ main.rs 和 service 文件没找到，让我扩大搜索范围。
 
 ## 四、Station URL 完整路由清单
 
-### Friend Chat Station 路由（[handler.go](file://apps/station/app/subserver/friend_chat/handler.go#L15-L29)）
+### Friend Chat Station 路由（[handler.go](../../../apps/station/app/subserver/friend_chat/handler.go#L15-L29)）
 
 | HTTP Method | URL | Handler |
 |---|---|---|
@@ -14778,7 +14778,7 @@ main.rs 和 service 文件没找到，让我扩大搜索范围。
 | GET | `/friend-chat/pending` | `handleGetPending` |
 | GET | `/friend-chat/stats` | `handleStats` |
 
-### Group Chat Station 路由（[handler.go](file://apps/station/app/subserver/group_chat/handler.go#L15-L41)）
+### Group Chat Station 路由（[handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L15-L41)）
 
 | HTTP Method | URL | Handler |
 |---|---|---|
@@ -14877,7 +14877,7 @@ setResults([{
 
 ### 发现 1：FindPeopleModal — `handleSearch` 使用假数据而非真实 API 搜索
 
-**文件**: [FindPeopleModal.tsx](file://apps/desktop/src/components/chat/FindPeopleModal.tsx#L29-L39)
+**文件**: [FindPeopleModal.tsx](../../../apps/desktop/src/components/chat/FindPeopleModal.tsx#L29-L39)
 
 ```typescript
 const handleSearch = async () => {
@@ -14900,7 +14900,7 @@ const handleSearch = async () => {
 
 ### 发现 2：FindPeopleModal — 硬编码占位字符串 "Network User"
 
-**文件**: [FindPeopleModal.tsx](file://apps/desktop/src/components/chat/FindPeopleModal.tsx#L135)
+**文件**: [FindPeopleModal.tsx](../../../apps/desktop/src/components/chat/FindPeopleModal.tsx#L135)
 
 ```typescript
 <Text type="secondary" style={{ fontSize: 11 }}>Network User</Text>
@@ -14912,7 +14912,7 @@ const handleSearch = async () => {
 
 ### 发现 3：ChatSessionList — 硬编码 "Unknown" 作为 fallback 名称
 
-**文件**: [ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx#L154)
+**文件**: [ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx#L154)
 
 ```typescript
 name = s.participantBDid ? s.participantBDid.slice(0, 16) : 'Unknown';
@@ -14924,7 +14924,7 @@ name = s.participantBDid ? s.participantBDid.slice(0, 16) : 'Unknown';
 
 ### 发现 4：ChatSessionList — 硬编码消息占位文本
 
-**文件**: [ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx#L155)
+**文件**: [ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx#L155)
 
 ```typescript
 lastMsg = s.lastMessageUlid ? 'New message' : 'Start chatting';
@@ -14936,7 +14936,7 @@ lastMsg = s.lastMessageUlid ? 'New message' : 'Start chatting';
 
 ### 发现 5：ChatMessageArea — 硬编码 "Online" 在线状态
 
-**文件**: [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx#L148)
+**文件**: [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx#L148)
 
 ```typescript
 const subtitle = (() => {
@@ -14952,14 +14952,14 @@ const subtitle = (() => {
 
 ### 发现 6：ChatMessageArea — DID 截取作为显示名称（多处）
 
-**文件**: [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx#L140-L141)
+**文件**: [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx#L140-L141)
 
 ```typescript
 const s = sessions.find((s) => s.ulid === activeUlid);
 return s ? s.participantBDid.slice(0, 16) : '';
 ```
 
-以及第 [320 行](file://apps/desktop/src/components/chat/ChatMessageArea.tsx#L320)：
+以及第 [320 行](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx#L320)：
 
 ```typescript
 {msg.senderDid.slice(0, 12)}
@@ -14971,7 +14971,7 @@ return s ? s.participantBDid.slice(0, 16) : '';
 
 ### 发现 7：ChatMessageArea — `isOwn` 消息判定逻辑有误
 
-**文件**: [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx#L266)
+**文件**: [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx#L266)
 
 ```typescript
 const isOwn = isFriendMsg(msg) ? msg.senderDid === msg.receiverDid : false;
@@ -14983,7 +14983,7 @@ const isOwn = isFriendMsg(msg) ? msg.senderDid === msg.receiverDid : false;
 
 ### 发现 8：ChatMessageArea — `onDelete` 为空函数
 
-**文件**: [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx#L312)
+**文件**: [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx#L312)
 
 ```typescript
 <HoverActions
@@ -14999,7 +14999,7 @@ const isOwn = isFriendMsg(msg) ? msg.senderDid === msg.receiverDid : false;
 
 ### 发现 9：ChatSessionList — 在线状态指示器始终为绿色
 
-**文件**: [ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx#L200-L213)
+**文件**: [ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx#L200-L213)
 
 ```typescript
 {activeTab === 'friend' && (
@@ -15024,7 +15024,7 @@ const isOwn = isFriendMsg(msg) ? msg.senderDid === msg.receiverDid : false;
 
 ### 发现 10：ChatDetailPanel — 硬编码 "Network User" 占位符
 
-**文件**: [ChatDetailPanel.tsx](file://apps/desktop/src/components/chat/ChatDetailPanel.tsx#L62)
+**文件**: [ChatDetailPanel.tsx](../../../apps/desktop/src/components/chat/ChatDetailPanel.tsx#L62)
 
 ```typescript
 const subtitle = (() => {
@@ -15040,7 +15040,7 @@ const subtitle = (() => {
 
 ### 发现 11：ChatDetailPanel — DID 截取作为显示名称
 
-**文件**: [ChatDetailPanel.tsx](file://apps/desktop/src/components/chat/ChatDetailPanel.tsx#L54-L55)
+**文件**: [ChatDetailPanel.tsx](../../../apps/desktop/src/components/chat/ChatDetailPanel.tsx#L54-L55)
 
 ```typescript
 const s = sessions.find((s) => s.ulid === activeUlid);
@@ -15053,7 +15053,7 @@ return s ? s.participantBDid.slice(0, 16) : '';
 
 ### 发现 12：ChatDetailPanel — 功能按钮未接入真实 API
 
-**文件**: [ChatDetailPanel.tsx](file://apps/desktop/src/components/chat/ChatDetailPanel.tsx#L130-L193)
+**文件**: [ChatDetailPanel.tsx](../../../apps/desktop/src/components/chat/ChatDetailPanel.tsx#L130-L193)
 
 ```typescript
 <Button type="link" size="small" style={{ fontSize: 12, padding: 0 }}>
@@ -15091,7 +15091,7 @@ return s ? s.participantBDid.slice(0, 16) : '';
 
 ### 发现 13：CreateGroupModal — DID 截取作为联系人名称 + "Unknown" fallback
 
-**文件**: [CreateGroupModal.tsx](file://apps/desktop/src/components/chat/CreateGroupModal.tsx#L29-L33)
+**文件**: [CreateGroupModal.tsx](../../../apps/desktop/src/components/chat/CreateGroupModal.tsx#L29-L33)
 
 ```typescript
 const contacts: { did: string; name: string }[] = useMemo(() => {
@@ -15108,7 +15108,7 @@ const contacts: { did: string; name: string }[] = useMemo(() => {
 
 ### 发现 14：ChatMessageArea — 聊天头部工具栏按钮无功能
 
-**文件**: [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx#L248-L250)
+**文件**: [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx#L248-L250)
 
 ```typescript
 <Button type="text" icon={<Phone size={16} />} style={{ width: 32, height: 32 }} />
@@ -15240,13 +15240,13 @@ const contacts: { did: string; name: string }[] = useMemo(() => {
 - 路由常量：`RouterURLActorSearch`
 - 需要 JWT 认证
 
-**路由注册位置：** [activitypub_router.go:60](file://apps/station/frame/touch/activitypub_router.go#L60)
+**路由注册位置：** [activitypub_router.go:60](../../../apps/station/frame/touch/activitypub_router.go#L60)
 
 ```go
 RouterURLActorSearch RouterPath = "/search"
 ```
 
-**Handler 注册位置：** [activitypub_handler.go:102-107](file://apps/station/frame/touch/activitypub_handler.go#L102-L107)
+**Handler 注册位置：** [activitypub_handler.go:102-107](../../../apps/station/frame/touch/activitypub_handler.go#L102-L107)
 
 ```go
 {
@@ -15257,7 +15257,7 @@ RouterURLActorSearch RouterPath = "/search"
 },
 ```
 
-**Handler 函数：** [activitypub_handler.go:545-584](file://apps/station/frame/touch/activitypub_handler.go#L545-L584) - `SearchActors`
+**Handler 函数：** [activitypub_handler.go:545-584](../../../apps/station/frame/touch/activitypub_handler.go#L545-L584) - `SearchActors`
 
 - **请求参数**：Query param `?q=<搜索词>`
 - **逻辑**：自动排除当前已认证用户，对 `preferred_username` 和 `name` 字段做 `LIKE %query%` 模糊匹配
@@ -15283,14 +15283,14 @@ type Actor struct {
 ```
 
 **服务层**：
-- [activitypub/list.go:88-108](file://apps/station/frame/touch/activitypub/list.go#L88-L108) - `activitypub.SearchActors()`
-- [actor/service.go:136-154](file://apps/station/frame/touch/actor/service.go#L136-L154) - `actor.SearchActors()`（另一个独立服务层方法，逻辑类似）
+- [activitypub/list.go:88-108](../../../apps/station/frame/touch/activitypub/list.go#L88-L108) - `activitypub.SearchActors()`
+- [actor/service.go:136-154](../../../apps/station/frame/touch/actor/service.go#L136-L154) - `actor.SearchActors()`（另一个独立服务层方法，逻辑类似）
 
 #### 1.2 Actor 列表（列出所有本地 Actor）
 
 - **路由**：`GET /list`
 - 路由常量：`RouterURLActorList`
-- Handler：[activitypub_handler.go:497-543](file://apps/station/frame/touch/activitypub_handler.go#L497-L543) - `ListActors`
+- Handler：[activitypub_handler.go:497-543](../../../apps/station/frame/touch/activitypub_handler.go#L497-L543) - `ListActors`
 - 需要 JWT 认证
 - 会检查关注关系（`isFollowing`/`followedBy`）
 
@@ -15298,8 +15298,8 @@ type Actor struct {
 
 - **路由**：`GET /launcher/search`
 - **Handler 名称**：`HandleSearch`
-- **Handler 位置**：[launcher_handler.go:31-43](file://apps/station/app/subserver/launcher/handler/launcher_handler.go#L31-L43)
-- **路由注册位置**：[launcher.go:76-82](file://apps/station/app/subserver/launcher/launcher.go#L76-L82)
+- **Handler 位置**：[launcher_handler.go:31-43](../../../apps/station/app/subserver/launcher/handler/launcher_handler.go#L31-L43)
+- **路由注册位置**：[launcher.go:76-82](../../../apps/station/app/subserver/launcher/launcher.go#L76-L82)
 - **无需认证**
 
 **请求结构**（protobuf）：
@@ -15330,11 +15330,11 @@ type SearchResult struct {
 }
 ```
 
-**服务层**：[search_service.go:11-101](file://apps/station/app/subserver/launcher/service/search_service.go#L11-L101) - `SearchContent()` - **注意：当前是 Mock 数据实现**，返回预定义的 friends/posts/applets 列表，按 `Title`/`Subtitle` 做 `strings.Contains` 过滤。
+**服务层**：[search_service.go:11-101](../../../apps/station/app/subserver/launcher/service/search_service.go#L11-L101) - `SearchContent()` - **注意：当前是 Mock 数据实现**，返回预定义的 friends/posts/applets 列表，按 `Title`/`Subtitle` 做 `strings.Contains` 过滤。
 
 #### 1.4 Actor 服务层查找方法
 
-在 [actor/service.go](file://apps/station/frame/touch/actor/service.go) 中还有以下非 HTTP 暴露但被内部使用的查找方法：
+在 [actor/service.go](../../../apps/station/frame/touch/actor/service.go) 中还有以下非 HTTP 暴露但被内部使用的查找方法：
 
 | 方法 | 说明 |
 |---|---|
@@ -15353,8 +15353,8 @@ type SearchResult struct {
 #### 2.1 上线接口 - `POST /friend-chat/online`
 
 - **Handler 名称**：`fc-online`
-- **路由注册**：[handler.go:24](file://apps/station/app/subserver/friend_chat/handler.go#L24)
-- **Handler 函数**：[handler.go:247-262](file://apps/station/app/subserver/friend_chat/handler.go#L247-L262) - `handleOnline`
+- **路由注册**：[handler.go:24](../../../apps/station/app/subserver/friend_chat/handler.go#L24)
+- **Handler 函数**：[handler.go:247-262](../../../apps/station/app/subserver/friend_chat/handler.go#L247-L262) - `handleOnline`
 - **需要 JWT 认证**
 
 **请求结构**（protobuf）：
@@ -15378,15 +15378,15 @@ type OnlineResponse struct {
 #### 2.2 下线接口 - `POST /friend-chat/offline`
 
 - **Handler 名称**：`fc-offline`
-- **路由注册**：[handler.go:25](file://apps/station/app/subserver/friend_chat/handler.go#L25)
-- **Handler 函数**：[handler.go:265-281](file://apps/station/app/subserver/friend_chat/handler.go#L265-L281) - `handleOffline`
+- **路由注册**：[handler.go:25](../../../apps/station/app/subserver/friend_chat/handler.go#L25)
+- **Handler 函数**：[handler.go:265-281](../../../apps/station/app/subserver/friend_chat/handler.go#L265-L281) - `handleOffline`
 - **请求/响应**：同上，Status 返回 `"offline"`
 
 #### 2.3 统计信息接口（含在线人数）- `GET /friend-chat/stats`
 
 - **Handler 名称**：`fc-stats`
-- **路由注册**：[handler.go:27](file://apps/station/app/subserver/friend_chat/handler.go#L27)
-- **Handler 函数**：[handler.go:311-325](file://apps/station/app/subserver/friend_chat/handler.go#L311-L325) - `handleStats`
+- **路由注册**：[handler.go:27](../../../apps/station/app/subserver/friend_chat/handler.go#L27)
+- **Handler 函数**：[handler.go:311-325](../../../apps/station/app/subserver/friend_chat/handler.go#L311-L325) - `handleStats`
 - **无需认证**
 
 **请求结构**：
@@ -15407,7 +15407,7 @@ type GetStatsResponse struct {
 
 #### 2.4 间接在线状态检查（消息发送时）
 
-在 [handler.go:116-118](file://apps/station/app/subserver/friend_chat/handler.go#L116-L118)（`handleSendMessage` 中），发送消息时会检查接收者是否在线：
+在 [handler.go:116-118](../../../apps/station/app/subserver/friend_chat/handler.go#L116-L118)（`handleSendMessage` 中），发送消息时会检查接收者是否在线：
 
 ```go
 _, isOnline := s.online[req.ReceiverDid]
@@ -15420,7 +15420,7 @@ if !isOnline {
 
 #### 2.5 被注释掉的在线状态 API
 
-在 [activitypub_handler.go:108-120](file://apps/station/frame/touch/activitypub_handler.go#L108-L120)，有两个被注释掉的端点：
+在 [activitypub_handler.go:108-120](../../../apps/station/frame/touch/activitypub_handler.go#L108-L120)，有两个被注释掉的端点：
 
 ```go
 /*  {
@@ -15444,8 +15444,8 @@ if !isOnline {
 #### 3.1 Actor Basic Info（按 Actor ID 解析基本信息）- `GET /actors/:id/basic-info`
 
 - **路由常量**：`RouterURLActorBasicInfo`
-- **路由定义**：[activitypub_router.go:63](file://apps/station/frame/touch/activitypub_router.go#L63)
-- **Handler 函数**：[activitypub_handler.go:437-472](file://apps/station/frame/touch/activitypub_handler.go#L437-L472) - `GetActorBasicInfo`
+- **路由定义**：[activitypub_router.go:63](../../../apps/station/frame/touch/activitypub_router.go#L63)
+- **Handler 函数**：[activitypub_handler.go:437-472](../../../apps/station/frame/touch/activitypub_handler.go#L437-L472) - `GetActorBasicInfo`
 - **HTTP 方法**：`GET`
 - **无需认证**（公开端点，设计给 Avatar 组件使用）
 
@@ -15466,27 +15466,27 @@ type ActorBasicInfoResponse struct {
 #### 3.2 当前用户 Profile - `GET /profile`（需认证）
 
 - **路由常量**：`RouterURLActorProfile`
-- **Handler 函数**：[activitypub_handler.go:385-400](file://apps/station/frame/touch/activitypub_handler.go#L385-L400) - `GetActorProfile`
+- **Handler 函数**：[activitypub_handler.go:385-400](../../../apps/station/frame/touch/activitypub_handler.go#L385-L400) - `GetActorProfile`
 - **认证**：JWT 必须
 - 通过 JWT token 解析当前用户 ID，调用 `activitypub.GetWebProfileByID()` 获取完整 profile
 
 #### 3.3 公开 Profile（按 username）- `GET /:actor/profile`
 
 - **路由常量**：`RouterURLPublicProfile`
-- **Handler 函数**：[activitypub_handler.go:402-423](file://apps/station/frame/touch/activitypub_handler.go#L402-L423) - `PublicProfile`
+- **Handler 函数**：[activitypub_handler.go:402-423](../../../apps/station/frame/touch/activitypub_handler.go#L402-L423) - `PublicProfile`
 - **无需认证**
 - **请求**：URL path param `:actor`（username 字符串）
 
 #### 3.4 ActivityPub Actor Document - `GET /:actor/actor`
 
 - **路由常量**：`ActivityPubRouterURLActor`
-- **Handler 函数**：[activitypub_handler.go:616-629](file://apps/station/frame/touch/activitypub_handler.go#L616-L629) - `GetUserActor`
+- **Handler 函数**：[activitypub_handler.go:616-629](../../../apps/station/frame/touch/activitypub_handler.go#L616-L629) - `GetUserActor`
 - **无需认证**
 - 返回标准 ActivityPub Actor JSON-LD 文档
 
 #### 3.5 按 DID/PTID 解析用户信息
 
-虽然没有直接暴露为独立 HTTP API，但在服务层 [actor/service.go:74-91](file://apps/station/frame/touch/actor/service.go#L74-L91) 提供了：
+虽然没有直接暴露为独立 HTTP API，但在服务层 [actor/service.go:74-91](../../../apps/station/frame/touch/actor/service.go#L74-L91) 提供了：
 
 ```go
 // GetActorByPTID 通过 PTID (DID) 解析 Actor 信息
@@ -15496,7 +15496,7 @@ func GetActorByPTID(ctx context.Context, ptid string) (*db.Actor, error)
 func GetActorsByPTIDs(ctx context.Context, ptids []string) (map[string]*db.Actor, error)
 ```
 
-其中 `db.Actor` 结构（[db/actor.go:10-25+](file://apps/station/frame/touch/model/db/actor.go#L10-L25)）包含：
+其中 `db.Actor` 结构（[db/actor.go:10-25+](../../../apps/station/frame/touch/model/db/actor.go#L10-L25)）包含：
 
 ```go
 type Actor struct {
@@ -15652,7 +15652,7 @@ STEP 2：修改 socialChat store，添加 `currentUserProfile` 状态和 `loadCu
 
 ## 新建文件
 
-### 1. [actor_service.rs](file://apps/desktop/src-tauri/src/application/social_chat/actor_service.rs) — BFF 服务层
+### 1. [actor_service.rs](../../../apps/desktop/src-tauri/src/application/social_chat/actor_service.rs) — BFF 服务层
 
 ```rust
 use crate::infrastructure::station_client;
@@ -15682,9 +15682,9 @@ pub fn get_my_profile(token: &str) -> Result<actor::ActorProfile, String> {
 
 - `search_actors` 通过 query 参数 `?q={query}` 调用 Station `GET /search`
 - `get_my_profile` 调用 Station `GET /profile`，无请求体和 query 参数
-- 直接使用 `station_client::request_proto`（带 5 参数签名），与 [shared.rs](file://apps/desktop/src-tauri/src/application/social_chat/shared.rs) 中的封装一致
+- 直接使用 `station_client::request_proto`（带 5 参数签名），与 [shared.rs](../../../apps/desktop/src-tauri/src/application/social_chat/shared.rs) 中的封装一致
 
-### 2. [actor.rs (tauri_commands)](file://apps/desktop/src-tauri/src/interface/tauri_commands/actor.rs) — Tauri 命令层
+### 2. [actor.rs (tauri_commands)](../../../apps/desktop/src-tauri/src/interface/tauri_commands/actor.rs) — Tauri 命令层
 
 ```rust
 use crate::application::social_chat::actor_service;
@@ -15708,17 +15708,17 @@ pub fn actor_get_my_profile(token: String) -> AppResult<Vec<u8>> {
 }
 ```
 
-- 遵循 [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L38-L47) 的模式：`Ok => encode_to_vec + AppResult::success`，`Err => AppResult::fail(ErrorCode::InternalError, ...)`
+- 遵循 [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L38-L47) 的模式：`Ok => encode_to_vec + AppResult::success`，`Err => AppResult::fail(ErrorCode::InternalError, ...)`
 
 ---
 
 ## 修改文件
 
-### 3. [social_chat/mod.rs](file://apps/desktop/src-tauri/src/application/social_chat/mod.rs) — 新增 `pub mod actor_service;`
+### 3. [social_chat/mod.rs](../../../apps/desktop/src-tauri/src/application/social_chat/mod.rs) — 新增 `pub mod actor_service;`
 
-### 4. [tauri_commands/mod.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs) — 新增 `pub mod actor;`
+### 4. [tauri_commands/mod.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs) — 新增 `pub mod actor;`
 
-### 5. [main.rs](file://apps/desktop/src-tauri/src/main.rs#L12-L22) — 两处变更：
+### 5. [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L12-L22) — 两处变更：
 - import 行增加了 `actor`
 - `generate_handler!` 宏中注册了 `actor::actor_search_actors` 和 `actor::actor_get_my_profile`
 
@@ -15780,7 +15780,7 @@ TypeScript 编译通过，零错误。
 
 ## 各文件变更说明
 
-### 1. [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+### 1. [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 - 新增 `ActorListSchema`、`ActorProfileSchema` 的 import（来自 `actor_pb.ts`）
 - 新增 `ActorList`、`ActorProfile`、`Actor` 类型的 re-export
@@ -15788,13 +15788,13 @@ TypeScript 编译通过，零错误。
   - `actorSearchActors(query)` — 调用 `invokeRustProto('actor_search_actors', ...)`
   - `actorGetMyProfile()` — 调用 `invokeRustProto('actor_get_my_profile', ...)`
 
-### 2. [socialChat.ts](file://apps/desktop/src/store/socialChat.ts)
+### 2. [socialChat.ts](../../../apps/desktop/src/store/socialChat.ts)
 
 - 新增 `ActorProfile` 类型 import
 - Store state 新增 `currentUserProfile: ActorProfile | null`（初始 `null`）
 - 新增 `loadCurrentProfile()` 方法 — 调用 `api.actorGetMyProfile()` 并 set 到 state
 
-### 3. [FindPeopleModal.tsx](file://apps/desktop/src/components/chat/FindPeopleModal.tsx)
+### 3. [FindPeopleModal.tsx](../../../apps/desktop/src/components/chat/FindPeopleModal.tsx)
 
 - 结果类型从 `{ did, name }` 改为 `{ id, username, displayName }`
 - `handleSearch` 从硬编码 mock 改为调用真实的 `api.actorSearchActors()`
@@ -15803,13 +15803,13 @@ TypeScript 编译通过，零错误。
 - 移除了所有 `did` 引用和硬编码 `"Network User"`
 - placeholder 从 `"Enter DID to find..."` 改为 `"Search by username..."`
 
-### 4. [ChatSessionList.tsx](file://apps/desktop/src/components/chat/ChatSessionList.tsx)
+### 4. [ChatSessionList.tsx](../../../apps/desktop/src/components/chat/ChatSessionList.tsx)
 
 - `name` 显示从 `participantBDid.slice(0, 16)` 改为 `participantBDid || 'Unknown'`（不再截断）
 - `lastMsg` 从虚假的 `'New message'`/`'Start chatting'` 改为基于数据的 `s.lastMessageUlid ? 'Message' : ''`
 - 移除了始终显示的绿色在线状态圆点（添加了 TODO 注释说明待 per-user API 可用时再加）
 
-### 5. [ChatMessageArea.tsx](file://apps/desktop/src/components/chat/ChatMessageArea.tsx)
+### 5. [ChatMessageArea.tsx](../../../apps/desktop/src/components/chat/ChatMessageArea.tsx)
 
 - 新增 `Tooltip` import（来自 antd）
 - 从 store 解构新增 `currentUserProfile` 和 `deleteMessage`
@@ -15820,7 +15820,7 @@ TypeScript 编译通过，零错误。
 - 群聊发送者名称从 `msg.senderDid.slice(0, 12)` 改为完整的 `msg.senderDid`
 - Phone 和 Video 按钮添加了 `disabled` 属性和 `<Tooltip title="Coming soon">` 包裹
 
-### 6. [ChatDetailPanel.tsx](file://apps/desktop/src/components/chat/ChatDetailPanel.tsx)
+### 6. [ChatDetailPanel.tsx](../../../apps/desktop/src/components/chat/ChatDetailPanel.tsx)
 
 - 新增 `api` import
 - `currentName` 从 `.slice(0, 16)` 改为 `participantBDid || ''`
@@ -15828,11 +15828,11 @@ TypeScript 编译通过，零错误。
 - "Leave Group" 按钮接入真实 `api.groupChatLeaveGroup(activeUlid)` 调用
 - "Add Member"、"See all"、"Search in Conversation"、"Block User" 按钮添加了 `console.log` 占位 onClick
 
-### 7. [CreateGroupModal.tsx](file://apps/desktop/src/components/chat/CreateGroupModal.tsx)
+### 7. [CreateGroupModal.tsx](../../../apps/desktop/src/components/chat/CreateGroupModal.tsx)
 
 - 联系人名称从 `participantBDid.slice(0, 16)` 改为 `participantBDid || 'Unknown'`
 
-### 8. [SocialChatPage.tsx](file://apps/desktop/src/pages/SocialChatPage.tsx)
+### 8. [SocialChatPage.tsx](../../../apps/desktop/src/pages/SocialChatPage.tsx)
 
 - 新增 `useEffect` import
 - 页面挂载时调用 `loadCurrentProfile()` 加载当前用户 profile 到 store
@@ -15895,64 +15895,64 @@ Error: SSE finish
 已做过一轮较完整扫描（`friend_chat/group_chat` + Desktop 两套端 + Rust Tauri BFF 相关目录），下面是当前代码现状与落点。
 
 **现状总览**
-- **Station 已有 friend/group 子服务**：在 [main.go](file://apps/station/app/main.go#L52-L56) 注册 `friend_chat`/`group_chat`，并通过 HTTP handler 暴露接口。
-- **friend_chat 能力已跑通主链路但协议混用**：路由与处理在 [handler.go](file://apps/station/app/subserver/friend_chat/handler.go#L20-L389)，`send/sync` 走 Proto，其他多数仍 JSON（状态文档见 [FRIEND_CHAT_API_STATUS.md](file://qa/station/api_tests/FRIEND_CHAT_API_STATUS.md#L1-L117)）。
-- **group_chat 能力更完整但有占位实现**：接口较全在 [handler.go](file://apps/station/app/subserver/group_chat/handler.go#L18-L813)，但 `stats` 固定返回 0。
+- **Station 已有 friend/group 子服务**：在 [main.go](../../../apps/station/app/main.go#L52-L56) 注册 `friend_chat`/`group_chat`，并通过 HTTP handler 暴露接口。
+- **friend_chat 能力已跑通主链路但协议混用**：路由与处理在 [handler.go](../../../apps/station/app/subserver/friend_chat/handler.go#L20-L389)，`send/sync` 走 Proto，其他多数仍 JSON（状态文档见 [FRIEND_CHAT_API_STATUS.md](../../../qa/station/api_tests/FRIEND_CHAT_API_STATUS.md#L1-L117)）。
+- **group_chat 能力更完整但有占位实现**：接口较全在 [handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L18-L813)，但 `stats` 固定返回 0。
 - **Desktop 存在两套实现路径**：Flutter Desktop（`client/desktop`）有 friend/group UI 与调用；Tauri React Desktop（`apps/desktop`）当前聚焦 AI chat（非 friend/group）。
-- **Rust BFF 形态是 Tauri 内嵌后端，不是独立服务**：入口在 [main.rs](file://apps/desktop/src-tauri/src/main.rs#L16-L239)，chat 命令是本地内存态实现。
+- **Rust BFF 形态是 Tauri 内嵌后端，不是独立服务**：入口在 [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L16-L239)，chat 命令是本地内存态实现。
 
 **关键文件**
-- **Friend Chat（Station）**：[friend_chat.go](file://apps/station/app/subserver/friend_chat/friend_chat.go)、[handler.go](file://apps/station/app/subserver/friend_chat/handler.go)、[message_service.go](file://apps/station/app/subserver/friend_chat/service/message_service.go)。
-- **Group Chat（Station）**：[group_chat.go](file://apps/station/app/subserver/group_chat/group_chat.go)、[handler.go](file://apps/station/app/subserver/group_chat/handler.go)、[message_service.go](file://apps/station/app/subserver/group_chat/service/message_service.go)。
-- **协议定义**：[friend_chat.proto](file://model/domain/chat/friend_chat.proto#L1-L225)、[group_chat.proto](file://model/domain/chat/group_chat.proto#L1-L400)。
-- **Flutter Desktop 调用层**：[friend_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L170-L277)、[group_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L139-L367)、[friend_chat_controller.dart](file://client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L49-L2197)。
-- **Rust BFF + React Desktop**：[main.rs](file://apps/desktop/src-tauri/src/main.rs#L47-L236)、[chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L17-L80)、[application/chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L572)、[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1766-L1905)。
+- **Friend Chat（Station）**：[friend_chat.go](../../../apps/station/app/subserver/friend_chat/friend_chat.go)、[handler.go](../../../apps/station/app/subserver/friend_chat/handler.go)、[message_service.go](../../../apps/station/app/subserver/friend_chat/service/message_service.go)。
+- **Group Chat（Station）**：[group_chat.go](../../../apps/station/app/subserver/group_chat/group_chat.go)、[handler.go](../../../apps/station/app/subserver/group_chat/handler.go)、[message_service.go](../../../apps/station/app/subserver/group_chat/service/message_service.go)。
+- **协议定义**：[friend_chat.proto](../../../model/domain/chat/friend_chat.proto#L1-L225)、[group_chat.proto](../../../model/domain/chat/group_chat.proto#L1-L400)。
+- **Flutter Desktop 调用层**：[friend_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L170-L277)、[group_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L139-L367)、[friend_chat_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L49-L2197)。
+- **Rust BFF + React Desktop**：[main.rs](../../../apps/desktop/src-tauri/src/main.rs#L47-L236)、[chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L17-L80)、[application/chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L572)、[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1766-L1905)。
 
 **调用链**
-- **Flutter Friend/Group 主链路**：UI/Controller（[friend_chat_controller.dart](file://client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L1707-L1940)）→ API Service（[friend_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L173-L277)、[group_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L143-L367)）→ Station Handler（[friend handler](file://apps/station/app/subserver/friend_chat/handler.go#L24-L389)、[group handler](file://apps/station/app/subserver/group_chat/handler.go#L22-L813)）→ Service/DB。
-- **React + Rust BFF 链路（当前 AI chat）**：Zustand Store（[chat.ts](file://apps/desktop/src/store/chat.ts#L151-L211)）→ TS Bridge（[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1788-L1888)）→ Tauri Command（[chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L17-L80)）→ Rust Application（[application/chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L96-L572)）。
-- **Rust chat_completion**：`streamChat` 调 `chat_completion_once`（[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2926-L2964)），当前是 Echo/本地逻辑，不接 Station。
-- **Desktop React 页面范围**：现有 [ChatPage.tsx](file://apps/desktop/src/pages/ChatPage.tsx#L35-L137) 是 AI chat，不含 friend/group 入口。
+- **Flutter Friend/Group 主链路**：UI/Controller（[friend_chat_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L1707-L1940)）→ API Service（[friend_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L173-L277)、[group_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L143-L367)）→ Station Handler（[friend handler](../../../apps/station/app/subserver/friend_chat/handler.go#L24-L389)、[group handler](../../../apps/station/app/subserver/group_chat/handler.go#L22-L813)）→ Service/DB。
+- **React + Rust BFF 链路（当前 AI chat）**：Zustand Store（[chat.ts](../../../apps/desktop/src/store/chat.ts#L151-L211)）→ TS Bridge（[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1788-L1888)）→ Tauri Command（[chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L17-L80)）→ Rust Application（[application/chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L96-L572)）。
+- **Rust chat_completion**：`streamChat` 调 `chat_completion_once`（[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2926-L2964)），当前是 Echo/本地逻辑，不接 Station。
+- **Desktop React 页面范围**：现有 [ChatPage.tsx](../../../apps/desktop/src/pages/ChatPage.tsx#L35-L137) 是 AI chat，不含 friend/group 入口。
 
 **缺失点**
-- **协议与实现不一致**：friend_chat 仍大比例 JSON，Proto 仅部分落地（见 [FRIEND_CHAT_API_STATUS.md](file://qa/station/api_tests/FRIEND_CHAT_API_STATUS.md#L1-L117)）。
-- **客户端参数存在错位风险**：`_fetchNewMessages` 用 `actorId` 调 `getMessages(sessionUlid)`（[friend_chat_controller.dart](file://client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L774-L780) vs [friend_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L226-L240)）。
-- **Group API 返回字段不对齐**：客户端 `markGroupAsRead` 读取 `marked_count`（[group_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L361-L366)），服务端仅返回 `success`（[handler.go](file://apps/station/app/subserver/group_chat/handler.go#L777-L801)）。
-- **group stats 为占位实现**：固定 0（[handler.go](file://apps/station/app/subserver/group_chat/handler.go#L803-L813)）。
-- **Rust BFF 未接 friend/group 真实后端**：仅本地内存 `ChatStore`（[application/chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L78)），且命令契约是通用 conversation，不是 friend/group 领域（[contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L35-L87)）。
-- **Proto 仅 message 定义，无 service/rpc 声明**：[friend_chat.proto](file://model/domain/chat/friend_chat.proto#L1-L225)、[group_chat.proto](file://model/domain/chat/group_chat.proto#L1-L400)。
+- **协议与实现不一致**：friend_chat 仍大比例 JSON，Proto 仅部分落地（见 [FRIEND_CHAT_API_STATUS.md](../../../qa/station/api_tests/FRIEND_CHAT_API_STATUS.md#L1-L117)）。
+- **客户端参数存在错位风险**：`_fetchNewMessages` 用 `actorId` 调 `getMessages(sessionUlid)`（[friend_chat_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L774-L780) vs [friend_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L226-L240)）。
+- **Group API 返回字段不对齐**：客户端 `markGroupAsRead` 读取 `marked_count`（[group_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L361-L366)），服务端仅返回 `success`（[handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L777-L801)）。
+- **group stats 为占位实现**：固定 0（[handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L803-L813)）。
+- **Rust BFF 未接 friend/group 真实后端**：仅本地内存 `ChatStore`（[application/chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L78)），且命令契约是通用 conversation，不是 friend/group 领域（[contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L35-L87)）。
+- **Proto 仅 message 定义，无 service/rpc 声明**：[friend_chat.proto](../../../model/domain/chat/friend_chat.proto#L1-L225)、[group_chat.proto](../../../model/domain/chat/group_chat.proto#L1-L400)。
 
 **建议实现入口**
-- **若以 Rust BFF（Tauri）为主线**：从 [interface/tauri_commands/chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L17-L80) + [application/chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L96-L572) 入手，先把 `list/send/messages/mark_read` 改为调用 Station `friend-chat/group-chat`。
-- **TS 桥接同步改造**：在 [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1788-L1888) 补 friend/group typed API，避免继续复用 AI conversation 语义。
-- **若以 Flutter Desktop 为主线**：先对齐 [friend_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L173-L277) 与 [group_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L139-L367) 的请求/响应字段，再修 controller 参数链路。
-- **服务端优先修契约面**：从 [friend handler](file://apps/station/app/subserver/friend_chat/handler.go#L24-L389) 与 [group handler](file://apps/station/app/subserver/group_chat/handler.go#L22-L813) 统一 Proto/JSON 策略与返回字段，再补统计与读回执一致性。
+- **若以 Rust BFF（Tauri）为主线**：从 [interface/tauri_commands/chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L17-L80) + [application/chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L96-L572) 入手，先把 `list/send/messages/mark_read` 改为调用 Station `friend-chat/group-chat`。
+- **TS 桥接同步改造**：在 [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1788-L1888) 补 friend/group typed API，避免继续复用 AI conversation 语义。
+- **若以 Flutter Desktop 为主线**：先对齐 [friend_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L173-L277) 与 [group_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L139-L367) 的请求/响应字段，再修 controller 参数链路。
+- **服务端优先修契约面**：从 [friend handler](../../../apps/station/app/subserver/friend_chat/handler.go#L24-L389) 与 [group handler](../../../apps/station/app/subserver/group_chat/handler.go#L22-L813) 统一 Proto/JSON 策略与返回字段，再补统计与读回执一致性。
 
 我已在 `apps/desktop/src-tauri` 做了多轮语义检索 + 精确 grep（含 `station/Station`、`reqwest`、`base_url`、`Bearer`、`token`），结论是：**当前没有任何 `HTTP/Station` 直连实现；远端 HTTP 调用仅发现 Provider 模型探测这一套。**
 
 **现有远端 HTTP 实现**
-- 可复用请求封装在 [remote.rs](file://apps/desktop/src-tauri/src/application/provider/remote.rs#L12-L133)：
+- 可复用请求封装在 [remote.rs](../../../apps/desktop/src-tauri/src/application/provider/remote.rs#L12-L133)：
   - `normalize_base_url` / `build_candidate_endpoints`：统一 base_url 并生成候选端点（`/models`、`/v1/models`、`/api/tags`）  
-  - `request_models`：统一 GET + JSON 解析 + 状态码校验 + 错误包装 [remote.rs:L77-L100](file://apps/desktop/src-tauri/src/application/provider/remote.rs#L77-L100)
-  - `probe_provider` / `fetch_models`：对外可复用入口 [remote.rs:L102-L133](file://apps/desktop/src-tauri/src/application/provider/remote.rs#L102-L133)
+  - `request_models`：统一 GET + JSON 解析 + 状态码校验 + 错误包装 [remote.rs:L77-L100](../../../apps/desktop/src-tauri/src/application/provider/remote.rs#L77-L100)
+  - `probe_provider` / `fetch_models`：对外可复用入口 [remote.rs:L102-L133](../../../apps/desktop/src-tauri/src/application/provider/remote.rs#L102-L133)
 
 **鉴权 token（API Key）读取**
-- HTTP Header 注入在 [request_models](file://apps/desktop/src-tauri/src/application/provider/remote.rs#L82-L85)：`Authorization: Bearer {api_key}`
+- HTTP Header 注入在 [request_models](../../../apps/desktop/src-tauri/src/application/provider/remote.rs#L82-L85)：`Authorization: Bearer {api_key}`
 - API Key 来源（优先级）：
-  - `provider_check`：优先 `input.key_vaults`，否则 `provider.key_vaults` [provider/mod.rs:L125-L130](file://apps/desktop/src-tauri/src/application/provider/mod.rs#L125-L130)
-  - `model_fetch_remote`：优先 `input.data.api_key`，否则 `provider.key_vaults` [models/mod.rs:L242-L253](file://apps/desktop/src-tauri/src/application/models/mod.rs#L242-L253)
+  - `provider_check`：优先 `input.key_vaults`，否则 `provider.key_vaults` [provider/mod.rs:L125-L130](../../../apps/desktop/src-tauri/src/application/provider/mod.rs#L125-L130)
+  - `model_fetch_remote`：优先 `input.data.api_key`，否则 `provider.key_vaults` [models/mod.rs:L242-L253](../../../apps/desktop/src-tauri/src/application/models/mod.rs#L242-L253)
 - Key 解析函数可复用：`parse_key_vault_api_key`  
-  - [provider/mod.rs:L30-L38](file://apps/desktop/src-tauri/src/application/provider/mod.rs#L30-L38)  
-  - [models/mod.rs:L123-L131](file://apps/desktop/src-tauri/src/application/models/mod.rs#L123-L131)
+  - [provider/mod.rs:L30-L38](../../../apps/desktop/src-tauri/src/application/provider/mod.rs#L30-L38)  
+  - [models/mod.rs:L123-L131](../../../apps/desktop/src-tauri/src/application/models/mod.rs#L123-L131)
 
 **base_url 来源位置**
-- `provider_check`：优先 `input.config_json.base_url`，否则 `provider.config_json.base_url` [provider/mod.rs:L137-L143](file://apps/desktop/src-tauri/src/application/provider/mod.rs#L137-L143)
-- `model_fetch_remote`：优先 `input.data.base_url`，否则 `provider.config_json.base_url` [models/mod.rs:L254-L265](file://apps/desktop/src-tauri/src/application/models/mod.rs#L254-L265)
-- 默认种子值在 Provider Store：`https://api.openai.com/v1` [store.rs:L81-L83](file://apps/desktop/src-tauri/src/application/provider/store.rs#L81-L83)
+- `provider_check`：优先 `input.config_json.base_url`，否则 `provider.config_json.base_url` [provider/mod.rs:L137-L143](../../../apps/desktop/src-tauri/src/application/provider/mod.rs#L137-L143)
+- `model_fetch_remote`：优先 `input.data.base_url`，否则 `provider.config_json.base_url` [models/mod.rs:L254-L265](../../../apps/desktop/src-tauri/src/application/models/mod.rs#L254-L265)
+- 默认种子值在 Provider Store：`https://api.openai.com/v1` [store.rs:L81-L83](../../../apps/desktop/src-tauri/src/application/provider/store.rs#L81-L83)
 
 **补充**
 - `station/Station` 在 `src-tauri` 内无匹配（无现成 Station client / Station API 路由）。
-- `AuthLoginInput` 虽有 `base_url` 字段，但当前未被消费 [contracts/mod.rs:L13-L16](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L13-L16)。
+- `AuthLoginInput` 虽有 `base_url` 字段，但当前未被消费 [contracts/mod.rs:L13-L16](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L13-L16)。
 
 ## User
 Friend Chat & Group Chat 实现 
@@ -15970,11 +15970,11 @@ Friend Chat & Group Chat 实现
 我先道歉：在你未确认评审结论前，我不该推进实现改动。后续我会严格按“先评审结论 → 你确认 → 再编码”执行。
 
 **当前评审结论（仅结论，不实施）**
-- Station 端确实已有 Friend/Group Chat 的核心接口入口：Friend 在 [handler.go](file://apps/station/app/subserver/friend_chat/handler.go#L20-L34)，Group 在 [handler.go](file://apps/station/app/subserver/group_chat/handler.go#L18-L49)。
-- Friend Chat 存在协议混用（部分 Proto、部分 JSON），契约统一性不足，增加多端对接成本（可见发送/同步与查询路径分裂于 [friend handler](file://apps/station/app/subserver/friend_chat/handler.go#L37-L182)）。
-- Group Chat 存在返回契约不对齐：`mark-read` 只返回 `success`，但现有客户端倾向读取 `marked_count`（服务端实现见 [group handler](file://apps/station/app/subserver/group_chat/handler.go#L777-L801)）。
-- Group `stats` 当前是占位实现（固定 0），不利于运营/观测闭环（见 [group handler](file://apps/station/app/subserver/group_chat/handler.go#L803-L813)）。
-- Desktop(Tauri React) 与 Rust BFF 当前主链路仍是 AI chat 会话模型，不是 Friend/Group 领域模型（见 [chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L17-L80)、[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1788-L1905)）。
+- Station 端确实已有 Friend/Group Chat 的核心接口入口：Friend 在 [handler.go](../../../apps/station/app/subserver/friend_chat/handler.go#L20-L34)，Group 在 [handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L18-L49)。
+- Friend Chat 存在协议混用（部分 Proto、部分 JSON），契约统一性不足，增加多端对接成本（可见发送/同步与查询路径分裂于 [friend handler](../../../apps/station/app/subserver/friend_chat/handler.go#L37-L182)）。
+- Group Chat 存在返回契约不对齐：`mark-read` 只返回 `success`，但现有客户端倾向读取 `marked_count`（服务端实现见 [group handler](../../../apps/station/app/subserver/group_chat/handler.go#L777-L801)）。
+- Group `stats` 当前是占位实现（固定 0），不利于运营/观测闭环（见 [group handler](../../../apps/station/app/subserver/group_chat/handler.go#L803-L813)）。
+- Desktop(Tauri React) 与 Rust BFF 当前主链路仍是 AI chat 会话模型，不是 Friend/Group 领域模型（见 [chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L17-L80)、[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1788-L1905)）。
 
 **DDD 与“烟囱架构”判断**
 - **DDD 角度**：`friend_chat` / `group_chat` 作为独立子域是合理的（边界清晰），但部分业务规则仍堆在 handler，应用层/领域层职责还有下沉空间。
@@ -15995,43 +15995,43 @@ Friend Chat & Group Chat 实现
 我已完成对 `apps/desktop` 与 `client/desktop` 的代码级扫描（含存储层、DAO、控制器、API、Tauri 命令），下面是完整结论。
 
 **总体结论**
-- `apps/desktop` 的聊天消息目前是 **进程内内存 HashMap**，不是本地持久化数据库；搜索接口也是 stub（返回空结果）。见 [chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L19)、[search/mod.rs](file://apps/desktop/src-tauri/src/application/search/mod.rs#L20-L35)。
+- `apps/desktop` 的聊天消息目前是 **进程内内存 HashMap**，不是本地持久化数据库；搜索接口也是 stub（返回空结果）。见 [chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L19)、[search/mod.rs](../../../apps/desktop/src-tauri/src/application/search/mod.rs#L20-L35)。
 - `client/desktop` 已有本地聊天库（Drift + SQLite）能力，含表结构和索引，但在 friend/group 主流程里 **实际写入接入不完整**（初始化/读少量会话元信息有，消息落库基本未接上）。
 - 搜索来源是分裂的：群消息搜索走服务端 API；本地全文搜索能力存在但几乎未在桌面聊天主流程使用。
 
 **apps/desktop（Tauri）**
-- 存储根目录按平台生成：macOS 默认 `~/Library/Application Support/peers-touch`，并分 `desktop/{config,data,cache,logs,runtime,temp}`。见 [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L53-L67)、[storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L147-L156)。
-- 目前聊天数据不落盘：`ChatStore` 仅 `HashMap<String, Conversation>` + `HashMap<String, Vec<Message>>`，`OnceLock<Mutex<...>>` 进程内持有。见 [chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L19)、[chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L74-L78)。
+- 存储根目录按平台生成：macOS 默认 `~/Library/Application Support/peers-touch`，并分 `desktop/{config,data,cache,logs,runtime,temp}`。见 [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L53-L67)、[storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L147-L156)。
+- 目前聊天数据不落盘：`ChatStore` 仅 `HashMap<String, Conversation>` + `HashMap<String, Vec<Message>>`，`OnceLock<Mutex<...>>` 进程内持有。见 [chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L19)、[chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L74-L78)。
 - 索引方式：仅内存键索引（conversation_id -> messages），无 SQLite/FTS/倒排索引。
-- 搜索来源：`search_sources/search_query/search_ai` 都是 stub/空结果。见 [search/mod.rs](file://apps/desktop/src-tauri/src/application/search/mod.rs#L20-L35)。
-- 额外：仅 auth 会话写到 temp 下 `auth/session.json`。见 [auth/service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs#L222-L232)。
+- 搜索来源：`search_sources/search_query/search_ai` 都是 stub/空结果。见 [search/mod.rs](../../../apps/desktop/src-tauri/src/application/search/mod.rs#L20-L35)。
+- 额外：仅 auth 会话写到 temp 下 `auth/session.json`。见 [auth/service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs#L222-L232)。
 
 **client/desktop（Flutter）**
-- 本地存储位置：`getApplicationSupportDirectory()/peers_touch_desktop/users/<userHandle>/`，聊天库文件 `chat.db`，KV 文件 `kv_storage.db`。见 [connection.dart](file://client/common/peers_touch_base/lib/storage/connection/connection.dart#L33-L39)、[chat_database.dart](file://client/common/peers_touch_base/lib/storage/chat/chat_database.dart#L45-L47)、[kv_database.dart](file://client/common/peers_touch_base/lib/storage/kv/kv_database.dart#L32-L34)。
-- 用户隔离：登录切换时设置 `KvDatabase.setUserHandle(handle)` 与 `SecureStorage` 作用域。见 [auth_controller.dart](file://client/desktop/lib/features/auth/controller/auth_controller.dart#L754-L759)。
+- 本地存储位置：`getApplicationSupportDirectory()/peers_touch_desktop/users/<userHandle>/`，聊天库文件 `chat.db`，KV 文件 `kv_storage.db`。见 [connection.dart](../../../client/common/peers_touch_base/lib/storage/connection/connection.dart#L33-L39)、[chat_database.dart](../../../client/common/peers_touch_base/lib/storage/chat/chat_database.dart#L45-L47)、[kv_database.dart](../../../client/common/peers_touch_base/lib/storage/kv/kv_database.dart#L32-L34)。
+- 用户隔离：登录切换时设置 `KvDatabase.setUserHandle(handle)` 与 `SecureStorage` 作用域。见 [auth_controller.dart](../../../client/desktop/lib/features/auth/controller/auth_controller.dart#L754-L759)。
 - 聊天表与索引：
-  - 表：`sessions/messages/group_members/...`。见 [chat_database.dart](file://client/common/peers_touch_base/lib/storage/chat/chat_database.dart#L22-L31)。
-  - 索引：`messages(session_id,sent_at desc)`、`messages(reply_to_id)`、`sessions(is_pinned,last_message_at)`。见 [chat_database.dart](file://client/common/peers_touch_base/lib/storage/chat/chat_database.dart#L57-L69)。
-  - 消息搜索实现：`LIKE '%query%'`（注释写明后续可 FTS）。见 [message_dao.dart](file://client/common/peers_touch_base/lib/storage/chat/daos/message_dao.dart#L105-L129)。
-- AI Chat（desktop client 内）是走 LocalStorage 的 KV 持久化（按 session key 存消息 JSON），非 chat.db。见 [ai_chat_controller.dart](file://client/desktop/lib/features/ai_chat/controller/ai_chat_controller.dart#L560-L583)。
+  - 表：`sessions/messages/group_members/...`。见 [chat_database.dart](../../../client/common/peers_touch_base/lib/storage/chat/chat_database.dart#L22-L31)。
+  - 索引：`messages(session_id,sent_at desc)`、`messages(reply_to_id)`、`sessions(is_pinned,last_message_at)`。见 [chat_database.dart](../../../client/common/peers_touch_base/lib/storage/chat/chat_database.dart#L57-L69)。
+  - 消息搜索实现：`LIKE '%query%'`（注释写明后续可 FTS）。见 [message_dao.dart](../../../client/common/peers_touch_base/lib/storage/chat/daos/message_dao.dart#L105-L129)。
+- AI Chat（desktop client 内）是走 LocalStorage 的 KV 持久化（按 session key 存消息 JSON），非 chat.db。见 [ai_chat_controller.dart](../../../client/desktop/lib/features/ai_chat/controller/ai_chat_controller.dart#L560-L583)。
 
 **搜索来源**
-- 群聊搜索：直接调用服务端 `/group-chat/messages/search`。见 [group_info_panel_controller.dart](file://client/desktop/lib/features/friend_chat/controller/group_info_panel_controller.dart#L184-L189)、[group_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L301-L314)。
-- 私聊搜索：未见 friend-chat 对应搜索 API；现有 friend API 仅 session/messages/send/ack 等。见 [friend_chat_api_service.dart](file://client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L173-L277)。
-- 本地搜索能力：`ChatSearchService` 调 `ChatCacheService.searchMessages`，但 desktop 主流程里未形成完整接入。见 [chat_search_service.dart](file://client/common/peers_touch_base/lib/chat/services/chat_search_service.dart#L132-L139)。
+- 群聊搜索：直接调用服务端 `/group-chat/messages/search`。见 [group_info_panel_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/group_info_panel_controller.dart#L184-L189)、[group_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/group_chat/group_chat_api_service.dart#L301-L314)。
+- 私聊搜索：未见 friend-chat 对应搜索 API；现有 friend API 仅 session/messages/send/ack 等。见 [friend_chat_api_service.dart](../../../client/common/peers_touch_base/lib/network/friend_chat/friend_chat_api_service.dart#L173-L277)。
+- 本地搜索能力：`ChatSearchService` 调 `ChatCacheService.searchMessages`，但 desktop 主流程里未形成完整接入。见 [chat_search_service.dart](../../../client/common/peers_touch_base/lib/chat/services/chat_search_service.dart#L132-L139)。
 
 **friend/group chat 缺口（重点）**
-- friend/group 消息主链路仍以服务端拉取 + 内存列表为主，未见调用 `ChatCacheService.saveMessage/saveGroupMessage` 落库。见 [friend_chat_controller.dart](file://client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L1766-L1787)、[friend_chat_controller.dart](file://client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L1029-L1047)。
-- 本地缓存服务虽初始化，但实际使用点很少（主要读会话、清未读）。见 [friend_chat_controller.dart](file://client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L787-L799)、[friend_chat_controller.dart](file://client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L995-L999)。
-- 未读清零存在键语义风险：UI 传的是 `targetId(好友did/群ulid)`，DAO 清零按 `sessions.id` 更新；而 `sessions` 表同时有 `id` 与 `target_id`，若两者不一致会失效。见 [friend_chat_controller.dart](file://client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L984-L998)、[sessions_table.dart](file://client/common/peers_touch_base/lib/storage/chat/tables/sessions_table.dart#L6-L13)、[session_dao.dart](file://client/common/peers_touch_base/lib/storage/chat/daos/session_dao.dart#L92-L94)。
-- 群聊有“服务端搜索”，私聊无对等能力；本地统一搜索（联系人/群/消息）存在服务类但未落地成桌面统一入口。见 [chat_search_service.dart](file://client/common/peers_touch_base/lib/chat/services/chat_search_service.dart#L99-L104)、[chat_search_service.dart](file://client/common/peers_touch_base/lib/chat/services/chat_search_service.dart#L132-L158)。
+- friend/group 消息主链路仍以服务端拉取 + 内存列表为主，未见调用 `ChatCacheService.saveMessage/saveGroupMessage` 落库。见 [friend_chat_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L1766-L1787)、[friend_chat_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L1029-L1047)。
+- 本地缓存服务虽初始化，但实际使用点很少（主要读会话、清未读）。见 [friend_chat_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L787-L799)、[friend_chat_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L995-L999)。
+- 未读清零存在键语义风险：UI 传的是 `targetId(好友did/群ulid)`，DAO 清零按 `sessions.id` 更新；而 `sessions` 表同时有 `id` 与 `target_id`，若两者不一致会失效。见 [friend_chat_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L984-L998)、[sessions_table.dart](../../../client/common/peers_touch_base/lib/storage/chat/tables/sessions_table.dart#L6-L13)、[session_dao.dart](../../../client/common/peers_touch_base/lib/storage/chat/daos/session_dao.dart#L92-L94)。
+- 群聊有“服务端搜索”，私聊无对等能力；本地统一搜索（联系人/群/消息）存在服务类但未落地成桌面统一入口。见 [chat_search_service.dart](../../../client/common/peers_touch_base/lib/chat/services/chat_search_service.dart#L99-L104)、[chat_search_service.dart](../../../client/common/peers_touch_base/lib/chat/services/chat_search_service.dart#L132-L158)。
 
 你这个点非常关键，而且你说得对：**“本地历史消息存储 + 本地搜索”应当是 Desktop 聊天能力的核心约束**。我补上这一块结论。
 
 **现状判断**
-- **Tauri Desktop（apps/desktop）当前没有消息持久化**，聊天消息在 Rust 里是进程内内存结构，重启即丢失，无法支撑本地历史搜索。实现位于 [chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L19) 和 [chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L74-L78)。
-- **搜索接口在 Tauri 侧是占位**，没有真实消息检索能力。见 [search/mod.rs](file://apps/desktop/src-tauri/src/application/search/mod.rs#L20-L35)。
-- **Flutter Desktop 这条线有本地 SQLite（drift）能力**，有 `chat.db` 和消息索引，但 Friend/Group 主流程落库接入不完整，导致“有库但没吃满”。见 [chat_database.dart](file://client/common/peers_touch_base/lib/storage/chat/chat_database.dart#L45-L69) 与 [friend_chat_controller.dart](file://client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L1766-L1787)。
+- **Tauri Desktop（apps/desktop）当前没有消息持久化**，聊天消息在 Rust 里是进程内内存结构，重启即丢失，无法支撑本地历史搜索。实现位于 [chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L15-L19) 和 [chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L74-L78)。
+- **搜索接口在 Tauri 侧是占位**，没有真实消息检索能力。见 [search/mod.rs](../../../apps/desktop/src-tauri/src/application/search/mod.rs#L20-L35)。
+- **Flutter Desktop 这条线有本地 SQLite（drift）能力**，有 `chat.db` 和消息索引，但 Friend/Group 主流程落库接入不完整，导致“有库但没吃满”。见 [chat_database.dart](../../../client/common/peers_touch_base/lib/storage/chat/chat_database.dart#L45-L69) 与 [friend_chat_controller.dart](../../../client/desktop/lib/features/friend_chat/controller/friend_chat_controller.dart#L1766-L1787)。
 
 **对你这个需求的直接含义**
 - 你要的“用户搜索消息是本地搜”在当前 Tauri 栈里**尚不成立**。
@@ -16055,20 +16055,20 @@ Friend Chat & Group Chat 实现
 我已对 `friend_chat` 与 `group_chat` 做了完整范围审查（仅这两个目录及其直接契约/事件依赖），下面给出结论与重构级建议。
 
 **分层现状**
-- **friend_chat**：HTTP Handler 直接编排 Service，Service 又直接操作 GORM；`db/repo` 层已实现但实际上未被使用，形成“名义分层、实际旁路” ([handler.go](file://apps/station/app/subserver/friend_chat/handler.go#L20-L389), [message_service.go](file://apps/station/app/subserver/friend_chat/service/message_service.go#L48-L203), [session_repo.go](file://apps/station/app/subserver/friend_chat/db/repo/session_repo.go#L12-L162))。
-- **group_chat**：同样是 Handler 直接编排多个 Service，Service 直接 DB；没有独立 repo 抽象，且大量 `AutoMigrate` 在请求路径执行 ([handler.go](file://apps/station/app/subserver/group_chat/handler.go#L52-L905), [group_service.go](file://apps/station/app/subserver/group_chat/service/group_service.go#L37-L158), [member_service.go](file://apps/station/app/subserver/group_chat/service/member_service.go#L34-L63), [message_service.go](file://apps/station/app/subserver/group_chat/service/message_service.go#L47-L50))。
+- **friend_chat**：HTTP Handler 直接编排 Service，Service 又直接操作 GORM；`db/repo` 层已实现但实际上未被使用，形成“名义分层、实际旁路” ([handler.go](../../../apps/station/app/subserver/friend_chat/handler.go#L20-L389), [message_service.go](../../../apps/station/app/subserver/friend_chat/service/message_service.go#L48-L203), [session_repo.go](../../../apps/station/app/subserver/friend_chat/db/repo/session_repo.go#L12-L162))。
+- **group_chat**：同样是 Handler 直接编排多个 Service，Service 直接 DB；没有独立 repo 抽象，且大量 `AutoMigrate` 在请求路径执行 ([handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L52-L905), [group_service.go](../../../apps/station/app/subserver/group_chat/service/group_service.go#L37-L158), [member_service.go](../../../apps/station/app/subserver/group_chat/service/member_service.go#L34-L63), [message_service.go](../../../apps/station/app/subserver/group_chat/service/message_service.go#L47-L50))。
 
 **实体/聚合**
-- **friend_chat** 可识别聚合：`Session`（会话）+ `Message`（消息）+ `OfflineMessage`（离线投递）；但未形成聚合内一致性边界（跨表更新散落在多个方法）([session.go](file://apps/station/app/subserver/friend_chat/db/model/session.go#L10-L22), [message.go](file://apps/station/app/subserver/friend_chat/db/model/message.go#L10-L24), [offline.go](file://apps/station/app/subserver/friend_chat/db/model/offline.go#L10-L22))。
-- **group_chat** 可识别聚合：`Group`（根）+ `GroupMember` + `GroupMessage` + `GroupInvitation` + `GroupOfflineMessage`，但成员计数、邀请、入群、消息离线化并非同一事务边界 ([group.go](file://apps/station/app/subserver/group_chat/db/model/group.go#L20-L63), [member.go](file://apps/station/app/subserver/group_chat/db/model/member.go#L15-L25), [message.go](file://apps/station/app/subserver/group_chat/db/model/message.go#L47-L89))。
+- **friend_chat** 可识别聚合：`Session`（会话）+ `Message`（消息）+ `OfflineMessage`（离线投递）；但未形成聚合内一致性边界（跨表更新散落在多个方法）([session.go](../../../apps/station/app/subserver/friend_chat/db/model/session.go#L10-L22), [message.go](../../../apps/station/app/subserver/friend_chat/db/model/message.go#L10-L24), [offline.go](../../../apps/station/app/subserver/friend_chat/db/model/offline.go#L10-L22))。
+- **group_chat** 可识别聚合：`Group`（根）+ `GroupMember` + `GroupMessage` + `GroupInvitation` + `GroupOfflineMessage`，但成员计数、邀请、入群、消息离线化并非同一事务边界 ([group.go](../../../apps/station/app/subserver/group_chat/db/model/group.go#L20-L63), [member.go](../../../apps/station/app/subserver/group_chat/db/model/member.go#L15-L25), [message.go](../../../apps/station/app/subserver/group_chat/db/model/message.go#L47-L89))。
 
 **关键问题（按你要求的六个维度）**
-- **事务一致性**：创建群=建群+加 owner+加初始成员完全无事务，任何一步失败都可能残留半成品；发送群消息后离线消息和事件是异步 goroutine，主流程成功不代表后续一致 ([handler.go](file://apps/station/app/subserver/group_chat/handler.go#L65-L83), [handler.go](file://apps/station/app/subserver/group_chat/handler.go#L430-L477))。
-- **接口契约漂移**：friend/group 的 proto 字段不少未落地（如附件、search `before_ulid`、group settings 持久化）；`CreateSessionResponse.Created` 永远 `false` ([friend_chat.pb.go](file://apps/station/frame/touch/model/chat/friend_chat.pb.go#L1025-L1031), [handler.go](file://apps/station/app/subserver/friend_chat/handler.go#L336-L347), [group_chat.pb.go](file://apps/station/frame/touch/model/chat/group_chat.pb.go#L2521-L2527), [handler.go](file://apps/station/app/subserver/group_chat/handler.go#L590-L625), [handler.go](file://apps/station/app/subserver/group_chat/handler.go#L673-L705))。
-- **并发/竞态**：`GetOrCreateSession` 非原子，且会话参与者无唯一约束，竞态下可重复建会话；member_count 变更与成员行写入分离，存在计数漂移 ([session_service.go](file://apps/station/app/subserver/friend_chat/service/session_service.go#L96-L107), [session.go](file://apps/station/app/subserver/friend_chat/db/model/session.go#L12-L22), [member_service.go](file://apps/station/app/subserver/group_chat/service/member_service.go#L56-L63))。
-- **事件模型**：group_chat 直接在 Handler 中逐个用户发布事件，缺少 outbox/重试/幂等键；事件系统设计文档强调 outbox+dispatcher，但这里是“即发即忘” ([handler.go](file://apps/station/app/subserver/group_chat/handler.go#L451-L474), [event.go](file://apps/station/frame/core/event/event.go#L1-L41), [delivery_router.go](file://apps/station/frame/core/event/delivery_router.go#L106-L137))。
-- **可扩展性**：请求路径执行 `AutoMigrate`、群发事件按成员循环、离线写入全量 receiver 批量但无分片策略；`MaxMembers` 有字段无校验执行 ([group_service.go](file://apps/station/app/subserver/group_chat/service/group_service.go#L43-L46), [message_service.go](file://apps/station/app/subserver/group_chat/service/message_service.go#L47-L50), [group_service.go](file://apps/station/app/subserver/group_chat/service/group_service.go#L63-L64), [member_service.go](file://apps/station/app/subserver/group_chat/service/member_service.go#L34-L63))。
-- **严重正确性缺陷（friend_chat）**：模型列名是 `ul_id/session_ul_id/last_message_ul_id`，但查询大量使用 `ulid/session_ulid/last_message_ulid`，会导致查询/更新命中失败或 silent no-op ([session.go](file://apps/station/app/subserver/friend_chat/db/model/session.go#L12-L17), [message.go](file://apps/station/app/subserver/friend_chat/db/model/message.go#L12-L14), [session_service.go](file://apps/station/app/subserver/friend_chat/service/session_service.go#L71-L143), [message_service.go](file://apps/station/app/subserver/friend_chat/service/message_service.go#L93-L140))。
+- **事务一致性**：创建群=建群+加 owner+加初始成员完全无事务，任何一步失败都可能残留半成品；发送群消息后离线消息和事件是异步 goroutine，主流程成功不代表后续一致 ([handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L65-L83), [handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L430-L477))。
+- **接口契约漂移**：friend/group 的 proto 字段不少未落地（如附件、search `before_ulid`、group settings 持久化）；`CreateSessionResponse.Created` 永远 `false` ([friend_chat.pb.go](../../../apps/station/frame/touch/model/chat/friend_chat.pb.go#L1025-L1031), [handler.go](../../../apps/station/app/subserver/friend_chat/handler.go#L336-L347), [group_chat.pb.go](../../../apps/station/frame/touch/model/chat/group_chat.pb.go#L2521-L2527), [handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L590-L625), [handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L673-L705))。
+- **并发/竞态**：`GetOrCreateSession` 非原子，且会话参与者无唯一约束，竞态下可重复建会话；member_count 变更与成员行写入分离，存在计数漂移 ([session_service.go](../../../apps/station/app/subserver/friend_chat/service/session_service.go#L96-L107), [session.go](../../../apps/station/app/subserver/friend_chat/db/model/session.go#L12-L22), [member_service.go](../../../apps/station/app/subserver/group_chat/service/member_service.go#L56-L63))。
+- **事件模型**：group_chat 直接在 Handler 中逐个用户发布事件，缺少 outbox/重试/幂等键；事件系统设计文档强调 outbox+dispatcher，但这里是“即发即忘” ([handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L451-L474), [event.go](../../../apps/station/frame/core/event/event.go#L1-L41), [delivery_router.go](../../../apps/station/frame/core/event/delivery_router.go#L106-L137))。
+- **可扩展性**：请求路径执行 `AutoMigrate`、群发事件按成员循环、离线写入全量 receiver 批量但无分片策略；`MaxMembers` 有字段无校验执行 ([group_service.go](../../../apps/station/app/subserver/group_chat/service/group_service.go#L43-L46), [message_service.go](../../../apps/station/app/subserver/group_chat/service/message_service.go#L47-L50), [group_service.go](../../../apps/station/app/subserver/group_chat/service/group_service.go#L63-L64), [member_service.go](../../../apps/station/app/subserver/group_chat/service/member_service.go#L34-L63))。
+- **严重正确性缺陷（friend_chat）**：模型列名是 `ul_id/session_ul_id/last_message_ul_id`，但查询大量使用 `ulid/session_ulid/last_message_ulid`，会导致查询/更新命中失败或 silent no-op ([session.go](../../../apps/station/app/subserver/friend_chat/db/model/session.go#L12-L17), [message.go](../../../apps/station/app/subserver/friend_chat/db/model/message.go#L12-L14), [session_service.go](../../../apps/station/app/subserver/friend_chat/service/session_service.go#L71-L143), [message_service.go](../../../apps/station/app/subserver/friend_chat/service/message_service.go#L93-L140))。
 
 **重构级架构建议**
 - **重建应用层**：拆成 `application/usecase`（事务编排）+ `domain`（聚合与不变量）+ `infrastructure/repository`（GORM 实现），Handler 只做鉴权+DTO 转换。
@@ -16089,7 +16089,7 @@ Friend Chat & Group Chat 实现
 - 直接在现状上补丁式迭代，会快速形成你最担心的“烟囱”。
 
 **关键架构问题**
-- **应用层缺位**：handler 直接编排服务与存储，导致业务规则分散在 handler/service 中，难以治理。参考 [friend handler](file://apps/station/app/subserver/friend_chat/handler.go#L20-L389)、[group handler](file://apps/station/app/subserver/group_chat/handler.go#L18-L813)。
+- **应用层缺位**：handler 直接编排服务与存储，导致业务规则分散在 handler/service 中，难以治理。参考 [friend handler](../../../apps/station/app/subserver/friend_chat/handler.go#L20-L389)、[group handler](../../../apps/station/app/subserver/group_chat/handler.go#L18-L813)。
 - **事务边界不完整**：群创建、入群、发消息后的离线投递与事件发布并非统一事务闭环，失败后易出现“主流程成功、派生状态不一致”。
 - **事件模型偏过程化**：群消息 fanout 在 handler 中直接逐个发布，缺少 outbox + dispatcher 的可靠投递闭环。
 - **契约实现漂移**：proto 字段与实际落地存在不一致（如部分查询/设置语义与返回字段不完整），会放大多端对接成本。
@@ -16136,8 +16136,8 @@ Friend Chat & Group Chat 实现
 - **搜索本地优先**：用户搜索命中来自本地索引，不依赖在线 RTT。
 
 **为什么要重构**
-- 当前 handler 直接编排业务与存储，应用层职责混杂（如 [friend_chat/handler.go](file://apps/station/app/subserver/friend_chat/handler.go#L20-L389)、[group_chat/handler.go](file://apps/station/app/subserver/group_chat/handler.go#L18-L813)）。
-- 群消息派发/离线处理在请求后 goroutine 分叉，缺乏可靠事件闭环（[group_chat/handler.go](file://apps/station/app/subserver/group_chat/handler.go#L430-L477)）。
+- 当前 handler 直接编排业务与存储，应用层职责混杂（如 [friend_chat/handler.go](../../../apps/station/app/subserver/friend_chat/handler.go#L20-L389)、[group_chat/handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L18-L813)）。
+- 群消息派发/离线处理在请求后 goroutine 分叉，缺乏可靠事件闭环（[group_chat/handler.go](../../../apps/station/app/subserver/group_chat/handler.go#L430-L477)）。
 - 现状不适合继续叠需求，继续补丁只会变成烟囱。
 
 **V2 目标架构（Station）**
@@ -16290,8 +16290,8 @@ Friend Chat & Group Chat 实现
   - 新实现挂原路由名
   - 旧实现挂 `_old` 路由名
 - 参考当前旧入口：
-  - [friend_chat/handler.go](file://apps/station/app/subserver/friend_chat/handler.go)
-  - [group_chat/handler.go](file://apps/station/app/subserver/group_chat/handler.go)
+  - [friend_chat/handler.go](../../../apps/station/app/subserver/friend_chat/handler.go)
+  - [group_chat/handler.go](../../../apps/station/app/subserver/group_chat/handler.go)
 
 **B. Station 新目录（Phase 1 交付）**
 - `apps/station/app/subserver/friend_chat/`
@@ -16403,7 +16403,7 @@ Friend Chat & Group Chat 实现
   - `apps/station/app/subserver/friend_chat` → `apps/station/app/subserver/friend_chat_old`
   - `apps/station/app/subserver/group_chat` → `apps/station/app/subserver/group_chat_old`
 - **保留旧实现注册但改路径后缀**
-  - 参考当前注册点 [main.go](file://apps/station/app/main.go)
+  - 参考当前注册点 [main.go](../../../apps/station/app/main.go)
   - 旧路由统一加 `_old`：`/friend-chat_old/...`、`/group-chat_old/...`
 
 **二、Station：新 IM 子域目录骨架**
@@ -16525,25 +16525,25 @@ Friend Chat & Group Chat 实现
 **本次已落地**
 
 - Station 主进程已切到新子服务实现，旧 `friend_chat/group_chat` 不再注册，因此旧路由不可调用  
-  - [main.go:L20-L21](file://apps/station/app/main.go#L20-L21)  
-  - [main.go:L52-L53](file://apps/station/app/main.go#L52-L53)
+  - [main.go:L20-L21](../../../apps/station/app/main.go#L20-L21)  
+  - [main.go:L52-L53](../../../apps/station/app/main.go#L52-L53)
 - 新 Friend Chat 子服务骨架已创建并接入原路由名 `/friend-chat/*`  
-  - [subserver.go](file://apps/station/app/subserver/friend_chat_new/subserver.go)  
-  - [handler.go:L13-L21](file://apps/station/app/subserver/friend_chat_new/handler.go#L13-L21)
+  - [subserver.go](../../../apps/station/app/subserver/friend_chat_new/subserver.go)  
+  - [handler.go:L13-L21](../../../apps/station/app/subserver/friend_chat_new/handler.go#L13-L21)
 - 新 Group Chat 子服务骨架已创建并接入原路由名 `/group-chat/*`  
-  - [subserver.go](file://apps/station/app/subserver/group_chat_new/subserver.go)  
-  - [handler.go:L13-L22](file://apps/station/app/subserver/group_chat_new/handler.go#L13-L22)
+  - [subserver.go](../../../apps/station/app/subserver/group_chat_new/subserver.go)  
+  - [handler.go:L13-L22](../../../apps/station/app/subserver/group_chat_new/handler.go#L13-L22)
 - Desktop Rust 新命令骨架已接入（直接走 Station HTTP，带 token）  
-  - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)  
-  - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+  - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)  
+  - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 - Tauri 命令注册与 contracts 已补齐  
-  - [tauri_commands/mod.rs:L9-L10](file://apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs#L9-L10)  
-  - [main.rs:L38-L47](file://apps/desktop/src-tauri/src/main.rs#L38-L47)  
-  - [contracts/mod.rs:L90](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L90)  
-  - [contracts/mod.rs:L151](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L151)
+  - [tauri_commands/mod.rs:L9-L10](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs#L9-L10)  
+  - [main.rs:L38-L47](../../../apps/desktop/src-tauri/src/main.rs#L38-L47)  
+  - [contracts/mod.rs:L90](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L90)  
+  - [contracts/mod.rs:L151](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L151)
 - TS API 侧 friend/group typed 接口已补齐  
-  - [desktop_api.ts:L1298](file://apps/desktop/src/services/desktop_api.ts#L1298)  
-  - [desktop_api.ts:L1890-L1941](file://apps/desktop/src/services/desktop_api.ts#L1890-L1941)
+  - [desktop_api.ts:L1298](../../../apps/desktop/src/services/desktop_api.ts#L1298)  
+  - [desktop_api.ts:L1890-L1941](../../../apps/desktop/src/services/desktop_api.ts#L1890-L1941)
 
 **验证结果**
 
@@ -16573,12 +16573,12 @@ Friend Chat & Group Chat 实现
   - `friend_chat_new` → `friend_chat`
   - `group_chat_new` → `group_chat`
 - 引用同步：
-  - [main.go](file://apps/station/app/main.go#L20-L21) 已改为引入新路径 `subserver/friend_chat`、`subserver/group_chat`
+  - [main.go](../../../apps/station/app/main.go#L20-L21) 已改为引入新路径 `subserver/friend_chat`、`subserver/group_chat`
 - 包名同步：
-  - [friend_chat/subserver.go](file://apps/station/app/subserver/friend_chat/subserver.go)
-  - [friend_chat/handler.go](file://apps/station/app/subserver/friend_chat/handler.go)
-  - [group_chat/subserver.go](file://apps/station/app/subserver/group_chat/subserver.go)
-  - [group_chat/handler.go](file://apps/station/app/subserver/group_chat/handler.go)
+  - [friend_chat/subserver.go](../../../apps/station/app/subserver/friend_chat/subserver.go)
+  - [friend_chat/handler.go](../../../apps/station/app/subserver/friend_chat/handler.go)
+  - [group_chat/subserver.go](../../../apps/station/app/subserver/group_chat/subserver.go)
+  - [group_chat/handler.go](../../../apps/station/app/subserver/group_chat/handler.go)
 
 **验证**
 - 在 `apps/station/app` 执行 `go build .`，已通过（exit code 0）。
@@ -16594,20 +16594,20 @@ Friend Chat & Group Chat 实现
 
 **当前覆盖情况**
 - Friend Chat 新实现只覆盖了 5 个核心接口：`create/list/send/messages/ack`  
-  - [friend_chat/handler.go:L16-L20](file://apps/station/app/subserver/friend_chat/handler.go#L16-L20)
+  - [friend_chat/handler.go:L16-L20](../../../apps/station/app/subserver/friend_chat/handler.go#L16-L20)
 - Group Chat 新实现只覆盖了 6 个核心接口：`create/list/send/messages/unread-count/mark-read`  
-  - [group_chat/handler.go:L16-L21](file://apps/station/app/subserver/group_chat/handler.go#L16-L21)
+  - [group_chat/handler.go:L16-L21](../../../apps/station/app/subserver/group_chat/handler.go#L16-L21)
 
 **和旧实现差距**
 - Friend 旧版有 10 个接口（缺了 `sync/online/offline/pending/stats`）  
-  - [friend_chat_old/handler.go:L24-L33](file://apps/station/app/subserver/friend_chat_old/handler.go#L24-L33)
+  - [friend_chat_old/handler.go:L24-L33](../../../apps/station/app/subserver/friend_chat_old/handler.go#L24-L33)
 - Group 旧版有 22 个接口（缺了 `info/update/invite/join/leave/members/search/settings/offline/stats` 等）  
-  - [group_chat_old/handler.go:L22-L48](file://apps/station/app/subserver/group_chat_old/handler.go#L22-L48)
+  - [group_chat_old/handler.go:L22-L48](../../../apps/station/app/subserver/group_chat_old/handler.go#L22-L48)
 
 **另外一个关键点**
 - 现在新实现是内存仓储，不是持久化，不满足你强调的本地搜索/同步基线。  
-  - [friend_chat/infrastructure/repo.go:L13-L18](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go#L13-L18)  
-  - [group_chat/service.go:L30-L35](file://apps/station/app/subserver/group_chat/service.go#L30-L35)
+  - [friend_chat/infrastructure/repo.go:L13-L18](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go#L13-L18)  
+  - [group_chat/service.go:L30-L35](../../../apps/station/app/subserver/group_chat/service.go#L30-L35)
 
 所以结论很明确：**当前只完成了重构切换与最小可运行主链路，不是功能全量覆盖**。  
 下一步我会继续补 Phase 1.2（持久化仓储 + outbox + 同步语义），再进到接口全量补齐。
@@ -16621,18 +16621,18 @@ Friend Chat & Group Chat 实现
 
 **当前覆盖结果**
 - Friend Chat：已从 5 个接口补齐到 10 个接口（与旧版数量一致）  
-  - 新路由清单在 [handler.go:L16-L25](file://apps/station/app/subserver/friend_chat/handler.go#L16-L25)
-  - 新增了 `sync/online/offline/pending/stats`（例如 [handleSyncMessages](file://apps/station/app/subserver/friend_chat/handler.go#L177-L204)、[handleStats](file://apps/station/app/subserver/friend_chat/handler.go#L266-L279)）
+  - 新路由清单在 [handler.go:L16-L25](../../../apps/station/app/subserver/friend_chat/handler.go#L16-L25)
+  - 新增了 `sync/online/offline/pending/stats`（例如 [handleSyncMessages](../../../apps/station/app/subserver/friend_chat/handler.go#L177-L204)、[handleStats](../../../apps/station/app/subserver/friend_chat/handler.go#L266-L279)）
 - Group Chat：已从 6 个接口补齐到 22 个接口（与旧版数量一致）  
-  - 新路由清单在 [handler.go:L16-L37](file://apps/station/app/subserver/group_chat/handler.go#L16-L37)
-  - 已补 `info/update/invite/join/leave/members/remove/recall/delete/search/settings/offline/stats` 等（例如 [handleInfo](file://apps/station/app/subserver/group_chat/handler.go#L164-L178)、[handleGetOfflineMessages](file://apps/station/app/subserver/group_chat/handler.go#L416-L440)、[handleStats](file://apps/station/app/subserver/group_chat/handler.go#L452-L464)）
+  - 新路由清单在 [handler.go:L16-L37](../../../apps/station/app/subserver/group_chat/handler.go#L16-L37)
+  - 已补 `info/update/invite/join/leave/members/remove/recall/delete/search/settings/offline/stats` 等（例如 [handleInfo](../../../apps/station/app/subserver/group_chat/handler.go#L164-L178)、[handleGetOfflineMessages](../../../apps/station/app/subserver/group_chat/handler.go#L416-L440)、[handleStats](../../../apps/station/app/subserver/group_chat/handler.go#L452-L464)）
 
 **支撑实现**
 - Friend 子服务增加了在线态与待投递内存状态  
-  - [subserver.go:L16-L33](file://apps/station/app/subserver/friend_chat/subserver.go#L16-L33)
+  - [subserver.go:L16-L33](../../../apps/station/app/subserver/friend_chat/subserver.go#L16-L33)
 - Group 子服务扩展了成员、邀请、设置、离线消息等内存模型  
-  - [service.go:L65-L74](file://apps/station/app/subserver/group_chat/service.go#L65-L74)
-  - 关键能力实现如 [createGroup](file://apps/station/app/subserver/group_chat/service.go#L77-L106)、[createInvitation](file://apps/station/app/subserver/group_chat/service.go#L308-L327)、[getOfflineMessages](file://apps/station/app/subserver/group_chat/service.go#L437-L448)
+  - [service.go:L65-L74](../../../apps/station/app/subserver/group_chat/service.go#L65-L74)
+  - 关键能力实现如 [createGroup](../../../apps/station/app/subserver/group_chat/service.go#L77-L106)、[createInvitation](../../../apps/station/app/subserver/group_chat/service.go#L308-L327)、[getOfflineMessages](../../../apps/station/app/subserver/group_chat/service.go#L437-L448)
 
 **验证**
 - 已执行 `go build .`（`apps/station/app`）通过，当前可编译。
@@ -16649,26 +16649,26 @@ Friend Chat & Group Chat 实现
 - 我已做了面向 `apps/station` 的多轮全量检索（启动链路、store/gorm、subserver migration、repository、outbox/event），结论是：`station` 当前 DB 初始化是统一 Store 注入 + 分散 `AutoMigrate`，而“事务型 Outbox”仍是设计态，未落库实现。
 
 **GORM/数据库初始化链路**
-- 入口在 [main.go](file://apps/station/app/main.go#L35-L83)，`p.Init()` 触发框架组件初始化。
-- `native node` 在 [native_init_top_comp.go](file://apps/station/frame/core/plugin/native/node/native_init_top_comp.go#L76-L92) 初始化 Store，并调用 Store `Init`。
-- Store 插件把配置里的 `peers.store.rds.gorm` 转为 `RDSMap`，见 [plugin.go](file://apps/station/frame/core/plugin/native/store/plugin.go#L31-L49)。
-- 真正 `gorm.Open` 在 [native.go](file://apps/station/frame/core/plugin/native/store/native.go#L33-L57)，随后执行所有 `InitTableHooks`，见 [native.go](file://apps/station/frame/core/plugin/native/store/native.go#L64-L66) + [rds.go](file://apps/station/frame/core/store/rds.go#L13-L17)。
-- 驱动通过插件注册：SQLite [sqlite.go](file://apps/station/frame/core/plugin/store/rds/sqlite/sqlite.go#L8-L10)、Postgres [postgre.go](file://apps/station/frame/core/plugin/store/rds/postgres/postgre.go#L8-L10)。
+- 入口在 [main.go](../../../apps/station/app/main.go#L35-L83)，`p.Init()` 触发框架组件初始化。
+- `native node` 在 [native_init_top_comp.go](../../../apps/station/frame/core/plugin/native/node/native_init_top_comp.go#L76-L92) 初始化 Store，并调用 Store `Init`。
+- Store 插件把配置里的 `peers.store.rds.gorm` 转为 `RDSMap`，见 [plugin.go](../../../apps/station/frame/core/plugin/native/store/plugin.go#L31-L49)。
+- 真正 `gorm.Open` 在 [native.go](../../../apps/station/frame/core/plugin/native/store/native.go#L33-L57)，随后执行所有 `InitTableHooks`，见 [native.go](../../../apps/station/frame/core/plugin/native/store/native.go#L64-L66) + [rds.go](../../../apps/station/frame/core/store/rds.go#L13-L17)。
+- 驱动通过插件注册：SQLite [sqlite.go](../../../apps/station/frame/core/plugin/store/rds/sqlite/sqlite.go#L8-L10)、Postgres [postgre.go](../../../apps/station/frame/core/plugin/store/rds/postgres/postgre.go#L8-L10)。
 
 **Migration 现状（按子服务）**
-- 全局 touch 模型通过 Hook 自动迁移，见 [automigrate.go](file://apps/station/frame/touch/model/db/automigrate.go#L13-L32)。
-- `oss` 采用“双迁移位点”：插件 Hook + Subserver.Init 再次迁移，见 [oss/plugin.go](file://apps/station/app/subserver/oss/plugin.go#L56-L61) 与 [oss.go](file://apps/station/app/subserver/oss/oss.go#L60-L66)。
-- `ai_chat` 在 Subserver.Init 里直接 `AutoMigrate`，见 [aichat.go](file://apps/station/app/subserver/ai_chat/aichat.go#L40-L53)。
-- `launcher` 当前代码未初始化 DB/migration（仅配置项），见 [launcher/plugin.go](file://apps/station/app/subserver/launcher/plugin.go#L33-L47) 与 [launcher.go](file://apps/station/app/subserver/launcher/launcher.go#L23-L34)；其 migration 仅出现在集成文档示例 [INTEGRATION.md](file://apps/station/app/subserver/launcher/INTEGRATION.md#L208-L224)。
+- 全局 touch 模型通过 Hook 自动迁移，见 [automigrate.go](../../../apps/station/frame/touch/model/db/automigrate.go#L13-L32)。
+- `oss` 采用“双迁移位点”：插件 Hook + Subserver.Init 再次迁移，见 [oss/plugin.go](../../../apps/station/app/subserver/oss/plugin.go#L56-L61) 与 [oss.go](../../../apps/station/app/subserver/oss/oss.go#L60-L66)。
+- `ai_chat` 在 Subserver.Init 里直接 `AutoMigrate`，见 [aichat.go](../../../apps/station/app/subserver/ai_chat/aichat.go#L40-L53)。
+- `launcher` 当前代码未初始化 DB/migration（仅配置项），见 [launcher/plugin.go](../../../apps/station/app/subserver/launcher/plugin.go#L33-L47) 与 [launcher.go](../../../apps/station/app/subserver/launcher/launcher.go#L23-L34)；其 migration 仅出现在集成文档示例 [INTEGRATION.md](../../../apps/station/app/subserver/launcher/INTEGRATION.md#L208-L224)。
 
 **可复用仓储模式**
-- 推荐复用“接口 + gorm 实现 + 构造注入 `*gorm.DB`”模式：如 [post_repository.go](file://apps/station/frame/touch/social/repository/post_repository.go#L15-L40)、[follow_repository.go](file://apps/station/frame/touch/social/repository/follow_repository.go#L12-L30)。
-- 跨库名场景可复用 `dbName` 延迟取库模式：如 [file_repo.go](file://apps/station/app/subserver/oss/db/repo/file_repo.go#L17-L31)。
-- 事务写模型当前可复用 `gormDB.Transaction(...)` 范式，见 [post_service.go](file://apps/station/frame/touch/social/service/post_service.go#L62-L79)。
+- 推荐复用“接口 + gorm 实现 + 构造注入 `*gorm.DB`”模式：如 [post_repository.go](../../../apps/station/frame/touch/social/repository/post_repository.go#L15-L40)、[follow_repository.go](../../../apps/station/frame/touch/social/repository/follow_repository.go#L12-L30)。
+- 跨库名场景可复用 `dbName` 延迟取库模式：如 [file_repo.go](../../../apps/station/app/subserver/oss/db/repo/file_repo.go#L17-L31)。
+- 事务写模型当前可复用 `gormDB.Transaction(...)` 范式，见 [post_service.go](../../../apps/station/frame/touch/social/service/post_service.go#L62-L79)。
 
 **Outbox 事件写入范式（现状）**
-- 当前 `event` 模块定义了 Outbox 状态枚举，但没有 DB Outbox 表/dispatcher 扫描实现，见 [types.go](file://apps/station/frame/core/event/types.go#L52-L64)。
-- 现有路由器是“在线直推 + broker 落消息（内存实现）”，非事务 Outbox，见 [delivery_router.go](file://apps/station/frame/core/event/delivery_router.go#L83-L90) 与 [a.go](file://apps/station/frame/core/plugin/broker/a/a.go#L20-L25)。
+- 当前 `event` 模块定义了 Outbox 状态枚举，但没有 DB Outbox 表/dispatcher 扫描实现，见 [types.go](../../../apps/station/frame/core/event/types.go#L52-L64)。
+- 现有路由器是“在线直推 + broker 落消息（内存实现）”，非事务 Outbox，见 [delivery_router.go](../../../apps/station/frame/core/event/delivery_router.go#L83-L90) 与 [a.go](../../../apps/station/frame/core/plugin/broker/a/a.go#L20-L25)。
 
 **最小可用实现路径（建议）**
 - 第一步：给 `launcher` 落地 `model + repo(interface/gorm)`，按 social repo 模式实现。
@@ -16680,17 +16680,17 @@ Friend Chat & Group Chat 实现
 
 **本轮完成**
 - Friend Chat 仓储从内存实现升级为 GORM 持久化仓储，并加了 Outbox 表与写入。
-  - 仓储与表定义：[repo.go](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go#L43-L227)
-  - `AutoMigrate` 生效：[repo.go:L62-L63](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go#L62-L63)
-  - 发送消息事务内写 message + session + outbox：[repo.go:L150-L191](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go#L150-L191)
+  - 仓储与表定义：[repo.go](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go#L43-L227)
+  - `AutoMigrate` 生效：[repo.go:L62-L63](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go#L62-L63)
+  - 发送消息事务内写 message + session + outbox：[repo.go:L150-L191](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go#L150-L191)
 - Friend Chat 子服务初始化接入真实 RDS，并在启动时迁移表。
-  - [subserver.go:L47-L55](file://apps/station/app/subserver/friend_chat/subserver.go#L47-L55)
+  - [subserver.go:L47-L55](../../../apps/station/app/subserver/friend_chat/subserver.go#L47-L55)
 - Friend Chat handler 已改为处理持久化层错误返回（不是 silent fail）。
-  - [handler.go:L37-L210](file://apps/station/app/subserver/friend_chat/handler.go#L37-L210)
+  - [handler.go:L37-L210](../../../apps/station/app/subserver/friend_chat/handler.go#L37-L210)
 - Group Chat 增加了持久化模型与迁移，并在关键写路径追加落库/outbox。
-  - 模型定义：[models.go](file://apps/station/app/subserver/group_chat/models.go#L5-L51)
-  - 子服务迁移接入：[subserver.go:L41-L48](file://apps/station/app/subserver/group_chat/subserver.go#L41-L48)
-  - 关键写路径（发消息/已读）落库与 outbox：[service.go:L144-L205](file://apps/station/app/subserver/group_chat/service.go#L144-L205), [service.go:L238-L250](file://apps/station/app/subserver/group_chat/service.go#L238-L250)
+  - 模型定义：[models.go](../../../apps/station/app/subserver/group_chat/models.go#L5-L51)
+  - 子服务迁移接入：[subserver.go:L41-L48](../../../apps/station/app/subserver/group_chat/subserver.go#L41-L48)
+  - 关键写路径（发消息/已读）落库与 outbox：[service.go:L144-L205](../../../apps/station/app/subserver/group_chat/service.go#L144-L205), [service.go:L238-L250](../../../apps/station/app/subserver/group_chat/service.go#L238-L250)
 
 **验证**
 - `apps/station/app` 下执行 `go build .` 通过。
@@ -16713,17 +16713,17 @@ chat 相关的功能，还有多少事没做
 
 **已完成（当前状态）**
 - Station 侧路由覆盖已补到 friend 10 个、group 22 个（数量上对齐旧版）  
-  - Friend 路由：[friend_chat/handler.go:L16-L25](file://apps/station/app/subserver/friend_chat/handler.go#L16-L25)  
-  - Group 路由：[group_chat/handler.go:L16-L37](file://apps/station/app/subserver/group_chat/handler.go#L16-L37)
+  - Friend 路由：[friend_chat/handler.go:L16-L25](../../../apps/station/app/subserver/friend_chat/handler.go#L16-L25)  
+  - Group 路由：[group_chat/handler.go:L16-L37](../../../apps/station/app/subserver/group_chat/handler.go#L16-L37)
 - Friend 已接入 GORM 持久化 + outbox 表写入（关键写链路）  
-  - [friend_chat/infrastructure/repo.go:L62-L63](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go#L62-L63)  
-  - [friend_chat/infrastructure/repo.go:L150-L191](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go#L150-L191)
+  - [friend_chat/infrastructure/repo.go:L62-L63](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go#L62-L63)  
+  - [friend_chat/infrastructure/repo.go:L150-L191](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go#L150-L191)
 - Group 已有模型迁移与部分写入落库起步  
-  - [group_chat/subserver.go:L41-L48](file://apps/station/app/subserver/group_chat/subserver.go#L41-L48)
+  - [group_chat/subserver.go:L41-L48](../../../apps/station/app/subserver/group_chat/subserver.go#L41-L48)
 
 **还没做完的核心事项（按优先级）**
 - **P0：Group 全量仓储化**  
-  - 目前 Group 仍是“内存主状态 + DB 部分落库”混合，不是纯持久化一致性实现（关键逻辑还在 [group_chat/service.go](file://apps/station/app/subserver/group_chat/service.go) 的内存 map）。
+  - 目前 Group 仍是“内存主状态 + DB 部分落库”混合，不是纯持久化一致性实现（关键逻辑还在 [group_chat/service.go](../../../apps/station/app/subserver/group_chat/service.go) 的内存 map）。
 - **P0：Outbox Dispatcher**  
   - 现在只有 outbox 写入，没有完整的 pending→publish→acked/retry 调度闭环。
 - **P0：事务边界统一**  
@@ -16752,19 +16752,19 @@ chat 相关的功能，还有多少事没做
 
 **本轮已完成**
 - Group Chat 增加了持久化自举（服务启动时从 DB 重建内存状态）。
-  - 自举入口：[service.go:80](file://apps/station/app/subserver/group_chat/service.go#L80)
-  - 子服务初始化调用：[subserver.go:58](file://apps/station/app/subserver/group_chat/subserver.go#L58)
+  - 自举入口：[service.go:80](../../../apps/station/app/subserver/group_chat/service.go#L80)
+  - 子服务初始化调用：[subserver.go:58](../../../apps/station/app/subserver/group_chat/subserver.go#L58)
 - Group Chat 扩展了持久化模型并迁移：
-  - 新模型（邀请/设置/离线）[models.go](file://apps/station/app/subserver/group_chat/models.go)
-  - 迁移调用：[subserver.go:46-L54](file://apps/station/app/subserver/group_chat/subserver.go#L46-L54)
+  - 新模型（邀请/设置/离线）[models.go](../../../apps/station/app/subserver/group_chat/models.go)
+  - 迁移调用：[subserver.go:46-L54](../../../apps/station/app/subserver/group_chat/subserver.go#L46-L54)
 - Group 关键路径补了 DB 写入：
-  - 邀请创建/接受、设置更新、昵称更新、离线 ack、消息撤回/删除等在 [service.go](file://apps/station/app/subserver/group_chat/service.go) 已加入落库分支。
+  - 邀请创建/接受、设置更新、昵称更新、离线 ack、消息撤回/删除等在 [service.go](../../../apps/station/app/subserver/group_chat/service.go) 已加入落库分支。
 - Friend Chat 增加 outbox 调度闭环：
-  - 调度方法：[repo.go:238](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go#L238)
-  - 启动定时调度：[subserver.go:80](file://apps/station/app/subserver/friend_chat/subserver.go#L80)
+  - 调度方法：[repo.go:238](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go#L238)
+  - 启动定时调度：[subserver.go:80](../../../apps/station/app/subserver/friend_chat/subserver.go#L80)
 - Group Chat 也加了 outbox 调度闭环：
-  - 调度方法：[service.go:206](file://apps/station/app/subserver/group_chat/service.go#L206)
-  - 启动定时调度：[subserver.go:74](file://apps/station/app/subserver/group_chat/subserver.go#L74)
+  - 调度方法：[service.go:206](../../../apps/station/app/subserver/group_chat/service.go#L206)
+  - 启动定时调度：[subserver.go:74](../../../apps/station/app/subserver/group_chat/subserver.go#L74)
 
 **验证**
 - 已执行 `go build .`（`apps/station/app`）通过。
@@ -16784,20 +16784,20 @@ chat 相关的功能，还有多少事没做
 
 **本轮完成**
 - Group 子服务启动时已做扩展迁移 + DB 自举 + outbox 调度。
-  - 迁移与自举：[subserver.go:L46-L58](file://apps/station/app/subserver/group_chat/subserver.go#L46-L58)
-  - 定时调度 outbox：[subserver.go:L74](file://apps/station/app/subserver/group_chat/subserver.go#L74)
+  - 迁移与自举：[subserver.go:L46-L58](../../../apps/station/app/subserver/group_chat/subserver.go#L46-L58)
+  - 定时调度 outbox：[subserver.go:L74](../../../apps/station/app/subserver/group_chat/subserver.go#L74)
 - Group 读路径改为 DB-first（DB 可用优先查 DB，失败再退回内存）：
-  - `listGroups` [service.go:L278](file://apps/station/app/subserver/group_chat/service.go#L278)
-  - `listMessages` [service.go:L393](file://apps/station/app/subserver/group_chat/service.go#L393)
-  - `unreadCount` [service.go:L427](file://apps/station/app/subserver/group_chat/service.go#L427)
-  - `getGroup` [service.go:L478](file://apps/station/app/subserver/group_chat/service.go#L478)
-  - `listMembers` [service.go:L625](file://apps/station/app/subserver/group_chat/service.go#L625)
-  - `getSettings` [service.go:L802](file://apps/station/app/subserver/group_chat/service.go#L802)
-  - `getOfflineMessages` [service.go:L881](file://apps/station/app/subserver/group_chat/service.go#L881)
-  - `stats` [service.go:L933](file://apps/station/app/subserver/group_chat/service.go#L933)
+  - `listGroups` [service.go:L278](../../../apps/station/app/subserver/group_chat/service.go#L278)
+  - `listMessages` [service.go:L393](../../../apps/station/app/subserver/group_chat/service.go#L393)
+  - `unreadCount` [service.go:L427](../../../apps/station/app/subserver/group_chat/service.go#L427)
+  - `getGroup` [service.go:L478](../../../apps/station/app/subserver/group_chat/service.go#L478)
+  - `listMembers` [service.go:L625](../../../apps/station/app/subserver/group_chat/service.go#L625)
+  - `getSettings` [service.go:L802](../../../apps/station/app/subserver/group_chat/service.go#L802)
+  - `getOfflineMessages` [service.go:L881](../../../apps/station/app/subserver/group_chat/service.go#L881)
+  - `stats` [service.go:L933](../../../apps/station/app/subserver/group_chat/service.go#L933)
 - Friend outbox 闭环已接：
-  - `DispatchOutbox`：[repo.go:L238](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go#L238)
-  - 启动调度：[subserver.go:L80](file://apps/station/app/subserver/friend_chat/subserver.go#L80)
+  - `DispatchOutbox`：[repo.go:L238](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go#L238)
+  - 启动调度：[subserver.go:L80](../../../apps/station/app/subserver/friend_chat/subserver.go#L80)
 
 **验证**
 - `apps/station/app` 下 `go build .` 通过。
@@ -16817,18 +16817,18 @@ chat 相关的功能，还有多少事没做
 
 **本轮关键进展**
 - Group 核心写路径改成了 DB-first 事务优先：
-  - `createGroup`：[service.go:L227](file://apps/station/app/subserver/group_chat/service.go#L227)
-  - `appendMessage`：[service.go:L355](file://apps/station/app/subserver/group_chat/service.go#L355)
-  - `markRead`：[service.go:L557](file://apps/station/app/subserver/group_chat/service.go#L557)
-  - `addMember`：[service.go:L685](file://apps/station/app/subserver/group_chat/service.go#L685)
-  - `removeMember`：[service.go:L788](file://apps/station/app/subserver/group_chat/service.go#L788)
+  - `createGroup`：[service.go:L227](../../../apps/station/app/subserver/group_chat/service.go#L227)
+  - `appendMessage`：[service.go:L355](../../../apps/station/app/subserver/group_chat/service.go#L355)
+  - `markRead`：[service.go:L557](../../../apps/station/app/subserver/group_chat/service.go#L557)
+  - `addMember`：[service.go:L685](../../../apps/station/app/subserver/group_chat/service.go#L685)
+  - `removeMember`：[service.go:L788](../../../apps/station/app/subserver/group_chat/service.go#L788)
 - Group 读路径仍保持 DB-first（这轮继续保留）：
-  - `listGroups`：[service.go:L324](file://apps/station/app/subserver/group_chat/service.go#L324)
-  - `listMessages`：[service.go:L500](file://apps/station/app/subserver/group_chat/service.go#L500)
-  - `unreadCount`：[service.go:L534](file://apps/station/app/subserver/group_chat/service.go#L534)
+  - `listGroups`：[service.go:L324](../../../apps/station/app/subserver/group_chat/service.go#L324)
+  - `listMessages`：[service.go:L500](../../../apps/station/app/subserver/group_chat/service.go#L500)
+  - `unreadCount`：[service.go:L534](../../../apps/station/app/subserver/group_chat/service.go#L534)
 - Group 子服务启动链路已具备：
   - 表迁移 + 自举 + outbox 调度  
-  - [subserver.go:L46](file://apps/station/app/subserver/group_chat/subserver.go#L46), [subserver.go:L58](file://apps/station/app/subserver/group_chat/subserver.go#L58), [subserver.go:L74](file://apps/station/app/subserver/group_chat/subserver.go#L74)
+  - [subserver.go:L46](../../../apps/station/app/subserver/group_chat/subserver.go#L46), [subserver.go:L58](../../../apps/station/app/subserver/group_chat/subserver.go#L58), [subserver.go:L74](../../../apps/station/app/subserver/group_chat/subserver.go#L74)
 
 **验证**
 - 已执行 `go build .`（`apps/station/app`）通过。
@@ -16845,20 +16845,20 @@ chat 相关的功能，还有多少事没做
 
 **本轮完成**
 - Group 核心写路径均已采用 DB-first 分支优先：
-  - `createGroup` [service.go:L227](file://apps/station/app/subserver/group_chat/service.go#L227)
-  - `appendMessage` [service.go:L337](file://apps/station/app/subserver/group_chat/service.go#L337)
-  - `markRead` [service.go:L496](file://apps/station/app/subserver/group_chat/service.go#L496)
-  - `addMember` [service.go:L627](file://apps/station/app/subserver/group_chat/service.go#L627)
-  - `removeMember` [service.go:L712](file://apps/station/app/subserver/group_chat/service.go#L712)
+  - `createGroup` [service.go:L227](../../../apps/station/app/subserver/group_chat/service.go#L227)
+  - `appendMessage` [service.go:L337](../../../apps/station/app/subserver/group_chat/service.go#L337)
+  - `markRead` [service.go:L496](../../../apps/station/app/subserver/group_chat/service.go#L496)
+  - `addMember` [service.go:L627](../../../apps/station/app/subserver/group_chat/service.go#L627)
+  - `removeMember` [service.go:L712](../../../apps/station/app/subserver/group_chat/service.go#L712)
 - 同时把这批能力也改成 DB 分支直接返回，进一步降低内存写依赖：
-  - `updateGroup` [service.go:L564](file://apps/station/app/subserver/group_chat/service.go#L564)
-  - `createInvitation` [service.go:L801](file://apps/station/app/subserver/group_chat/service.go#L801)
-  - `acceptInvitation` [service.go:L841](file://apps/station/app/subserver/group_chat/service.go#L841)
-  - `recallMessage` [service.go:L863](file://apps/station/app/subserver/group_chat/service.go#L863)
-  - `deleteMessage` [service.go:L891](file://apps/station/app/subserver/group_chat/service.go#L891)
-  - `updateSettings` [service.go:L969](file://apps/station/app/subserver/group_chat/service.go#L969)
-  - `updateNickname` [service.go:L1030](file://apps/station/app/subserver/group_chat/service.go#L1030)
-  - `ackOffline` [service.go:L1082](file://apps/station/app/subserver/group_chat/service.go#L1082)
+  - `updateGroup` [service.go:L564](../../../apps/station/app/subserver/group_chat/service.go#L564)
+  - `createInvitation` [service.go:L801](../../../apps/station/app/subserver/group_chat/service.go#L801)
+  - `acceptInvitation` [service.go:L841](../../../apps/station/app/subserver/group_chat/service.go#L841)
+  - `recallMessage` [service.go:L863](../../../apps/station/app/subserver/group_chat/service.go#L863)
+  - `deleteMessage` [service.go:L891](../../../apps/station/app/subserver/group_chat/service.go#L891)
+  - `updateSettings` [service.go:L969](../../../apps/station/app/subserver/group_chat/service.go#L969)
+  - `updateNickname` [service.go:L1030](../../../apps/station/app/subserver/group_chat/service.go#L1030)
+  - `ackOffline` [service.go:L1082](../../../apps/station/app/subserver/group_chat/service.go#L1082)
 
 **验证**
 - 已执行 `go build .`（`apps/station/app`）通过。
@@ -16875,20 +16875,20 @@ chat 相关的功能，还有多少事没做
 
 **本轮已完成**
 - 新增本地消息存储模块（文件持久化，支持 friend/group 入库与本地搜索）  
-  - [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
+  - [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
 - Friend Rust 命令接入本地落盘与本地搜索命令：
-  - 拉消息/发消息后入库：[friend_chat.rs:L145](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L145), [friend_chat.rs:L171](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L171)
-  - 新增本地搜索命令：[friend_chat.rs:L198](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L198)
+  - 拉消息/发消息后入库：[friend_chat.rs:L145](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L145), [friend_chat.rs:L171](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L171)
+  - 新增本地搜索命令：[friend_chat.rs:L198](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L198)
 - Group Rust 命令接入本地落盘与本地搜索命令：
-  - 拉消息/发消息后入库：[group_chat.rs:L123](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L123), [group_chat.rs:L150](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L150)
-  - 新增本地搜索命令：[group_chat.rs:L191](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L191)
+  - 拉消息/发消息后入库：[group_chat.rs:L123](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L123), [group_chat.rs:L150](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L150)
+  - 新增本地搜索命令：[group_chat.rs:L191](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L191)
 - 契约与命令注册补齐：
-  - 新增输入契约 `ChatLocalSearchInput`：[contracts/mod.rs:L156](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L156)
-  - Tauri 命令注册：[main.rs:L43](file://apps/desktop/src-tauri/src/main.rs#L43), [main.rs:L49](file://apps/desktop/src-tauri/src/main.rs#L49)
+  - 新增输入契约 `ChatLocalSearchInput`：[contracts/mod.rs:L156](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L156)
+  - Tauri 命令注册：[main.rs:L43](../../../apps/desktop/src-tauri/src/main.rs#L43), [main.rs:L49](../../../apps/desktop/src-tauri/src/main.rs#L49)
 - TS API 已补本地搜索能力：
-  - 类型：[desktop_api.ts:L1354](file://apps/desktop/src/services/desktop_api.ts#L1354)
-  - `friendChatLocalSearch`：[desktop_api.ts:L1923](file://apps/desktop/src/services/desktop_api.ts#L1923)
-  - `groupChatLocalSearch`：[desktop_api.ts:L1957](file://apps/desktop/src/services/desktop_api.ts#L1957)
+  - 类型：[desktop_api.ts:L1354](../../../apps/desktop/src/services/desktop_api.ts#L1354)
+  - `friendChatLocalSearch`：[desktop_api.ts:L1923](../../../apps/desktop/src/services/desktop_api.ts#L1923)
+  - `groupChatLocalSearch`：[desktop_api.ts:L1957](../../../apps/desktop/src/services/desktop_api.ts#L1957)
 
 **验证结果**
 - Station：`go build .` 通过。
@@ -16998,14 +16998,14 @@ chat 消息不一定要用sqlite吧，业界用的什么？
 
 **已补齐内容**
 - 完整补强文档：  
-  [unified-runtime-storage-architecture.md](file://docs/architecture/storage/unified-runtime-storage-architecture.md)
+  [unified-runtime-storage-architecture.md](../../../docs/architecture/storage/unified-runtime-storage-architecture.md)
 - 关键增强点：
-  - 明确 DB 作为一等存储对象（统一接入 `data/db`）[L74-L93](file://docs/architecture/storage/unified-runtime-storage-architecture.md#L74-L93)
-  - 增加分域分库规则（chat 必须独立库）[L89-L93](file://docs/architecture/storage/unified-runtime-storage-architecture.md#L89-L93)
-  - 增加加密分级、密钥管理、轮换恢复 [L94-L110](file://docs/architecture/storage/unified-runtime-storage-architecture.md#L94-L110)
-  - 补齐 framework 必备能力接口（`resolveDatabasePath/openDatabase/healthCheck` 等）[L147-L160](file://docs/architecture/storage/unified-runtime-storage-architecture.md#L147-L160)
-  - 增加可观测性与治理指标 [L161-L174](file://docs/architecture/storage/unified-runtime-storage-architecture.md#L161-L174)
-  - 强化验收标准（chat 分库 + L2 加密）[L182-L188](file://docs/architecture/storage/unified-runtime-storage-architecture.md#L182-L188)
+  - 明确 DB 作为一等存储对象（统一接入 `data/db`）[L74-L93](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L74-L93)
+  - 增加分域分库规则（chat 必须独立库）[L89-L93](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L89-L93)
+  - 增加加密分级、密钥管理、轮换恢复 [L94-L110](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L94-L110)
+  - 补齐 framework 必备能力接口（`resolveDatabasePath/openDatabase/healthCheck` 等）[L147-L160](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L147-L160)
+  - 增加可观测性与治理指标 [L161-L174](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L161-L174)
+  - 强化验收标准（chat 分库 + L2 加密）[L182-L188](../../../docs/architecture/storage/unified-runtime-storage-architecture.md#L182-L188)
 
 **现在这版的核心变化**
 - 不再是“目录规范文档”，而是“**可实施的存储框架规范**”。
@@ -17028,10 +17028,10 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 
 **P0：先做（必须）**
 - **统一 DB 路径决议接口**：在 Desktop storage 框架里新增 `resolveDatabasePath(appName, domain, profile, scope)`，把 chat 落盘从临时 JSON 切到 `data/db/chat.main.db`。
-  - 当前存储入口在 [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs)
-  - 当前临时 chat 本地存储在 [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
+  - 当前存储入口在 [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs)
+  - 当前临时 chat 本地存储在 [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
 - **接入 scope 解析**：Desktop 命令层从会话提 `userScope`（未登录用 `__default__`），所有 chat 本地读写必须显式带 scope。
-  - 命令入口在 [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) 与 [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+  - 命令入口在 [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) 与 [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 - **Chat 与其它模块分库落地**：chat 不与 settings/profile 共库，严格按你文档执行。
 
 **P1：紧接着做（核心能力）**
@@ -17046,8 +17046,8 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 
 **和当前代码状态的衔接**
 - Station 侧 group/friend 已有 DB-first 与 outbox 基础，可继续沿用：
-  - [group_chat/service.go](file://apps/station/app/subserver/group_chat/service.go)
-  - [friend_chat/repo.go](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go)
+  - [group_chat/service.go](../../../apps/station/app/subserver/group_chat/service.go)
+  - [friend_chat/repo.go](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go)
 - Desktop 侧目前是“可用过渡态”，下一步就是按新 storage 架构替换掉临时本地存储路径与实现。
 
 如果你同意，我下一步直接开始做 **P0 第一项**：先改 storage 框架接口和 chat DB 路径决议，再把 friend/group 命令层切到新接口。
@@ -17060,15 +17060,15 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 
 **这轮已完成（Group Chat DDD 化）**
 - 新增领域层模型：  
-  - [types.go](file://apps/station/app/subserver/group_chat/domain/types.go)
+  - [types.go](../../../apps/station/app/subserver/group_chat/domain/types.go)
 - 新增应用层服务（Use Case 门面，屏蔽下层实现细节）：  
-  - [service.go](file://apps/station/app/subserver/group_chat/application/service.go)
+  - [service.go](../../../apps/station/app/subserver/group_chat/application/service.go)
 - 基础设施层（原 `service.go`）补了 Repository 适配方法，对外暴露领域对象而不是内部结构：  
-  - 关键入口如 [service.go:L227](file://apps/station/app/subserver/group_chat/service.go#L227), [service.go:L337](file://apps/station/app/subserver/group_chat/service.go#L337), [service.go:L496](file://apps/station/app/subserver/group_chat/service.go#L496)
+  - 关键入口如 [service.go:L227](../../../apps/station/app/subserver/group_chat/service.go#L227), [service.go:L337](../../../apps/station/app/subserver/group_chat/service.go#L337), [service.go:L496](../../../apps/station/app/subserver/group_chat/service.go#L496)
 - 子服务初始化接入应用层：  
-  - [subserver.go:L19](file://apps/station/app/subserver/group_chat/subserver.go#L19), [subserver.go:L61](file://apps/station/app/subserver/group_chat/subserver.go#L61)
+  - [subserver.go:L19](../../../apps/station/app/subserver/group_chat/subserver.go#L19), [subserver.go:L61](../../../apps/station/app/subserver/group_chat/subserver.go#L61)
 - handler 核心链路切换为调用 `appService`（不是直连 infra 细节）：  
-  - 例如 create/list/send/messages/unread/mark/info/join/leave 在 [handler.go](file://apps/station/app/subserver/group_chat/handler.go)
+  - 例如 create/list/send/messages/unread/mark/info/join/leave 在 [handler.go](../../../apps/station/app/subserver/group_chat/handler.go)
 
 **验证**
 - `apps/station/app` 下 `go build .` 已通过。
@@ -17085,16 +17085,16 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 
 **这轮完成**
 - Group 新增了明确的领域层对象：
-  - [types.go](file://apps/station/app/subserver/group_chat/domain/types.go)
+  - [types.go](../../../apps/station/app/subserver/group_chat/domain/types.go)
 - Group 新增应用层服务（Repository 接口 + 用例门面），把 handler 与基础设施解耦：
-  - [application/service.go](file://apps/station/app/subserver/group_chat/application/service.go)
+  - [application/service.go](../../../apps/station/app/subserver/group_chat/application/service.go)
 - 基础设施服务实现了应用层接口映射（domain ↔ infra）：
-  - [service.go:L65](file://apps/station/app/subserver/group_chat/service.go#L65)
+  - [service.go:L65](../../../apps/station/app/subserver/group_chat/service.go#L65)
 - subserver 初始化接入 `appService`：
-  - [subserver.go:L19](file://apps/station/app/subserver/group_chat/subserver.go#L19)
-  - [subserver.go:L61](file://apps/station/app/subserver/group_chat/subserver.go#L61)
+  - [subserver.go:L19](../../../apps/station/app/subserver/group_chat/subserver.go#L19)
+  - [subserver.go:L61](../../../apps/station/app/subserver/group_chat/subserver.go#L61)
 - **关键点**：handler 里对 `s.service` 的直接调用已经清空，全部走 `s.appService`：
-  - [handler.go](file://apps/station/app/subserver/group_chat/handler.go)
+  - [handler.go](../../../apps/station/app/subserver/group_chat/handler.go)
   - （已确认 `s.service.` 无匹配）
 
 **验证**
@@ -17111,16 +17111,16 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 
 **这轮主要改动**
 - 在应用层增加了业务错误与用例化方法（不再只是 repo 透传）：
-  - 文件：[application/service.go](file://apps/station/app/subserver/group_chat/application/service.go)
+  - 文件：[application/service.go](../../../apps/station/app/subserver/group_chat/application/service.go)
   - 新增错误：`ErrPermissionDenied`、`ErrNotMember`、`ErrInvalidInvitation`、`ErrOwnerCannotLeave` 等
   - 新增用例：`UpdateGroupByActor`、`InviteByActor`、`JoinByActor`、`LeaveByActor`、`RemoveMemberByActor`、`RecallMessageByActor`、`DeleteMessageByActor`、`SearchMessagesByActor`
 - Handler 侧把权限判断和规则判断改为调用应用层用例，并只做 HTTP 映射：
-  - 文件：[handler.go](file://apps/station/app/subserver/group_chat/handler.go)
+  - 文件：[handler.go](../../../apps/station/app/subserver/group_chat/handler.go)
   - 结果：`handler` 不再直接承载角色规则，应用层成为规则入口
 - 领域模型补齐了邀请、设置、离线消息对象，支撑用例语义：
-  - 文件：[domain/types.go](file://apps/station/app/subserver/group_chat/domain/types.go)
+  - 文件：[domain/types.go](../../../apps/station/app/subserver/group_chat/domain/types.go)
 - 基础设施服务继续作为 repository 实现，提供 domain 对象映射：
-  - 文件：[service.go](file://apps/station/app/subserver/group_chat/service.go)
+  - 文件：[service.go](../../../apps/station/app/subserver/group_chat/service.go)
 
 **验证**
 - `apps/station/app` 下 `go build .` 通过（exit code 0）。
@@ -17137,13 +17137,13 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 
 **本轮完成**
 - Friend 应用层补了错误语义与按 actor 的用例方法：
-  - [application/service.go](file://apps/station/app/subserver/friend_chat/application/service.go)
+  - [application/service.go](../../../apps/station/app/subserver/friend_chat/application/service.go)
   - 新增错误：`ErrSessionNotFound`、`ErrNotParticipant`、`ErrInvalidReceiver` 等
   - 新增用例：`SendMessageByActor`、`ListMessagesByActor`、`SyncMessagesByActor`
 - Repository 能力补齐 `GetSession`，用于应用层权限与参与者校验：
-  - [infrastructure/repo.go](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go)
+  - [infrastructure/repo.go](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go)
 - Handler 切到应用层用例并做错误映射（Forbidden/NotFound/Internal）：
-  - [handler.go](file://apps/station/app/subserver/friend_chat/handler.go)
+  - [handler.go](../../../apps/station/app/subserver/friend_chat/handler.go)
   - 重点链路：`send`、`list messages`、`sync`
 
 **效果**
@@ -17201,18 +17201,18 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 **本轮完成**
 - Desktop storage 框架新增数据库路径与 scope 决议能力：
   - `resolve_user_scope(actor_id)` 与 `resolve_database_path(app, domain, profile, actor)`  
-  - [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L92-L130)
+  - [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L92-L130)
 - chat 本地存储改为“按用户 scope 分库路径”读写（不再单一全局文件）：
-  - [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L16-L121)
+  - [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L16-L121)
 - friend/group 命令接入 actor scope：
   - 拉消息/发消息入库时使用 `actor_id` scope  
   - 新增 `*_local_search_scoped` 命令  
-  - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L36-L247)  
-  - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L36-L240)
+  - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L36-L247)  
+  - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L36-L240)
 - 主进程已注册 friend/group 命令（含 scoped 搜索）：
-  - [main.rs](file://apps/desktop/src-tauri/src/main.rs#L8-L252)
+  - [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L8-L252)
 - TS API 已切到 scoped 本地搜索命令：
-  - [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1923-L1961)
+  - [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1923-L1961)
 
 **验证**
 - Station：`go build .` 通过。
@@ -17238,19 +17238,19 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 - Storage 框架新增数据库路径与 scope 规则：
   - `resolve_database_path(app, domain, profile, actor_id)`
   - `resolve_user_scope(actor_id)`（未登录默认 `__default__`）
-  - [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L92-L130)
+  - [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L92-L130)
 - 本地 chat 存储从 JSON 过渡到 SQLite：
   - 新建连接、自动迁移、消息表、同步游标表、FTS 表
-  - [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
+  - [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
 - scoped 写入与 scoped 搜索已接入 friend/group：
   - friend：入库按 actor scope；新增 `friend_chat_local_search_scoped`
-    - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+    - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
   - group：入库按 actor scope；新增 `group_chat_local_search_scoped`
-    - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+    - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 - 主进程命令注册已补齐 friend/group scoped 命令：
-  - [main.rs](file://apps/desktop/src-tauri/src/main.rs)
+  - [main.rs](../../../apps/desktop/src-tauri/src/main.rs)
 - TS API 已改为调用 scoped 搜索命令：
-  - [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1923-L1961)
+  - [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1923-L1961)
 
 **构建验证**
 - Station：`go build .` 通过。
@@ -17398,27 +17398,27 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 **本轮已完成**
 - **Storage 领域层抽象（Domain）**
   - 新增数据库打开规格与加密等级：
-    - [database.rs](file://apps/desktop/src-tauri/src/domain/storage/database.rs)
+    - [database.rs](../../../apps/desktop/src-tauri/src/domain/storage/database.rs)
   - 新增密钥管理领域接口：
-    - [key_management.rs](file://apps/desktop/src-tauri/src/domain/storage/key_management.rs)
+    - [key_management.rs](../../../apps/desktop/src-tauri/src/domain/storage/key_management.rs)
   - 领域模块注册：
-    - [domain/mod.rs](file://apps/desktop/src-tauri/src/domain/mod.rs)
+    - [domain/mod.rs](../../../apps/desktop/src-tauri/src/domain/mod.rs)
 - **基础设施层实现（Infrastructure）**
   - 新增 `PlatformKeyProvider`（当前为接入层占位实现，接口已固定）：
-    - [key_provider.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs)
+    - [key_provider.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs)
   - 在 storage 框架新增统一 `open_database(spec, key_provider)`：
-    - [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs)
+    - [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs)
 - **应用层编排（Application）**
   - 新增 chat 本地存储应用服务（不让接口层直接操作基础设施细节）：
-    - [chat_storage.rs](file://apps/desktop/src-tauri/src/application/chat_storage.rs)
+    - [chat_storage.rs](../../../apps/desktop/src-tauri/src/application/chat_storage.rs)
   - 应用模块注册：
-    - [application/mod.rs](file://apps/desktop/src-tauri/src/application/mod.rs)
+    - [application/mod.rs](../../../apps/desktop/src-tauri/src/application/mod.rs)
 - **chat 落盘链路切换**
   - `local_chat_store` 改为统一走 `open_database`，并继续保留迁移、FTS、cursor：
-    - [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
+    - [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
   - friend/group 命令改为走应用层 `chat_storage`：
-    - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
-    - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+    - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+    - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 
 **验证结果**
 - Station：`go build .` 通过。
@@ -17443,21 +17443,21 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 **本轮完成**
 - **补齐 scoped cursor 能力（Rust 命令层）**
   - Friend：
-    - [friend_chat.rs:L247-L270](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L247-L270)
+    - [friend_chat.rs:L247-L270](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs#L247-L270)
   - Group：
-    - [group_chat.rs:L240-L263](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L240-L263)
+    - [group_chat.rs:L240-L263](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs#L240-L263)
 - **命令注册补齐**
-  - [main.rs:L77-L87](file://apps/desktop/src-tauri/src/main.rs#L77-L87)
+  - [main.rs:L77-L87](../../../apps/desktop/src-tauri/src/main.rs#L77-L87)
 - **TS API 封装补齐**
   - Friend cursor：
-    - [desktop_api.ts:L1939-L1948](file://apps/desktop/src/services/desktop_api.ts#L1939-L1948)
+    - [desktop_api.ts:L1939-L1948](../../../apps/desktop/src/services/desktop_api.ts#L1939-L1948)
   - Group cursor：
-    - [desktop_api.ts:L1984-L1993](file://apps/desktop/src/services/desktop_api.ts#L1984-L1993)
+    - [desktop_api.ts:L1984-L1993](../../../apps/desktop/src/services/desktop_api.ts#L1984-L1993)
 - **主线相关基础仍生效**
   - storage 统一 DB 打开入口 + scope 路径：
-    - [storage/mod.rs:L97-L132](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L97-L132)
+    - [storage/mod.rs:L97-L132](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L97-L132)
   - chat 本地存储统一走 `open_database`：
-    - [local_chat_store.rs:L25](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L25)
+    - [local_chat_store.rs:L25](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs#L25)
 
 **验证**
 - Station：`go build .` 通过。
@@ -17492,13 +17492,13 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 
 **已完成关键点**
 - storage 已有统一数据库路径与打开入口：  
-  [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs)
+  [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs)
 - chat 已切到 scoped 本地库与 FTS 搜索：  
-  [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
+  [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
 - friend/group scoped cursor 命令与 TS API 已补齐：  
-  [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)  
-  [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+  [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)  
+  [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)  
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 **下一步（严格按主线）**
 - 把 chat 相关应用层接口改为**显式 scope 参数**（对齐你文档 8.5）。
@@ -17517,18 +17517,18 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 **本轮完成**
 - **应用层改为显式 scope 参数**
   - chat 应用服务不再接受 `actor_id` 推断，而是直接收 `user_scope`：
-  - [chat_storage.rs](file://apps/desktop/src-tauri/src/application/chat_storage.rs)
+  - [chat_storage.rs](../../../apps/desktop/src-tauri/src/application/chat_storage.rs)
 - **基础设施层改为显式 scope 打开 chat.db**
   - 本地 chat 存储改为 `open_connection(user_scope)`，并通过 `DatabaseOpenSpec::new_chat_main(user_scope)` 打开：
-  - [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
+  - [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
 - **命令层统一从会话解析 scope 后透传**
   - friend：
-    - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+    - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
   - group：
-    - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+    - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 - **KeyProvider 平台实现骨架增强**
   - 增加平台后端枚举（macOS/Windows/Linux/fallback）并纳入 key 生成上下文：
-  - [key_provider.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs)
+  - [key_provider.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs)
 
 **验证**
 - Station：`go build .` 通过。
@@ -17557,29 +17557,29 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 **本轮完成**
 - **按文档约束改为显式 scope 传参**
   - 应用层 `chat_storage` 全部改为 `user_scope: &str` 明确入参，不再在业务层隐式推断：
-  - [chat_storage.rs](file://apps/desktop/src-tauri/src/application/chat_storage.rs)
+  - [chat_storage.rs](../../../apps/desktop/src-tauri/src/application/chat_storage.rs)
 - **存储层同步改为显式 scope**
   - `local_chat_store` 统一使用 `open_connection(user_scope)`：
-  - [local_chat_store.rs](file://apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
+  - [local_chat_store.rs](../../../apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs)
 - **Key version / rotate 与迁移日志链路**
   - storage 新增：
     - `get_database_key_version`
     - `rotate_database_key`
     - `append_migration_log`
-  - [storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs)
+  - [storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs)
 - **KeyProvider 平台骨架增强**
   - 增加平台后端枚举（macOS / Windows / Linux / fallback）并纳入 key material：
-  - [key_provider.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs)
+  - [key_provider.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs)
 - **命令层与 TS API 打通 key/version 操作**
   - Rust 命令：
     - `*_get_key_version_scoped`
     - `*_rotate_key_scoped`
   - 文件：
-    - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
-    - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
-    - [main.rs](file://apps/desktop/src-tauri/src/main.rs)
+    - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+    - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+    - [main.rs](../../../apps/desktop/src-tauri/src/main.rs)
   - TS 封装：
-    - [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+    - [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 **验证**
 - Station：`go build .` 通过。
@@ -17614,23 +17614,23 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
     - 入本地 chat 库
     - 推进 cursor
   - 文件：
-    - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
-    - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+    - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+    - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 - **契约层补齐**
   - 新增输入：
     - `FriendChatSyncInput`
     - `GroupChatSyncInput`
   - 文件：
-    - [contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs)
+    - [contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs)
 - **命令注册**
   - 主进程新增同步命令注册：
-    - [main.rs](file://apps/desktop/src-tauri/src/main.rs)
+    - [main.rs](../../../apps/desktop/src-tauri/src/main.rs)
 - **TS API 封装补齐**
   - 新增：
     - `friendChatSyncFromStation(sessionUlid, limit?)`
     - `groupChatSyncFromStation(groupUlid, limit?)`
   - 文件：
-    - [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+    - [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 **验证**
 - Station：`go build .` 通过。
@@ -17658,19 +17658,19 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 **本轮主线完成**
 - 把 friend/group 的增量同步从“全量拉取后覆盖”升级为“**cursor 增量过滤 + cursor 推进**”：
   - 同步命令会读取 `cursor_before`，仅保留 `ulid > cursor` 的消息入库，然后写回 `cursor_after`。
-  - Friend：[friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
-  - Group：[group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+  - Friend：[friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+  - Group：[group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 - 新增同步契约输入：
   - `FriendChatSyncInput` / `GroupChatSyncInput`
-  - [contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs)
+  - [contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs)
 - 命令注册已补齐：
   - `friend_chat_sync_from_station_scoped`
   - `group_chat_sync_from_station_scoped`
-  - [main.rs](file://apps/desktop/src-tauri/src/main.rs)
+  - [main.rs](../../../apps/desktop/src-tauri/src/main.rs)
 - TS API 已接增量同步封装：
   - `friendChatSyncFromStation(sessionUlid, limit?)`
   - `groupChatSyncFromStation(groupUlid, limit?)`
-  - [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+  - [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 **验证**
 - Station：`go build .` 通过。
@@ -17729,16 +17729,16 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 
 **这轮完成**
 - Station Friend 消息接口支持 `before_ulid=since:<cursor>` 语义（服务端只返回增量消息）：
-  - [repo.go](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go)
-  - [service.go](file://apps/station/app/subserver/friend_chat/application/service.go)
-  - [handler.go](file://apps/station/app/subserver/friend_chat/handler.go)
+  - [repo.go](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go)
+  - [service.go](../../../apps/station/app/subserver/friend_chat/application/service.go)
+  - [handler.go](../../../apps/station/app/subserver/friend_chat/handler.go)
 - Station Group 消息接口同样支持 `since` 语义，并保留原分页语义：
-  - [application/service.go](file://apps/station/app/subserver/group_chat/application/service.go)
-  - [service.go](file://apps/station/app/subserver/group_chat/service.go)
-  - [handler.go](file://apps/station/app/subserver/group_chat/handler.go)
+  - [application/service.go](../../../apps/station/app/subserver/group_chat/application/service.go)
+  - [service.go](../../../apps/station/app/subserver/group_chat/service.go)
+  - [handler.go](../../../apps/station/app/subserver/group_chat/handler.go)
 - Desktop 同步命令已对齐协议：有 cursor 时会传 `before_ulid=since:<cursor>`：
-  - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
-  - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+  - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+  - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 
 **验证**
 - Station：`go build .` 通过。
@@ -17761,25 +17761,25 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
 **本轮完成**
 - **系统密钥库存储骨架接入（Desktop）**
   - `PlatformKeyProvider` 现在优先走系统密钥库（`keyring`），并保留内存回退：
-  - [key_provider.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs)
+  - [key_provider.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs)
   - 依赖已加入：
-  - [Cargo.toml](file://apps/desktop/src-tauri/Cargo.toml)
+  - [Cargo.toml](../../../apps/desktop/src-tauri/Cargo.toml)
 
 - **Station 侧 since-cursor 协议落地（friend + group）**
   - 支持 `before_ulid=since:<cursor>` 的服务端增量查询语义：
   - Friend：
-    - [service.go](file://apps/station/app/subserver/friend_chat/application/service.go)
-    - [repo.go](file://apps/station/app/subserver/friend_chat/infrastructure/repo.go)
-    - [handler.go](file://apps/station/app/subserver/friend_chat/handler.go)
+    - [service.go](../../../apps/station/app/subserver/friend_chat/application/service.go)
+    - [repo.go](../../../apps/station/app/subserver/friend_chat/infrastructure/repo.go)
+    - [handler.go](../../../apps/station/app/subserver/friend_chat/handler.go)
   - Group：
-    - [application/service.go](file://apps/station/app/subserver/group_chat/application/service.go)
-    - [service.go](file://apps/station/app/subserver/group_chat/service.go)
-    - [handler.go](file://apps/station/app/subserver/group_chat/handler.go)
+    - [application/service.go](../../../apps/station/app/subserver/group_chat/application/service.go)
+    - [service.go](../../../apps/station/app/subserver/group_chat/service.go)
+    - [handler.go](../../../apps/station/app/subserver/group_chat/handler.go)
 
 - **Desktop 同步命令已对齐 since 协议**
   - 同步请求携带 `before_ulid=since:<cursor>`：
-  - [friend_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
-  - [group_chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
+  - [friend_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs)
+  - [group_chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs)
 
 **验证**
 - Station：`go build .` 通过。

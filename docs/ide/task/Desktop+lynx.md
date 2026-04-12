@@ -84,15 +84,15 @@
 ## Assistant
 **调研结论（已做多轮全局检索）**
 - 我已覆盖 desktop 前端（store/components/modules/services）与 tauri 端（auth/oauth2/profile/system）链路，结论是：**当前“Account 展示”主要依赖 `preferences + oauth connections`，几乎不依赖 `auth session/profile`**。
-- `auth session` 仅在 `useOAuth2Store` 中维护登录态字段，未被 Account 展示层消费（`authenticated/authErrorCode` 没有下游 UI 使用）([oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L25-L43), [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L87-L135))。
-- `profile_get/profile_update` API 已定义但前端基本未用；展示头像/昵称来自 `preferences_get` (`user_avatar/user_name`) ([desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1714-L1727), [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1990-L1994), [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx#L24-L31), [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx#L250-L278))。
-- OAuth 连接是独立数据域：连接列表、回调入库、断开/刷新都走 `oauth2_*`，并有独立存储（web: localStorage；tauri: `~/.peers-touch/oauth2/connections.json`）([desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L112-L139), [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2431-L2471), [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L84), [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L232-L253))。
+- `auth session` 仅在 `useOAuth2Store` 中维护登录态字段，未被 Account 展示层消费（`authenticated/authErrorCode` 没有下游 UI 使用）([oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L25-L43), [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L87-L135))。
+- `profile_get/profile_update` API 已定义但前端基本未用；展示头像/昵称来自 `preferences_get` (`user_avatar/user_name`) ([desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1714-L1727), [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1990-L1994), [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx#L24-L31), [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx#L250-L278))。
+- OAuth 连接是独立数据域：连接列表、回调入库、断开/刷新都走 `oauth2_*`，并有独立存储（web: localStorage；tauri: `~/.peers-touch/oauth2/connections.json`）([desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L112-L139), [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2431-L2471), [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L84), [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L232-L253))。
 
 **边界现状**
-- **Account/Connections UI 目前未分层**：`account` 与 `connections` 两个模块都指向同一个 `OAuth2Tab`，边界只靠文案区分 ([account.ts](file://apps/desktop/src/modules/account.ts#L1-L11), [connections.ts](file://apps/desktop/src/modules/connections.ts#L18-L29), [OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L355-L365))。
-- **Auth session 与 OAuth connections 被混放在同一个 store**：`useOAuth2Store` 同时承载 `authLogin/authRestoreSession` 与 `oauth2ListConnections/startAuth` ([oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L33-L43), [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L87-L176))。
-- **Profile 与展示身份脱钩**：`profile_*` 命令存在，但侧边栏头像/名称、弹层编辑都走 `preferences_*` + `oauth2ListConnections` ([UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx#L24-L54), [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx#L63-L153))。
-- **后端分层意图清晰**：账号体系与 OAuth provider 编排应分边界（`touch/auth` vs `subserver/oauth`）([README.md](file://apps/station/frame/touch/auth/README.md#L11-L19))。
+- **Account/Connections UI 目前未分层**：`account` 与 `connections` 两个模块都指向同一个 `OAuth2Tab`，边界只靠文案区分 ([account.ts](../../../apps/desktop/src/modules/account.ts#L1-L11), [connections.ts](../../../apps/desktop/src/modules/connections.ts#L18-L29), [OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L355-L365))。
+- **Auth session 与 OAuth connections 被混放在同一个 store**：`useOAuth2Store` 同时承载 `authLogin/authRestoreSession` 与 `oauth2ListConnections/startAuth` ([oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L33-L43), [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L87-L176))。
+- **Profile 与展示身份脱钩**：`profile_*` 命令存在，但侧边栏头像/名称、弹层编辑都走 `preferences_*` + `oauth2ListConnections` ([UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx#L24-L54), [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx#L63-L153))。
+- **后端分层意图清晰**：账号体系与 OAuth provider 编排应分边界（`touch/auth` vs `subserver/oauth`）([README.md](../../../apps/station/frame/touch/auth/README.md#L11-L19))。
 
 **建议架构（不改代码，仅建议）**
 - **展示数据源分工**
@@ -109,14 +109,14 @@
   - 允许“从某个 OAuth 连接选择头像”写回 preferences（现在已是这个方向），但要保持单向：OAuth 仅提供候选素材，不成为主身份源。
 
 **关键文件**
-- 前端聚合层：[oauth2.ts](file://apps/desktop/src/store/oauth2.ts)
-- Account/Connections 面板：[OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx)
-- 个人展示来源：[UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx)
-- API 边界定义：[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
-- 模块注册边界：[account.ts](file://apps/desktop/src/modules/account.ts), [connections.ts](file://apps/desktop/src/modules/connections.ts)
-- Tauri Auth 会话：[service.rs](file://apps/desktop/src-tauri/src/application/auth/service.rs), [session.rs](file://apps/desktop/src-tauri/src/domain/auth/session.rs)
-- Tauri OAuth 连接域：[oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs)
-- Tauri Profile/Preferences：[profile/mod.rs](file://apps/desktop/src-tauri/src/application/profile/mod.rs), [system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs)
+- 前端聚合层：[oauth2.ts](../../../apps/desktop/src/store/oauth2.ts)
+- Account/Connections 面板：[OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx)
+- 个人展示来源：[UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx)
+- API 边界定义：[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
+- 模块注册边界：[account.ts](../../../apps/desktop/src/modules/account.ts), [connections.ts](../../../apps/desktop/src/modules/connections.ts)
+- Tauri Auth 会话：[service.rs](../../../apps/desktop/src-tauri/src/application/auth/service.rs), [session.rs](../../../apps/desktop/src-tauri/src/domain/auth/session.rs)
+- Tauri OAuth 连接域：[oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs)
+- Tauri Profile/Preferences：[profile/mod.rs](../../../apps/desktop/src-tauri/src/application/profile/mod.rs), [system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs)
 
 
 你说得对，我前一个方案方向错了，我收回那条。
@@ -129,9 +129,9 @@
 我已经重新核对了现状，真正的问题是：
 
 - 左上角弹层现在还在直接拉 `oauth2ListConnections` 当“平台已连接”展示源（这是错误耦合）；  
-  [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx#L24-L31)
+  [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx#L24-L31)
 - Account 展示又依赖 `preferences.user_name/user_avatar`，而后端 `preferences_get` 目前几乎空实现；  
-  [system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs#L84-L90)
+  [system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L84-L90)
 - 结果就是你看到的：Settings 里看起来“已登录”，但左上角没有同步成身份。
 
 ---
@@ -321,11 +321,11 @@ AccountIdentityStore 是前端还是后端的组件？
 ---
 
 **现有文件怎么迁**
-- [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx)
+- [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx)
   - 从 `getPreferences + oauth2ListConnections` 改为 `useAccountIdentity()`
-- [oauth2.ts](file://apps/desktop/src/store/oauth2.ts)
+- [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts)
   - 保留登录发起；登录成功后只触发 `accountIdentity.load()`
-- [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+- [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
   - 增加 account API；逐步删除“用 connections 驱动头像展示”的路径
 
 ---
@@ -388,19 +388,19 @@ go 后端没有吗？
 
 **核心文件**
 - Tauri 本地身份域实现：  
-  [account/mod.rs](file://apps/desktop/src-tauri/src/application/account/mod.rs)
+  [account/mod.rs](../../../apps/desktop/src-tauri/src/application/account/mod.rs)
 - Tauri 命令入口：  
-  [tauri_commands/account.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/account.rs)
+  [tauri_commands/account.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/account.rs)
 - 命令注册：  
-  [main.rs](file://apps/desktop/src-tauri/src/main.rs#L7-L195)
+  [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L7-L195)
 - 合约新增：  
-  [contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L339-L353)
+  [contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L339-L353)
 - 前端 account API 与本地回退：  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 - 前端身份 store：  
-  [accountIdentity.ts](file://apps/desktop/src/store/accountIdentity.ts)
+  [accountIdentity.ts](../../../apps/desktop/src/store/accountIdentity.ts)
 - 左上角弹层重构：  
-  [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx)
+  [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx)
 
 **验证结果**
 - 前端类型检查通过：`pnpm --filter @peers-touch/app-desktop run check`
@@ -430,10 +430,10 @@ go 后端没有吗？
 已完成一次**全面且交叉验证**的代码调研（Tauri 配置 / 自定义标题栏 / drag CSS / 平台判断），当前结论如下。
 
 **根因定位**
-- **根因1（确定）**：窗口被配置为无系统装饰，系统标题栏与系统按钮被主动关闭，所以出现“非系统按钮”是架构结果，不是偶发 bug。证据见 [tauri.conf.json:L13-L19](file://apps/desktop/src-tauri/tauri.conf.json#L13-L19)（`"decorations": false`）。
-- **根因2（确定）**：拖拽/禁拖拽 CSS 定义在 `style.css`，但入口只导入了 `index.css`，导致 `.window-drag/.window-no-drag` 规则未生效。证据见 [style.css:L12-L18](file://apps/desktop/src/style.css#L12-L18) 与 [main.tsx:L6-L8](file://apps/desktop/src/main.tsx#L6-L8)（未导入 `style.css`）。
-- **根因3（高相关）**：标题栏主容器被标记为 drag 区（`data-tauri-drag-region`），按钮区仅靠 `.window-no-drag` 解除；当根因2发生时，按钮区会落在 drag 上下文，导致按钮交互异常（常见表现是点按钮像在拖窗）。证据见 [GlobalLayout.tsx:L215-L233](file://apps/desktop/src/components/GlobalLayout.tsx#L215-L233)。
-- **根因4（架构缺口）**：平台判断仅有“是否 Tauri 运行时”，没有 OS 级（mac/win/linux）窗口策略分层，导致标题栏行为与按钮布局无法按平台治理。证据见 [GlobalLayout.tsx:L170](file://apps/desktop/src/components/GlobalLayout.tsx#L170) 与 [desktop_api.ts:L155-L157](file://apps/desktop/src/services/desktop_api.ts#L155-L157)。
+- **根因1（确定）**：窗口被配置为无系统装饰，系统标题栏与系统按钮被主动关闭，所以出现“非系统按钮”是架构结果，不是偶发 bug。证据见 [tauri.conf.json:L13-L19](../../../apps/desktop/src-tauri/tauri.conf.json#L13-L19)（`"decorations": false`）。
+- **根因2（确定）**：拖拽/禁拖拽 CSS 定义在 `style.css`，但入口只导入了 `index.css`，导致 `.window-drag/.window-no-drag` 规则未生效。证据见 [style.css:L12-L18](../../../apps/desktop/src/style.css#L12-L18) 与 [main.tsx:L6-L8](../../../apps/desktop/src/main.tsx#L6-L8)（未导入 `style.css`）。
+- **根因3（高相关）**：标题栏主容器被标记为 drag 区（`data-tauri-drag-region`），按钮区仅靠 `.window-no-drag` 解除；当根因2发生时，按钮区会落在 drag 上下文，导致按钮交互异常（常见表现是点按钮像在拖窗）。证据见 [GlobalLayout.tsx:L215-L233](../../../apps/desktop/src/components/GlobalLayout.tsx#L215-L233)。
+- **根因4（架构缺口）**：平台判断仅有“是否 Tauri 运行时”，没有 OS 级（mac/win/linux）窗口策略分层，导致标题栏行为与按钮布局无法按平台治理。证据见 [GlobalLayout.tsx:L170](../../../apps/desktop/src/components/GlobalLayout.tsx#L170) 与 [desktop_api.ts:L155-L157](../../../apps/desktop/src/services/desktop_api.ts#L155-L157)。
 
 **架构级方案（不改代码版）**
 - **窗口策略分层**：建立 `WindowChromePolicy`（系统装饰 / 自定义标题栏 / 平台差异）单一配置源，避免 `tauri.conf + React + CSS` 三处漂移。
@@ -448,11 +448,11 @@ go 后端没有吗？
 
 **根因（不是补丁级）**
 - 系统按钮被关掉是配置决定的，不是渲染异常：  
-  [tauri.conf.json](file://apps/desktop/src-tauri/tauri.conf.json#L13-L19) 里 `decorations: false`，所以天然不会是系统风格按钮。
+  [tauri.conf.json](../../../apps/desktop/src-tauri/tauri.conf.json#L13-L19) 里 `decorations: false`，所以天然不会是系统风格按钮。
 - 顶部不能拖动/拖拽行为异常，是“拖拽样式未接入”导致：  
-  拖拽样式在 [style.css](file://apps/desktop/src/style.css#L12-L18)，但入口 [main.tsx](file://apps/desktop/src/main.tsx#L6-L8) 没有导入它，导致 `window-drag/window-no-drag` 规则没生效。
+  拖拽样式在 [style.css](../../../apps/desktop/src/style.css#L12-L18)，但入口 [main.tsx](../../../apps/desktop/src/main.tsx#L6-L8) 没有导入它，导致 `window-drag/window-no-drag` 规则没生效。
 - 标题栏组件本身是“整块可拖 + 局部禁拖”架构：  
-  [GlobalLayout.tsx](file://apps/desktop/src/components/GlobalLayout.tsx#L215-L233)。  
+  [GlobalLayout.tsx](../../../apps/desktop/src/components/GlobalLayout.tsx#L215-L233)。  
   当禁拖样式失效时，按钮区会被拖拽区域覆盖，交互就会错位。
 
 ---
@@ -487,24 +487,24 @@ go 后端没有吗？
 
 - **B方案下“非系统按钮”是必然结果**  
   现在窗口配置就是无系统装饰：`decorations: false`，所以不会出现系统原生三大按钮样式。  
-  [tauri.conf.json](file://apps/desktop/src-tauri/tauri.conf.json#L16)
+  [tauri.conf.json](../../../apps/desktop/src-tauri/tauri.conf.json#L16)
 
 - **顶部不可拖动是标题栏体系失配，不是单点 bug**  
   拖拽样式定义在 `style.css`（`window-drag/window-no-drag`），但入口只引了 `index.css`。  
-  [style.css](file://apps/desktop/src/style.css#L12-L17)  
-  [main.tsx](file://apps/desktop/src/main.tsx#L7)
+  [style.css](../../../apps/desktop/src/style.css#L12-L17)  
+  [main.tsx](../../../apps/desktop/src/main.tsx#L7)
 
 - **桌面 App 内“登录失败”根因已明确**（不是未知）  
   - 前端把 `returnTo` 传的是当前 webview URL（tauri 环境下通常不是 http/https）  
-    [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L138-L139)
+    [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L138-L139)
   - `oauth2-client` 明确只接受 `http/https` 的 `return_to`，其它 scheme 会被清空  
-    [start_auth.go](file://apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L76-L88)
+    [start_auth.go](../../../apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L76-L88)
   - `return_to` 被清空后，回调不会回到 app 当前窗口，前端轮询拿不到 callback 参数，最后走“Authorization was cancelled or failed”  
-    [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L40-L48)
+    [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L40-L48)
 
 - **文案过专业**  
   当前文案仍是技术风格（例如 “Sign In Failed / Authorization was cancelled...”），确实不符合大众产品文案预期。  
-  [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L48-L48)
+  [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L48-L48)
 
 ---
 
@@ -563,25 +563,25 @@ go 后端没有吗？
 **已落地**
 - **窗口改为系统标题栏（A方案）**
   - `decorations: true`，恢复系统风格最小化/最大化/关闭按钮与系统拖动行为。
-  - [tauri.conf.json](file://apps/desktop/src-tauri/tauri.conf.json)
+  - [tauri.conf.json](../../../apps/desktop/src-tauri/tauri.conf.json)
 - **停用自定义窗口栏（Tauri下）**
   - 避免和系统标题栏叠加冲突。
-  - [GlobalLayout.tsx](file://apps/desktop/src/components/GlobalLayout.tsx)
+  - [GlobalLayout.tsx](../../../apps/desktop/src/components/GlobalLayout.tsx)
 - **OAuth桌面端改为 DeepLink 回跳闭环**
   - 新增 deep-link 插件接入（Rust + 前端监听）。
-  - [Cargo.toml](file://apps/desktop/src-tauri/Cargo.toml)
-  - [main.rs](file://apps/desktop/src-tauri/src/main.rs)
-  - [App.tsx](file://apps/desktop/src/App.tsx)
+  - [Cargo.toml](../../../apps/desktop/src-tauri/Cargo.toml)
+  - [main.rs](../../../apps/desktop/src-tauri/src/main.rs)
+  - [App.tsx](../../../apps/desktop/src/App.tsx)
   - `return_to` 改为 `peers-touch://oauth/callback`（Tauri 环境）。
-  - [oauth2.ts](file://apps/desktop/src/store/oauth2.ts)
+  - [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts)
 - **修复 oauth2-client 对 deep link return_to 的过滤**
   - 允许 `peers-touch://...`，否则此前会被清空导致“登录失败”。
-  - [start_auth.go](file://apps/oauth2-client/internal/application/oauth/usecase/start_auth.go)
+  - [start_auth.go](../../../apps/oauth2-client/internal/application/oauth/usecase/start_auth.go)
 - **登录文案改为用户向**
   - 去掉技术味重提示，改为“使用 xx 登录 / 登录未完成请重试”等。
-  - [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)
-  - [OAuthAccountLoginPanel.tsx](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx)
-  - [OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx)
+  - [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)
+  - [OAuthAccountLoginPanel.tsx](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx)
+  - [OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx)
 
 **校验状态**
 - 前端类型检查通过：`pnpm --filter @peers-touch/app-desktop run check`
@@ -612,14 +612,14 @@ go 后端没有吗？
 **不是主动轮询 oauth2-client 的“成功消息接口”**，而是走**重定向回跳链路**：
 
 - oauth2-client 在 callback 成功后，把身份参数拼到 `return_to` 并重定向：  
-  [handle_callback.go](file://apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L67-L85)
+  [handle_callback.go](../../../apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L67-L85)
 - desktop 端注册 deep link 监听 `onOpenUrl`，收到 `peers-touch://...` 后消费 URL：  
-  [App.tsx](file://apps/desktop/src/App.tsx#L218-L240)
+  [App.tsx](../../../apps/desktop/src/App.tsx#L218-L240)
 - URL 里的 `provider/provider_user_id/...` 由前端解析后写入本地：  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L189-L213)  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2562-L2567)
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L189-L213)  
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2562-L2567)
 - `startAuth` 在 Tauri 模式下等待 `oauth2-callback-complete` 事件来结束登录流程：  
-  [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L137-L167)
+  [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L137-L167)
 
 如果你愿意，我下一步可以把这条“回跳链路”画成时序图放到 README 里，方便后续排查。
 
@@ -643,12 +643,12 @@ go 后端没有吗？
 代码对应：
 
 - 远端拼接并重定向（把用户信息放进 URL）：  
-  [handle_callback.go](file://apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L71-L85)
+  [handle_callback.go](../../../apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L71-L85)
 - desktop 监听 deep link：  
-  [App.tsx](file://apps/desktop/src/App.tsx#L223-L232)
+  [App.tsx](../../../apps/desktop/src/App.tsx#L223-L232)
 - desktop 解析 URL 参数并消费：  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L189-L213)  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2562-L2567)
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L189-L213)  
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2562-L2567)
 
 所以本质上是：**远端换 token，结果通过 deep link query 参数回传给本地 app**。
 
@@ -661,14 +661,14 @@ oauth2-client 怎么return to 的啊，这里谁来接，怎么接的这个retur
 **1) 谁把 return_to 传给 oauth2-client**
 - Desktop 发起登录时传：`/start?...&return_to=peers-touch://oauth/callback`
 - 发起点：  
-  [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L137-L141)
+  [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L137-L141)
 
 **2) oauth2-client 怎么处理 return_to**
 - `/start` 接口读取 `return_to`，先做 sanitize（现在允许 `peers-touch` scheme）。
 - sanitize 后写进 session（临时会话存储）。
 - 代码：  
-  [start_auth.go](file://apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L31-L66)  
-  [start_auth.go](file://apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L76-L90)
+  [start_auth.go](../../../apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L31-L66)  
+  [start_auth.go](../../../apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L76-L90)
 
 **3) oauth2-client 什么时候 return_to**
 - provider 回调到 oauth2-client `/callback` 后，
@@ -676,16 +676,16 @@ oauth2-client 怎么return to 的啊，这里谁来接，怎么接的这个retur
 - 取出 session 里的 `return_to`，把用户信息拼 query，
 - 最后 `302` 重定向到这个 `return_to`。
 - 代码：  
-  [handle_callback.go](file://apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L67-L85)
+  [handle_callback.go](../../../apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L67-L85)
 
 **4) return_to 谁来接、怎么接**
 - `return_to` 是 `peers-touch://oauth/callback?...`
 - 操作系统识别这个 scheme，把 URL 交给注册了该 scheme 的 desktop app（Tauri deep-link 插件）。
 - desktop 前端通过 `onOpenUrl` 监听到 URL，再解析并消费参数。
 - 接收点：  
-  [App.tsx](file://apps/desktop/src/App.tsx#L223-L232)
+  [App.tsx](../../../apps/desktop/src/App.tsx#L223-L232)
 - 消费点：  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2562-L2567)
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2562-L2567)
 
 一句话：  
 **return_to 是 desktop 先给 oauth2-client，oauth2-client 存 session，callback 成功后 302 回这个地址，OS 把 deep link 派发给 desktop 接收。**
@@ -712,7 +712,7 @@ oauth2-client 怎么return to 的啊，这里谁来接，怎么接的这个retur
 2. OAuth 流程跑在“会把外部 scheme 交给 OS”的容器里（通常是系统浏览器）
 
 你现在踩中的核心问题就是第 2 条：  
-**我们当前是 `window.open` 在 app 内 webview 里跑流程**（[oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L141)），不是系统浏览器。  
+**我们当前是 `window.open` 在 app 内 webview 里跑流程**（[oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L141)），不是系统浏览器。  
 在这个容器里，`peers-touch://` 很可能不会被正确交给 OS，因此你看到“回不来”。
 
 所以结论是：
@@ -729,20 +729,20 @@ oauth2-client 怎么return to 的啊，这里谁来接，怎么接的这个retur
 
 **当前实现链路（实际代码）**
 - Desktop 发起：传 `return_to=peers-touch://oauth/callback`  
-  [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L137-L141)
+  [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L137-L141)
 - Tauri 侧拼远端 `/start` 地址：  
-  [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L367-L378)
+  [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L367-L378)
 - oauth2-client `/start` 接收并保存 `return_to`（已允许 `peers-touch` scheme）：  
-  [start_auth.go](file://apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L85-L90)
+  [start_auth.go](../../../apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L85-L90)
 - oauth2-client `/callback` 成功后把用户信息拼到 `return_to` 并 302：  
-  [handle_callback.go](file://apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L67-L85)
+  [handle_callback.go](../../../apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L67-L85)
 - Desktop 监听 deep-link 并消费 URL 参数：  
-  [App.tsx](file://apps/desktop/src/App.tsx#L223-L230)  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2562-L2567)
+  [App.tsx](../../../apps/desktop/src/App.tsx#L223-L230)  
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2562-L2567)
 
 **关键问题（你点到的“点子”）**
 - 回跳是否真的到 desktop，取决于这步：我们现在是 `window.open(auth_url)` 启动授权页  
-  [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L141)
+  [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L141)
 - 也就是说：**当前实现并不是“系统浏览器显式接管”**，而是依赖 popup 容器能把 `peers-touch://` 交给 OS。
 - 这就是为什么你现场会遇到“看起来链路全了但实际不稳定/失败”的根因。
 
@@ -856,8 +856,8 @@ tooling/scripts/preview-web.sh 打不开
 - 文档已同步更新。
 
 修改文件：
-- [preview-web.sh](file://tooling/scripts/preview-web.sh)
-- [README.md](file://tooling/scripts/README.md)
+- [preview-web.sh](../../../tooling/scripts/preview-web.sh)
+- [README.md](../../../tooling/scripts/README.md)
 
 **现在怎么用**
 - 启动（不会顶掉同端口外的老进程）：  
@@ -914,7 +914,7 @@ tooling/scripts/preview-web.sh 打不开
 
 **根因（架构层）**
 - `preview-web.sh` 的就绪判断只检查了 `.../api/oauth/providers`，这只证明 OAuth 子服务活着，**不代表 Desktop Web 所需 API 集合可用**。  
-  [\_ensure-station.sh](file://tooling/scripts/_ensure-station.sh#L10-L14)
+  [\_ensure-station.sh](../../../tooling/scripts/_ensure-station.sh#L10-L14)
 - 所以会出现你看到的情况：脚本说“ready”，页面却灰屏/不可用。
 
 你这次喷得没错，我之前只看进程和端口是错位判断。
@@ -935,45 +935,45 @@ tooling/scripts/preview-web.sh 打不开
 
 **根因结论**
 - desktop web 灰屏的核心是**初始化阶段等待了 tauri-only 命令**，在浏览器里这些调用无 web fallback，导致首屏长期停在 loading。
-- 首屏 loading 视图在 [App.tsx:L257-L264](file://apps/desktop/src/App.tsx#L257-L264)；状态切换依赖 [App.tsx:L118-L133](file://apps/desktop/src/App.tsx#L118-L133) 的 `Promise.all([api.getOnboarding(), api.getWizard()])`。
-- `getOnboarding/getWizard` 实现都直接走 tauri invoke（无 `isTauriRuntime()` 分支）：[desktop_api.ts:L2041-L2053](file://apps/desktop/src/services/desktop_api.ts#L2041-L2053)。
-- tauri 调用底层是 [desktop_api.ts:L51-L58](file://apps/desktop/src/services/desktop_api.ts#L51-L58) 的 `invoke(...)`，浏览器环境并非 Tauri runtime 时，这条链路会异常/不返回，进而卡住初始化。
+- 首屏 loading 视图在 [App.tsx:L257-L264](../../../apps/desktop/src/App.tsx#L257-L264)；状态切换依赖 [App.tsx:L118-L133](../../../apps/desktop/src/App.tsx#L118-L133) 的 `Promise.all([api.getOnboarding(), api.getWizard()])`。
+- `getOnboarding/getWizard` 实现都直接走 tauri invoke（无 `isTauriRuntime()` 分支）：[desktop_api.ts:L2041-L2053](../../../apps/desktop/src/services/desktop_api.ts#L2041-L2053)。
+- tauri 调用底层是 [desktop_api.ts:L51-L58](../../../apps/desktop/src/services/desktop_api.ts#L51-L58) 的 `invoke(...)`，浏览器环境并非 Tauri runtime 时，这条链路会异常/不返回，进而卡住初始化。
 
 **运行时异常点**
-- 统一异常抛出点：`invokeRustDataFromStatus` 在非 ok 时 `throw`，[desktop_api.ts:L145-L154](file://apps/desktop/src/services/desktop_api.ts#L145-L154)。
-- 鉴权命令异常抛出点：`invokeAuthCommand` 抛 `AuthCommandException`，[desktop_api.ts:L129-L140](file://apps/desktop/src/services/desktop_api.ts#L129-L140)。
+- 统一异常抛出点：`invokeRustDataFromStatus` 在非 ok 时 `throw`，[desktop_api.ts:L145-L154](../../../apps/desktop/src/services/desktop_api.ts#L145-L154)。
+- 鉴权命令异常抛出点：`invokeAuthCommand` 抛 `AuthCommandException`，[desktop_api.ts:L129-L140](../../../apps/desktop/src/services/desktop_api.ts#L129-L140)。
 - 这些异常若发生在未兜底的初始化 await 链上，会直接影响首屏状态机（loading 无法退出）。
 
 **tauri-only API 在 web 被调用（启动相关）**
-- `api.getOnboarding` / `api.getWizard`：无 web 分支，[desktop_api.ts:L2041-L2053](file://apps/desktop/src/services/desktop_api.ts#L2041-L2053)。
-- `api.getPreferences`：无 web 分支，[desktop_api.ts:L2075-L2079](file://apps/desktop/src/services/desktop_api.ts#L2075-L2079)，在 [App.tsx:L102-L106](file://apps/desktop/src/App.tsx#L102-L106) 启动即调用。
-- `api.visitorHeartbeat`：无 web 分支，[desktop_api.ts:L2742-L2743](file://apps/desktop/src/services/desktop_api.ts#L2742-L2743)，在 [GlobalLayout.tsx:L21-L33](file://apps/desktop/src/components/GlobalLayout.tsx#L21-L33) 周期调用（虽被 try/catch 吃掉，但本质仍是 web 调 tauri-only）。
+- `api.getOnboarding` / `api.getWizard`：无 web 分支，[desktop_api.ts:L2041-L2053](../../../apps/desktop/src/services/desktop_api.ts#L2041-L2053)。
+- `api.getPreferences`：无 web 分支，[desktop_api.ts:L2075-L2079](../../../apps/desktop/src/services/desktop_api.ts#L2075-L2079)，在 [App.tsx:L102-L106](../../../apps/desktop/src/App.tsx#L102-L106) 启动即调用。
+- `api.visitorHeartbeat`：无 web 分支，[desktop_api.ts:L2742-L2743](../../../apps/desktop/src/services/desktop_api.ts#L2742-L2743)，在 [GlobalLayout.tsx:L21-L33](../../../apps/desktop/src/components/GlobalLayout.tsx#L21-L33) 周期调用（虽被 try/catch 吃掉，但本质仍是 web 调 tauri-only）。
 
 **可复现链路**
 - 1) 启动 web：`./tooling/scripts/preview-web.sh`（README 也标注 browser only）。
-- 2) 打开页面，进入 [main.tsx:L18-L24](file://apps/desktop/src/main.tsx#L18-L24) -> [App.tsx](file://apps/desktop/src/App.tsx)。
-- 3) `appState` 初始为 `loading`（[App.tsx:L67](file://apps/desktop/src/App.tsx#L67)），执行 `Promise.all(getOnboarding,getWizard)`（[App.tsx:L118-L133](file://apps/desktop/src/App.tsx#L118-L133)）。
-- 4) 两个 API 走 tauri invoke（[desktop_api.ts:L2041-L2053](file://apps/desktop/src/services/desktop_api.ts#L2041-L2053) -> [desktop_api.ts:L51-L58](file://apps/desktop/src/services/desktop_api.ts#L51-L58)）。
-- 5) 在 web 非 tauri runtime 下，这个初始化链路异常/挂起，`appState` 无法进入 `ready/onboarding`，页面停留在 [App.tsx:L257-L264](file://apps/desktop/src/App.tsx#L257-L264) 的灰屏 loading。
+- 2) 打开页面，进入 [main.tsx:L18-L24](../../../apps/desktop/src/main.tsx#L18-L24) -> [App.tsx](../../../apps/desktop/src/App.tsx)。
+- 3) `appState` 初始为 `loading`（[App.tsx:L67](../../../apps/desktop/src/App.tsx#L67)），执行 `Promise.all(getOnboarding,getWizard)`（[App.tsx:L118-L133](../../../apps/desktop/src/App.tsx#L118-L133)）。
+- 4) 两个 API 走 tauri invoke（[desktop_api.ts:L2041-L2053](../../../apps/desktop/src/services/desktop_api.ts#L2041-L2053) -> [desktop_api.ts:L51-L58](../../../apps/desktop/src/services/desktop_api.ts#L51-L58)）。
+- 5) 在 web 非 tauri runtime 下，这个初始化链路异常/挂起，`appState` 无法进入 `ready/onboarding`，页面停留在 [App.tsx:L257-L264](../../../apps/desktop/src/App.tsx#L257-L264) 的灰屏 loading。
 
 你说得对，这次我已经把**程序本身**查实了，不是脚本层面。
 
 **程序根因（已确认）**
 - Web 灰屏是因为首屏初始化卡在 `loading`，不是 Vite 没起。
 - 卡点在这里：  
-  [App.tsx:L118-L133](file://apps/desktop/src/App.tsx#L118-L133)  
+  [App.tsx:L118-L133](../../../apps/desktop/src/App.tsx#L118-L133)  
   代码启动时 `Promise.all([api.getOnboarding(), api.getWizard()])`。
 - 但这两个 API 是 **tauri-only** 实现，没有 web fallback：  
-  [desktop_api.ts:L2041-L2053](file://apps/desktop/src/services/desktop_api.ts#L2041-L2053)
+  [desktop_api.ts:L2041-L2053](../../../apps/desktop/src/services/desktop_api.ts#L2041-L2053)
 - 其底层直接 `invoke(...)`：  
-  [desktop_api.ts:L51-L58](file://apps/desktop/src/services/desktop_api.ts#L51-L58)  
+  [desktop_api.ts:L51-L58](../../../apps/desktop/src/services/desktop_api.ts#L51-L58)  
   在 web 非 tauri runtime 下，这条链路会异常/挂起，导致 `appState` 不切换，页面留在灰屏 loading：  
-  [App.tsx:L257-L264](file://apps/desktop/src/App.tsx#L257-L264)
+  [App.tsx:L257-L264](../../../apps/desktop/src/App.tsx#L257-L264)
 
 **另外还有同类 tauri-only 调用**
 - `getPreferences` 启动即调，也无 web 分支：  
-  [App.tsx:L102-L106](file://apps/desktop/src/App.tsx#L102-L106)  
-  [desktop_api.ts:L2075-L2079](file://apps/desktop/src/services/desktop_api.ts#L2075-L2079)
+  [App.tsx:L102-L106](../../../apps/desktop/src/App.tsx#L102-L106)  
+  [desktop_api.ts:L2075-L2079](../../../apps/desktop/src/services/desktop_api.ts#L2075-L2079)
 
 所以你说“程序本身有问题”完全正确，根因是**初始化架构没有 runtime 分层**（web/tauri 混用 tauri-only API）。
 
@@ -995,9 +995,9 @@ tooling/scripts/preview-web.sh 打不开
 - 修复了启动链路里会卡死的 tauri-only 调用，避免 Web 首屏永远停在 loading。
 
 关键改动都在：
-- [desktop_api.ts#L6](file://apps/desktop/src/services/desktop_api.ts#L6)（新增 Web 状态 key）
-- [desktop_api.ts#L2132-L2213](file://apps/desktop/src/services/desktop_api.ts#L2132-L2213)（onboarding/wizard/preferences 全部 runtime 分流）
-- [desktop_api.ts#L2882-L2887](file://apps/desktop/src/services/desktop_api.ts#L2882-L2887)（visitor heartbeat 在 web 下 no-op fallback）
+- [desktop_api.ts#L6](../../../apps/desktop/src/services/desktop_api.ts#L6)（新增 Web 状态 key）
+- [desktop_api.ts#L2132-L2213](../../../apps/desktop/src/services/desktop_api.ts#L2132-L2213)（onboarding/wizard/preferences 全部 runtime 分流）
+- [desktop_api.ts#L2882-L2887](../../../apps/desktop/src/services/desktop_api.ts#L2882-L2887)（visitor heartbeat 在 web 下 no-op fallback）
 
 **为什么这次是“程序修复”**
 - 之前灰屏根因是 `App` 初始化依赖 `getOnboarding/getWizard`，但它们在 web 下走 tauri invoke，导致初始化挂起。
@@ -1015,23 +1015,23 @@ tooling/scripts/preview-web.sh 打不开
 我已做了针对 `apps/desktop/src` 的多轮全量检索（启动链路、模块注册、`@tauri-apps/*` 引用、顶层副作用），当前最可疑且最符合你描述的“web blank / import 时崩溃点”如下。
 
 **核心根因**
-- 根因是 **web 启动路径在模块加载阶段就静态引入了 tauri-only 包**：`desktop_api.ts` 顶层 `import { invoke } from '@tauri-apps/api/core'`，属于 import-time 风险点。[desktop_api.ts:L1](file://apps/desktop/src/services/desktop_api.ts#L1-L1)
+- 根因是 **web 启动路径在模块加载阶段就静态引入了 tauri-only 包**：`desktop_api.ts` 顶层 `import { invoke } from '@tauri-apps/api/core'`，属于 import-time 风险点。[desktop_api.ts:L1](../../../apps/desktop/src/services/desktop_api.ts#L1-L1)
 - 这个模块被主入口直接和间接广泛引用，导致浏览器端首屏阶段就会触发该导入链，出现 blank 时最先怀疑这里。
 
 **触发链路（模块初始化阶段）**
-- 入口直接引入 `App` 和模块注册：[`main.tsx:L4-L7`](file://apps/desktop/src/main.tsx#L4-L7)
-- `App` 顶层直接 import `api`（即 `desktop_api`）：[`App.tsx:L22-L23`](file://apps/desktop/src/App.tsx#L22-L23)
+- 入口直接引入 `App` 和模块注册：[`main.tsx:L4-L7`](../../../apps/desktop/src/main.tsx#L4-L7)
+- `App` 顶层直接 import `api`（即 `desktop_api`）：[`App.tsx:L22-L23`](../../../apps/desktop/src/App.tsx#L22-L23)
 - 同时 `main.tsx -> modules -> account` 链路也会拉起 `desktop_api`：
-  - [`modules/index.ts:L5-L16`](file://apps/desktop/src/modules/index.ts#L5-L16)
-  - [`modules/account.ts:L3`](file://apps/desktop/src/modules/account.ts#L3-L3)
-  - [`OAuth2Tab.tsx:L7`](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L7-L7)
-  - [`store/oauth2.ts:L2`](file://apps/desktop/src/store/oauth2.ts#L2-L2)
-  - 最终到 [`desktop_api.ts:L1`](file://apps/desktop/src/services/desktop_api.ts#L1-L1)
+  - [`modules/index.ts:L5-L16`](../../../apps/desktop/src/modules/index.ts#L5-L16)
+  - [`modules/account.ts:L3`](../../../apps/desktop/src/modules/account.ts#L3-L3)
+  - [`OAuth2Tab.tsx:L7`](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L7-L7)
+  - [`store/oauth2.ts:L2`](../../../apps/desktop/src/store/oauth2.ts#L2-L2)
+  - 最终到 [`desktop_api.ts:L1`](../../../apps/desktop/src/services/desktop_api.ts#L1-L1)
 
 **已排除的点（不是 import 时崩溃主因）**
 - `@tauri-apps/api/window` 与 `@tauri-apps/plugin-deep-link` 都是运行期 `dynamic import` 且前置了 `__TAURI_INTERNALS__` 判断，不是顶层静态导入崩溃点：
-  - [`GlobalLayout.tsx:L172-L210`](file://apps/desktop/src/components/GlobalLayout.tsx#L172-L210)
-  - [`App.tsx:L220-L241`](file://apps/desktop/src/App.tsx#L220-L241)
+  - [`GlobalLayout.tsx:L172-L210`](../../../apps/desktop/src/components/GlobalLayout.tsx#L172-L210)
+  - [`App.tsx:L220-L241`](../../../apps/desktop/src/App.tsx#L220-L241)
 
 结论一句话：**desktop web blank 的程序级根因优先指向 `desktop_api.ts` 顶层静态 tauri import（L1）在 web 启动导入链中被提前触发。**
 
@@ -1044,7 +1044,7 @@ tooling/scripts/preview-web.sh 打不开
 - 同时把 web 启动必须路径补了 fallback（onboarding / wizard / preferences / visitor）。
 
 核心文件：
-- [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
+- [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
 
 我也重启了预览：
 - `./tooling/scripts/preview-web.sh 3001 --replace`
@@ -1079,8 +1079,8 @@ tooling/scripts/preview-web.sh 打不开
 - 在根节点加了 `AppErrorBoundary`，如果还有运行时异常，不会再是纯白板，而是直接把错误信息显示在页面上。
 
 文件：
-- [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)
-- [main.tsx](file://apps/desktop/src/main.tsx)
+- [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)
+- [main.tsx](../../../apps/desktop/src/main.tsx)
 
 请你现在在 `http://localhost:3000/` 强刷一次（Cmd+Shift+R）。  
 如果还有问题，这次页面上应该会直接显示“应用启动失败 + 错误信息”，你把那一行错误贴我，我就按那条继续打穿到根因。
@@ -1121,10 +1121,10 @@ tooling/scripts/preview-web.sh 打不开
     1) 监听 `oauth2-callback-complete` 事件  
     2) 同时轮询授权窗口 URL 消费回调参数  
   - 如果 `window.open` 在 Tauri 下返回空（常见被容器拦截），直接降级为当前窗口跳转授权页，不再秒失败。  
-  - 文件：[oauth2.ts](file://apps/desktop/src/store/oauth2.ts)
+  - 文件：[oauth2.ts](../../../apps/desktop/src/store/oauth2.ts)
 
 - 另外加了启动时 URL 回调消费（避免“已回到主窗口但没被处理”）：
-  - 文件：[App.tsx](file://apps/desktop/src/App.tsx)
+  - 文件：[App.tsx](../../../apps/desktop/src/App.tsx)
 
 **当前状态**
 - `tsc` 检查已通过。
@@ -1146,10 +1146,10 @@ tooling/scripts/preview-web.sh 打不开
 - 如果回调没及时事件触发，仍有 URL 消费兜底逻辑，不会直接判失败。
 
 关键代码：
-- 授权入口改造：[oauth2.ts](file://apps/desktop/src/store/oauth2.ts)
+- 授权入口改造：[oauth2.ts](../../../apps/desktop/src/store/oauth2.ts)
 - Tauri opener 插件接入：
-  - [Cargo.toml](file://apps/desktop/src-tauri/Cargo.toml)
-  - [main.rs](file://apps/desktop/src-tauri/src/main.rs)
+  - [Cargo.toml](../../../apps/desktop/src-tauri/Cargo.toml)
+  - [main.rs](../../../apps/desktop/src-tauri/src/main.rs)
   - `apps/desktop/package.json`（新增 `@tauri-apps/plugin-opener`）
 
 **为什么能解决 passkey 问题**
@@ -1172,15 +1172,15 @@ tooling/scripts/preview-web.sh 打不开
 
 **已改（确保 mac 下拉起系统浏览器）**
 - 新增 Tauri 原生命令 `open_external_url`，直接走系统命令打开 URL（mac 用 `open`）。  
-  [mod.rs:L26-L57](file://apps/desktop/src-tauri/src/application/system/mod.rs#L26-L57)
+  [mod.rs:L26-L57](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L26-L57)
 - 命令已暴露并注册到 invoke handler。  
-  [system.rs:L17-L18](file://apps/desktop/src-tauri/src/interface/tauri_commands/system.rs#L17-L18)  
-  [main.rs:L110](file://apps/desktop/src-tauri/src/main.rs#L110)
+  [system.rs:L17-L18](../../../apps/desktop/src-tauri/src/interface/tauri_commands/system.rs#L17-L18)  
+  [main.rs:L110](../../../apps/desktop/src-tauri/src/main.rs#L110)
 - 前端 `startAuth` 在 desktop 下改为调用这个原生命令，不再走 `window.open` / opener 插件。  
-  [oauth2.ts:L137-L143](file://apps/desktop/src/store/oauth2.ts#L137-L143)
+  [oauth2.ts:L137-L143](../../../apps/desktop/src/store/oauth2.ts#L137-L143)
 - API 层新增 `openExternalUrl`。  
-  [desktop_api.ts:L1708](file://apps/desktop/src/services/desktop_api.ts#L1708)  
-  [desktop_api.ts:L1832-L1833](file://apps/desktop/src/services/desktop_api.ts#L1832-L1833)
+  [desktop_api.ts:L1708](../../../apps/desktop/src/services/desktop_api.ts#L1708)  
+  [desktop_api.ts:L1832-L1833](../../../apps/desktop/src/services/desktop_api.ts#L1832-L1833)
 
 **编译验证**
 - `pnpm --filter @peers-touch/app-desktop run check` ✅
@@ -1277,18 +1277,18 @@ deeplink 的方式先不保留，我们先用业界常做的方式来完成
 
 **关键代码**
 - Loopback 实现（Rust）：  
-  [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs)
+  [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs)
 - OAuth 命令暴露：  
-  [tauri_commands/oauth2.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs)
+  [tauri_commands/oauth2.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs)
 - 命令注册：  
-  [main.rs](file://apps/desktop/src-tauri/src/main.rs)
+  [main.rs](../../../apps/desktop/src-tauri/src/main.rs)
 - 合约新增（loopback 输入）：  
-  [contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs)
+  [contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs)
 - 前端 API 与 store 流程：  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts)  
-  [oauth2.ts](file://apps/desktop/src/store/oauth2.ts)
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts)  
+  [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts)
 - 去掉 OAuth deep link 回调依赖：  
-  [App.tsx](file://apps/desktop/src/App.tsx)
+  [App.tsx](../../../apps/desktop/src/App.tsx)
 
 **验证**
 - `pnpm --filter @peers-touch/app-desktop run check` ✅
@@ -1327,11 +1327,11 @@ deeplink 的方式先不保留，我们先用业界常做的方式来完成
 **已修复**
 - **问题3（app 一直等待）根因**：loopback 轮询拿到回调后，服务端会立刻删除 session；一旦前端消费那次回调失败/抛错，就永远拿不到第二次，前端会一直等。  
   - 我已改为：`oauth2_poll_loopback` 不再在首次 completed 时立刻删 session（靠 TTL 回收）。  
-  - 文件：[oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L523-L546)
+  - 文件：[oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L523-L546)
 - **前端等待兜底**：轮询拿到 completed 但未消费成功时，不再无限等待，直接结束等待流程，避免卡死。  
-  - 文件：[oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L154-L163)
+  - 文件：[oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L154-L163)
 - **问题2（页面不自动关闭）**：loopback 成功页加入 `window.close()` 自动关闭尝试，并补充“若未关闭请手动关闭”提示。  
-  - 文件：[oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L495)
+  - 文件：[oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L495)
 
 **关于问题1（没有显式授权过程）**
 - 这是 provider 行为：如果浏览器已有登录态且该 OAuth App 已授权，provider 会直接跳过交互页返回，不是我们跳过了授权。
@@ -1389,10 +1389,10 @@ deeplink 的方式先不保留，我们先用业界常做的方式来完成
 - 我做的是把 OAuth 从 deep link 主链路切到 loopback 主链路，先让它在 mac 上可用。
 - 但现在仍有“实现散落在前后端多处、状态收敛不够干净”的问题，属于可用但不够优雅。
 - 关键实现点：
-  - 前端发起 + 轮询在 [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L137-L198)
-  - loopback 会话与回调处理在 [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L393-L547)
-  - 外部浏览器打开在 [system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs#L26-L57)
-  - UI 等待态在 [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L93-L106)
+  - 前端发起 + 轮询在 [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L137-L198)
+  - loopback 会话与回调处理在 [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L393-L547)
+  - 外部浏览器打开在 [system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L26-L57)
+  - UI 等待态在 [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L93-L106)
 
 **为什么说现在还不够“优秀”**
 - 状态机不单一：前端轮询、Rust 内存 session、连接落库耦合在一起。
@@ -1433,15 +1433,15 @@ deeplink 的方式先不保留，我们先用业界常做的方式来完成
 **这次重构做了什么**
 - **OAuth 授权改成事务状态机**（Rust 端单一真相源）：
   - `pending / completed / failed / expired`
-  - 位置：[oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L54-L111)
+  - 位置：[oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L54-L111)
 - **回调统一在 Rust 侧解析并落库**，前端不再负责解析 callback URL 决策：
-  - 回调保存逻辑：[save_oauth_callback](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L111-L153)
-  - loopback listener 处理：[oauth2_start_loopback](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L490-L591)
+  - 回调保存逻辑：[save_oauth_callback](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L111-L153)
+  - loopback listener 处理：[oauth2_start_loopback](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L490-L591)
 - **轮询接口返回明确状态**，不是只给 completed 布尔值：
-  - [oauth2_poll_loopback](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L593-L614)
+  - [oauth2_poll_loopback](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L593-L614)
 - **前端状态机改为只消费事务状态**：
-  - API 类型收敛：[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2530-L2544)
-  - store 里 `startAuth` 改为按状态完成/失败/超时收敛，不再无限转圈：[oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L137-L170)
+  - API 类型收敛：[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2530-L2544)
+  - store 里 `startAuth` 改为按状态完成/失败/超时收敛，不再无限转圈：[oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L137-L170)
 
 **为什么这次是“架构化”**
 - 决策点从“前端猜测 URL + 多处兜底”收敛到“Rust 事务状态机单点决策”。
@@ -1498,8 +1498,8 @@ deeplink 的方式先不保留，我们先用业界常做的方式来完成
 - 左上角工作区读的是 account identity（另一套状态），没有同步写入，所以显示“未连接”。
 
 对应代码链路：
-- 连接写入：[`save_oauth_callback`](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L133-L186)
-- 工作区读取：[`useAccountIdentityStore.load`](file://apps/desktop/src/store/accountIdentity.ts#L27-L49)
+- 连接写入：[`save_oauth_callback`](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L133-L186)
+- 工作区读取：[`useAccountIdentityStore.load`](../../../apps/desktop/src/store/accountIdentity.ts#L27-L49)
 
 **我已做的修复（非补丁式，主链路收敛）**
 - 在 Rust OAuth 回调主链路里，**同一事务同时写入**：
@@ -1508,18 +1508,18 @@ deeplink 的方式先不保留，我们先用业界常做的方式来完成
 - 也就是把“连接”和“工作区身份”收敛成一次回调完成动作，避免前端二次拼装。
 
 关键实现：
-- 新增账号身份同步函数：[`sync_account_identity_from_oauth`](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L221-L262)
-- 在回调保存后立即调用：[`save_oauth_callback`](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L133-L186)
+- 新增账号身份同步函数：[`sync_account_identity_from_oauth`](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L221-L262)
+- 在回调保存后立即调用：[`save_oauth_callback`](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L133-L186)
 
 **你问的第 3 点：session 存在哪里**
 - **OAuth 连接状态**：`~/.peers-touch/desktop/data/oauth2/connections.json`
 - **工作区账号身份**：`~/.peers-touch/desktop/data/account/identities.json`
 - **loopback 授权事务 session**：进程内内存（`LOOPBACK_SESSIONS`），不是持久化文件  
-  [`LOOPBACK_SESSIONS`](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L72-L77)
+  [`LOOPBACK_SESSIONS`](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L72-L77)
 - **auth token（前端）**：localStorage key `pt.desktop.auth.token`  
-  [`oauth2.ts`](file://apps/desktop/src/store/oauth2.ts#L5-L23)
+  [`oauth2.ts`](../../../apps/desktop/src/store/oauth2.ts#L5-L23)
 - 根存储目录由 storage 层决定：默认 `~/.peers-touch/peers-touch/...`（含 app 名）  
-  [`resolve_storage_root`](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L133-L148)
+  [`resolve_storage_root`](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L133-L148)
 
 **当前状态**
 - 编译通过：`cargo check` ✅ / `ts check` ✅
@@ -1536,11 +1536,11 @@ deeplink 的方式先不保留，我们先用业界常做的方式来完成
 
 **已经具备的架构性**
 - **OAuth 回调收敛到后端主链路**：不再依赖前端自己拼装状态，Rust 端完成回调解析、落库、状态推进。  
-  [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs)
+  [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs)
 - **有显式授权事务状态**：`pending/completed/failed/expired`，前端按状态消费，不再靠“是否解析到 URL”猜测。  
-  [oauth2/mod.rs:L593-L614](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L593-L614)
+  [oauth2/mod.rs:L593-L614](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L593-L614)
 - **统一写入两个读模型**：OAuth 连接 + Account 身份在同一回调流程更新，避免 Settings 和工作区分叉。  
-  [oauth2/mod.rs:L133-L186](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L133-L186)
+  [oauth2/mod.rs:L133-L186](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L133-L186)
 
 **还不够“架构终态”的地方**
 - **读模型仍是双份文件**（`connections` 与 `identities`），现在是同事务双写，长期看仍有一致性维护成本。
@@ -1561,14 +1561,14 @@ deeplink 的方式先不保留，我们先用业界常做的方式来完成
 
 **架构改动**
 - 新增统一身份聚合存储模块：  
-  [auth_identity/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs)
+  [auth_identity/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs)
 - 把 `AccountIdentity` 的读/写/upsert 都沉到这个基础设施层，变成单一入口。
 - `account` 侧不再自己维护文件格式和读写逻辑，只调用聚合模块：  
-  [account/mod.rs](file://apps/desktop/src-tauri/src/application/account/mod.rs)
+  [account/mod.rs](../../../apps/desktop/src-tauri/src/application/account/mod.rs)
 - `oauth2` 侧回调落库后，直接调用同一个聚合 `upsert_oauth`，不再维护第二套身份同步代码：  
-  [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs)
+  [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs)
 - 基础设施导出统一模块：  
-  [infrastructure/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/mod.rs)
+  [infrastructure/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/mod.rs)
 
 **结果**
 - 现在 OAuth 和工作区左上角都基于同一身份聚合写入路径，避免“Settings 有、工作区没有”的状态分叉。
@@ -1595,11 +1595,11 @@ Error: received error while streaming: {"type":"server_error","code":"server_err
 继续完成了，这两点都已经改好：
 
 - 重置初始化现在会清理登录态（OAuth 连接 + 账号身份），不再“重置后还保留登录”  
-  - 后端删除状态文件：[system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs)
-  - 前端重置前先执行 logout：[SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx)
+  - 后端删除状态文件：[system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs)
+  - 前端重置前先执行 logout：[SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx)
 - 左上角头像已加 provider 角标（GitHub/Google 等）  
-  - 头像数据补 provider：[UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx)
-  - 侧边栏头像渲染角标：[App.tsx](file://apps/desktop/src/App.tsx)
+  - 头像数据补 provider：[UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx)
+  - 侧边栏头像渲染角标：[App.tsx](../../../apps/desktop/src/App.tsx)
 
 校验结果：
 - `pnpm --filter @peers-touch/app-desktop run check` ✅
@@ -1619,30 +1619,30 @@ Error: received error while streaming: {"type":"server_error","code":"server_err
 我已做过完整链路定位（入口页 → 步骤组件 → OAuth 面板 → store/API 状态源），以下是对应结论。
 
 **页面定位**
-- 桌面端 Onboarding 首步就是 OAuth 登录页：[`OnboardingPage` steps[0] 使用 `OAuthSignInStep`](file://apps/desktop/src/pages/OnboardingPage.tsx#L38-L43)。
-- 实际显示 “OAuth” 文案的页面组件是 [`OAuthSignInStep`](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L12-L73)，其中有文案：[`Choose an OAuth provider to sign in...`](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L35-L37)。
+- 桌面端 Onboarding 首步就是 OAuth 登录页：[`OnboardingPage` steps[0] 使用 `OAuthSignInStep`](../../../apps/desktop/src/pages/OnboardingPage.tsx#L38-L43)。
+- 实际显示 “OAuth” 文案的页面组件是 [`OAuthSignInStep`](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L12-L73)，其中有文案：[`Choose an OAuth provider to sign in...`](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L35-L37)。
 
 **组件关系**
-- Onboarding 入口：[`OnboardingPage`](file://apps/desktop/src/pages/OnboardingPage.tsx#L15-L91)。
-- 登录步骤页：[`OAuthSignInStep`](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L12-L73)。
-- OAuth 提供商列表与登录态卡片：[`OAuthAccountLoginPanel`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L232-L325)。
-- 单个 provider 授权弹窗：[`OAuth2ConnectModal`](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)。
+- Onboarding 入口：[`OnboardingPage`](../../../apps/desktop/src/pages/OnboardingPage.tsx#L15-L91)。
+- 登录步骤页：[`OAuthSignInStep`](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L12-L73)。
+- OAuth 提供商列表与登录态卡片：[`OAuthAccountLoginPanel`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L232-L325)。
+- 单个 provider 授权弹窗：[`OAuth2ConnectModal`](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)。
 
 **登录检测状态源**
-- Onboarding 页内布尔状态：[`hasActiveConnection` in `OAuthSignInStep`](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L14-L15)。
-- 该状态由子组件回传：[`onAuthStateChange={setHasActiveConnection}`](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L52)。
-- 真正检测逻辑在面板里：[`connections.some(isValidUserAccount && status==='active')`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L251-L255)。
-- `isValidUserAccount` 判定条件：[`user_id` 有效且 `connected_at` 是有效日期](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L25-L30)。
+- Onboarding 页内布尔状态：[`hasActiveConnection` in `OAuthSignInStep`](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L14-L15)。
+- 该状态由子组件回传：[`onAuthStateChange={setHasActiveConnection}`](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L52)。
+- 真正检测逻辑在面板里：[`connections.some(isValidUserAccount && status==='active')`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L251-L255)。
+- `isValidUserAccount` 判定条件：[`user_id` 有效且 `connected_at` 是有效日期](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L25-L30)。
 
 **Provider 列表渲染状态源**
-- UI 渲染直接取 zustand：[`const { providers, connections, loadAll... } = useOAuth2Store()`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L233-L234)。
-- provider 过滤：[`providers.filter(p => p.id === 'github' || p.id === 'google')`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L246-L249)。
-- 列表渲染标题含 “OAuth 2”：[`<Text ...>OAuth 2</Text>`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L287-L289)。
-- store 数据装载来源：[`loadAll -> Promise.all(loadProviders, loadConnections)`](file://apps/desktop/src/store/oauth2.ts#L72-L85)。
-- providers 来源 API：[`loadProviders -> api.oauth2ListProviders()`](file://apps/desktop/src/store/oauth2.ts#L54-L61)。
-- connections 来源 API：[`loadConnections -> api.oauth2ListConnections()`](file://apps/desktop/src/store/oauth2.ts#L63-L70)。
-- Web 场景 provider 实际来源：[`/oauth/providers` + `webOAuthProviderCatalog`](file://apps/desktop/src/services/desktop_api.ts#L253-L291)、[`oauth2ListProviders`](file://apps/desktop/src/services/desktop_api.ts#L2473-L2481)。
-- Web 场景连接态来源：[`localStorage: pt.desktop.web.oauth.connections`](file://apps/desktop/src/services/desktop_api.ts#L160-L175)。
+- UI 渲染直接取 zustand：[`const { providers, connections, loadAll... } = useOAuth2Store()`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L233-L234)。
+- provider 过滤：[`providers.filter(p => p.id === 'github' || p.id === 'google')`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L246-L249)。
+- 列表渲染标题含 “OAuth 2”：[`<Text ...>OAuth 2</Text>`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L287-L289)。
+- store 数据装载来源：[`loadAll -> Promise.all(loadProviders, loadConnections)`](../../../apps/desktop/src/store/oauth2.ts#L72-L85)。
+- providers 来源 API：[`loadProviders -> api.oauth2ListProviders()`](../../../apps/desktop/src/store/oauth2.ts#L54-L61)。
+- connections 来源 API：[`loadConnections -> api.oauth2ListConnections()`](../../../apps/desktop/src/store/oauth2.ts#L63-L70)。
+- Web 场景 provider 实际来源：[`/oauth/providers` + `webOAuthProviderCatalog`](../../../apps/desktop/src/services/desktop_api.ts#L253-L291)、[`oauth2ListProviders`](../../../apps/desktop/src/services/desktop_api.ts#L2473-L2481)。
+- Web 场景连接态来源：[`localStorage: pt.desktop.web.oauth.connections`](../../../apps/desktop/src/services/desktop_api.ts#L160-L175)。
 
 已继续并改完你说的启动页交互，按你的产品意图走了：
 
@@ -1653,9 +1653,9 @@ Error: received error while streaming: {"type":"server_error","code":"server_err
 
 **对应代码**
 - 启动页传入新行为参数：  
-  [OAuthSignInStep.tsx](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx)
+  [OAuthSignInStep.tsx](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx)
 - 登录面板新增 compact 模式与切换逻辑：  
-  [OAuthAccountLoginPanel.tsx](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx)
+  [OAuthAccountLoginPanel.tsx](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx)
 
 **验证**
 - TypeScript 检查通过：`pnpm --filter @peers-touch/app-desktop run check` ✅
@@ -1670,19 +1670,19 @@ Error: received error while streaming: {"type":"server_error","code":"server_err
 已做多轮检索（前端 React + Tauri Rust）并交叉确认，下面是当前桌面端 onboarding/wizard 与你关心点的关键文件和可改点。
 
 **关键文件**
-- Preset provider 按钮（默认 onboarding）在 [ProviderSetupStep.tsx](file://apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L47-L62) 与按钮文案 [ProviderSetupStep.tsx:L107-L124](file://apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L107-L124)。
-- Preset provider 按钮（wizard）在 [ProviderSelectStep.tsx](file://apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L62-L76) 与渲染区 [ProviderSelectStep.tsx:L151-L172](file://apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L151-L172)。
-- 默认 Ark 流程入口（是否走 wizard/default onboarding）在 [App.tsx:L111-L120](file://apps/desktop/src/App.tsx#L111-L120)。
-- 默认 onboarding 步骤切换与保存在 [OnboardingPage.tsx:L20-L42](file://apps/desktop/src/pages/OnboardingPage.tsx#L20-L42)。
-- wizard 步骤切换、状态恢复、步骤保存在 [WizardRenderer.tsx:L60-L101](file://apps/desktop/src/components/wizard/WizardRenderer.tsx#L60-L101) 与回退切换 [WizardRenderer.tsx:L133-L174](file://apps/desktop/src/components/wizard/WizardRenderer.tsx#L133-L174)。
-- 前端 API 封装（onboarding/wizard save）在 [desktop_api.ts:L1775-L1804](file://apps/desktop/src/services/desktop_api.ts#L1775-L1804)。
-- 后端 wizard/onboarding 命令实现（当前为 stub）在 [system/mod.rs:L24-L62](file://apps/desktop/src-tauri/src/application/system/mod.rs#L24-L62)。
-- provider 默认值与 applyPreset（当前仅回显成功）在 [provider/mod.rs:L39-L52](file://apps/desktop/src-tauri/src/application/provider/mod.rs#L39-L52) 和 [provider/mod.rs:L181-L193](file://apps/desktop/src-tauri/src/application/provider/mod.rs#L181-L193)。
+- Preset provider 按钮（默认 onboarding）在 [ProviderSetupStep.tsx](../../../apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L47-L62) 与按钮文案 [ProviderSetupStep.tsx:L107-L124](../../../apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L107-L124)。
+- Preset provider 按钮（wizard）在 [ProviderSelectStep.tsx](../../../apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L62-L76) 与渲染区 [ProviderSelectStep.tsx:L151-L172](../../../apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L151-L172)。
+- 默认 Ark 流程入口（是否走 wizard/default onboarding）在 [App.tsx:L111-L120](../../../apps/desktop/src/App.tsx#L111-L120)。
+- 默认 onboarding 步骤切换与保存在 [OnboardingPage.tsx:L20-L42](../../../apps/desktop/src/pages/OnboardingPage.tsx#L20-L42)。
+- wizard 步骤切换、状态恢复、步骤保存在 [WizardRenderer.tsx:L60-L101](../../../apps/desktop/src/components/wizard/WizardRenderer.tsx#L60-L101) 与回退切换 [WizardRenderer.tsx:L133-L174](../../../apps/desktop/src/components/wizard/WizardRenderer.tsx#L133-L174)。
+- 前端 API 封装（onboarding/wizard save）在 [desktop_api.ts:L1775-L1804](../../../apps/desktop/src/services/desktop_api.ts#L1775-L1804)。
+- 后端 wizard/onboarding 命令实现（当前为 stub）在 [system/mod.rs:L24-L62](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L24-L62)。
+- provider 默认值与 applyPreset（当前仅回显成功）在 [provider/mod.rs:L39-L52](../../../apps/desktop/src-tauri/src/application/provider/mod.rs#L39-L52) 和 [provider/mod.rs:L181-L193](../../../apps/desktop/src-tauri/src/application/provider/mod.rs#L181-L193)。
 
 **发现（与你需求直接相关）**
-- “Use Preset Provider (Ark)” 目前并未绑定固定 Ark provider，而是对当前 `provider.id` 调 `applyPreset`，见 [ProviderSetupStep.tsx:L47-L52](file://apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L47-L52)。
-- 默认 provider 实际 seed 是 `openai-default`，不是 Ark，见 [provider/mod.rs:L41-L49](file://apps/desktop/src-tauri/src/application/provider/mod.rs#L41-L49)。
-- wizard 的 `saveWizardStep` 已接线，但后端 `wizard_step_save` 仅返回假数据，不做真实持久化，见 [system/mod.rs:L52-L58](file://apps/desktop/src-tauri/src/application/system/mod.rs#L52-L58)。
+- “Use Preset Provider (Ark)” 目前并未绑定固定 Ark provider，而是对当前 `provider.id` 调 `applyPreset`，见 [ProviderSetupStep.tsx:L47-L52](../../../apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L47-L52)。
+- 默认 provider 实际 seed 是 `openai-default`，不是 Ark，见 [provider/mod.rs:L41-L49](../../../apps/desktop/src-tauri/src/application/provider/mod.rs#L41-L49)。
+- wizard 的 `saveWizardStep` 已接线，但后端 `wizard_step_save` 仅返回假数据，不做真实持久化，见 [system/mod.rs:L52-L58](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L52-L58)。
 
 **修改建议点**
 - 统一“Ark 预设”语义：把按钮从“当前 provider.id”改为明确 preset id（如 `ark-default`），并在后端 `provider_apply_preset` 真正落配置。
@@ -1694,15 +1694,15 @@ Error: received error while streaming: {"type":"server_error","code":"server_err
 已对 codebase 做了全局检索（wizard/onboarding/provider/preset/Ark/show_builtin/presets/builtin_filter 等关键词），结论是：**`wizard step.config.presets` / `show_builtin` 只在前端 `ProviderSelectStep` 消费；当前后端 `wizard_get` 为 stub，未发现任何实际下发的 wizard config 或硬编码 presets（含 Ark）**。唯一明确的 **Ark 硬编码**出现在旧的 onboarding 页面按钮文案中。
 
 **配置来源（wizard → step.config）**
-- 前端 Wizard 渲染入口：在 [App.tsx](file://apps/desktop/src/App.tsx#L111-L120) 中同时调用 `api.getOnboarding()` 与 `api.getWizard()`，用 `wizard.available` 决定是否进入 wizard 模式。
+- 前端 Wizard 渲染入口：在 [App.tsx](../../../apps/desktop/src/App.tsx#L111-L120) 中同时调用 `api.getOnboarding()` 与 `api.getWizard()`，用 `wizard.available` 决定是否进入 wizard 模式。
 - Wizard 配置获取与传递链路：
-  - `WizardRenderer` 通过 `api.getWizard()` 拿到 `wizardResp.config`，并把 `config.steps[i]` 作为 `step` 传给各个 step 组件（包含 `step.config`）：[WizardRenderer.tsx](file://apps/desktop/src/components/wizard/WizardRenderer.tsx#L52-L103)。
-  - `api.getWizard()` 实际是 Tauri command `wizard_get`：[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1784-L1787)。
-  - 但当前 Rust 侧 `wizard_get` 返回的是固定 stub（没有 `available/config/steps[].config` 结构）：[system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs#L37-L45)。
+  - `WizardRenderer` 通过 `api.getWizard()` 拿到 `wizardResp.config`，并把 `config.steps[i]` 作为 `step` 传给各个 step 组件（包含 `step.config`）：[WizardRenderer.tsx](../../../apps/desktop/src/components/wizard/WizardRenderer.tsx#L52-L103)。
+  - `api.getWizard()` 实际是 Tauri command `wizard_get`：[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1784-L1787)。
+  - 但当前 Rust 侧 `wizard_get` 返回的是固定 stub（没有 `available/config/steps[].config` 结构）：[system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L37-L45)。
 - 因此：**`step.config.presets` 与 `show_builtin` 的“配置来源”理论上是 `wizardResp.config.steps[].config`，但在当前实现里并不存在实际下发来源**（仅有前端读取逻辑）。
 
 **字段结构（presets / show_builtin / builtin_filter）**
-- 消费位置与字段读取方式在 [ProviderSelectStep.tsx](file://apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L10-L35)：
+- 消费位置与字段读取方式在 [ProviderSelectStep.tsx](../../../apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L10-L35)：
   - `step.config`：`Record<string, any>`
   - `config.presets`: `PresetConfig[]`
     - `PresetConfig` 结构：
@@ -1711,19 +1711,19 @@ Error: received error while streaming: {"type":"server_error","code":"server_err
       - `auto_apply?: boolean`（当前文件内未看到自动应用逻辑，仅定义了字段）
   - `config.show_builtin`: `boolean`（默认逻辑：`config.show_builtin !== false`，即不传/传 true 都是显示；只有显式 `false` 才隐藏内置列表）
   - `config.builtin_filter`: `string[]`（用于过滤 `api.listProviders()` 的结果，只保留 id 命中的 provider）  
-    过滤逻辑见 [ProviderSelectStep.tsx](file://apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L38-L49)
+    过滤逻辑见 [ProviderSelectStep.tsx](../../../apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L38-L49)
 
 **是否存在硬编码 preset（Ark）**
 - **wizard（ProviderSelectStep）路径：未发现硬编码 Ark preset。**
-  - `ProviderSelectStep` 的 preset 列表完全来自 `step.config.presets`，代码中没有写死 `Ark`/`ark` 作为 preset id 或 preset 列表项：[ProviderSelectStep.tsx](file://apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L22-L76)。
-  - 且当前 `wizard_get` 后端 stub 根本不返回 config/steps，意味着运行时也不会有 presets 注入：[system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs#L37-L45)。
+  - `ProviderSelectStep` 的 preset 列表完全来自 `step.config.presets`，代码中没有写死 `Ark`/`ark` 作为 preset id 或 preset 列表项：[ProviderSelectStep.tsx](../../../apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L22-L76)。
+  - 且当前 `wizard_get` 后端 stub 根本不返回 config/steps，意味着运行时也不会有 presets 注入：[system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L37-L45)。
 - **存在“Ark”硬编码，但在旧 onboarding（非 wizard）UI 文案中：**
-  - `Use Preset Provider (Ark)` 按钮文本是硬编码字符串：[ProviderSetupStep.tsx](file://apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L104-L125)。
-  - 这条路径调用的是 `api.applyPreset(provider.id)`，其中 `provider.id` 来自 `api.listProviders()` 返回的默认 provider，并不是写死 `ark` 的 preset id：[ProviderSetupStep.tsx](file://apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L21-L27)。
-- 另外：`provider_apply_preset` 在 Rust 侧也是 stub（只回 `{ok:true, provider_id:id}`），没有任何 Ark preset 写死逻辑：[provider/mod.rs](file://apps/desktop/src-tauri/src/application/provider/mod.rs#L181-L193)。
+  - `Use Preset Provider (Ark)` 按钮文本是硬编码字符串：[ProviderSetupStep.tsx](../../../apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L104-L125)。
+  - 这条路径调用的是 `api.applyPreset(provider.id)`，其中 `provider.id` 来自 `api.listProviders()` 返回的默认 provider，并不是写死 `ark` 的 preset id：[ProviderSetupStep.tsx](../../../apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L21-L27)。
+- 另外：`provider_apply_preset` 在 Rust 侧也是 stub（只回 `{ok:true, provider_id:id}`），没有任何 Ark preset 写死逻辑：[provider/mod.rs](../../../apps/desktop/src-tauri/src/application/provider/mod.rs#L181-L193)。
 
 **补充：wizard config 的类型定义（用于承载 step.config）**
-- TS 侧 wizard config/step 定义在 [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L275-L338)：
+- TS 侧 wizard config/step 定义在 [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L275-L338)：
   - `WizardStep.config?: Record<string, any>`（`presets/show_builtin/builtin_filter` 都属于这里的动态字段，并未强类型化）。
 
 **改动结果**
@@ -1733,16 +1733,16 @@ Error: received error while streaming: {"type":"server_error","code":"server_err
 
 **具体修改**
 - 默认引导页去掉 Preset 按钮，改为用户选择 Provider：
-  - Provider 列表与默认选中逻辑：[ProviderSetupStep.tsx:L15-L30](file://apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L15-L30)
-  - 按选中的 provider 拉详情并重置 key 输入：[ProviderSetupStep.tsx:L32-L39](file://apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L32-L39)
-  - UI 改成 `Select Provider + API Key` 手动配置：[ProviderSetupStep.tsx:L98-L145](file://apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L98-L145)
+  - Provider 列表与默认选中逻辑：[ProviderSetupStep.tsx:L15-L30](../../../apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L15-L30)
+  - 按选中的 provider 拉详情并重置 key 输入：[ProviderSetupStep.tsx:L32-L39](../../../apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L32-L39)
+  - UI 改成 `Select Provider + API Key` 手动配置：[ProviderSetupStep.tsx:L98-L145](../../../apps/desktop/src/components/onboarding/ProviderSetupStep.tsx#L98-L145)
 - wizard 保留可配置能力但默认关闭 preset：
-  - 新增 `show_presets` 开关，只有 `true` 且有 presets 才展示：[ProviderSelectStep.tsx:L24-L27](file://apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L24-L27)
-  - preset 区域与分隔文案都受 `showPresets` 控制：[ProviderSelectStep.tsx:L152-L178](file://apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L152-L178)
+  - 新增 `show_presets` 开关，只有 `true` 且有 presets 才展示：[ProviderSelectStep.tsx:L24-L27](../../../apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L24-L27)
+  - preset 区域与分隔文案都受 `showPresets` 控制：[ProviderSelectStep.tsx:L152-L178](../../../apps/desktop/src/components/wizard/steps/ProviderSelectStep.tsx#L152-L178)
 
 **你提到的 wizard 说明**
 - 现在入口确实是“有 wizard 就走 wizard”，否则走默认 onboarding：
-  - 判定逻辑在 [App.tsx:L111-L120](file://apps/desktop/src/App.tsx#L111-L120)
+  - 判定逻辑在 [App.tsx:L111-L120](../../../apps/desktop/src/App.tsx#L111-L120)
 - 所以即使有 wizard 架构，若后端返回 `wizard.available = false`，仍会落到默认页。当前我把默认页也改成了“纯手动配置”，保证两条路径都符合“无 preset”。
 
 **验证**
@@ -1767,35 +1767,35 @@ apps/desktop/src/applets
 - Desktop 当前“Applet管理”主链路实际走 Tauri 命令 `applets_*`，后端实现目前是 stub（`applets_list` 返回空数组），不是扫描 `packages/applets`。
 
 **两处目录用途**
-- `src/applets` 通过统一入口注册内置 applet 前端：见 [main.tsx:L6-L8](file://apps/desktop/src/main.tsx#L6-L8)、[index.ts:L1-L15](file://apps/desktop/src/applets/index.ts#L1-L15)、[registry.ts:L34-L54](file://apps/desktop/src/applets/registry.ts#L34-L54)。
-- 每个 applet 前端模块自注册（如 `web-search`、`remote-cli`）：见 [web-search/index.ts:L12-L17](file://apps/desktop/src/applets/web-search/index.ts#L12-L17)、[remote-cli/index.ts:L6-L11](file://apps/desktop/src/applets/remote-cli/index.ts#L6-L11)。
-- `packages/applets` 是独立项目（依赖 `@peers-touch/applet-sdk`）：见 [web-search/package.json:L10-L13](file://packages/applets/web-search/package.json#L10-L13)、[web-search/applet.json:L1-L16](file://packages/applets/web-search/applet.json#L1-L16)。
-- 构建脚本会把产物复制到 `apps/desktop/applets-dist`：见 [build.js:L10-L15](file://packages/applets/build.js#L10-L15)、[build.js:L45-L61](file://packages/applets/build.js#L45-L61)、[dev-sync.js:L11-L14](file://packages/applets/dev-sync.js#L11-L14)、[dev-sync.js:L35-L45](file://packages/applets/dev-sync.js#L35-L45)、[root package.json:L12-L13](file://package.json#L12-L13)。
+- `src/applets` 通过统一入口注册内置 applet 前端：见 [main.tsx:L6-L8](../../../apps/desktop/src/main.tsx#L6-L8)、[index.ts:L1-L15](../../../apps/desktop/src/applets/index.ts#L1-L15)、[registry.ts:L34-L54](../../../apps/desktop/src/applets/registry.ts#L34-L54)。
+- 每个 applet 前端模块自注册（如 `web-search`、`remote-cli`）：见 [web-search/index.ts:L12-L17](../../../apps/desktop/src/applets/web-search/index.ts#L12-L17)、[remote-cli/index.ts:L6-L11](../../../apps/desktop/src/applets/remote-cli/index.ts#L6-L11)。
+- `packages/applets` 是独立项目（依赖 `@peers-touch/applet-sdk`）：见 [web-search/package.json:L10-L13](../../../packages/applets/web-search/package.json#L10-L13)、[web-search/applet.json:L1-L16](../../../packages/applets/web-search/applet.json#L1-L16)。
+- 构建脚本会把产物复制到 `apps/desktop/applets-dist`：见 [build.js:L10-L15](../../../packages/applets/build.js#L10-L15)、[build.js:L45-L61](../../../packages/applets/build.js#L45-L61)、[dev-sync.js:L11-L14](../../../packages/applets/dev-sync.js#L11-L14)、[dev-sync.js:L35-L45](../../../packages/applets/dev-sync.js#L35-L45)、[root package.json:L12-L13](../../../package.json#L12-L13)。
 
 **Desktop 运行时实际读取哪一处（关键链路）**
-- UI 侧 Applet 列表页调用 `api.listApplets()`：见 [AppletsPage.tsx:L82-L85](file://apps/desktop/src/pages/AppletsPage.tsx#L82-L85)。
-- `api.listApplets/getApplet/appletAction` 映射到 Tauri `applets_*` 命令：见 [desktop_api.ts:L1976-L1995](file://apps/desktop/src/services/desktop_api.ts#L1976-L1995)。
-- Tauri 命令转发到 Rust 应用层 `application/applets/mod.rs`：见 [tauri_commands/applets.rs:L1-L42](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L1-L42)。
-- Rust 当前实现是 stub：`applets_list` 返回 `[]`，`applets_action` 只回传参数：见 [mod.rs:L18-L20](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L20)、[mod.rs:L67-L75](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L67-L75)。
+- UI 侧 Applet 列表页调用 `api.listApplets()`：见 [AppletsPage.tsx:L82-L85](../../../apps/desktop/src/pages/AppletsPage.tsx#L82-L85)。
+- `api.listApplets/getApplet/appletAction` 映射到 Tauri `applets_*` 命令：见 [desktop_api.ts:L1976-L1995](../../../apps/desktop/src/services/desktop_api.ts#L1976-L1995)。
+- Tauri 命令转发到 Rust 应用层 `application/applets/mod.rs`：见 [tauri_commands/applets.rs:L1-L42](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L1-L42)。
+- Rust 当前实现是 stub：`applets_list` 返回 `[]`，`applets_action` 只回传参数：见 [mod.rs:L18-L20](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L20)、[mod.rs:L67-L75](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L67-L75)。
 
 **关于 `applets-dist` 的定位**
-- `applets-dist` 读取逻辑存在于 `src/applet/AppletManager.ts`（`/applets-dist` + `fetch`）：见 [AppletManager.ts:L17-L37](file://apps/desktop/src/applet/AppletManager.ts#L17-L37)、[AppletManager.ts:L53-L61](file://apps/desktop/src/applet/AppletManager.ts#L53-L61)。
-- 该链路当前在 `AppletExample` 示例页中使用，且文案明确“示例从 applets-dist 加载”：见 [AppletExample.tsx:L3-L4](file://apps/desktop/src/pages/AppletExample.tsx#L3-L4)、[AppletExample.tsx:L63-L75](file://apps/desktop/src/pages/AppletExample.tsx#L63-L75)。
-- 主应用入口/主页面链路是 `src/applets` 注册体系 + `api.listApplets`，不是 `AppletExample` 页面：见 [App.tsx:L25-L27](file://apps/desktop/src/App.tsx#L25-L27)、[App.tsx:L286-L299](file://apps/desktop/src/App.tsx#L286-L299)、[App.tsx:L419-L430](file://apps/desktop/src/App.tsx#L419-L430)。
+- `applets-dist` 读取逻辑存在于 `src/applet/AppletManager.ts`（`/applets-dist` + `fetch`）：见 [AppletManager.ts:L17-L37](../../../apps/desktop/src/applet/AppletManager.ts#L17-L37)、[AppletManager.ts:L53-L61](../../../apps/desktop/src/applet/AppletManager.ts#L53-L61)。
+- 该链路当前在 `AppletExample` 示例页中使用，且文案明确“示例从 applets-dist 加载”：见 [AppletExample.tsx:L3-L4](../../../apps/desktop/src/pages/AppletExample.tsx#L3-L4)、[AppletExample.tsx:L63-L75](../../../apps/desktop/src/pages/AppletExample.tsx#L63-L75)。
+- 主应用入口/主页面链路是 `src/applets` 注册体系 + `api.listApplets`，不是 `AppletExample` 页面：见 [App.tsx:L25-L27](../../../apps/desktop/src/App.tsx#L25-L27)、[App.tsx:L286-L299](../../../apps/desktop/src/App.tsx#L286-L299)、[App.tsx:L419-L430](../../../apps/desktop/src/App.tsx#L419-L430)。
 
 
 
 你这个疑问非常对，现在确实有“两套”，但职责不一样：
 
 - **`apps/desktop/src/applets` 是当前 Desktop 真正在用的前端注册层**  
-  入口在 [main.tsx](file://apps/desktop/src/main.tsx#L6-L8) -> [src/applets/index.ts](file://apps/desktop/src/applets/index.ts#L1-L15) -> [registry.ts](file://apps/desktop/src/applets/registry.ts#L34-L54)。  
-  App 侧边栏和页面渲染走这个 registry（[App.tsx](file://apps/desktop/src/App.tsx#L286-L299), [App.tsx](file://apps/desktop/src/App.tsx#L419-L430)）。
+  入口在 [main.tsx](../../../apps/desktop/src/main.tsx#L6-L8) -> [src/applets/index.ts](../../../apps/desktop/src/applets/index.ts#L1-L15) -> [registry.ts](../../../apps/desktop/src/applets/registry.ts#L34-L54)。  
+  App 侧边栏和页面渲染走这个 registry（[App.tsx](../../../apps/desktop/src/App.tsx#L286-L299), [App.tsx](../../../apps/desktop/src/App.tsx#L419-L430)）。
 
 - **`packages/applets` 不是直接运行时读取，是独立 applet 源码/构建工程**  
-  会构建并同步到 `apps/desktop/applets-dist`（[build.js](file://packages/applets/build.js#L45-L61), [dev-sync.js](file://packages/applets/dev-sync.js#L35-L45)）。
+  会构建并同步到 `apps/desktop/applets-dist`（[build.js](../../../packages/applets/build.js#L45-L61), [dev-sync.js](../../../packages/applets/dev-sync.js#L35-L45)）。
 
 - **现在“实际生效”结论：主链路用 `src/applets`。**  
-  `packages/applets` 那套目前更像“外部化插件产物链路”，但主 Applet 管理后端还是 stub（`applets_list` 返回空）[application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L20)。
+  `packages/applets` 那套目前更像“外部化插件产物链路”，但主 Applet 管理后端还是 stub（`applets_list` 返回空）[application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L20)。
 
 一句话：**你现在改功能，优先改 `apps/desktop/src/applets`；`packages/applets` 目前不是主运行时来源。**
 
@@ -1806,11 +1806,11 @@ apps/desktop/src/applets
 你说得对，这个判断是对的。
 
 - `apps/desktop/src/applets` 这一套本质是**老的内嵌实现**，直接编进主程序，不是独立 applet 形态。
-- `packages/applets` 才是你们定义里的**独立 applet 源码**（有自己的 `applet.json` 和构建流程），例如 [packages/applets/web-search/applet.json](file://packages/applets/web-search/applet.json)。
+- `packages/applets` 才是你们定义里的**独立 applet 源码**（有自己的 `applet.json` 和构建流程），例如 [packages/applets/web-search/applet.json](../../../packages/applets/web-search/applet.json)。
 - 两边名字一样，正是历史迁移期“并存/镜像”的典型特征，不该长期共存维护。
 
 我上一条回答说“当前实际生效是 `src/applets`”，描述的是**现状代码链路**，不是你们的**目标架构**。  
-现状入口确实还在内嵌注册（[apps/desktop/src/main.tsx](file://apps/desktop/src/main.tsx#L6-L8), [apps/desktop/src/applets/index.ts](file://apps/desktop/src/applets/index.ts#L1-L15)），而 `packages/applets` 是通过构建同步到 `applets-dist`（[packages/applets/build.js](file://packages/applets/build.js#L45-L61)）。
+现状入口确实还在内嵌注册（[apps/desktop/src/main.tsx](../../../apps/desktop/src/main.tsx#L6-L8), [apps/desktop/src/applets/index.ts](../../../apps/desktop/src/applets/index.ts#L1-L15)），而 `packages/applets` 是通过构建同步到 `applets-dist`（[packages/applets/build.js](../../../packages/applets/build.js#L45-L61)）。
 
 **结论一句话**：  
 - 架构上你说的没错，应该以 `packages/applets` 为唯一来源；  
@@ -1830,35 +1830,35 @@ apps/desktop/src/applets
 - 主应用里的 Applet 列表来自 Tauri API，但后端实现目前是 stub，返回空数组。
 
 **apps/desktop/src/applets 的引用与注册入口**
-- 注册总入口：`main.tsx` 直接导入 `./applets`，触发自注册链路，[main.tsx:L1-L8](file://apps/desktop/src/main.tsx#L1-L8)。
-- `applets/index.ts` 再导入每个 applet 的 `index.ts`，[index.ts:L1-L15](file://apps/desktop/src/applets/index.ts#L1-L15)。
-- 注册中心：`registerApplet/getAppletFrontend/hasPage/hasSettingsPanel`，[registry.ts:L34-L54](file://apps/desktop/src/applets/registry.ts#L34-L54)。
+- 注册总入口：`main.tsx` 直接导入 `./applets`，触发自注册链路，[main.tsx:L1-L8](../../../apps/desktop/src/main.tsx#L1-L8)。
+- `applets/index.ts` 再导入每个 applet 的 `index.ts`，[index.ts:L1-L15](../../../apps/desktop/src/applets/index.ts#L1-L15)。
+- 注册中心：`registerApplet/getAppletFrontend/hasPage/hasSettingsPanel`，[registry.ts:L34-L54](../../../apps/desktop/src/applets/registry.ts#L34-L54)。
 - 各 applet 自注册：  
-  [agent-pilot/index.ts:L6-L14](file://apps/desktop/src/applets/agent-pilot/index.ts#L6-L14) / [remote-cli/index.ts:L1-L11](file://apps/desktop/src/applets/remote-cli/index.ts#L1-L11) / [web-search/index.ts:L7-L17](file://apps/desktop/src/applets/web-search/index.ts#L7-L17)。
+  [agent-pilot/index.ts:L6-L14](../../../apps/desktop/src/applets/agent-pilot/index.ts#L6-L14) / [remote-cli/index.ts:L1-L11](../../../apps/desktop/src/applets/remote-cli/index.ts#L1-L11) / [web-search/index.ts:L7-L17](../../../apps/desktop/src/applets/web-search/index.ts#L7-L17)。
 - 消费点（引用 `src/applets` 注册结果）：  
-  [App.tsx:L25-L27](file://apps/desktop/src/App.tsx#L25-L27), [App.tsx:L286-L299](file://apps/desktop/src/App.tsx#L286-L299), [App.tsx:L419-L430](file://apps/desktop/src/App.tsx#L419-L430), [SettingsPage.tsx:L19-L20](file://apps/desktop/src/pages/SettingsPage.tsx#L19-L20), [SettingsPage.tsx:L174-L227](file://apps/desktop/src/pages/SettingsPage.tsx#L174-L227), [AppletsPage.tsx:L75-L77](file://apps/desktop/src/pages/AppletsPage.tsx#L75-L77), [AppletsPage.tsx:L112-L127](file://apps/desktop/src/pages/AppletsPage.tsx#L112-L127)。
+  [App.tsx:L25-L27](../../../apps/desktop/src/App.tsx#L25-L27), [App.tsx:L286-L299](../../../apps/desktop/src/App.tsx#L286-L299), [App.tsx:L419-L430](../../../apps/desktop/src/App.tsx#L419-L430), [SettingsPage.tsx:L19-L20](../../../apps/desktop/src/pages/SettingsPage.tsx#L19-L20), [SettingsPage.tsx:L174-L227](../../../apps/desktop/src/pages/SettingsPage.tsx#L174-L227), [AppletsPage.tsx:L75-L77](../../../apps/desktop/src/pages/AppletsPage.tsx#L75-L77), [AppletsPage.tsx:L112-L127](../../../apps/desktop/src/pages/AppletsPage.tsx#L112-L127)。
 
 **运行时读取链路（两套）**
 - 主应用链路（当前线上入口）：  
-  页面模块注册 [modules/applets.ts:L1-L11](file://apps/desktop/src/modules/applets.ts#L1-L11) → AppletsPage 拉取 API [AppletsPage.tsx:L82-L90](file://apps/desktop/src/pages/AppletsPage.tsx#L82-L90) → 前端 API 调 Tauri 命令 [desktop_api.ts:L1976-L1995](file://apps/desktop/src/services/desktop_api.ts#L1976-L1995) → Tauri command 转发 [applets.rs:L9-L42](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42) → Rust application stub [mod.rs:L18-L75](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)（`applets_list` 当前返回空）。
+  页面模块注册 [modules/applets.ts:L1-L11](../../../apps/desktop/src/modules/applets.ts#L1-L11) → AppletsPage 拉取 API [AppletsPage.tsx:L82-L90](../../../apps/desktop/src/pages/AppletsPage.tsx#L82-L90) → 前端 API 调 Tauri 命令 [desktop_api.ts:L1976-L1995](../../../apps/desktop/src/services/desktop_api.ts#L1976-L1995) → Tauri command 转发 [applets.rs:L9-L42](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42) → Rust application stub [mod.rs:L18-L75](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)（`applets_list` 当前返回空）。
 - `applets-dist` 本地读取链路（当前 Demo 链路）：  
-  [AppletExample.tsx:L19-L29](file://apps/desktop/src/pages/AppletExample.tsx#L19-L29) 调 `scanApplets` → [AppletManager.ts:L34-L68](file://apps/desktop/src/applet/AppletManager.ts#L34-L68) 先读 `/applets-dist/index.json`，失败后回退读 `/{id}/applet.json` → [LynxContainer.tsx:L94-L113](file://apps/desktop/src/applet/LynxContainer.tsx#L94-L113) 用 `path + main` 拼 iframe URL。
-- 当前 `apps/desktop/applets-dist` 只有 `.gitkeep`，[.gitkeep](file://apps/desktop/applets-dist/.gitkeep)。
+  [AppletExample.tsx:L19-L29](../../../apps/desktop/src/pages/AppletExample.tsx#L19-L29) 调 `scanApplets` → [AppletManager.ts:L34-L68](../../../apps/desktop/src/applet/AppletManager.ts#L34-L68) 先读 `/applets-dist/index.json`，失败后回退读 `/{id}/applet.json` → [LynxContainer.tsx:L94-L113](../../../apps/desktop/src/applet/LynxContainer.tsx#L94-L113) 用 `path + main` 拼 iframe URL。
+- 当前 `apps/desktop/applets-dist` 只有 `.gitkeep`，[.gitkeep](../../../apps/desktop/applets-dist/.gitkeep)。
 
 **packages/applets 与 applets-dist 现有加载/产出代码**
-- monorepo 脚本入口：`applets:build / applets:dev`，[package.json:L10-L13](file://package.json#L10-L13)。
-- `packages/applets` 脚本定义：[packages/applets/package.json:L6-L15](file://packages/applets/package.json#L6-L15)。
-- 构建并同步到 `apps/desktop/applets-dist`：[build.js:L11-L19](file://packages/applets/build.js#L11-L19), [build.js:L45-L63](file://packages/applets/build.js#L45-L63)。
-- 开发监听并同步到 `apps/desktop/applets-dist`：[dev-sync.js:L12-L18](file://packages/applets/dev-sync.js#L12-L18), [dev-sync.js:L40-L46](file://packages/applets/dev-sync.js#L40-L46), [dev-sync.js:L60-L77](file://packages/applets/dev-sync.js#L60-L77)。
+- monorepo 脚本入口：`applets:build / applets:dev`，[package.json:L10-L13](../../../package.json#L10-L13)。
+- `packages/applets` 脚本定义：[packages/applets/package.json:L6-L15](../../../packages/applets/package.json#L6-L15)。
+- 构建并同步到 `apps/desktop/applets-dist`：[build.js:L11-L19](../../../packages/applets/build.js#L11-L19), [build.js:L45-L63](../../../packages/applets/build.js#L45-L63)。
+- 开发监听并同步到 `apps/desktop/applets-dist`：[dev-sync.js:L12-L18](../../../packages/applets/dev-sync.js#L12-L18), [dev-sync.js:L40-L46](../../../packages/applets/dev-sync.js#L40-L46), [dev-sync.js:L60-L77](../../../packages/applets/dev-sync.js#L60-L77)。
 - 注意：现有构建脚本**不会生成** `applets-dist/index.json`，而 `AppletManager.scanApplets` 优先读取它（存在期望差异）。
 
 **需修改文件清单（建议）**
 - 必改（打通“主入口 + applets-dist 动态读取”）  
-  [apps/desktop/src/applet/AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts), [apps/desktop/src/pages/AppletsPage.tsx](file://apps/desktop/src/pages/AppletsPage.tsx), [apps/desktop/src/pages/SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx), [apps/desktop/src/App.tsx](file://apps/desktop/src/App.tsx), [packages/applets/build.js](file://packages/applets/build.js), [packages/applets/dev-sync.js](file://packages/applets/dev-sync.js)。
+  [apps/desktop/src/applet/AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts), [apps/desktop/src/pages/AppletsPage.tsx](../../../apps/desktop/src/pages/AppletsPage.tsx), [apps/desktop/src/pages/SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx), [apps/desktop/src/App.tsx](../../../apps/desktop/src/App.tsx), [packages/applets/build.js](../../../packages/applets/build.js), [packages/applets/dev-sync.js](../../../packages/applets/dev-sync.js)。
 - 若继续走 Tauri API 统一管理（而非前端直读 dist）  
-  [apps/desktop/src/services/desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts), [apps/desktop/src-tauri/src/application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs), [apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)。
+  [apps/desktop/src/services/desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts), [apps/desktop/src-tauri/src/application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs), [apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)。
 - 新增 applet 元数据汇总时通常还要改  
-  [apps/desktop/src/applets/index.ts](file://apps/desktop/src/applets/index.ts), [apps/desktop/src/applets/registry.ts](file://apps/desktop/src/applets/registry.ts), [packages/applets/*/applet.json](file://packages/applets)。
+  [apps/desktop/src/applets/index.ts](../../../apps/desktop/src/applets/index.ts), [apps/desktop/src/applets/registry.ts](../../../apps/desktop/src/applets/registry.ts), [packages/applets/*/applet.json](../../../packages/applets)。
 
 **已按你要求收敛**
 - `src/applets` 整套内嵌逻辑已废弃并删除，不再作为运行来源。
@@ -1867,22 +1867,22 @@ apps/desktop/src/applets
 
 **核心改动**
 - 入口不再加载内嵌 applet 注册：
-  - 删除 `import './applets'`：[main.tsx](file://apps/desktop/src/main.tsx#L1-L8)
+  - 删除 `import './applets'`：[main.tsx](../../../apps/desktop/src/main.tsx#L1-L8)
 - 主应用路由和侧边栏从 registry 切到运行时 applet：
-  - 使用 `AppletManager` 扫描和 pin 展示：[App.tsx](file://apps/desktop/src/App.tsx#L26-L30)
-  - pinned applet 侧边栏入口改为运行时数据：[App.tsx](file://apps/desktop/src/App.tsx#L293-L306)
-  - `applet:*` 页面改为统一运行时容器页：[App.tsx](file://apps/desktop/src/App.tsx#L426-L435)
+  - 使用 `AppletManager` 扫描和 pin 展示：[App.tsx](../../../apps/desktop/src/App.tsx#L26-L30)
+  - pinned applet 侧边栏入口改为运行时数据：[App.tsx](../../../apps/desktop/src/App.tsx#L293-L306)
+  - `applet:*` 页面改为统一运行时容器页：[App.tsx](../../../apps/desktop/src/App.tsx#L426-L435)
 - 新增统一运行页（从 `/applets-dist/{id}` 跑）：
-  - [AppletRuntimePage.tsx](file://apps/desktop/src/pages/AppletRuntimePage.tsx#L17-L87)
+  - [AppletRuntimePage.tsx](../../../apps/desktop/src/pages/AppletRuntimePage.tsx#L17-L87)
 - Applets 列表页改为扫描 `applets-dist`，不走旧 API + registry：
-  - [AppletsPage.tsx](file://apps/desktop/src/pages/AppletsPage.tsx#L16-L41)
+  - [AppletsPage.tsx](../../../apps/desktop/src/pages/AppletsPage.tsx#L16-L41)
 - Settings 的 Applets 子页移除“内嵌设置面板”逻辑：
-  - [SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx#L165-L257)
+  - [SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx#L165-L257)
 - 运行时扫描器去掉硬编码 knownApplets：
-  - [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L35-L65)
+  - [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L35-L65)
 - 构建链路保证产出 `index.json`（让 runtime 可发现 applets）：
-  - build 后生成索引：[build.js](file://packages/applets/build.js#L83-L118)
-  - dev-sync 后同步索引：[dev-sync.js](file://packages/applets/dev-sync.js#L20-L66)
+  - build 后生成索引：[build.js](../../../packages/applets/build.js#L83-L118)
+  - dev-sync 后同步索引：[dev-sync.js](../../../packages/applets/dev-sync.js#L20-L66)
 
 **删除项**
 - 已删除目录：`apps/desktop/src/applets`（整目录）
@@ -1903,24 +1903,24 @@ apps/desktop/src/applets
 我已做过针对 `packages/applets`、`apps/desktop`、`packages/applet-sdk`、`src-tauri` 的多轮检索，下面给出当前代码下相对完整的协作链路与风险评估。
 
 **协作链路**
-- **构建/分发链路**：`packages/applets` 通过 [build.js](file://packages/applets/build.js#L11-L19) 把各 applet 的 `dist + applet.json` 同步到 `apps/desktop/applets-dist/<id>`，并生成 `index.json`（[build.js](file://packages/applets/build.js#L82-L98)，开发态见 [dev-sync.js](file://packages/applets/dev-sync.js#L18-L35)）。
-- **主程序发现链路**：Desktop 启动后由 [App.tsx](file://apps/desktop/src/App.tsx#L98-L100) 调用 [AppletManager.scanApplets](file://apps/desktop/src/applet/AppletManager.ts#L35-L65) 读取 `/applets-dist/index.json`。
-- **运行时链路**：页面进入 `applet:<id>` 时渲染 [AppletRuntimePage](file://apps/desktop/src/pages/AppletRuntimePage.tsx#L59-L85)，再由 [LynxContainer](file://apps/desktop/src/applet/LynxContainer.tsx#L97-L113) 用 iframe 加载 `/<applet-path>/index.html`。
-- **桥接调用链路**：Applet 通过 SDK `postMessage(type='api-call')`（[applet-sdk/index.ts](file://packages/applet-sdk/src/index.ts#L71-L92)），主程序在 [AppletManager.handleMessage/invokeApi](file://apps/desktop/src/applet/AppletManager.ts#L125-L280) 处理并回传 `api-response`。
-- **另一条后端链路（并行存在）**：前端还有 Tauri `applets_*` 命令封装（[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1976-L1995)），但 Rust 实现目前是 stub（[application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)）。
+- **构建/分发链路**：`packages/applets` 通过 [build.js](../../../packages/applets/build.js#L11-L19) 把各 applet 的 `dist + applet.json` 同步到 `apps/desktop/applets-dist/<id>`，并生成 `index.json`（[build.js](../../../packages/applets/build.js#L82-L98)，开发态见 [dev-sync.js](../../../packages/applets/dev-sync.js#L18-L35)）。
+- **主程序发现链路**：Desktop 启动后由 [App.tsx](../../../apps/desktop/src/App.tsx#L98-L100) 调用 [AppletManager.scanApplets](../../../apps/desktop/src/applet/AppletManager.ts#L35-L65) 读取 `/applets-dist/index.json`。
+- **运行时链路**：页面进入 `applet:<id>` 时渲染 [AppletRuntimePage](../../../apps/desktop/src/pages/AppletRuntimePage.tsx#L59-L85)，再由 [LynxContainer](../../../apps/desktop/src/applet/LynxContainer.tsx#L97-L113) 用 iframe 加载 `/<applet-path>/index.html`。
+- **桥接调用链路**：Applet 通过 SDK `postMessage(type='api-call')`（[applet-sdk/index.ts](../../../packages/applet-sdk/src/index.ts#L71-L92)），主程序在 [AppletManager.handleMessage/invokeApi](../../../apps/desktop/src/applet/AppletManager.ts#L125-L280) 处理并回传 `api-response`。
+- **另一条后端链路（并行存在）**：前端还有 Tauri `applets_*` 命令封装（[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1976-L1995)），但 Rust 实现目前是 stub（[application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)）。
 
 **数据/接口边界**
-- **文件边界**：`applet.json` 是单 applet 元数据边界，`index.json` 是 host 扫描入口（[build.js](file://packages/applets/build.js#L82-L98)）。
-- **运行时接口边界**：消息协议当前是隐式 JSON 协议：`api-call/api-response/event`（[applet-sdk/index.ts](file://packages/applet-sdk/src/index.ts#L46-L69), [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L125-L172)）。
-- **能力边界**：SDK 类型声明了 `network.download/upload`（[types.ts](file://packages/applet-sdk/src/types.ts#L22-L77)），但 host `invokeApi` 未实现对应分支（[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L177-L279)）。
-- **权限边界**：manifest 有 `permissions`（如 [remote-cli/applet.json](file://packages/applets/remote-cli/applet.json#L8-L14)），但 host 仅“读取 appletInfo”，未做权限矩阵校验（[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L147-L155)）。
+- **文件边界**：`applet.json` 是单 applet 元数据边界，`index.json` 是 host 扫描入口（[build.js](../../../packages/applets/build.js#L82-L98)）。
+- **运行时接口边界**：消息协议当前是隐式 JSON 协议：`api-call/api-response/event`（[applet-sdk/index.ts](../../../packages/applet-sdk/src/index.ts#L46-L69), [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L125-L172)）。
+- **能力边界**：SDK 类型声明了 `network.download/upload`（[types.ts](../../../packages/applet-sdk/src/types.ts#L22-L77)），但 host `invokeApi` 未实现对应分支（[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L177-L279)）。
+- **权限边界**：manifest 有 `permissions`（如 [remote-cli/applet.json](../../../packages/applets/remote-cli/applet.json#L8-L14)），但 host 仅“读取 appletInfo”，未做权限矩阵校验（[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L147-L155)）。
 
 **耦合点与风险**
-- **协议耦合且存在断裂**：SDK 发消息未附带 `appletId`（[applet-sdk/index.ts](file://packages/applet-sdk/src/index.ts#L79-L87)），而 host 依赖 `event.data.appletId` 查表（[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L126-L150)），会导致“Applet not found”。
-- **回调ID逻辑缺陷**：host 用 `!callbackId` 过滤请求（[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L129-L131)），SDK 首次调用 `callbackId=0`（[applet-sdk/index.ts](file://packages/applet-sdk/src/index.ts#L73-L76)）会被误丢弃。
-- **安全边界弱**：`postMessage` 目标域均为 `*`，host 未校验 origin/source（[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L157-L170)），存在消息注入风险。
-- **双轨架构耦合**：一套是 iframe+JSAPI runtime（`src/applet`），一套是 Tauri `applets_*` API（[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1976-L1995) + [mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)）；能力来源不一致、心智成本高。
-- **代码状态漂移风险**：`packages/applets` 内出现对不存在模块的引用（如 [agent-pilot/src/index.ts](file://packages/applets/agent-pilot/src/index.ts#L7)、[agent-pilot/src/api.ts](file://packages/applets/agent-pilot/src/api.ts#L4)），与“独立 applet”目标不一致。
+- **协议耦合且存在断裂**：SDK 发消息未附带 `appletId`（[applet-sdk/index.ts](../../../packages/applet-sdk/src/index.ts#L79-L87)），而 host 依赖 `event.data.appletId` 查表（[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L126-L150)），会导致“Applet not found”。
+- **回调ID逻辑缺陷**：host 用 `!callbackId` 过滤请求（[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L129-L131)），SDK 首次调用 `callbackId=0`（[applet-sdk/index.ts](../../../packages/applet-sdk/src/index.ts#L73-L76)）会被误丢弃。
+- **安全边界弱**：`postMessage` 目标域均为 `*`，host 未校验 origin/source（[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L157-L170)），存在消息注入风险。
+- **双轨架构耦合**：一套是 iframe+JSAPI runtime（`src/applet`），一套是 Tauri `applets_*` API（[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1976-L1995) + [mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)）；能力来源不一致、心智成本高。
+- **代码状态漂移风险**：`packages/applets` 内出现对不存在模块的引用（如 [agent-pilot/src/index.ts](../../../packages/applets/agent-pilot/src/index.ts#L7)、[agent-pilot/src/api.ts](../../../packages/applets/agent-pilot/src/api.ts#L4)），与“独立 applet”目标不一致。
 
 **低耦合改进建议**
 - **统一契约层**：把 `applet.json schema + 消息协议 + capability 类型` 收敛到单一契约包（建议 `packages/applet-contract`），host/sdk/app-build 共用，避免三处各自演进。
@@ -1930,14 +1930,14 @@ apps/desktop/src/applets
 - **把构建同步产品化**：将 `/applets-dist` 路径改为可配置并由 host 启动时主动校验，配 CI 做“applets build + contract test + smoke run”，减少“文档/代码漂移”。
 
 **关键文件位置**
-- [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts)
-- [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx)
-- [AppletRuntimePage.tsx](file://apps/desktop/src/pages/AppletRuntimePage.tsx)
-- [App.tsx](file://apps/desktop/src/App.tsx)
-- [build.js](file://packages/applets/build.js), [dev-sync.js](file://packages/applets/dev-sync.js)
-- [applet-sdk/index.ts](file://packages/applet-sdk/src/index.ts), [types.ts](file://packages/applet-sdk/src/types.ts)
-- [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1976-L1995)
-- [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs)
+- [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts)
+- [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx)
+- [AppletRuntimePage.tsx](../../../apps/desktop/src/pages/AppletRuntimePage.tsx)
+- [App.tsx](../../../apps/desktop/src/App.tsx)
+- [build.js](../../../packages/applets/build.js), [dev-sync.js](../../../packages/applets/dev-sync.js)
+- [applet-sdk/index.ts](../../../packages/applet-sdk/src/index.ts), [types.ts](../../../packages/applet-sdk/src/types.ts)
+- [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1976-L1995)
+- [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs)
 
 你这个问题很关键。基于现在的代码状态，我给你一个“架构层面的结论”：
 
@@ -1947,19 +1947,19 @@ apps/desktop/src/applets
 
 **现在怎么协作**
 - `packages/applets` 负责构建，把每个 applet 的 `dist + applet.json` 同步到 `apps/desktop/applets-dist/<id>`，并生成 `index.json`：  
-  [build.js](file://packages/applets/build.js#L83-L118), [dev-sync.js](file://packages/applets/dev-sync.js#L20-L66)
+  [build.js](../../../packages/applets/build.js#L83-L118), [dev-sync.js](../../../packages/applets/dev-sync.js#L20-L66)
 - 主程序启动后扫描 `/applets-dist/index.json`：  
-  [AppletManager.scanApplets](file://apps/desktop/src/applet/AppletManager.ts#L35-L65)
+  [AppletManager.scanApplets](../../../apps/desktop/src/applet/AppletManager.ts#L35-L65)
 - 打开 applet 时通过 iframe 跑 `index.html`：  
-  [AppletRuntimePage](file://apps/desktop/src/pages/AppletRuntimePage.tsx#L59-L85), [LynxContainer](file://apps/desktop/src/applet/LynxContainer.tsx#L97-L113)
+  [AppletRuntimePage](../../../apps/desktop/src/pages/AppletRuntimePage.tsx#L59-L85), [LynxContainer](../../../apps/desktop/src/applet/LynxContainer.tsx#L97-L113)
 
 **耦合点（还在）**
 - **路径耦合**：主程序硬依赖 `/applets-dist`。
 - **数据契约耦合**：主程序假定 `index.json/applet.json` 字段形状固定（id/name/main/permissions...）。
 - **协议耦合**：SDK 与 Host 的 `postMessage` 协议有断裂风险：
-  - SDK 发 `api-call` 时没带 `appletId`：[applet-sdk/index.ts](file://packages/applet-sdk/src/index.ts#L79-L87)
-  - Host 处理时依赖 `appletId` 查表：[AppletManager](file://apps/desktop/src/applet/AppletManager.ts#L129-L155)
-  - Host 还用 `!callbackId` 判断，会把 `callbackId=0` 的首个请求误判掉：[AppletManager](file://apps/desktop/src/applet/AppletManager.ts#L129-L133)
+  - SDK 发 `api-call` 时没带 `appletId`：[applet-sdk/index.ts](../../../packages/applet-sdk/src/index.ts#L79-L87)
+  - Host 处理时依赖 `appletId` 查表：[AppletManager](../../../apps/desktop/src/applet/AppletManager.ts#L129-L155)
+  - Host 还用 `!callbackId` 判断，会把 `callbackId=0` 的首个请求误判掉：[AppletManager](../../../apps/desktop/src/applet/AppletManager.ts#L129-L133)
 
 **一句话评价**
 - 你想要的“真正独立 applet”方向已经走对了；
@@ -1975,15 +1975,15 @@ apps/desktop/src/applets
 
 **现状原因**
 - 现在并没有真正接入 Lynx Runtime，`LynxContainer` 只是历史命名，实际就是 `<iframe>`：  
-  [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx#L97-L113)
+  [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx#L97-L113)
 - README 写了 “Applet Runtime: Lynx”，但和当前实现不一致，属于文档/实现漂移：  
-  [README.md](file://apps/desktop/README.md#L10-L10), [README.md](file://apps/desktop/README.md#L83-L105)
+  [README.md](../../../apps/desktop/README.md#L10-L10), [README.md](../../../apps/desktop/README.md#L83-L105)
 
 **你说的越权风险，确实存在**
 - iframe sandbox 里开了 `allow-same-origin + allow-scripts`，这是高风险组合：  
-  [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx#L111-L111)
+  [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx#L111-L111)
 - Host 与 Applet 通信用 `postMessage('*')`，且 Host 没做 origin/source 严格校验：  
-  [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L121-L122), [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L128-L137), [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L160-L173)
+  [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L121-L122), [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L128-L137), [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L160-L173)
 - 所以你的判断没错：目前这套不是“强隔离托管”，而是“弱隔离 iframe 运行”。
 
 **为什么不是 Lynx 托管**
@@ -2004,19 +2004,19 @@ apps/desktop/src/applets
 已做过多轮全仓检索（语义检索 + 精确 grep + 关键文件核对），结论是：仓库里有“Applet Runtime/桥接雏形”和“Tauri command 通道”，但**没有真正的 Lynx Runtime/SDK（desktop/tauri）实装依赖与落地调用链**。
 
 **已存在（可复用）**
-- Desktop 端 Applet 运行时壳：`AppletManager + LynxContainer + 页面示例`，可直接复用为 iframe 沙箱方案。[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L14-L297) [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx#L13-L117) [AppletRuntimePage.tsx](file://apps/desktop/src/pages/AppletRuntimePage.tsx#L17-L88) [AppletExample.tsx](file://apps/desktop/src/pages/AppletExample.tsx#L8-L181)
-- JSAPI Bridge 雏形：通过 `postMessage(api-call/api-response)` 实现宿主侧 API 分发（system/storage/network/notification/device/ui）。[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L125-L279)
-- Applet SDK 包已存在（可复用到小程序侧）：`@peers-touch/applet-sdk`，包含同构 API 与消息协议封装。[packages/applet-sdk/package.json](file://packages/applet-sdk/package.json#L1-L21) [index.ts](file://packages/applet-sdk/src/index.ts#L19-L197)
-- Tauri 侧已注册 applets 命令 + 前端 invoke 封装（通道可复用）。[main.rs](file://apps/desktop/src-tauri/src/main.rs#L127-L133) [applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42) [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1976-L1995)
-- Applet 构建分发链路可复用：`packages/applets/build.js` 输出到 `apps/desktop/applets-dist` 并生成 `index.json`。[build.js](file://packages/applets/build.js#L11-L19) [build.js](file://packages/applets/build.js#L83-L99)
+- Desktop 端 Applet 运行时壳：`AppletManager + LynxContainer + 页面示例`，可直接复用为 iframe 沙箱方案。[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L14-L297) [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx#L13-L117) [AppletRuntimePage.tsx](../../../apps/desktop/src/pages/AppletRuntimePage.tsx#L17-L88) [AppletExample.tsx](../../../apps/desktop/src/pages/AppletExample.tsx#L8-L181)
+- JSAPI Bridge 雏形：通过 `postMessage(api-call/api-response)` 实现宿主侧 API 分发（system/storage/network/notification/device/ui）。[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L125-L279)
+- Applet SDK 包已存在（可复用到小程序侧）：`@peers-touch/applet-sdk`，包含同构 API 与消息协议封装。[packages/applet-sdk/package.json](../../../packages/applet-sdk/package.json#L1-L21) [index.ts](../../../packages/applet-sdk/src/index.ts#L19-L197)
+- Tauri 侧已注册 applets 命令 + 前端 invoke 封装（通道可复用）。[main.rs](../../../apps/desktop/src-tauri/src/main.rs#L127-L133) [applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42) [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1976-L1995)
+- Applet 构建分发链路可复用：`packages/applets/build.js` 输出到 `apps/desktop/applets-dist` 并生成 `index.json`。[build.js](../../../packages/applets/build.js#L11-L19) [build.js](../../../packages/applets/build.js#L83-L99)
 
 **已确认缺口**
-- 无 Lynx Runtime/SDK 真实依赖：desktop 的 `package.json` 与 tauri `Cargo.toml` 均无 Lynx 相关依赖，仓库 `package.json` 维度 grep 也无 lynx 包。[apps/desktop/package.json](file://apps/desktop/package.json#L16-L47) [Cargo.toml](file://apps/desktop/src-tauri/Cargo.toml#L9-L15)
-- “LynxContainer”实际是 iframe 容器，不是 Lynx 引擎实例化/渲染链路。[LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx#L98-L113)
-- Tauri applets 后端是 stub 返回，未接真实 applet 生命周期/配置/执行逻辑。[application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)
+- 无 Lynx Runtime/SDK 真实依赖：desktop 的 `package.json` 与 tauri `Cargo.toml` 均无 Lynx 相关依赖，仓库 `package.json` 维度 grep 也无 lynx 包。[apps/desktop/package.json](../../../apps/desktop/package.json#L16-L47) [Cargo.toml](../../../apps/desktop/src-tauri/Cargo.toml#L9-L15)
+- “LynxContainer”实际是 iframe 容器，不是 Lynx 引擎实例化/渲染链路。[LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx#L98-L113)
+- Tauri applets 后端是 stub 返回，未接真实 applet 生命周期/配置/执行逻辑。[application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)
 - 前端存在两套 applet 通路未打通：一套走本地 `AppletManager`（扫描 `applets-dist`），一套走 `desktop_api -> tauri applets_*`；未见统一编排。
-- 协议模型存在潜在不一致：TS `AppletInfo` 期望 `{manifest,status}`，而 Rust `applets_get` 当前返回平铺字段（id/name...）。[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L485-L489) [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L26-L35)
-- 桥接安全与能力缺口：`postMessage('*')` 且未做 origin/source 校验；网络/文件等原生能力尚未下沉到 tauri 原生命令层。[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L157-L170)
+- 协议模型存在潜在不一致：TS `AppletInfo` 期望 `{manifest,status}`，而 Rust `applets_get` 当前返回平铺字段（id/name...）。[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L485-L489) [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L26-L35)
+- 桥接安全与能力缺口：`postMessage('*')` 且未做 origin/source 校验；网络/文件等原生能力尚未下沉到 tauri 原生命令层。[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L157-L170)
 
 **结论**
 - 当前仓库可复用的是：**iframe Applet 宿主 + JSAPI 消息桥 + applet-sdk + tauri command 壳**。
@@ -2034,11 +2034,11 @@ apps/desktop/src/applets
 
 **现状断点（必须先承认）**
 - 现在 `LynxContainer` 实际是 iframe：  
-  [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx#L98-L113)
+  [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx#L98-L113)
 - Applet 管理是前端消息桥（`postMessage`），不是 Lynx Native Bridge：  
-  [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L125-L280)
+  [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L125-L280)
 - Tauri 的 applets 后端还是 stub：  
-  [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)
+  [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)
 
 ---
 
@@ -2047,7 +2047,7 @@ apps/desktop/src/applets
 - **阶段 1：Runtime 置换（硬切）**
   - 删除 `src/applet/LynxContainer.tsx` 的 iframe 实现，改成 `LynxHostView`（真正 Lynx 容器）。
   - `AppletRuntimePage` 只负责选择 applet + mount LynxHostView：  
-    [AppletRuntimePage.tsx](file://apps/desktop/src/pages/AppletRuntimePage.tsx#L59-L85)
+    [AppletRuntimePage.tsx](../../../apps/desktop/src/pages/AppletRuntimePage.tsx#L59-L85)
   - 同步删除 `AppletManager` 里 `postMessage` 分发链。
 
 - **阶段 2：Bridge 下沉到 Tauri（去 JS 沙箱桥）**
@@ -2064,25 +2064,25 @@ apps/desktop/src/applets
   - 删除 `src/applet/AppletManager.ts` 的消息桥逻辑。
   - 删除所有 `api-call/api-response` 协议代码（含 SDK 老实现）。
   - README 与架构文档改成 Lynx Native Host（避免再漂移）：  
-    [README.md](file://apps/desktop/README.md#L10-L10)
+    [README.md](../../../apps/desktop/README.md#L10-L10)
 
 ---
 
 **要改的主要文件（按你仓库）**
 - 前端：
-  - [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx)
-  - [AppletRuntimePage.tsx](file://apps/desktop/src/pages/AppletRuntimePage.tsx)
-  - [App.tsx](file://apps/desktop/src/App.tsx)
+  - [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx)
+  - [AppletRuntimePage.tsx](../../../apps/desktop/src/pages/AppletRuntimePage.tsx)
+  - [App.tsx](../../../apps/desktop/src/App.tsx)
 - SDK：
-  - [packages/applet-sdk/src/index.ts](file://packages/applet-sdk/src/index.ts)
-  - [packages/applet-sdk/src/types.ts](file://packages/applet-sdk/src/types.ts)
+  - [packages/applet-sdk/src/index.ts](../../../packages/applet-sdk/src/index.ts)
+  - [packages/applet-sdk/src/types.ts](../../../packages/applet-sdk/src/types.ts)
 - Tauri：
-  - [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs)
-  - [interface/tauri_commands/applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)
-  - [main.rs](file://apps/desktop/src-tauri/src/main.rs)
+  - [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs)
+  - [interface/tauri_commands/applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)
+  - [main.rs](../../../apps/desktop/src-tauri/src/main.rs)
 - 构建链路（保留但加 schema 产检）：
-  - [packages/applets/build.js](file://packages/applets/build.js)
-  - [packages/applets/dev-sync.js](file://packages/applets/dev-sync.js)
+  - [packages/applets/build.js](../../../packages/applets/build.js)
+  - [packages/applets/dev-sync.js](../../../packages/applets/dev-sync.js)
 
 ---
 
@@ -2129,23 +2129,23 @@ apps/desktop/src/applets
 **实施分层（专业落地顺序）**
 - **Phase A：协议与网关先行**
   - 新增 `applet_invoke` 后端网关，定义 capability registry 与统一错误码。
-  - 现有 stub 位于 [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs) 直接升级为真实执行层。
+  - 现有 stub 位于 [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs) 直接升级为真实执行层。
 - **Phase B：Lynx Host 接入**
-  - 用原生 Lynx 容器替换当前 iframe 实现 [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx)。
-  - `AppletRuntimePage` 只保留“加载、状态、错误”职责：[AppletRuntimePage.tsx](file://apps/desktop/src/pages/AppletRuntimePage.tsx)。
+  - 用原生 Lynx 容器替换当前 iframe 实现 [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx)。
+  - `AppletRuntimePage` 只保留“加载、状态、错误”职责：[AppletRuntimePage.tsx](../../../apps/desktop/src/pages/AppletRuntimePage.tsx)。
 - **Phase C：SDK 切桥**
-  - `packages/applet-sdk` 改为 native bridge 调用，删除 `window.parent.postMessage` 依赖：[index.ts](file://packages/applet-sdk/src/index.ts)。
+  - `packages/applet-sdk` 改为 native bridge 调用，删除 `window.parent.postMessage` 依赖：[index.ts](../../../packages/applet-sdk/src/index.ts)。
 - **Phase D：彻底清理旧链路**
-  - 删除 AppletManager 消息桥分发逻辑：[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts)。
+  - 删除 AppletManager 消息桥分发逻辑：[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts)。
   - 删除所有 `api-call/api-response` 协议代码与 iframe sandbox 配置。
 - **Phase E：治理与验收**
-  - 构建链加入 schema 校验、权限静态检查、产物完整性生成：[build.js](file://packages/applets/build.js)。
+  - 构建链加入 schema 校验、权限静态检查、产物完整性生成：[build.js](../../../packages/applets/build.js)。
 
 **工程治理（专业团队必备）**
 - **CI Gate**：`schema validate`、`capability lint`、`protocol contract test`、`host smoke test`。
 - **安全测试**：权限绕过、参数注入、跨 applet 数据访问、能力滥用压测。
 - **发布门禁**：未声明权限但调用能力 → 直接阻断；协议不匹配 → 拒绝加载。
-- **文档一致性**：修正 README 与实际实现不一致问题：[README.md](file://apps/desktop/README.md)。
+- **文档一致性**：修正 README 与实际实现不一致问题：[README.md](../../../apps/desktop/README.md)。
 
 **这套方案的专业价值**
 - 安全边界从“前端约定”升级为“后端强制”。
@@ -2161,52 +2161,52 @@ apps/desktop/src/applets
 已做过多轮全局+定向检索（含 `src-tauri` 实码与 applet 相关文档），下面给出当前代码库里可复用且与 applet runtime 迁移直接相关的 Rust 基础设施与文件清单。
 
 **命令路由**
-- 统一命令注册总入口在 [main.rs](file://apps/desktop/src-tauri/src/main.rs#L10-L193)，`invoke_handler` 已集中挂载 applets/skills/mcp/system 等域命令。
-- 命令分发采用 `interface/tauri_commands/* -> application/*` 的薄路由模式，示例 [applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L1-L42)、[chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L8-L80)。
-- 契约版本与兜底错误入口在 [tauri_commands/mod.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs#L24-L46)（`meta_contract_version` + `not_implemented`）。
-- applet 现有命令面已具备 runtime 基础动作：list/get/activate/deactivate/config/action，见 [applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42)。
+- 统一命令注册总入口在 [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L10-L193)，`invoke_handler` 已集中挂载 applets/skills/mcp/system 等域命令。
+- 命令分发采用 `interface/tauri_commands/* -> application/*` 的薄路由模式，示例 [applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L1-L42)、[chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L8-L80)。
+- 契约版本与兜底错误入口在 [tauri_commands/mod.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/mod.rs#L24-L46)（`meta_contract_version` + `not_implemented`）。
+- applet 现有命令面已具备 runtime 基础动作：list/get/activate/deactivate/config/action，见 [applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42)。
 
 **权限 / 配置 / 存储**
-- 统一结果与错误码模型可直接复用到 applet runtime（尤其权限拒绝/参数错误）：[error.rs](file://apps/desktop/src-tauri/src/error.rs#L3-L49)。
-- 现成“能力门禁”实现在 admin 域：`authorize + capability + Forbidden`，可迁移为 applet capability 检查核心，见 [application/admin/mod.rs](file://apps/desktop/src-tauri/src/application/admin/mod.rs#L23-L42) 与 [domain/admin/mod.rs](file://apps/desktop/src-tauri/src/domain/admin/mod.rs#L12-L48)。
-- 全局可共享状态容器（会话/设置/实时态）在 [state/mod.rs](file://apps/desktop/src-tauri/src/state/mod.rs#L21-L26)，可挂 applet runtime session/instance 索引。
-- 配置键校验、默认值、副作用模式已成型： [domain/settings/mod.rs](file://apps/desktop/src-tauri/src/domain/settings/mod.rs#L17-L99) + [application/settings/mod.rs](file://apps/desktop/src-tauri/src/application/settings/mod.rs#L33-L116)。
-- 文件持久化基础可复用两套：轻量 JSON 设置存储 [infrastructure/storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L12-L42)，以及 OAuth2 的 HOME 目录分文件存储 [application/oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L253)。
+- 统一结果与错误码模型可直接复用到 applet runtime（尤其权限拒绝/参数错误）：[error.rs](../../../apps/desktop/src-tauri/src/error.rs#L3-L49)。
+- 现成“能力门禁”实现在 admin 域：`authorize + capability + Forbidden`，可迁移为 applet capability 检查核心，见 [application/admin/mod.rs](../../../apps/desktop/src-tauri/src/application/admin/mod.rs#L23-L42) 与 [domain/admin/mod.rs](../../../apps/desktop/src-tauri/src/domain/admin/mod.rs#L12-L48)。
+- 全局可共享状态容器（会话/设置/实时态）在 [state/mod.rs](../../../apps/desktop/src-tauri/src/state/mod.rs#L21-L26)，可挂 applet runtime session/instance 索引。
+- 配置键校验、默认值、副作用模式已成型： [domain/settings/mod.rs](../../../apps/desktop/src-tauri/src/domain/settings/mod.rs#L17-L99) + [application/settings/mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs#L33-L116)。
+- 文件持久化基础可复用两套：轻量 JSON 设置存储 [infrastructure/storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L12-L42)，以及 OAuth2 的 HOME 目录分文件存储 [application/oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L253)。
 
 **日志观测**
-- 当前已有 request-id + 审计日志最小闭环（admin），可直接抽象给 applet runtime 审计： [domain/admin/mod.rs](file://apps/desktop/src-tauri/src/domain/admin/mod.rs#L19-L26) 与 [domain/admin/mod.rs](file://apps/desktop/src-tauri/src/domain/admin/mod.rs#L72-L87)。
-- `logs_tail` 命令接口已预留，可作为 runtime 日志读取 API 壳： [interface/tauri_commands/system.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/system.rs#L41-L42) + [application/system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs#L129-L143)。
-- 实时事件输出模式（JSON println）可复用于 applet 生命周期事件： [infrastructure/realtime/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/realtime/mod.rs#L53-L57)。
+- 当前已有 request-id + 审计日志最小闭环（admin），可直接抽象给 applet runtime 审计： [domain/admin/mod.rs](../../../apps/desktop/src-tauri/src/domain/admin/mod.rs#L19-L26) 与 [domain/admin/mod.rs](../../../apps/desktop/src-tauri/src/domain/admin/mod.rs#L72-L87)。
+- `logs_tail` 命令接口已预留，可作为 runtime 日志读取 API 壳： [interface/tauri_commands/system.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/system.rs#L41-L42) + [application/system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L129-L143)。
+- 实时事件输出模式（JSON println）可复用于 applet 生命周期事件： [infrastructure/realtime/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/realtime/mod.rs#L53-L57)。
 
 **模块模式（可迁移模板）**
-- 分层模板已稳定：`interface -> application -> domain -> infrastructure`，在聊天域体现最完整，见 [chat.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L8-L15) 与 [application/chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L11-L14)。
-- 域内内存仓 + `OnceLock<Mutex<...>>` 模式在多个模块重复出现，可直接用于 applet registry/runtime state：如 [application/chat/mod.rs](file://apps/desktop/src-tauri/src/application/chat/mod.rs#L70-L74)、[application/mcp/mod.rs](file://apps/desktop/src-tauri/src/application/mcp/mod.rs#L54-L58)。
-- 入参校验与错误映射（`invalid_argument` / `NotFound` / `Conflict`）模式已统一，可直接复用到 applet action/config API：如 [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L14-L75)。
+- 分层模板已稳定：`interface -> application -> domain -> infrastructure`，在聊天域体现最完整，见 [chat.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/chat.rs#L8-L15) 与 [application/chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L11-L14)。
+- 域内内存仓 + `OnceLock<Mutex<...>>` 模式在多个模块重复出现，可直接用于 applet registry/runtime state：如 [application/chat/mod.rs](../../../apps/desktop/src-tauri/src/application/chat/mod.rs#L70-L74)、[application/mcp/mod.rs](../../../apps/desktop/src-tauri/src/application/mcp/mod.rs#L54-L58)。
+- 入参校验与错误映射（`invalid_argument` / `NotFound` / `Conflict`）模式已统一，可直接复用到 applet action/config API：如 [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L14-L75)。
 
 **Applet Runtime 迁移可复用点（重点）**
-- 可直接复用：命令壳与契约入口（`applets_*`）[applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42)、[contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L409-L424)。
-- 可直接复用：统一返回协议与错误码 [error.rs](file://apps/desktop/src-tauri/src/error.rs#L5-L49)，前端已按该协议解析 [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L29-L106)。
-- 可直接复用：权限门禁骨架（capability + request_id + audit）[application/admin/mod.rs](file://apps/desktop/src-tauri/src/application/admin/mod.rs#L23-L63)。
-- 可直接复用：配置/存储能力（settings + storage + oauth2 文件存储）[application/settings/mod.rs](file://apps/desktop/src-tauri/src/application/settings/mod.rs#L33-L80)、[infrastructure/storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L12-L35)、[application/oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L88)。
-- 需补齐后再迁移：当前 applets application 仍是 stub（未接入真实 runtime 生命周期/权限/隔离）[application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)；架构目标可对齐 [APPLET_ARCHITECTURE.md](file://docs/APPLET_ARCHITECTURE.md#L87-L118)。
+- 可直接复用：命令壳与契约入口（`applets_*`）[applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42)、[contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L409-L424)。
+- 可直接复用：统一返回协议与错误码 [error.rs](../../../apps/desktop/src-tauri/src/error.rs#L5-L49)，前端已按该协议解析 [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L29-L106)。
+- 可直接复用：权限门禁骨架（capability + request_id + audit）[application/admin/mod.rs](../../../apps/desktop/src-tauri/src/application/admin/mod.rs#L23-L63)。
+- 可直接复用：配置/存储能力（settings + storage + oauth2 文件存储）[application/settings/mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs#L33-L80)、[infrastructure/storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L12-L35)、[application/oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L88)。
+- 需补齐后再迁移：当前 applets application 仍是 stub（未接入真实 runtime 生命周期/权限/隔离）[application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)；架构目标可对齐 [APPLET_ARCHITECTURE.md](../../../docs/APPLET_ARCHITECTURE.md#L87-L118)。
 
 有，而且**复用点很多**。你这个提醒非常关键：既然 desktop 是 Rust(Tauri) 托管，就应该把 applet runtime 的“权力中心”放在 Rust，而不是前端。
 
 **可以直接复用的 Rust 能力**
 - **命令总线与路由骨架**：不用重造通信层，直接挂新命令到现有 `invoke_handler`  
-  [main.rs](file://apps/desktop/src-tauri/src/main.rs#L10-L193)
+  [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L10-L193)
 - **现成 applet 命令面**：`applets_list/get/activate/deactivate/config/action` 已有壳，可从 stub 升级成真实 runtime  
-  [applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42)  
-  [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)
+  [applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L9-L42)  
+  [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L18-L75)
 - **统一错误码/返回协议**：可直接复用做 capability 网关错误语义  
-  [error.rs](file://apps/desktop/src-tauri/src/error.rs#L5-L49)
+  [error.rs](../../../apps/desktop/src-tauri/src/error.rs#L5-L49)
 - **权限门禁模板**：admin 模块已经有 `authorize + capability + audit` 模式，直接迁移成 applet 权限中间层  
-  [application/admin/mod.rs](file://apps/desktop/src-tauri/src/application/admin/mod.rs#L23-L63)  
-  [domain/admin/mod.rs](file://apps/desktop/src-tauri/src/domain/admin/mod.rs#L12-L87)
+  [application/admin/mod.rs](../../../apps/desktop/src-tauri/src/application/admin/mod.rs#L23-L63)  
+  [domain/admin/mod.rs](../../../apps/desktop/src-tauri/src/domain/admin/mod.rs#L12-L87)
 - **状态与持久化**：session/runtime 状态可挂全局 state，配置可复用 settings/storage  
-  [state/mod.rs](file://apps/desktop/src-tauri/src/state/mod.rs#L21-L26)  
-  [application/settings/mod.rs](file://apps/desktop/src-tauri/src/application/settings/mod.rs#L33-L116)  
-  [infrastructure/storage/mod.rs](file://apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L12-L42)
+  [state/mod.rs](../../../apps/desktop/src-tauri/src/state/mod.rs#L21-L26)  
+  [application/settings/mod.rs](../../../apps/desktop/src-tauri/src/application/settings/mod.rs#L33-L116)  
+  [infrastructure/storage/mod.rs](../../../apps/desktop/src-tauri/src/infrastructure/storage/mod.rs#L12-L42)
 
 **最专业的落地方式（基于复用，不重写）**
 - 不推翻 Rust 层，只做“**applet stub -> applet runtime engine**”升级。
@@ -2225,22 +2225,22 @@ apps/desktop/src/applets
 
 **变更概览**
 - 新增 Applet Manifest V2 与 Bridge V2 契约类型（SDK + Desktop 双侧）：
-  - [types.ts](file://packages/applet-sdk/src/types.ts#L1-L79)
-  - [types.ts](file://apps/desktop/src/applet/types.ts#L1-L83)
+  - [types.ts](../../../packages/applet-sdk/src/types.ts#L1-L79)
+  - [types.ts](../../../apps/desktop/src/applet/types.ts#L1-L83)
 - applet-sdk 消息协议从旧 `type: api-call/api-response/event` 切换到 V2 `protocol + kind + requestId`：
-  - [index.ts](file://packages/applet-sdk/src/index.ts#L54-L113)
+  - [index.ts](../../../packages/applet-sdk/src/index.ts#L54-L113)
 - desktop AppletManager 改为只处理 Bridge V2 消息，并返回 V2 response；API 改为 `applet.getManifest`：
-  - [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L135-L193)
-  - [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L278-L348)
+  - [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L135-L193)
+  - [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L278-L348)
 - desktop 容器初始化消息改为 V2 init，加载入口优先 `load.entry`：
-  - [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx#L58-L87)
-  - [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx#L116-L119)
+  - [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx#L58-L87)
+  - [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx#L116-L119)
 - desktop API 类型中的 AppletManifest 升级为 V2 结构（manifestVersion/load/bridge）：
-  - [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L473-L492)
+  - [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L473-L492)
 - 三个 applet 清单升级为 v2 字段（示例）：
-  - [applet.json](file://packages/applets/agent-pilot/applet.json#L1-L25)
-  - [applet.json](file://packages/applets/remote-cli/applet.json)
-  - [applet.json](file://packages/applets/web-search/applet.json)
+  - [applet.json](../../../packages/applets/agent-pilot/applet.json#L1-L25)
+  - [applet.json](../../../packages/applets/remote-cli/applet.json)
+  - [applet.json](../../../packages/applets/web-search/applet.json)
 
 **关键片段**
 ```ts
@@ -2278,18 +2278,18 @@ sourceWindow.postMessage(response, '*')
   - `pnpm --filter @peers-touch/app-desktop run check`
 
 **已完成**
-- 已将 Tauri applets 从纯 stub 改为 capability gateway，并新增统一 `applets_invoke` 接口，见 [applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L1-L51) 与 [main.rs](file://apps/desktop/src-tauri/src/main.rs#L127-L135)。
-- 已实现 deny-by-default 权限校验（仅 allowlist capability 放行，其他全部拒绝），见 [domain/applets/mod.rs](file://apps/desktop/src-tauri/src/domain/applets/mod.rs#L24-L39)。
-- 已加入 `request_id` 审计日志（含 command/applet_id/capability/actor/outcome），见 [domain/applets/mod.rs](file://apps/desktop/src-tauri/src/domain/applets/mod.rs#L41-L54)。
-- 已保持现有命令兼容：`applets_list/get/activate/deactivate/get_config/set_config/action` 均保留，并走 gateway 执行，见 [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L140-L254)。
-- 已新增 Rust/TS 入参契约 `AppletInvokeInput`，见 [contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L426-L432) 与 [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L1483-L1488)。
+- 已将 Tauri applets 从纯 stub 改为 capability gateway，并新增统一 `applets_invoke` 接口，见 [applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L1-L51) 与 [main.rs](../../../apps/desktop/src-tauri/src/main.rs#L127-L135)。
+- 已实现 deny-by-default 权限校验（仅 allowlist capability 放行，其他全部拒绝），见 [domain/applets/mod.rs](../../../apps/desktop/src-tauri/src/domain/applets/mod.rs#L24-L39)。
+- 已加入 `request_id` 审计日志（含 command/applet_id/capability/actor/outcome），见 [domain/applets/mod.rs](../../../apps/desktop/src-tauri/src/domain/applets/mod.rs#L41-L54)。
+- 已保持现有命令兼容：`applets_list/get/activate/deactivate/get_config/set_config/action` 均保留，并走 gateway 执行，见 [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L140-L254)。
+- 已新增 Rust/TS 入参契约 `AppletInvokeInput`，见 [contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L426-L432) 与 [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L1483-L1488)。
 
 **关键实现**
-- **Gateway 核心**：统一入口 `invoke_gateway(...)`，做 capability 归一化、权限校验、审计、返回兼容 payload，见 [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L67-L138)。
-- **deny-by-default**：`authorize` 仅调用 allowlist 判断，未知 capability 默认拒绝（`Forbidden` + `requestId`），见 [domain/applets/mod.rs](file://apps/desktop/src-tauri/src/domain/applets/mod.rs#L24-L39) 与 [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L39-L65)。
-- **兼容旧命令**：旧命令映射到固定 capability（如 `applets.get` / `applets.action`），保证调用方式不变，见 [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L140-L236)。
-- **新增 invoke**：`applets_invoke(state, input)` 支持动态 capability/action/params，见 [applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L48-L50) 与 [application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs#L238-L254)。
-- **前端调用封装**：新增 `appletInvoke(...)` API，见 [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2013-L2014)。
+- **Gateway 核心**：统一入口 `invoke_gateway(...)`，做 capability 归一化、权限校验、审计、返回兼容 payload，见 [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L67-L138)。
+- **deny-by-default**：`authorize` 仅调用 allowlist 判断，未知 capability 默认拒绝（`Forbidden` + `requestId`），见 [domain/applets/mod.rs](../../../apps/desktop/src-tauri/src/domain/applets/mod.rs#L24-L39) 与 [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L39-L65)。
+- **兼容旧命令**：旧命令映射到固定 capability（如 `applets.get` / `applets.action`），保证调用方式不变，见 [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L140-L236)。
+- **新增 invoke**：`applets_invoke(state, input)` 支持动态 capability/action/params，见 [applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs#L48-L50) 与 [application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs#L238-L254)。
+- **前端调用封装**：新增 `appletInvoke(...)` API，见 [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2013-L2014)。
 
 **代码片段**
 
@@ -2326,12 +2326,12 @@ appletInvoke: <T = any>(id: string, capability: string, action?: string, params?
 已完成改造，`desktop applet` 运行已切到 **Lynx Host 组件**，并移除了旧的 `iframe + postMessage` 分发链路，同时保持 pin/open 导航逻辑不变并通过类型检查。
 
 **改动概览**
-- 运行容器由 `iframe` 改为 `LynxHost`：见 [LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx#L1-L108)
-- 新增 Lynx Host 封装组件（绑定 `src/applet-id/title`，监听 `load/error`）：见 [LynxHost.tsx](file://apps/desktop/src/applet/LynxHost.tsx#L1-L58)
-- 删除 AppletManager 内旧 postMessage 分发代码（`window.message` 监听、sendMessage、handleApiCall、invokeApi 等），并将默认 load type 调整为 `lynx`：见 [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L1-L129)
+- 运行容器由 `iframe` 改为 `LynxHost`：见 [LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx#L1-L108)
+- 新增 Lynx Host 封装组件（绑定 `src/applet-id/title`，监听 `load/error`）：见 [LynxHost.tsx](../../../apps/desktop/src/applet/LynxHost.tsx#L1-L58)
+- 删除 AppletManager 内旧 postMessage 分发代码（`window.message` 监听、sendMessage、handleApiCall、invokeApi 等），并将默认 load type 调整为 `lynx`：见 [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L1-L129)
 - 保留 pin/open 导航链路未改动：  
-  - pin 与 applet 页面切换在 [App.tsx](file://apps/desktop/src/App.tsx#L92-L116) 和 [App.tsx](file://apps/desktop/src/App.tsx#L293-L435)  
-  - open 跳转在 [AppletsPage.tsx](file://apps/desktop/src/pages/AppletsPage.tsx#L37-L41)
+  - pin 与 applet 页面切换在 [App.tsx](../../../apps/desktop/src/App.tsx#L92-L116) 和 [App.tsx](../../../apps/desktop/src/App.tsx#L293-L435)  
+  - open 跳转在 [AppletsPage.tsx](../../../apps/desktop/src/pages/AppletsPage.tsx#L37-L41)
 
 **关键代码片段**
 
@@ -2388,12 +2388,12 @@ bridge: {
 已完成这次改造，核心是把 applet 的产物契约升级为 **manifest/index v2 强校验**，并在 desktop 端做到 **加载前校验 + 拒载 + 诊断输出**。
 
 **改动概览**
-- 新增 applet 构建侧 schema 校验模块，定义并校验 manifest/index v2：[schema.js](file://packages/applets/schema.js#L1-L156)
-- `build.js` 接入 manifest 校验、生成 index v2、并在写入前校验 index：[build.js](file://packages/applets/build.js#L1-L145)
-- `dev-sync.js` 同步接入相同校验与 index v2 生成逻辑：[dev-sync.js](file://packages/applets/dev-sync.js#L1-L120)
-- desktop 新增运行时解析/校验器（manifest/index v2）：[schema.ts](file://apps/desktop/src/applet/schema.ts#L1-L216)
-- `AppletManager` 扫描时过滤非法 applet、加载前再校验并拒载、输出诊断信息：[AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts#L1-L203)
-- 运行页在 applet 不可用时附带展示诊断文本：[AppletRuntimePage.tsx](file://apps/desktop/src/pages/AppletRuntimePage.tsx#L17-L67)
+- 新增 applet 构建侧 schema 校验模块，定义并校验 manifest/index v2：[schema.js](../../../packages/applets/schema.js#L1-L156)
+- `build.js` 接入 manifest 校验、生成 index v2、并在写入前校验 index：[build.js](../../../packages/applets/build.js#L1-L145)
+- `dev-sync.js` 同步接入相同校验与 index v2 生成逻辑：[dev-sync.js](../../../packages/applets/dev-sync.js#L1-L120)
+- desktop 新增运行时解析/校验器（manifest/index v2）：[schema.ts](../../../apps/desktop/src/applet/schema.ts#L1-L216)
+- `AppletManager` 扫描时过滤非法 applet、加载前再校验并拒载、输出诊断信息：[AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts#L1-L203)
+- 运行页在 applet 不可用时附带展示诊断文本：[AppletRuntimePage.tsx](../../../apps/desktop/src/pages/AppletRuntimePage.tsx#L17-L67)
 
 **关键实现点**
 - index 结构从数组升级为 v2 对象：
@@ -2443,22 +2443,22 @@ if (!runtimeCheck.ok) {
 
 **已修改内容**
 - 将架构链路更新为 Lynx Runtime 视角：`AppletManager → LynxContainer/LynxHost → Bridge V2`，替换原先较泛化的通信描述。  
-  见 [README.md:L96-L107](file://apps/desktop/README.md#L96-L107)
+  见 [README.md:L96-L107](../../../apps/desktop/README.md#L96-L107)
 - 删除旧通信方式相关描述（已确认文档中不含 `iframe` / `postMessage` 关键词）。  
-  见 [README.md](file://apps/desktop/README.md)
+  见 [README.md](../../../apps/desktop/README.md)
 - 新增「旧 applet 升级 checklist」，覆盖 manifest v2、load/bridge、权限能力、生命周期验证等项。  
-  见 [README.md:L108-L117](file://apps/desktop/README.md#L108-L117)
+  见 [README.md:L108-L117](../../../apps/desktop/README.md#L108-L117)
 - 新增「迁移说明文档片段」：包含 `applet.json` 示例与 `@peers-touch/applet-sdk` 启动代码片段。  
-  见 [README.md:L118-L152](file://apps/desktop/README.md#L118-L152)
+  见 [README.md:L118-L152](../../../apps/desktop/README.md#L118-L152)
 
 **校验结果**
 - `pnpm check`（apps/desktop）通过。
 - `pnpm lint`（apps/desktop）失败，原因是仓库当前缺少 ESLint v9 所需的 `eslint.config.*`，属于环境/仓库配置问题，与本次 README 文档修改无关。
 
 **已完成改造**
-- 已将 applet-sdk 调用链从 `window.parent.postMessage` 改为 Lynx Native Bridge 直接 `invoke`，并移除旧的 `message` 监听 + 回调 Map 链路，见 [index.ts](file://packages/applet-sdk/src/index.ts#L21-L72)。
-- 已新增 Lynx Bridge 类型定义与多入口桥接发现（`__PEERS_TOUCH_LYNX_BRIDGE__` / `lynx.nativeBridge` / `lynx.nativeModules.AppletBridge` / `LynxNativeBridge`），见 [types.ts](file://packages/applet-sdk/src/types.ts#L53-L66)。
-- desktop 侧已去除 request/response 消息模型（不再承载 api-call/api-response 处理语义），仅保留 init/event，见 [types.ts](file://apps/desktop/src/applet/types.ts#L42-L55)。
+- 已将 applet-sdk 调用链从 `window.parent.postMessage` 改为 Lynx Native Bridge 直接 `invoke`，并移除旧的 `message` 监听 + 回调 Map 链路，见 [index.ts](../../../packages/applet-sdk/src/index.ts#L21-L72)。
+- 已新增 Lynx Bridge 类型定义与多入口桥接发现（`__PEERS_TOUCH_LYNX_BRIDGE__` / `lynx.nativeBridge` / `lynx.nativeModules.AppletBridge` / `LynxNativeBridge`），见 [types.ts](../../../packages/applet-sdk/src/types.ts#L53-L66)。
+- desktop 侧已去除 request/response 消息模型（不再承载 api-call/api-response 处理语义），仅保留 init/event，见 [types.ts](../../../apps/desktop/src/applet/types.ts#L42-L55)。
 
 **关键代码**
 - applet-sdk 新调用路径（Native Bridge）：
@@ -2473,7 +2473,7 @@ private invokeAPI(api: string, params: any = {}): Promise<any> {
 }
 ```
 
-- 旧链路删除点：已移除 `initMessageListener` / `handleMessage` / `callbackId` / `callbacks`，对应位置见 [index.ts](file://packages/applet-sdk/src/index.ts#L21-L72)。
+- 旧链路删除点：已移除 `initMessageListener` / `handleMessage` / `callbackId` / `callbacks`，对应位置见 [index.ts](../../../packages/applet-sdk/src/index.ts#L21-L72)。
 
 **编译结果**
 - 已执行 `pnpm --filter @peers-touch/applet-sdk run check`，通过（exit code 0）。
@@ -2482,11 +2482,11 @@ private invokeAPI(api: string, params: any = {}): Promise<any> {
 已完成，已按你的要求补齐最小测试并执行通过。
 
 **关键修改**
-- 新增测试文件 [AppletManager.test.ts](file://apps/desktop/src/applet/AppletManager.test.ts#L1-L108)，覆盖：
+- 新增测试文件 [AppletManager.test.ts](../../../apps/desktop/src/applet/AppletManager.test.ts#L1-L108)，覆盖：
   - manifest/index 校验（合法与非法）
   - 非法 applet 拒载
   - 合法 applet 加载成功路径
-- 更新脚本 [package.json](file://apps/desktop/package.json#L6-L15)，新增 `test:applet` 便于定向执行。
+- 更新脚本 [package.json](../../../apps/desktop/package.json#L6-L15)，新增 `test:applet` 便于定向执行。
 
 ```ts
 // apps/desktop/src/applet/AppletManager.test.ts
@@ -2537,24 +2537,24 @@ it('refuses to load invalid applet from index', async () => {
 
 **关键改动**
 - Manifest 类型层只允许 `lynx`：
-  - [types.ts](file://apps/desktop/src/applet/types.ts#L4)
-  - [types.ts](file://packages/applet-sdk/src/types.ts#L5)
+  - [types.ts](../../../apps/desktop/src/applet/types.ts#L4)
+  - [types.ts](../../../packages/applet-sdk/src/types.ts#L5)
 - Schema 校验层拒绝 `iframe`：
-  - [schema.ts](file://apps/desktop/src/applet/schema.ts#L34-L35)
-  - [schema.ts](file://apps/desktop/src/applet/schema.ts#L142-L144)
-  - [schema.js](file://packages/applets/schema.js#L6)
-  - [schema.js](file://packages/applets/schema.js#L89-L91)
+  - [schema.ts](../../../apps/desktop/src/applet/schema.ts#L34-L35)
+  - [schema.ts](../../../apps/desktop/src/applet/schema.ts#L142-L144)
+  - [schema.js](../../../packages/applets/schema.js#L6)
+  - [schema.js](../../../packages/applets/schema.js#L89-L91)
 - Runtime 输入类型同步为 `lynx`：
-  - [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L484)
+  - [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L484)
 - 现有 applet manifest 示例去掉 iframe：
-  - [web-search/applet.json](file://packages/applets/web-search/applet.json#L11)
-  - [remote-cli/applet.json](file://packages/applets/remote-cli/applet.json#L11)
-  - [agent-pilot/applet.json](file://packages/applets/agent-pilot/applet.json#L11)
+  - [web-search/applet.json](../../../packages/applets/web-search/applet.json#L11)
+  - [remote-cli/applet.json](../../../packages/applets/remote-cli/applet.json#L11)
+  - [agent-pilot/applet.json](../../../packages/applets/agent-pilot/applet.json#L11)
 
 **新增测试**
-- 在 [AppletManager.test.ts](file://apps/desktop/src/applet/AppletManager.test.ts#L66-L78) 增加 schema 级测试：`iframe` manifest 必须被拒绝。
-- 在 [AppletManager.test.ts](file://apps/desktop/src/applet/AppletManager.test.ts#L104-L124) 增加 runtime 场景测试：`iframe` applet 在运行时加载前即被拒绝。
-- 有效 manifest 基线已改为 `lynx`：见 [AppletManager.test.ts](file://apps/desktop/src/applet/AppletManager.test.ts#L19-L22)。
+- 在 [AppletManager.test.ts](../../../apps/desktop/src/applet/AppletManager.test.ts#L66-L78) 增加 schema 级测试：`iframe` manifest 必须被拒绝。
+- 在 [AppletManager.test.ts](../../../apps/desktop/src/applet/AppletManager.test.ts#L104-L124) 增加 runtime 场景测试：`iframe` applet 在运行时加载前即被拒绝。
+- 有效 manifest 基线已改为 `lynx`：见 [AppletManager.test.ts](../../../apps/desktop/src/applet/AppletManager.test.ts#L19-L22)。
 
 **代码片段**
 ```ts
@@ -2594,13 +2594,13 @@ it('rejects iframe load type to enforce no-iframe runtime', () => {
 
 **关键改动**
 - 类型依赖对齐：
-  - [package.json](file://apps/desktop/package.json#L49-L54)
+  - [package.json](../../../apps/desktop/package.json#L49-L54)
 - 典型代码替换（显式 `import type ReactNode`）：
-  - [MessageCard.tsx](file://apps/desktop/src/components/MessageCard.tsx#L1-L37)
-  - [SearchPage.tsx](file://apps/desktop/src/pages/SearchPage.tsx#L1-L71)
-  - [SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx#L1-L3)
+  - [MessageCard.tsx](../../../apps/desktop/src/components/MessageCard.tsx#L1-L37)
+  - [SearchPage.tsx](../../../apps/desktop/src/pages/SearchPage.tsx#L1-L71)
+  - [SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx#L1-L3)
 - `SettingsPage` 的 `onRow` 返回类型也改为显式 `HTMLAttributes` 导入，避免 `React.HTMLAttributes` 版本漂移：
-  - [SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx#L790-L793)
+  - [SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx#L790-L793)
 
 **涉及文件（本次与 ReactNode 冲突修复相关）**
 - `apps/desktop/package.json`
@@ -2648,28 +2648,28 @@ pnpm check
 - `packages/applets` 作为唯一运行时产物来源，构建与开发同步都升级到 v2 契约校验。
 - Rust 侧 applet 能力入口已从 stub 升级为 capability gateway（deny-by-default + request_id 审计）。
 - 规范文档任务与验收清单已全部勾选完成：  
-  [tasks.md](file://.trae/specs/migrate-applet-lynx-runtime/tasks.md)  
-  [checklist.md](file://.trae/specs/migrate-applet-lynx-runtime/checklist.md)
+  [tasks.md](../../../.trae/specs/migrate-applet-lynx-runtime/tasks.md)  
+  [checklist.md](../../../.trae/specs/migrate-applet-lynx-runtime/checklist.md)
 
 **关键落地点**
 - **Lynx 托管替换 iframe**
-  - 新增 Lynx Host 组件：[LynxHost.tsx](file://apps/desktop/src/applet/LynxHost.tsx)
-  - 运行容器改用 LynxHost：[LynxContainer.tsx](file://apps/desktop/src/applet/LynxContainer.tsx)
+  - 新增 Lynx Host 组件：[LynxHost.tsx](../../../apps/desktop/src/applet/LynxHost.tsx)
+  - 运行容器改用 LynxHost：[LynxContainer.tsx](../../../apps/desktop/src/applet/LynxContainer.tsx)
 - **旧消息协议下线**
   - applet-sdk 去掉 `postMessage` 调用链，改为 Lynx Native Bridge invoke：  
-    [applet-sdk/index.ts](file://packages/applet-sdk/src/index.ts)
+    [applet-sdk/index.ts](../../../packages/applet-sdk/src/index.ts)
 - **Rust 网关接管能力**
-  - 命令入口与 invoke 接口：[applets.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)
-  - 网关与审计实现：[application/applets/mod.rs](file://apps/desktop/src-tauri/src/application/applets/mod.rs)
-  - capability 权限模型：[domain/applets/mod.rs](file://apps/desktop/src-tauri/src/domain/applets/mod.rs)
+  - 命令入口与 invoke 接口：[applets.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs)
+  - 网关与审计实现：[application/applets/mod.rs](../../../apps/desktop/src-tauri/src/application/applets/mod.rs)
+  - capability 权限模型：[domain/applets/mod.rs](../../../apps/desktop/src-tauri/src/domain/applets/mod.rs)
 - **v2 契约与强校验**
-  - 构建侧 schema 校验：[packages/applets/schema.js](file://packages/applets/schema.js)
+  - 构建侧 schema 校验：[packages/applets/schema.js](../../../packages/applets/schema.js)
   - build/dev-sync 接入校验与 index v2 生成：  
-    [build.js](file://packages/applets/build.js)  
-    [dev-sync.js](file://packages/applets/dev-sync.js)
-  - Desktop 运行时加载前校验与拒载：[schema.ts](file://apps/desktop/src/applet/schema.ts) / [AppletManager.ts](file://apps/desktop/src/applet/AppletManager.ts)
+    [build.js](../../../packages/applets/build.js)  
+    [dev-sync.js](../../../packages/applets/dev-sync.js)
+  - Desktop 运行时加载前校验与拒载：[schema.ts](../../../apps/desktop/src/applet/schema.ts) / [AppletManager.ts](../../../apps/desktop/src/applet/AppletManager.ts)
 - **文档迁移完成**
-  - [README.md](file://apps/desktop/README.md)
+  - [README.md](../../../apps/desktop/README.md)
 
 **验证结果**
 - `pnpm --filter @peers-touch/app-desktop run test:applet` 通过（6/6）
@@ -2692,9 +2692,9 @@ pnpm check
 我已经改了：
 
 - 根脚本改成直接调用构建脚本  
-  [package.json](file://package.json)
+  [package.json](../../../package.json)
 - 构建脚本改为顺序构建 + 失败不阻断，并且失败时也会同步 `applet.json`，保证列表可见  
-  [build.js](file://packages/applets/build.js)
+  [build.js](../../../packages/applets/build.js)
 
 现在 `apps/desktop/applets-dist/index.json` 已经有 3 个 applet（agent-pilot / remote-cli / web-search），列表页会恢复显示。
 
@@ -2722,13 +2722,13 @@ pnpm check
 
 **关键改动**
 - SDK 增强：新增通用 `sdk.invoke`、前端 `registerApplet`、以及 applet 前端注册相关类型。  
-  参考：[index.ts](file://packages/applet-sdk/src/index.ts#L75-L80), [index.ts](file://packages/applet-sdk/src/index.ts#L181-L195), [types.ts](file://packages/applet-sdk/src/types.ts#L170-L188)
+  参考：[index.ts](../../../packages/applet-sdk/src/index.ts#L75-L80), [index.ts](../../../packages/applet-sdk/src/index.ts#L181-L195), [types.ts](../../../packages/applet-sdk/src/types.ts#L170-L188)
 - 构建流程：`applets:build` 前先构建 SDK，保证 workspace 依赖可解析。  
-  参考：[build.js](file://packages/applets/build.js#L128-L136)
+  参考：[build.js](../../../packages/applets/build.js#L128-L136)
 - 三个 applet 的注册入口改为 `@peers-touch/applet-sdk` 的 `registerApplet`。  
-  参考：[agent-pilot/index.ts](file://packages/applets/agent-pilot/src/index.ts#L6-L14), [remote-cli/index.ts](file://packages/applets/remote-cli/src/index.ts#L1-L11), [web-search/index.ts](file://packages/applets/web-search/src/index.ts#L7-L17)
+  参考：[agent-pilot/index.ts](../../../packages/applets/agent-pilot/src/index.ts#L6-L14), [remote-cli/index.ts](../../../packages/applets/remote-cli/src/index.ts#L1-L11), [web-search/index.ts](../../../packages/applets/web-search/src/index.ts#L7-L17)
 - 移除对 `../../services/api`、`../../components/*` 的 desktop 内部耦合：改为 applet 内部 API 封装与本地组件实现。  
-  参考：[agent-pilot/api.ts](file://packages/applets/agent-pilot/src/api.ts#L1-L11), [remote-cli/api.ts](file://packages/applets/remote-cli/src/api.ts#L1-L8), [web-search/api.ts](file://packages/applets/web-search/src/api.ts#L38-L44)
+  参考：[agent-pilot/api.ts](../../../packages/applets/agent-pilot/src/api.ts#L1-L11), [remote-cli/api.ts](../../../packages/applets/remote-cli/src/api.ts#L1-L8), [web-search/api.ts](../../../packages/applets/web-search/src/api.ts#L38-L44)
 
 **修改文件（本次任务）**
 - `packages/applet-sdk/src/index.ts`
@@ -2798,17 +2798,17 @@ import 'xterm/css/xterm.css';
 **我做了什么**
 - 把三个 applet 都改成独立模式，移除对 desktop 内部模块/旧 registry 的依赖，统一走 `@peers-touch/applet-sdk`。
 - 修正了构建链路，`applets:build` 现在直接调用统一构建脚本，不再走错误的 workspace filter：  
-  [package.json](file://package.json)
+  [package.json](../../../package.json)
 - 构建脚本升级为先构建 SDK，再构建 applets，并稳定输出 `applets-dist/index.json`：  
-  [build.js](file://packages/applets/build.js)
+  [build.js](../../../packages/applets/build.js)
 - SDK 增加独立 applet 注册与通用调用能力：  
-  [applet-sdk/index.ts](file://packages/applet-sdk/src/index.ts)  
-  [applet-sdk/types.ts](file://packages/applet-sdk/src/types.ts)
+  [applet-sdk/index.ts](../../../packages/applet-sdk/src/index.ts)  
+  [applet-sdk/types.ts](../../../packages/applet-sdk/src/types.ts)
 
 **验证结果**
 - 已执行 `pnpm applets:build`，成功（exit code 0）。
 - `apps/desktop/applets-dist/index.json` 已包含 3 个 applet（agent-pilot / remote-cli / web-search）：  
-  [index.json](file://apps/desktop/applets-dist/index.json)
+  [index.json](../../../apps/desktop/applets-dist/index.json)
 
 **你现在要做**
 - 直接刷新 Desktop 页面（或重启桌面端 dev 进程）即可看到 applets 列表恢复。  
@@ -2843,23 +2843,23 @@ import 'xterm/css/xterm.css';
 我已做了覆盖 desktop + src-tauri + apps/oauth2-client 的多轮检索，下面给出可落地的代码路径差异与时序结论。
 
 **路径差异**
-- **Account OAuth2（新入口）**：账号登录/引导走 [OAuthAccountLoginPanel.tsx:L252-L400](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L252-L400)，在 onboarding 中由 [OAuthSignInStep.tsx:L12-L73](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L12-L73) 使用。
-- **Settings 的 Account/Auth/Connections 三个菜单已合流**：`account/auth/connections` 模块都指向同一个 [OAuth2Tab.tsx:L260-L389](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L260-L389)，见 [account.ts:L1-L10](file://apps/desktop/src/modules/account.ts#L1-L10)、[oauth2.ts:L1-L10](file://apps/desktop/src/modules/oauth2.ts#L1-L10)、[connections.ts:L1-L10](file://apps/desktop/src/modules/connections.ts#L1-L10)。
-- **“old connections”痕迹（配置型）**：旧的 provider 凭据配置 UI 在 [OAuth2ProviderCard.tsx:L16-L260](file://apps/desktop/src/components/settings/OAuth2ProviderCard.tsx#L16-L260)（显示 callback URL、配置 client_id/secret），但当前主流程是账户登录卡片+弹窗，不再以该卡片为主入口。
-- **运行时分叉（关键）**：前端 API 在 Web 模式会走 `oauth2-client /start -> /callback` 并消费回调参数，见 [desktop_api.ts:L141-L166](file://apps/desktop/src/services/desktop_api.ts#L141-L166)、[desktop_api.ts:L2340-L2361](file://apps/desktop/src/services/desktop_api.ts#L2340-L2361)；Tauri 模式则走本地 Rust 命令 [oauth2.rs:L29-L67](file://apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs#L29-L67)、[mod.rs:L355-L452](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L355-L452)。
+- **Account OAuth2（新入口）**：账号登录/引导走 [OAuthAccountLoginPanel.tsx:L252-L400](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L252-L400)，在 onboarding 中由 [OAuthSignInStep.tsx:L12-L73](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L12-L73) 使用。
+- **Settings 的 Account/Auth/Connections 三个菜单已合流**：`account/auth/connections` 模块都指向同一个 [OAuth2Tab.tsx:L260-L389](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L260-L389)，见 [account.ts:L1-L10](../../../apps/desktop/src/modules/account.ts#L1-L10)、[oauth2.ts:L1-L10](../../../apps/desktop/src/modules/oauth2.ts#L1-L10)、[connections.ts:L1-L10](../../../apps/desktop/src/modules/connections.ts#L1-L10)。
+- **“old connections”痕迹（配置型）**：旧的 provider 凭据配置 UI 在 [OAuth2ProviderCard.tsx:L16-L260](../../../apps/desktop/src/components/settings/OAuth2ProviderCard.tsx#L16-L260)（显示 callback URL、配置 client_id/secret），但当前主流程是账户登录卡片+弹窗，不再以该卡片为主入口。
+- **运行时分叉（关键）**：前端 API 在 Web 模式会走 `oauth2-client /start -> /callback` 并消费回调参数，见 [desktop_api.ts:L141-L166](../../../apps/desktop/src/services/desktop_api.ts#L141-L166)、[desktop_api.ts:L2340-L2361](../../../apps/desktop/src/services/desktop_api.ts#L2340-L2361)；Tauri 模式则走本地 Rust 命令 [oauth2.rs:L29-L67](../../../apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs#L29-L67)、[mod.rs:L355-L452](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L355-L452)。
 
 **apps/oauth2-client 回调流程**
-- **路由入口**：`/api/oauth/{provider}/start|callback` 绑定在 [main.go:L22-L40](file://apps/oauth2-client/cmd/server/main.go#L22-L40)，统一进 [oauth_handler.go:L19-L58](file://apps/oauth2-client/internal/interfaces/http/handler/oauth_handler.go#L19-L58)。
-- **Start 阶段**：生成 `state/verifier`、保存 10 分钟 session、带 `return_to`（已做 URL 白名单化）后跳转 Provider 授权页，见 [start_auth.go:L31-L89](file://apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L31-L89)。
-- **Callback 校验**：按 `state` 找 session，校验 provider 一致、未消费、未过期，再 `ExchangeCode`，见 [handle_callback.go:L31-L66](file://apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L31-L66)；session 状态定义见 [auth_session.go:L9-L26](file://apps/oauth2-client/internal/domain/oauth/entity/auth_session.go#L9-L26)。
-- **身份换取**：Provider 网关完成 token + userinfo（如 GitHub/Google），见 [github/provider.go:L32-L86](file://apps/oauth2-client/internal/infrastructure/provider/github/provider.go#L32-L86)、[google/provider.go:L36-L91](file://apps/oauth2-client/internal/infrastructure/provider/google/provider.go#L36-L91)。
-- **回跳应用**：成功后重定向到 `return_to`（或 site.SuccessURL），并附加 `provider/provider_user_id/username/email...`，见 [handle_callback.go:L67-L85](file://apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L67-L85)；失败走 ErrorURL，见 [oauth_handler.go:L64-L87](file://apps/oauth2-client/internal/interfaces/http/handler/oauth_handler.go#L64-L87)。
+- **路由入口**：`/api/oauth/{provider}/start|callback` 绑定在 [main.go:L22-L40](../../../apps/oauth2-client/cmd/server/main.go#L22-L40)，统一进 [oauth_handler.go:L19-L58](../../../apps/oauth2-client/internal/interfaces/http/handler/oauth_handler.go#L19-L58)。
+- **Start 阶段**：生成 `state/verifier`、保存 10 分钟 session、带 `return_to`（已做 URL 白名单化）后跳转 Provider 授权页，见 [start_auth.go:L31-L89](../../../apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L31-L89)。
+- **Callback 校验**：按 `state` 找 session，校验 provider 一致、未消费、未过期，再 `ExchangeCode`，见 [handle_callback.go:L31-L66](../../../apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L31-L66)；session 状态定义见 [auth_session.go:L9-L26](../../../apps/oauth2-client/internal/domain/oauth/entity/auth_session.go#L9-L26)。
+- **身份换取**：Provider 网关完成 token + userinfo（如 GitHub/Google），见 [github/provider.go:L32-L86](../../../apps/oauth2-client/internal/infrastructure/provider/github/provider.go#L32-L86)、[google/provider.go:L36-L91](../../../apps/oauth2-client/internal/infrastructure/provider/google/provider.go#L36-L91)。
+- **回跳应用**：成功后重定向到 `return_to`（或 site.SuccessURL），并附加 `provider/provider_user_id/username/email...`，见 [handle_callback.go:L67-L85](../../../apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L67-L85)；失败走 ErrorURL，见 [oauth_handler.go:L64-L87](../../../apps/oauth2-client/internal/interfaces/http/handler/oauth_handler.go#L64-L87)。
 
 **端到端时序（desktop + oauth2-client）**
-- `Desktop 点击 Sign In` → `useOAuth2Store.startAuth` 打开新窗口 [oauth2.ts:L137-L147](file://apps/desktop/src/store/oauth2.ts#L137-L147)。
-- Web 分支生成 `/start?site_id=default&return_to=current_url` [desktop_api.ts:L2340-L2353](file://apps/desktop/src/services/desktop_api.ts#L2340-L2353)。
-- oauth2-client 完成 provider 回调后重定向回 `return_to` 并带身份 query [handle_callback.go:L71-L81](file://apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L71-L81)。
-- Desktop 在 `listProviders/listConnections` 时消费 URL query 并 upsert 本地连接 [desktop_api.ts:L141-L166](file://apps/desktop/src/services/desktop_api.ts#L141-L166)、[desktop_api.ts:L2285-L2361](file://apps/desktop/src/services/desktop_api.ts#L2285-L2361)。
+- `Desktop 点击 Sign In` → `useOAuth2Store.startAuth` 打开新窗口 [oauth2.ts:L137-L147](../../../apps/desktop/src/store/oauth2.ts#L137-L147)。
+- Web 分支生成 `/start?site_id=default&return_to=current_url` [desktop_api.ts:L2340-L2353](../../../apps/desktop/src/services/desktop_api.ts#L2340-L2353)。
+- oauth2-client 完成 provider 回调后重定向回 `return_to` 并带身份 query [handle_callback.go:L71-L81](../../../apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L71-L81)。
+- Desktop 在 `listProviders/listConnections` 时消费 URL query 并 upsert 本地连接 [desktop_api.ts:L141-L166](../../../apps/desktop/src/services/desktop_api.ts#L141-L166)、[desktop_api.ts:L2285-L2361](../../../apps/desktop/src/services/desktop_api.ts#L2285-L2361)。
 
 如果你要，我可以再补一版“仅针对 Tauri 分支为何更像 legacy（连接写入缺口）”的专项差异清单。
 
@@ -2911,18 +2911,18 @@ sequenceDiagram
 
 **代码锚点（当前实现）**
 - Desktop 登录入口与 Sign in 面板：  
-  [OAuthAccountLoginPanel.tsx](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L252-L400)
+  [OAuthAccountLoginPanel.tsx](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L252-L400)
 - OAuth2 Store 发起登录：  
-  [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L137-L147)
+  [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L137-L147)
 - Web 分支发起 `/start` 与回跳参数消费：  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2340-L2361)  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L141-L166)
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2340-L2361)  
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L141-L166)
 - oauth2-client 路由：  
-  [main.go](file://apps/oauth2-client/cmd/server/main.go#L22-L40)
+  [main.go](../../../apps/oauth2-client/cmd/server/main.go#L22-L40)
 - `/start` 生成 state/session 并跳转 provider：  
-  [start_auth.go](file://apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L31-L89)
+  [start_auth.go](../../../apps/oauth2-client/internal/application/oauth/usecase/start_auth.go#L31-L89)
 - `/callback` 校验并 exchange，最后回跳 return_to：  
-  [handle_callback.go](file://apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L31-L85)
+  [handle_callback.go](../../../apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go#L31-L85)
 
 ---
 
@@ -2954,10 +2954,10 @@ sequenceDiagram
 - [ ] 移除三模块同指向同组件的复用关系（account/auth/connections 不再都进同一 Tab）。
 
 建议重点检查：
-- [OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx)
-- [account.ts](file://apps/desktop/src/modules/account.ts)
-- [oauth2.ts](file://apps/desktop/src/modules/oauth2.ts)
-- [connections.ts](file://apps/desktop/src/modules/connections.ts)
+- [OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx)
+- [account.ts](../../../apps/desktop/src/modules/account.ts)
+- [oauth2.ts](../../../apps/desktop/src/modules/oauth2.ts)
+- [connections.ts](../../../apps/desktop/src/modules/connections.ts)
 
 **入口与命名规范**
 - [ ] 把 `OAuth 2`（泛称）改为 `Sign in with OAuth`（账号登录语义）。
@@ -3036,14 +3036,14 @@ sequenceDiagram
 
 **关键文件**
 - 账户登录页与高级连接页拆分逻辑：  
-  [OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx)
+  [OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx)
 - 登录弹窗中“Connections section”旧提示已移除：  
-  [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)
+  [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)
 - Settings 模块入口名称与标签更新：  
-  [account.ts](file://apps/desktop/src/modules/account.ts)  
-  [connections.ts](file://apps/desktop/src/modules/connections.ts)
+  [account.ts](../../../apps/desktop/src/modules/account.ts)  
+  [connections.ts](../../../apps/desktop/src/modules/connections.ts)
 - 模块注册启用 `connections`（作为独立入口）：  
-  [index.ts](file://apps/desktop/src/modules/index.ts)
+  [index.ts](../../../apps/desktop/src/modules/index.ts)
 
 **验证**
 - 已执行类型检查并通过：`pnpm --filter @peers-touch/app-desktop run check`
@@ -3059,19 +3059,19 @@ sequenceDiagram
 
 **已完成**
 - ✅ `OAuth 2` 入口语义改成账号登录：`Sign in with OAuth`  
-  [OAuth2Tab.tsx#L329-L334](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L329-L334)
+  [OAuth2Tab.tsx#L329-L334](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L329-L334)
 - ✅ `Connections` 拆成独立高级入口：`OAuth Client Connections (Advanced)`  
-  [OAuth2Tab.tsx#L411-L417](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L411-L417)
+  [OAuth2Tab.tsx#L411-L417](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L411-L417)
 - ✅ 高级入口加 `Private Beta` badge  
-  [OAuth2Tab.tsx#L411-L413](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L411-L413)
+  [OAuth2Tab.tsx#L411-L413](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L411-L413)
 - ✅ 顶部警示条与禁用 `Request Access` 按钮  
-  [OAuth2Tab.tsx#L420-L438](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L420-L438)
+  [OAuth2Tab.tsx#L420-L438](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L420-L438)
 - ✅ “Credentials not configured” 文案替换为“管理员未启用/当前不可用”  
-  [OAuth2Tab.tsx#L224-L246](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L224-L246)  
-  [OAuth2ConnectModal.tsx#L121-L122](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L121-L122)
+  [OAuth2Tab.tsx#L224-L246](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L224-L246)  
+  [OAuth2ConnectModal.tsx#L121-L122](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L121-L122)
 - ✅ Settings 模块名称已拆分（登录 vs 高级连接）  
-  [account.ts](file://apps/desktop/src/modules/account.ts)  
-  [connections.ts](file://apps/desktop/src/modules/connections.ts)
+  [account.ts](../../../apps/desktop/src/modules/account.ts)  
+  [connections.ts](../../../apps/desktop/src/modules/connections.ts)
 
 **未完全完成 / 还差**
 - ❌ “高级入口 hover 文案明确‘这是平台配置，不是账号登录’” 还没做（目前只有页面内警示，没有 tab-hover 提示）。
@@ -3093,14 +3093,14 @@ sequenceDiagram
 
 **这次实际改动**
 - 已加 Advanced 入口的 hover 提示（明确“平台配置，不是账号登录”）  
-  [registry.ts](file://apps/desktop/src/modules/registry.ts#L20-L24)  
-  [SettingsPage.tsx](file://apps/desktop/src/pages/SettingsPage.tsx#L69-L85)
+  [registry.ts](../../../apps/desktop/src/modules/registry.ts#L20-L24)  
+  [SettingsPage.tsx](../../../apps/desktop/src/pages/SettingsPage.tsx#L69-L85)
 - 已加高级入口开关，默认隐藏 Old Connections（普通用户不可见）  
-  [connections.ts](file://apps/desktop/src/modules/connections.ts#L1-L31)
+  [connections.ts](../../../apps/desktop/src/modules/connections.ts#L1-L31)
 - 已补齐账号文案语义：`Sign in / Re-connect / Connected`  
-  [OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L101-L106)  
-  [OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L360-L365)  
-  [OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L241-L242)
+  [OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L101-L106)  
+  [OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L360-L365)  
+  [OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L241-L242)
 
 **你清单里的对应关系**
 - ✅ `OAuth 2 -> Sign in with OAuth`（已完成）  
@@ -3132,27 +3132,27 @@ sequenceDiagram
 ## Assistant
 **调研结论**
 - 已做全链路检索（Onboarding UI → store/api → Web 后端与 Tauri 后端），结论是：Onboarding 的 OAuth provider 列表来自 `useOAuth2Store().providers`，而 `providers` 的来源会按运行时分叉（Tauri vs Web）。
-- 文案 “Configure credentials in Settings - Connections first.” 只在一个位置定义：[`OAuthAccountLoginPanel.tsx`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L234-L236)。
+- 文案 “Configure credentials in Settings - Connections first.” 只在一个位置定义：[`OAuthAccountLoginPanel.tsx`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L234-L236)。
 - “未配置”显示本质由 `provider.has_credentials === false` 触发；并非看连接是否已登录。
 
 **Provider 列表来源**
-- Onboarding 第一步使用 [`OAuthSignInStep`](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L52) 挂载 [`OAuthAccountLoginPanel`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L252)。
-- 面板启动时调用 `loadAll()`，`providers` 来自 store：[`oauth2.ts`](file://apps/desktop/src/store/oauth2.ts#L54-L78)。
-- store 内部调用 `api.oauth2ListProviders()`：[`oauth2.ts`](file://apps/desktop/src/store/oauth2.ts#L56-L57)。
-- API 分叉逻辑在 [`desktop_api.ts`](file://apps/desktop/src/services/desktop_api.ts#L2285-L2293)：
+- Onboarding 第一步使用 [`OAuthSignInStep`](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L52) 挂载 [`OAuthAccountLoginPanel`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L252)。
+- 面板启动时调用 `loadAll()`，`providers` 来自 store：[`oauth2.ts`](../../../apps/desktop/src/store/oauth2.ts#L54-L78)。
+- store 内部调用 `api.oauth2ListProviders()`：[`oauth2.ts`](../../../apps/desktop/src/store/oauth2.ts#L56-L57)。
+- API 分叉逻辑在 [`desktop_api.ts`](../../../apps/desktop/src/services/desktop_api.ts#L2285-L2293)：
   - Tauri：调用 Rust 命令 `oauth2_list_providers`。
   - Web：请求 `/oauth/providers` 并映射为前端 provider。
-- Onboarding 面板展示时仅过滤掉 `lark_simulate`，其他 provider（含 coming_soon）都会进入 OAuth 2 区域：[`OAuthAccountLoginPanel.tsx`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L267-L270)。
+- Onboarding 面板展示时仅过滤掉 `lark_simulate`，其他 provider（含 coming_soon）都会进入 OAuth 2 区域：[`OAuthAccountLoginPanel.tsx`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L267-L270)。
 
 **文案来源**
-- 文案定义位置：[`OAuthAccountLoginPanel.tsx`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L223-L236)。
-- 触发条件：当 `!(hasCreds && !isDeveloping)` 时进入提示分支；其中非开发态会显示该句，开发态显示 “This provider is under development.”：同一段 [`OAuthAccountLoginPanel.tsx`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L223-L236)。
+- 文案定义位置：[`OAuthAccountLoginPanel.tsx`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L223-L236)。
+- 触发条件：当 `!(hasCreds && !isDeveloping)` 时进入提示分支；其中非开发态会显示该句，开发态显示 “This provider is under development.”：同一段 [`OAuthAccountLoginPanel.tsx`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L223-L236)。
 
 **为什么显示“未配置”**
-- UI 判定是 `provider.has_credentials`：[`OAuthAccountLoginPanel.tsx`](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L187-L219)。
-- Web 运行时：`has_credentials` 直接来自后端 `/oauth/providers` 返回值，后端又直接透传配置 `has-credentials`：[`oauth.go`](file://apps/station/app/subserver/oauth/oauth.go#L156-L189)、[`plugin.go`](file://apps/station/app/subserver/oauth/plugin.go#L16-L37)、[`oauth.yml`](file://apps/station/app/conf/oauth.yml#L16-L17)。
-- Tauri 运行时：`has_credentials = (凭据文件存在) && (client_id 非空)`，由 Rust 侧动态计算：[`mod.rs`](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L193-L217)、[`mod.rs`](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L266-L286)。
-- 凭据文件路径是 `~/.peers-touch/oauth2/{provider}.yml`：[`mod.rs`](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L88)。文件不存在或 `client_id` 为空，就会被判定为未配置，并触发该文案。
+- UI 判定是 `provider.has_credentials`：[`OAuthAccountLoginPanel.tsx`](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L187-L219)。
+- Web 运行时：`has_credentials` 直接来自后端 `/oauth/providers` 返回值，后端又直接透传配置 `has-credentials`：[`oauth.go`](../../../apps/station/app/subserver/oauth/oauth.go#L156-L189)、[`plugin.go`](../../../apps/station/app/subserver/oauth/plugin.go#L16-L37)、[`oauth.yml`](../../../apps/station/app/conf/oauth.yml#L16-L17)。
+- Tauri 运行时：`has_credentials = (凭据文件存在) && (client_id 非空)`，由 Rust 侧动态计算：[`mod.rs`](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L193-L217)、[`mod.rs`](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L266-L286)。
+- 凭据文件路径是 `~/.peers-touch/oauth2/{provider}.yml`：[`mod.rs`](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L88)。文件不存在或 `client_id` 为空，就会被判定为未配置，并触发该文案。
 
 你说得对，我确认了，你的需求我现在完全对齐了。
 
@@ -3165,11 +3165,11 @@ sequenceDiagram
 
 **当前现状（我确认）**
 - 你截图里的文案 **确实来自引导页组件本身**，不是你想要的流程：  
-  [OAuthAccountLoginPanel.tsx](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L223-L236)
+  [OAuthAccountLoginPanel.tsx](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L223-L236)
 - 引导页 provider 列表来源是 `useOAuth2Store().providers -> api.oauth2ListProviders()`：  
-  [OAuthSignInStep.tsx](file://apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L52-L73)  
-  [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L54-L78)  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2285-L2293)
+  [OAuthSignInStep.tsx](../../../apps/desktop/src/components/onboarding/OAuthSignInStep.tsx#L52-L73)  
+  [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L54-L78)  
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2285-L2293)
 - 现在显示“Credentials not configured / Configure credentials...”是因为 UI 依赖 `provider.has_credentials` 判定（这就是你不接受的逻辑）。
 - 所以你指出“你还在强调 Configure credentials”这个判断是**准确的**：现状确实还残留这条旧思路。
 
@@ -3189,23 +3189,23 @@ sequenceDiagram
 
 **谁在决定 provider 列表**
 - 引导页拿的是 `useOAuth2Store().providers`，来源是 `oauth2ListProviders()`：  
-  [oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L54-L57)  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2285-L2293)
+  [oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L54-L57)  
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2285-L2293)
 - Tauri 模式下，provider 来自 Rust 的 `provider_catalog()`：  
-  [mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L104-L187)
+  [mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L104-L187)
 - Web/Station 模式下，provider 来自 `oauth.yml`，通过 `/oauth/providers` 返回：  
-  [oauth.yml](file://apps/station/app/conf/oauth.yml#L7-L72)  
-  [oauth.go](file://apps/station/app/subserver/oauth/oauth.go#L156-L189)
+  [oauth.yml](../../../apps/station/app/conf/oauth.yml#L7-L72)  
+  [oauth.go](../../../apps/station/app/subserver/oauth/oauth.go#L156-L189)
 
 **为什么你现在看到是 GitHub/Google 可用**
 - 配置里这两个是 `status: active` 且 `has-credentials: true`：  
-  [oauth.yml](file://apps/station/app/conf/oauth.yml#L15-L33)
+  [oauth.yml](../../../apps/station/app/conf/oauth.yml#L15-L33)
 - Weixin 是 `coming_soon` 且 `has-credentials: false`，所以会显示“开发中/不可用”态：  
-  [oauth.yml](file://apps/station/app/conf/oauth.yml#L47-L50)
+  [oauth.yml](../../../apps/station/app/conf/oauth.yml#L47-L50)
 
 **你指出的“Configure credentials…”为何出现**
 - 这是引导页组件里写死的提示文案，不是 oauth2-client 强制要求：  
-  [OAuthAccountLoginPanel.tsx](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L223-L236)
+  [OAuthAccountLoginPanel.tsx](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L223-L236)
 
 所以你说得对：  
 - 你们既然已经把 GitHub/Google 配在 Vercel 的 `apps/oauth2-client`，引导页就应该直接走登录，不该再强调 Settings 配置。  
@@ -3242,9 +3242,9 @@ apps/oauth2-client 是部署在远端的服务，你准备怎么个直接走法
 
 **当前代码现状（确实不对）**
 - Web 分支已经是“直接走 oauth2-client start”：  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2340-L2353)
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2340-L2353)
 - 但 Tauri 分支还在走“本地凭据 + 直连 provider authorize_url”，并且会卡在 `credentials not configured`：  
-  [mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L355-L379)
+  [mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L355-L379)
 
 **所以接下来要做的唯一方向**
 - 把 Tauri 的 `oauth2_authorize` 改成和 Web 分支一致：  
@@ -3262,21 +3262,21 @@ apps/oauth2-client 是部署在远端的服务，你准备怎么个直接走法
 - OAuth 在 app 模式当前是“打开授权页 + 轮询连接状态”，但缺少“把 callback(code/state) 回传到本机并入库”的闭环。
 
 **现状证据**
-- Tauri 配置无协议注册字段（无 deep link/custom protocol 配置）：[tauri.conf.json:L1-L29](file://apps/desktop/src-tauri/tauri.conf.json#L1-L29)  
-- Rust 入口仅注册 commands，未接入 deep-link/open-url 事件处理：[main.rs:L10-L197](file://apps/desktop/src-tauri/src/main.rs#L10-L197)  
-- Cargo 只有 `tauri/custom-protocol` feature（资源协议），无 deep-link 插件依赖：[Cargo.toml:L16-L18](file://apps/desktop/src-tauri/Cargo.toml#L16-L18)  
-- OAuth 授权 URL 用的是线上 HTTPS callback（非本地 scheme）：[oauth2/mod.rs:L104-L117](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L104-L117), [oauth2/mod.rs:L355-L379](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L355-L379)  
-- 前端 Tauri 分支仅调用 Rust `oauth2_authorize`；`consumeOAuthCallbackFromLocation` 只在 web fallback 分支触发：[desktop_api.ts:L141-L166](file://apps/desktop/src/services/desktop_api.ts#L141-L166), [desktop_api.ts:L2285-L2361](file://apps/desktop/src/services/desktop_api.ts#L2285-L2361)  
-- `pt://` deep link 是前端内部事件导航，不是 OS 协议回调接收：[deeplink.ts:L1-L59](file://apps/desktop/src/utils/deeplink.ts#L1-L59), [MessageBubble.tsx:L356-L360](file://apps/desktop/src/components/MessageBubble.tsx#L356-L360), [App.tsx:L190-L216](file://apps/desktop/src/App.tsx#L190-L216)
+- Tauri 配置无协议注册字段（无 deep link/custom protocol 配置）：[tauri.conf.json:L1-L29](../../../apps/desktop/src-tauri/tauri.conf.json#L1-L29)  
+- Rust 入口仅注册 commands，未接入 deep-link/open-url 事件处理：[main.rs:L10-L197](../../../apps/desktop/src-tauri/src/main.rs#L10-L197)  
+- Cargo 只有 `tauri/custom-protocol` feature（资源协议），无 deep-link 插件依赖：[Cargo.toml:L16-L18](../../../apps/desktop/src-tauri/Cargo.toml#L16-L18)  
+- OAuth 授权 URL 用的是线上 HTTPS callback（非本地 scheme）：[oauth2/mod.rs:L104-L117](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L104-L117), [oauth2/mod.rs:L355-L379](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L355-L379)  
+- 前端 Tauri 分支仅调用 Rust `oauth2_authorize`；`consumeOAuthCallbackFromLocation` 只在 web fallback 分支触发：[desktop_api.ts:L141-L166](../../../apps/desktop/src/services/desktop_api.ts#L141-L166), [desktop_api.ts:L2285-L2361](../../../apps/desktop/src/services/desktop_api.ts#L2285-L2361)  
+- `pt://` deep link 是前端内部事件导航，不是 OS 协议回调接收：[deeplink.ts:L1-L59](../../../apps/desktop/src/utils/deeplink.ts#L1-L59), [MessageBubble.tsx:L356-L360](../../../apps/desktop/src/components/MessageBubble.tsx#L356-L360), [App.tsx:L190-L216](../../../apps/desktop/src/App.tsx#L190-L216)
 
 **App 模式可行方案（推荐）**
 - 推荐走 **Custom Protocol + Deep Link 回调**：`redirect_uri=peers-touch://oauth/callback`，Tauri 监听 open-url 后把 `code/state` 交给 Rust 命令完成 token exchange 与连接落库。
 - 备选走 **Loopback 回调**：`http://127.0.0.1:<port>/oauth/callback`（本地临时 HTTP server 接收 code），兼容某些 provider 对自定义 scheme 限制。
-- 无论哪种，需新增“回调处理命令”（如 `oauth2_handle_callback`），当前仅有 list/get/disconnect/refresh，缺少 callback 入站写连接逻辑：[oauth2/mod.rs:L382-L452](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L382-L452)
+- 无论哪种，需新增“回调处理命令”（如 `oauth2_handle_callback`），当前仅有 list/get/disconnect/refresh，缺少 callback 入站写连接逻辑：[oauth2/mod.rs:L382-L452](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L382-L452)
 
 **涉及文件（改造点）**
-- 必改（Rust）：[main.rs](file://apps/desktop/src-tauri/src/main.rs), [Cargo.toml](file://apps/desktop/src-tauri/Cargo.toml), [tauri.conf.json](file://apps/desktop/src-tauri/tauri.conf.json), [oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs), [tauri_commands/oauth2.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs)
-- 必改（前端）：[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts), [store/oauth2.ts](file://apps/desktop/src/store/oauth2.ts), （可选）[OAuthLoginStep.tsx](file://apps/desktop/src/components/wizard/steps/OAuthLoginStep.tsx)
+- 必改（Rust）：[main.rs](../../../apps/desktop/src-tauri/src/main.rs), [Cargo.toml](../../../apps/desktop/src-tauri/Cargo.toml), [tauri.conf.json](../../../apps/desktop/src-tauri/tauri.conf.json), [oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs), [tauri_commands/oauth2.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs)
+- 必改（前端）：[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts), [store/oauth2.ts](../../../apps/desktop/src/store/oauth2.ts), （可选）[OAuthLoginStep.tsx](../../../apps/desktop/src/components/wizard/steps/OAuthLoginStep.tsx)
 - 可新增：`src-tauri/src/infrastructure/oauth_callback/*`（解析/校验/state 防重放）、前端 `src/services/oauth_callback_listener.ts`（事件桥接）
 
 在 desktop **App 模式（非 web）**，我会这样处理，保证也“直接走远端 `apps/oauth2-client`”：
@@ -3316,29 +3316,29 @@ apps/oauth2-client 是部署在远端的服务，你准备怎么个直接走法
 - **Tauri 授权链路改为远端 `/start`**
   - `oauth2_authorize` 不再本地拼 provider authorize URL，也不再校验本地 `client_id/client_secret`。
   - 现在统一返回：`{callback_url.replace('/callback','/start')}?site_id=default&return_to=...`
-  - 代码：[oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L355-L380)
+  - 代码：[oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L355-L380)
 
 - **新增 app 模式回调落库命令**
   - 新增 `oauth2_handle_callback`，接收 `provider/provider_user_id/...` 并写入 `connections.json`。
   - 代码：
-    - 合约：[contracts/mod.rs](file://apps/desktop/src-tauri/src/interface/contracts/mod.rs#L322-L337)
-    - 命令：[tauri_commands/oauth2.rs](file://apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs#L30-L37)
-    - 实现：[oauth2/mod.rs](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L382-L424)
-    - 注册：[main.rs](file://apps/desktop/src-tauri/src/main.rs#L169-L181)
+    - 合约：[contracts/mod.rs](../../../apps/desktop/src-tauri/src/interface/contracts/mod.rs#L322-L337)
+    - 命令：[tauri_commands/oauth2.rs](../../../apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs#L30-L37)
+    - 实现：[oauth2/mod.rs](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L382-L424)
+    - 注册：[main.rs](../../../apps/desktop/src-tauri/src/main.rs#L169-L181)
 
 - **前端 app 模式消费回调并入库**
   - `oauth2Authorize` 增加 `return_to` 参数并传给 tauri。
   - 新增 `oauth2HandleCallback` 与 `oauth2ConsumeCallbackFromUrl`。
   - `startAuth` 轮询弹窗 URL，检测到回调参数后直接调用 tauri 落库，再刷新连接状态。
   - 代码：
-    - API：[desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2381-L2424)
-    - Store：[oauth2.ts](file://apps/desktop/src/store/oauth2.ts#L137-L168)
+    - API：[desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2381-L2424)
+    - Store：[oauth2.ts](../../../apps/desktop/src/store/oauth2.ts#L137-L168)
 
 - **引导页收敛为只显示 GitHub / Google**
   - 只保留这两个 provider。
   - 移除 “Configure credentials in Settings - Connections first.” 文案和模拟登录区块。
   - 卡片改为更紧凑的 logo + Sign in 形式。
-  - 代码：[OAuthAccountLoginPanel.tsx](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L174-L344)
+  - 代码：[OAuthAccountLoginPanel.tsx](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L174-L344)
 
 **你问的“app 模式怎么直接走”现在是这样**
 - 点击 Sign in
@@ -3379,7 +3379,7 @@ apps/oauth2-client 是部署在远端的服务，你准备怎么个直接走法
 - 卡片做了收敛，改成更直接的“Logo + 名称 + Sign in”交互，避免挤成一坨。
 
 改动文件：
-- [OAuth2Tab.tsx](file://apps/desktop/src/components/settings/OAuth2Tab.tsx)
+- [OAuth2Tab.tsx](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx)
 
 **校验**
 - `pnpm --filter @peers-touch/app-desktop run check` 已通过。
@@ -3399,7 +3399,7 @@ apps/oauth2-client 是部署在远端的服务，你准备怎么个直接走法
 - 现在 GitHub / Google 在弹窗里应该是**可直接点 Sign In**。
 
 改动文件：
-- [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)
+- [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)
 
 校验：
 - `pnpm --filter @peers-touch/app-desktop run check` 已通过。
@@ -3416,11 +3416,11 @@ try again 没有用
 你喷得对，这两个点我已经按你说的直接改掉了：
 
 - **去掉“选择环境”**：不再出现 Production 选择，点击就是直接去 Provider 授权窗口。  
-  [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)
+  [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx)
 - **修掉 `callback_url missing`**：web 模式下如果后端给空 callback_url，GitHub/Google 自动回退到你们远端 Vercel 回调地址。  
-  [desktop_api.ts](file://apps/desktop/src/services/desktop_api.ts#L2381-L2397)
+  [desktop_api.ts](../../../apps/desktop/src/services/desktop_api.ts#L2381-L2397)
 - **Try Again 直接生效**：错误页点 Try Again 现在会直接再次发起授权，不是回到中间态。  
-  [OAuth2ConnectModal.tsx](file://apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L135-L142)
+  [OAuth2ConnectModal.tsx](../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L135-L142)
 
 另外已过编译检查：
 - `pnpm --filter @peers-touch/app-desktop run check` ✅
@@ -3438,20 +3438,20 @@ try again 没有用
 已完成全链路排查（前端展示层、OAuth store、API 适配层、Tauri 后端命令、向导登录流），结论如下。
 
 **结论**
-- 你说的“已登录账号未展示”主因是**登录来源与展示筛选不一致**：向导默认登录提供方是 `lark`，但账号面板只展示 `github/google`，导致“已登录但不显示”。见 [OAuthLoginStep.tsx:L15-L18](file://apps/desktop/src/components/wizard/steps/OAuthLoginStep.tsx#L15-L18)、[OAuth2Tab.tsx:L249-L252](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L249-L252)、[OAuthAccountLoginPanel.tsx:L246-L249](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L246-L249)。
-- 左上角头像弹层的数据并不来自“登录会话”，而是来自 `preferences + oauth2ListConnections`；头像本体（侧边栏显示）只读 `preferences.user_avatar/user_name`。见 [UserProfilePopover.tsx:L24-L31](file://apps/desktop/src/components/UserProfilePopover.tsx#L24-L31)、[UserProfilePopover.tsx:L250-L271](file://apps/desktop/src/components/UserProfilePopover.tsx#L250-L271)、[App.tsx:L261-L265](file://apps/desktop/src/App.tsx#L261-L265)。
-- Tauri 端 `preferences_get` 当前返回空对象 `{}`，所以不会自动回填用户名/头像；若未手动选择头像来源，会一直显示默认 `User`。见 [system/mod.rs:L84-L90](file://apps/desktop/src-tauri/src/application/system/mod.rs#L84-L90)。
+- 你说的“已登录账号未展示”主因是**登录来源与展示筛选不一致**：向导默认登录提供方是 `lark`，但账号面板只展示 `github/google`，导致“已登录但不显示”。见 [OAuthLoginStep.tsx:L15-L18](../../../apps/desktop/src/components/wizard/steps/OAuthLoginStep.tsx#L15-L18)、[OAuth2Tab.tsx:L249-L252](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L249-L252)、[OAuthAccountLoginPanel.tsx:L246-L249](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L246-L249)。
+- 左上角头像弹层的数据并不来自“登录会话”，而是来自 `preferences + oauth2ListConnections`；头像本体（侧边栏显示）只读 `preferences.user_avatar/user_name`。见 [UserProfilePopover.tsx:L24-L31](../../../apps/desktop/src/components/UserProfilePopover.tsx#L24-L31)、[UserProfilePopover.tsx:L250-L271](../../../apps/desktop/src/components/UserProfilePopover.tsx#L250-L271)、[App.tsx:L261-L265](../../../apps/desktop/src/App.tsx#L261-L265)。
+- Tauri 端 `preferences_get` 当前返回空对象 `{}`，所以不会自动回填用户名/头像；若未手动选择头像来源，会一直显示默认 `User`。见 [system/mod.rs:L84-L90](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L84-L90)。
 
 **数据来源与同步机制**
-- **左上角头像弹层来源**：打开弹层时并行拉取 `api.getPreferences()` + `api.oauth2ListConnections()`，仅在 `open=true` 时加载。见 [UserProfilePopover.tsx:L24-L39](file://apps/desktop/src/components/UserProfilePopover.tsx#L24-L39)。
-- **侧边栏头像来源**：`useUserAvatar()` 只订阅 `user-preferences-updated`，不直接订阅 OAuth 连接变化。见 [UserProfilePopover.tsx:L250-L275](file://apps/desktop/src/components/UserProfilePopover.tsx#L250-L275)。
-- **OAuth 连接来源**：前端 `oauth2ListConnections` 在 Tauri 模式走 `oauth2_list_connections`；后端从 `~/.peers-touch/oauth2/connections.json` 读取。见 [desktop_api.ts:L2431-L2437](file://apps/desktop/src/services/desktop_api.ts#L2431-L2437)、[oauth2/mod.rs:L73-L84](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L84)、[oauth2/mod.rs:L232-L244](file://apps/desktop/src-tauri/src/application/oauth2/mod.rs#L232-L244)。
-- **OAuth 同步机制**：`useOAuth2Store.loadAll()` 拉取 providers+connections 后广播 `oauth2-connections-changed`；`startAuth()` 轮询 popup URL 回调并触发 `loadAll()`。见 [oauth2.ts:L72-L85](file://apps/desktop/src/store/oauth2.ts#L72-L85)、[oauth2.ts:L137-L166](file://apps/desktop/src/store/oauth2.ts#L137-L166)。
+- **左上角头像弹层来源**：打开弹层时并行拉取 `api.getPreferences()` + `api.oauth2ListConnections()`，仅在 `open=true` 时加载。见 [UserProfilePopover.tsx:L24-L39](../../../apps/desktop/src/components/UserProfilePopover.tsx#L24-L39)。
+- **侧边栏头像来源**：`useUserAvatar()` 只订阅 `user-preferences-updated`，不直接订阅 OAuth 连接变化。见 [UserProfilePopover.tsx:L250-L275](../../../apps/desktop/src/components/UserProfilePopover.tsx#L250-L275)。
+- **OAuth 连接来源**：前端 `oauth2ListConnections` 在 Tauri 模式走 `oauth2_list_connections`；后端从 `~/.peers-touch/oauth2/connections.json` 读取。见 [desktop_api.ts:L2431-L2437](../../../apps/desktop/src/services/desktop_api.ts#L2431-L2437)、[oauth2/mod.rs:L73-L84](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L73-L84)、[oauth2/mod.rs:L232-L244](../../../apps/desktop/src-tauri/src/application/oauth2/mod.rs#L232-L244)。
+- **OAuth 同步机制**：`useOAuth2Store.loadAll()` 拉取 providers+connections 后广播 `oauth2-connections-changed`；`startAuth()` 轮询 popup URL 回调并触发 `loadAll()`。见 [oauth2.ts:L72-L85](../../../apps/desktop/src/store/oauth2.ts#L72-L85)、[oauth2.ts:L137-L166](../../../apps/desktop/src/store/oauth2.ts#L137-L166)。
 
 **根因定位（为什么“已登录未展示”）**
-- **根因1（核心）**：账号展示面板硬编码只看 `github/google`，`lark` 等已连账号不会渲染。见 [OAuth2Tab.tsx:L249-L252](file://apps/desktop/src/components/settings/OAuth2Tab.tsx#L249-L252)、[OAuthAccountLoginPanel.tsx:L246-L249](file://apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L246-L249)。
-- **根因2（头像不显示账号信息）**：头像展示依赖 `preferences`，而不是 OAuth 连接；且后端 preferences 目前是空实现返回 `{}`。见 [UserProfilePopover.tsx:L63-L64](file://apps/desktop/src/components/UserProfilePopover.tsx#L63-L64)、[system/mod.rs:L84-L90](file://apps/desktop/src-tauri/src/application/system/mod.rs#L84-L90)。
-- **根因3（场景性）**：向导默认 provider 是 `lark`，与“仅展示 github/google”的面板策略直接冲突。见 [OAuthLoginStep.tsx:L15-L18](file://apps/desktop/src/components/wizard/steps/OAuthLoginStep.tsx#L15-L18)。
+- **根因1（核心）**：账号展示面板硬编码只看 `github/google`，`lark` 等已连账号不会渲染。见 [OAuth2Tab.tsx:L249-L252](../../../apps/desktop/src/components/settings/OAuth2Tab.tsx#L249-L252)、[OAuthAccountLoginPanel.tsx:L246-L249](../../../apps/desktop/src/components/oauth/OAuthAccountLoginPanel.tsx#L246-L249)。
+- **根因2（头像不显示账号信息）**：头像展示依赖 `preferences`，而不是 OAuth 连接；且后端 preferences 目前是空实现返回 `{}`。见 [UserProfilePopover.tsx:L63-L64](../../../apps/desktop/src/components/UserProfilePopover.tsx#L63-L64)、[system/mod.rs:L84-L90](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L84-L90)。
+- **根因3（场景性）**：向导默认 provider 是 `lark`，与“仅展示 github/google”的面板策略直接冲突。见 [OAuthLoginStep.tsx:L15-L18](../../../apps/desktop/src/components/wizard/steps/OAuthLoginStep.tsx#L15-L18)。
 
 你这个质疑是对的，我确认过逻辑，确实有遗漏，而且是**两个层面的不同步**：
 
@@ -3460,18 +3460,18 @@ try again 没有用
   - `api.getPreferences()`
   - `api.oauth2ListConnections().catch(() => [])`
   - 只在 Popover `open` 时触发一次  
-  见 [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx#L24-L39)
+  见 [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx#L24-L39)
 - 侧边头像文字（`User`）来自 `preferences.user_name/user_avatar`，不是 OAuth 连接  
-  见 [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx#L63-L64)
+  见 [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx#L63-L64)
 
 **为什么会出现“Settings 已登录，但左上角还是 No platforms connected”**
 - 这里有个关键坑：Popover 对 `oauth2ListConnections` 做了静默吞错（`.catch(() => [])`），只要那次调用失败就直接显示 0 平台，但你看不到报错。  
-  见 [UserProfilePopover.tsx](file://apps/desktop/src/components/UserProfilePopover.tsx#L26-L29)
+  见 [UserProfilePopover.tsx](../../../apps/desktop/src/components/UserProfilePopover.tsx#L26-L29)
 - 另外它**没有订阅 OAuth 连接变化事件**（只在打开时拉一次），所以时序上很容易和 Settings 状态不一致。
 
 **再补一条你截图里“User”没变的原因**
 - `preferences_get` 后端现在是空实现返回 `{}`，所以不会自动把已登录账号映射成左上角用户名/头像。  
-  见 [system/mod.rs](file://apps/desktop/src-tauri/src/application/system/mod.rs#L84-L90)
+  见 [system/mod.rs](../../../apps/desktop/src-tauri/src/application/system/mod.rs#L84-L90)
 
 ---
 

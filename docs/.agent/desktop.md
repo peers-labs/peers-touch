@@ -1,118 +1,82 @@
-# Desktop (TypeScript + Rust) — Agent Platform Rules
+# Desktop Agent Entry
 
 > Load this file when working on `apps/desktop/`.
 > Parent rules: [AGENTS.md](../../AGENTS.md)
 
 ---
 
-## TypeScript / React Standards
+## 1. Role Of This File
 
-| Rule | Detail |
-|------|--------|
-| Components | Function components only, no class components |
-| Typing | TypeScript strict mode, **no `any`** |
-| State | Zustand (`use<Feature>Store`) |
-| UI Library | LobeUI first, antd as fallback |
-| Exports | Named exports (except page/App entry) |
-| Variables | `const` preferred, `let` when needed, **never `var`** |
-| File naming | Components: PascalCase (`.tsx`), utils: camelCase (`.ts`) |
+This file is an **Agent navigation + guardrail entry**, not the Desktop architecture or coding-standard source of truth.
 
-### Import Order
+Use it to answer:
 
-```typescript
-// 1. React core
-// 2. Third-party libs
-// 3. Kernel / internal layer
-// 4. Modules / business modules
-// 5. Local files
-```
+- Which Desktop documents must be read first
+- Which hard constraints cannot be violated
+- Which verification commands must run before completion
 
-### Logger
-
-```typescript
-import { log } from '@/utils/logger';
-
-log.info('chat', 'conversation created', { sessionId: 'sess-123' });
-log.error('auth', 'token refresh failed', { status: 401 });
-```
-
-**Forbidden**: `console.log`, `console.error`, `console.warn`, `console.debug`.
-
-### Tag Conventions
-
-| Tag | Scope |
-|-----|-------|
-| `app` | Global events (startup, crash, lifecycle) |
-| `chat` | Conversations, messages |
-| `store` | State management |
-| `auth` | Authentication |
-| `network` | HTTP requests |
-| `applet` | Applet runtime |
+Do **not** use this file as the place to redefine Desktop architecture, module boundaries, or full coding standards.
 
 ---
 
-## Rust (Tauri) Standards
+## 2. Read These Sources First
 
-| Rule | Detail |
-|------|--------|
-| Error handling | All commands return `AppResult<T>`, **never panic** |
-| Error types | Use `thiserror` for custom errors |
-| State | `Mutex<T>` wrapping `AppState`, via `tauri::State` |
-| Proto types | Via prost `include!()` macro |
+### Architecture Sources
 
-### DDD Layers
+- [Desktop Runtime Architecture](file://docs/architecture/runtime/desktop-runtime-architecture.md)
+- [Station/Desktop Scope Boundary](file://docs/architecture/boundaries/station-desktop-scope-boundary.md)
 
-```
-src-tauri/src/
-├── domain/          # Entities, value objects, domain services
-├── application/     # Use cases, command handlers
-├── infrastructure/  # DB, network, filesystem
-└── interface/       # Tauri commands, events
-```
+### Platform Sources
 
-### Logger
+- [Desktop Base](file://docs/client/desktop/base.md)
+- [Desktop README](file://docs/client/desktop/README.md)
 
-```rust
-tracing::info!(user_id = %id, "user logged in");
-tracing::error!(?err, "failed to connect");
-```
+### Specification Sources
 
-**Forbidden**: `println!`, `eprintln!`.
+- [Desktop Coding Guide](file://docs/global/coding-guide/desktop)
+- [Common Coding Guide](file://docs/global/coding-guide/common)
 
-### Error Pattern
+### Topic Sources
 
-```rust
-// Success
-AppResult::success(data)
-
-// Failure — never panic
-AppResult::fail(ErrorCode::InvalidArgument, "name is required", None)
-AppResult::fail(ErrorCode::InternalError, format!("db error: {}", err), None)
-```
-
-### TypeScript ↔ Rust Error Bridge
-
-```
-Rust AppResult<T>  →  Tauri IPC  →  TS RustCommandResult<T>
-     ErrorCode          invoke()       RustErrorCode (string)
-```
-
-TS side: `invokeRustCommand<T>()` wraps all calls. Store/page layer uses try/catch.
+- [Global Context Kernel](file://docs/client/desktop/global-context-kernel.md)
+- [Provider Model Target Architecture](file://docs/client/desktop/provider-model-target-architecture.md)
 
 ---
 
-## Verification
+## 3. Hard Constraints
+
+- UI runtime is `desktop-web -> desktop-rust -> station`; do not bypass `desktop-rust` when the architecture says it is the required bridge.
+- Use generated proto/domain contracts; do not introduce manual parallel models.
+- Desktop UI uses LobeUI first; use antd only when necessary and consistent with existing design.
+- TypeScript uses strict typing; do not introduce `any` unless the user explicitly accepts it.
+- Rust commands return `AppResult<T>`; do not panic for normal error paths.
+- Logging must go through project loggers; do not use `console.*`, `println!`, or `eprintln!`.
+
+---
+
+## 4. Verification Commands
 
 ```bash
 cd apps/desktop
-pnpm run check        # Lint + typecheck
-pnpm run test         # Unit tests
-pnpm run build        # Production build
+pnpm run check
+pnpm run test
+pnpm run build
 ```
 
-Tauri app verification:
+Tauri verification:
 
 ```bash
+cd apps/desktop
 source ~/.cargo/env
 CI=false pnpm run tauri:build
 ```
+
+---
+
+## 5. What This File Does Not Define
+
+- It does not define Desktop runtime topology in detail.
+- It does not define Desktop module boundaries in detail.
+- It does not define the full Desktop coding standard body.
+
+If you need those answers, go to the linked source documents above.

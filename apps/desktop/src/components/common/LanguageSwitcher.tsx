@@ -1,9 +1,5 @@
-// Compact language switcher button with dropdown.
-// Used on LoginPage (top-right corner) and can be reused in Settings.
-// Reads available languages from i18n service, switches on selection.
-// 2026-04-09: Initial creation for i18n architecture landing.
-
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Globe, Check, ChevronDown } from 'lucide-react';
 import { theme } from 'antd';
@@ -13,19 +9,42 @@ export function LanguageSwitcher() {
   const { i18n } = useTranslation();
   const { token } = theme.useToken();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const languages = getAvailableLanguages();
+
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPanelPos({
+      top: rect.top - 4,
+      left: rect.right,
+    });
+  }, []);
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+
+    updatePosition();
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        triggerRef.current && !triggerRef.current.contains(target) &&
+        panelRef.current && !panelRef.current.contains(target)
+      ) {
         setOpen(false);
       }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [open, updatePosition]);
 
   if (languages.length < 2) return null;
 
@@ -33,51 +52,55 @@ export function LanguageSwitcher() {
   const displayName = current?.native_name ?? current?.name ?? i18n.language;
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px 12px',
-          background: 'transparent',
-          border: `1px solid ${token.colorBorderSecondary}`,
-          borderRadius: 8,
-          cursor: 'pointer',
-          color: token.colorTextSecondary,
-          fontSize: 13,
-          fontFamily: 'inherit',
-          transition: 'all 0.15s',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = token.colorBorder;
-          e.currentTarget.style.color = token.colorText;
-          e.currentTarget.style.background = token.colorFillQuaternary;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = token.colorBorderSecondary;
-          e.currentTarget.style.color = token.colorTextSecondary;
-          e.currentTarget.style.background = 'transparent';
-        }}
-      >
-        <Globe size={14} />
-        <span>{displayName}</span>
-        <ChevronDown size={12} style={{ opacity: 0.5 }} />
-      </button>
-
-      {open && (
-        <div
+    <>
+      <div ref={triggerRef} style={{ position: 'relative', display: 'inline-block' }}>
+        <button
+          onClick={() => setOpen(!open)}
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            right: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            background: 'transparent',
+            border: `1px solid ${token.colorBorderSecondary}`,
+            borderRadius: 8,
+            cursor: 'pointer',
+            color: token.colorTextSecondary,
+            fontSize: 13,
+            fontFamily: 'inherit',
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = token.colorBorder;
+            e.currentTarget.style.color = token.colorText;
+            e.currentTarget.style.background = token.colorFillQuaternary;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = token.colorBorderSecondary;
+            e.currentTarget.style.color = token.colorTextSecondary;
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          <Globe size={14} />
+          <span>{displayName}</span>
+          <ChevronDown size={12} style={{ opacity: 0.5, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+        </button>
+      </div>
+
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          style={{
+            position: 'fixed',
+            top: panelPos.top,
+            left: panelPos.left,
+            transform: 'translate(-100%, -100%)',
             minWidth: 160,
             background: token.colorBgElevated,
             borderRadius: 10,
             boxShadow: `0 4px 16px rgba(0,0,0,0.1), 0 0 0 1px ${token.colorBorderSecondary}`,
             padding: 4,
-            zIndex: 1000,
+            zIndex: 10000,
           }}
         >
           {languages.map((lang) => {
@@ -106,14 +129,10 @@ export function LanguageSwitcher() {
                   transition: 'all 0.1s',
                 }}
                 onMouseEnter={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = token.colorFillQuaternary;
-                  }
+                  if (!isActive) e.currentTarget.style.background = token.colorFillQuaternary;
                 }}
                 onMouseLeave={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = 'transparent';
-                  }
+                  if (!isActive) e.currentTarget.style.background = 'transparent';
                 }}
               >
                 <span>{lang.native_name ?? lang.name ?? lang.code}</span>
@@ -121,8 +140,9 @@ export function LanguageSwitcher() {
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }

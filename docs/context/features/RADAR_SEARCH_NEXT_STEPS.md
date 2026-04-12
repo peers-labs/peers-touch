@@ -1,5 +1,8 @@
 # 雷达搜索功能 - 下一步建议
 
+> Historical next-steps note. This document records an earlier Radar Search follow-up list and includes outdated endpoint and stack assumptions. It is not a current source of truth.
+> Current sources should be located from `docs/README.md`.
+
 ## 已完成
 - ✅ 后端：新增本地 Actor 模糊搜索接口 `GET /activitypub/search?q=xxx`
 - ✅ 前端：重构 RadarView UI，移除地图和 mock 数据

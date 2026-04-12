@@ -1,5 +1,8 @@
 # Launch Screen 功能路线图 v2.0
 
+> Historical roadmap. This document preserves a prior Launch Screen planning track with phased delivery and old stack assumptions. It is not a current architecture or platform source of truth.
+> Current sources should be located from `docs/README.md`.
+
 > **版本**: 2.0  
 > **更新日期**: 2025-01-05  
 > **变更**: 移除联邦化集成,聚焦本地数据和实用功能

@@ -417,7 +417,7 @@ message AckEventsResponse {
 
 ## 6. 构建流程
 
-### 6.1 Go + Dart 生成
+### 6.1 Shared / Server-Side Generation
 
 ```bash
 # 在项目根目录执行
@@ -426,8 +426,8 @@ message AckEventsResponse {
 
 该脚本做三件事：
 1. 遍历 `model/domain/` 下所有 `.proto` 文件
-2. 生成 Dart 代码到 `client/common/peers_touch_base/lib/model/domain/`
-3. 生成 Go 代码到 `apps/station/`（路径由 `go_package` 决定）
+2. 生成共享 / 服务端需要的目标产物
+3. 生成 Go 代码到 `apps/station/...`（路径由 `go_package` 决定）
 
 ### 6.2 Kotlin + Swift 生成
 
@@ -446,7 +446,7 @@ message AckEventsResponse {
 - Kotlin: `apps/mobile/android/app/src/main/java/`
 - Swift: `apps/mobile/ios/PeersTouch/Core/Proto/`
 
-### 6.3 Rust (Desktop) 生成
+### 6.3 Desktop Rust 生成
 
 Desktop 端使用 prost 编译 proto，生成的 `.rs` 文件位于 `apps/desktop/src-tauri/src/model/`。
 
@@ -470,12 +470,20 @@ pub mod actor {
 
 新增 domain 时，需要在 `mod.rs` 中添加对应的 module 声明。
 
+### 6.4 Desktop TypeScript 消费
+
+Desktop TypeScript 当前消费生成产物的位置为：
+
+- `apps/desktop/src/gen/proto/`
+
+该目录中的生成文件同样属于派生产物，不是共享契约真源。
+
 ---
 
 ## 7. 强制规则
 
 1. **所有跨平台数据模型必须先定义 .proto** -- 绝对不允许手写模型类（Go struct / Dart class / Rust struct / Kotlin data class / Swift struct）来替代 proto 生成
-2. **绝对不允许编辑生成文件** -- `.pb.go`、`.pb.dart`、`prost` 生成的 `.rs` 文件均为生成产物，修改会在下次 build 时被覆盖
+2. **绝对不允许编辑生成文件** -- `.pb.go`、Desktop TS 生成文件、`prost` 生成的 `.rs` 文件以及移动端生成文件均为生成产物，修改会在下次 build 时被覆盖
 3. **新 proto 文件必须遵守命名和 package 规范** -- 参照本文档第 1、2 节
 4. **提交 .proto 源文件** -- 生成文件可能在 `.gitignore` 中，但 `.proto` 必须提交
 5. **域内应用通信必须使用 protobuf 协议** -- 仅在与第三方系统对接等不可避免的场景下使用 JSON
@@ -569,6 +577,7 @@ pub mod notification {
 
 确认以下平台均编译通过：
 - Go: `cd apps/station && go build ./...`
-- Dart: `cd client/common/peers_touch_base && flutter pub get && dart analyze`
+- TypeScript: `cd apps/desktop && pnpm run check`
 - Rust: `cd apps/desktop/src-tauri && cargo check`
-- Kotlin/Swift: 各自平台 build
+- Android: `cd apps/mobile/android && ./gradlew build`
+- iOS: Xcode build

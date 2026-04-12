@@ -1,5 +1,8 @@
 # ICE Capability Architecture Design
 
+> Historical proposal. This document preserves an earlier ICE capability design with phased rollout notes and older repository path assumptions. It is not the current architecture or platform source of truth.
+> Current sources should be located from `docs/README.md`.
+
 > **Status**: Draft  
 > **Version**: 2.0 (Simplified - No ActivityPub)  
 > **Date**: 2026-01-20  

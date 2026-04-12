@@ -1,262 +1,214 @@
-# Project Identity: What is Peers-Touch?
+# Project Identity: What Is Peers-Touch?
 
-> **The Foundation Document**  
-> Read this first to understand the essence of Peers-Touch.
-
----
-
-## 🎯 Project Vision
-
-**Peers-Touch** is a **decentralized, federated social network framework** that empowers users to own their data and connect across independent server instances (stations).
-
-### Core Mission
-To build a peer-to-peer social ecosystem where:
-- **Users own their identity** - Portable across stations via ActivityPub
-- **Data stays private** - End-to-end encryption for sensitive content
-- **Communities are sovereign** - Each station controls its own rules
-- **Connections are direct** - P2P mesh networking for real-time communication
+> Foundation-level identity document for what the project is, what it owns, and what it is trying to become.
+> For system relationships, read `docs/global/architecture.md`.
 
 ---
 
-## 🏗️ Project Scope
+## 1. Project Definition
 
-### What We Are Building
+**Peers-Touch** is a decentralized, federated social network framework organized around three layers:
 
-#### 1. **Three-Tier Architecture**
+- `Client`
+- `Model`
+- `Station`
+
+It is not a single app. It is a system that supports multiple client runtimes, shared protobuf contracts, and a backend runtime that owns shared business truth.
+
+---
+
+## 2. Core Mission
+
+Peers-Touch exists to build a user-centered social and intelligent runtime where:
+
+- users can own and move their identity across deployments
+- communities can run independent stations with their own governance
+- clients can provide rich local experiences without becoming the shared business source of truth
+- shared contracts remain consistent across runtimes through proto-first design
+
+---
+
+## 3. System Shape
+
+```text
+Client -> Model -> Station
 ```
-┌─────────────────────────────────────┐
-│  Client Layer (Mobile + Desktop)    │  ← User-facing applications
-├─────────────────────────────────────┤
-│  Model Layer (Proto Definitions)    │  ← Single source of truth
-├─────────────────────────────────────┤
-│  Station Layer (Backend Services)   │  ← Federation + Storage
-└─────────────────────────────────────┘
+
+### 3.1 Client
+
+The user-facing runtimes:
+
+- Desktop: Tauri + React/TypeScript + Rust
+- Mobile: Android native + iOS native
+
+### 3.2 Model
+
+The shared contract layer:
+
+- `model/domain/*.proto`
+
+### 3.3 Station
+
+The shared business runtime:
+
+- `apps/station/frame/`
+- `apps/station/app/`
+
+---
+
+## 4. What The Project Builds
+
+Peers-Touch is building a system that can support:
+
+- identity and authentication
+- cross-device and cross-station social interaction
+- messaging and event-driven communication
+- applet-style extensibility
+- agent and AI-assisted capabilities
+- local-runtime-rich clients coordinated by Station-owned business truth
+
+This document defines the identity and scope of the project, not detailed feature delivery status.
+
+---
+
+## 5. Active Runtime Landscape
+
+### 5.1 Desktop
+
+Desktop is a multi-runtime client, not just a UI:
+
+- `desktop-web`
+- `desktop-rust`
+- `desktop-app`
+- `station`
+
+At a high level:
+
+```text
+desktop-web -> desktop-rust -> station
+desktop-app -> hosts desktop-web and carries desktop-rust
 ```
 
-#### 2. **Client Applications**
-- **Desktop** (Tauri + React/TS + Rust): Professional workspace for power users
-- **Mobile** (Flutter + GetX): On-the-go social experience
-- **Shared UI Library** (`peers_touch_ui`): Consistent design system
+### 5.2 Mobile
 
-#### 3. **Station Backend**
-- **Frame**: Core framework (routing, auth, storage)
-- **Subservers**: Modular services (ai_box, posting, activitypub)
-- **Federation**: ActivityPub protocol implementation
+Mobile is a native dual-platform client:
 
-#### 4. **Core Features**
-- User registration and authentication
-- Federated identity (`@handle@domain.com`)
-- Real-time messaging (P2P + server-mediated)
-- Private circles (encrypted group chats)
-- Public posting (federated timeline)
-- AI-powered chat assistant
-- Extensible applet system
+- Android: Kotlin + Jetpack Compose
+- iOS: Swift + SwiftUI
 
----
+`apps/mobile/flutter/` is historical only and not the active implementation direction.
 
-## 🌟 Key Differentiators
+### 5.3 Station
 
-### 1. **Proto-First Architecture**
-All data models are defined once in `.proto` files and generated for all three tiers.
+Station is the shared backend runtime that owns:
 
-**Why?** Ensures type safety and consistency across Mobile, Desktop, and Station.
-
-### 2. **Hybrid Networking**
-- **P2P (libp2p)**: Direct client-to-client for low-latency
-- **Federation (ActivityPub)**: Server-to-server for reach
-- **Mesh Discovery**: Local network auto-discovery
-
-**Why?** Best of both worlds - privacy + interoperability.
-
-### 3. **Privacy-First Design**
-- End-to-end encryption for private circles
-- Granular visibility controls (public/followers/private)
-- Local-first data storage with optional sync
-
-**Why?** Users should control who sees their data.
-
-### 4. **Extensible Architecture**
-- Modular subservers on backend
-- Feature modules on client
-- Plugin system for applets
-
-**Why?** Easy to add new features without breaking existing code.
+- shared business state
+- server-side policies
+- persistence
+- federation behavior
+- subserver-based domain capabilities
 
 ---
 
-## 📐 Project Scale
+## 6. Architectural Identity
 
-**Target Audience**: Families, small communities, interest groups
+### 6.1 Proto-First
 
-**Network Topology**: Federated (like Mastodon) + P2P (like BitTorrent)
+All shared data contracts start in `model/domain/*.proto`.
 
-**Deployment Model**:
-- Self-hosted stations (home servers, VPS)
-- Managed hosting (future)
-- Hybrid (some users on self-hosted, some on managed)
+This is not just a tooling preference. It is one of the project's core identity rules:
 
----
+- shared models are defined once
+- platforms consume generated contracts
+- manual parallel shared models are forbidden
 
-## 🎨 Design Philosophy
+### 6.2 Federated And Decentralized
 
-### 1. **LobeChat-Inspired UI**
-Clean, modern, professional aesthetic with:
-- Minimalist color palette
-- Smooth animations
-- Intuitive navigation
-- Responsive layouts
+The project is designed for a world where multiple independent stations can exist and interoperate.
 
-### 2. **Code Simplicity**
-- Clear separation of concerns (View/Controller/Model)
-- No magic - explicit dependencies
-- Self-documenting code structure
+That means the project identity includes:
 
-### 3. **Developer Experience**
-- Consistent patterns across platforms
-- Comprehensive prompts for AI assistance
-- Easy onboarding for new contributors
+- decentralized deployment
+- federated communication
+- portable identity and interoperable contracts
 
----
+### 6.3 Local-Runtime-Rich Clients
 
-## 🚫 What Peers-Touch Is NOT
+Peers-Touch is not “backend-only truth plus thin clients”.
 
-- ❌ **Not a centralized platform** - No single company controls the network
-- ❌ **Not a blockchain project** - We use proven protocols (ActivityPub, libp2p)
-- ❌ **Not a Mastodon clone** - We add P2P, circles, and AI features
-- ❌ **Not enterprise software** - Focused on personal and community use
+Clients may own:
+
+- UI behavior
+- device capability integration
+- local orchestration
+- applet hosting
+- runtime-specific coordination
+
+But clients do not become the shared business truth owner when Station already owns that role.
 
 ---
 
-## 🛠️ Technology Stack
+## 7. Repository Shape
 
-### Client (Mobile + Desktop)
-- **Framework**: Flutter (latest stable)
-- **State Management**: GetX (mandatory)
-- **UI Library**: peers_touch_ui (custom)
-- **Networking**: Dio (HTTP), libp2p (P2P)
-- **Storage**: GetStorage (local), SecureStorage (encrypted)
-
-### Station (Backend)
-- **Language**: Go
-- **Framework**: Custom frame (based on micro patterns)
-- **Protocols**: ActivityPub, libp2p, gRPC
-- **Storage**: PostgreSQL (relational), BadgerDB (local)
-
-### Model (Shared)
-- **Format**: Protocol Buffers (.proto)
-- **Generation**: protoc for Dart, Go, and other targets
-
----
-
-## 📊 Project Structure
-
-```
+```text
 peers-touch/
-├── client/                 # Client applications
-│   ├── desktop/            # Desktop app (Flutter)
-│   ├── mobile/             # Mobile app (Flutter)
-│   └── common/             # Shared libraries
-│       ├── peers_touch_base/   # Core utilities
-│       └── peers_touch_ui/     # UI components
-│
-├── station/                # Backend services
-│   ├── frame/              # Core framework
-│   └── app/                # Application services
-│       └── subserver/      # Modular services
-│
-├── model/                  # Proto definitions
-│   └── domain/             # Domain models (.proto files)
-│
-└── docs/                   # This documentation system
+├── apps/
+│   ├── desktop/
+│   ├── mobile/
+│   │   ├── android/
+│   │   ├── ios/
+│   │   └── flutter/        # deprecated
+│   └── station/
+│       ├── app/
+│       └── frame/
+├── model/
+│   └── domain/
+├── packages/
+└── docs/
 ```
 
 ---
 
-## 🎓 Learning Path
+## 8. What Peers-Touch Is Not
 
-### For New Developers
+Peers-Touch is not:
 
-**Step 1**: Read this document (you're here!)
-
-**Step 2**: Read [11-architecture.md](./11-architecture.md) to understand how the pieces fit together
-
-**Step 3**: Read [12-domain-model.md](./12-domain-model.md) to learn the Proto system
-
-**Step 4**: Choose your platform:
-- Desktop → [desktop/base.md](../client/desktop/base.md)
-- Mobile → [mobile/base.md](../client/mobile/base.md)
-- Station → [station/base.md](../station/base.md)
-
-**Step 5**: Read coding standards [13-coding-standards.md](./13-coding-standards.md)
+- a centralized single-vendor platform
+- a blockchain-first product
+- a Flutter-only client stack
+- a single-process desktop application model
+- a JSON-first shared contract architecture
 
 ---
 
-## 🤝 Contributing Philosophy
+## 9. Reading Path
 
-### We Value:
-- **Clarity over cleverness** - Simple code beats clever code
-- **Consistency over convenience** - Follow patterns even if verbose
-- **Documentation over assumptions** - Write prompts for AI and humans
+If you are new to the project, read in this order:
 
-### We Require:
-- All models from Proto files (no manual models)
-- StatelessWidget only (no StatefulWidget)
-- Package imports only (no relative imports)
-- GetX for all state management
-
----
-
-## 📞 Getting Help
-
-- **Architecture questions**: Read [11-architecture.md](./11-architecture.md)
-- **Terminology confusion**: See [GLOSSARY.md](../meta/GLOSSARY.md)
-- **Design decisions**: Check [context/decisions/](../context/decisions/)
-- **Platform-specific**: See platform base files (21.0, 22.0, 30.0)
+1. `docs/README.md`
+2. `docs/global/architecture.md`
+3. `docs/global/domain-model.md`
+4. platform base documents:
+   - `docs/client/desktop/base.md`
+   - `docs/client/mobile/base.md`
+   - `docs/station/base.md`
 
 ---
 
-## 🔮 Future Vision
+## 10. Boundaries Of This Document
 
-### Short-term (v1.0)
-- ✅ Basic federation (ActivityPub)
-- ✅ Private circles (E2E encrypted)
-- ✅ AI chat assistant
-- ✅ Mobile + Desktop apps
+This document defines:
 
-### Mid-term (v2.0)
-- 🔄 Video/voice calls (P2P)
-- 🔄 Advanced applet system
-- 🔄 Decentralized storage (IPFS)
-- 🔄 Mobile notifications
+- what the project is
+- what the main layers are
+- what kinds of runtimes exist
+- what high-level identity rules the project follows
 
-### Long-term (v3.0+)
-- 🔮 Decentralized identity (DID)
-- 🔮 Token-based incentives
-- 🔮 Cross-protocol bridges
-- 🔮 Web client
+This document does not define:
 
----
+- Desktop internal architecture details
+- Mobile module structure details
+- Station subserver coding rules
+- delivery phase, roadmap, or implementation status
 
-## 📜 Project History
-
-**Genesis**: 2024 - Started as a family communication tool
-
-**Evolution**: Expanded to support federated communities
-
-**Current**: Building v1.0 with full federation + P2P
-
-See [CHANGELOG.md](../meta/CHANGELOG.md) for detailed history.
-
----
-
-## ⚖️ License & Governance
-
-**License**: TBD (likely AGPL or similar copyleft)
-
-**Governance**: Community-driven with core maintainers
-
-**Code of Conduct**: Respect, inclusivity, constructive feedback
-
----
-
-*This document defines the "what" and "why" of Peers-Touch. For "how", see the architecture and platform-specific prompts.*
+For those, follow the corresponding architecture, platform, and specification documents.
