@@ -12,7 +12,7 @@
 
 ### 2) Respect current repo boundaries
 - Desktop: `apps/desktop` (Tauri + React/TS + Rust)
-- Mobile: `apps/mobile/flutter`
+- Mobile: `apps/mobile/android` and `apps/mobile/ios`
 - Station: `apps/station/app` and `apps/station/frame`
 - Shared client libraries: `client/common/*`
 
@@ -49,9 +49,8 @@ CI=false pnpm run tauri:build
 
 ### Mobile
 ```bash
-cd apps/mobile/flutter
-flutter analyze
-flutter test
+cd apps/mobile/android && ./gradlew build
+cd apps/mobile/ios && xcodebuild -scheme PeersTouch -configuration Debug build
 ```
 
 ### Station

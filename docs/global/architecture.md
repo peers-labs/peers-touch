@@ -1,262 +1,233 @@
 # Architecture: Three-Tier System
 
-> **Understanding How Peers-Touch Components Work Together**
+> Current architecture source for how Peers-Touch components relate to each other.
 
 ---
 
-## 🏛️ High-Level Architecture
+## 1. Document Scope
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         CLIENT LAYER                                 │
-│  ┌──────────────────────┐    ┌────────────────────────────────┐    │
-│  │ Desktop (Tauri/TS)   │    │  Mobile (Native per platform)  │    │
-│  │ - React + TypeScript │    │ - Android: Kotlin + Jetpack    │    │
-│  │ - Rust commands      │    │            Compose             │    │
-│  │ - App-only runtime   │    │ - iOS: Swift + SwiftUI         │    │
-│  │                      │    │ - Station Relay (no P2P)       │    │
-│  │                      │    │ - Lynx applet container        │    │
-│  └──────────────────────┘    └────────────────────────────────┘    │
-│             │                           │                            │
-│             └───────────┬───────────────┘                            │
-└─────────────────────────┼────────────────────────────────────────────┘
-                          │
-                    HTTP/gRPC + P2P (Desktop only)
-                    HTTP/gRPC + Station Relay (Mobile)
-                          │
-┌─────────────────────────┼────────────────────────────────────────────┐
-│                    MODEL LAYER                                        │
-│                                                                        │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  Protocol Buffers (.proto files)                             │    │
-│  │  - Single source of truth for all data models                │    │
-│  │  - Generated for Kotlin, Swift, Go (and Rust contracts       │    │
-│  │    adapter)                                                  │    │
-│  │  - Located in: model/domain/                                 │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-└───────────────────────────┬──────────────────────────────────────────┘
-                            │
-                      Generated Models
-                            │
-┌───────────────────────────┼──────────────────────────────────────────┐
-│                    STATION LAYER                                      │
-│                                                                        │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  Frame (Core Framework)                                      │    │
-│  │  - Routing, Auth, Config, Logging                            │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-│                            │                                          │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  Subservers (Modular Services)                               │    │
-│  │  - ai_box: AI service management                             │    │
-│  │  - posting: Content creation/federation                      │    │
-│  │  - auth: User authentication                                 │    │
-│  │  - relay: Message relay for mobile clients                   │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-│                            │                                          │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  Federation Layer                                             │    │
-│  │  - ActivityPub protocol                                      │    │
-│  │  - Inter-station communication                               │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────────┘
+This document defines:
+
+- the project-level three-tier model
+- the relationship between Client, Model, and Station
+- the high-level role of Desktop, Mobile, and Station
+- the system-wide source-of-truth boundaries
+
+This document does **not** define:
+
+- Desktop internal runtime details
+- Station internal subserver implementation rules
+- platform-specific coding standards
+
+For those, follow:
+
+- `docs/architecture/runtime/desktop-runtime-architecture.md`
+- `docs/station/base.md`
+- `docs/client/mobile/base.md`
+- `docs/global/coding-guide/`
+
+---
+
+## 2. High-Level Architecture
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                       CLIENT LAYER                           │
+│                                                              │
+│  Desktop = desktop-web + desktop-rust + desktop-app         │
+│  Mobile  = Android native + iOS native                      │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               │ consumes generated contracts
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                        MODEL LAYER                           │
+│                                                              │
+│  model/domain/*.proto                                        │
+│  Single source of truth for shared contracts and models      │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               │ generated code + protocol contracts
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                       STATION LAYER                          │
+│                                                              │
+│  apps/station/frame  = framework / transport / infrastructure│
+│  apps/station/app    = business domains / subservers         │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📦 Component Breakdown
+## 3. Layer Responsibilities
 
-### 1. Client Layer (Desktop + Mobile)
+### 3.1 Client Layer
 
-**Shared Architecture**:
-- Both consume proto/domain contracts
-- Both depend on Station APIs for control-plane capability
+The Client layer is where user-facing interaction happens.
 
-**Key Differences**:
-- Desktop: `apps/desktop` with Tauri + React/TS + Rust command bridge; supports relay + P2P hybrid for realtime messaging
-- Mobile: `apps/mobile/android/` (Kotlin + Jetpack Compose) + `apps/mobile/ios/` (Swift + SwiftUI)，双端独立原生实现；**不走 P2P，所有实时通信通过 Station Relay 中转**
-- Mobile Applet 容器：使用 [Lynx](https://github.com/lynx-family/lynx) 原生 LynxView 承载小程序/Applet，Android 端通过 LynxView 集成，iOS 端同理
+It includes:
 
-**Directory Structure**:
+- `apps/desktop/`
+- `apps/mobile/android/`
+- `apps/mobile/ios/`
+
+The Client layer is responsible for:
+
+- rendering UI
+- guiding user interaction flows
+- adapting device capabilities
+- maintaining local ephemeral state and local runtime orchestration
+
+The Client layer is **not** the shared business source of truth.
+
+### 3.2 Model Layer
+
+The Model layer is the contract layer.
+
+Location:
+
+- `model/domain/`
+
+It is responsible for:
+
+- defining shared protobuf contracts
+- keeping cross-end model semantics aligned
+- serving as the only valid source for generated domain models
+
+No platform is allowed to create parallel manual domain contracts when the same concept belongs in proto.
+
+### 3.3 Station Layer
+
+The Station layer is the shared business system and cross-end truth source.
+
+Location:
+
+- `apps/station/`
+
+It is responsible for:
+
+- domain rules and state machines
+- authentication, authorization, audit, quota, and policy
+- shared business APIs and event semantics
+- federation and server-side persistence
+
+Station owns shared business truth. Clients orchestrate and present it.
+
+---
+
+## 4. Client Variants
+
+### 4.1 Desktop
+
+Desktop is not a single process and not a single layer.
+
+It consists of four runtime units:
+
+- `desktop-web`: React + TypeScript UI
+- `desktop-rust`: local runtime / local BFF / command gateway
+- `desktop-app`: Tauri native shell and window host
+- `station`: remote shared business system
+
+Desktop high-level runtime chain:
+
+```text
+desktop-web -> desktop-rust -> station
+desktop-app -> hosts desktop-web and carries desktop-rust
 ```
-apps/
-├── desktop/
-│   ├── src/               # React/TS UI + state
-│   └── src-tauri/src/     # Rust contracts/commands/application
-├── mobile/
-│   ├── android/           # Kotlin + Jetpack Compose native app
-│   ├── ios/               # Swift + SwiftUI native app
-│   └── flutter/           # (archived) legacy Flutter implementation
-├── station/...
-client/common/
-├── peers_touch_base/
-└── peers_touch_ui/
+
+Desktop is the richer local runtime client. It may host local orchestration and device capabilities, but it does not replace Station as the shared business truth owner.
+
+### 4.2 Mobile
+
+Mobile is a native dual-platform client:
+
+- Android: Kotlin + Jetpack Compose
+- iOS: Swift + SwiftUI
+
+Mobile high-level principles:
+
+- native implementation per platform
+- shared contract semantics through proto
+- Station remains the shared truth source
+- mobile does not become an independent cross-end business truth owner
+
+Applet-related runtime follows the Lynx-based container direction inside the native hosts.
+
+---
+
+## 5. System Boundaries
+
+### 5.1 Source Of Truth
+
+- Shared business truth: `Station`
+- Shared contract truth: `Model`
+- Device-local UI and runtime state: corresponding client runtime
+
+### 5.2 Ownership Rule
+
+When deciding ownership of a capability:
+
+1. If the capability represents cross-end business state, owner is `Station`.
+2. If the capability represents contract semantics, owner is `Model`.
+3. If the capability represents device interaction or local runtime orchestration, owner is the corresponding client.
+
+### 5.3 Communication Rule
+
+- Client-to-Station communication uses Station APIs and protobuf-aligned contracts.
+- Inter-app shared model communication must remain proto-first.
+- Clients must not redefine business truth locally when Station already owns it.
+
+---
+
+## 6. Repository Structure
+
+```text
+peers-touch/
+├── apps/
+│   ├── desktop/
+│   ├── mobile/
+│   │   ├── android/
+│   │   ├── ios/
+│   │   └── flutter/        # deprecated, not active implementation
+│   └── station/
+│       ├── app/
+│       └── frame/
+├── model/
+│   └── domain/
+├── packages/
+└── docs/
 ```
 
 ---
 
-### 2. Model Layer (Proto Definitions)
+## 7. Generated Contract Direction
 
-**Location**: `model/domain/`
+Proto source:
 
-**Purpose**: Single source of truth for all data structures
+- `model/domain/<domain>/<name>.proto`
 
-**Example**:
-```protobuf
-// model/domain/actor/actor.proto
-syntax = "proto3";
+Generation follows active platform paths:
 
-message Actor {
-  string id = 1;
-  string handle = 2;
-  string display_name = 3;
-  string avatar_url = 4;
-}1
-```
+- Station-side generated Go contracts support `apps/station/...`
+- Mobile generation follows `./tooling/scripts/proto-gen-mobile.sh`
+- Desktop consumes generated contracts through its active Rust/TS contract paths
 
-**Generation**:
-- For Kotlin (Android): `protoc --kotlin_out=...`
-- For Swift (iOS): `protoc --swift_out=...`
-- For Go (station): `protoc --go_out=...`
-
-**Generated Files Location**:
-- Kotlin: `apps/mobile/android/.../model/domain/`
-- Swift: `apps/mobile/ios/.../model/domain/`
-- Go: `apps/station/app/subserver/*/model/`
+The source of truth is always the `.proto`, never the generated file.
 
 ---
 
-### 3. Station Layer (Backend)
+## 8. Related Architecture Sources
 
-**Location**: `apps/station/`
-
-**Components**:
-
-#### 3.1 Frame (Core Framework)
-```
-apps/station/frame/
-├── core/           # Core services
-│   ├── auth/       # Authentication
-│   ├── config/     # Configuration
-│   ├── registry/   # Service registry
-│   └── transport/  # Network transport
-├── touch/          # API layer
-│   ├── router/     # HTTP routing
-│   └── middleware/ # Request middleware
-└── vendors/        # Third-party integrations
-```
-
-#### 3.2 App (Business Logic)
-```
-apps/station/app/
-├── actuator/       # Health checks, metrics
-└── subserver/      # Modular services
-    ├── ai_box/     # AI service management
-    ├── auth/       # User authentication
-    └── posting/    # Content management
-```
-
----
-
-## 🔄 Data Flow Patterns
-
-### Pattern 1: Client → Station (HTTP/gRPC)
-
-**Example: User Login**
-
-```
-1. User enters credentials in Desktop app
-   ↓
-2. LoginController calls AuthRepository
-   ↓
-3. AuthRepository uses HttpService (from peers_touch_base)
-   ↓
-4. HTTP POST to Station: /api/auth/login
-   ↓
-5. Station's auth subserver validates credentials
-   ↓
-6. Station returns JWT token (Proto-defined AuthResponse)
-   ↓
-7. Client stores token in SecureStorage
-   ↓
-8. UI updates to show logged-in state
-```
-
-### Pattern 2: Desktop Client ↔ Client (P2P via libp2p)
-
-**Example: Direct Message (Desktop)**
-
-```
-1. User A sends message to User B
-   ↓
-2. MessageController creates Message (Proto model)
-   ↓
-3. libp2p layer discovers User B's peer
-   ↓
-4. Direct P2P connection established
-   ↓
-5. Message sent over encrypted P2P channel
-   ↓
-6. User B receives message, updates UI
-```
-
-### Pattern 2b: Mobile Client ↔ Client (Station Relay)
-
-**Example: Direct Message (Mobile)**
-
-```
-1. User A (mobile) sends message to User B
-   ↓
-2. Message created as Proto model
-   ↓
-3. Message sent to Station via HTTP/gRPC
-   ↓
-4. Station relay service forwards to User B's station
-   ↓
-5. User B's client receives message via push / long-poll / WebSocket
-   ↓
-6. User B's UI updates
-```
-
-### Pattern 3: Station ↔ Station (Federation via ActivityPub)
-
-**Example: Follow Request**
-
-```
-1. User A (@alice@station1.com) follows User B (@bob@station2.com)
-   ↓
-2. Station 1 creates ActivityPub Follow activity
-   ↓
-3. Station 1 sends HTTP POST to Station 2's inbox
-   ↓
-4. Station 2 validates signature, stores follow
-   ↓
-5. Station 2 sends Accept activity back to Station 1
-   ↓
-6. Both stations update their databases
-   ↓
-7. Clients receive updates via WebSocket/polling
-```
-
----
-
-## 🔐 Security Architecture
-
-### Client-Side Security
-- **Secure Storage**: Encrypted storage for tokens/keys
-- **Certificate Pinning**: Prevent MITM attacks
-- **Input Validation**: Sanitize all user inputs
-
-### Station-Side Security
-- **JWT Authentication**: Stateless token-based auth
-- **Rate Limiting**: Prevent abuse
-- **CORS**: Restrict cross-origin requests
-- **SQL Injection Prevention**: Parameterized queries
-
-### P2P Security (Desktop only)
-- **End-to-End Encryption**: All P2P messages encrypted
-- **Peer Authentication**: Verify peer identities
-- **NAT Traversal**: Secure hole-punching
+- Desktop runtime details:
+  - `docs/architecture/runtime/desktop-runtime-architecture.md`
+- Station/Desktop ownership boundary:
+  - `docs/architecture/boundaries/station-desktop-scope-boundary.md`
+- Station platform overview:
+  - `docs/station/base.md`
+- Mobile platform overview:
+  - `docs/client/mobile/base.md`
+- Project identity:
+  - `docs/global/project-identity.md`
 
 ### Mobile Relay Security
 - **TLS**: All Mobile ↔ Station communication over TLS
@@ -372,8 +343,8 @@ Internet
 
 ## 📚 Related Documents
 
-- **Project Identity**: [10-project-identity.md](./10-project-identity.md)
-- **Domain Models**: [12-domain-model.md](./12-domain-model.md)
+- **Domain Models**: [domain-model.md](./domain-model.md)
+- **Project Identity**: [project-identity.md](./project-identity.md)
 - **Desktop Architecture**: [desktop/base.md](../client/desktop/base.md)
 - **Station Architecture**: [station/base.md](../station/base.md)
 

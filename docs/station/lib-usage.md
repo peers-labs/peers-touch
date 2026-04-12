@@ -383,6 +383,6 @@ func init() {
 
 ## 参考文档
 
-- [Station Base](./30-station-base.md)
-- [Go Standards](./31-go-standards.md)
-- [SubServer Standard](./34-subserver-standard.md)
+- [Station Base](./base.md)
+- [Go Standards](./go-standards.md)
+- [Subserver Standard](./subserver-standard.md)

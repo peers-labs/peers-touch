@@ -1,5 +1,8 @@
 # Launch Screen 集成指南
 
+> Historical integration note. This document records an earlier Launch Screen integration path and includes outdated stack and path assumptions. It is not a current source of truth.
+> Current sources should be located from `docs/README.md`.
+
 本文档说明如何将 Launch Screen 功能集成到 Peers-Touch 项目中。
 
 ## 📦 已完成的组件

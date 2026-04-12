@@ -1,16 +1,20 @@
-# Desktop Prompt Set
+# Desktop Docs
 
-This directory has been migrated to the new desktop stack:
-- Tauri
-- React + TypeScript
-- Rust command architecture
+当前 Desktop 文档按“平台层真源 + 相关子主题”组织。
 
-Current active base prompt:
+优先阅读：
+
 - [base.md](./base.md)
 
-Legacy Flutter desktop prompts were removed intentionally.
+如果你要看 Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的运行关系，请看架构层真源：
 
-Planned additions:
-- 21.1 command-contract patterns
-- 21.2 frontend-store patterns
-- 21.3 desktop app-only verification playbook
+- [desktop-runtime-architecture.md](../../architecture/runtime/desktop-runtime-architecture.md)
+
+如果你要看 Desktop 内部主题：
+
+- [global-context-kernel.md](./global-context-kernel.md)
+- [provider-model-target-architecture.md](./provider-model-target-architecture.md)
+
+如果你不确定先看哪份，请先回到总入口：
+
+- [docs/README.md](../../README.md)
