@@ -67,49 +67,7 @@ CI=false pnpm run tauri:build
 
 ## Notes
 
-- This file supersedes old Flutter desktop guidance.
-- Any prompt content that requires `client/desktop` or GetX should be considered outdated.
-   flutter build macos --debug  # or your platform
-   ```
-   - Must complete without errors
-   - Verify the build output exists
-
-3. **Test Check** (if tests exist):
-   ```bash
-   cd client/desktop
-   flutter test
-   ```
-   - All tests must pass
-   - No skipped tests without justification
-
-### Why This Matters
-
-- **Lint**: Catches code style violations, potential bugs, and deprecated API usage
-- **Build**: Ensures code compiles and all dependencies are resolved
-- **Test**: Verifies functionality works as expected
-
-### When to Run
-
-- ✅ **After every feature implementation**
-- ✅ **Before marking a task as complete**
-- ✅ **Before committing code**
-- ✅ **After fixing bugs**
-
-### What to Do If Checks Fail
-
-1. **Read the error message carefully**
-2. **Fix the issue in your code**
-3. **Re-run the check**
-4. **Repeat until all checks pass**
-
-**DO NOT**:
-- ❌ Ignore lint warnings
-- ❌ Comment out failing tests
-- ❌ Commit code that doesn't compile
-- ❌ Skip checks "because it works on my machine"
-
 ---
 
-## 其它Prompt
-
-其它非Base级的Prompt在 './PROMPTs' 目录下
+> Legacy note: Any references to `client/desktop`, `flutter build`, or GetX in other documents
+> should be considered outdated. This file is the current Desktop baseline.

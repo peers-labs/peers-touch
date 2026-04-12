@@ -1,6 +1,8 @@
 # Coding Standards: Universal Rules
 
-> **Code Style Guidelines for All Platforms**
+> Historical consolidated coding standards document. Dart/Flutter-era content has been moved to
+> `docs/context/legacy-standards/dart-flutter-coding-standards.md`.
+> Current source of truth: `docs/global/coding-guide/` for platform-specific standards.
 
 ---
 
@@ -14,111 +16,6 @@ Follow established patterns even if more verbose.
 
 ### 3. **Explicit Over Implicit**
 Make dependencies and intentions clear.
-
----
-
-## 📝 Dart/Flutter Standards (Client)
-
-### Import Ordering
-
-```dart
-// 1. Dart SDK imports
-import 'dart:async';
-import 'dart:convert';
-
-// 2. Flutter imports
-import 'package:flutter/material.dart';
-
-// 3. Third-party packages
-import 'package:get/get.dart';
-
-// 4. Project imports
-import 'package:peers_touch_base/context/global_context.dart';
-import 'package:peers_touch_desktop/core/services/logging_service.dart';
-```
-
-### Naming Conventions
-
-| Type | Convention | Example |
-|------|-----------|---------|
-| Files/Directories | snake_case | `home_controller.dart` |
-| Classes | PascalCase | `HomeController` |
-| Variables/Methods | camelCase | `userName`, `fetchData()` |
-| Constants | UPPER_SNAKE_CASE | `MAX_PAGE_SIZE` |
-| Private | _prefix | `_privateMethod()` |
-
-### String Style
-
-```dart
-// ✅ CORRECT: Single quotes
-final name = 'Alice';
-
-// ❌ WRONG: Double quotes (unless string contains single quote)
-final name = "Alice";
-```
-
-### Variable Declarations
-
-```dart
-// ✅ CORRECT: Use final for non-reassigned variables
-final userName = 'Alice';
-final count = 0.obs; // GetX reactive
-
-// ❌ WRONG: Using var when value doesn't change
-var userName = 'Alice';
-```
-
-### Flow Control
-
-```dart
-// ✅ CORRECT: Always use braces
-if (condition) {
-  doSomething();
-}
-
-// ❌ WRONG: No braces
-if (condition) doSomething();
-```
-
-### Package Imports
-
-```dart
-// ✅ CORRECT: Package imports for lib/ files
-import 'package:peers_touch_desktop/features/home/view/home_page.dart';
-
-// ❌ WRONG: Relative imports
-import '../features/home/view/home_page.dart';
-```
-
-### Deprecated APIs
-
-```dart
-// ✅ CORRECT: New API
-color.withValues(alpha: 0.5)
-
-// ❌ WRONG: Deprecated
-color.withOpacity(0.5)
-```
-
-### Logging
-
-```dart
-// ✅ CORRECT: Use LoggingService
-LoggingService.debug('User logged in');
-LoggingService.info('Session created for user: $username');
-LoggingService.warning('Token refresh failed, retrying...');
-LoggingService.error('Failed to connect to server', error, stackTrace);
-
-// ❌ WRONG: Using print() or println()
-print('User logged in');
-println('Debug info');
-```
-
-**Logging Levels:**
-- `debug()`: Development debugging info
-- `info()`: Important events (login, logout, etc.)
-- `warning()`: Recoverable issues
-- `error()`: Errors with exception details
 
 ---
 
@@ -167,52 +64,44 @@ type Actor struct {
 
 ### ❌ Hardcoded Strings
 
-```dart
+```tsx
 // WRONG
-Text('Login')
+<span>Login</span>
 
 // CORRECT
-Text(tr(LocaleKeys.login))
+<span>{t('login')}</span>
 ```
 
 ### ❌ Magic Numbers
 
-```dart
+```tsx
 // WRONG
-if (status == 200) { }
+if (status === 200) { }
 
 // CORRECT
-if (status == HttpStatus.ok) { }
+if (status === HttpStatusCode.Ok) { }
 ```
 
 ### ❌ God Classes
 
-```dart
-// WRONG: One controller doing everything
-class AppController {
-  void login() {}
-  void fetchPosts() {}
-  void sendMessage() {}
+```tsx
+// WRONG: One module doing everything
+class AppService {
+  login() {}
+  fetchPosts() {}
+  sendMessage() {}
   // ... 50 more methods
 }
 
-// CORRECT: Separate controllers per feature
-class AuthController { void login() {} }
-class PostController { void fetchPosts() {} }
-class MessageController { void sendMessage() {} }
+// CORRECT: Separate modules per feature
+class AuthService { login() {} }
+class PostService { fetchPosts() {} }
+class MessageService { sendMessage() {} }
 ```
 
 ---
 
 ## 📐 Architecture Rules
-
-### Client (Dart/Flutter)
-
-1. **No StatefulWidget** - Use GetX Controllers
-2. **No Relative Imports** - Package imports only
-3. **No Manual Models** - Proto-generated only
-4. **No Direct Dio** - Use HttpService
-5. **No Business Logic in Views** - Controllers only
 
 ### Station (Go)
 
@@ -228,10 +117,10 @@ class MessageController { void sendMessage() {} }
 
 ### When to Comment
 
-```dart
+```tsx
 // ✅ GOOD: Explain WHY, not WHAT
 // We use a delay here to prevent rate limiting from the API
-await Future.delayed(Duration(seconds: 1));
+await new Promise((resolve) => setTimeout(resolve, 1000));
 
 // ❌ BAD: Stating the obvious
 // Increment counter by 1
@@ -240,12 +129,14 @@ counter++;
 
 ### Documentation Comments
 
-```dart
-/// Fetches user profile from the server.
-///
-/// Throws [NetworkException] if the request fails.
-/// Returns [Actor] on success.
-Future<Actor> fetchProfile(String userId) async {
+```tsx
+/**
+ * Fetches user profile from the server.
+ *
+ * @throws {NetworkError} If the request fails.
+ * @returns The Actor profile on success.
+ */
+async function fetchProfile(userId: string): Promise<Actor> {
   // ...
 }
 ```
@@ -272,34 +163,33 @@ Future<Actor> fetchProfile(String userId) async {
 
 ### Test File Naming
 ```
-home_controller.dart → home_controller_test.dart
+useAuthStore.ts → useAuthStore.test.ts
+UserCard.tsx   → UserCard.test.tsx
 ```
 
 ### Test Structure
-```dart
-void main() {
-  group('HomeController', () {
-    late HomeController controller;
-    
-    setUp(() {
-      controller = HomeController();
-    });
-    
-    test('should fetch posts on init', () {
-      // Arrange
-      // Act
-      // Assert
-    });
+```tsx
+import { describe, it, expect, beforeEach } from 'vitest';
+
+describe('useAuthStore', () => {
+  beforeEach(() => {
+    // Reset state before each test
   });
-}
+
+  it('should authenticate user with valid credentials', () => {
+    // Arrange
+    // Act
+    // Assert
+  });
+});
 ```
 
 ---
 
 ## 📚 Related Documents
 
-- **Project Identity**: [10-project-identity.md](./10-project-identity.md)
-- **Domain Models**: [12-domain-model.md](./12-domain-model.md)
+- **Project Identity**: [project-identity.md](./project-identity.md)
+- **Domain Models**: [domain-model.md](./domain-model.md)
 - **Desktop Standards**: [desktop/base.md](../client/desktop/base.md)
 
 ---

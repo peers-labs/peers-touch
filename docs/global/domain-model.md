@@ -1,158 +1,183 @@
-# Domain Models: Proto-First Architecture
+# Domain Models: Proto-First Contract Rules
 
-> **The Single Source of Truth for All Data Structures**
-
----
-
-## 🎯 Core Principle
-
-**ALL data models in Peers-Touch MUST be defined in Protocol Buffer (.proto) files.**
-
-This is non-negotiable. Manual model creation is strictly forbidden.
+> Current global source for shared contract ownership, proto-first rules, and generated model boundaries.
 
 ---
 
-## 📍 Model Location
+## 1. Core Principle
 
-**Source**: `model/domain/*.proto`
+All shared data contracts in Peers-Touch must be defined in Protocol Buffers first.
 
-**Generated Files**:
-- **Dart (Client)**: `client/common/peers_touch_base/lib/model/domain/`
-- **Go (Station)**: `apps/station/app/subserver/*/model/`
+Source of truth:
 
----
+- `model/domain/<domain>/<name>.proto`
 
-## 🔄 Generation Workflow
+This is non-negotiable.
 
-### 1. Define Model in Proto
-
-```protobuf
-// model/domain/actor/actor.proto
-syntax = "proto3";
-
-package peers_touch.model.actor.v1;
-
-option go_package = "github.com/peers-labs/peers-touch/apps/station/app/model;model";
-
-message Actor {
-  string id = 1;
-  string handle = 2;
-  string display_name = 3;
-  string avatar_url = 4;
-  string bio = 5;
-  google.protobuf.Timestamp created_at = 6;
-}
-```
-
-### 2. Generate for Dart (Client)
-
-```bash
-cd model
-protoc --dart_out=../client/common/peers_touch_base/lib/model/domain \
-       --proto_path=. \
-       domain/actor/actor.proto
-```
-
-### 3. Generate for Go (Station)
-
-```bash
-cd model
-protoc --go_out=../apps/station/app/subserver/auth/model \
-       --proto_path=. \
-       domain/actor/actor.proto
-```
-
-### 4. Use in Code
-
-**Dart (Client)**:
-```dart
-import 'package:peers_touch_base/model/domain/actor/actor.pb.dart';
-
-final actor = Actor()
-  ..id = '123'
-  ..handle = 'alice'
-  ..displayName = 'Alice';
-```
-
-**Go (Station)**:
-```go
-import "github.com/peers-labs/peers-touch/apps/station/app/model"
-
-actor := &model.Actor{
-    Id: "123",
-    Handle: "alice",
-    DisplayName: "Alice",
-}
-```
+If a concept is shared across runtimes or crosses the Client / Model / Station boundary, its contract belongs in proto first.
 
 ---
 
-## 📦 Existing Domain Models
+## 2. What This Document Defines
 
-### Core Models
+This document defines:
 
-| Proto File | Purpose | Used By |
-|-----------|---------|---------|
-| `actor/actor.proto` | User/Bot identity | All modules |
-| `ai_box/ai_models.proto` | AI model definitions | AI Chat |
-| `ai_box/chat.proto` | Chat messages | AI Chat |
-| `core/page.proto` | Pagination | All list APIs |
+- where shared model truth lives
+- what counts as a generated contract consumer
+- how generated outputs relate to the source proto
+- what is forbidden when evolving shared models
 
-### Adding New Models
+This document does not define:
 
-**Step 1**: Create `.proto` file in `model/domain/<category>/`
-
-**Step 2**: Define message structure
-
-**Step 3**: Run generation scripts
-
-**Step 4**: Import generated files in client/station code
-
-**Step 5**: NEVER manually edit generated files
+- one platform's internal DTO conventions
+- one platform's local-only runtime state shape
+- detailed generation implementation of every build script
 
 ---
 
-## ✅ Rules
+## 3. Source Of Truth Rule
 
-1. **No Manual Models**: Never create model classes by hand
-2. **Proto First**: Always define in .proto before coding
-3. **No Edits**: Never edit generated `.pb.dart` or `.pb.go` files
-4. **Package Imports**: Always use package imports for generated files
-5. **Version Control**: Commit `.proto` files, not generated files (add to .gitignore if needed)
+### 3.1 Only One Shared Contract Truth
 
----
+For shared models:
 
-## 🚫 Anti-Patterns
+- `.proto` is the truth
+- generated files are derivatives
+- manual replicas are forbidden
 
-### ❌ WRONG: Manual Model
+### 3.2 Generated Files Are Not Truth
 
-```dart
-// DON'T DO THIS
-class User {
-  final String id;
-  final String name;
-  
-  User({required this.id, required this.name});
-}
-```
+Generated files exist to serve runtimes and toolchains. They must not become the place where field meaning or ownership is redefined.
 
-### ✅ CORRECT: Proto-Generated Model
+That means:
 
-```dart
-// DO THIS
-import 'package:peers_touch_base/model/domain/actor/actor.pb.dart';
-
-// Use the generated Actor class
-final user = Actor()..id = '123'..displayName = 'Alice';
-```
+- do not edit generated files by hand
+- do not fix contract problems only in generated output
+- do not let one platform's hand-written DTO drift away from the proto contract
 
 ---
 
-## 📚 Related Documents
+## 4. Contract Ownership Boundaries
 
-- **Architecture**: [11-architecture.md](./11-architecture.md)
-- **Coding Standards**: [13-coding-standards.md](./13-coding-standards.md)
+### 4.1 What Belongs In Proto
+
+Put a model in proto when it represents:
+
+- shared API request/response structure
+- shared event payloads
+- cross-runtime business entities
+- enums and status values that must stay aligned across runtimes
+
+### 4.2 What Does Not Need To Be Proto
+
+These can remain local to one runtime when they are not shared contracts:
+
+- transient UI-only view state
+- local form state
+- local orchestration-only objects
+- platform-private adapter or persistence helpers
 
 ---
 
-*Proto files are the contract between client and station. Treat them as sacred.*
+## 5. Current Consumer Directions
+
+The repository currently contains multiple generated consumer targets.
+
+### 5.1 Station
+
+Station consumes generated Go contracts under active `apps/station/...` paths, including:
+
+- `apps/station/frame/touch/model/`
+- selected app-layer generated model targets such as subserver-owned model directories
+
+### 5.2 Desktop
+
+Desktop consumes generated contracts in two forms:
+
+- TypeScript generated files under `apps/desktop/src/gen/proto/`
+- Rust `prost-build` outputs under `apps/desktop/src-tauri/src/model/`
+
+### 5.3 Mobile
+
+Mobile consumes generated contracts under app-owned directories:
+
+- Android output under `apps/mobile/android/...`
+- iOS output under `apps/mobile/ios/PeersTouch/Core/Proto/`
+
+The exact build implementation may evolve, but the ownership rule does not:
+
+- generated outputs follow active app paths
+- they do not redefine contract truth
+
+---
+
+## 6. Generation Entry Rules
+
+Repository policy entry points are:
+
+- shared / server-side generation: `./model/build.sh`
+- mobile generation: `./tooling/scripts/proto-gen-mobile.sh`
+
+Additional platform-specific generation may exist inside a platform build pipeline, such as Desktop Rust build-time generation.
+
+Regardless of entry point:
+
+- the source remains `model/domain/*.proto`
+- generated outputs must follow active platform paths
+- deprecated Flutter/Dart generation paths must not be expanded
+
+---
+
+## 7. Evolution Rules
+
+When changing a proto contract:
+
+1. update the `.proto` first
+2. preserve backward-compatible field evolution where required
+3. regenerate affected targets
+4. update consuming code
+5. verify that no platform-specific manual contract has drifted
+
+### 7.1 Compatibility Constraints
+
+- append fields instead of reusing removed field numbers
+- do not silently change semantic meaning of an existing field
+- define shared enums in proto, not separately in each platform
+- keep package and ownership semantics stable unless intentionally migrated
+
+---
+
+## 8. Forbidden Patterns
+
+- hand-writing a parallel shared model because generation feels inconvenient
+- editing `.pb.go`, generated Rust model files, generated TS protobuf files, or Mobile generated outputs manually
+- using JSON-only hand-written cross-runtime DTOs where the same concept already belongs in proto
+- letting generated artifacts land outside active app-owned directories
+- expanding deprecated Flutter/Dart shared-generation paths as if they were still primary
+
+---
+
+## 9. Minimal Change Flow
+
+When a new shared business concept appears:
+
+1. add or update the proto definition
+2. regenerate affected outputs
+3. adapt Station handlers and services
+4. adapt Desktop and Mobile consumers
+5. verify compatibility and ownership boundaries
+
+This keeps contract change upstream and implementation change downstream.
+
+---
+
+## 10. Related Documents
+
+- `docs/global/architecture.md`
+- `docs/client/mobile/base.md`
+- `docs/station/base.md`
+- `docs/station/subserver-standard.md`
+
+---
+
+*Proto files are the shared contract truth. Generated files serve runtimes; they do not redefine the model.*

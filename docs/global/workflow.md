@@ -6,9 +6,10 @@
 
 ## 1) Read before coding
 
-1. [10-project-identity.md](./10-project-identity.md)
-2. [11-architecture.md](./11-architecture.md)
-3. [12-domain-model.md](./12-domain-model.md)
+1. [project-identity.md](./project-identity.md)
+2. [architecture.md](./architecture.md)
+3. [domain-model.md](./domain-model.md)
+4. [docs/README.md](../README.md)
 
 Then select platform docs:
 - Desktop: `docs/client/desktop/`
@@ -20,7 +21,8 @@ Then select platform docs:
 ## 2) Use correct paths
 
 - Desktop: `apps/desktop`
-- Mobile: `apps/mobile/flutter`
+- Mobile Android: `apps/mobile/android`
+- Mobile iOS: `apps/mobile/ios`
 - Station App: `apps/station/app`
 - Station Frame: `apps/station/frame`
 - Domain Model: `model/domain`
@@ -59,9 +61,8 @@ CI=false pnpm run tauri:build
 ### Mobile
 
 ```bash
-cd apps/mobile/flutter
-flutter analyze
-flutter test
+cd apps/mobile/android && ./gradlew build
+cd apps/mobile/ios && xcodebuild -scheme PeersTouch -configuration Debug build
 ```
 
 ### Station

@@ -12,7 +12,7 @@ mod state;
 
 use std::sync::Arc;
 use tauri::Manager;
-use interface::tauri_commands::{account, actor, admin, agent_turn, agents, applets, auth, channels, chat, cron, friend_chat, frontend_log, group_chat, i18n, mcp, memory, model_config, models, notebook, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
+use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agent_turn, agents, applets, auth, channels, chat, cron, friend_chat, frontend_log, group_chat, i18n, mcp, memory, model_config, models, notebook, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
 
 fn main() {
     let ctx = bootstrap::run();

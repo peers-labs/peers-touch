@@ -1,5 +1,8 @@
 # ADR-003: Social System Refactor - From ActivityPub to Modern Architecture
 
+> Historical ADR. This record captures an earlier refactor decision context and includes outdated stack assumptions such as Flutter/GetX-era client references. Do not treat it as the current source of truth.
+> Current architecture sources should be located from `docs/README.md`.
+
 **Status:** In Progress  
 **Date:** 2025-01-09  
 **Decision Makers:** Project Team  

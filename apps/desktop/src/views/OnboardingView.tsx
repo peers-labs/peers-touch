@@ -181,6 +181,8 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
 
   const peersTextOffset = 260;
 
+  const isTransition = phase === 'transition';
+
   return (
     <GlobalLayout sideNav={null}>
       <div
@@ -188,7 +190,6 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
           width: '100%',
           height: '100%',
           position: 'relative',
-          overflow: 'hidden',
           background: token.colorBgLayout,
         }}
       >
@@ -199,9 +200,8 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
             top: '50%',
             left: `calc(50% - ${peersTextOffset}px)`,
             transform: 'translate(-100%, -50%)',
-            opacity: phase === 'transition' ? 0 : 1,
+            opacity: isTransition ? 0 : 1,
             transition: `opacity ${TRANSITION_DURATION}ms ease`,
-            zIndex: 1,
             pointerEvents: 'none',
           }}
         >
@@ -213,11 +213,10 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
         {/* LoginPage — full area, card naturally centers itself */}
         <div
           style={{
-            width: '100%',
-            height: '100%',
-            opacity: phase === 'transition' ? 0 : 1,
-            transform: phase === 'transition' ? 'translateX(30px)' : 'translateX(0)',
-            transition: `all ${TRANSITION_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+            position: 'absolute',
+            inset: 0,
+            opacity: isTransition ? 0 : 1,
+            transition: `opacity ${TRANSITION_DURATION}ms ease`,
           }}
         >
           <LoginPage
@@ -226,14 +225,14 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
           />
         </div>
 
-        {/* Language switcher — bottom right corner */}
+        {/* Language switcher — bottom right, above everything */}
         <div
           style={{
             position: 'absolute',
-            bottom: 16,
-            right: 16,
-            zIndex: 10,
-            opacity: phase === 'transition' ? 0 : 1,
+            bottom: 20,
+            right: 20,
+            zIndex: 100,
+            opacity: isTransition ? 0 : 1,
             transition: `opacity ${TRANSITION_DURATION}ms ease`,
           }}
         >

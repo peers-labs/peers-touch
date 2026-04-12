@@ -1,5 +1,8 @@
 # Friend Chat Architecture Design
 
+> Historical proposal. This document preserves an earlier Friend Chat architecture draft with phase planning and older path conventions. It is not the current Station, Client, or architecture source of truth.
+> Current sources should be located from `docs/README.md`.
+ 
 > **Status**: Draft  
 > **Version**: 4.0 (Refactored)  
 > **Date**: 2026-01-22  

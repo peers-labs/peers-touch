@@ -1,5 +1,7 @@
 # Mobile 端实现计划
 
+> Execution plan only. This file tracks implementation order and progress. It is not the Mobile platform architecture source of truth.
+
 本文档是 Peers Touch Mobile（Android + iOS）从骨架到可运行产品的完整实施路线图。
 
 ---

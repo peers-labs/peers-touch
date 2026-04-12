@@ -144,7 +144,7 @@
 │                      Station Layer                                  │
 │                             │                                        │
 │  ┌──────────────────────────▼───────────────────────────────────┐  │
-│  │              memory SubServer (Go)                            │  │
+│  │          Memory capability runtime (Go / Agent-owned)         │  │
 │  │                                                               │  │
 │  │  ┌──────────────────────────────────────────────────────┐   │  │
 │  │  │  Handler Layer (handler/)                             │   │  │
@@ -180,16 +180,16 @@
 │  │  │  │  + pgvector     │      │  (调用 Provider 体系) │    │   │  │
 │  │  │  │                │      │                       │    │   │  │
 │  │  │  │  记忆存储       │      │  文本 → 向量          │    │   │  │
-│  │  │  │  向量索引       │      │  复用 ai_chat 的      │    │   │  │
+│  │  │  │  向量索引       │      │  复用 Agent 的        │    │   │  │
 │  │  │  │  全文检索       │      │  Provider/Model 配置  │    │   │  │
 │  │  │  └────────────────┘      └─────────────────────┘    │   │  │
 │  │  └──────────────────────────────────────────────────────┘   │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  ai_chat SubServer (已有)                                    │  │
-│  │  - 在 chat/completions 流程中调用 memory 的 Extraction       │  │
-│  │  - 在 chat/completions 流程中调用 memory 的 Injection        │  │
+│  │  agent SubServer（当前主线）                                  │  │
+│  │  - 在 turn/completion 流程中调用 memory 的 Extraction        │  │
+│  │  - 在 turn/completion 流程中调用 memory 的 Injection         │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -203,7 +203,7 @@
      │
      ▼
 ┌──────────────────────────────────────────────────────────┐
-│  ai_chat: POST /ai-chat/chat/completions                 │
+│  agent: turn/completion pipeline                         │
 │                                                           │
 │  Step 1: 检索相关记忆（Memory Retrieval）                 │
 │  ├── 从用户消息中提取语义 query                           │
@@ -518,7 +518,7 @@ message ImportMemoriesResponse {
   int32 failed = 3;
 }
 
-// ── 内部 API（ai_chat 调用 memory 用） ──
+// ── 内部 API（agent turn pipeline 调用 memory 用） ──
 
 // Retrieval：在生成回复前检索相关记忆
 message MemoryRetrievalRequest {
@@ -606,8 +606,8 @@ apps/station/app/subserver/memory/
 | `/memory/events` | GET | 查询审计事件 | JWT |
 | `/memory/export` | GET | 导出记忆 | JWT |
 | `/memory/import` | POST | 导入记忆 | JWT |
-| `/memory/internal/retrieve` | POST | 内部：检索记忆（ai_chat 调用） | Internal |
-| `/memory/internal/extract` | POST | 内部：提取记忆（ai_chat 调用） | Internal |
+| `/memory/internal/retrieve` | POST | 内部：检索记忆（agent pipeline 调用） | Internal |
+| `/memory/internal/extract` | POST | 内部：提取记忆（agent pipeline 调用） | Internal |
 
 ### 5.3 配置
 
@@ -620,7 +620,7 @@ peers:
           enabled: true
           storage: postgres           # postgres（pgvector）
           embedding:
-            provider: ""              # 留空则复用 ai_chat 的默认 Provider
+            provider: ""              # 留空则复用 Agent 的默认 Provider
             model: ""                 # 留空则自动选择 Provider 的 embedding 模型
             dimensions: 0             # 0 = 自动检测
           retrieval:
@@ -863,7 +863,7 @@ Station ──── WRITE ────→ PostgreSQL + pgvector
 
 | 操作 | 发起方 | 执行方 | 说明 |
 |------|--------|--------|------|
-| 自动提取 | Station (ai_chat 触发) | Station memory service | 用户无感知 |
+| 自动提取 | Station（agent turn 流程触发） | Station memory service | 用户无感知 |
 | 浏览/搜索 | 客户端 | Station API | 端侧缓存摘要 |
 | 删除 | 客户端 | Station API | 用户主动删除 |
 | Persona 查看 | 客户端 | Station API | 缓存 30 分钟 |
@@ -931,9 +931,9 @@ Station ──── WRITE ────→ PostgreSQL + pgvector
 
 ## 10. 与现有代码的集成点
 
-### 10.1 ai_chat SubServer 集成
+### 10.1 Agent turn pipeline 集成
 
-`ai_chat` 的 `chat/completions` 流程是记忆系统的核心集成点：
+Agent 的 turn/completion 流程是记忆系统的核心集成点：
 
 ```go
 // service/chat_service.go 中的 HandleCompletion 方法
@@ -1051,30 +1051,13 @@ Rules:
 
 ---
 
-## 12. 实施路线
+## 12. 执行计划入口
 
-### Phase 1: 基础能力（Station + Proto）
-1. 创建 `model/domain/memory/` Proto 定义
-2. 实现 Station `memory` SubServer 骨架（plugin + options + handler + service + db）
-3. 实现记忆 CRUD + 搜索 API
-4. 实现 Embedding 集成（复用 Provider 体系）
+本文只定义 Agent Memory 的领域模型、检索/注入/提取架构、同步与存储设计。
 
-### Phase 2: AI 集成（核心价值）
-1. 实现 Extraction Service（从对话提取记忆）
-2. 实现 Retrieval Service（混合检索）
-3. 实现 Injection Service（注入 Agent 上下文）
-4. 在 `ai_chat` 的 `chat/completions` 流程中集成
+如需查看实施阶段与落地顺序，请看：
 
-### Phase 3: Desktop 对接
-1. Desktop Rust 层改为调用 Station API（替换 stub）
-2. 前端对接真实数据（保持现有 UI）
-3. Memory 配置同步到 Station
-
-### Phase 4: 生命周期 + 多端同步
-1. 实现时间衰减 + 合并 + 归档定时任务
-2. 实现 Persona 自动生成
-3. SSE 事件推送
-4. Mobile 端适配
+- `execution-plans/agent-memory-adoption-plan.md`
 
 ---
 
@@ -1085,5 +1068,5 @@ Rules:
 - [第一性原理](../global/first-principles.md)
 - [SubServer 开发标准](../station/subserver-standard.md)
 - [多端同步协议](../client/mobile/sync-protocol.md)
-- [Station/Desktop 职责边界](./station-desktop-scope-boundary.md)
+- [Station/Desktop 职责边界](../boundaries/station-desktop-scope-boundary.md)
 - [统一运行时存储架构](./storage/unified-runtime-storage-architecture.md)
