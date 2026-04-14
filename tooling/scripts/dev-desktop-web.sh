@@ -1,119 +1,115 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-# dev-desktop-web.sh — Desktop pure Web dev mode
+# dev-desktop-web.sh — Desktop Web dev mode (browser debugging)
 #
-# Change record:
-# - Reason: split Desktop app/web startup into two independent scripts.
-# - Change: this script now starts Vite only and no longer launches Tauri.
-# - Impact: browser preview can run independently and concurrently with
-#   dev-desktop.sh, which now owns App startup only.
+# Starts a complete, independent Desktop Web stack:
+#   station → desktop-rust (profile=desktop-web, gateway=:3031) → browser
 #
-# Usage:
-#   ./tooling/scripts/dev-desktop-web.sh
-#   Then open http://localhost:3210 in Chrome / Firefox / Safari.
+# This instance is fully isolated from dev-desktop-app.sh.
+# They run separate Rust BFF processes with separate sessions,
+# so you can log in with different accounts simultaneously.
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DESKTOP_DIR="$PROJECT_ROOT/apps/desktop"
-WEB_PID_FILE="/tmp/peers-touch-desktop-web.pid"
-WEB_PORT="${WEB_PORT:-3210}"
+
+PROFILE="desktop-web"
+GATEWAY_PORT=3031
+WEB_PORT="${WEB_PORT:-3211}"
 WEB_URL="http://localhost:$WEB_PORT"
+STATION_PORT="${STATION_PORT:-18080}"
+DASHBOARD_URL="http://localhost:${STATION_PORT}/dashboard/"
+VITE_PID_FILE="/tmp/peers-touch-desktop-vite-${PROFILE}.pid"
 
 source "$SCRIPT_DIR/_ensure-station.sh"
+source "$SCRIPT_DIR/_ensure-desktop-rust.sh"
 
 if [[ ! -d "$DESKTOP_DIR" ]]; then
   echo "[ERROR] desktop app dir not found: $DESKTOP_DIR"
   exit 1
 fi
 
+# ── 1. Station ────────────────────────────────────────────────
 ensure_station_ready "$PROJECT_ROOT"
 
-cd "$DESKTOP_DIR"
-
+# ── 2. Vite (frontend dev server) ────────────────────────────
 web_is_listening() {
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -tiTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1
-  else
-    curl -fsS -m 1 "$WEB_URL" >/dev/null 2>&1
-  fi
+  lsof -tiTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1
 }
 
-web_listener_pids() {
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -tiTCP:"$WEB_PORT" -sTCP:LISTEN 2>/dev/null || true
-  fi
-}
-
-web_pid_alive() {
-  if [[ -f "$WEB_PID_FILE" ]]; then
-    local pid
-    pid="$(cat "$WEB_PID_FILE" 2>/dev/null || true)"
-    if [[ -n "${pid:-}" ]] && ps -p "$pid" >/dev/null 2>&1; then
-      return 0
-    fi
-    rm -f "$WEB_PID_FILE"
-  fi
-  return 1
-}
-
+VITE_PID=""
 if web_is_listening; then
-  LISTENER_PIDS="$(web_listener_pids | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-  echo ""
-  echo "┌──────────────────────────────────────────────────────┐"
-  echo "│  Desktop Web dev is already running                  │"
-  echo "│                                                      │"
-  echo "│  Open in browser: $WEB_URL                           │"
-  echo "│  PID            : ${LISTENER_PIDS:-unknown}                                │"
-  echo "│                                                      │"
-  echo "│  This script starts Vite only.                       │"
-  echo "│  Run dev-desktop.sh separately for the App.          │"
-  echo "└──────────────────────────────────────────────────────┘"
-  echo ""
-  exit 0
+  echo "[INFO] Vite already running on $WEB_URL"
 else
-  echo ""
-  echo "┌──────────────────────────────────────────────────────┐"
-  echo "│  Peers Touch Desktop — Web Dev Mode                  │"
-  echo "│                                                      │"
-  echo "│  Browser URL: $WEB_URL                               │"
-  echo "│  Starts     : Vite only                              │"
-  echo "│                                                      │"
-  echo "│  Run dev-desktop.sh in another terminal if you       │"
-  echo "│  also want the App window at the same time.          │"
-  echo "│                                                      │"
-  echo "│  tsx/css changes → instant hot reload                │"
-  echo "│                                                      │"
-  echo "│  Ctrl+C to stop                                      │"
-  echo "└──────────────────────────────────────────────────────┘"
-  echo ""
+  echo "[INFO] Starting Vite..."
+  (cd "$DESKTOP_DIR" && VITE_GATEWAY_PORT="$GATEWAY_PORT" pnpm dev --port "$WEB_PORT") &
+  VITE_PID=$!
+  echo "$VITE_PID" > "$VITE_PID_FILE"
+
+  for _ in {1..60}; do
+    if ! ps -p "$VITE_PID" >/dev/null 2>&1; then
+      echo "[ERROR] Vite process exited unexpectedly"
+      exit 1
+    fi
+    if web_is_listening; then
+      echo "[INFO] Vite ready: $WEB_URL"
+      break
+    fi
+    sleep 1
+  done
+
+  if ! web_is_listening; then
+    echo "[ERROR] Vite did not start within 60s"
+    exit 1
+  fi
 fi
 
-pnpm dev &
-WEB_PID=$!
-echo "$WEB_PID" > "$WEB_PID_FILE"
+# ── 3. Desktop Rust BFF (headless — window hidden) ───────────
+cd "$DESKTOP_DIR"
+ensure_desktop_rust_ready "$DESKTOP_DIR" "$GATEWAY_PORT" "$PROFILE" "$WEB_PORT" --headless
 
+# ── banner ────────────────────────────────────────────────────
+echo ""
+echo "  ┌─────────────────────────────────────────────────────────┐"
+echo "  │  Peers Touch Desktop — Web Dev Mode                     │"
+echo "  │                                                         │"
+echo "  │  Profile   : $PROFILE                              │"
+echo "  │  Browser   : $WEB_URL                        │"
+echo "  │  Gateway   : :$GATEWAY_PORT                                 │"
+echo "  │  Station   : :$STATION_PORT                                │"
+echo "  │  Dashboard : $DASHBOARD_URL  │"
+echo "  │                                                         │"
+echo "  │  Open $WEB_URL in any browser.              │"
+echo "  │  App and Web run separate sessions — you can log in     │"
+echo "  │  with different accounts for cross-account testing.     │"
+echo "  │                                                         │"
+echo "  │  tsx/css → Vite hot reload                              │"
+echo "  │  .rs    → auto recompile + gateway restart              │"
+echo "  │                                                         │"
+echo "  │  Ctrl+C to stop                                         │"
+echo "  └─────────────────────────────────────────────────────────┘"
+echo ""
+
+# ── cleanup & wait ────────────────────────────────────────────
 cleanup() {
-  if [[ -n "${WEB_PID:-}" ]] && ps -p "$WEB_PID" >/dev/null 2>&1; then
-    kill "$WEB_PID" 2>/dev/null || true
+  if [[ -n "${VITE_PID:-}" ]] && ps -p "$VITE_PID" >/dev/null 2>&1; then
+    kill "$VITE_PID" 2>/dev/null || true
   fi
-  rm -f "$WEB_PID_FILE"
+  rm -f "$VITE_PID_FILE"
+  if [[ -n "${TAURI_PID:-}" ]] && ps -p "$TAURI_PID" >/dev/null 2>&1; then
+    kill "$TAURI_PID" 2>/dev/null || true
+  fi
+  rm -f "$DESKTOP_RUST_PID_FILE"
 }
 trap cleanup EXIT INT TERM
 
-for _ in {1..60}; do
-  if ! ps -p "$WEB_PID" >/dev/null 2>&1; then
-    echo "[ERROR] Vite dev process exited unexpectedly"
-    exit 1
-  fi
-  if web_is_listening; then
-    echo "[INFO] Desktop Web ready: $WEB_URL"
-    wait "$WEB_PID"
-    exit $?
-  fi
-  sleep 1
-done
-
-echo "[ERROR] Vite dev server did not start within 60s"
-exit 1
+if [[ -n "${VITE_PID:-}" ]]; then
+  wait "$VITE_PID" || true
+elif [[ -n "${TAURI_PID:-}" ]]; then
+  wait "$TAURI_PID" || true
+else
+  echo "[INFO] All processes were already running. Press Ctrl+C to exit."
+  while true; do sleep 60; done
+fi

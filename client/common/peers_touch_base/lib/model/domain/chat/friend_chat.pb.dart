@@ -17,6 +17,7 @@ import 'package:protobuf/protobuf.dart' as $pb;
 import 'package:peers_touch_base/model/google/protobuf/timestamp.pb.dart'
     as $0;
 
+import 'chat.pb.dart' as $1;
 import 'friend_chat.pbenum.dart';
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
@@ -199,6 +200,7 @@ class FriendChatMessage extends $pb.GeneratedMessage {
     $0.Timestamp? readAt,
     $0.Timestamp? createdAt,
     $0.Timestamp? updatedAt,
+    $core.List<$core.int>? encryptedPayload,
   }) {
     final result = create();
     if (ulid != null) result.ulid = ulid;
@@ -215,6 +217,7 @@ class FriendChatMessage extends $pb.GeneratedMessage {
     if (readAt != null) result.readAt = readAt;
     if (createdAt != null) result.createdAt = createdAt;
     if (updatedAt != null) result.updatedAt = updatedAt;
+    if (encryptedPayload != null) result.encryptedPayload = encryptedPayload;
     return result;
   }
 
@@ -254,6 +257,8 @@ class FriendChatMessage extends $pb.GeneratedMessage {
         subBuilder: $0.Timestamp.create)
     ..aOM<$0.Timestamp>(14, _omitFieldNames ? '' : 'updatedAt',
         subBuilder: $0.Timestamp.create)
+    ..a<$core.List<$core.int>>(
+        15, _omitFieldNames ? '' : 'encryptedPayload', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -404,6 +409,16 @@ class FriendChatMessage extends $pb.GeneratedMessage {
   void clearUpdatedAt() => $_clearField(14);
   @$pb.TagNumber(14)
   $0.Timestamp ensureUpdatedAt() => $_ensure(13);
+
+  /// E2E ciphertext; when set, content may be empty or a non-secret placeholder.
+  @$pb.TagNumber(15)
+  $core.List<$core.int> get encryptedPayload => $_getN(14);
+  @$pb.TagNumber(15)
+  set encryptedPayload($core.List<$core.int> value) => $_setBytes(14, value);
+  @$pb.TagNumber(15)
+  $core.bool hasEncryptedPayload() => $_has(14);
+  @$pb.TagNumber(15)
+  void clearEncryptedPayload() => $_clearField(15);
 }
 
 class FriendMessageAttachment extends $pb.GeneratedMessage {
@@ -823,6 +838,7 @@ class SendMessageRequest extends $pb.GeneratedMessage {
     $core.String? content,
     $core.Iterable<FriendMessageAttachment>? attachments,
     $core.String? replyToUlid,
+    $core.List<$core.int>? encryptedPayload,
   }) {
     final result = create();
     if (sessionUlid != null) result.sessionUlid = sessionUlid;
@@ -831,6 +847,7 @@ class SendMessageRequest extends $pb.GeneratedMessage {
     if (content != null) result.content = content;
     if (attachments != null) result.attachments.addAll(attachments);
     if (replyToUlid != null) result.replyToUlid = replyToUlid;
+    if (encryptedPayload != null) result.encryptedPayload = encryptedPayload;
     return result;
   }
 
@@ -856,6 +873,8 @@ class SendMessageRequest extends $pb.GeneratedMessage {
     ..pPM<FriendMessageAttachment>(5, _omitFieldNames ? '' : 'attachments',
         subBuilder: FriendMessageAttachment.create)
     ..aOS(6, _omitFieldNames ? '' : 'replyToUlid')
+    ..a<$core.List<$core.int>>(
+        7, _omitFieldNames ? '' : 'encryptedPayload', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -924,6 +943,15 @@ class SendMessageRequest extends $pb.GeneratedMessage {
   $core.bool hasReplyToUlid() => $_has(5);
   @$pb.TagNumber(6)
   void clearReplyToUlid() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.List<$core.int> get encryptedPayload => $_getN(6);
+  @$pb.TagNumber(7)
+  set encryptedPayload($core.List<$core.int> value) => $_setBytes(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasEncryptedPayload() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearEncryptedPayload() => $_clearField(7);
 }
 
 class SendMessageResponse extends $pb.GeneratedMessage {
@@ -1147,6 +1175,165 @@ class GetMessagesResponse extends $pb.GeneratedMessage {
   $core.bool hasNextCursor() => $_has(2);
   @$pb.TagNumber(3)
   void clearNextCursor() => $_clearField(3);
+}
+
+class SearchFriendMessagesRequest extends $pb.GeneratedMessage {
+  factory SearchFriendMessagesRequest({
+    $core.String? query,
+    $core.String? sessionUlid,
+    $core.int? limit,
+    $core.int? offset,
+  }) {
+    final result = create();
+    if (query != null) result.query = query;
+    if (sessionUlid != null) result.sessionUlid = sessionUlid;
+    if (limit != null) result.limit = limit;
+    if (offset != null) result.offset = offset;
+    return result;
+  }
+
+  SearchFriendMessagesRequest._();
+
+  factory SearchFriendMessagesRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SearchFriendMessagesRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SearchFriendMessagesRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'query')
+    ..aOS(2, _omitFieldNames ? '' : 'sessionUlid')
+    ..aI(3, _omitFieldNames ? '' : 'limit')
+    ..aI(4, _omitFieldNames ? '' : 'offset')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchFriendMessagesRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchFriendMessagesRequest copyWith(
+          void Function(SearchFriendMessagesRequest) updates) =>
+      super.copyWith(
+              (message) => updates(message as SearchFriendMessagesRequest))
+          as SearchFriendMessagesRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SearchFriendMessagesRequest create() =>
+      SearchFriendMessagesRequest._();
+  @$core.override
+  SearchFriendMessagesRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SearchFriendMessagesRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SearchFriendMessagesRequest>(create);
+  static SearchFriendMessagesRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get query => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set query($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasQuery() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearQuery() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get sessionUlid => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set sessionUlid($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasSessionUlid() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSessionUlid() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get limit => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set limit($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasLimit() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearLimit() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get offset => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set offset($core.int value) => $_setSignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasOffset() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearOffset() => $_clearField(4);
+}
+
+class SearchFriendMessagesResponse extends $pb.GeneratedMessage {
+  factory SearchFriendMessagesResponse({
+    $core.Iterable<FriendChatMessage>? messages,
+    $core.int? total,
+  }) {
+    final result = create();
+    if (messages != null) result.messages.addAll(messages);
+    if (total != null) result.total = total;
+    return result;
+  }
+
+  SearchFriendMessagesResponse._();
+
+  factory SearchFriendMessagesResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SearchFriendMessagesResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SearchFriendMessagesResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..pPM<FriendChatMessage>(1, _omitFieldNames ? '' : 'messages',
+        subBuilder: FriendChatMessage.create)
+    ..aI(2, _omitFieldNames ? '' : 'total')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchFriendMessagesResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SearchFriendMessagesResponse copyWith(
+          void Function(SearchFriendMessagesResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as SearchFriendMessagesResponse))
+          as SearchFriendMessagesResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SearchFriendMessagesResponse create() =>
+      SearchFriendMessagesResponse._();
+  @$core.override
+  SearchFriendMessagesResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SearchFriendMessagesResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SearchFriendMessagesResponse>(create);
+  static SearchFriendMessagesResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<FriendChatMessage> get messages => $_getList(0);
+
+  @$pb.TagNumber(2)
+  $core.int get total => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set total($core.int value) => $_setSignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasTotal() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearTotal() => $_clearField(2);
 }
 
 class CreateSessionRequest extends $pb.GeneratedMessage {
@@ -2436,6 +2623,529 @@ class GetStatsResponse extends $pb.GeneratedMessage {
   $core.bool hasStatus() => $_has(2);
   @$pb.TagNumber(3)
   void clearStatus() => $_clearField(3);
+}
+
+class SendFriendRequestRequest extends $pb.GeneratedMessage {
+  factory SendFriendRequestRequest({
+    $core.String? receiverDid,
+    $core.String? message,
+  }) {
+    final result = create();
+    if (receiverDid != null) result.receiverDid = receiverDid;
+    if (message != null) result.message = message;
+    return result;
+  }
+
+  SendFriendRequestRequest._();
+
+  factory SendFriendRequestRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SendFriendRequestRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SendFriendRequestRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'receiverDid')
+    ..aOS(2, _omitFieldNames ? '' : 'message')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SendFriendRequestRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SendFriendRequestRequest copyWith(
+          void Function(SendFriendRequestRequest) updates) =>
+      super.copyWith((message) => updates(message as SendFriendRequestRequest))
+          as SendFriendRequestRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SendFriendRequestRequest create() => SendFriendRequestRequest._();
+  @$core.override
+  SendFriendRequestRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SendFriendRequestRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SendFriendRequestRequest>(create);
+  static SendFriendRequestRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get receiverDid => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set receiverDid($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasReceiverDid() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearReceiverDid() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get message => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set message($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasMessage() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearMessage() => $_clearField(2);
+}
+
+class SendFriendRequestResponse extends $pb.GeneratedMessage {
+  factory SendFriendRequestResponse({
+    $1.FriendRequest? request,
+  }) {
+    final result = create();
+    if (request != null) result.request = request;
+    return result;
+  }
+
+  SendFriendRequestResponse._();
+
+  factory SendFriendRequestResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SendFriendRequestResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SendFriendRequestResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOM<$1.FriendRequest>(1, _omitFieldNames ? '' : 'request',
+        subBuilder: $1.FriendRequest.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SendFriendRequestResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SendFriendRequestResponse copyWith(
+          void Function(SendFriendRequestResponse) updates) =>
+      super.copyWith((message) => updates(message as SendFriendRequestResponse))
+          as SendFriendRequestResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SendFriendRequestResponse create() => SendFriendRequestResponse._();
+  @$core.override
+  SendFriendRequestResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SendFriendRequestResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SendFriendRequestResponse>(create);
+  static SendFriendRequestResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $1.FriendRequest get request => $_getN(0);
+  @$pb.TagNumber(1)
+  set request($1.FriendRequest value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasRequest() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRequest() => $_clearField(1);
+  @$pb.TagNumber(1)
+  $1.FriendRequest ensureRequest() => $_ensure(0);
+}
+
+class AcceptFriendRequestRequest extends $pb.GeneratedMessage {
+  factory AcceptFriendRequestRequest({
+    $core.String? requestId,
+  }) {
+    final result = create();
+    if (requestId != null) result.requestId = requestId;
+    return result;
+  }
+
+  AcceptFriendRequestRequest._();
+
+  factory AcceptFriendRequestRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory AcceptFriendRequestRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'AcceptFriendRequestRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'requestId')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AcceptFriendRequestRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AcceptFriendRequestRequest copyWith(
+          void Function(AcceptFriendRequestRequest) updates) =>
+      super.copyWith(
+              (message) => updates(message as AcceptFriendRequestRequest))
+          as AcceptFriendRequestRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static AcceptFriendRequestRequest create() => AcceptFriendRequestRequest._();
+  @$core.override
+  AcceptFriendRequestRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static AcceptFriendRequestRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<AcceptFriendRequestRequest>(create);
+  static AcceptFriendRequestRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get requestId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set requestId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasRequestId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRequestId() => $_clearField(1);
+}
+
+class AcceptFriendRequestResponse extends $pb.GeneratedMessage {
+  factory AcceptFriendRequestResponse({
+    $1.FriendRequest? request,
+    FriendChatSession? session,
+  }) {
+    final result = create();
+    if (request != null) result.request = request;
+    if (session != null) result.session = session;
+    return result;
+  }
+
+  AcceptFriendRequestResponse._();
+
+  factory AcceptFriendRequestResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory AcceptFriendRequestResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'AcceptFriendRequestResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOM<$1.FriendRequest>(1, _omitFieldNames ? '' : 'request',
+        subBuilder: $1.FriendRequest.create)
+    ..aOM<FriendChatSession>(2, _omitFieldNames ? '' : 'session',
+        subBuilder: FriendChatSession.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AcceptFriendRequestResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AcceptFriendRequestResponse copyWith(
+          void Function(AcceptFriendRequestResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as AcceptFriendRequestResponse))
+          as AcceptFriendRequestResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static AcceptFriendRequestResponse create() =>
+      AcceptFriendRequestResponse._();
+  @$core.override
+  AcceptFriendRequestResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static AcceptFriendRequestResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<AcceptFriendRequestResponse>(create);
+  static AcceptFriendRequestResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $1.FriendRequest get request => $_getN(0);
+  @$pb.TagNumber(1)
+  set request($1.FriendRequest value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasRequest() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRequest() => $_clearField(1);
+  @$pb.TagNumber(1)
+  $1.FriendRequest ensureRequest() => $_ensure(0);
+
+  @$pb.TagNumber(2)
+  FriendChatSession get session => $_getN(1);
+  @$pb.TagNumber(2)
+  set session(FriendChatSession value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasSession() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSession() => $_clearField(2);
+  @$pb.TagNumber(2)
+  FriendChatSession ensureSession() => $_ensure(1);
+}
+
+class RejectFriendRequestRequest extends $pb.GeneratedMessage {
+  factory RejectFriendRequestRequest({
+    $core.String? requestId,
+  }) {
+    final result = create();
+    if (requestId != null) result.requestId = requestId;
+    return result;
+  }
+
+  RejectFriendRequestRequest._();
+
+  factory RejectFriendRequestRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory RejectFriendRequestRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'RejectFriendRequestRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'requestId')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RejectFriendRequestRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RejectFriendRequestRequest copyWith(
+          void Function(RejectFriendRequestRequest) updates) =>
+      super.copyWith(
+              (message) => updates(message as RejectFriendRequestRequest))
+          as RejectFriendRequestRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static RejectFriendRequestRequest create() => RejectFriendRequestRequest._();
+  @$core.override
+  RejectFriendRequestRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static RejectFriendRequestRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<RejectFriendRequestRequest>(create);
+  static RejectFriendRequestRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get requestId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set requestId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasRequestId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRequestId() => $_clearField(1);
+}
+
+class RejectFriendRequestResponse extends $pb.GeneratedMessage {
+  factory RejectFriendRequestResponse({
+    $1.FriendRequest? request,
+  }) {
+    final result = create();
+    if (request != null) result.request = request;
+    return result;
+  }
+
+  RejectFriendRequestResponse._();
+
+  factory RejectFriendRequestResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory RejectFriendRequestResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'RejectFriendRequestResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aOM<$1.FriendRequest>(1, _omitFieldNames ? '' : 'request',
+        subBuilder: $1.FriendRequest.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RejectFriendRequestResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RejectFriendRequestResponse copyWith(
+          void Function(RejectFriendRequestResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as RejectFriendRequestResponse))
+          as RejectFriendRequestResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static RejectFriendRequestResponse create() =>
+      RejectFriendRequestResponse._();
+  @$core.override
+  RejectFriendRequestResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static RejectFriendRequestResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<RejectFriendRequestResponse>(create);
+  static RejectFriendRequestResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $1.FriendRequest get request => $_getN(0);
+  @$pb.TagNumber(1)
+  set request($1.FriendRequest value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasRequest() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRequest() => $_clearField(1);
+  @$pb.TagNumber(1)
+  $1.FriendRequest ensureRequest() => $_ensure(0);
+}
+
+class ListFriendRequestsRequest extends $pb.GeneratedMessage {
+  factory ListFriendRequestsRequest({
+    $1.FriendRequestStatus? status,
+    $core.int? limit,
+    $core.int? offset,
+  }) {
+    final result = create();
+    if (status != null) result.status = status;
+    if (limit != null) result.limit = limit;
+    if (offset != null) result.offset = offset;
+    return result;
+  }
+
+  ListFriendRequestsRequest._();
+
+  factory ListFriendRequestsRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ListFriendRequestsRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ListFriendRequestsRequest',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..aE<$1.FriendRequestStatus>(1, _omitFieldNames ? '' : 'status',
+        enumValues: $1.FriendRequestStatus.values)
+    ..aI(2, _omitFieldNames ? '' : 'limit')
+    ..aI(3, _omitFieldNames ? '' : 'offset')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ListFriendRequestsRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ListFriendRequestsRequest copyWith(
+          void Function(ListFriendRequestsRequest) updates) =>
+      super.copyWith((message) => updates(message as ListFriendRequestsRequest))
+          as ListFriendRequestsRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ListFriendRequestsRequest create() => ListFriendRequestsRequest._();
+  @$core.override
+  ListFriendRequestsRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ListFriendRequestsRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ListFriendRequestsRequest>(create);
+  static ListFriendRequestsRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $1.FriendRequestStatus get status => $_getN(0);
+  @$pb.TagNumber(1)
+  set status($1.FriendRequestStatus value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasStatus() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearStatus() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get limit => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set limit($core.int value) => $_setSignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasLimit() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearLimit() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get offset => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set offset($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasOffset() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearOffset() => $_clearField(3);
+}
+
+class ListFriendRequestsResponse extends $pb.GeneratedMessage {
+  factory ListFriendRequestsResponse({
+    $core.Iterable<$1.FriendRequest>? requests,
+    $core.int? total,
+  }) {
+    final result = create();
+    if (requests != null) result.requests.addAll(requests);
+    if (total != null) result.total = total;
+    return result;
+  }
+
+  ListFriendRequestsResponse._();
+
+  factory ListFriendRequestsResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ListFriendRequestsResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ListFriendRequestsResponse',
+      package: const $pb.PackageName(
+          _omitMessageNames ? '' : 'peers_touch.model.chat.v1'),
+      createEmptyInstance: create)
+    ..pPM<$1.FriendRequest>(1, _omitFieldNames ? '' : 'requests',
+        subBuilder: $1.FriendRequest.create)
+    ..aI(2, _omitFieldNames ? '' : 'total')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ListFriendRequestsResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ListFriendRequestsResponse copyWith(
+          void Function(ListFriendRequestsResponse) updates) =>
+      super.copyWith(
+              (message) => updates(message as ListFriendRequestsResponse))
+          as ListFriendRequestsResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ListFriendRequestsResponse create() => ListFriendRequestsResponse._();
+  @$core.override
+  ListFriendRequestsResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ListFriendRequestsResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ListFriendRequestsResponse>(create);
+  static ListFriendRequestsResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<$1.FriendRequest> get requests => $_getList(0);
+
+  @$pb.TagNumber(2)
+  $core.int get total => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set total($core.int value) => $_setSignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasTotal() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearTotal() => $_clearField(2);
 }
 
 const $core.bool _omitFieldNames =

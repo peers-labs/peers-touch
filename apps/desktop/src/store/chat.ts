@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import { log } from '../utils/logger';
+import { resolveI18nValue } from '../i18n/index';
 import {
   api,
-  executeAgentTurn,
+  streamChat,
   type Message,
   type Session,
   type StreamEvent,
+  type ChatImageInput,
   type UploadResult,
   type AvailableModel,
   type Agent,
@@ -17,12 +19,17 @@ import {
   parseAgentParams,
 } from '../services/desktop_api';
 
+export type ToolCallStatus = 'queued' | 'pending' | 'success' | 'error';
+
 export interface ToolCallInfo {
   id: string;
   name: string;
   args?: string;
   result?: string;
   pending?: boolean;
+  status?: ToolCallStatus;
+  progress?: string;
+  progressPct?: number;
 }
 
 export interface ChatMessage {
@@ -38,6 +45,10 @@ export interface ChatMessage {
   timestamp: number;
   model?: string;
   error?: string;
+  thinking?: string;
+  thinkingDone?: boolean;
+  processDuration?: number;
+  lastEventAt?: number;
 }
 
 export interface PendingImage {
@@ -127,6 +138,98 @@ function tempId() {
   return `temp-${Date.now()}-${messageCounter++}`;
 }
 
+// ── Stream event reducer ────────────────────────────────────────────
+// Pure function: takes a message + event → returns updated message.
+// Shared by sendMessage, regenerateMessage, and any future streaming path.
+function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
+  switch (event.event) {
+    case 'text':
+      return { ...msg, content: msg.content + (event.data.content || ''), loading: true, lastEventAt: Date.now() };
+
+    case 'tool_call': {
+      const existing = msg.toolCalls || [];
+      return {
+        ...msg,
+        toolCalls: [...existing, {
+          id: event.data.id || tempId(),
+          name: event.data.name,
+          args: event.data.args,
+          pending: true,
+          status: 'pending' as ToolCallStatus,
+        }],
+        lastEventAt: Date.now(),
+      };
+    }
+
+    case 'tool_result': {
+      const calls = (msg.toolCalls || []).map((tc) =>
+        tc.name === event.data.name && tc.pending
+          ? { ...tc, result: event.data.content, pending: false, status: 'success' as ToolCallStatus }
+          : tc,
+      );
+      return { ...msg, toolCalls: calls, lastEventAt: Date.now() };
+    }
+
+    case 'image': {
+      const imgs = msg.images || [];
+      return { ...msg, images: [...imgs, event.data.url] };
+    }
+
+    case 'thinking':
+      return {
+        ...msg,
+        thinking: (msg.thinking || '') + (event.data.content || ''),
+        thinkingDone: !!event.data.done,
+        lastEventAt: Date.now(),
+      };
+
+    case 'progress': {
+      const progCalls = (msg.toolCalls || []).map((tc) =>
+        tc.pending
+          ? { ...tc, progress: event.data.message || tc.progress, progressPct: event.data.pct != null ? Number(event.data.pct) : tc.progressPct }
+          : tc,
+      );
+      return { ...msg, toolCalls: progCalls, lastEventAt: Date.now() };
+    }
+
+    case 'error': {
+      log.error('chat', 'Stream error', { event: event.data });
+      const errCalls = (msg.toolCalls || []).map((tc) =>
+        tc.pending ? { ...tc, result: `Error: ${event.data.error || 'Unknown'}`, pending: false, status: 'error' as ToolCallStatus } : tc,
+      );
+      return { ...msg, toolCalls: errCalls, error: event.data.error, loading: false };
+    }
+
+    case 'done': {
+      const doneCalls = (msg.toolCalls || []).map((tc) =>
+        tc.pending ? { ...tc, result: '(interrupted)', pending: false, status: 'success' as ToolCallStatus } : tc,
+      );
+      return {
+        ...msg,
+        toolCalls: doneCalls,
+        loading: false,
+        model: event.data.model || msg.model,
+        processDuration: Math.round((Date.now() - msg.timestamp) / 1000),
+      };
+    }
+
+    default:
+      return msg;
+  }
+}
+
+// Finalize any pending tool calls when streaming ends (e.g. abort / stopStreaming).
+function finalizeToolCalls(msg: ChatMessage): ChatMessage {
+  if (!msg.toolCalls?.some((tc) => tc.pending)) return msg;
+  return {
+    ...msg,
+    toolCalls: msg.toolCalls!.map((tc) =>
+      tc.pending ? { ...tc, pending: false, status: 'success' as ToolCallStatus } : tc,
+    ),
+    loading: false,
+  };
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   currentSessionKey: 'main',
@@ -153,7 +256,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadSessions: async () => {
     log.info('chat', 'Loading sessions');
     try {
-      const sessions = await api.listSessions();
+      const raw = await api.listSessions();
+      const sessions = raw.map((s) => ({
+        ...s,
+        title: resolveI18nValue(s.title),
+      }));
       log.info('chat', 'Sessions loaded', { count: sessions.length });
       set({ sessions });
       const { currentSessionKey, selectedModel, defaultModel } = get();
@@ -372,7 +479,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadAgents: async () => {
     try {
-      const agents = await api.listAgents();
+      const raw = await api.listAgents();
+      const agents = raw.map((a) => ({
+        ...a,
+        title: resolveI18nValue(a.title),
+        description: resolveI18nValue(a.description),
+      }));
       log.info('chat', 'Agents loaded', { count: agents.length });
       set({ agents });
       const current = agents.find((a) => a.name === get().selectedAgent);
@@ -464,11 +576,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
     log.debug('chat', 'Syncing messages', { key: get().currentSessionKey });
     const { currentSessionKey, messages: currentMessages } = get();
 
-    const errorMap = new Map<string, string>();
-    for (const m of currentMessages) {
-      if (m.error) {
-        errorMap.set(m.id, m.error);
-      }
+    const cotFields = (m: ChatMessage) => ({
+      toolCalls: m.toolCalls,
+      thinking: m.thinking,
+      thinkingDone: m.thinkingDone,
+      processDuration: m.processDuration,
+      lastEventAt: m.lastEventAt,
+      error: m.error,
+    });
+
+    const existingById = new Map<string, ChatMessage>();
+    const existingByIdx = new Map<number, ChatMessage>();
+    for (const [i, m] of currentMessages.entries()) {
+      existingById.set(m.id, m);
+      existingByIdx.set(i, m);
     }
 
     try {
@@ -503,27 +624,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
         chatMessages.push(m);
       }
 
-      // Preserve error states from the current session that aren't in server data.
-      // If the last current message has an error and the server didn't return a
-      // corresponding assistant message, keep it so the user sees the error.
-      if (errorMap.size > 0) {
-        const lastCurrent = currentMessages[currentMessages.length - 1];
-        if (lastCurrent?.error && lastCurrent.role === 'assistant') {
-          const serverHasIt = chatMessages.some(
-            (m) => m.role === 'assistant' && m.id === lastCurrent.id,
-          );
-          if (!serverHasIt) {
-            chatMessages.push({
-              ...lastCurrent,
-              loading: false,
-            });
-          }
+      const merged = chatMessages.map((serverMsg, i) => {
+        const mem = existingById.get(serverMsg.id)
+          || (existingByIdx.get(i)?.role === serverMsg.role ? existingByIdx.get(i) : undefined);
+        if (mem) {
+          const cot = cotFields(mem);
+          const hasCOT = cot.toolCalls || cot.thinking || cot.processDuration != null;
+          if (hasCOT) return { ...serverMsg, ...cot };
+        }
+        return serverMsg;
+      });
+
+      const lastCurrent = currentMessages[currentMessages.length - 1];
+      if (lastCurrent?.error && lastCurrent.role === 'assistant') {
+        const serverHasIt = merged.some((m) => m.id === lastCurrent.id);
+        if (!serverHasIt) {
+          merged.push({ ...lastCurrent, loading: false });
         }
       }
 
-      set({ messages: chatMessages });
+      set({ messages: merged });
     } catch {
-      // keep current messages if sync fails
     }
   },
 
@@ -546,6 +667,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const readyImages = pendingImages.filter((p) => !p.uploading && p.dataUrl);
     const imageUrls = readyImages.map((p) => p.servingUrl || p.previewUrl);
+
+    const chatImages: ChatImageInput[] = readyImages.map((p) => ({
+      data_url: p.dataUrl!,
+      mime_type: p.mimeType,
+      url: p.servingUrl,
+      filename: p.filename,
+    }));
 
     const userMsg: ChatMessage = {
       id: tempId(),
@@ -577,7 +705,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const assistantId = assistantMsg.id;
 
-    const controller = executeAgentTurn(
+    const controller = streamChat(
       content,
       currentSessionKey,
       selectedAgent || 'assistant',
@@ -586,56 +714,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const msgs = [...state.messages];
           const idx = msgs.findIndex((m) => m.id === assistantId);
           if (idx === -1) return state;
-
-          switch (event.event) {
-            case 'text':
-              msgs[idx] = {
-                ...msgs[idx],
-                content: msgs[idx].content + (event.data.content || ''),
-                loading: true,
-              };
-              break;
-            case 'tool_call': {
-              const existing = msgs[idx].toolCalls || [];
-              msgs[idx] = {
-                ...msgs[idx],
-                toolCalls: [...existing, {
-                  id: event.data.id || tempId(),
-                  name: event.data.name,
-                  args: event.data.args,
-                  pending: true,
-                }],
-              };
-              break;
-            }
-            case 'tool_result': {
-              const calls = (msgs[idx].toolCalls || []).map((tc) =>
-                tc.name === event.data.name && tc.pending
-                  ? { ...tc, result: event.data.content, pending: false }
-                  : tc,
-              );
-              msgs[idx] = { ...msgs[idx], toolCalls: calls };
-              break;
-            }
-            case 'image': {
-              const imgs = msgs[idx].images || [];
-              msgs[idx] = { ...msgs[idx], images: [...imgs, event.data.url] };
-              break;
-            }
-            case 'error':
-              log.error('chat', 'Stream error', { event: event.data });
-              msgs[idx] = {
-                ...msgs[idx],
-                error: event.data.error,
-                loading: false,
-              };
-              break;
-            case 'done':
-              if (event.data.model) {
-                msgs[idx] = { ...msgs[idx], model: event.data.model };
-              }
-              break;
-          }
+          msgs[idx] = applyStreamEvent(msgs[idx], event);
           return { messages: msgs };
         });
       },
@@ -658,6 +737,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().syncMessages();
         get().loadSessions();
       },
+      chatImages.length > 0 ? chatImages : undefined,
       modelOverride,
       selectedProviderId || undefined,
     );
@@ -725,7 +805,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const assistantId = assistantMsg.id;
 
-    const controller = executeAgentTurn(
+    const controller = streamChat(
       userMsg.content,
       currentSessionKey,
       selectedAgent || 'assistant',
@@ -734,42 +814,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const msgs = [...state.messages];
           const idx = msgs.findIndex((m) => m.id === assistantId);
           if (idx === -1) return state;
-
-          switch (event.event) {
-            case 'text':
-              msgs[idx] = { ...msgs[idx], content: msgs[idx].content + (event.data.content || ''), loading: true };
-              break;
-            case 'tool_call': {
-              const existing = msgs[idx].toolCalls || [];
-              msgs[idx] = {
-                ...msgs[idx],
-                toolCalls: [...existing, {
-                  id: event.data.id || tempId(),
-                  name: event.data.name,
-                  args: event.data.args,
-                  pending: true,
-                }],
-              };
-              break;
-            }
-            case 'tool_result': {
-              const calls = (msgs[idx].toolCalls || []).map((tc) =>
-                tc.name === event.data.name && tc.pending
-                  ? { ...tc, result: event.data.content, pending: false }
-                  : tc,
-              );
-              msgs[idx] = { ...msgs[idx], toolCalls: calls };
-              break;
-            }
-            case 'image': {
-              const imgs2 = msgs[idx].images || [];
-              msgs[idx] = { ...msgs[idx], images: [...imgs2, event.data.url] };
-              break;
-            }
-            case 'error':
-              msgs[idx] = { ...msgs[idx], error: event.data.error, loading: false };
-              break;
-          }
+          msgs[idx] = applyStreamEvent(msgs[idx], event);
           return { messages: msgs };
         });
       },
@@ -785,6 +830,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().syncMessages();
         get().loadSessions();
       },
+      userMsg.images?.map((url) => ({ data_url: url, mime_type: 'image/png' })),
       modelOverride,
       selectedProviderId || undefined,
     );
@@ -799,7 +845,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       abortController.abort();
       api.stopChat(currentSessionKey).catch(() => {});
       set((state) => ({
-        messages: state.messages.map((m) => m.loading ? { ...m, loading: false } : m),
+        messages: state.messages.map((m) => m.loading ? finalizeToolCalls({ ...m, loading: false }) : m),
         isStreaming: false,
         abortController: null,
       }));

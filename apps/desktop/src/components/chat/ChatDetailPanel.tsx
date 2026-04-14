@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button } from '@lobehub/ui';
 import { Divider, theme, Typography } from 'antd';
-import { X, Search, BarChart3, LogOut, Ban, UserPlus } from 'lucide-react';
+import { X, Search, BarChart3, LogOut, Ban, UserPlus, Lock } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
@@ -48,8 +48,10 @@ export function ChatDetailPanel() {
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers,
-    setShowDetail, loadGroupMembers,
+    setShowDetail, loadGroupMembers, loadGroups, selectGroup,
   } = useSocialChatStore();
+  const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
+  const ownFingerprint = useSocialChatStore((s) => s.ownFingerprint);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const isGroup = activeTab === 'group';
@@ -188,6 +190,8 @@ export function ChatDetailPanel() {
               if (activeUlid) {
                 try {
                   await api.groupChatLeaveGroup(activeUlid);
+                  await loadGroups();
+                  selectGroup('');
                   setShowDetail(false);
                 } catch (e) {
                   log.error('chat', 'leave group failed', e);
@@ -210,6 +214,22 @@ export function ChatDetailPanel() {
           </Button>
         )}
       </Flexbox>
+
+      {encryptionEnabled && (
+        <>
+          <Divider style={{ margin: '0 16px', minWidth: 'auto', width: 'auto' }} />
+          <Flexbox style={{ padding: '12px 16px' }} gap={8}>
+            <Flexbox horizontal align="center" gap={6}>
+              <Lock size={14} style={{ color: token.colorSuccess }} />
+              <Text strong style={{ fontSize: 13 }}>{t('chat.social.encryption.title')}</Text>
+            </Flexbox>
+            <Text type="secondary" style={{ fontSize: 11 }}>{t('chat.social.encryption.fingerprint')}</Text>
+            <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+              {ownFingerprint || '—'}
+            </Text>
+          </Flexbox>
+        </>
+      )}
     </Flexbox>
   );
 }

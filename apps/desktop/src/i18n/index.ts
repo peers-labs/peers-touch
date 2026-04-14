@@ -88,4 +88,14 @@ export function changeLanguage(lang: string) {
   localStorage.setItem('peers-touch-lang', lang);
 }
 
+const I18N_PREFIX = 'i18n:';
+
+export function resolveI18nValue(value: string | undefined | null): string {
+  if (!value) return '';
+  if (!value.startsWith(I18N_PREFIX)) return value;
+  const key = value.slice(I18N_PREFIX.length);
+  const resolved = i18n.t(key, { ns: 'common', defaultValue: '' });
+  return (resolved && resolved !== key) ? resolved : key;
+}
+
 export default i18n;

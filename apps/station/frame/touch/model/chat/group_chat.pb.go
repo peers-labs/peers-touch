@@ -590,22 +590,23 @@ func (x *GroupMember) GetInvitedBy() string {
 
 // 群消息
 type GroupMessage struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Ulid          string                    `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
-	GroupUlid     string                    `protobuf:"bytes,2,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	SenderDid     string                    `protobuf:"bytes,3,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
-	Type          GroupMessageType          `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupMessageType" json:"type,omitempty"`
-	Content       string                    `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
-	Attachments   []*GroupMessageAttachment `protobuf:"bytes,6,rep,name=attachments,proto3" json:"attachments,omitempty"`
-	ReplyToUlid   string                    `protobuf:"bytes,7,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`     // 回复的消息ID
-	MentionedDids []string                  `protobuf:"bytes,8,rep,name=mentioned_dids,json=mentionedDids,proto3" json:"mentioned_dids,omitempty"` // @的成员
-	MentionAll    bool                      `protobuf:"varint,9,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`         // @全体成员
-	SentAt        *timestamppb.Timestamp    `protobuf:"bytes,10,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
-	CreatedAt     *timestamppb.Timestamp    `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp    `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Deleted       bool                      `protobuf:"varint,13,opt,name=deleted,proto3" json:"deleted,omitempty"` // 是否被撤回
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState    `protogen:"open.v1"`
+	Ulid             string                    `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
+	GroupUlid        string                    `protobuf:"bytes,2,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
+	SenderDid        string                    `protobuf:"bytes,3,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
+	Type             GroupMessageType          `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupMessageType" json:"type,omitempty"`
+	Content          string                    `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
+	Attachments      []*GroupMessageAttachment `protobuf:"bytes,6,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	ReplyToUlid      string                    `protobuf:"bytes,7,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`     // 回复的消息ID
+	MentionedDids    []string                  `protobuf:"bytes,8,rep,name=mentioned_dids,json=mentionedDids,proto3" json:"mentioned_dids,omitempty"` // @的成员
+	MentionAll       bool                      `protobuf:"varint,9,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`         // @全体成员
+	SentAt           *timestamppb.Timestamp    `protobuf:"bytes,10,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
+	CreatedAt        *timestamppb.Timestamp    `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt        *timestamppb.Timestamp    `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Deleted          bool                      `protobuf:"varint,13,opt,name=deleted,proto3" json:"deleted,omitempty"` // 是否被撤回
+	EncryptedPayload []byte                    `protobuf:"bytes,14,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GroupMessage) Reset() {
@@ -727,6 +728,13 @@ func (x *GroupMessage) GetDeleted() bool {
 		return x.Deleted
 	}
 	return false
+}
+
+func (x *GroupMessage) GetEncryptedPayload() []byte {
+	if x != nil {
+		return x.EncryptedPayload
+	}
+	return nil
 }
 
 type GroupMessageAttachment struct {
@@ -1974,16 +1982,17 @@ func (x *RemoveMemberResponse) GetSuccess() bool {
 
 // 发送群消息
 type SendGroupMessageRequest struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	GroupUlid     string                    `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	Type          GroupMessageType          `protobuf:"varint,2,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupMessageType" json:"type,omitempty"`
-	Content       string                    `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
-	Attachments   []*GroupMessageAttachment `protobuf:"bytes,4,rep,name=attachments,proto3" json:"attachments,omitempty"`
-	ReplyToUlid   string                    `protobuf:"bytes,5,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
-	MentionedDids []string                  `protobuf:"bytes,6,rep,name=mentioned_dids,json=mentionedDids,proto3" json:"mentioned_dids,omitempty"`
-	MentionAll    bool                      `protobuf:"varint,7,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState    `protogen:"open.v1"`
+	GroupUlid        string                    `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
+	Type             GroupMessageType          `protobuf:"varint,2,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupMessageType" json:"type,omitempty"`
+	Content          string                    `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	Attachments      []*GroupMessageAttachment `protobuf:"bytes,4,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	ReplyToUlid      string                    `protobuf:"bytes,5,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
+	MentionedDids    []string                  `protobuf:"bytes,6,rep,name=mentioned_dids,json=mentionedDids,proto3" json:"mentioned_dids,omitempty"`
+	MentionAll       bool                      `protobuf:"varint,7,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`
+	EncryptedPayload []byte                    `protobuf:"bytes,8,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SendGroupMessageRequest) Reset() {
@@ -2063,6 +2072,13 @@ func (x *SendGroupMessageRequest) GetMentionAll() bool {
 		return x.MentionAll
 	}
 	return false
+}
+
+func (x *SendGroupMessageRequest) GetEncryptedPayload() []byte {
+	if x != nil {
+		return x.EncryptedPayload
+	}
+	return nil
 }
 
 type SendGroupMessageResponse struct {
@@ -3478,7 +3494,7 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"mutedUntil\x127\n" +
 	"\tjoined_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12\x1d\n" +
 	"\n" +
-	"invited_by\x18\b \x01(\tR\tinvitedBy\"\xc1\x04\n" +
+	"invited_by\x18\b \x01(\tR\tinvitedBy\"\xee\x04\n" +
 	"\fGroupMessage\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x1d\n" +
 	"\n" +
@@ -3498,7 +3514,8 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
-	"\adeleted\x18\r \x01(\bR\adeleted\"\x9c\x01\n" +
+	"\adeleted\x18\r \x01(\bR\adeleted\x12+\n" +
+	"\x11encrypted_payload\x18\x0e \x01(\fR\x10encryptedPayload\"\x9c\x01\n" +
 	"\x16GroupMessageAttachment\x12\x10\n" +
 	"\x03cid\x18\x01 \x01(\tR\x03cid\x12\x1a\n" +
 	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
@@ -3604,7 +3621,7 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1b\n" +
 	"\tactor_did\x18\x02 \x01(\tR\bactorDid\"0\n" +
 	"\x14RemoveMemberResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xd4\x02\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x81\x03\n" +
 	"\x17SendGroupMessageRequest\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12?\n" +
@@ -3614,7 +3631,8 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\rreply_to_ulid\x18\x05 \x01(\tR\vreplyToUlid\x12%\n" +
 	"\x0ementioned_dids\x18\x06 \x03(\tR\rmentionedDids\x12\x1f\n" +
 	"\vmention_all\x18\a \x01(\bR\n" +
-	"mentionAll\"]\n" +
+	"mentionAll\x12+\n" +
+	"\x11encrypted_payload\x18\b \x01(\fR\x10encryptedPayload\"]\n" +
 	"\x18SendGroupMessageResponse\x12A\n" +
 	"\amessage\x18\x01 \x01(\v2'.peers_touch.model.chat.v1.GroupMessageR\amessage\"o\n" +
 	"\x17GetGroupMessagesRequest\x12\x1d\n" +

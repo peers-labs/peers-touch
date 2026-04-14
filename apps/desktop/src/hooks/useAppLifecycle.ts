@@ -1,13 +1,49 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSessionStore } from '../store/session';
 import { useOAuth2Store } from '../store/oauth2';
-import { useAccountIdentityStore } from '../store/accountIdentity';
 import { globalContext } from '../kernel/global-context';
+import { api } from '../services/desktop_api';
+import type { AccountIdentity } from '../services/desktop_api';
 import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
 
+const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
+const WARM_RESUME_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+function isWarmResume(): boolean {
+  try {
+    const stored = localStorage.getItem(WARM_RESUME_KEY);
+    if (!stored) return false;
+    const elapsed = Date.now() - Number(stored);
+    return elapsed < WARM_RESUME_THRESHOLD_MS;
+  } catch {
+    return false;
+  }
+}
+
+function touchActivity(): void {
+  try {
+    localStorage.setItem(WARM_RESUME_KEY, String(Date.now()));
+  } catch {
+    // noop
+  }
+}
+
+function accountToSessionUser(account: AccountIdentity): SessionUser {
+  return {
+    name: account.name || account.provider_user_id || 'User',
+    email: account.email || '',
+    avatar: account.avatar_url || undefined,
+    accountId: account.id,
+    hasPin: account.has_pin,
+    provider: account.provider,
+  };
+}
+
 export function useAppLifecycle(): AppLifecycle {
-  const [state, setState] = useState<AppState>('onboarding');
+  const warm = isWarmResume();
+  const [state, setState] = useState<AppState>(warm ? 'resuming' : 'onboarding');
   const [restoredUser, setRestoredUser] = useState<SessionUser | null>(null);
+  const [knownAccounts, setKnownAccounts] = useState<SessionUser[]>([]);
   const [dataReady, setDataReady] = useState(false);
 
   useEffect(() => {
@@ -15,16 +51,13 @@ export function useAppLifecycle(): AppLifecycle {
   }, []);
 
   useEffect(() => {
-    if (state === 'onboarding') {
-      globalContext.setRuntimeAppState('booting');
-    } else {
+    if (state === 'ready') {
       globalContext.setRuntimeAppState('ready');
+    } else {
+      globalContext.setRuntimeAppState('booting');
     }
   }, [state]);
 
-  // Restore session from BFF and load OAuth connections in parallel.
-  // Identity comes from the SessionStore (single source of truth),
-  // not from OAuth connections.
   useEffect(() => {
     const session = useSessionStore.getState();
     const oauth2 = useOAuth2Store.getState();
@@ -32,7 +65,8 @@ export function useAppLifecycle(): AppLifecycle {
     Promise.all([
       session.restoreSession().catch(() => {}),
       oauth2.loadAll().catch(() => {}),
-    ]).then(() => {
+      api.accountListRestorable().catch(() => [] as AccountIdentity[]),
+    ]).then(([, , restorableAccounts]) => {
       const { currentUser, authenticated } = useSessionStore.getState();
       if (authenticated && currentUser) {
         setRestoredUser({
@@ -41,18 +75,26 @@ export function useAppLifecycle(): AppLifecycle {
           avatar: currentUser.avatarUrl,
         });
       }
-      setDataReady(true);
-    });
-  }, []);
 
-  // When login completes:
-  // 1. Refresh accountIdentity and OAuth connections for the current user
-  // 2. Transition to ready state
+      // Load all accounts that have restorable sessions
+      if (Array.isArray(restorableAccounts) && restorableAccounts.length > 0) {
+        setKnownAccounts(restorableAccounts.map(accountToSessionUser));
+      }
+
+      setDataReady(true);
+
+      if (warm && authenticated && currentUser) {
+        touchActivity();
+        setState('ready');
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const completeLogin = useCallback(() => {
-    useAccountIdentityStore.getState().load().catch(() => {});
+    touchActivity();
     useOAuth2Store.getState().loadAll().catch(() => {});
     setState('ready');
   }, []);
 
-  return { state, restoredUser, dataReady, completeLogin };
+  return { state, restoredUser, knownAccounts, dataReady, completeLogin };
 }

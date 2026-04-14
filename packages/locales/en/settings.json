@@ -1,6 +1,24 @@
 {
   "settings.title": "Settings",
 
+  "settings.group.general": "General",
+  "settings.group.ai": "AI",
+  "settings.group.channels": "Channels",
+  "settings.group.applets": "Applets",
+  "settings.group.data": "Data",
+  "settings.group.help": "Help",
+
+  "settings.module.account": "Account",
+  "settings.module.providers": "Providers",
+  "settings.module.models": "Model Service",
+  "settings.module.memory": "Memory",
+  "settings.module.skills": "Skills",
+  "settings.module.mcp": "MCP",
+  "settings.module.tts": "Voice",
+  "settings.module.logs": "Logs",
+  "settings.module.channels": "Channels",
+  "settings.module.connections": "Connections",
+
   "settings.tab.statistics": "Statistics",
   "settings.tab.applets": "Applets",
   "settings.tab.general": "General",
@@ -35,6 +53,9 @@
   "settings.applets.backToApplets": "← Back to Applets",
   "settings.applets.noSettings": "No settings",
   "settings.applets.noApplets": "No applets installed",
+  "settings.applets.status.active": "Active",
+  "settings.applets.status.error": "Error",
+  "settings.applets.status.inactive": "Inactive",
 
   "settings.general.languageTitle": "Language",
   "settings.general.languageDescription": "Choose the display language for the application. Changes take effect immediately.",
@@ -68,6 +89,7 @@
   "settings.help.aboutTitle": "Agent Box",
   "settings.help.aboutTag": "dev",
   "settings.help.aboutDescription": "Your personal AI assistant with file operations, shell commands, web search, multi-agent orchestration, long-term memory, and extensible agent applets.",
+  "settings.help.appletTag": "Applet",
   "settings.help.extensionPointTitle": "EXTENSION POINT",
   "settings.help.extensionPointDescription": "Agent Applets can declare help entries in their manifest. When installed, their documentation will automatically appear in the relevant categories above.",
 

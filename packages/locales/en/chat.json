@@ -229,12 +229,18 @@
   "chat.social.detail.blockUser": "Block User",
   "chat.social.detail.membersCount": "{{count}} members",
 
+  "chat.social.encryption.enabled": "End-to-end encrypted",
+  "chat.social.encryption.title": "Encryption",
+  "chat.social.encryption.fingerprint": "Your security fingerprint",
+  "chat.social.encryption.encryptedMessage": "Encrypted message",
+
   "chat.social.messageArea.selectConversation": "Select a conversation to start chatting",
   "chat.social.messageArea.noMessages": "No messages yet",
   "chat.social.messageArea.replyingTo": "Replying to",
   "chat.social.messageArea.cancel": "Cancel",
   "chat.social.messageArea.placeholder": "Type a message...",
   "chat.social.messageArea.comingSoon": "Coming soon",
+  "chat.social.messageArea.uploadFailed": "Failed to upload file",
 
   "chat.social.sessionList.searchPlaceholder": "Search...",
   "chat.social.sessionList.friends": "Friends",
@@ -262,5 +268,36 @@
   "chat.social.findPeople.hint": "Enter a username to search",
   "chat.social.findPeople.add": "Add",
   "chat.social.findPeople.searchFailed": "Search failed",
-  "chat.social.findPeople.addFailed": "Failed to add friend"
+  "chat.social.findPeople.addFailed": "Failed to add friend",
+  "chat.social.findPeople.sendRequest": "Send Request",
+  "chat.social.findPeople.requestSent": "Friend request sent",
+
+  "chat.social.contacts.newFriends": "New Friends",
+  "chat.social.contacts.savedGroups": "Saved Groups",
+  "chat.social.contacts.friends": "Contacts",
+  "chat.social.contacts.accept": "Accept",
+  "chat.social.contacts.reject": "Reject",
+  "chat.social.contacts.noPendingRequests": "No pending friend requests",
+  "chat.social.contacts.noGroups": "No groups yet",
+  "chat.social.contacts.noFriends": "No contacts yet",
+
+  "chat.social.search.title": "Search Messages",
+  "chat.social.search.placeholder": "Search in messages...",
+  "chat.social.search.noResults": "No messages found",
+  "chat.social.search.resultCount": "{{count}} result(s) found",
+  "chat.social.search.inConversation": "in {{name}}",
+
+  "chat.social.time.justNow": "Just now",
+  "chat.social.time.minutesAgo": "{{count}} min ago",
+  "chat.social.time.oneHourAgo": "1 hour ago",
+  "chat.social.time.hoursAgo": "{{count}}h ago",
+  "chat.social.time.yesterday": "Yesterday",
+
+  "chat.social.preview.image": "[Image]",
+  "chat.social.preview.file": "[File]",
+  "chat.social.preview.audio": "[Audio]",
+  "chat.social.preview.video": "[Video]",
+
+  "chat.social.subNav.chats": "Chats",
+  "chat.social.subNav.contacts": "Contacts"
 }

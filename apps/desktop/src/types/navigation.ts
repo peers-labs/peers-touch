@@ -20,13 +20,20 @@ export interface SessionUser {
   name: string;
   email: string;
   avatar?: string;
+  /** Account identity ID (e.g. "password:abc" or "github:123"). Present for restorable accounts. */
+  accountId?: string;
+  /** Whether this account has a PIN set. */
+  hasPin?: boolean;
+  /** Login provider (e.g. "password", "github"). */
+  provider?: string;
 }
 
-export type AppState = 'onboarding' | 'ready';
+export type AppState = 'onboarding' | 'resuming' | 'ready';
 
 export interface AppLifecycle {
   state: AppState;
   restoredUser: SessionUser | null;
+  knownAccounts: SessionUser[];
   dataReady: boolean;
   completeLogin: () => void;
 }

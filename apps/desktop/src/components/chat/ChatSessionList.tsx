@@ -1,28 +1,31 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Dropdown, Input, Segmented } from '@lobehub/ui';
+import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Badge, Empty, Spin, theme, Typography } from 'antd';
-import { MessageCircle, Users, Search, Plus, UserPlus, UsersRound } from 'lucide-react';
+import { Users, Search, Plus, UserPlus, UsersRound } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
-import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
-import type { Group } from '../../gen/proto/domain/chat/group_chat_pb';
-import type { Timestamp } from '@bufbuild/protobuf/wkt';
-import { timestampDate } from '@bufbuild/protobuf/wkt';
+import type { UnifiedConversation } from '../../store/socialChat';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
 
 const { Text } = Typography;
 
-function formatTime(ts: Timestamp | undefined, t: (key: string) => string): string {
-  if (!ts) return '';
-  const d = timestampDate(ts);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / 86400000);
-  if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (diffDays === 1) return t('chat.social.sessionList.yesterday');
-  if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' });
+function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  const diffMs = Date.now() - d.getTime();
+  if (diffMs < 0) return t('chat.social.time.justNow');
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return t('chat.social.time.justNow');
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return t('chat.social.time.minutesAgo', { count: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    if (hours === 1) return t('chat.social.time.oneHourAgo');
+    return t('chat.social.time.hoursAgo', { count: hours });
+  }
+  const days = Math.floor(hours / 24);
+  if (days === 1) return t('chat.social.time.yesterday');
+  if (days < 7) return d.toLocaleDateString([], { weekday: 'short' });
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
@@ -35,8 +38,23 @@ export function ChatSessionList() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
-    sessions, groups, activeTab, activeSessionUlid, activeGroupUlid,
-    loading, loadSessions, loadGroups, setActiveTab, selectSession, selectGroup,
+    sessions,
+    groups,
+    groupUnreadCounts,
+    lastPreviews,
+    currentUserDid,
+    activeTab,
+    activeSessionUlid,
+    activeGroupUlid,
+    loading,
+    loadSessions,
+    loadGroups,
+    loadGroupUnreadCounts,
+    loadConversationPreviews,
+    setActiveTab,
+    selectSession,
+    selectGroup,
+    getUnifiedConversations,
   } = useSocialChatStore();
 
   const [searchText, setSearchText] = useState('');
@@ -44,23 +62,26 @@ export function ChatSessionList() {
   const [showFindPeople, setShowFindPeople] = useState(false);
 
   useEffect(() => {
-    loadSessions();
-    loadGroups();
-  }, [loadSessions, loadGroups]);
+    void (async () => {
+      await loadSessions().catch(() => {});
+      await loadGroups().catch(() => {});
+      await Promise.all([
+        loadGroupUnreadCounts().catch(() => {}),
+        loadConversationPreviews().catch(() => {}),
+      ]);
+    })();
+  }, [loadSessions, loadGroups, loadGroupUnreadCounts, loadConversationPreviews]);
 
-  const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
+  const conversations = useMemo(
+    () => getUnifiedConversations(),
+    [getUnifiedConversations, sessions, groups, groupUnreadCounts, lastPreviews, currentUserDid],
+  );
 
   const filteredItems = useMemo(() => {
-    const items = activeTab === 'friend' ? sessions : groups;
-    if (!searchText.trim()) return items;
+    if (!searchText.trim()) return conversations;
     const q = searchText.toLowerCase();
-    return items.filter((item) => {
-      const name = activeTab === 'friend'
-        ? (item as FriendChatSession).participantBDid
-        : (item as Group).name;
-      return (name || '').toLowerCase().includes(q);
-    });
-  }, [activeTab, sessions, groups, searchText]);
+    return conversations.filter((c) => c.name.toLowerCase().includes(q));
+  }, [conversations, searchText]);
 
   const plusMenuItems = [
     {
@@ -76,6 +97,23 @@ export function ChatSessionList() {
       onClick: () => setShowCreateGroup(true),
     },
   ];
+
+  const handleSelect = (c: UnifiedConversation) => {
+    if (c.type === 'friend') {
+      selectSession(c.ulid);
+      setActiveTab('friend');
+    } else {
+      selectGroup(c.ulid);
+      setActiveTab('group');
+    }
+  };
+
+  const isRowActive = (c: UnifiedConversation) => {
+    if (c.type === 'friend') {
+      return activeTab === 'friend' && c.ulid === activeSessionUlid;
+    }
+    return activeTab === 'group' && c.ulid === activeGroupUlid;
+  };
 
   return (
     <>
@@ -116,18 +154,6 @@ export function ChatSessionList() {
               />
             </Dropdown>
           </Flexbox>
-
-          <Segmented
-            block
-            value={activeTab}
-            onChange={(v) => setActiveTab(v as 'friend' | 'group')}
-            options={[
-              { label: t('chat.social.sessionList.friends'), value: 'friend', icon: <MessageCircle size={14} /> },
-              { label: t('chat.social.sessionList.groups'), value: 'group', icon: <Users size={14} /> },
-            ]}
-            size="small"
-            style={{ width: '100%' }}
-          />
         </Flexbox>
 
         <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
@@ -139,31 +165,39 @@ export function ChatSessionList() {
             <Flexbox align="center" justify="center" flex={1}>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={searchText ? t('chat.social.sessionList.noResults') : activeTab === 'friend' ? t('chat.social.sessionList.noConversations') : t('chat.social.sessionList.noGroups')}
+                description={
+                  searchText ? t('chat.social.sessionList.noResults') : t('chat.social.sessionList.noConversations')
+                }
               />
             </Flexbox>
           ) : (
-            filteredItems.map((item) => {
-              const ulid = item.ulid;
-              const isActive = ulid === activeUlid;
+            filteredItems.map((c) => {
+              const isActive = isRowActive(c);
+              const name = c.name || t('chat.social.sessionList.unknown');
+              const timeStr = relativeTime(c.lastActivity, t);
+              const unread = c.unread;
 
-              let name: string;
-              let lastMsg: string;
-              let timeStr: string;
-              let unread: number;
-
-              if (activeTab === 'friend') {
-                const s = item as FriendChatSession;
-                name = s.participantBDid || t('chat.social.sessionList.unknown');
-                lastMsg = s.lastMessageUlid ? t('chat.social.sessionList.message') : '';
-                timeStr = formatTime(s.lastMessageAt ?? s.updatedAt, t);
-                unread = s.unreadCountB || 0;
-              } else {
-                const g = item as Group;
-                name = g.name || t('chat.social.sessionList.unnamedGroup');
-                lastMsg = t('chat.social.detail.membersCount', { count: g.memberCount || 0 });
-                timeStr = formatTime(g.updatedAt, t);
-                unread = 0;
+              let subtitle = '';
+              if (c.preview) {
+                const p = c.preview;
+                let text: string;
+                if (p.type === 2) {
+                  text = t('chat.social.preview.image');
+                } else if (p.type === 3) {
+                  text = t('chat.social.preview.file');
+                } else if (p.type === 4) {
+                  text = t('chat.social.preview.audio');
+                } else if (p.type === 5) {
+                  text = t('chat.social.preview.video');
+                } else {
+                  text = p.content;
+                }
+                if (c.type === 'group' && p.senderDid) {
+                  const senderShort = p.senderDid.length > 12 ? p.senderDid.slice(0, 12) + '…' : p.senderDid;
+                  subtitle = `${senderShort}: ${text}`;
+                } else {
+                  subtitle = text;
+                }
               }
 
               const avatarBg = isActive ? token.colorPrimary : token.colorFillSecondary;
@@ -171,11 +205,11 @@ export function ChatSessionList() {
 
               return (
                 <Flexbox
-                  key={ulid}
+                  key={`${c.type}-${c.ulid}`}
                   horizontal
                   align="center"
                   gap={10}
-                  onClick={() => activeTab === 'friend' ? selectSession(ulid) : selectGroup(ulid)}
+                  onClick={() => handleSelect(c)}
                   style={{
                     padding: '10px 12px',
                     borderRadius: 8,
@@ -200,33 +234,28 @@ export function ChatSessionList() {
                     >
                       {getInitial(name)}
                     </Flexbox>
-                    {/* TODO: online status indicator — will be added when per-user online check API is available */}
                   </div>
 
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
-                    <Flexbox horizontal align="center" justify="space-between">
-                      <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{name}</Text>
-                      <Text
-                        type="secondary"
-                        style={{ fontSize: 11, flexShrink: 0, marginLeft: 8 }}
-                      >
+                    <Flexbox horizontal align="center" justify="space-between" gap={6}>
+                      <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
+                        {c.type === 'group' && (
+                          <Users size={12} style={{ color: token.colorTextSecondary, flexShrink: 0 }} aria-hidden />
+                        )}
+                        <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
+                          {name}
+                        </Text>
+                      </Flexbox>
+                      <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
                         {timeStr}
                       </Text>
                     </Flexbox>
                     <Flexbox horizontal align="center" justify="space-between">
-                      <Text
-                        type="secondary"
-                        ellipsis
-                        style={{ fontSize: 12, flex: 1, minWidth: 0 }}
-                      >
-                        {lastMsg}
+                      <Text type="secondary" ellipsis style={{ fontSize: 12, flex: 1, minWidth: 0 }}>
+                        {subtitle}
                       </Text>
                       {unread > 0 && (
-                        <Badge
-                          count={unread}
-                          size="small"
-                          style={{ marginLeft: 8 }}
-                        />
+                        <Badge count={unread} size="small" style={{ marginLeft: 8 }} />
                       )}
                     </Flexbox>
                   </Flexbox>
@@ -237,14 +266,8 @@ export function ChatSessionList() {
         </Flexbox>
       </Flexbox>
 
-      <CreateGroupModal
-        open={showCreateGroup}
-        onClose={() => setShowCreateGroup(false)}
-      />
-      <FindPeopleModal
-        open={showFindPeople}
-        onClose={() => setShowFindPeople(false)}
-      />
+      <CreateGroupModal open={showCreateGroup} onClose={() => setShowCreateGroup(false)} />
+      <FindPeopleModal open={showFindPeople} onClose={() => setShowFindPeople(false)} />
     </>
   );
 }

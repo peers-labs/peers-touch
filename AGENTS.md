@@ -81,7 +81,7 @@ Primary docs entry:
 ## 4. Thinking Principles
 
 1. **Rationality over minimalism** — Architectural soundness is the goal, not minimum change.
-2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop.sh`, `pt.sh`, etc.).
+2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `dev-desktop-web.sh`, `pt.sh`, etc.).
 3. **Architecture methodology** — For architecture landing / migration / domain decomposition, **MUST** use `architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
 
 ---

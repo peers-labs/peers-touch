@@ -19,11 +19,21 @@ pub fn ingest_group_messages(user_scope: &str, payload: &Value) -> Result<(), St
 }
 
 pub fn search_friend_messages(user_scope: &str, query: &str, limit: usize) -> Result<Vec<LocalChatRecord>, String> {
-    local_chat_store::search_local(user_scope, "friend", query, limit)
+    local_chat_store::search_local(user_scope, Some("friend"), None, query, limit)
 }
 
 pub fn search_group_messages(user_scope: &str, query: &str, limit: usize) -> Result<Vec<LocalChatRecord>, String> {
-    local_chat_store::search_local(user_scope, "group", query, limit)
+    local_chat_store::search_local(user_scope, Some("group"), None, query, limit)
+}
+
+pub fn search_messages_unified(
+    user_scope: &str,
+    query: &str,
+    scope_filter: &str,
+    conversation_id: &str,
+    limit: usize,
+) -> Result<Vec<LocalChatRecord>, String> {
+    local_chat_store::search_local_unified(user_scope, query, scope_filter, conversation_id, limit)
 }
 
 pub fn set_scope_cursor(user_scope: &str, scope: &str, cursor: &str) -> Result<(), String> {

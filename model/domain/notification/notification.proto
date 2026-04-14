@@ -1,0 +1,189 @@
+syntax = "proto3";
+
+package peers_touch.model.notification.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/notification;notification";
+
+// ============================================================================
+// Notification Core Model
+// ============================================================================
+
+// Notification represents a single notification entity.
+// title and body carry server-generated fallback text for push previews.
+// Rich clients render locale-aware display text from the structured
+// references (type + target_type + target_id + actor_id).
+message Notification {
+  string id = 1;
+  string recipient_id = 2;
+  string actor_id = 3;
+  NotificationType type = 4;
+  NotificationCategory category = 5;
+  NotificationStatus status = 6;
+  string target_type = 7;
+  string target_id = 8;
+  string title = 9;
+  string body = 10;
+  map<string, string> metadata = 11;
+  string group_key = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp read_at = 14;
+}
+
+// NotificationGroup represents an aggregated notification group.
+message NotificationGroup {
+  string group_key = 1;
+  NotificationType type = 2;
+  NotificationCategory category = 3;
+  string target_type = 4;
+  string target_id = 5;
+  string title = 6;
+  string body = 7;
+  int32 count = 8;
+  repeated string actor_ids = 9;
+  Notification latest = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum NotificationCategory {
+  NOTIFICATION_CATEGORY_UNSPECIFIED = 0;
+  NOTIFICATION_CATEGORY_SOCIAL = 1;
+  NOTIFICATION_CATEGORY_CHAT = 2;
+  NOTIFICATION_CATEGORY_SYSTEM = 3;
+  NOTIFICATION_CATEGORY_TASK = 4;
+}
+
+enum NotificationType {
+  NOTIFICATION_TYPE_UNSPECIFIED = 0;
+
+  // Social (100-199)
+  NOTIFICATION_TYPE_FOLLOW_REQUESTED = 100;
+  NOTIFICATION_TYPE_FOLLOW_ACCEPTED = 101;
+  NOTIFICATION_TYPE_POST_LIKED = 102;
+  NOTIFICATION_TYPE_POST_COMMENTED = 103;
+  NOTIFICATION_TYPE_POST_REPOSTED = 104;
+  NOTIFICATION_TYPE_MENTIONED = 105;
+
+  // Chat (200-299)
+  NOTIFICATION_TYPE_FRIEND_REQUEST = 200;
+  NOTIFICATION_TYPE_FRIEND_ACCEPTED = 201;
+  NOTIFICATION_TYPE_FRIEND_MESSAGE = 202;
+  NOTIFICATION_TYPE_GROUP_INVITED = 203;
+  NOTIFICATION_TYPE_CHAT_MENTIONED = 204;
+
+  // System (300-399)
+  NOTIFICATION_TYPE_WELCOME = 300;
+  NOTIFICATION_TYPE_SECURITY_ALERT = 301;
+  NOTIFICATION_TYPE_VERSION_UPDATE = 302;
+  NOTIFICATION_TYPE_MAINTENANCE = 303;
+
+  // Task (400-499)
+  NOTIFICATION_TYPE_TASK_ASSIGNED = 400;
+  NOTIFICATION_TYPE_TASK_COMPLETED = 401;
+  NOTIFICATION_TYPE_TASK_REMINDER = 402;
+}
+
+enum NotificationStatus {
+  NOTIFICATION_STATUS_UNSPECIFIED = 0;
+  NOTIFICATION_STATUS_UNREAD = 1;
+  NOTIFICATION_STATUS_READ = 2;
+  NOTIFICATION_STATUS_ARCHIVED = 3;
+}
+
+// ============================================================================
+// User Preference Model
+// ============================================================================
+
+// NotificationPreference controls notification behavior per category.
+// The type field is reserved for future per-type control granularity.
+message NotificationPreference {
+  string actor_id = 1;
+  NotificationCategory category = 2;
+  bool enabled = 3;
+  bool push_enabled = 4;
+  bool sound_enabled = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  NotificationType type = 7;
+}
+
+// ============================================================================
+// API Messages
+// ============================================================================
+
+message ListNotificationsRequest {
+  NotificationCategory category = 1;
+  NotificationStatus status = 2;
+  string cursor = 3;
+  int32 limit = 4;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  string next_cursor = 2;
+  int32 total_count = 3;
+  int32 unread_count = 4;
+}
+
+message ListGroupedNotificationsRequest {
+  NotificationCategory category = 1;
+  string cursor = 2;
+  int32 limit = 3;
+}
+
+message ListGroupedNotificationsResponse {
+  repeated NotificationGroup groups = 1;
+  string next_cursor = 2;
+}
+
+message MarkNotificationsReadRequest {
+  repeated string notification_ids = 1;
+}
+
+message MarkNotificationsReadResponse {
+  int32 updated_count = 1;
+}
+
+message MarkAllNotificationsReadRequest {
+  NotificationCategory category = 1;
+}
+
+message MarkAllNotificationsReadResponse {
+  int32 updated_count = 1;
+}
+
+message DeleteNotificationsRequest {
+  repeated string notification_ids = 1;
+}
+
+message DeleteNotificationsResponse {
+  int32 deleted_count = 1;
+}
+
+message GetUnreadCountsRequest {}
+
+message GetUnreadCountsResponse {
+  int32 total = 1;
+  map<int32, int32> by_category = 2;
+}
+
+message GetNotificationPreferencesRequest {}
+
+message GetNotificationPreferencesResponse {
+  repeated NotificationPreference preferences = 1;
+}
+
+message UpdateNotificationPreferenceRequest {
+  NotificationCategory category = 1;
+  bool enabled = 2;
+  bool push_enabled = 3;
+  bool sound_enabled = 4;
+}
+
+message UpdateNotificationPreferenceResponse {
+  NotificationPreference preference = 1;
+}

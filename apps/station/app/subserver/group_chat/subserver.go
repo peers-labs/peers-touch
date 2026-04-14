@@ -49,6 +49,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		&groupModel{},
 		&memberModel{},
 		&messageModel{},
+		&MessageAttachmentModel{},
 		&outboxModel{},
 		&invitationModel{},
 		&settingModel{},

@@ -6,9 +6,13 @@ import { Spin, theme, Typography, Empty } from 'antd';
 import {
   Send, Inbox, Phone, Video, Search, Info,
   Paperclip, Smile, Check, CheckCheck,
-  Reply, Trash2,
+  Reply, Trash2, Lock,
 } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
+import { SearchMessagesModal } from './SearchMessagesModal';
+import { api } from '../../services/desktop_api';
+import { log } from '../../utils/logger';
+import { toast } from '@lobehub/ui';
 import type { FriendChatMessage, FriendMessageStatus } from '../../gen/proto/domain/chat/friend_chat_pb';
 import { FriendMessageStatus as FMS } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
@@ -128,22 +132,33 @@ export function ChatMessageArea() {
   const {
     activeTab, activeSessionUlid, activeGroupUlid, messages, loading,
     sessions, groups, loadMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
-    currentUserProfile, deleteMessage,
+    deleteMessage,
   } = useSocialChatStore();
+  const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
+  const scrollToMessageUlid = useSocialChatStore((s) => s.scrollToMessageUlid);
+  const setScrollToMessageUlid = useSocialChatStore((s) => s.setScrollToMessageUlid);
+  const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
   const [inputValue, setInputValue] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
   const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
 
   const currentName = (() => {
     if (activeTab === 'friend') {
-      const s = sessions.find((s) => s.ulid === activeUlid);
-      return s ? s.participantBDid || '' : '';
+      const s = sessions.find((sess) => sess.ulid === activeUlid);
+      if (!s) return '';
+      if (currentUserDid) {
+        if (s.participantADid === currentUserDid) return s.participantBDid || s.participantADid || '';
+        if (s.participantBDid === currentUserDid) return s.participantADid || s.participantBDid || '';
+      }
+      return s.participantBDid || s.participantADid || '';
     }
-    const g = groups.find((g) => g.ulid === activeUlid);
+    const g = groups.find((grp) => grp.ulid === activeUlid);
     return g?.name || '';
   })();
 
@@ -167,19 +182,36 @@ export function ChatMessageArea() {
     setReplyToUlid(null);
   }, [activeUlid]);
 
+  useEffect(() => {
+    if (!scrollToMessageUlid || !activeUlid) return;
+    const hasMsg = currentMessages.some((m) => m.ulid === scrollToMessageUlid);
+    if (!hasMsg) return;
+    const raf = requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-message-ulid="${scrollToMessageUlid}"]`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setScrollToMessageUlid(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [scrollToMessageUlid, activeUlid, currentMessages, setScrollToMessageUlid]);
+
   const handleSend = async () => {
     if (!inputValue.trim() || !activeUlid) return;
     const content = inputValue.trim();
+    const replyRef = replyToUlid || undefined;
     setInputValue('');
     setReplyToUlid(null);
     setSending(true);
     try {
       if (activeTab === 'friend') {
         const session = sessions.find((s) => s.ulid === activeUlid);
-        const receiverDid = session?.participantBDid || '';
-        await sendFriendMessage(activeUlid, receiverDid, content);
+        const receiverDid = session
+          ? session.participantADid === currentUserDid
+            ? session.participantBDid
+            : session.participantADid
+          : '';
+        await sendFriendMessage(activeUlid, receiverDid, content, undefined, replyRef);
       } else {
-        await sendGroupMessage(activeUlid, content);
+        await sendGroupMessage(activeUlid, content, undefined, replyRef);
       }
     } finally {
       setSending(false);
@@ -191,6 +223,41 @@ export function ChatMessageArea() {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeUlid) return;
+    setSending(true);
+    try {
+      const result = await api.uploadFile(file);
+      const isImage = file.type.startsWith('image/');
+      const msgType = isImage ? 2 : 3;
+      const attachment = {
+        cid: result.id,
+        filename: result.filename,
+        mime_type: result.mime_type,
+        size: result.size,
+        thumbnail_cid: '',
+      };
+      if (activeTab === 'friend') {
+        const session = sessions.find((s) => s.ulid === activeUlid);
+        const receiverDid = session
+          ? session.participantADid === currentUserDid
+            ? session.participantBDid
+            : session.participantADid
+          : '';
+        await sendFriendMessage(activeUlid, receiverDid, file.name, msgType, undefined, [attachment]);
+      } else {
+        await sendGroupMessage(activeUlid, file.name, msgType, undefined, [attachment]);
+      }
+    } catch (err) {
+      log.error('chat', 'file upload failed', err);
+      toast.error(t('chat.social.messageArea.uploadFailed'));
+    } finally {
+      setSending(false);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const replyingMsg = replyToUlid ? currentMessages.find((m) => m.ulid === replyToUlid) : null;
@@ -214,6 +281,12 @@ export function ChatMessageArea() {
   return (
     <Flexbox flex={1} gap={0} style={{ height: '100%', background: token.colorBgContainer }}>
       <style>{hoverStyle}</style>
+      <SearchMessagesModal
+        open={showSearch}
+        onClose={() => setShowSearch(false)}
+        initialScope={activeTab === 'friend' ? 'friend' : 'group'}
+        conversationId={activeUlid ?? undefined}
+      />
 
       <Flexbox
         horizontal
@@ -242,9 +315,16 @@ export function ChatMessageArea() {
           >
             {getInitial(currentName)}
           </Flexbox>
-          <Flexbox>
-            <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>{subtitle}</Text>
+          <Flexbox horizontal align="center" gap={6}>
+            <Flexbox>
+              <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{subtitle}</Text>
+            </Flexbox>
+            {encryptionEnabled && (
+              <Tooltip title={t('chat.social.encryption.enabled')}>
+                <Lock size={14} style={{ color: token.colorSuccess, marginLeft: 4 }} />
+              </Tooltip>
+            )}
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
@@ -254,7 +334,14 @@ export function ChatMessageArea() {
           <Tooltip title={t('chat.social.messageArea.comingSoon')}>
             <Button type="text" icon={<Video size={16} />} disabled style={{ width: 32, height: 32 }} />
           </Tooltip>
-          <Button type="text" icon={<Search size={16} />} style={{ width: 32, height: 32 }} />
+          <Tooltip title={t('chat.social.search.title')}>
+            <Button
+              type="text"
+              icon={<Search size={16} />}
+              style={{ width: 32, height: 32 }}
+              onClick={() => setShowSearch(true)}
+            />
+          </Tooltip>
           <Button type="text" icon={<Info size={16} />} style={{ width: 32, height: 32 }} onClick={toggleDetail} />
         </Flexbox>
       </Flexbox>
@@ -270,10 +357,10 @@ export function ChatMessageArea() {
           </Flexbox>
         ) : (
           currentMessages.map((msg) => {
-            const myUsername = currentUserProfile?.username;
-            const isOwn = myUsername ? msg.senderDid === myUsername : false;
+            const isOwn = currentUserDid ? msg.senderDid === currentUserDid : false;
             const isGroup = !isFriendMsg(msg);
             const hasReply = (isFriendMsg(msg) ? msg.replyToUlid : (msg as GroupMessage).replyToUlid) || '';
+            const isEncryptedPlaceholder = msg.content === '[Encrypted Message]';
 
             const bubbleBg = isOwn ? token.colorPrimary : token.colorFillSecondary;
             const bubbleColor = isOwn ? '#fff' : token.colorText;
@@ -284,6 +371,7 @@ export function ChatMessageArea() {
             return (
               <Flexbox
                 key={msg.ulid}
+                data-message-ulid={msg.ulid}
                 className="msg-row"
                 horizontal={isOwn}
                 style={{
@@ -317,9 +405,14 @@ export function ChatMessageArea() {
                   <HoverActions
                     isOwn={isOwn}
                     onReply={() => setReplyToUlid(msg.ulid)}
-                    onDelete={() => {
-                      if (activeUlid) {
-                        deleteMessage(activeUlid, msg.ulid);
+                    onDelete={async () => {
+                      if (!activeUlid) return;
+                      const kind = activeTab === 'friend' ? 'friend' : 'group';
+                      try {
+                        await deleteMessage(activeUlid, msg.ulid, kind);
+                      } catch (e) {
+                        log.error('chat', 'deleteMessage failed', e);
+                        toast.error(t('chat.social.messageArea.deleteFailed'));
                       }
                     }}
                   />
@@ -351,7 +444,60 @@ export function ChatMessageArea() {
                         isOwn={isOwn}
                       />
                     )}
-                    {msg.content}
+                    {isEncryptedPlaceholder ? (
+                      <Flexbox horizontal align="center" gap={4}>
+                        <Lock size={12} style={{ color: token.colorTextQuaternary }} />
+                        <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 13 }}>
+                          {t('chat.social.encryption.encryptedMessage')}
+                        </Text>
+                      </Flexbox>
+                    ) : (
+                      msg.content
+                    )}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <Flexbox gap={4} style={{ marginTop: msg.content ? 4 : 0 }}>
+                        {msg.attachments.map((att, idx) => {
+                          if (att.mimeType?.startsWith('image/')) {
+                            return (
+                              <img
+                                key={idx}
+                                src={`/api/files/${att.cid}`}
+                                alt={att.filename}
+                                style={{ maxWidth: 200, maxHeight: 200, borderRadius: 6, cursor: 'pointer' }}
+                                onError={(ev) => {
+                                  (ev.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            );
+                          }
+                          return (
+                            <Flexbox
+                              key={idx}
+                              horizontal
+                              align="center"
+                              gap={8}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: 6,
+                                background: isOwn ? 'rgba(255,255,255,0.15)' : token.colorFillTertiary,
+                                cursor: 'pointer',
+                              }}
+                              onClick={() => window.open(`/api/files/${att.cid}`, '_blank')}
+                            >
+                              <Paperclip size={14} />
+                              <Flexbox style={{ minWidth: 0 }}>
+                                <Text ellipsis style={{ fontSize: 12, color: isOwn ? '#fff' : token.colorText }}>
+                                  {att.filename}
+                                </Text>
+                                <Text style={{ fontSize: 10, color: isOwn ? 'rgba(255,255,255,0.6)' : token.colorTextQuaternary }}>
+                                  {(Number(att.size) / 1024).toFixed(1)} KB
+                                </Text>
+                              </Flexbox>
+                            </Flexbox>
+                          );
+                        })}
+                      </Flexbox>
+                    )}
                   </Flexbox>
 
                   <Flexbox
@@ -421,10 +567,18 @@ export function ChatMessageArea() {
         )}
 
         <Flexbox horizontal align="flex-end" gap={8}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
           <Button
             type="text"
             icon={<Paperclip size={18} />}
             style={{ width: 36, height: 36, flexShrink: 0 }}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending}
           />
           <Button
             type="text"

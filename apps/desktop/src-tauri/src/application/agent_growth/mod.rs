@@ -31,7 +31,7 @@ pub struct AgentFeedbackInput {
 }
 
 pub fn agent_growth_snapshot(input: AgentGrowthInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = token_from_state(state)?;
+    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
 
     match station_client::request_json(
         Method::GET,
@@ -60,7 +60,7 @@ pub fn agent_growth_snapshot(input: AgentGrowthInput, state: &AppState) -> AppRe
 }
 
 pub fn agent_memory_list(input: AgentMemoryListInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = token_from_state(state)?;
+    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
 
     match station_client::request_json(
         Method::GET,
@@ -89,7 +89,7 @@ pub fn agent_memory_list(input: AgentMemoryListInput, state: &AppState) -> AppRe
 }
 
 pub fn agent_skill_list(input: AgentSkillListInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = token_from_state(state)?;
+    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
 
     match station_client::request_json(
         Method::GET,
@@ -118,7 +118,7 @@ pub fn agent_skill_list(input: AgentSkillListInput, state: &AppState) -> AppResu
 }
 
 pub fn agent_submit_feedback(input: AgentFeedbackInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = token_from_state(state)?;
+    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
 
     let body = json!({
         "agent_id": input.agent_id,

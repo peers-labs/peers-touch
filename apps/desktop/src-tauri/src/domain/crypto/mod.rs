@@ -1,0 +1,494 @@
+//! E2E crypto: Ed25519 identity, X25519 X3DH, AES-256-GCM, and symmetric ratchet chains.
+
+use aes_gcm::aead::{Aead, KeyInit, Payload};
+use aes_gcm::{Aes256Gcm, Nonce};
+use curve25519_dalek::edwards::CompressedEdwardsY;
+use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
+use hkdf::Hkdf;
+use keyring::Entry;
+use rand::rngs::OsRng;
+use rand::RngCore;
+use sha2::Digest;
+use sha2::Sha256;
+use x25519_dalek::{PublicKey, StaticSecret};
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
+// --- Key types ----------------------------------------------------------------
+
+pub struct IdentityKeyPair {
+    pub signing_key: SigningKey,
+    pub verifying_key: VerifyingKey,
+}
+
+pub struct X25519KeyPair {
+    pub private: StaticSecret,
+    pub public: PublicKey,
+}
+
+// --- Primitives ---------------------------------------------------------------
+
+pub fn generate_identity_keypair() -> IdentityKeyPair {
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let verifying_key = signing_key.verifying_key();
+    IdentityKeyPair {
+        signing_key,
+        verifying_key,
+    }
+}
+
+/// Map Ed25519 signing key bytes to an X25519 static key (seed clamped by x25519-dalek).
+pub fn ed25519_to_x25519(signing_key: &SigningKey) -> X25519KeyPair {
+    let seed = signing_key.to_bytes();
+    let private = StaticSecret::from(seed);
+    let public = PublicKey::from(&private);
+    X25519KeyPair { private, public }
+}
+
+/// Convert Ed25519 verifying key to X25519 Montgomery public (Edwards → Montgomery).
+pub fn ed25519_verifying_to_x25519_public(verifying_key: &VerifyingKey) -> Result<PublicKey, String> {
+    let bytes = verifying_key.to_bytes();
+    let comp = CompressedEdwardsY(bytes);
+    let edwards = comp
+        .decompress()
+        .ok_or_else(|| "invalid Ed25519 public key".to_string())?;
+    let mont = edwards.to_montgomery();
+    Ok(PublicKey::from(mont.to_bytes()))
+}
+
+pub fn aes_gcm_encrypt(
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    plaintext: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>, String> {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
+    let n = Nonce::from_slice(nonce.as_slice());
+    cipher
+        .encrypt(n, Payload { msg: plaintext, aad })
+        .map_err(|e| e.to_string())
+}
+
+pub fn aes_gcm_decrypt(
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    ciphertext: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>, String> {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
+    let n = Nonce::from_slice(nonce.as_slice());
+    cipher
+        .decrypt(n, Payload { msg: ciphertext, aad })
+        .map_err(|e| e.to_string())
+}
+
+pub fn hkdf_sha256(ikm: &[u8], salt: &[u8], info: &[u8], out_len: usize) -> Vec<u8> {
+    let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
+    let mut okm = vec![0u8; out_len];
+    let _ = hk.expand(info, &mut okm);
+    okm
+}
+
+fn hkdf_sha256_array<const N: usize>(ikm: &[u8], salt: &[u8], info: &[u8]) -> [u8; N] {
+    let mut out = [0u8; N];
+    let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
+    let _ = hk.expand(info, &mut out);
+    out
+}
+
+// --- X3DH ---------------------------------------------------------------------
+
+pub struct X3DHBundle {
+    /// Ed25519 identity public key bytes (used for signature verification and mapped to X25519 for DH).
+    pub ik_pub: [u8; 32],
+    pub spk_pub: [u8; 32],
+    pub spk_sig: Vec<u8>,
+    pub opk_pub: Option<[u8; 32]>,
+}
+
+pub struct X3DHResult {
+    pub shared_secret: [u8; 32],
+    pub ephemeral_pub: [u8; 32],
+}
+
+fn dh(secret: &StaticSecret, peer: &PublicKey) -> [u8; 32] {
+    secret.diffie_hellman(peer).to_bytes()
+}
+
+/// Sender X3DH: verifies SPK signature, performs DH1..DH4, derives 32-byte secret.
+pub fn x3dh_sender(
+    our_ik: &IdentityKeyPair,
+    their_bundle: &X3DHBundle,
+) -> Result<X3DHResult, String> {
+    let their_ik_ed = VerifyingKey::from_bytes(&their_bundle.ik_pub)
+        .map_err(|_| "invalid peer identity Ed25519 public key".to_string())?;
+    let spk_msg = their_bundle.spk_pub;
+    let sig =
+        Signature::from_slice(&their_bundle.spk_sig).map_err(|_| "invalid SPK signature length")?;
+    their_ik_ed
+        .verify(spk_msg.as_slice(), &sig)
+        .map_err(|_| "SPK signature verification failed")?;
+
+    let their_ik_x = ed25519_verifying_to_x25519_public(&their_ik_ed)?;
+    let their_spk = PublicKey::from(their_bundle.spk_pub);
+    let their_opk = their_bundle.opk_pub.map(PublicKey::from);
+
+    let our_ik_x = ed25519_to_x25519(&our_ik.signing_key);
+    let ephemeral_sk = StaticSecret::random_from_rng(OsRng);
+    let ephemeral_pub = PublicKey::from(&ephemeral_sk);
+
+    let dh1 = dh(&our_ik_x.private, &their_spk);
+    let dh2 = dh(&ephemeral_sk, &their_ik_x);
+    let dh3 = dh(&ephemeral_sk, &their_spk);
+
+    let mut ikm: Vec<u8> = Vec::with_capacity(32 * 4);
+    ikm.extend_from_slice(&dh1);
+    ikm.extend_from_slice(&dh2);
+    ikm.extend_from_slice(&dh3);
+    if let Some(ref opk) = their_opk {
+        let dh4 = dh(&ephemeral_sk, opk);
+        ikm.extend_from_slice(&dh4);
+    }
+
+    let salt = [0u8; 32];
+    let mut shared = [0u8; 32];
+    let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
+    hk.expand(b"X3DH", &mut shared)
+        .map_err(|_| "HKDF expand failed for X3DH".to_string())?;
+
+    Ok(X3DHResult {
+        shared_secret: shared,
+        ephemeral_pub: ephemeral_pub.to_bytes(),
+    })
+}
+
+/// Receiver X3DH (complements `x3dh_sender`).
+pub fn x3dh_receiver(
+    our_ik: &IdentityKeyPair,
+    our_spk: &X25519KeyPair,
+    our_opk: Option<&X25519KeyPair>,
+    their_ik_pub: &[u8; 32],
+    their_ephemeral_pub: &[u8; 32],
+) -> Result<[u8; 32], String> {
+    let their_ik_ed =
+        VerifyingKey::from_bytes(their_ik_pub).map_err(|_| "invalid sender IK".to_string())?;
+    let their_ik_x = ed25519_verifying_to_x25519_public(&their_ik_ed)?;
+    let their_eph = PublicKey::from(*their_ephemeral_pub);
+
+    let our_ik_x = ed25519_to_x25519(&our_ik.signing_key);
+
+    let dh1 = dh(&our_spk.private, &their_ik_x);
+    let dh2 = dh(&our_ik_x.private, &their_eph);
+    let dh3 = dh(&our_spk.private, &their_eph);
+
+    let mut ikm: Vec<u8> = Vec::with_capacity(32 * 4);
+    ikm.extend_from_slice(&dh1);
+    ikm.extend_from_slice(&dh2);
+    ikm.extend_from_slice(&dh3);
+    if let Some(opk) = our_opk {
+        let dh4 = dh(&opk.private, &their_eph);
+        ikm.extend_from_slice(&dh4);
+    }
+
+    let salt = [0u8; 32];
+    let mut shared = [0u8; 32];
+    let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
+    hk.expand(b"X3DH", &mut shared)
+        .map_err(|_| "HKDF expand failed for X3DH receiver".to_string())?;
+
+    Ok(shared)
+}
+
+// --- Symmetric ratchet --------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct MessageKeys {
+    pub encryption_key: [u8; 32],
+    pub nonce: [u8; 12],
+    pub counter: u32,
+}
+
+#[derive(Clone, Debug, Zeroize, ZeroizeOnDrop)]
+pub struct RatchetState {
+    pub chain_key: [u8; 32],
+    pub counter: u32,
+}
+
+impl RatchetState {
+    pub fn init(shared_secret: [u8; 32]) -> Self {
+        let chain_key = hkdf_sha256_array::<32>(&shared_secret, &[0u8; 32], b"ratchet-root");
+        Self {
+            chain_key,
+            counter: 0,
+        }
+    }
+
+    pub fn next_message_keys(&mut self) -> MessageKeys {
+        let c = self.counter;
+        let counter_bytes = c.to_be_bytes();
+        let buf = hkdf_sha256(&self.chain_key, b"msg", &counter_bytes, 44);
+        let encryption_key: [u8; 32] = buf[..32].try_into().expect("len 44");
+        let nonce: [u8; 12] = buf[32..44].try_into().expect("len 12");
+
+        let next_chain = hkdf_sha256(&self.chain_key, b"chain", b"advance", 32);
+        self.chain_key.copy_from_slice(&next_chain[..32]);
+        self.counter = self.counter.wrapping_add(1);
+
+        MessageKeys {
+            encryption_key,
+            nonce,
+            counter: c,
+        }
+    }
+}
+
+fn derive_send_recv_roots(shared: [u8; 32], initiator: bool) -> ([u8; 32], [u8; 32]) {
+    let a = hkdf_sha256_array::<32>(&shared, &[0u8; 32], b"dir-a");
+    let b = hkdf_sha256_array::<32>(&shared, &[0u8; 32], b"dir-b");
+    if initiator {
+        (a, b)
+    } else {
+        (b, a)
+    }
+}
+
+// --- Session ------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct EncryptedMessage {
+    pub ciphertext: Vec<u8>,
+    pub counter: u32,
+    pub ephemeral_key: Option<[u8; 32]>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CryptoSession {
+    pub session_id: String,
+    pub peer_did: String,
+    pub send_ratchet: RatchetState,
+    pub recv_ratchet: RatchetState,
+    pub established: bool,
+    pub is_initiator: bool,
+    pub pending_ephemeral: Option<[u8; 32]>,
+}
+
+impl CryptoSession {
+    pub fn from_x3dh_shared_secret(
+        session_id: String,
+        peer_did: String,
+        shared_secret: [u8; 32],
+        is_initiator: bool,
+        pending_ephemeral: Option<[u8; 32]>,
+    ) -> Self {
+        let (send_root, recv_root) = derive_send_recv_roots(shared_secret, is_initiator);
+        CryptoSession {
+            session_id,
+            peer_did,
+            send_ratchet: RatchetState::init(send_root),
+            recv_ratchet: RatchetState::init(recv_root),
+            established: true,
+            is_initiator,
+            pending_ephemeral,
+        }
+    }
+
+    pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<EncryptedMessage, String> {
+        let mk = self.send_ratchet.next_message_keys();
+        let ct = aes_gcm_encrypt(&mk.encryption_key, &mk.nonce, plaintext, b"")?;
+        let ephemeral_key = self.pending_ephemeral.take();
+        Ok(EncryptedMessage {
+            ciphertext: ct,
+            counter: mk.counter,
+            ephemeral_key,
+        })
+    }
+
+    /// Decrypt using receive chain; `counter` must match the next expected receive counter.
+    pub fn decrypt(&mut self, msg: &EncryptedMessage) -> Result<Vec<u8>, String> {
+        if msg.counter != self.recv_ratchet.counter {
+            return Err(format!(
+                "ratchet counter mismatch: expected {}, got {}",
+                self.recv_ratchet.counter, msg.counter
+            ));
+        }
+        let mk = self.recv_ratchet.next_message_keys();
+        aes_gcm_decrypt(
+            &mk.encryption_key,
+            &mk.nonce,
+            msg.ciphertext.as_slice(),
+            b"",
+        )
+    }
+}
+
+/// Serializable session row for SQLCipher persistence.
+#[derive(Clone, Debug)]
+pub struct CryptoSessionState {
+    pub session_id: String,
+    pub peer_did: String,
+    pub send_chain_key: [u8; 32],
+    pub send_counter: u32,
+    pub recv_chain_key: [u8; 32],
+    pub recv_counter: u32,
+    pub established: bool,
+    pub is_initiator: bool,
+    pub pending_ephemeral: Option<[u8; 32]>,
+}
+
+impl CryptoSession {
+    pub fn to_state(&self) -> CryptoSessionState {
+        CryptoSessionState {
+            session_id: self.session_id.clone(),
+            peer_did: self.peer_did.clone(),
+            send_chain_key: self.send_ratchet.chain_key,
+            send_counter: self.send_ratchet.counter,
+            recv_chain_key: self.recv_ratchet.chain_key,
+            recv_counter: self.recv_ratchet.counter,
+            established: self.established,
+            is_initiator: self.is_initiator,
+            pending_ephemeral: self.pending_ephemeral,
+        }
+    }
+
+    pub fn from_state(state: &CryptoSessionState) -> Self {
+        CryptoSession {
+            session_id: state.session_id.clone(),
+            peer_did: state.peer_did.clone(),
+            send_ratchet: RatchetState {
+                chain_key: state.send_chain_key,
+                counter: state.send_counter,
+            },
+            recv_ratchet: RatchetState {
+                chain_key: state.recv_chain_key,
+                counter: state.recv_counter,
+            },
+            established: state.established,
+            is_initiator: state.is_initiator,
+            pending_ephemeral: state.pending_ephemeral,
+        }
+    }
+}
+
+// --- Identity storage (OS keyring) --------------------------------------------
+
+const CRYPTO_SERVICE: &str = "peers-touch.desktop.crypto";
+
+fn identity_entry(actor_id: &str) -> Result<Entry, String> {
+    let user = format!("identity-key:{actor_id}");
+    Entry::new(CRYPTO_SERVICE, user.as_str()).map_err(|e| e.to_string())
+}
+
+pub fn store_identity_key(actor_id: &str, seed: &[u8; 32]) -> Result<(), String> {
+    let hex_seed: String = seed.iter().map(|b| format!("{b:02x}")).collect();
+    let entry = identity_entry(actor_id)?;
+    entry
+        .set_password(hex_seed.as_str())
+        .map_err(|e| e.to_string())
+}
+
+pub fn load_identity_key(actor_id: &str) -> Result<Option<IdentityKeyPair>, String> {
+    let entry = identity_entry(actor_id)?;
+    let pw = match entry.get_password() {
+        Ok(p) => p,
+        Err(keyring::Error::NoEntry) => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    if pw.len() != 64 || !pw.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("stored identity key has invalid format".to_string());
+    }
+    let mut seed = [0u8; 32];
+    for i in 0..32 {
+        seed[i] = u8::from_str_radix(&pw[i * 2..i * 2 + 2], 16)
+            .map_err(|_| "identity key hex decode failed")?;
+    }
+    let signing_key = SigningKey::from_bytes(&seed);
+    let verifying_key = signing_key.verifying_key();
+    Ok(Some(IdentityKeyPair {
+        signing_key,
+        verifying_key,
+    }))
+}
+
+pub fn get_or_create_identity(actor_id: &str) -> Result<IdentityKeyPair, String> {
+    if let Some(kp) = load_identity_key(actor_id)? {
+        return Ok(kp);
+    }
+    let kp = generate_identity_keypair();
+    let seed = kp.signing_key.to_bytes();
+    store_identity_key(actor_id, &seed)?;
+    Ok(kp)
+}
+
+/// Hex-encoded SHA-256 of the Ed25519 public key (64 hex chars).
+pub fn identity_fingerprint_hex(verifying_key: &VerifyingKey) -> String {
+    let mut h = Sha256::new();
+    h.update(verifying_key.as_bytes());
+    let digest = h.finalize();
+    hex::encode(digest)
+}
+
+// --- Group symmetric key (simplified shared group key, local persistence) -----
+
+/// Serialized wire form for one encrypted group message (AES-GCM ciphertext only; epoch/counter in AAD).
+#[derive(Clone, Debug)]
+pub struct GroupEncryptedMessage {
+    pub ciphertext: Vec<u8>,
+    pub epoch: u32,
+    pub counter: u32,
+}
+
+/// Local group encryption state: one 32-byte key per group, epoch bumps on rotation.
+pub struct GroupKeyState {
+    pub group_id: String,
+    pub key: [u8; 32],
+    pub epoch: u32,
+    pub counter: u32,
+}
+
+impl GroupKeyState {
+    pub fn generate(group_id: &str) -> Self {
+        let mut key = [0u8; 32];
+        OsRng.fill_bytes(&mut key);
+        GroupKeyState {
+            group_id: group_id.to_string(),
+            key,
+            epoch: 1,
+            counter: 0,
+        }
+    }
+
+    pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<GroupEncryptedMessage, String> {
+        self.counter += 1;
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[0..4].copy_from_slice(&self.epoch.to_be_bytes());
+        nonce_bytes[4..8].copy_from_slice(&self.counter.to_be_bytes());
+
+        let aad = format!(
+            "group:{}:{}:{}",
+            self.group_id, self.epoch, self.counter
+        );
+        let ciphertext = aes_gcm_encrypt(&self.key, &nonce_bytes, plaintext, aad.as_bytes())?;
+
+        Ok(GroupEncryptedMessage {
+            ciphertext,
+            epoch: self.epoch,
+            counter: self.counter,
+        })
+    }
+
+    pub fn decrypt(&self, msg: &GroupEncryptedMessage) -> Result<Vec<u8>, String> {
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[0..4].copy_from_slice(&msg.epoch.to_be_bytes());
+        nonce_bytes[4..8].copy_from_slice(&msg.counter.to_be_bytes());
+
+        let aad = format!("group:{}:{}:{}", self.group_id, msg.epoch, msg.counter);
+        aes_gcm_decrypt(&self.key, &nonce_bytes, &msg.ciphertext, aad.as_bytes())
+    }
+
+    pub fn rotate(&mut self) {
+        let mut new_key = [0u8; 32];
+        OsRng.fill_bytes(&mut new_key);
+        self.key = new_key;
+        self.epoch += 1;
+        self.counter = 0;
+    }
+}

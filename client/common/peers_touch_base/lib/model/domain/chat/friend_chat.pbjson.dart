@@ -196,6 +196,13 @@ const FriendChatMessage$json = {
       '6': '.google.protobuf.Timestamp',
       '10': 'updatedAt'
     },
+    {
+      '1': 'encrypted_payload',
+      '3': 15,
+      '4': 1,
+      '5': 12,
+      '10': 'encryptedPayload'
+    },
   ],
 };
 
@@ -213,7 +220,8 @@ final $typed_data.Uint8List friendChatMessageDescriptor = $convert.base64Decode(
     'gLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcFILZGVsaXZlcmVkQXQSMwoHcmVhZF9hdBgM'
     'IAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSBnJlYWRBdBI5CgpjcmVhdGVkX2F0GA'
     '0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcFIJY3JlYXRlZEF0EjkKCnVwZGF0ZWRf'
-    'YXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgl1cGRhdGVkQXQ=');
+    'YXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgl1cGRhdGVkQXQSKwoRZW5jcn'
+    'lwdGVkX3BheWxvYWQYDyABKAxSEGVuY3J5cHRlZFBheWxvYWQ=');
 
 @$core.Deprecated('Use friendMessageAttachmentDescriptor instead')
 const FriendMessageAttachment$json = {
@@ -355,6 +363,13 @@ const SendMessageRequest$json = {
       '10': 'attachments'
     },
     {'1': 'reply_to_ulid', '3': 6, '4': 1, '5': 9, '10': 'replyToUlid'},
+    {
+      '1': 'encrypted_payload',
+      '3': 7,
+      '4': 1,
+      '5': 12,
+      '10': 'encryptedPayload'
+    },
   ],
 };
 
@@ -365,7 +380,8 @@ final $typed_data.Uint8List sendMessageRequestDescriptor = $convert.base64Decode
     'c190b3VjaC5tb2RlbC5jaGF0LnYxLkZyaWVuZE1lc3NhZ2VUeXBlUgR0eXBlEhgKB2NvbnRlbn'
     'QYBCABKAlSB2NvbnRlbnQSVAoLYXR0YWNobWVudHMYBSADKAsyMi5wZWVyc190b3VjaC5tb2Rl'
     'bC5jaGF0LnYxLkZyaWVuZE1lc3NhZ2VBdHRhY2htZW50UgthdHRhY2htZW50cxIiCg1yZXBseV'
-    '90b191bGlkGAYgASgJUgtyZXBseVRvVWxpZA==');
+    '90b191bGlkGAYgASgJUgtyZXBseVRvVWxpZBIrChFlbmNyeXB0ZWRfcGF5bG9hZBgHIAEoDFIQ'
+    'ZW5jcnlwdGVkUGF5bG9hZA==');
 
 @$core.Deprecated('Use sendMessageResponseDescriptor instead')
 const SendMessageResponse$json = {
@@ -426,6 +442,47 @@ final $typed_data.Uint8List getMessagesResponseDescriptor = $convert.base64Decod
     'ChNHZXRNZXNzYWdlc1Jlc3BvbnNlEkgKCG1lc3NhZ2VzGAEgAygLMiwucGVlcnNfdG91Y2gubW'
     '9kZWwuY2hhdC52MS5GcmllbmRDaGF0TWVzc2FnZVIIbWVzc2FnZXMSGQoIaGFzX21vcmUYAiAB'
     'KAhSB2hhc01vcmUSHwoLbmV4dF9jdXJzb3IYAyABKAlSCm5leHRDdXJzb3I=');
+
+@$core.Deprecated('Use searchFriendMessagesRequestDescriptor instead')
+const SearchFriendMessagesRequest$json = {
+  '1': 'SearchFriendMessagesRequest',
+  '2': [
+    {'1': 'query', '3': 1, '4': 1, '5': 9, '10': 'query'},
+    {'1': 'session_ulid', '3': 2, '4': 1, '5': 9, '10': 'sessionUlid'},
+    {'1': 'limit', '3': 3, '4': 1, '5': 5, '10': 'limit'},
+    {'1': 'offset', '3': 4, '4': 1, '5': 5, '10': 'offset'},
+  ],
+};
+
+/// Descriptor for `SearchFriendMessagesRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List searchFriendMessagesRequestDescriptor =
+    $convert.base64Decode(
+        'ChtTZWFyY2hGcmllbmRNZXNzYWdlc1JlcXVlc3QSFAoFcXVlcnkYASABKAlSBXF1ZXJ5EiEKDH'
+        'Nlc3Npb25fdWxpZBgCIAEoCVILc2Vzc2lvblVsaWQSFAoFbGltaXQYAyABKAVSBWxpbWl0EhYK'
+        'Bm9mZnNldBgEIAEoBVIGb2Zmc2V0');
+
+@$core.Deprecated('Use searchFriendMessagesResponseDescriptor instead')
+const SearchFriendMessagesResponse$json = {
+  '1': 'SearchFriendMessagesResponse',
+  '2': [
+    {
+      '1': 'messages',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.FriendChatMessage',
+      '10': 'messages'
+    },
+    {'1': 'total', '3': 2, '4': 1, '5': 5, '10': 'total'},
+  ],
+};
+
+/// Descriptor for `SearchFriendMessagesResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List searchFriendMessagesResponseDescriptor =
+    $convert.base64Decode(
+        'ChxTZWFyY2hGcmllbmRNZXNzYWdlc1Jlc3BvbnNlEkgKCG1lc3NhZ2VzGAEgAygLMiwucGVlcn'
+        'NfdG91Y2gubW9kZWwuY2hhdC52MS5GcmllbmRDaGF0TWVzc2FnZVIIbWVzc2FnZXMSFAoFdG90'
+        'YWwYAiABKAVSBXRvdGFs');
 
 @$core.Deprecated('Use createSessionRequestDescriptor instead')
 const CreateSessionRequest$json = {
@@ -764,3 +821,164 @@ final $typed_data.Uint8List getStatsResponseDescriptor = $convert.base64Decode(
     'ChBHZXRTdGF0c1Jlc3BvbnNlEiEKDG9ubGluZV9wZWVycxgBIAEoBVILb25saW5lUGVlcnMSKQ'
     'oQcGVuZGluZ19tZXNzYWdlcxgCIAEoA1IPcGVuZGluZ01lc3NhZ2VzEhYKBnN0YXR1cxgDIAEo'
     'CVIGc3RhdHVz');
+
+@$core.Deprecated('Use sendFriendRequestRequestDescriptor instead')
+const SendFriendRequestRequest$json = {
+  '1': 'SendFriendRequestRequest',
+  '2': [
+    {'1': 'receiver_did', '3': 1, '4': 1, '5': 9, '10': 'receiverDid'},
+    {'1': 'message', '3': 2, '4': 1, '5': 9, '10': 'message'},
+  ],
+};
+
+/// Descriptor for `SendFriendRequestRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sendFriendRequestRequestDescriptor =
+    $convert.base64Decode(
+        'ChhTZW5kRnJpZW5kUmVxdWVzdFJlcXVlc3QSIQoMcmVjZWl2ZXJfZGlkGAEgASgJUgtyZWNlaX'
+        'ZlckRpZBIYCgdtZXNzYWdlGAIgASgJUgdtZXNzYWdl');
+
+@$core.Deprecated('Use sendFriendRequestResponseDescriptor instead')
+const SendFriendRequestResponse$json = {
+  '1': 'SendFriendRequestResponse',
+  '2': [
+    {
+      '1': 'request',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.FriendRequest',
+      '10': 'request'
+    },
+  ],
+};
+
+/// Descriptor for `SendFriendRequestResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sendFriendRequestResponseDescriptor =
+    $convert.base64Decode(
+        'ChlTZW5kRnJpZW5kUmVxdWVzdFJlc3BvbnNlEkIKB3JlcXVlc3QYASABKAsyKC5wZWVyc190b3'
+        'VjaC5tb2RlbC5jaGF0LnYxLkZyaWVuZFJlcXVlc3RSB3JlcXVlc3Q=');
+
+@$core.Deprecated('Use acceptFriendRequestRequestDescriptor instead')
+const AcceptFriendRequestRequest$json = {
+  '1': 'AcceptFriendRequestRequest',
+  '2': [
+    {'1': 'request_id', '3': 1, '4': 1, '5': 9, '10': 'requestId'},
+  ],
+};
+
+/// Descriptor for `AcceptFriendRequestRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List acceptFriendRequestRequestDescriptor =
+    $convert.base64Decode(
+        'ChpBY2NlcHRGcmllbmRSZXF1ZXN0UmVxdWVzdBIdCgpyZXF1ZXN0X2lkGAEgASgJUglyZXF1ZX'
+        'N0SWQ=');
+
+@$core.Deprecated('Use acceptFriendRequestResponseDescriptor instead')
+const AcceptFriendRequestResponse$json = {
+  '1': 'AcceptFriendRequestResponse',
+  '2': [
+    {
+      '1': 'request',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.FriendRequest',
+      '10': 'request'
+    },
+    {
+      '1': 'session',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.FriendChatSession',
+      '10': 'session'
+    },
+  ],
+};
+
+/// Descriptor for `AcceptFriendRequestResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List acceptFriendRequestResponseDescriptor = $convert.base64Decode(
+    'ChtBY2NlcHRGcmllbmRSZXF1ZXN0UmVzcG9uc2USQgoHcmVxdWVzdBgBIAEoCzIoLnBlZXJzX3'
+    'RvdWNoLm1vZGVsLmNoYXQudjEuRnJpZW5kUmVxdWVzdFIHcmVxdWVzdBJGCgdzZXNzaW9uGAIg'
+    'ASgLMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5GcmllbmRDaGF0U2Vzc2lvblIHc2Vzc2'
+    'lvbg==');
+
+@$core.Deprecated('Use rejectFriendRequestRequestDescriptor instead')
+const RejectFriendRequestRequest$json = {
+  '1': 'RejectFriendRequestRequest',
+  '2': [
+    {'1': 'request_id', '3': 1, '4': 1, '5': 9, '10': 'requestId'},
+  ],
+};
+
+/// Descriptor for `RejectFriendRequestRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List rejectFriendRequestRequestDescriptor =
+    $convert.base64Decode(
+        'ChpSZWplY3RGcmllbmRSZXF1ZXN0UmVxdWVzdBIdCgpyZXF1ZXN0X2lkGAEgASgJUglyZXF1ZX'
+        'N0SWQ=');
+
+@$core.Deprecated('Use rejectFriendRequestResponseDescriptor instead')
+const RejectFriendRequestResponse$json = {
+  '1': 'RejectFriendRequestResponse',
+  '2': [
+    {
+      '1': 'request',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.FriendRequest',
+      '10': 'request'
+    },
+  ],
+};
+
+/// Descriptor for `RejectFriendRequestResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List rejectFriendRequestResponseDescriptor =
+    $convert.base64Decode(
+        'ChtSZWplY3RGcmllbmRSZXF1ZXN0UmVzcG9uc2USQgoHcmVxdWVzdBgBIAEoCzIoLnBlZXJzX3'
+        'RvdWNoLm1vZGVsLmNoYXQudjEuRnJpZW5kUmVxdWVzdFIHcmVxdWVzdA==');
+
+@$core.Deprecated('Use listFriendRequestsRequestDescriptor instead')
+const ListFriendRequestsRequest$json = {
+  '1': 'ListFriendRequestsRequest',
+  '2': [
+    {
+      '1': 'status',
+      '3': 1,
+      '4': 1,
+      '5': 14,
+      '6': '.peers_touch.model.chat.v1.FriendRequestStatus',
+      '10': 'status'
+    },
+    {'1': 'limit', '3': 2, '4': 1, '5': 5, '10': 'limit'},
+    {'1': 'offset', '3': 3, '4': 1, '5': 5, '10': 'offset'},
+  ],
+};
+
+/// Descriptor for `ListFriendRequestsRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List listFriendRequestsRequestDescriptor = $convert.base64Decode(
+    'ChlMaXN0RnJpZW5kUmVxdWVzdHNSZXF1ZXN0EkYKBnN0YXR1cxgBIAEoDjIuLnBlZXJzX3RvdW'
+    'NoLm1vZGVsLmNoYXQudjEuRnJpZW5kUmVxdWVzdFN0YXR1c1IGc3RhdHVzEhQKBWxpbWl0GAIg'
+    'ASgFUgVsaW1pdBIWCgZvZmZzZXQYAyABKAVSBm9mZnNldA==');
+
+@$core.Deprecated('Use listFriendRequestsResponseDescriptor instead')
+const ListFriendRequestsResponse$json = {
+  '1': 'ListFriendRequestsResponse',
+  '2': [
+    {
+      '1': 'requests',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.peers_touch.model.chat.v1.FriendRequest',
+      '10': 'requests'
+    },
+    {'1': 'total', '3': 2, '4': 1, '5': 5, '10': 'total'},
+  ],
+};
+
+/// Descriptor for `ListFriendRequestsResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List listFriendRequestsResponseDescriptor =
+    $convert.base64Decode(
+        'ChpMaXN0RnJpZW5kUmVxdWVzdHNSZXNwb25zZRJECghyZXF1ZXN0cxgBIAMoCzIoLnBlZXJzX3'
+        'RvdWNoLm1vZGVsLmNoYXQudjEuRnJpZW5kUmVxdWVzdFIIcmVxdWVzdHMSFAoFdG90YWwYAiAB'
+        'KAVSBXRvdGFs');
