@@ -2,7 +2,6 @@ use crate::domain::storage::key_management::{KeyErrorCode, KeyMaterial, KeyProvi
 use keyring::Entry;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlatformBackend {
@@ -59,35 +58,42 @@ impl PlatformKeyProvider {
     }
 
     fn encode_material(item: &KeyMaterial) -> String {
-        let key_text = String::from_utf8_lossy(&item.key_bytes);
-        format!("v{}|{}|{}", item.key_version, item.key_id, key_text)
+        let key_hex: String = item.key_bytes.iter().map(|b| format!("{b:02x}")).collect();
+        format!("v{}|{}|{}", item.key_version, item.key_id, key_hex)
     }
 
     fn decode_material(payload: &str) -> Option<KeyMaterial> {
         let mut parts = payload.splitn(3, '|');
         let version_part = parts.next()?;
         let key_id = parts.next()?.to_string();
-        let key_text = parts.next()?.to_string();
+        let key_text = parts.next()?;
         let key_version = version_part
             .strip_prefix('v')
             .and_then(|s| s.parse::<i32>().ok())?;
+        // Try hex decode first (new format), fall back to raw bytes (legacy format)
+        let key_bytes = if key_text.len() == 64 && key_text.chars().all(|c| c.is_ascii_hexdigit()) {
+            (0..key_text.len())
+                .step_by(2)
+                .filter_map(|i| u8::from_str_radix(&key_text[i..i + 2], 16).ok())
+                .collect()
+        } else {
+            key_text.as_bytes().to_vec()
+        };
         Some(KeyMaterial {
             key_id,
             key_version,
-            key_bytes: key_text.into_bytes(),
+            key_bytes,
         })
     }
 
     fn generate_key_material(key_ref: &str, key_version: i32) -> KeyMaterial {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let bytes = format!("pt:{}:{key_ref}:{key_version}:{ts}", Self::backend_name()).into_bytes();
+        use rand::RngCore;
+        let mut key_bytes = vec![0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut key_bytes);
         KeyMaterial {
             key_id: key_ref.to_string(),
             key_version,
-            key_bytes: bytes,
+            key_bytes,
         }
     }
 

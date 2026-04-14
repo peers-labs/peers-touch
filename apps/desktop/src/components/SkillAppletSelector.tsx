@@ -13,6 +13,7 @@ import {
 import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/desktop_api';
 import { useChatStore } from '../store/chat';
 import { useTranslation } from 'react-i18next';
+import { resolveI18nValue } from '../i18n/index';
 
 function SelectorRow({
   icon,
@@ -91,8 +92,16 @@ function useSkillAppletState() {
     api
       .listSkills()
       .then((data) => {
-        setSkills(data.skills);
-        setBuiltins(data.builtin);
+        setSkills(data.skills.map((s) => ({
+          ...s,
+          name: resolveI18nValue(s.name),
+          description: resolveI18nValue(s.description),
+        })));
+        setBuiltins(data.builtin.map((b) => ({
+          ...b,
+          name: resolveI18nValue(b.name),
+          description: resolveI18nValue(b.description),
+        })));
       })
       .catch(() => {});
   }, []);

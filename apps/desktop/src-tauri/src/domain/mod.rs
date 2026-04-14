@@ -2,6 +2,8 @@ pub mod admin;
 pub mod applets;
 pub mod auth;
 pub mod chat;
+pub mod crypto;
+pub mod pin_lock;
 pub mod profile;
 pub mod settings;
 pub mod storage;

@@ -7,7 +7,7 @@
 use std::sync::Arc;
 use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
-    FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
+    AccountSyncAvatarInput, FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
 };
 use crate::application::profile as application_profile;
 use crate::state::AppState;
@@ -69,12 +69,12 @@ pub fn pick_image_file() -> AppResult<StubPayload> {
 /// Sync avatar URL to local auth identity so the sidebar avatar stays up-to-date.
 /// Called by frontend after profile avatar is loaded or changed on Station.
 #[tauri::command]
-pub fn account_sync_avatar(avatar_url: String) -> AppResult<StubPayload> {
-    match crate::infrastructure::auth_identity::update_active_avatar(&avatar_url) {
+pub fn account_sync_avatar(input: AccountSyncAvatarInput) -> AppResult<StubPayload> {
+    match crate::infrastructure::auth_identity::update_active_avatar(&input.avatar_url) {
         Ok(()) => AppResult::success(StubPayload {
             command: "account_sync_avatar".to_string(),
             status: "synced".to_string(),
         }),
-        Err(e) => AppResult::fail(ErrorCode::InternalError, "error.profile.avatarSyncFailed", None),
+        Err(_e) => AppResult::fail(ErrorCode::InternalError, "error.profile.avatarSyncFailed", None),
     }
 }

@@ -1,7 +1,0 @@
-# Desktop Flutter app analysis options
-# Inherits from shared client config
-include: ../analysis_options.yaml
-
-analyzer:
-  exclude:
-    - lib/old/**

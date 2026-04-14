@@ -3,6 +3,7 @@
   "layout.nav.chat": "对话",
   "layout.nav.agent": "智能体",
   "layout.nav.notes": "笔记",
+  "layout.nav.contacts": "通讯录",
   "layout.nav.settings": "设置",
 
   "layout.online.tooltip": "过去 5 分钟内有 {{count}} 位访客在线",

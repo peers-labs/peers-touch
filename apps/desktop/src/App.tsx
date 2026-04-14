@@ -10,6 +10,8 @@ interface ViewProps {
 
 const APP_VIEWS: Record<AppState, ComponentType<ViewProps>> = {
   onboarding: OnboardingView,
+  // Warm resume: show ReadyView immediately (auto-transitions from 'resuming' to 'ready')
+  resuming: ReadyView,
   ready: ReadyView,
 };
 

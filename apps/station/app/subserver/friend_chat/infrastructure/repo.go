@@ -1,8 +1,8 @@
 package infrastructure
 
 import (
-	"fmt"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -12,12 +12,12 @@ import (
 )
 
 type SessionModel struct {
-	ID              uint      `gorm:"primaryKey"`
-	ULID            string    `gorm:"size:64;uniqueIndex"`
-	PairKey         string    `gorm:"size:255;uniqueIndex"`
-	ParticipantADID string    `gorm:"size:255;index"`
-	ParticipantBDID string    `gorm:"size:255;index"`
-	LastMessageULID string    `gorm:"size:64"`
+	ID              uint   `gorm:"primaryKey"`
+	ULID            string `gorm:"size:64;uniqueIndex"`
+	PairKey         string `gorm:"size:255;uniqueIndex"`
+	ParticipantADID string `gorm:"size:255;index"`
+	ParticipantBDID string `gorm:"size:255;index"`
+	LastMessageULID string `gorm:"size:64"`
 	LastMessageAt   time.Time
 	UnreadCountA    int32
 	UnreadCountB    int32
@@ -26,27 +26,56 @@ type SessionModel struct {
 }
 
 type MessageModel struct {
-	ID          uint      `gorm:"primaryKey"`
-	ULID        string    `gorm:"size:64;uniqueIndex"`
-	SessionULID string    `gorm:"size:64;index"`
-	SenderDID   string    `gorm:"size:255;index"`
-	ReceiverDID string    `gorm:"size:255;index"`
+	ID          uint   `gorm:"primaryKey"`
+	ULID        string `gorm:"size:64;uniqueIndex"`
+	SessionULID string `gorm:"size:64;index"`
+	SenderDID   string `gorm:"size:255;index"`
+	ReceiverDID string `gorm:"size:255;index"`
 	Type        int32
-	Content     string    `gorm:"type:text"`
-	ReplyToULID string    `gorm:"size:64"`
-	Status      int32
-	SentAt      time.Time `gorm:"index"`
+	Content     string `gorm:"type:text"`
+	// EncryptedPayload is optional E2E ciphertext (PostgreSQL bytea).
+	EncryptedPayload []byte `gorm:"type:bytea"`
+	ReplyToULID      string `gorm:"size:64"`
+	Status           int32
+	SentAt           time.Time `gorm:"index"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// MessageAttachmentModel stores per-message attachment metadata (blobs addressed by CID).
+type MessageAttachmentModel struct {
+	ID           uint   `gorm:"primaryKey"`
+	MessageULID  string `gorm:"size:64;index"`
+	CID          string `gorm:"size:255"`
+	Filename     string `gorm:"size:255"`
+	MimeType     string `gorm:"size:128"`
+	Size         int64
+	ThumbnailCID string `gorm:"size:255"`
+}
+
+func (MessageAttachmentModel) TableName() string {
+	return "friend_message_attachments"
+}
+
+type FriendRequestModel struct {
+	ID          uint   `gorm:"primaryKey"`
+	RequestID   string `gorm:"column:request_id;size:64;uniqueIndex"`
+	PairKey     string `gorm:"size:255;uniqueIndex:idx_fr_pair_status"`
+	SenderDID   string `gorm:"size:255;index"`
+	ReceiverDID string `gorm:"size:255;index"`
+	Status      int32  `gorm:"uniqueIndex:idx_fr_pair_status"`
+	Message     string `gorm:"type:text"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
 type OutboxModel struct {
-	ID        uint      `gorm:"primaryKey"`
-	EventID   string    `gorm:"size:64;uniqueIndex"`
-	EventType string    `gorm:"size:128;index"`
-	TargetID  string    `gorm:"size:64;index"`
-	Payload   string    `gorm:"type:text"`
-	Status    string    `gorm:"size:32;index"`
+	ID        uint   `gorm:"primaryKey"`
+	EventID   string `gorm:"size:64;uniqueIndex"`
+	EventType string `gorm:"size:128;index"`
+	TargetID  string `gorm:"size:64;index"`
+	Payload   string `gorm:"type:text"`
+	Status    string `gorm:"size:32;index"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -60,7 +89,7 @@ func NewGormRepo(db *gorm.DB) *GormRepo {
 }
 
 func (r *GormRepo) AutoMigrate() error {
-	return r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &OutboxModel{})
+	return r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &MessageAttachmentModel{}, &OutboxModel{}, &FriendRequestModel{})
 }
 
 func pairKey(a, b string) string {
@@ -85,18 +114,77 @@ func toDomainSession(item SessionModel) domain.Session {
 
 func toDomainMessage(item MessageModel) domain.Message {
 	return domain.Message{
-		ID:          item.ULID,
-		SessionID:   item.SessionULID,
-		SenderDID:   item.SenderDID,
-		ReceiverDID: item.ReceiverDID,
-		Type:        item.Type,
-		Content:     item.Content,
-		ReplyToID:   item.ReplyToULID,
-		Status:      item.Status,
-		SentAt:      item.SentAt,
-		CreatedAt:   item.CreatedAt,
-		UpdatedAt:   item.UpdatedAt,
+		ID:               item.ULID,
+		SessionID:        item.SessionULID,
+		SenderDID:        item.SenderDID,
+		ReceiverDID:      item.ReceiverDID,
+		Type:             item.Type,
+		Content:          item.Content,
+		EncryptedPayload: append([]byte(nil), item.EncryptedPayload...),
+		ReplyToID:        item.ReplyToULID,
+		Status:           item.Status,
+		SentAt:           item.SentAt,
+		CreatedAt:        item.CreatedAt,
+		UpdatedAt:        item.UpdatedAt,
 	}
+}
+
+func attachmentRowToDomain(m MessageAttachmentModel) domain.Attachment {
+	return domain.Attachment{
+		CID:          m.CID,
+		Filename:     m.Filename,
+		MimeType:     m.MimeType,
+		Size:         m.Size,
+		ThumbnailCID: m.ThumbnailCID,
+	}
+}
+
+// LoadAttachments returns stored attachments for one message (optional granular load; list APIs batch-load instead).
+func (r *GormRepo) LoadAttachments(messageULID string) ([]domain.Attachment, error) {
+	var rows []MessageAttachmentModel
+	if err := r.db.Where("message_ulid = ?", messageULID).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.Attachment, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, attachmentRowToDomain(row))
+	}
+	return out, nil
+}
+
+func (r *GormRepo) batchAttachmentsByMessageULIDs(messageULIDs []string) (map[string][]domain.Attachment, error) {
+	out := make(map[string][]domain.Attachment)
+	if len(messageULIDs) == 0 {
+		return out, nil
+	}
+	var rows []MessageAttachmentModel
+	if err := r.db.Where("message_ulid IN ?", messageULIDs).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.MessageULID] = append(out[row.MessageULID], attachmentRowToDomain(row))
+	}
+	return out, nil
+}
+
+func (r *GormRepo) mergeAttachmentsIntoMessages(messages []domain.Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+	ids := make([]string, len(messages))
+	for i := range messages {
+		ids[i] = messages[i].ID
+	}
+	m, err := r.batchAttachmentsByMessageULIDs(ids)
+	if err != nil {
+		return err
+	}
+	for i := range messages {
+		if atts, ok := m[messages[i].ID]; ok {
+			messages[i].Attachments = atts
+		}
+	}
+	return nil
 }
 
 func (r *GormRepo) GetOrCreateSession(actorDID, participantDID string) (*domain.Session, bool, error) {
@@ -159,19 +247,33 @@ func (r *GormRepo) ListSessions(actorDID string, limit, offset int) ([]domain.Se
 func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error) {
 	now := time.Now()
 	record := MessageModel{
-		ULID:        fmt.Sprintf("fcm-%d", now.UnixNano()),
-		SessionULID: message.SessionID,
-		SenderDID:   message.SenderDID,
-		ReceiverDID: message.ReceiverDID,
-		Type:        message.Type,
-		Content:     message.Content,
-		ReplyToULID: message.ReplyToID,
-		Status:      message.Status,
-		SentAt:      now,
+		ULID:             fmt.Sprintf("fcm-%d", now.UnixNano()),
+		SessionULID:      message.SessionID,
+		SenderDID:        message.SenderDID,
+		ReceiverDID:      message.ReceiverDID,
+		Type:             message.Type,
+		Content:          message.Content,
+		EncryptedPayload: append([]byte(nil), message.EncryptedPayload...),
+		ReplyToULID:      message.ReplyToID,
+		Status:           message.Status,
+		SentAt:           now,
 	}
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&record).Error; err != nil {
 			return err
+		}
+		for _, a := range message.Attachments {
+			row := MessageAttachmentModel{
+				MessageULID:  record.ULID,
+				CID:          a.CID,
+				Filename:     a.Filename,
+				MimeType:     a.MimeType,
+				Size:         a.Size,
+				ThumbnailCID: a.ThumbnailCID,
+			}
+			if err := tx.Create(&row).Error; err != nil {
+				return err
+			}
 		}
 		var session SessionModel
 		if err := tx.Where("ulid = ?", message.SessionID).First(&session).Error; err != nil {
@@ -201,7 +303,51 @@ func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error)
 	if err != nil {
 		return domain.Message{}, err
 	}
-	return toDomainMessage(record), nil
+	out := toDomainMessage(record)
+	if len(message.Attachments) > 0 {
+		out.Attachments = append([]domain.Attachment(nil), message.Attachments...)
+	}
+	return out, nil
+}
+
+// SearchMessages returns messages whose content matches query (case-insensitive substring) across sessions
+// the actor participates in, optionally scoped to one session. Uses LOWER/LIKE so PostgreSQL and SQLite agree.
+func (r *GormRepo) SearchMessages(actorDID, query, sessionUlid string, limit, offset int) ([]domain.Message, int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	searchPattern := "%" + query + "%"
+	base := r.db.Model(&MessageModel{}).
+		Joins("INNER JOIN session_models AS s ON message_models.session_ulid = s.ulid").
+		Where("(s.participant_a_did = ? OR s.participant_b_did = ?)", actorDID, actorDID).
+		Where("LOWER(message_models.content) LIKE LOWER(?)", searchPattern)
+	if sessionUlid != "" {
+		base = base.Where("message_models.session_ulid = ?", sessionUlid)
+	}
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var items []MessageModel
+	if err := base.Order("message_models.sent_at DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	out := make([]domain.Message, 0, len(items))
+	for _, item := range items {
+		out = append(out, toDomainMessage(item))
+	}
+	if len(out) > 0 {
+		if err := r.mergeAttachmentsIntoMessages(out); err != nil {
+			return nil, 0, err
+		}
+	}
+	return out, int(total), nil
 }
 
 func (r *GormRepo) ListMessages(sessionID, beforeUlid string, limit int) ([]domain.Message, error) {
@@ -221,6 +367,9 @@ func (r *GormRepo) ListMessages(sessionID, beforeUlid string, limit int) ([]doma
 		for _, item := range items {
 			out = append(out, toDomainMessage(item))
 		}
+		if err := r.mergeAttachmentsIntoMessages(out); err != nil {
+			return nil, err
+		}
 		return out, nil
 	}
 	if beforeUlid != "" {
@@ -236,6 +385,9 @@ func (r *GormRepo) ListMessages(sessionID, beforeUlid string, limit int) ([]doma
 	for _, item := range items {
 		out = append(out, toDomainMessage(item))
 	}
+	if err := r.mergeAttachmentsIntoMessages(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -247,12 +399,28 @@ func (r *GormRepo) MarkRead(actorDID string, messageIDs []string, status int32) 
 		}).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&SessionModel{}).Where("participant_a_did = ?", actorDID).Update("unread_count_a", 0).Error; err != nil {
+
+		// Scope unread reset to only sessions that contain the acked messages
+		var sessionULIDs []string
+		if err := tx.Model(&MessageModel{}).
+			Where("ulid IN ?", messageIDs).
+			Distinct("session_ulid").
+			Pluck("session_ulid", &sessionULIDs).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&SessionModel{}).Where("participant_b_did = ?", actorDID).Update("unread_count_b", 0).Error; err != nil {
-			return err
+		if len(sessionULIDs) > 0 {
+			if err := tx.Model(&SessionModel{}).
+				Where("ulid IN ? AND participant_a_did = ?", sessionULIDs, actorDID).
+				Update("unread_count_a", 0).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&SessionModel{}).
+				Where("ulid IN ? AND participant_b_did = ?", sessionULIDs, actorDID).
+				Update("unread_count_b", 0).Error; err != nil {
+				return err
+			}
 		}
+
 		outbox := OutboxModel{
 			EventID:   fmt.Sprintf("fce-%d", time.Now().UnixNano()),
 			EventType: "friend.message.acked",
@@ -262,6 +430,146 @@ func (r *GormRepo) MarkRead(actorDID string, messageIDs []string, status int32) 
 		}
 		return tx.Create(&outbox).Error
 	})
+}
+
+// ============================================================================
+// Friend Request Operations
+// ============================================================================
+
+func toDomainFriendRequest(m FriendRequestModel) domain.FriendRequest {
+	return domain.FriendRequest{
+		ID:          m.RequestID,
+		SenderDID:   m.SenderDID,
+		ReceiverDID: m.ReceiverDID,
+		Status:      m.Status,
+		Message:     m.Message,
+		CreatedAt:   m.CreatedAt,
+		UpdatedAt:   m.UpdatedAt,
+	}
+}
+
+func (r *GormRepo) CreateFriendRequest(senderDID, receiverDID, message string) (domain.FriendRequest, error) {
+	now := time.Now()
+	key := pairKey(senderDID, receiverDID)
+
+	// Check for existing pending request in either direction
+	var existing FriendRequestModel
+	err := r.db.Where("pair_key = ? AND status = ?", key, domain.FriendRequestStatusPending).First(&existing).Error
+	if err == nil {
+		return toDomainFriendRequest(existing), nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.FriendRequest{}, err
+	}
+
+	// Check for already-accepted relationship
+	err = r.db.Where("pair_key = ? AND status = ?", key, domain.FriendRequestStatusAccepted).First(&existing).Error
+	if err == nil {
+		return domain.FriendRequest{}, errors.New("already friends")
+	}
+
+	record := FriendRequestModel{
+		RequestID:   fmt.Sprintf("fr-%d", now.UnixNano()),
+		PairKey:     key,
+		SenderDID:   senderDID,
+		ReceiverDID: receiverDID,
+		Status:      domain.FriendRequestStatusPending,
+		Message:     message,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := r.db.Create(&record).Error; err != nil {
+		return domain.FriendRequest{}, err
+	}
+	return toDomainFriendRequest(record), nil
+}
+
+func (r *GormRepo) GetFriendRequest(requestID string) (*domain.FriendRequest, error) {
+	var record FriendRequestModel
+	if err := r.db.Where("request_id = ?", requestID).First(&record).Error; err != nil {
+		return nil, err
+	}
+	fr := toDomainFriendRequest(record)
+	return &fr, nil
+}
+
+func (r *GormRepo) AcceptFriendRequest(requestID string) (*domain.FriendRequest, *domain.Session, error) {
+	var fr domain.FriendRequest
+	var session domain.Session
+
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var record FriendRequestModel
+		if err := tx.Where("request_id = ? AND status = ?", requestID, domain.FriendRequestStatusPending).First(&record).Error; err != nil {
+			return err
+		}
+		record.Status = domain.FriendRequestStatusAccepted
+		record.UpdatedAt = time.Now()
+		if err := tx.Save(&record).Error; err != nil {
+			return err
+		}
+		fr = toDomainFriendRequest(record)
+
+		// Create chat session for the new friendship
+		now := time.Now()
+		key := pairKey(record.SenderDID, record.ReceiverDID)
+		var existingSession SessionModel
+		err := tx.Where("pair_key = ?", key).First(&existingSession).Error
+		if err == nil {
+			session = toDomainSession(existingSession)
+			return nil
+		}
+		newSession := SessionModel{
+			ULID:            fmt.Sprintf("fcs-%d", now.UnixNano()),
+			PairKey:         key,
+			ParticipantADID: record.SenderDID,
+			ParticipantBDID: record.ReceiverDID,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+		if err := tx.Create(&newSession).Error; err != nil {
+			return err
+		}
+		session = toDomainSession(newSession)
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return &fr, &session, nil
+}
+
+func (r *GormRepo) RejectFriendRequest(requestID string) (*domain.FriendRequest, error) {
+	var record FriendRequestModel
+	if err := r.db.Where("request_id = ? AND status = ?", requestID, domain.FriendRequestStatusPending).First(&record).Error; err != nil {
+		return nil, err
+	}
+	record.Status = domain.FriendRequestStatusRejected
+	record.UpdatedAt = time.Now()
+	if err := r.db.Save(&record).Error; err != nil {
+		return nil, err
+	}
+	fr := toDomainFriendRequest(record)
+	return &fr, nil
+}
+
+func (r *GormRepo) ListFriendRequests(actorDID string, status int32, limit, offset int) ([]domain.FriendRequest, int, error) {
+	query := r.db.Model(&FriendRequestModel{}).Where("receiver_did = ?", actorDID)
+	if status > 0 {
+		query = query.Where("status = ?", status)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var items []FriendRequestModel
+	if err := query.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	out := make([]domain.FriendRequest, 0, len(items))
+	for _, item := range items {
+		out = append(out, toDomainFriendRequest(item))
+	}
+	return out, int(total), nil
 }
 
 func (r *GormRepo) DispatchOutbox(limit int) (int64, error) {

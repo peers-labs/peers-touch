@@ -22,14 +22,16 @@ type group struct {
 }
 
 type message struct {
-	ID        string
-	GroupID   string
-	SenderDID string
-	Type      int32
-	Content   string
-	ReplyToID string
-	Deleted   bool
-	SentAt    time.Time
+	ID               string
+	GroupID          string
+	SenderDID        string
+	Type             int32
+	Content          string
+	EncryptedPayload []byte
+	ReplyToID        string
+	Deleted          bool
+	Attachments      []domain.Attachment
+	SentAt           time.Time
 }
 
 type member struct {
@@ -108,34 +110,79 @@ func (s *service) ListGroups() []domain.Group {
 	return out
 }
 
-func (s *service) SendMessage(groupID, senderDID string, messageType int32, content, replyToID string) domain.Message {
-	item := s.appendMessage(groupID, senderDID, messageType, content, replyToID)
+func (s *service) mergeGroupAttachmentsIntoDomainMessages(messages []domain.Message) error {
+	if s.db == nil || len(messages) == 0 {
+		return nil
+	}
+	ids := make([]string, len(messages))
+	for i := range messages {
+		ids[i] = messages[i].ID
+	}
+	var rows []MessageAttachmentModel
+	if err := s.db.Where("message_ulid IN ?", ids).Find(&rows).Error; err != nil {
+		return err
+	}
+	m := make(map[string][]domain.Attachment)
+	for _, row := range rows {
+		m[row.MessageULID] = append(m[row.MessageULID], domain.Attachment{
+			CID:          row.CID,
+			Filename:     row.Filename,
+			MimeType:     row.MimeType,
+			Size:         row.Size,
+			ThumbnailCID: row.ThumbnailCID,
+		})
+	}
+	for i := range messages {
+		if atts, ok := m[messages[i].ID]; ok {
+			messages[i].Attachments = atts
+		}
+	}
+	return nil
+}
+
+func (s *service) SendMessage(groupID, senderDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte) domain.Message {
+	item := s.appendMessage(groupID, senderDID, messageType, content, replyToID, attachments, encryptedPayload)
+	var enc []byte
+	if len(item.EncryptedPayload) > 0 {
+		enc = append([]byte(nil), item.EncryptedPayload...)
+	}
 	return domain.Message{
-		ID:        item.ID,
-		GroupID:   item.GroupID,
-		SenderDID: item.SenderDID,
-		Type:      item.Type,
-		Content:   item.Content,
-		ReplyToID: item.ReplyToID,
-		SentAt:    item.SentAt,
+		ID:               item.ID,
+		GroupID:          item.GroupID,
+		SenderDID:        item.SenderDID,
+		Type:             item.Type,
+		Content:          item.Content,
+		ReplyToID:        item.ReplyToID,
+		Attachments:      append([]domain.Attachment(nil), item.Attachments...),
+		EncryptedPayload: enc,
+		SentAt:           item.SentAt,
 	}
 }
 
-func (s *service) ListMessages(groupID, beforeUlid string, limit int) []domain.Message {
+func (s *service) ListMessages(groupID, beforeUlid string, limit int) ([]domain.Message, error) {
 	items := s.listMessages(groupID, beforeUlid, limit)
 	out := make([]domain.Message, 0, len(items))
 	for _, item := range items {
+		var enc []byte
+		if len(item.EncryptedPayload) > 0 {
+			enc = append([]byte(nil), item.EncryptedPayload...)
+		}
 		out = append(out, domain.Message{
-			ID:        item.ID,
-			GroupID:   item.GroupID,
-			SenderDID: item.SenderDID,
-			Type:      item.Type,
-			Content:   item.Content,
-			ReplyToID: item.ReplyToID,
-			SentAt:    item.SentAt,
+			ID:               item.ID,
+			GroupID:          item.GroupID,
+			SenderDID:        item.SenderDID,
+			Type:             item.Type,
+			Content:          item.Content,
+			ReplyToID:        item.ReplyToID,
+			Attachments:      append([]domain.Attachment(nil), item.Attachments...),
+			EncryptedPayload: enc,
+			SentAt:           item.SentAt,
 		})
 	}
-	return out
+	if err := s.mergeGroupAttachmentsIntoDomainMessages(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (s *service) UnreadCount(actorDID, groupID string) int64 {
@@ -255,21 +302,30 @@ func (s *service) DeleteMessage(messageID string) bool {
 	return s.deleteMessage(messageID)
 }
 
-func (s *service) SearchMessages(groupID, query string, limit int) []domain.Message {
+func (s *service) SearchMessages(groupID, query string, limit int) ([]domain.Message, error) {
 	items := s.searchMessages(groupID, query, limit)
 	out := make([]domain.Message, 0, len(items))
 	for _, item := range items {
+		var enc []byte
+		if len(item.EncryptedPayload) > 0 {
+			enc = append([]byte(nil), item.EncryptedPayload...)
+		}
 		out = append(out, domain.Message{
-			ID:        item.ID,
-			GroupID:   item.GroupID,
-			SenderDID: item.SenderDID,
-			Type:      item.Type,
-			Content:   item.Content,
-			ReplyToID: item.ReplyToID,
-			SentAt:    item.SentAt,
+			ID:               item.ID,
+			GroupID:          item.GroupID,
+			SenderDID:        item.SenderDID,
+			Type:             item.Type,
+			Content:          item.Content,
+			ReplyToID:        item.ReplyToID,
+			Attachments:      append([]domain.Attachment(nil), item.Attachments...),
+			EncryptedPayload: enc,
+			SentAt:           item.SentAt,
 		})
 	}
-	return out
+	if err := s.mergeGroupAttachmentsIntoDomainMessages(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (s *service) UpdateNickname(groupID, actorDID, nickname string) (*domain.Member, bool) {
@@ -373,15 +429,20 @@ func (s *service) bootstrapFromDB() error {
 	s.messages = make(map[string][]message)
 	s.messagesByID = make(map[string]message, len(messages))
 	for _, item := range messages {
+		var enc []byte
+		if len(item.EncryptedPayload) > 0 {
+			enc = append([]byte(nil), item.EncryptedPayload...)
+		}
 		m := message{
-			ID:        item.ULID,
-			GroupID:   item.GroupULID,
-			SenderDID: item.SenderDID,
-			Type:      item.Type,
-			Content:   item.Content,
-			ReplyToID: item.ReplyToID,
-			Deleted:   item.Deleted,
-			SentAt:    item.SentAt,
+			ID:               item.ULID,
+			GroupID:          item.GroupULID,
+			SenderDID:        item.SenderDID,
+			Type:             item.Type,
+			Content:          item.Content,
+			EncryptedPayload: enc,
+			ReplyToID:        item.ReplyToID,
+			Deleted:          item.Deleted,
+			SentAt:           item.SentAt,
 		}
 		s.messages[m.GroupID] = append(s.messages[m.GroupID], m)
 		s.messagesByID[m.ID] = m
@@ -581,32 +642,54 @@ func (s *service) listGroups() []group {
 	return out
 }
 
-func (s *service) appendMessage(groupID, senderDID string, messageType int32, content, replyToID string) message {
+func (s *service) appendMessage(groupID, senderDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte) message {
 	if s.db != nil {
 		now := time.Now()
+		var enc []byte
+		if len(encryptedPayload) > 0 {
+			enc = append([]byte(nil), encryptedPayload...)
+		}
 		item := message{
-			ID:        fmt.Sprintf("gcm-%d", now.UnixNano()),
-			GroupID:   groupID,
-			SenderDID: senderDID,
-			Type:      messageType,
-			Content:   content,
-			ReplyToID: replyToID,
-			SentAt:    now,
+			ID:               fmt.Sprintf("gcm-%d", now.UnixNano()),
+			GroupID:          groupID,
+			SenderDID:        senderDID,
+			Type:             messageType,
+			Content:          content,
+			EncryptedPayload: enc,
+			ReplyToID:        replyToID,
+			SentAt:           now,
+		}
+		if len(attachments) > 0 {
+			item.Attachments = append([]domain.Attachment(nil), attachments...)
 		}
 		_ = s.db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Create(&messageModel{
-				ULID:      item.ID,
-				GroupULID: groupID,
-				SenderDID: senderDID,
-				Type:      messageType,
-				Content:   content,
-				ReplyToID: replyToID,
-				Deleted:   false,
-				SentAt:    now,
-				CreatedAt: now,
-				UpdatedAt: now,
+				ULID:             item.ID,
+				GroupULID:        groupID,
+				SenderDID:        senderDID,
+				Type:             messageType,
+				Content:          content,
+				EncryptedPayload: enc,
+				ReplyToID:        replyToID,
+				Deleted:          false,
+				SentAt:           now,
+				CreatedAt:        now,
+				UpdatedAt:        now,
 			}).Error; err != nil {
 				return err
+			}
+			for _, a := range attachments {
+				row := MessageAttachmentModel{
+					MessageULID:  item.ID,
+					CID:          a.CID,
+					Filename:     a.Filename,
+					MimeType:     a.MimeType,
+					Size:         a.Size,
+					ThumbnailCID: a.ThumbnailCID,
+				}
+				if err := tx.Create(&row).Error; err != nil {
+					return err
+				}
 			}
 			var members []memberModel
 			if err := tx.Where("group_ulid = ?", groupID).Find(&members).Error; err != nil {
@@ -645,14 +728,22 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
+	var enc []byte
+	if len(encryptedPayload) > 0 {
+		enc = append([]byte(nil), encryptedPayload...)
+	}
 	item := message{
-		ID:        fmt.Sprintf("gcm-%d", now.UnixNano()),
-		GroupID:   groupID,
-		SenderDID: senderDID,
-		Type:      messageType,
-		Content:   content,
-		ReplyToID: replyToID,
-		SentAt:    now,
+		ID:               fmt.Sprintf("gcm-%d", now.UnixNano()),
+		GroupID:          groupID,
+		SenderDID:        senderDID,
+		Type:             messageType,
+		Content:          content,
+		EncryptedPayload: enc,
+		ReplyToID:        replyToID,
+		SentAt:           now,
+	}
+	if len(attachments) > 0 {
+		item.Attachments = append([]domain.Attachment(nil), attachments...)
 	}
 	s.messages[groupID] = append(s.messages[groupID], item)
 	if s.messagesByID == nil {
@@ -697,15 +788,20 @@ func (s *service) listMessages(groupID, beforeUlid string, limit int) []message 
 			if err := query.Limit(limit).Find(&rows).Error; err == nil {
 				out := make([]message, 0, len(rows))
 				for _, row := range rows {
+					var enc []byte
+					if len(row.EncryptedPayload) > 0 {
+						enc = append([]byte(nil), row.EncryptedPayload...)
+					}
 					out = append(out, message{
-						ID:        row.ULID,
-						GroupID:   row.GroupULID,
-						SenderDID: row.SenderDID,
-						Type:      row.Type,
-						Content:   row.Content,
-						ReplyToID: row.ReplyToID,
-						Deleted:   row.Deleted,
-						SentAt:    row.SentAt,
+						ID:               row.ULID,
+						GroupID:          row.GroupULID,
+						SenderDID:        row.SenderDID,
+						Type:             row.Type,
+						Content:          row.Content,
+						EncryptedPayload: enc,
+						ReplyToID:        row.ReplyToID,
+						Deleted:          row.Deleted,
+						SentAt:           row.SentAt,
 					})
 				}
 				return out
@@ -717,15 +813,20 @@ func (s *service) listMessages(groupID, beforeUlid string, limit int) []message 
 		if err := query.Order("sent_at DESC").Limit(limit).Find(&rows).Error; err == nil {
 			out := make([]message, 0, len(rows))
 			for i := len(rows) - 1; i >= 0; i-- {
+				var enc []byte
+				if len(rows[i].EncryptedPayload) > 0 {
+					enc = append([]byte(nil), rows[i].EncryptedPayload...)
+				}
 				out = append(out, message{
-					ID:        rows[i].ULID,
-					GroupID:   rows[i].GroupULID,
-					SenderDID: rows[i].SenderDID,
-					Type:      rows[i].Type,
-					Content:   rows[i].Content,
-					ReplyToID: rows[i].ReplyToID,
-					Deleted:   rows[i].Deleted,
-					SentAt:    rows[i].SentAt,
+					ID:               rows[i].ULID,
+					GroupID:          rows[i].GroupULID,
+					SenderDID:        rows[i].SenderDID,
+					Type:             rows[i].Type,
+					Content:          rows[i].Content,
+					EncryptedPayload: enc,
+					ReplyToID:        rows[i].ReplyToID,
+					Deleted:          rows[i].Deleted,
+					SentAt:           rows[i].SentAt,
 				})
 			}
 			return out
@@ -1168,9 +1269,10 @@ func (s *service) acceptInvitation(invitationID, actorDID string) (string, bool)
 func (s *service) recallMessage(messageID string) bool {
 	if s.db != nil {
 		return s.db.Model(&messageModel{}).Where("ulid = ?", messageID).Updates(map[string]interface{}{
-			"deleted":    true,
-			"content":    "",
-			"updated_at": time.Now(),
+			"deleted":           true,
+			"content":           "",
+			"encrypted_payload": nil,
+			"updated_at":        time.Now(),
 		}).Error == nil
 	}
 	s.mu.Lock()
@@ -1181,12 +1283,14 @@ func (s *service) recallMessage(messageID string) bool {
 	}
 	msg.Deleted = true
 	msg.Content = ""
+	msg.EncryptedPayload = nil
 	s.messagesByID[messageID] = msg
 	items := s.messages[msg.GroupID]
 	for i := range items {
 		if items[i].ID == messageID {
 			items[i].Deleted = true
 			items[i].Content = ""
+			items[i].EncryptedPayload = nil
 		}
 	}
 	s.messages[msg.GroupID] = items
@@ -1195,7 +1299,13 @@ func (s *service) recallMessage(messageID string) bool {
 
 func (s *service) deleteMessage(messageID string) bool {
 	if s.db != nil {
-		return s.db.Where("ulid = ?", messageID).Delete(&messageModel{}).Error == nil
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("message_ulid = ?", messageID).Delete(&MessageAttachmentModel{}).Error; err != nil {
+				return err
+			}
+			return tx.Where("ulid = ?", messageID).Delete(&messageModel{}).Error
+		})
+		return err == nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1219,19 +1329,24 @@ func (s *service) deleteMessage(messageID string) bool {
 func (s *service) searchMessages(groupID, query string, limit int) []message {
 	if s.db != nil {
 		var rows []messageModel
-		if err := s.db.Where("group_ulid = ? AND content LIKE ?", groupID, "%"+query+"%").
+		if err := s.db.Where("group_ulid = ? AND content ILIKE ?", groupID, "%"+query+"%").
 			Order("sent_at DESC").Limit(limit).Find(&rows).Error; err == nil {
 			out := make([]message, 0, len(rows))
 			for _, row := range rows {
+				var enc []byte
+				if len(row.EncryptedPayload) > 0 {
+					enc = append([]byte(nil), row.EncryptedPayload...)
+				}
 				out = append(out, message{
-					ID:        row.ULID,
-					GroupID:   row.GroupULID,
-					SenderDID: row.SenderDID,
-					Type:      row.Type,
-					Content:   row.Content,
-					ReplyToID: row.ReplyToID,
-					Deleted:   row.Deleted,
-					SentAt:    row.SentAt,
+					ID:               row.ULID,
+					GroupID:          row.GroupULID,
+					SenderDID:        row.SenderDID,
+					Type:             row.Type,
+					Content:          row.Content,
+					EncryptedPayload: enc,
+					ReplyToID:        row.ReplyToID,
+					Deleted:          row.Deleted,
+					SentAt:           row.SentAt,
 				})
 			}
 			return out

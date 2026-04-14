@@ -9,8 +9,8 @@ import (
 type Repository interface {
 	CreateGroup(ownerDID, name, description string) domain.Group
 	ListGroups() []domain.Group
-	SendMessage(groupID, senderDID string, messageType int32, content, replyToID string) domain.Message
-	ListMessages(groupID, beforeUlid string, limit int) []domain.Message
+	SendMessage(groupID, senderDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte) domain.Message
+	ListMessages(groupID, beforeUlid string, limit int) ([]domain.Message, error)
 	UnreadCount(actorDID, groupID string) int64
 	MarkRead(actorDID, groupID string) (int64, int64)
 	GetGroup(groupID string) (*domain.Group, bool)
@@ -23,7 +23,7 @@ type Repository interface {
 	AcceptInvitation(invitationID, actorDID string) (string, bool)
 	RecallMessage(messageID string) bool
 	DeleteMessage(messageID string) bool
-	SearchMessages(groupID, query string, limit int) []domain.Message
+	SearchMessages(groupID, query string, limit int) ([]domain.Message, error)
 	UpdateNickname(groupID, actorDID, nickname string) (*domain.Member, bool)
 	GetSettings(groupID, actorDID string) domain.GroupSetting
 	UpdateSettings(groupID, actorDID string, muted, pinned, showNickname *bool)
@@ -37,14 +37,14 @@ type Service struct {
 }
 
 var (
-	ErrGroupNotFound   = errors.New("group not found")
-	ErrMemberNotFound  = errors.New("member not found")
-	ErrNotMember       = errors.New("not a member")
-	ErrPermissionDenied = errors.New("permission denied")
+	ErrGroupNotFound     = errors.New("group not found")
+	ErrMemberNotFound    = errors.New("member not found")
+	ErrNotMember         = errors.New("not a member")
+	ErrPermissionDenied  = errors.New("permission denied")
 	ErrInvalidInvitation = errors.New("invalid invitation")
-	ErrOwnerCannotLeave = errors.New("owner cannot leave group")
+	ErrOwnerCannotLeave  = errors.New("owner cannot leave group")
 	ErrCannotRemoveOwner = errors.New("cannot remove owner")
-	ErrMessageNotFound = errors.New("message not found")
+	ErrMessageNotFound   = errors.New("message not found")
 )
 
 func NewService(repo Repository) *Service {
@@ -59,11 +59,11 @@ func (s *Service) ListGroups() []domain.Group {
 	return s.repo.ListGroups()
 }
 
-func (s *Service) SendMessage(groupID, senderDID string, messageType int32, content, replyToID string) domain.Message {
-	return s.repo.SendMessage(groupID, senderDID, messageType, content, replyToID)
+func (s *Service) SendMessage(groupID, senderDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte) domain.Message {
+	return s.repo.SendMessage(groupID, senderDID, messageType, content, replyToID, attachments, encryptedPayload)
 }
 
-func (s *Service) ListMessages(groupID, beforeUlid string, limit int) []domain.Message {
+func (s *Service) ListMessages(groupID, beforeUlid string, limit int) ([]domain.Message, error) {
 	return s.repo.ListMessages(groupID, beforeUlid, limit)
 }
 
@@ -115,7 +115,7 @@ func (s *Service) DeleteMessage(messageID string) bool {
 	return s.repo.DeleteMessage(messageID)
 }
 
-func (s *Service) SearchMessages(groupID, query string, limit int) []domain.Message {
+func (s *Service) SearchMessages(groupID, query string, limit int) ([]domain.Message, error) {
 	return s.repo.SearchMessages(groupID, query, limit)
 }
 
@@ -232,5 +232,5 @@ func (s *Service) SearchMessagesByActor(actorDID, groupID, query string, limit i
 	if _, ok := s.repo.GetMember(groupID, actorDID); !ok {
 		return nil, ErrNotMember
 	}
-	return s.repo.SearchMessages(groupID, query, limit), nil
+	return s.repo.SearchMessages(groupID, query, limit)
 }

@@ -229,12 +229,18 @@
   "chat.social.detail.blockUser": "屏蔽用户",
   "chat.social.detail.membersCount": "{{count}} 名成员",
 
+  "chat.social.encryption.enabled": "端到端加密",
+  "chat.social.encryption.title": "加密",
+  "chat.social.encryption.fingerprint": "你的安全指纹",
+  "chat.social.encryption.encryptedMessage": "加密消息",
+
   "chat.social.messageArea.selectConversation": "选择一个对话开始聊天",
   "chat.social.messageArea.noMessages": "暂无消息",
   "chat.social.messageArea.replyingTo": "回复",
   "chat.social.messageArea.cancel": "取消",
   "chat.social.messageArea.placeholder": "输入消息...",
   "chat.social.messageArea.comingSoon": "即将推出",
+  "chat.social.messageArea.uploadFailed": "文件上传失败",
 
   "chat.social.sessionList.searchPlaceholder": "搜索...",
   "chat.social.sessionList.friends": "好友",
@@ -262,5 +268,36 @@
   "chat.social.findPeople.hint": "输入用户名进行搜索",
   "chat.social.findPeople.add": "添加",
   "chat.social.findPeople.searchFailed": "搜索失败",
-  "chat.social.findPeople.addFailed": "添加好友失败"
+  "chat.social.findPeople.addFailed": "添加好友失败",
+  "chat.social.findPeople.sendRequest": "发送请求",
+  "chat.social.findPeople.requestSent": "好友请求已发送",
+
+  "chat.social.contacts.newFriends": "新的朋友",
+  "chat.social.contacts.savedGroups": "保存的群聊",
+  "chat.social.contacts.friends": "联系人",
+  "chat.social.contacts.accept": "接受",
+  "chat.social.contacts.reject": "拒绝",
+  "chat.social.contacts.noPendingRequests": "暂无好友请求",
+  "chat.social.contacts.noGroups": "暂无群聊",
+  "chat.social.contacts.noFriends": "暂无联系人",
+
+  "chat.social.search.title": "搜索消息",
+  "chat.social.search.placeholder": "搜索消息内容...",
+  "chat.social.search.noResults": "未找到相关消息",
+  "chat.social.search.resultCount": "找到 {{count}} 条结果",
+  "chat.social.search.inConversation": "在 {{name}} 中",
+
+  "chat.social.time.justNow": "刚刚",
+  "chat.social.time.minutesAgo": "{{count}}分钟前",
+  "chat.social.time.oneHourAgo": "1小时前",
+  "chat.social.time.hoursAgo": "{{count}}小时前",
+  "chat.social.time.yesterday": "昨天",
+
+  "chat.social.preview.image": "[图片]",
+  "chat.social.preview.file": "[文件]",
+  "chat.social.preview.audio": "[语音]",
+  "chat.social.preview.video": "[视频]",
+
+  "chat.social.subNav.chats": "聊天",
+  "chat.social.subNav.contacts": "通讯录"
 }

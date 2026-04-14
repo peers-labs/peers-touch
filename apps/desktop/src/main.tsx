@@ -1,8 +1,12 @@
 import { StrictMode, Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@lobehub/ui';
+import { I18nextProvider } from 'react-i18next';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
+import App from './App';
+import SharePage from './pages/SharePage';
+import './modules';
 import './index.css';
 
 // ── Browser Dev Gateway ──
@@ -10,7 +14,8 @@ import './index.css';
 // __TAURI_INTERNALS__ so that invoke() routes through the
 // Rust HTTP gateway at 127.0.0.1:3030.
 if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
-  const GATEWAY = 'http://127.0.0.1:3030';
+  const port = import.meta.env.VITE_GATEWAY_PORT || '3030';
+  const GATEWAY = `http://127.0.0.1:${port}`;
   (window as any).__TAURI_INTERNALS__ = {
     invoke: async (cmd: string, args?: Record<string, unknown>) => {
       const res = await fetch(GATEWAY, {
@@ -59,28 +64,19 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 
 async function bootstrap() {
-  const [{ default: App }, { default: SharePage }] = await Promise.all([
-    import('./App'),
-    import('./pages/SharePage'),
-  ]);
+  const i18n = await initI18n();
 
-  await initI18n();
-
-  function Root() {
-    const path = window.location.pathname;
-    const shareMatch = path.match(/^\/share\/s\/([A-Za-z0-9]+)$/);
-    if (shareMatch) {
-      return <SharePage token={shareMatch[1]} />;
-    }
-    return <App />;
-  }
+  const path = window.location.pathname;
+  const shareMatch = path.match(/^\/share\/s\/([A-Za-z0-9]+)$/);
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ErrorBoundary>
-        <ThemeProvider>
-          <Root />
-        </ThemeProvider>
+        <I18nextProvider i18n={i18n}>
+          <ThemeProvider>
+            {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}
+          </ThemeProvider>
+        </I18nextProvider>
       </ErrorBoundary>
     </StrictMode>,
   );
@@ -91,5 +87,6 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-  log.error('app', 'Bootstrap failed', { error: String(err) });
+  const msg = err instanceof Error ? err.message : String(err);
+  log.error('app', 'Bootstrap failed', { error: msg, stack: err?.stack });
 });

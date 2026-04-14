@@ -24,6 +24,17 @@ urlencoding = "2"
 reqwest = { version = "0.12", features = ["blocking", "json", "multipart", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 keyring = "3"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+curve25519-dalek = "4"
+aes-gcm = "0.10"
+argon2 = "0.5"
+hkdf = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+rand = "0.8"
+zeroize = { version = "1", features = ["derive"] }
 prost = { version = "0.14.3", features = ["derive"] }
 prost-types = "0.14.3"
 tracing = "0.1"

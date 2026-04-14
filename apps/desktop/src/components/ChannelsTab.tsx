@@ -10,6 +10,7 @@ import {
   ChevronDown, ExternalLink, Zap, Webhook,
 } from 'lucide-react';
 import { api, type Channel } from '../services/desktop_api';
+import { resolveI18nValue } from '../i18n';
 import { LarkSimulateLoginModal } from './settings/LarkSimulateLoginModal';
 import { useTranslation } from 'react-i18next';
 
@@ -137,12 +138,12 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
         </Flexbox>
         <Space>
           <Dropdown menu={{ items: addMenuItems }} trigger={['click']}>
-            <Button icon={<ChevronDown size={14} />}>
+            <Button size="small" icon={<ChevronDown size={14} />}>
               {t('provider.channels.add')}
             </Button>
           </Dropdown>
           {onNavigate && (
-            <Button type="primary" icon={<ExternalLink size={14} />} onClick={() => onNavigate('channels')}>
+            <Button size="small" type="primary" icon={<ExternalLink size={14} />} onClick={() => onNavigate('channels')}>
               {t('provider.channels.openChannels')}
             </Button>
           )}
@@ -168,7 +169,7 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
       {channels.length === 0 && !loading ? (
         <Empty description={t('provider.channels.noChannels')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
           {onNavigate ? (
-            <Button type="primary" onClick={() => onNavigate('channels')}>{t('provider.channels.configureChannels')}</Button>
+            <Button size="small" type="primary" onClick={() => onNavigate('channels')}>{t('provider.channels.configureChannels')}</Button>
           ) : (
             <Text type="secondary">{t('provider.channels.addFromSidebar')}</Text>
           )}
@@ -189,7 +190,7 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
                     ) : getIcon(ch.type)}
                     <Flexbox>
                       <Flexbox horizontal align="center" gap={6}>
-                        <Text strong style={{ fontSize: 13 }}>{ch.name}</Text>
+                        <Text strong style={{ fontSize: 13 }}>{resolveI18nValue(ch.name)}</Text>
                         <Tag color={TYPE_COLORS[ch.type]} style={{ margin: 0, fontSize: 11 }}>
                           {t(`provider.channels.type.${ch.type}`)}
                         </Tag>

@@ -46,15 +46,61 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     }
 
     let parts: Vec<&str> = token.split('.').collect();
-    if parts.len() == 3 && token.starts_with("eyJ") {
-        return Ok(AuthSession {
-            actor_id: String::new(),
-            token: token.to_string(),
-            expires_at: now_epoch_seconds() + TOKEN_TTL_SECONDS,
-        });
+    if parts.len() != 3 || !token.starts_with("eyJ") {
+        return Err(AuthDomainError::Unauthorized("error.auth.tokenInvalid".to_string()));
     }
 
-    Err(AuthDomainError::Unauthorized("error.auth.tokenInvalid".to_string()))
+    let actor_id = decode_jwt_subject(parts[1]).unwrap_or_default();
+
+    Ok(AuthSession {
+        actor_id,
+        token: token.to_string(),
+        expires_at: now_epoch_seconds() + TOKEN_TTL_SECONDS,
+    })
+}
+
+fn decode_jwt_subject(payload_b64: &str) -> Option<String> {
+    let mut b64 = payload_b64.replace('-', "+").replace('_', "/");
+    let pad = (4 - b64.len() % 4) % 4;
+    b64.extend(std::iter::repeat('=').take(pad));
+
+    let decoded = base64_decode(&b64)?;
+    let text = String::from_utf8(decoded).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v.get("subject_id")
+        .or_else(|| v.get("sub"))
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string())
+}
+
+fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    let table: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut lookup = [255u8; 256];
+    for (i, &c) in table.iter().enumerate() {
+        lookup[c as usize] = i as u8;
+    }
+
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
+    let mut buf: u32 = 0;
+    let mut bits: u32 = 0;
+    for &b in bytes {
+        if b == b'=' {
+            break;
+        }
+        let val = lookup[b as usize];
+        if val == 255 {
+            return None;
+        }
+        buf = (buf << 6) | val as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
 }
 
 fn now_epoch_seconds() -> u64 {
