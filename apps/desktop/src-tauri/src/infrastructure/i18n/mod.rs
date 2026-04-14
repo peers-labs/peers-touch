@@ -2,10 +2,14 @@
 // Owns the i18n root path, handles deploying built-in packs and
 // scanning/loading language packs from the filesystem at runtime.
 //
-// In dev mode: copies from packages/locales/ source directory.
-// In production: copies from Tauri bundled resources.
+// Dev mode: reads directly from packages/locales/ source tree for
+// instant reflection of changes — no version bump required.
+// Production: deploys from Tauri bundled resources to config/i18n/,
+// using metadata.json version comparison as a fast-path cache.
 // 2026-04-09: Initial creation for i18n architecture landing.
 // 2026-04-09: Refactored from procedural functions to I18nService struct.
+// 2026-04-14: Dev-mode direct-read — load_resources bypasses config/i18n
+//             in debug builds, reading from packages/locales/ directly.
 
 use std::collections::HashMap;
 use std::fs;
@@ -30,20 +34,61 @@ pub struct I18nResources {
 
 /// Core i18n infrastructure service.
 ///
-/// Holds the resolved i18n root path (config/i18n/) and provides
-/// all language pack operations: deploy, scan, and load.
+/// In debug builds, `dev_source` is resolved at construction time from
+/// the monorepo layout (packages/locales/). When present, `load_resources`
+/// and `resolve_key` read from the source tree directly — locale edits
+/// are reflected on the next app reload without touching metadata.json.
+///
+/// In release builds, `dev_source` is always `None`; the service reads
+/// from the deployed `config/i18n/` directory as before.
 #[derive(Debug, Clone)]
 pub struct I18nService {
     i18n_root: PathBuf,
+    dev_source: Option<PathBuf>,
 }
 
 impl I18nService {
     /// Create a new I18nService from a config directory path.
     ///
     /// The i18n root is resolved as `{config_dir}/i18n/`.
+    /// In debug builds, also probes for the monorepo source tree
+    /// (`packages/locales/`) to enable direct-read dev mode.
     pub fn new(config_dir: &Path) -> Self {
+        let dev_source = Self::detect_dev_source();
+        if let Some(ref src) = dev_source {
+            tracing::info!(
+                path = %src.display(),
+                "Dev-mode i18n: will read directly from source tree"
+            );
+        }
         Self {
             i18n_root: config_dir.join(I18N_DIR),
+            dev_source,
+        }
+    }
+
+    /// In debug builds, resolve packages/locales/ from the monorepo layout.
+    /// Returns None in release builds or if the path doesn't exist.
+    fn detect_dev_source() -> Option<PathBuf> {
+        #[cfg(debug_assertions)]
+        {
+            let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let project_root = manifest_dir
+                .parent()    // desktop
+                .and_then(|p| p.parent())    // apps
+                .and_then(|p| p.parent());   // project_root
+
+            if let Some(root) = project_root {
+                let dev_locales = root.join("packages").join("locales");
+                if dev_locales.exists() && dev_locales.join("en").is_dir() {
+                    return Some(dev_locales);
+                }
+            }
+            None
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            None
         }
     }
 
@@ -85,7 +130,7 @@ impl I18nService {
         // Deploy each built-in language pack (overwrite stale data)
         for lang in BUILTIN_LANGUAGES {
             let source_dir = source.join(lang);
-            if !source_dir.exists() {
+            if !source_dir.is_dir() {
                 tracing::warn!(lang = %lang, "Built-in pack not found in source");
                 continue;
             }
@@ -112,22 +157,36 @@ impl I18nService {
         Ok(())
     }
 
-    /// Scan config/i18n/ directory, discover all available languages
+    /// Scan language directories, discover all available languages
     /// and load their translation resources.
+    ///
+    /// In dev mode (debug build with packages/locales/ available),
+    /// reads from the source tree directly for instant changes.
+    /// In production, reads from the deployed config/i18n/ directory,
+    /// which also includes community packs.
     pub fn load_resources(&self) -> Result<I18nResources, String> {
-        if !self.i18n_root.exists() {
+        if let Some(ref source) = self.dev_source {
+            tracing::debug!("Loading i18n resources from dev source");
+            return self.scan_and_load(source);
+        }
+        self.scan_and_load(&self.i18n_root)
+    }
+
+    /// Core scan-and-load: reads all language directories under `root_dir`.
+    fn scan_and_load(&self, root_dir: &Path) -> Result<I18nResources, String> {
+        if !root_dir.exists() {
             return Ok(I18nResources {
                 languages: vec![],
                 resources: HashMap::new(),
             });
         }
 
-        let metadata = self.load_metadata();
+        let metadata = Self::load_metadata_from(root_dir);
 
         let mut languages = Vec::new();
         let mut resources: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
 
-        let entries = fs::read_dir(&self.i18n_root)
+        let entries = fs::read_dir(root_dir)
             .map_err(|e| format!("Failed to read i18n directory: {e}"))?;
 
         for entry in entries.flatten() {
@@ -141,7 +200,7 @@ impl I18nService {
                 None => continue,
             };
 
-            let (ns_list, lang_resources) = self.load_language_dir(&path, &lang_code);
+            let (ns_list, lang_resources) = Self::load_language_dir_static(&path, &lang_code);
 
             let meta_entry = metadata.get(&lang_code);
             languages.push(LanguageInfo {
@@ -174,9 +233,14 @@ impl I18nService {
         key.to_string()
     }
 
+    /// Read a single key from the appropriate root (dev_source or i18n_root).
     fn lookup_key(&self, lang: &str, ns: &str, key: &str) -> Option<String> {
-        let ns_path = self.i18n_root.join(lang).join(format!("{ns}.json"));
-        let content = fs::read_to_string(&ns_path).ok()?;
+        let root = self.dev_source.as_ref().unwrap_or(&self.i18n_root);
+        Self::read_key_from_file(&root.join(lang).join(format!("{ns}.json")), key)
+    }
+
+    fn read_key_from_file(path: &Path, key: &str) -> Option<String> {
+        let content = fs::read_to_string(path).ok()?;
         let obj: serde_json::Value = serde_json::from_str(&content).ok()?;
         obj.get(key).and_then(|v| v.as_str()).map(String::from)
     }
@@ -225,7 +289,7 @@ Community packs are **never touched** by the app.
     /// In dev mode: fallback to packages/locales/ in the project source tree.
     fn resolve_source_dir(resource_dir: &Path) -> PathBuf {
         let bundled = resource_dir.join(I18N_DIR);
-        if bundled.exists() {
+        if bundled.exists() && bundled.join("en").is_dir() {
             return bundled;
         }
 
@@ -268,8 +332,7 @@ Community packs are **never touched** by the app.
     }
 
     /// Load and parse all namespace JSON files from a language directory.
-    fn load_language_dir(
-        &self,
+    fn load_language_dir_static(
         lang_path: &Path,
         lang_code: &str,
     ) -> (Vec<String>, HashMap<String, serde_json::Value>) {
@@ -318,9 +381,9 @@ Community packs are **never touched** by the app.
         (ns_list, lang_resources)
     }
 
-    /// Load metadata.json from i18n root to get display names for languages.
-    fn load_metadata(&self) -> HashMap<String, MetadataEntry> {
-        let meta_path = self.i18n_root.join("metadata.json");
+    /// Load metadata.json from a given root directory.
+    fn load_metadata_from(root: &Path) -> HashMap<String, MetadataEntry> {
+        let meta_path = root.join("metadata.json");
         if !meta_path.exists() {
             return HashMap::new();
         }

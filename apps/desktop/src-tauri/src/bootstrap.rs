@@ -46,7 +46,8 @@ pub fn run() -> BootstrapResult {
 }
 
 fn init_storage() -> StorageLayout {
-    storage::initialize_app_storage("desktop")
+    let profile = std::env::var("PT_PROFILE").unwrap_or_else(|_| "desktop".to_string());
+    storage::initialize_app_storage(&profile)
         .expect("[bootstrap] Failed to initialize storage layout")
 }
 

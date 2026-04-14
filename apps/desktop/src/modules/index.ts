@@ -13,8 +13,3 @@ import './cron';
 import './memory';
 import './applets';
 import './logs';
-import './connections';
-
-// OAuth settings split:
-// - OAuth Sign-In: account login flow for supported providers
-// - Advanced Connections: client credential management for private beta users

@@ -391,6 +391,7 @@ class GroupMessage extends $pb.GeneratedMessage {
     $0.Timestamp? createdAt,
     $0.Timestamp? updatedAt,
     $core.bool? deleted,
+    $core.List<$core.int>? encryptedPayload,
   }) {
     final result = create();
     if (ulid != null) result.ulid = ulid;
@@ -406,6 +407,7 @@ class GroupMessage extends $pb.GeneratedMessage {
     if (createdAt != null) result.createdAt = createdAt;
     if (updatedAt != null) result.updatedAt = updatedAt;
     if (deleted != null) result.deleted = deleted;
+    if (encryptedPayload != null) result.encryptedPayload = encryptedPayload;
     return result;
   }
 
@@ -441,6 +443,8 @@ class GroupMessage extends $pb.GeneratedMessage {
     ..aOM<$0.Timestamp>(12, _omitFieldNames ? '' : 'updatedAt',
         subBuilder: $0.Timestamp.create)
     ..aOB(13, _omitFieldNames ? '' : 'deleted')
+    ..a<$core.List<$core.int>>(
+        14, _omitFieldNames ? '' : 'encryptedPayload', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -572,6 +576,15 @@ class GroupMessage extends $pb.GeneratedMessage {
   $core.bool hasDeleted() => $_has(12);
   @$pb.TagNumber(13)
   void clearDeleted() => $_clearField(13);
+
+  @$pb.TagNumber(14)
+  $core.List<$core.int> get encryptedPayload => $_getN(13);
+  @$pb.TagNumber(14)
+  set encryptedPayload($core.List<$core.int> value) => $_setBytes(13, value);
+  @$pb.TagNumber(14)
+  $core.bool hasEncryptedPayload() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearEncryptedPayload() => $_clearField(14);
 }
 
 class GroupMessageAttachment extends $pb.GeneratedMessage {
@@ -2208,6 +2221,7 @@ class SendGroupMessageRequest extends $pb.GeneratedMessage {
     $core.String? replyToUlid,
     $core.Iterable<$core.String>? mentionedDids,
     $core.bool? mentionAll,
+    $core.List<$core.int>? encryptedPayload,
   }) {
     final result = create();
     if (groupUlid != null) result.groupUlid = groupUlid;
@@ -2217,6 +2231,7 @@ class SendGroupMessageRequest extends $pb.GeneratedMessage {
     if (replyToUlid != null) result.replyToUlid = replyToUlid;
     if (mentionedDids != null) result.mentionedDids.addAll(mentionedDids);
     if (mentionAll != null) result.mentionAll = mentionAll;
+    if (encryptedPayload != null) result.encryptedPayload = encryptedPayload;
     return result;
   }
 
@@ -2243,6 +2258,8 @@ class SendGroupMessageRequest extends $pb.GeneratedMessage {
     ..aOS(5, _omitFieldNames ? '' : 'replyToUlid')
     ..pPS(6, _omitFieldNames ? '' : 'mentionedDids')
     ..aOB(7, _omitFieldNames ? '' : 'mentionAll')
+    ..a<$core.List<$core.int>>(
+        8, _omitFieldNames ? '' : 'encryptedPayload', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2315,6 +2332,15 @@ class SendGroupMessageRequest extends $pb.GeneratedMessage {
   $core.bool hasMentionAll() => $_has(6);
   @$pb.TagNumber(7)
   void clearMentionAll() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.List<$core.int> get encryptedPayload => $_getN(7);
+  @$pb.TagNumber(8)
+  set encryptedPayload($core.List<$core.int> value) => $_setBytes(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasEncryptedPayload() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearEncryptedPayload() => $_clearField(8);
 }
 
 class SendGroupMessageResponse extends $pb.GeneratedMessage {

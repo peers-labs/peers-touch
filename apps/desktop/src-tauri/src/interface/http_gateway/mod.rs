@@ -53,20 +53,30 @@ use crate::model;
 use reqwest::blocking::Client;
 use reqwest::Method;
 
-const BIND_ADDR: &str = "127.0.0.1:3030";
+const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
+
+fn resolve_bind_addr() -> String {
+    let port = std::env::var("PT_GATEWAY_PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(DEFAULT_PORT);
+    format!("127.0.0.1:{}", port)
+}
 
 /// Spawn a background thread that runs the HTTP gateway server.
 ///
-/// The server listens on 127.0.0.1:3030 and dispatches incoming POST
-/// requests to the same application-layer functions used by tauri_commands.
+/// The server listens on the port specified by PT_GATEWAY_PORT env var
+/// (default 3030) and dispatches incoming POST requests to the same
+/// application-layer functions used by tauri_commands.
 pub fn start(state: Arc<AppState>) {
     std::thread::Builder::new()
         .name("http-gateway".into())
         .spawn(move || {
-            let server = match tiny_http::Server::http(BIND_ADDR) {
+            let bind_addr = resolve_bind_addr();
+            let server = match tiny_http::Server::http(&bind_addr) {
                 Ok(s) => {
-                    tracing::info!(addr = BIND_ADDR, "HTTP gateway started");
+                    tracing::info!(addr = %bind_addr, "HTTP gateway started");
                     s
                 }
                 Err(e) => {
@@ -568,11 +578,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             }
         }
         "account_sync_avatar" => {
-            let avatar_url = args.get("avatar_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            if avatar_url.is_empty() {
+            let input = match parse_args::<crate::contracts::AccountSyncAvatarInput>(args) { Ok(v) => v, Err(e) => return e };
+            if input.avatar_url.is_empty() {
                 to_json(AppResult::<StubPayload>::fail(ErrorCode::InvalidArgument, "avatar_url is required", None))
             } else {
-                match crate::infrastructure::auth_identity::update_active_avatar(&avatar_url) {
+                match crate::infrastructure::auth_identity::update_active_avatar(&input.avatar_url) {
                     Ok(()) => to_json(AppResult::success(StubPayload {
                         command: "account_sync_avatar".to_string(),
                         status: "synced".to_string(),
@@ -1237,8 +1247,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
             let data = match station_request_json(Method::POST, "/friend-chat/message/send", &token, None, Some(json!({
                 "session_ulid": input.session_ulid, "receiver_did": input.receiver_did,
-                "content": input.content, "type": input.r#type.unwrap_or(1),
-                "reply_to_ulid": input.reply_to_ulid.unwrap_or_default()
+                "content": input.content,
+                "encrypted_payload": input.encrypted_payload.unwrap_or_default(),
+                "type": input.r#type.unwrap_or(1),
+                "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
+                "attachments": input.attachments.unwrap_or_default(),
             }))) {
                 Ok(d) => d, Err(e) => return e,
             };
@@ -1257,7 +1270,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "friend_chat_sync_messages" => {
             let input = match parse_args::<FriendChatSyncMessagesInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            match station_request_json(Method::POST, "/friend-chat/messages/sync", &token, None, Some(json!({"session_ulid": input.session_ulid, "messages_json": input.messages_json}))) {
+            match station_request_json(Method::POST, "/friend-chat/message/sync", &token, None, Some(json!({"messages": input.messages}))) {
                 Ok(data) => to_json(to_stub("friend_chat_sync_messages", data)),
                 Err(e) => e,
             }
@@ -1293,6 +1306,33 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
             match station_request_json(Method::GET, "/friend-chat/stats", &token, None, None) {
                 Ok(data) => to_json(to_stub("friend_chat_get_stats", data)),
+                Err(e) => e,
+            }
+        }
+        "key_exchange_upload_bundle" => {
+            let input = match parse_args::<KeyExchangeUploadInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(Method::POST, "/key-exchange/keys/bundle", &token, None, Some(json!({
+                "ik_pub": input.ik_pub,
+                "spk_id": input.spk_id,
+                "spk_pub": input.spk_pub,
+                "spk_sig": input.spk_sig,
+                "opk_ids": input.opk_ids,
+                "opk_pubs": input.opk_pubs,
+            }))) {
+                Ok(data) => to_json(to_stub("key_exchange_upload_bundle", data)),
+                Err(e) => e,
+            }
+        }
+        "key_exchange_fetch_bundle" => {
+            let input = match parse_args::<KeyExchangeFetchInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            if input.did.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(ErrorCode::InvalidArgument, "did is required", None));
+            }
+            let query = vec![("did", input.did)];
+            match station_request_json(Method::GET, "/key-exchange/keys/bundle", &token, Some(&query), None) {
+                Ok(data) => to_json(to_stub("key_exchange_fetch_bundle", data)),
                 Err(e) => e,
             }
         }
@@ -1405,6 +1445,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
                 "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
                 "mention_all": input.mention_all.unwrap_or(false),
+                "attachments": input.attachments.unwrap_or_default(),
             }))) {
                 Ok(d) => d, Err(e) => return e,
             };
@@ -1581,9 +1622,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_update_settings" => {
             let input = match parse_args::<GroupUpdateMySettingsInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            match station_request_json(Method::POST, "/group-chat/group/settings", &token, None, Some(json!({
-                "group_ulid": input.group_ulid, "settings_json": input.settings_json,
-            }))) {
+            let mut body = json!({"group_ulid": input.group_ulid});
+            if let Some(v) = input.is_muted { body["is_muted"] = json!(v); }
+            if let Some(v) = input.is_pinned { body["is_pinned"] = json!(v); }
+            if let Some(v) = input.show_member_nickname { body["show_member_nickname"] = json!(v); }
+            match station_request_json(Method::POST, "/group-chat/group/settings", &token, None, Some(body)) {
                 Ok(data) => to_json(to_stub("group_chat_update_settings", data)),
                 Err(e) => e,
             }
@@ -1604,7 +1647,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             let input = match parse_args::<GroupAckOfflineInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
             match station_request_json(Method::POST, "/group-chat/offline-messages/ack", &token, None, Some(json!({
-                "group_ulid": input.group_ulid, "message_ulids": input.message_ulids,
+                "group_ulid": input.group_ulid, "ulids": input.message_ulids,
             }))) {
                 Ok(data) => to_json(to_stub("group_chat_ack_offline_messages", data)),
                 Err(e) => e,

@@ -375,27 +375,35 @@ Station 侧无需 i18n 改动。Touch framework 已有 `ErrorResponse` 结构体
 
 ```rust
 pub struct I18nService {
-    i18n_root: PathBuf,   // config_dir/i18n/
+    i18n_root: PathBuf,            // config_dir/i18n/ (deployed copy)
+    dev_source: Option<PathBuf>,   // packages/locales/ (debug builds only)
 }
 ```
+
+#### Dev-mode Direct-Read
+
+在 debug 构建中，`I18nService::new()` 自动探测 monorepo 的 `packages/locales/` 源目录。若存在，则 `load_resources()` 和 `resolve_key()` 直接从源目录读取 — **编辑 locale JSON 后刷新页面即可生效，无需手动 bump metadata.json 版本号**。
+
+在 release 构建中，`dev_source` 始终为 `None`，所有读取走 `config/i18n/`（版本化部署的副本）。
 
 #### 核心方法
 
 | 方法 | 职责 |
 |------|------|
-| `new(config_dir)` | 初始化，解析 `{config_dir}/i18n/` 路径 |
-| `deploy_builtin_packs(resource_dir)` | 版本比较部署：source metadata.json version ≠ deployed version → 重新部署 en/ + zh-CN/；相同则跳过（快速路径） |
-| `load_resources()` | 扫描 config/i18n/ 所有子目录，发现全部语言（含社区包），加载所有 namespace JSON，返回 `I18nResources` |
-| `resolve_key(lang, ns, key)` | 预留 Rust 侧文本解析能力，用于 OAuth2 HTML 页面等需要 Rust 直接生成本地化文本的场景 |
+| `new(config_dir)` | 初始化，解析 `{config_dir}/i18n/` 路径；debug 构建自动探测 dev_source |
+| `deploy_builtin_packs(resource_dir)` | 版本比较部署：source metadata.json version ≠ deployed version → 重新部署 en/ + zh-CN/；相同则跳过（快速路径）。Production 路径必需 |
+| `load_resources()` | dev_source 存在 → 直接读源目录；否则 → 扫描 config/i18n/ 所有子目录（含社区包），返回 `I18nResources` |
+| `resolve_key(lang, ns, key)` | Rust 侧文本解析，优先读 dev_source，fallback 读 i18n_root |
 
 #### 源目录解析
 
 ```
-Production:  Tauri resource_dir/i18n/        ← bundled resources
-Dev mode:    CARGO_MANIFEST_DIR → ../../.. → packages/locales/
+Production:  Tauri resource_dir/i18n/        ← bundled resources → deploy → config/i18n/
+Dev mode:    detect_dev_source()             ← CARGO_MANIFEST_DIR → ../../.. → packages/locales/
+             load_resources() 直接读 packages/locales/，跳过 config/i18n/
 ```
 
-`resolve_source_dir()` 先检查 bundled 目录是否存在；不存在则通过 `CARGO_MANIFEST_DIR` 逆向查找 monorepo 根目录下的 `packages/locales/`，实现开发时零配置热更新。
+`detect_dev_source()` 在 `I18nService::new()` 时通过 `CARGO_MANIFEST_DIR` 逆向查找 monorepo 根目录下的 `packages/locales/`。`deploy_builtin_packs()` 仍然用于 production 路径的版本化部署。
 
 #### 社区语言包
 

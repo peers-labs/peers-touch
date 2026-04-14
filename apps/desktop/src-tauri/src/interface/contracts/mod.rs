@@ -704,12 +704,38 @@ pub struct FriendChatListMessagesInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentInput {
+    pub cid: String,
+    pub filename: String,
+    pub mime_type: String,
+    pub size: i64,
+    pub thumbnail_cid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatSendInput {
     pub session_ulid: String,
     pub receiver_did: String,
     pub content: String,
+    pub encrypted_payload: Option<String>,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
+    pub attachments: Option<Vec<AttachmentInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyExchangeUploadInput {
+    pub ik_pub: String,
+    pub spk_id: i32,
+    pub spk_pub: String,
+    pub spk_sig: String,
+    pub opk_ids: Vec<i32>,
+    pub opk_pubs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyExchangeFetchInput {
+    pub did: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -751,6 +777,8 @@ pub struct GroupChatSendInput {
     pub reply_to_ulid: Option<String>,
     pub mentioned_dids: Option<Vec<String>>,
     pub mention_all: Option<bool>,
+    pub attachments: Option<Vec<AttachmentInput>>,
+    pub encrypted_payload: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -782,6 +810,16 @@ pub struct ChatLocalSearchInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatSearchLocalInput {
+    pub query: String,
+    #[serde(default)]
+    pub scope: String,
+    pub conversation_id: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatScopeCursorGetInput {
     pub scope: String,
 }
@@ -790,4 +828,61 @@ pub struct ChatScopeCursorGetInput {
 pub struct ChatScopeCursorSetInput {
     pub scope: String,
     pub cursor: String,
+}
+
+// ============================================================================
+// Friend Request
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequestSendInput {
+    pub receiver_did: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequestActionInput {
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequestListInput {
+    pub status: Option<i32>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+// ============================================================================
+// Notification
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationListInput {
+    pub category: Option<i32>,
+    pub status: Option<i32>,
+    pub cursor: Option<String>,
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationMarkReadInput {
+    pub notification_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationMarkAllReadInput {
+    pub category: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationDeleteInput {
+    pub notification_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationPreferenceUpdateInput {
+    pub category: i32,
+    pub enabled: bool,
+    pub push_enabled: bool,
+    pub sound_enabled: bool,
 }

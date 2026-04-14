@@ -13,6 +13,7 @@ import {
 } from 'antd';
 import { Alert, Button, Tag, Tooltip, TextArea } from '@lobehub/ui';
 import {
+  Check,
   CheckCircle2,
   CircleDot,
   Database,
@@ -161,39 +162,29 @@ export function MemorySettingsTab() {
     finally { setPgTesting(false); }
   };
 
-  if (loading) return <Flexbox align="center" justify="center" style={{ padding: 60 }}><Spin /></Flexbox>;
-
-  const cardStyle: React.CSSProperties = {
-    padding: 20,
-    background: token.colorBgContainer,
-    borderRadius: 12,
-    border: `1px solid ${token.colorBorderSecondary}`,
-    display: 'flex',
-    flexDirection: 'column',
-    maxWidth: 640,
-  };
-
-  const noEmbeddingAvailable = embeddingOptions.length === 0;
   const selectedEmbeddingValue = Form.useWatch('embedding_model', memoryForm);
 
+  if (loading) return <Flexbox align="center" justify="center" style={{ padding: 60 }}><Spin /></Flexbox>;
+
+  const noEmbeddingAvailable = embeddingOptions.length === 0;
+
   return (
-    <Flexbox gap={16} style={{ padding: 24, height: '100%', overflow: 'auto' }}>
-      <div style={cardStyle}>
-        <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 16 }}>
+    <Flexbox gap={16} style={{ padding: 24, height: '100%', overflow: 'auto', maxWidth: 640 }}>
+        <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 4 }}>
           <Flexbox horizontal align="center" gap={8}>
             <Database size={16} style={{ color: token.colorPrimary }} />
             <Text strong style={{ fontSize: 15 }}>{t('provider.memory.memory')}</Text>
             {hasAnyCustom(memoryData) && <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('provider.memory.customized')}</Tag>}
           </Flexbox>
-          <Flexbox horizontal gap={6}>
+          <Flexbox horizontal gap={6} align="center">
             {hasAnyCustom(memoryData) && (
-              <Button size="small" icon={<RotateCcw size={12} />} onClick={handleResetSection} loading={saving}>{t('provider.memory.reset')}</Button>
+              <Button size="small" icon={<RotateCcw size={14} />} onClick={handleResetSection} loading={saving}>{t('provider.memory.reset')}</Button>
             )}
-            <Button size="small" type="primary" onClick={handleSaveMemory} loading={saving}>{t('provider.memory.save')}</Button>
+            <Button size="small" type="primary" icon={<Check size={14} />} onClick={handleSaveMemory} loading={saving}>{t('provider.memory.save')}</Button>
           </Flexbox>
         </Flexbox>
 
-        <Form form={memoryForm} layout="vertical" size="small" style={{ flex: 1 }}>
+        <Form form={memoryForm} layout="vertical" size="small">
           <Form.Item name="enabled" valuePropName="checked" label={
             <Flexbox horizontal align="center" gap={6}><span>{t('provider.memory.enableMemory')}</span>{memoryData?.enabled && <SourceBadge meta={memoryData.enabled} t={t} />}</Flexbox>
           }><Switch /></Form.Item>
@@ -272,7 +263,7 @@ export function MemorySettingsTab() {
                 <TextArea rows={2} placeholder={t('provider.memory.connectionPlaceholder')} style={{ fontFamily: 'monospace', fontSize: 12 }} />
               </Form.Item>
               <Flexbox horizontal gap={8} align="center" style={{ marginBottom: 12 }}>
-                <Button size="small" icon={<Zap size={12} />} onClick={handleTestPg} loading={pgTesting}>{t('provider.memory.test')}</Button>
+                <Button size="small" icon={<Zap size={14} />} onClick={handleTestPg} loading={pgTesting}>{t('provider.memory.test')}</Button>
                 {pgTestResult && (pgTestResult.ok ? (
                   <Flexbox horizontal align="center" gap={4}>
                     <CheckCircle2 size={14} style={{ color: token.colorSuccess }} />
@@ -303,9 +294,8 @@ export function MemorySettingsTab() {
             </Form.Item>
           </Flexbox>
         </Form>
-      </div>
 
-      <Text type="secondary" style={{ fontSize: 12, maxWidth: 640 }}>
+      <Text type="secondary" style={{ fontSize: 12 }}>
         {t('provider.memory.restartNote')}
       </Text>
     </Flexbox>

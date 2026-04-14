@@ -191,19 +191,26 @@ pub fn group_chat_send_message(input: GroupChatSendInput, state: State<'_, Arc<A
         Ok(token) => token,
         Err(error) => return error,
     };
+    let mut body = json!({
+        "group_ulid": input.group_ulid,
+        "content": input.content,
+        "type": input.r#type.unwrap_or(1),
+        "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
+        "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
+        "mention_all": input.mention_all.unwrap_or(false),
+        "attachments": input.attachments.unwrap_or_default(),
+    });
+    if let Some(ref ep) = input.encrypted_payload {
+        if !ep.trim().is_empty() {
+            body["encrypted_payload"] = json!(ep);
+        }
+    }
     let data = match request_json(
         Method::POST,
         "/group-chat/message/send",
         &token,
         None,
-        Some(json!({
-            "group_ulid": input.group_ulid,
-            "content": input.content,
-            "type": input.r#type.unwrap_or(1),
-            "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
-            "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
-            "mention_all": input.mention_all.unwrap_or(false),
-        })),
+        Some(body),
     ) {
         Ok(data) => data,
         Err(error) => return error,
@@ -728,15 +735,23 @@ pub fn group_chat_update_settings(input: GroupUpdateMySettingsInput, state: Stat
         Err(error) => return error,
     };
 
+    let mut body = json!({ "group_ulid": input.group_ulid });
+    if let Some(v) = input.is_muted {
+        body["is_muted"] = json!(v);
+    }
+    if let Some(v) = input.is_pinned {
+        body["is_pinned"] = json!(v);
+    }
+    if let Some(v) = input.show_member_nickname {
+        body["show_member_nickname"] = json!(v);
+    }
+
     let data = match request_json(
         Method::PUT,
         "/group-chat/my-settings",
         &token,
         None,
-        Some(json!({
-            "group_ulid": input.group_ulid,
-            "settings_json": input.settings_json,
-        })),
+        Some(body),
     ) {
         Ok(data) => data,
         Err(error) => return error,
@@ -754,7 +769,6 @@ pub fn group_chat_get_offline_messages(input: GroupOfflineMessagesInput, state: 
     };
 
     let query = vec![
-        ("group_ulid", input.group_ulid),
         ("limit", input.limit.unwrap_or(100).to_string()),
     ];
 
@@ -780,8 +794,7 @@ pub fn group_chat_ack_offline_messages(input: GroupAckOfflineInput, state: State
         &token,
         None,
         Some(json!({
-            "group_ulid": input.group_ulid,
-            "message_ulids": input.message_ulids,
+            "ulids": input.message_ulids,
         })),
     ) {
         Ok(data) => data,

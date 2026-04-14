@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────
 # preview-desktop.sh — Production-like preview (loads from dist/)
 #
-# Unlike dev-desktop.sh (HMR mode), this script builds the
+# Unlike dev-desktop-app.sh / dev-desktop-web.sh (HMR mode), this script builds the
 # frontend into dist/ and loads it statically, mimicking the
 # production build. Use this for final verification before release.
 # ─────────────────────────────────────────────────────────────

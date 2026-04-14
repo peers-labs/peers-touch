@@ -1,4 +1,5 @@
 use std::fmt;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyErrorCode {
@@ -65,7 +66,7 @@ fn sanitize_key_ref(key_ref: &str) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KeyMaterial {
     pub key_id: String,
     pub key_version: i32,

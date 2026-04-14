@@ -79,6 +79,7 @@ export function MCPTab() {
           </Text>
         </Flexbox>
         <Button
+          size="small"
           type="primary"
           icon={<Plus size={14} />}
           onClick={() => setAddModal(true)}

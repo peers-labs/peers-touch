@@ -281,7 +281,7 @@ export function ProviderDetail() {
     <Flexbox
       gap={16}
       style={{
-        padding: 24,
+        padding: '16px 24px 24px',
         height: '100%',
         overflow: 'hidden',
         opacity: isStale ? 0 : 1,
@@ -347,7 +347,7 @@ export function ProviderDetail() {
               <Button
                 type="text"
                 size="small"
-                icon={<Settings2 size={16} />}
+                icon={<Settings2 size={14} />}
                 onClick={() => setShowEditModal(true)}
                 style={{ color: token.colorTextSecondary }}
               />
@@ -520,11 +520,12 @@ export function ProviderDetail() {
               {t('provider.model.count', { filtered: filteredModels.length, total: allModels.length })}
             </Text>
           </Flexbox>
-          <Flexbox horizontal gap={8}>
+          <Flexbox horizontal gap={8} align="center">
             {filteredModels.length > 0 && (
               <>
                 <Button
                   size="small"
+                  icon={<CheckCircle2 size={14} />}
                   loading={fetching}
                   onClick={async () => {
                     try {
@@ -539,6 +540,7 @@ export function ProviderDetail() {
                 </Button>
                 <Button
                   size="small"
+                  icon={<X size={14} />}
                   loading={fetching}
                   onClick={async () => {
                     try {
@@ -571,12 +573,13 @@ export function ProviderDetail() {
         {allModels.length > 0 && (
           <>
           <Input
+            size="small"
             placeholder={t('provider.model.searchModels')}
-            prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
+            prefix={<Search size={12} style={{ color: token.colorTextQuaternary }} />}
             value={modelSearchKeyword}
             onChange={(e) => setModelSearchKeyword(e.target.value)}
             allowClear
-            style={{ marginBottom: 8, maxWidth: 240 }}
+            style={{ marginBottom: 8, maxWidth: 240, fontSize: 12 }}
           />
           <Tabs
             size="small"

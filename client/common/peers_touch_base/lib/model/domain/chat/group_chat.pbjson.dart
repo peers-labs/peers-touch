@@ -300,6 +300,13 @@ const GroupMessage$json = {
       '10': 'updatedAt'
     },
     {'1': 'deleted', '3': 13, '4': 1, '5': 8, '10': 'deleted'},
+    {
+      '1': 'encrypted_payload',
+      '3': 14,
+      '4': 1,
+      '5': 12,
+      '10': 'encryptedPayload'
+    },
   ],
 };
 
@@ -315,7 +322,8 @@ final $typed_data.Uint8List groupMessageDescriptor = $convert.base64Decode(
     '9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSBnNlbnRBdBI5CgpjcmVhdGVk'
     'X2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcFIJY3JlYXRlZEF0EjkKCnVwZG'
     'F0ZWRfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgl1cGRhdGVkQXQSGAoH'
-    'ZGVsZXRlZBgNIAEoCFIHZGVsZXRlZA==');
+    'ZGVsZXRlZBgNIAEoCFIHZGVsZXRlZBIrChFlbmNyeXB0ZWRfcGF5bG9hZBgOIAEoDFIQZW5jcn'
+    'lwdGVkUGF5bG9hZA==');
 
 @$core.Deprecated('Use groupMessageAttachmentDescriptor instead')
 const GroupMessageAttachment$json = {
@@ -848,6 +856,13 @@ const SendGroupMessageRequest$json = {
     {'1': 'reply_to_ulid', '3': 5, '4': 1, '5': 9, '10': 'replyToUlid'},
     {'1': 'mentioned_dids', '3': 6, '4': 3, '5': 9, '10': 'mentionedDids'},
     {'1': 'mention_all', '3': 7, '4': 1, '5': 8, '10': 'mentionAll'},
+    {
+      '1': 'encrypted_payload',
+      '3': 8,
+      '4': 1,
+      '5': 12,
+      '10': 'encryptedPayload'
+    },
   ],
 };
 
@@ -859,7 +874,7 @@ final $typed_data.Uint8List sendGroupMessageRequestDescriptor = $convert.base64D
     'gLMjEucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE1lc3NhZ2VBdHRhY2htZW50Ugth'
     'dHRhY2htZW50cxIiCg1yZXBseV90b191bGlkGAUgASgJUgtyZXBseVRvVWxpZBIlCg5tZW50aW'
     '9uZWRfZGlkcxgGIAMoCVINbWVudGlvbmVkRGlkcxIfCgttZW50aW9uX2FsbBgHIAEoCFIKbWVu'
-    'dGlvbkFsbA==');
+    'dGlvbkFsbBIrChFlbmNyeXB0ZWRfcGF5bG9hZBgIIAEoDFIQZW5jcnlwdGVkUGF5bG9hZA==');
 
 @$core.Deprecated('Use sendGroupMessageResponseDescriptor instead')
 const SendGroupMessageResponse$json = {

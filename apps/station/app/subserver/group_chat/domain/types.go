@@ -2,6 +2,15 @@ package domain
 
 import "time"
 
+// Attachment references blob storage for a group message (e.g. image/file).
+type Attachment struct {
+	CID          string
+	Filename     string
+	MimeType     string
+	Size         int64
+	ThumbnailCID string
+}
+
 type Group struct {
 	ID          string
 	Name        string
@@ -13,13 +22,17 @@ type Group struct {
 }
 
 type Message struct {
-	ID        string
-	GroupID   string
-	SenderDID string
-	Type      int32
-	Content   string
-	ReplyToID string
-	SentAt    time.Time
+	ID               string
+	GroupID          string
+	SenderDID        string
+	Type             int32
+	Content          string
+	ReplyToID        string
+	MentionedDIDs    []string
+	MentionAll       bool
+	Attachments      []Attachment
+	EncryptedPayload []byte
+	SentAt           time.Time
 }
 
 type Member struct {

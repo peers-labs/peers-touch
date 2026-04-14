@@ -73,16 +73,16 @@ export function ProviderMenu() {
   };
 
   return (
-    <Flexbox gap={8} style={{ height: '100%', padding: 12 }}>
+    <Flexbox gap={8} style={{ height: '100%', padding: '16px 12px 12px' }}>
       <Flexbox horizontal gap={6}>
         <Input
-          prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
+          prefix={<Search size={12} style={{ color: token.colorTextQuaternary }} />}
           placeholder={t('provider.menu.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           allowClear
           size="small"
-          style={{ borderRadius: 8, flex: 1 }}
+          style={{ borderRadius: 8, flex: 1, fontSize: 12 }}
         />
         <Button
           icon={<Plus size={14} />}

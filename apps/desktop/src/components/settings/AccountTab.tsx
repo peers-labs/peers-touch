@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Tooltip, toast } from '@lobehub/ui';
+import { Tooltip, toast } from '@lobehub/ui';
 import {
-  App,
   Avatar,
-  Collapse,
   Empty,
   Input,
   Select,
@@ -17,24 +15,20 @@ import {
   Camera,
   Clock3,
   Copy,
-  Globe,
   Hash,
   Link2,
   MapPin,
   Pencil,
   Plus,
-  Save,
   Trash2,
 } from 'lucide-react';
+import { Button } from '@lobehub/ui';
 import { api, type AccountProfile, type AccountProfileLink } from '../../services/desktop_api';
 import { useAccountIdentityStore } from '../../store/accountIdentity';
 import { useTranslation } from 'react-i18next';
-import { OAuth2Tab } from './OAuth2Tab';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
-
-// ── Common IANA timezone list (representative subset) ──
 
 const COMMON_TIMEZONES = [
   'UTC',
@@ -124,8 +118,6 @@ function createEmptyLink(): AccountProfileLink {
   return { label: '', url: '' };
 }
 
-// ── Helpers ──
-
 function copyToClipboard(text: string, t: (key: string, opts?: Record<string, unknown>) => string) {
   navigator.clipboard.writeText(text).then(
     () => toast.success(t('provider.account.identity.copied')),
@@ -135,14 +127,11 @@ function copyToClipboard(text: string, t: (key: string, opts?: Record<string, un
 
 async function pickImageFile(): Promise<string | null> {
   try {
-    const path = await api.pickImageFile();
-    return typeof path === 'string' && path ? path : null;
+    return await api.pickImageFile();
   } catch {
     return null;
   }
 }
-
-// ── Section title ──
 
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
@@ -158,8 +147,6 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle?: string })
     </Flexbox>
   );
 }
-
-// ── Clickable avatar with edit badge ──
 
 function EditableAvatar({
   src,
@@ -201,7 +188,6 @@ function EditableAvatar({
         {(fallbackText || 'P').slice(0, 1).toUpperCase()}
       </Avatar>
 
-      {/* Edit badge — bottom-right corner */}
       <div
         style={{
           position: 'absolute',
@@ -225,7 +211,6 @@ function EditableAvatar({
         )}
       </div>
 
-      {/* Hover overlay */}
       <div
         style={{
           position: 'absolute',
@@ -250,8 +235,6 @@ function EditableAvatar({
     </div>
   );
 }
-
-// ── Header image banner with edit ──
 
 function EditableHeaderBanner({
   src,
@@ -282,7 +265,6 @@ function EditableHeaderBanner({
         border: `1px solid ${token.colorBorderSecondary}`,
       }}
     >
-      {/* Hover overlay */}
       <div
         style={{
           position: 'absolute',
@@ -316,8 +298,6 @@ function EditableHeaderBanner({
     </div>
   );
 }
-
-// ── Read-only identity field ──
 
 function IdentityField({
   label,
@@ -370,8 +350,6 @@ function IdentityField({
   );
 }
 
-// ── Stat chip ──
-
 function StatChip({ label, value }: { label: string; value: number }) {
   const { token } = theme.useToken();
   return (
@@ -394,30 +372,26 @@ function StatChip({ label, value }: { label: string; value: number }) {
   );
 }
 
-// ── Main component ──
+const AUTO_SAVE_DELAY = 800;
 
 export function AccountTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const { modal } = App.useApp();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
-  const [draft, setDraft] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingHeader, setUploadingHeader] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const timezoneOptions = useMemo(() => buildTimezoneOptions(t), [t]);
 
-  // Silent reload: don't show full-page spinner, only update data
   const loadProfile = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const next = normalizeProfile(await api.profileGet());
       setProfile(next);
-      setDraft((prev) => (silent && prev ? { ...next, ...draftOnlyFields(prev, next) } : next));
 
-      // Sync avatar to sidebar identity store
       if (next.avatar) {
         api.accountSyncAvatar(next.avatar).catch(() => {});
         useAccountIdentityStore.getState().load();
@@ -431,77 +405,72 @@ export function AccountTab() {
 
   useEffect(() => {
     loadProfile(false);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, []);
 
-  const hasChanges = useMemo(() => {
-    if (!profile || !draft) return false;
-    return JSON.stringify(profile) !== JSON.stringify(draft);
-  }, [draft, profile]);
+  const autoSave = (nextProfile: AccountProfile) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      setSaving(true);
+      try {
+        const result = normalizeProfile(
+          await api.profileUpdate({
+            note: nextProfile.note.trim(),
+            region: nextProfile.region.trim(),
+            timezone: nextProfile.timezone.trim(),
+            tags: nextProfile.tags.map((tg) => tg.trim()).filter(Boolean),
+            links: nextProfile.links
+              .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
+              .filter((l) => l.label || l.url),
+          }),
+        );
+        setProfile(result);
+      } catch (error: any) {
+        toast.error(error?.message || t('provider.account.failedToUpdate'));
+      } finally {
+        setSaving(false);
+      }
+    }, AUTO_SAVE_DELAY);
+  };
 
   const onFieldChange = <K extends keyof AccountProfile>(key: K, value: AccountProfile[K]) => {
-    setDraft((current) => (current ? { ...current, [key]: value } : current));
+    setProfile((current) => {
+      if (!current) return current;
+      const next = { ...current, [key]: value };
+      autoSave(next);
+      return next;
+    });
   };
 
   const onLinkChange = (index: number, key: keyof AccountProfileLink, value: string) => {
-    setDraft((current) => {
+    setProfile((current) => {
       if (!current) return current;
       const nextLinks = current.links.map((item, i) =>
         i === index ? { ...item, [key]: value } : item,
       );
-      return { ...current, links: nextLinks };
+      const next = { ...current, links: nextLinks };
+      autoSave(next);
+      return next;
     });
   };
 
   const addLink = () => {
-    setDraft((current) =>
+    setProfile((current) =>
       current ? { ...current, links: [...current.links, createEmptyLink()] } : current,
     );
   };
 
   const removeLink = (index: number) => {
-    setDraft((current) => {
+    setProfile((current) => {
       if (!current) return current;
-      return { ...current, links: current.links.filter((_, i) => i !== index) };
+      const next = { ...current, links: current.links.filter((_, i) => i !== index) };
+      autoSave(next);
+      return next;
     });
   };
 
-  const resetDraft = () => {
-    if (!profile || !hasChanges) return;
-    modal.confirm({
-      title: t('provider.account.discardConfirm.title'),
-      content: t('provider.account.discardConfirm.content'),
-      okText: t('provider.account.discardConfirm.ok'),
-      cancelText: t('provider.account.discardConfirm.cancel'),
-      onOk: () => setDraft(profile),
-    });
-  };
-
-  const saveProfile = async () => {
-    if (!draft) return;
-    setSaving(true);
-    try {
-      const next = normalizeProfile(
-        await api.profileUpdate({
-          note: draft.note.trim(),
-          region: draft.region.trim(),
-          timezone: draft.timezone.trim(),
-          tags: draft.tags.map((t) => t.trim()).filter(Boolean),
-          links: draft.links
-            .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
-            .filter((l) => l.label || l.url),
-        }),
-      );
-      setProfile(next);
-      setDraft(next);
-      toast.success(t('provider.account.saved'));
-    } catch (error: any) {
-      toast.error(error?.message || t('provider.account.failedToUpdate'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Upload avatar: pick file → upload to OSS → sync to sidebar
   const handleUploadAvatar = async () => {
     if (uploadingAvatar) return;
     const path = await pickImageFile();
@@ -511,9 +480,7 @@ export function AccountTab() {
     try {
       const next = normalizeProfile(await api.profileUploadAvatarOss({ file_path: path }));
       setProfile(next);
-      setDraft((d) => (d ? { ...next, ...draftOnlyFields(d, next) } : next));
 
-      // Sync sidebar avatar immediately
       if (next.avatar) {
         api.accountSyncAvatar(next.avatar).catch(() => {});
         useAccountIdentityStore.getState().load();
@@ -536,7 +503,6 @@ export function AccountTab() {
     try {
       const next = normalizeProfile(await api.profileUploadHeaderOss({ file_path: path }));
       setProfile(next);
-      setDraft((d) => (d ? { ...next, ...draftOnlyFields(d, next) } : next));
       toast.success(t('provider.account.avatarHeader.headerUpdated'));
     } catch (error: any) {
       toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadHeader'));
@@ -553,7 +519,7 @@ export function AccountTab() {
     );
   }
 
-  if (!draft) {
+  if (!profile) {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 64 }}>
         <Empty description={t('provider.account.noProfile')} />
@@ -562,34 +528,13 @@ export function AccountTab() {
   }
 
   return (
-    <Flexbox gap={20} style={{ padding: '16px 24px 24px', height: '100%', overflow: 'auto' }}>
-      {/* ── Header bar ── */}
-      <Flexbox horizontal justify="space-between" align="center" gap={12}>
-        <Flexbox gap={4}>
-          <Title level={4} style={{ margin: 0 }}>
-            {t('provider.account.title')}
-          </Title>
-          <Text type="secondary">
-            {t('provider.account.subtitle')}
-          </Text>
-        </Flexbox>
-        <Flexbox horizontal gap={8}>
-          <Button onClick={resetDraft} disabled={!hasChanges || saving}>
-            {t('provider.account.reset')}
-          </Button>
-          <Button
-            type="primary"
-            icon={<Save size={14} />}
-            onClick={saveProfile}
-            loading={saving}
-            disabled={!hasChanges}
-          >
-            {t('provider.account.save')}
-          </Button>
-        </Flexbox>
-      </Flexbox>
-
-      {/* ── Section 1: Identity Overview — avatar inline with edit badge ── */}
+    <Flexbox gap={20} style={{ maxWidth: 700 }}>
+      {saving && (
+        <Text type="secondary" style={{ fontSize: 11, textAlign: 'right' }}>
+          {t('provider.account.autoSaving', { defaultValue: 'Saving...' })}
+        </Text>
+      )}
+      {/* ── Section 1: Identity Overview ── */}
       <Flexbox
         gap={16}
         style={{
@@ -604,20 +549,18 @@ export function AccountTab() {
           subtitle={t('provider.account.identity.subtitle')}
         />
 
-        {/* Header banner (clickable) */}
         <EditableHeaderBanner
-          src={draft.header || undefined}
+          src={profile.header || undefined}
           uploading={uploadingHeader}
           onUpload={handleUploadHeader}
           t={t}
         />
 
-        {/* Avatar + name + stats row */}
         <Flexbox horizontal gap={20} align="flex-start" style={{ flexWrap: 'wrap', marginTop: -40 }}>
           <div style={{ marginLeft: 16 }}>
             <EditableAvatar
-              src={draft.avatar || undefined}
-              fallbackText={draft.display_name || draft.username}
+              src={profile.avatar || undefined}
+              fallbackText={profile.display_name || profile.username}
               size={80}
               uploading={uploadingAvatar}
               onUpload={handleUploadAvatar}
@@ -627,32 +570,32 @@ export function AccountTab() {
           <Flexbox gap={8} style={{ flex: 1, minWidth: 0, paddingTop: 44 }}>
             <Flexbox horizontal align="center" gap={10} style={{ flexWrap: 'wrap' }}>
               <Title level={4} style={{ margin: 0 }}>
-                {draft.display_name || draft.username}
+                {profile.display_name || profile.username}
               </Title>
               <Tag color="processing" style={{ margin: 0 }}>
-                @{draft.username}
+                @{profile.username}
               </Tag>
             </Flexbox>
 
             <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
-              <StatChip label={t('provider.account.identity.posts')} value={draft.statuses_count} />
-              <StatChip label={t('provider.account.identity.following')} value={draft.following_count} />
-              <StatChip label={t('provider.account.identity.followers')} value={draft.followers_count} />
+              <StatChip label={t('provider.account.identity.posts')} value={profile.statuses_count} />
+              <StatChip label={t('provider.account.identity.following')} value={profile.following_count} />
+              <StatChip label={t('provider.account.identity.followers')} value={profile.followers_count} />
               <Text type="secondary" style={{ fontSize: 12, alignSelf: 'center' }}>
-                {t('provider.account.identity.created', { date: formatDate(draft.created_at) })}
+                {t('provider.account.identity.created', { date: formatDate(profile.created_at) })}
               </Text>
             </Flexbox>
           </Flexbox>
         </Flexbox>
 
         <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
-          <IdentityField label={t('provider.account.identity.name')} value={draft.display_name} t={t} />
-          <IdentityField label={t('provider.account.identity.preferredUsername')} value={draft.username} prefix="@" copiable t={t} />
-          <IdentityField label={t('provider.account.identity.ptid')} value={draft.peers_touch.network_id} copiable t={t} />
+          <IdentityField label={t('provider.account.identity.name')} value={profile.display_name} t={t} />
+          <IdentityField label={t('provider.account.identity.preferredUsername')} value={profile.username} prefix="@" copiable t={t} />
+          <IdentityField label={t('provider.account.identity.ptid')} value={profile.peers_touch.network_id} copiable t={t} />
         </Flexbox>
       </Flexbox>
 
-      {/* ── Section 2: Public Profile (editable) ── */}
+      {/* ── Section 2: Public Profile (editable, auto-save) ── */}
       <Flexbox
         gap={18}
         style={{
@@ -667,13 +610,12 @@ export function AccountTab() {
           subtitle={t('provider.account.profile.subtitle')}
         />
 
-        {/* Bio */}
         <Flexbox gap={6}>
           <Text strong style={{ fontSize: 13 }}>
             {t('provider.account.profile.bio')}
           </Text>
           <TextArea
-            value={draft.note}
+            value={profile.note}
             onChange={(e) => onFieldChange('note', e.target.value)}
             rows={4}
             maxLength={280}
@@ -683,7 +625,6 @@ export function AccountTab() {
           />
         </Flexbox>
 
-        {/* Region & Timezone */}
         <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
           <Flexbox gap={6} style={{ flex: '1 1 280px', minWidth: 240 }}>
             <Flexbox horizontal align="center" gap={6}>
@@ -696,7 +637,7 @@ export function AccountTab() {
               </Text>
             </Flexbox>
             <Input
-              value={draft.region}
+              value={profile.region}
               onChange={(e) => onFieldChange('region', e.target.value)}
               placeholder={t('provider.account.profile.regionPlaceholder')}
               maxLength={120}
@@ -714,7 +655,7 @@ export function AccountTab() {
               </Text>
             </Flexbox>
             <Select
-              value={draft.timezone || undefined}
+              value={profile.timezone || undefined}
               onChange={(value) => onFieldChange('timezone', value || '')}
               options={timezoneOptions}
               placeholder={t('provider.account.profile.timezonePlaceholder')}
@@ -728,7 +669,6 @@ export function AccountTab() {
           </Flexbox>
         </Flexbox>
 
-        {/* Tags */}
         <Flexbox gap={6}>
           <Flexbox horizontal align="center" gap={6}>
             <Hash size={14} style={{ color: token.colorTextTertiary }} />
@@ -741,7 +681,7 @@ export function AccountTab() {
           </Flexbox>
           <Select
             mode="tags"
-            value={draft.tags}
+            value={profile.tags}
             onChange={(value) => onFieldChange('tags', value)}
             placeholder={t('provider.account.profile.tagsPlaceholder')}
             style={{ width: '100%' }}
@@ -749,7 +689,6 @@ export function AccountTab() {
           />
         </Flexbox>
 
-        {/* Links */}
         <Flexbox gap={10}>
           <Flexbox horizontal justify="space-between" align="center" gap={12}>
             <Flexbox horizontal align="center" gap={6}>
@@ -761,18 +700,18 @@ export function AccountTab() {
                 {t('provider.account.profile.linksDesc')}
               </Text>
             </Flexbox>
-            <Button size="small" icon={<Plus size={12} />} onClick={addLink}>
+            <Button size="small" icon={<Plus size={14} />} onClick={addLink}>
               {t('provider.account.profile.addLink')}
             </Button>
           </Flexbox>
 
-          {draft.links.length === 0 ? (
+          {profile.links.length === 0 ? (
             <Text type="secondary" style={{ fontSize: 12, paddingLeft: 4 }}>
               {t('provider.account.profile.noLinks')}
             </Text>
           ) : null}
 
-          {draft.links.map((link, index) => (
+          {profile.links.map((link, index) => (
             <Flexbox
               key={`link-${index}`}
               horizontal
@@ -789,14 +728,14 @@ export function AccountTab() {
                 value={link.label}
                 onChange={(e) => onLinkChange(index, 'label', e.target.value)}
                 placeholder="Label (e.g. GitHub)"
-                style={{ flex: 1 }}
+                style={{ flex: 1, fontSize: 12 }}
                 size="small"
               />
               <Input
                 value={link.url}
                 onChange={(e) => onLinkChange(index, 'url', e.target.value)}
                 placeholder="https://..."
-                style={{ flex: 2 }}
+                style={{ flex: 2, fontSize: 12 }}
                 size="small"
               />
               <Tooltip title={t('common.action.delete', { ns: 'common' })}>
@@ -813,43 +752,6 @@ export function AccountTab() {
         </Flexbox>
       </Flexbox>
 
-      {/* ── Section 3: OAuth Connections (collapsed) ── */}
-      <Collapse
-        items={[
-          {
-            key: 'oauth',
-            label: (
-              <Flexbox horizontal align="center" gap={8}>
-                <Globe size={14} />
-                <Text strong>{t('provider.oauth.tab.oauthConnections')}</Text>
-              </Flexbox>
-            ),
-            children: <OAuth2Tab />,
-          },
-        ]}
-        style={{
-          background: token.colorBgContainer,
-          borderRadius: 16,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          overflow: 'hidden',
-        }}
-      />
     </Flexbox>
   );
-}
-
-// Preserve the user's in-flight edits for fields that weren't changed by the image upload.
-function draftOnlyFields(
-  currentDraft: AccountProfile,
-  freshFromServer: AccountProfile,
-): Partial<AccountProfile> {
-  const overrides: Partial<AccountProfile> = {};
-  if (currentDraft.note !== freshFromServer.note) overrides.note = currentDraft.note;
-  if (currentDraft.region !== freshFromServer.region) overrides.region = currentDraft.region;
-  if (currentDraft.timezone !== freshFromServer.timezone) overrides.timezone = currentDraft.timezone;
-  if (JSON.stringify(currentDraft.tags) !== JSON.stringify(freshFromServer.tags))
-    overrides.tags = currentDraft.tags;
-  if (JSON.stringify(currentDraft.links) !== JSON.stringify(freshFromServer.links))
-    overrides.links = currentDraft.links;
-  return overrides;
 }

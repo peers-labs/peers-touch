@@ -2,15 +2,13 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, DraggablePanel, Markdown, Dropdown, Tag, Input } from '@lobehub/ui';
-import type { MenuProps } from '@lobehub/ui';
+import { ActionIcon, DraggablePanel, Markdown, Tag, Input } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
-import { theme, Switch, Empty } from 'antd';
+import { theme, Empty } from 'antd';
 import { useChatStore } from '../store/chat';
 import { MessageBubble } from '../components/MessageBubble';
 import { ChatInput } from '../components/ChatInput';
 import { useUserAvatar } from '../components/UserProfilePopover';
-import { ShareDialog } from '../components/ShareDialog';
 import {
   FileText,
   Terminal,
@@ -18,11 +16,9 @@ import {
   Sparkles,
   FilePen,
   Maximize2,
-  MoreHorizontal,
   Trash2,
   BookOpen,
   Plus,
-  Share2,
   Wrench,
   Brain,
   CheckCircle,
@@ -54,9 +50,6 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
     portalLoading,
     deleteDocument,
     createDocument,
-    wideScreen,
-    setWideScreen,
-    loadPreferences,
     selectedAgent,
     agents,
     isStreaming,
@@ -65,7 +58,6 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const userAvatar = useUserAvatar();
-  const [shareOpen, setShareOpen] = useState(false);
   const [portalView, setPortalView] = useState<'list' | 'editor'>('list');
   const [editingDoc, setEditingDoc] = useState<import('../services/desktop_api').NotebookDocument | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -128,8 +120,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
 
   useEffect(() => {
     selectSession(currentSessionKey);
-    loadPreferences();
-  }, [currentSessionKey, selectSession, loadPreferences]);
+  }, [currentSessionKey, selectSession]);
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -137,25 +128,6 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
   }, [messages, isStreaming]);
 
   const isEmpty = messages.length === 0;
-
-  const headerMenuItems: MenuProps['items'] = [
-    {
-      key: 'wide',
-      label: (
-        <Flexbox horizontal align="center" justify="space-between" gap={12} style={{ minWidth: 160 }}>
-          <Flexbox horizontal align="center" gap={8}>
-            <Maximize2 size={14} />
-            <span>{t('chat.header.fullWidth')}</span>
-          </Flexbox>
-          <Switch
-            size="small"
-            checked={wideScreen}
-            onChange={(v) => setWideScreen(v)}
-          />
-        </Flexbox>
-      ),
-    },
-  ];
 
   return (
     <Flexbox horizontal flex={1} height="100%" style={{ position: 'relative' }}>
@@ -220,17 +192,6 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
               title={t('chat.header.notebook')}
               onClick={togglePortal}
             />
-            <ActionIcon
-              icon={Share2}
-              size="small"
-              title={t('chat.header.share')}
-              onClick={() => setShareOpen(true)}
-            />
-            <Dropdown menu={{ items: headerMenuItems }} trigger={['click']} placement="bottomRight">
-              <div>
-                <ActionIcon icon={MoreHorizontal} size="small" title={t('chat.header.more')} />
-              </div>
-            </Dropdown>
           </Flexbox>
         </Flexbox>
 
@@ -310,14 +271,6 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
           />
         )}
       </DraggablePanel>
-
-      <ShareDialog
-        open={shareOpen}
-        onClose={() => setShareOpen(false)}
-        sessionKey={currentSessionKey}
-        messages={messages}
-        title={currentAgent?.title || t('chat.share.defaultTitle')}
-      />
     </Flexbox>
   );
 }

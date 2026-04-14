@@ -21,7 +21,7 @@ pub struct SchedulerAddJobInput {
 }
 
 pub fn agent_scheduler_start(input: SchedulerStartInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = token_from_state(state)?;
+    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
 
     let body = json!({
         "agent_id": input.agent_id,
@@ -56,7 +56,7 @@ pub fn agent_scheduler_start(input: SchedulerStartInput, state: &AppState) -> Ap
 }
 
 pub fn agent_scheduler_stop(state: &AppState) -> AppResult<StubPayload> {
-    let token = token_from_state(state)?;
+    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
 
     match station_client::request_json(
         Method::POST,
@@ -85,7 +85,7 @@ pub fn agent_scheduler_stop(state: &AppState) -> AppResult<StubPayload> {
 }
 
 pub fn agent_scheduler_status(state: &AppState) -> AppResult<StubPayload> {
-    let token = token_from_state(state)?;
+    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
 
     match station_client::request_json(
         Method::GET,
@@ -114,7 +114,7 @@ pub fn agent_scheduler_status(state: &AppState) -> AppResult<StubPayload> {
 }
 
 pub fn agent_scheduler_add_job(input: SchedulerAddJobInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = token_from_state(state)?;
+    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
 
     let body = json!({
         "kind": input.kind,

@@ -25,7 +25,7 @@ interface SessionStore {
 
 // ── Helpers ──
 
-function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'password' | 'oauth'): CurrentUser | null {
+function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'password' | 'oauth', provider?: string): CurrentUser | null {
   if (!resp.actor_id) return null;
   return {
     actorId: resp.actor_id,
@@ -33,6 +33,7 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
     email: resp.email || '',
     avatarUrl: resp.avatar_url || undefined,
     loginMethod: (resp.login_method as 'password' | 'oauth') || fallbackMethod,
+    loginProvider: provider,
   };
 }
 
@@ -50,11 +51,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
   },
 
   loginWithOAuth: async (_providerId: string) => {
-    // After OAuth loopback completes, the caller should call
-    // api.ensureStationSession() which persists the JWT in BFF.
-    // We then load the session identity from it.
     const resp = await api.ensureStationSession();
-    const user = userFromAuthResponse(resp, 'oauth');
+    const user = userFromAuthResponse(resp, 'oauth', _providerId);
     set({ currentUser: user, authenticated: !!user });
   },
 
@@ -62,7 +60,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
     set({ restoring: true });
     try {
       const resp = await api.authRestoreSession();
-      const user = userFromAuthResponse(resp, 'password');
+      const method = resp.login_method || 'password';
+      const isOAuth = method !== 'password';
+      const user = userFromAuthResponse(resp, isOAuth ? 'oauth' : 'password', isOAuth ? method : undefined);
       set({ currentUser: user, authenticated: !!user, restoring: false });
     } catch (error) {
       if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {

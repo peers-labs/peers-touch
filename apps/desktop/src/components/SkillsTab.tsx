@@ -107,23 +107,27 @@ export function SkillsTab() {
   return (
     <Flexbox style={{ padding: 24, height: '100%', overflow: 'auto' }} gap={24}>
       <Flexbox horizontal justify="space-between" align="center">
-        <Title level={5} style={{ margin: 0 }}>Skills</Title>
+        <Title level={5} style={{ margin: 0 }}>{t('provider.skills.title')}</Title>
         <Flexbox horizontal gap={8}>
-          <Button icon={<Plus size={14} />} onClick={() => setImportModal('create')}>
-            Create
+          <Button size="small" icon={<Plus size={14} />} onClick={() => setImportModal('create')}>
+            {t('provider.skills.create')}
           </Button>
-          <Button icon={<LinkIcon size={14} />} onClick={() => setImportModal('source')}>
-            From URL / Git
+          <Button size="small" icon={<LinkIcon size={14} />} onClick={() => setImportModal('source')}>
+            {t('provider.skills.fromUrl')}
           </Button>
-          <Button icon={<UploadIcon size={14} />} onClick={() => setImportModal('zip')}>
-            Upload ZIP
+          <Button size="small" icon={<UploadIcon size={14} />} onClick={() => setImportModal('zip')}>
+            {t('provider.skills.uploadZip')}
           </Button>
         </Flexbox>
       </Flexbox>
       <Input
+        size="small"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search by name, keyword, description..."
+        placeholder={t('provider.skills.searchPlaceholder')}
+        prefix={<Search size={12} />}
+        allowClear
+        style={{ fontSize: 12 }}
       />
 
       <Tabs
@@ -132,7 +136,7 @@ export function SkillsTab() {
         items={[
           {
             key: 'installed',
-            label: `Installed (${skills.length})`,
+            label: t('provider.skills.tab.installed', { count: skills.length }),
             children: (
               <Flexbox gap={12}>
                 <Flexbox horizontal justify="flex-start" align="center" gap={8}>
@@ -163,7 +167,7 @@ export function SkillsTab() {
           },
           {
             key: 'builtin',
-            label: `Built-in (${builtins.length})`,
+            label: t('provider.skills.tab.builtin', { count: builtins.length }),
             children: (
               <Flexbox gap={12}>
                 {filteredBuiltins.length === 0 && !loading && (
@@ -395,7 +399,7 @@ function MarketCard({
                 type="text"
                 size="small"
                 loading={syncing}
-                icon={<RefreshCw size={12} />}
+                icon={<RefreshCw size={14} />}
                 onClick={handleSync}
               />
             </Tooltip>
@@ -404,7 +408,7 @@ function MarketCard({
                 type="text"
                 size="small"
                 danger
-                icon={<Trash2 size={12} />}
+                icon={<Trash2 size={14} />}
                 onClick={(e) => e.stopPropagation()}
               />
             </Popconfirm>
@@ -597,18 +601,20 @@ function MarketBrowserDialog({
       >
         <Flexbox gap={16}>
           <Input
-            prefix={<Search size={14} />}
+            size="small"
+            prefix={<Search size={12} />}
             placeholder={t('provider.skills.market.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onPressEnter={loadSkills}
             allowClear
+            style={{ fontSize: 12 }}
           />
 
           {loading && <Spin style={{ alignSelf: 'center', marginTop: 40 }} />}
 
           {!loading && skills.length === 0 && (
-            <Empty description="No skills found" />
+            <Empty description={t('provider.skills.market.noSkills')} />
           )}
 
           <Flexbox gap={8}>
@@ -651,7 +657,7 @@ function MarketBrowserDialog({
                     ) : (
                       <Button
                         type="text"
-                        icon={<Plus size={16} />}
+                        icon={<Plus size={14} />}
                         loading={installing === entry.filePath}
                         onClick={(e) => { e.stopPropagation(); handleInstall(entry); }}
                       />
@@ -941,7 +947,7 @@ function SkillCard({
           <Tag color={sourceColors[skill.source] || 'default'} style={{ margin: 0 }}>
             {skill.source}
           </Tag>
-          <Tooltip title={skill.enabled ? 'Disable' : 'Enable'}>
+          <Tooltip title={skill.enabled ? t('common.action.disable', { ns: 'common' }) : t('common.action.enable', { ns: 'common' })}>
             <Switch
               size="small"
               checked={skill.enabled}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/infrastructure"
+	notifbridge "github.com/peers-labs/peers-touch/station/app/subserver/notification"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -62,6 +63,8 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 
 func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusRunning
+	// Wire notification bridge during Start() — notification SubServer is initialized by now.
+	s.service.SetNotifier(notifbridge.NewBridge())
 	now := time.Now().Unix()
 	s.mu.Lock()
 	for did := range s.online {

@@ -2,6 +2,15 @@ package domain
 
 import "time"
 
+// Attachment references blob storage for a message (e.g. image/file).
+type Attachment struct {
+	CID          string
+	Filename     string
+	MimeType     string
+	Size         int64
+	ThumbnailCID string
+}
+
 type Session struct {
 	ID              string
 	ParticipantADID string
@@ -21,9 +30,29 @@ type Message struct {
 	ReceiverDID string
 	Type        int32
 	Content     string
-	ReplyToID   string
+	// EncryptedPayload stores E2E ciphertext when the client sends encrypted_payload; otherwise nil.
+	EncryptedPayload []byte
+	ReplyToID        string
+	Status           int32
+	Attachments      []Attachment
+	SentAt           time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// FriendRequest represents a pending relationship request before chat session creation.
+type FriendRequest struct {
+	ID          string
+	SenderDID   string
+	ReceiverDID string
 	Status      int32
-	SentAt      time.Time
+	Message     string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
+
+const (
+	FriendRequestStatusPending  = 1
+	FriendRequestStatusAccepted = 2
+	FriendRequestStatusRejected = 3
+)

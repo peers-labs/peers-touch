@@ -134,6 +134,14 @@ export function LogsTab() {
   const cursorRef = useRef<number>(-1);
   const loadingRef = useRef(false);
   const pausedRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const LOG_LINE_HEIGHT = 22;
+  const getMaxLines = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return 200;
+    return Math.max(50, Math.ceil(el.clientHeight / LOG_LINE_HEIGHT) * 3);
+  }, []);
 
   useEffect(() => {
     cursorRef.current = cursor;
@@ -143,7 +151,7 @@ export function LogsTab() {
     pausedRef.current = paused;
   }, [paused]);
 
-  const mergeEntries = (prev: LogEntry[], incoming: LogEntry[]) => {
+  const mergeEntries = useCallback((prev: LogEntry[], incoming: LogEntry[]) => {
     if (incoming.length === 0) return prev;
     const maxOverlap = Math.min(prev.length, incoming.length);
     let overlap = 0;
@@ -160,15 +168,17 @@ export function LogsTab() {
         break;
       }
     }
-    return [...prev, ...incoming.slice(overlap)].slice(-2000);
-  };
+    const maxLines = getMaxLines();
+    return [...prev, ...incoming.slice(overlap)].slice(-maxLines);
+  }, [getMaxLines]);
 
   const fetchLogs = useCallback(async (reset = false) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     try {
       const currentCursor = reset ? -1 : cursorRef.current;
-      const res = await api.tailLogs(currentCursor, 1000, 100 * 1024);
+      const fetchCount = Math.min(getMaxLines(), 500);
+      const res = await api.tailLogs(currentCursor, fetchCount, fetchCount * 200);
       const newEntries = (res.lines || []).map(parseLogLine);
 
       if (res.reset || reset) {
@@ -183,7 +193,7 @@ export function LogsTab() {
     } finally {
       loadingRef.current = false;
     }
-  }, []);
+  }, [getMaxLines, mergeEntries]);
 
   useEffect(() => {
     if (autoFollow && !paused && logsEndRef.current) {
@@ -268,26 +278,28 @@ export function LogsTab() {
                     <FileText size={18} style={{ color: token.colorPrimary }} />
                     <Title level={5} style={{ margin: 0 }}>{t('provider.logs.title')}</Title>
                 </Flexbox>
-                <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.logs.description')}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.logs.subtitle')}</Text>
             </Flexbox>
-            <Flexbox gap={8} horizontal>
+            <Flexbox gap={8} horizontal align="center">
                  <Input 
+                    size="small"
                     placeholder={t('provider.logs.filterPlaceholder')} 
-                    prefix={<Search size={14} />} 
+                    prefix={<Search size={12} />} 
                     value={filterText}
                     onChange={e => setFilterText(e.target.value)}
-                    style={{ width: 220 }}
+                    style={{ width: 200, fontSize: 12 }}
                     allowClear
                  />
-                 <Button 
+                 <Button
+                    size="small"
                     icon={paused ? <Play size={14} /> : <Pause size={14} />} 
                     onClick={() => setPaused(!paused)}
                  >
                     {paused ? t('provider.logs.resume') : t('provider.logs.pause')}
                  </Button>
-                 <Button icon={<RefreshCw size={14} />} onClick={() => fetchLogs(true)}>{t('provider.logs.refresh')}</Button>
-                 <Button icon={<Download size={14} />} onClick={handleExport}>{t('provider.logs.export')}</Button>
-                 <Button icon={<Trash2 size={14} />} danger onClick={() => setEntries([])} />
+                 <Button size="small" icon={<RefreshCw size={14} />} onClick={() => fetchLogs(true)}>{t('provider.logs.refresh')}</Button>
+                 <Button size="small" icon={<Download size={14} />} onClick={handleExport}>{t('provider.logs.exportVisible')}</Button>
+                 <Button size="small" icon={<Trash2 size={14} />} danger onClick={() => setEntries([])} />
             </Flexbox>
         </Flexbox>
 
@@ -310,7 +322,10 @@ export function LogsTab() {
         </Flexbox>
 
         <div 
-            ref={scrollRef}
+            ref={(el) => {
+                (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+                (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+            }}
             className="selectable"
             style={{ 
                 flex: 1, 
