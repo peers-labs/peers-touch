@@ -4,9 +4,12 @@ use crate::application::chat_storage;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::resolve_user_scope;
 use crate::contracts::{
-    ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, FriendChatAckInput, FriendChatCreateSessionInput, FriendChatListInput,
+    ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput,
+    FriendChatAckInput, FriendChatCreateSessionInput, FriendChatListInput,
     FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput, FriendChatSendInput,
-    FriendChatSyncInput, FriendChatSyncMessagesInput, StubPayload,
+    FriendChatSyncInput, FriendChatSyncMessagesInput, KeyExchangeFetchInput, KeyExchangeUploadInput,
+    FriendRequestSendInput, FriendRequestActionInput, FriendRequestListInput,
+    StubPayload,
 };
 use crate::state::AppState;
 use reqwest::blocking::Client;
@@ -217,8 +220,10 @@ pub fn friend_chat_send_message(input: FriendChatSendInput, state: State<'_, Arc
             "session_ulid": input.session_ulid,
             "receiver_did": input.receiver_did,
             "content": input.content,
+            "encrypted_payload": input.encrypted_payload.unwrap_or_default(),
             "type": input.r#type.unwrap_or(1),
-            "reply_to_ulid": input.reply_to_ulid.unwrap_or_default()
+            "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
+            "attachments": input.attachments.unwrap_or_default(),
         })),
     ) {
         Ok(data) => data,
@@ -411,7 +416,7 @@ pub fn friend_chat_sync_from_station_scoped(input: FriendChatSyncInput, state: S
 // Stub commands - registered in main.rs, backed by station JSON API
 // ---------------------------------------------------------------------------
 
-/// Sync messages for a friend-chat session from station (JSON-based).
+/// Sync messages for a friend-chat session from station.
 #[tauri::command]
 pub fn friend_chat_sync_messages(input: FriendChatSyncMessagesInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
@@ -421,12 +426,11 @@ pub fn friend_chat_sync_messages(input: FriendChatSyncMessagesInput, state: Stat
 
     let data = match request_json(
         Method::POST,
-        "/friend-chat/messages/sync",
+        "/friend-chat/message/sync",
         &token,
         None,
         Some(json!({
-            "session_ulid": input.session_ulid,
-            "messages_json": input.messages_json,
+            "messages": input.messages,
         })),
     ) {
         Ok(data) => data,
@@ -510,4 +514,171 @@ pub fn friend_chat_get_stats(state: State<'_, Arc<AppState>>) -> AppResult<StubP
     };
 
     to_stub("friend_chat_get_stats", data)
+}
+
+#[tauri::command]
+pub fn key_exchange_upload_bundle(
+    input: KeyExchangeUploadInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    let data = match request_json(
+        Method::POST,
+        "/key-exchange/keys/bundle",
+        &token,
+        None,
+        Some(json!({
+            "ik_pub": input.ik_pub,
+            "spk_id": input.spk_id,
+            "spk_pub": input.spk_pub,
+            "spk_sig": input.spk_sig,
+            "opk_ids": input.opk_ids,
+            "opk_pubs": input.opk_pubs,
+        })),
+    ) {
+        Ok(data) => data,
+        Err(error) => return error,
+    };
+    to_stub("key_exchange_upload_bundle", data)
+}
+
+#[tauri::command]
+pub fn key_exchange_fetch_bundle(
+    input: KeyExchangeFetchInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.did.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "error.keyExchange.didRequired", None);
+    }
+    let query = vec![("did", input.did)];
+    let data = match request_json(
+        Method::GET,
+        "/key-exchange/keys/bundle",
+        &token,
+        Some(&query),
+        None,
+    ) {
+        Ok(data) => data,
+        Err(error) => return error,
+    };
+    to_stub("key_exchange_fetch_bundle", data)
+}
+
+// ============================================================================
+// Friend Request Commands
+// ============================================================================
+
+#[tauri::command]
+pub fn friend_chat_send_friend_request(
+    input: FriendRequestSendInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    let data = match request_json(
+        Method::POST,
+        "/friend-chat/friend-request/send",
+        &token,
+        None,
+        Some(json!({
+            "receiver_did": input.receiver_did,
+            "message": input.message.unwrap_or_default(),
+        })),
+    ) {
+        Ok(d) => d,
+        Err(e) => return e,
+    };
+
+    to_stub("friend_chat_send_friend_request", data)
+}
+
+#[tauri::command]
+pub fn friend_chat_accept_friend_request(
+    input: FriendRequestActionInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    let data = match request_json(
+        Method::POST,
+        "/friend-chat/friend-request/accept",
+        &token,
+        None,
+        Some(json!({ "request_id": input.request_id })),
+    ) {
+        Ok(d) => d,
+        Err(e) => return e,
+    };
+
+    to_stub("friend_chat_accept_friend_request", data)
+}
+
+#[tauri::command]
+pub fn friend_chat_reject_friend_request(
+    input: FriendRequestActionInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    let data = match request_json(
+        Method::POST,
+        "/friend-chat/friend-request/reject",
+        &token,
+        None,
+        Some(json!({ "request_id": input.request_id })),
+    ) {
+        Ok(d) => d,
+        Err(e) => return e,
+    };
+
+    to_stub("friend_chat_reject_friend_request", data)
+}
+
+#[tauri::command]
+pub fn friend_chat_list_friend_requests(
+    input: FriendRequestListInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    let mut query: Vec<(&str, String)> = Vec::new();
+    if let Some(st) = input.status {
+        query.push(("status", st.to_string()));
+    }
+    let limit = input.limit.unwrap_or(20);
+    query.push(("limit", limit.to_string()));
+    let offset = input.offset.unwrap_or(0);
+    query.push(("offset", offset.to_string()));
+
+    let data = match request_json(
+        Method::GET,
+        "/friend-chat/friend-requests",
+        &token,
+        Some(&query.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>()),
+        None,
+    ) {
+        Ok(d) => d,
+        Err(e) => return e,
+    };
+
+    to_stub("friend_chat_list_friend_requests", data)
 }

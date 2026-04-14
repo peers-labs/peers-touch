@@ -153,6 +153,7 @@
 - 统一 Handler 架构：`architecture/runtime/unified-handler-architecture.md`
 - 统一存储架构：`architecture/storage/unified-runtime-storage-architecture.md`
 - i18n 架构：`architecture/i18n/i18n-architecture.md`
+- 通知系统架构：`architecture/notification/notification-architecture.md`
 
 ### 4.2 平台层真源
 
@@ -223,6 +224,11 @@
 
 - `context/`
 - `meta/INDEX.md`
+
+### 我想看通知系统
+
+- 先看 `architecture/notification/notification-architecture.md`
+- 再看执行计划 `architecture/notification/execution-plans/`
 
 ---
 

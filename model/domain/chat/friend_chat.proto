@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.chat.v1;
 
 import "google/protobuf/timestamp.proto";
+import "domain/chat/chat.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
@@ -37,6 +38,9 @@ message FriendChatMessage {
   
   google.protobuf.Timestamp created_at = 13;
   google.protobuf.Timestamp updated_at = 14;
+
+  // E2E ciphertext; when set, content may be empty or a non-secret placeholder.
+  bytes encrypted_payload = 15;
 }
 
 enum FriendMessageType {
@@ -102,6 +106,7 @@ message SendMessageRequest {
   string content = 4;
   repeated FriendMessageAttachment attachments = 5;
   string reply_to_ulid = 6;
+  bytes encrypted_payload = 7;
 }
 
 message SendMessageResponse {
@@ -119,6 +124,18 @@ message GetMessagesResponse {
   repeated FriendChatMessage messages = 1;
   bool has_more = 2;
   string next_cursor = 3;
+}
+
+message SearchFriendMessagesRequest {
+  string query = 1;
+  string session_ulid = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message SearchFriendMessagesResponse {
+  repeated FriendChatMessage messages = 1;
+  int32 total = 2;
 }
 
 message CreateSessionRequest {
@@ -223,4 +240,45 @@ message GetStatsResponse {
   int32 online_peers = 1;
   int64 pending_messages = 2;
   string status = 3;
+}
+
+// ============================================================================
+// Friend Request API (uses FriendRequest and FriendRequestStatus from chat.proto)
+// ============================================================================
+
+message SendFriendRequestRequest {
+  string receiver_did = 1;
+  string message = 2;
+}
+
+message SendFriendRequestResponse {
+  FriendRequest request = 1;
+}
+
+message AcceptFriendRequestRequest {
+  string request_id = 1;
+}
+
+message AcceptFriendRequestResponse {
+  FriendRequest request = 1;
+  FriendChatSession session = 2;
+}
+
+message RejectFriendRequestRequest {
+  string request_id = 1;
+}
+
+message RejectFriendRequestResponse {
+  FriendRequest request = 1;
+}
+
+message ListFriendRequestsRequest {
+  FriendRequestStatus status = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListFriendRequestsResponse {
+  repeated FriendRequest requests = 1;
+  int32 total = 2;
 }

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { AgentSidebar } from './AgentSidebar';
 import { AgentSettingsDrawer } from './AgentSettingsDrawer';
+import { NotificationBell } from './NotificationBell';
 import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import { PlatformLogo } from './common/PlatformLogo';
@@ -138,13 +139,16 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
           </>
         }
         bottomActions={
-          <ActionIcon
+          <>
+            <NotificationBell />
+            <ActionIcon
               icon={Settings}
               size="large"
               active={page === 'settings'}
               onClick={() => navigation.navigateTo('settings')}
               title={t('layout.nav.settings')}
             />
+          </>
         }
       />
 

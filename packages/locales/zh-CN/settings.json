@@ -1,6 +1,24 @@
 {
   "settings.title": "设置",
 
+  "settings.group.general": "通用",
+  "settings.group.ai": "AI",
+  "settings.group.channels": "频道",
+  "settings.group.applets": "小程序",
+  "settings.group.data": "数据",
+  "settings.group.help": "帮助",
+
+  "settings.module.account": "账户",
+  "settings.module.providers": "提供商",
+  "settings.module.models": "模型服务",
+  "settings.module.memory": "记忆",
+  "settings.module.skills": "技能",
+  "settings.module.mcp": "MCP",
+  "settings.module.tts": "语音",
+  "settings.module.logs": "日志",
+  "settings.module.channels": "频道",
+  "settings.module.connections": "连接",
+
   "settings.tab.statistics": "统计",
   "settings.tab.applets": "小程序",
   "settings.tab.general": "通用",
@@ -35,6 +53,9 @@
   "settings.applets.backToApplets": "← 返回小程序列表",
   "settings.applets.noSettings": "无设置项",
   "settings.applets.noApplets": "暂无已安装的小程序",
+  "settings.applets.status.active": "运行中",
+  "settings.applets.status.error": "异常",
+  "settings.applets.status.inactive": "未启用",
 
   "settings.general.languageTitle": "语言",
   "settings.general.languageDescription": "选择应用程序的显示语言。更改后立即生效。",
@@ -68,6 +89,7 @@
   "settings.help.aboutTitle": "Agent Box",
   "settings.help.aboutTag": "dev",
   "settings.help.aboutDescription": "你的个人 AI 助手，支持文件操作、Shell 命令、网络搜索、多智能体协作、长期记忆以及可扩展的智能体小程序。",
+  "settings.help.appletTag": "小程序",
   "settings.help.extensionPointTitle": "扩展入口",
   "settings.help.extensionPointDescription": "智能体小程序可以在清单中声明帮助条目。安装后，其文档将自动显示在上方的相应分类中。",
 

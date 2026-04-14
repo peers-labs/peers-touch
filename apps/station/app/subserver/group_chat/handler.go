@@ -67,8 +67,25 @@ func (s *subServer) handleList(ctx context.Context, req *chat.ListGroupsRequest)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	_ = req
 	items := s.appService.ListGroups()
+	limit := int(req.Limit)
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	offset := int(req.Offset)
+	if offset < 0 {
+		offset = 0
+	}
+	total := int32(len(items))
+	if offset < len(items) {
+		end := offset + limit
+		if end > len(items) {
+			end = len(items)
+		}
+		items = items[offset:end]
+	} else {
+		items = nil
+	}
 	out := make([]*chat.Group, 0, len(items))
 	for _, item := range items {
 		out = append(out, &chat.Group{
@@ -83,7 +100,7 @@ func (s *subServer) handleList(ctx context.Context, req *chat.ListGroupsRequest)
 	}
 	return &chat.ListGroupsResponse{
 		Groups: out,
-		Total:  int32(len(out)),
+		Total:  total,
 	}, nil
 }
 
@@ -92,23 +109,35 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMe
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.GroupUlid == "" || req.Content == "" {
-		return nil, server.BadRequest("group_ulid and content are required")
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
+	}
+	if req.Content == "" && len(req.Attachments) == 0 && len(req.GetEncryptedPayload()) == 0 {
+		return nil, server.BadRequest("content, attachments, or encrypted_payload are required")
 	}
 	msgType := int32(req.Type)
 	if msgType == 0 {
 		msgType = 1
 	}
-	item := s.appService.SendMessage(req.GroupUlid, subject.ID, msgType, req.Content, req.ReplyToUlid)
+	atts := groupAttachmentsFromProto(req.Attachments)
+	item := s.appService.SendMessage(req.GroupUlid, subject.ID, msgType, req.Content, req.ReplyToUlid, atts, req.GetEncryptedPayload())
+	var respEnc []byte
+	if len(item.EncryptedPayload) > 0 {
+		respEnc = append([]byte(nil), item.EncryptedPayload...)
+	}
 	return &chat.SendGroupMessageResponse{
 		Message: &chat.GroupMessage{
-			Ulid:      item.ID,
-			GroupUlid: item.GroupID,
-			SenderDid: item.SenderDID,
-			Type:      chat.GroupMessageType(item.Type),
-			Content:   item.Content,
-			ReplyToUlid: item.ReplyToID,
-			SentAt:    timestamppb.New(item.SentAt),
+			Ulid:             item.ID,
+			GroupUlid:        item.GroupID,
+			SenderDid:        item.SenderDID,
+			Type:             chat.GroupMessageType(item.Type),
+			Content:          item.Content,
+			ReplyToUlid:      item.ReplyToID,
+			MentionedDids:    req.MentionedDids,
+			MentionAll:       req.MentionAll,
+			Attachments:      groupAttachmentsToProto(item.Attachments),
+			EncryptedPayload: respEnc,
+			SentAt:           timestamppb.New(item.SentAt),
 		},
 	}, nil
 }
@@ -125,7 +154,10 @@ func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetGroupMes
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	items := s.appService.ListMessages(req.GroupUlid, req.BeforeUlid, limit+1)
+	items, err := s.appService.ListMessages(req.GroupUlid, req.BeforeUlid, limit+1)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to list messages", err)
+	}
 	hasMore := len(items) > limit
 	if hasMore {
 		items = items[:limit]
@@ -136,14 +168,20 @@ func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetGroupMes
 	}
 	out := make([]*chat.GroupMessage, 0, len(items))
 	for _, item := range items {
+		var listEnc []byte
+		if len(item.EncryptedPayload) > 0 {
+			listEnc = append([]byte(nil), item.EncryptedPayload...)
+		}
 		out = append(out, &chat.GroupMessage{
-			Ulid:      item.ID,
-			GroupUlid: item.GroupID,
-			SenderDid: item.SenderDID,
-			Type:      chat.GroupMessageType(item.Type),
-			Content:   item.Content,
-			ReplyToUlid: item.ReplyToID,
-			SentAt:    timestamppb.New(item.SentAt),
+			Ulid:             item.ID,
+			GroupUlid:        item.GroupID,
+			SenderDid:        item.SenderDID,
+			Type:             chat.GroupMessageType(item.Type),
+			Content:          item.Content,
+			ReplyToUlid:      item.ReplyToID,
+			Attachments:      groupAttachmentsToProto(item.Attachments),
+			EncryptedPayload: listEnc,
+			SentAt:           timestamppb.New(item.SentAt),
 		})
 	}
 	return &chat.GetGroupMessagesResponse{Messages: out, HasMore: hasMore, NextCursor: nextCursor}, nil
@@ -520,17 +558,22 @@ func toProtoMessage(item *message) *chat.GroupMessage {
 	if item == nil {
 		return nil
 	}
+	var enc []byte
+	if len(item.EncryptedPayload) > 0 {
+		enc = append([]byte(nil), item.EncryptedPayload...)
+	}
 	return &chat.GroupMessage{
-		Ulid:      item.ID,
-		GroupUlid: item.GroupID,
-		SenderDid: item.SenderDID,
-		Type:      chat.GroupMessageType(item.Type),
-		Content:   item.Content,
-		ReplyToUlid: item.ReplyToID,
-		SentAt:    timestamppb.New(item.SentAt),
-		CreatedAt: timestamppb.New(item.SentAt),
-		UpdatedAt: timestamppb.New(item.SentAt),
-		Deleted:   item.Deleted,
+		Ulid:             item.ID,
+		GroupUlid:        item.GroupID,
+		SenderDid:        item.SenderDID,
+		Type:             chat.GroupMessageType(item.Type),
+		Content:          item.Content,
+		ReplyToUlid:      item.ReplyToID,
+		EncryptedPayload: enc,
+		SentAt:           timestamppb.New(item.SentAt),
+		CreatedAt:        timestamppb.New(item.SentAt),
+		UpdatedAt:        timestamppb.New(item.SentAt),
+		Deleted:          item.Deleted,
 	}
 }
 
@@ -538,17 +581,60 @@ func toProtoMessageFromDomain(item *group_chat_domain.Message) *chat.GroupMessag
 	if item == nil {
 		return nil
 	}
-	return &chat.GroupMessage{
-		Ulid:        item.ID,
-		GroupUlid:   item.GroupID,
-		SenderDid:   item.SenderDID,
-		Type:        chat.GroupMessageType(item.Type),
-		Content:     item.Content,
-		ReplyToUlid: item.ReplyToID,
-		SentAt:      timestamppb.New(item.SentAt),
-		CreatedAt:   timestamppb.New(item.SentAt),
-		UpdatedAt:   timestamppb.New(item.SentAt),
+	var enc []byte
+	if len(item.EncryptedPayload) > 0 {
+		enc = append([]byte(nil), item.EncryptedPayload...)
 	}
+	return &chat.GroupMessage{
+		Ulid:             item.ID,
+		GroupUlid:        item.GroupID,
+		SenderDid:        item.SenderDID,
+		Type:             chat.GroupMessageType(item.Type),
+		Content:          item.Content,
+		ReplyToUlid:      item.ReplyToID,
+		Attachments:      groupAttachmentsToProto(item.Attachments),
+		EncryptedPayload: enc,
+		SentAt:           timestamppb.New(item.SentAt),
+		CreatedAt:        timestamppb.New(item.SentAt),
+		UpdatedAt:        timestamppb.New(item.SentAt),
+	}
+}
+
+func groupAttachmentsFromProto(in []*chat.GroupMessageAttachment) []group_chat_domain.Attachment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]group_chat_domain.Attachment, 0, len(in))
+	for _, a := range in {
+		if a == nil {
+			continue
+		}
+		out = append(out, group_chat_domain.Attachment{
+			CID:          a.GetCid(),
+			Filename:     a.GetFilename(),
+			MimeType:     a.GetMimeType(),
+			Size:         a.GetSize(),
+			ThumbnailCID: a.GetThumbnailCid(),
+		})
+	}
+	return out
+}
+
+func groupAttachmentsToProto(in []group_chat_domain.Attachment) []*chat.GroupMessageAttachment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*chat.GroupMessageAttachment, 0, len(in))
+	for _, a := range in {
+		out = append(out, &chat.GroupMessageAttachment{
+			Cid:          a.CID,
+			Filename:     a.Filename,
+			MimeType:     a.MimeType,
+			Size:         a.Size,
+			ThumbnailCid: a.ThumbnailCID,
+		})
+	}
+	return out
 }
 
 func toProtoGroupFromDomain(item *group_chat_domain.Group) *chat.Group {

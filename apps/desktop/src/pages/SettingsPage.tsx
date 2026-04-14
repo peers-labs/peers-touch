@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Tabs, Tag, Table, Button, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
+import { Tag, Table, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
+import { Button } from '@lobehub/ui';
 import {
   Settings, Bot, Wrench, HelpCircle,
   MessageSquare, Puzzle, Sparkles,
@@ -12,6 +13,7 @@ import {
   Code, PenTool, Clock, Shield, ShieldCheck, File,
   Edit, Package, Plus, Send, RefreshCw,
   GitBranch, Image, Trash2, Server, AlertTriangle, RotateCcw,
+  Database,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
@@ -21,7 +23,6 @@ import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
-import { AgentGrowthTab } from '../components/settings/AgentGrowthTab';
 import { log } from '../utils/logger';
 
 const { Title, Text } = Typography;
@@ -32,9 +33,6 @@ interface SettingsPageProps {
   onNavConsumed?: () => void;
 }
 
-/**
- * Scroll an element with [data-item-id="id"] into view and flash-highlight it.
- */
 function scrollAndHighlight(id: string) {
   requestAnimationFrame(() => {
     setTimeout(() => {
@@ -47,117 +45,195 @@ function scrollAndHighlight(id: string) {
   });
 }
 
+interface SectionDef {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  order: number;
+  render: (highlightId?: string) => React.ReactNode;
+}
+
+interface TabGroupDef {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  sectionKeys: string[];
+}
+
+function useSettingsSections(): SectionDef[] {
+  const { t } = useTranslation('settings');
+
+  return useMemo(() => {
+    const registrySections: SectionDef[] = getModulesWithSettings().map((mod) => ({
+      key: mod.id,
+      label: t(`settings.module.${mod.id}`, { defaultValue: mod.settingsEntry?.label || mod.name }),
+      icon: mod.icon,
+      order: mod.settingsEntry!.order,
+      render: () => {
+        const Panel = mod.settingsPanel!;
+        return <Panel />;
+      },
+    }));
+
+    const localSections: SectionDef[] = [
+      {
+        key: 'statistics',
+        label: t('settings.tab.statistics'),
+        icon: BarChart3,
+        order: 50,
+        render: () => <StatisticsTab />,
+      },
+      {
+        key: 'applets',
+        label: t('settings.tab.applets'),
+        icon: Puzzle,
+        order: 60,
+        render: () => <AppletsSettingsTab />,
+      },
+      {
+        key: 'general',
+        label: t('settings.tab.general'),
+        icon: Settings,
+        order: 70,
+        render: () => <GeneralTab />,
+      },
+      {
+        key: 'tools',
+        label: t('settings.tab.tools'),
+        icon: Wrench,
+        order: 90,
+        render: () => <ToolsTab />,
+      },
+      {
+        key: 'help',
+        label: t('settings.tab.help'),
+        icon: HelpCircle,
+        order: 100,
+        render: (hlId) => <HelpTab highlightId={hlId} />,
+      },
+    ];
+
+    return [...registrySections, ...localSections].sort((a, b) => a.order - b.order);
+  }, [t]);
+}
+
+function useTabGroups(): TabGroupDef[] {
+  const { t } = useTranslation('settings');
+
+  return useMemo(() => {
+    const allSections = getModulesWithSettings().map((m) => m.id);
+
+    const groups: TabGroupDef[] = [
+      {
+        key: 'general',
+        label: t('settings.group.general'),
+        icon: Settings,
+        sectionKeys: ['account', 'general'],
+      },
+      {
+        key: 'ai',
+        label: t('settings.group.ai'),
+        icon: Sparkles,
+        sectionKeys: ['providers', 'models', 'memory', 'skills', 'mcp', 'tts', 'tools'],
+      },
+      {
+        key: 'channels',
+        label: t('settings.group.channels'),
+        icon: Send,
+        sectionKeys: ['channels', 'connections'],
+      },
+      {
+        key: 'applets',
+        label: t('settings.group.applets'),
+        icon: Puzzle,
+        sectionKeys: ['applets'],
+      },
+      {
+        key: 'data',
+        label: t('settings.group.data'),
+        icon: Database,
+        sectionKeys: ['statistics', 'logs'],
+      },
+      {
+        key: 'help',
+        label: t('settings.group.help'),
+        icon: HelpCircle,
+        sectionKeys: ['help'],
+      },
+    ];
+
+    // Only keep section keys that actually exist in the registry or local definitions
+    const knownKeys = new Set([...allSections, 'statistics', 'applets', 'general', 'tools', 'help']);
+    return groups.map((g) => ({
+      ...g,
+      sectionKeys: g.sectionKeys.filter((k) => knownKeys.has(k)),
+    })).filter((g) => g.sectionKeys.length > 0);
+  }, [t]);
+}
+
+function findGroupForSection(groups: TabGroupDef[], sectionKey: string): string | undefined {
+  return groups.find((g) => g.sectionKeys.includes(sectionKey))?.key;
+}
+
 export function SettingsPage({ activeTab, highlightId, onNavConsumed }: SettingsPageProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
-  const [currentTab, setCurrentTab] = useState(activeTab || 'providers');
+  const sections = useSettingsSections();
+  const groups = useTabGroups();
 
+  const [activeGroup, setActiveGroup] = useState('general');
+  const [activeSection, setActiveSection] = useState('account');
+
+  // Sections that have been mounted at least once — kept alive via display:none
+  const mountedSections = useRef(new Set<string>(['account']));
+
+  const groupSections = useMemo(() => {
+    const groupDef = groups.find((g) => g.key === activeGroup);
+    if (!groupDef) return [];
+    return groupDef.sectionKeys
+      .map((key) => sections.find((s) => s.key === key))
+      .filter((s): s is SectionDef => !!s);
+  }, [activeGroup, groups, sections]);
+
+  const showSidebar = groupSections.length > 1;
+
+  // Keep activeSection valid when switching groups
   useEffect(() => {
-    if (activeTab) {
-      setCurrentTab(activeTab);
+    const groupDef = groups.find((g) => g.key === activeGroup);
+    if (!groupDef) return;
+    if (!groupDef.sectionKeys.includes(activeSection)) {
+      setActiveSection(groupDef.sectionKeys[0]);
     }
-  }, [activeTab]);
+  }, [activeGroup, activeSection, groups]);
 
+  // Track mounted sections for keep-alive
+  mountedSections.current.add(activeSection);
+
+  // Handle external navigation via activeTab prop
   useEffect(() => {
-    if (!highlightId) return;
+    if (!activeTab) return;
 
-    // For providers tab: select the provider in the store so the detail panel updates
-    if (currentTab === 'providers') {
-      useProviderStore.getState().selectProvider(highlightId);
+    const group = findGroupForSection(groups, activeTab);
+    if (group) {
+      setActiveGroup(group);
+      setActiveSection(activeTab);
     }
 
-    scrollAndHighlight(highlightId);
+    useProviderStore.getState().selectProvider(highlightId ?? '');
+
+    if (highlightId) {
+      setTimeout(() => scrollAndHighlight(highlightId), 500);
+    }
     onNavConsumed?.();
-  }, [highlightId, currentTab, onNavConsumed]);
+  }, [activeTab, highlightId, onNavConsumed, groups]);
 
-  // Build tabs from module registry (self-registered)
-  const registryTabs = getModulesWithSettings().map((mod) => {
-    const Icon = mod.icon;
-    const Panel = mod.settingsPanel!;
-    return {
-      key: mod.id,
-      order: mod.settingsEntry!.order,
-      label: (
-        <Flexbox horizontal align="center" gap={6}>
-          <Icon size={14} />
-          {mod.settingsEntry?.label || mod.name}
-        </Flexbox>
-      ),
-      children: <Panel />,
-    };
-  });
-
-  // Internal tabs that remain in host code
-  const localTabs = [
-    {
-      key: 'growth',
-      order: 45,
-      label: (
-        <Flexbox horizontal align="center" gap={6}>
-          <ActivityIcon size={14} />
-          Agent Growth
-        </Flexbox>
-      ),
-      children: <AgentGrowthTab />,
-    },
-    {
-      key: 'statistics',
-      order: 50,
-      label: (
-        <Flexbox horizontal align="center" gap={6}>
-          <BarChart3 size={14} />
-          {t('settings.tab.statistics')}
-        </Flexbox>
-      ),
-      children: <StatisticsTab />,
-    },
-    {
-      key: 'applets',
-      order: 60,
-      label: (
-        <Flexbox horizontal align="center" gap={6}>
-          <Puzzle size={14} />
-          {t('settings.tab.applets')}
-        </Flexbox>
-      ),
-      children: <AppletsSettingsTab />,
-    },
-    {
-      key: 'general',
-      order: 70,
-      label: (
-        <Flexbox horizontal align="center" gap={6}>
-          <Settings size={14} />
-          {t('settings.tab.general')}
-        </Flexbox>
-      ),
-      children: <GeneralTab />,
-    },
-    {
-      key: 'tools',
-      order: 90,
-      label: (
-        <Flexbox horizontal align="center" gap={6}>
-          <Wrench size={14} />
-          {t('settings.tab.tools')}
-        </Flexbox>
-      ),
-      children: <ToolsTab />,
-    },
-    {
-      key: 'help',
-      order: 100,
-      label: (
-        <Flexbox horizontal align="center" gap={6}>
-          <HelpCircle size={14} />
-          {t('settings.tab.help')}
-        </Flexbox>
-      ),
-      children: <HelpTab highlightId={currentTab === 'help' ? highlightId : undefined} />,
-    },
-  ];
-
-  const items = [...registryTabs, ...localTabs].sort((a, b) => a.order - b.order);
+  const handleGroupChange = useCallback((groupKey: string) => {
+    setActiveGroup(groupKey);
+    const groupDef = groups.find((g) => g.key === groupKey);
+    if (groupDef) {
+      setActiveSection(groupDef.sectionKeys[0]);
+    }
+  }, [groups]);
 
   return (
     <Flexbox style={{ height: '100%', overflow: 'hidden' }}>
@@ -166,14 +242,120 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
         icon={<Settings size={20} style={{ color: token.colorPrimary }} />}
       />
 
-      <Tabs
-        activeKey={currentTab}
-        onChange={setCurrentTab}
-        items={items}
-        style={{ flex: 1, overflow: 'hidden' }}
-        tabBarStyle={{ paddingInline: 24, marginBottom: 0 }}
-        className="settings-tabs"
-      />
+      {/* Horizontal tab group bar */}
+      <Flexbox
+        horizontal
+        align="center"
+        gap={2}
+        style={{
+          padding: '6px 24px 0',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          flexShrink: 0,
+        }}
+      >
+        {groups.map((group) => {
+          const Icon = group.icon;
+          const isActive = activeGroup === group.key;
+          return (
+            <Flexbox
+              key={group.key}
+              horizontal
+              align="center"
+              gap={6}
+              role="tab"
+              tabIndex={0}
+              aria-selected={isActive}
+              data-group-key={group.key}
+              onClick={() => handleGroupChange(group.key)}
+              style={{
+                padding: '8px 16px',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? token.colorPrimary : token.colorTextSecondary,
+                borderBottom: isActive ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
+                marginBottom: -1,
+                transition: 'all 0.2s',
+                userSelect: 'none',
+              }}
+            >
+              <Icon size={15} />
+              <span>{group.label}</span>
+            </Flexbox>
+          );
+        })}
+      </Flexbox>
+
+      {/* Content area: optional left sidebar + right content */}
+      <Flexbox horizontal style={{ flex: 1, overflow: 'hidden' }}>
+        {showSidebar && (
+          <Flexbox
+            style={{
+              width: 180,
+              flexShrink: 0,
+              borderRight: `1px solid ${token.colorBorderSecondary}`,
+              padding: '12px 0',
+              overflowY: 'auto',
+            }}
+          >
+            {groupSections.map((section) => {
+              const Icon = section.icon;
+              const isActive = activeSection === section.key;
+              return (
+                <Flexbox
+                  key={section.key}
+                  horizontal
+                  align="center"
+                  gap={8}
+                  role="button"
+                  tabIndex={0}
+                  data-section-key={section.key}
+                  onClick={() => setActiveSection(section.key)}
+                  style={{
+                    padding: '8px 14px',
+                    margin: '1px 8px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: isActive ? 600 : 400,
+                    color: isActive ? token.colorPrimary : token.colorTextSecondary,
+                    background: isActive ? token.colorPrimaryBg : 'transparent',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <Icon size={14} />
+                  <span style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {section.label}
+                  </span>
+                </Flexbox>
+              );
+            })}
+          </Flexbox>
+        )}
+
+        {/* Section content — keep-alive: mount on first visit, hide with display:none */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            scrollBehavior: 'smooth',
+          }}
+        >
+          {sections.map((section) => {
+            if (!mountedSections.current.has(section.key)) return null;
+            const isActive = activeSection === section.key;
+            return (
+              <div key={section.key} style={{ display: isActive ? 'block' : 'none', height: '100%' }}>
+                {section.render(isActive ? highlightId : undefined)}
+              </div>
+            );
+          })}
+        </div>
+      </Flexbox>
     </Flexbox>
   );
 }
@@ -192,13 +374,13 @@ function AppletsSettingsTab() {
 
   if (SettingsPanel) {
     return (
-      <Flexbox style={{ height: '100%', overflow: 'hidden' }}>
+      <Flexbox style={{ overflow: 'hidden', padding: '0 24px' }}>
         <Flexbox
           horizontal
           align="center"
           gap={8}
           style={{
-            padding: '12px 24px',
+            padding: '12px 0',
             borderBottom: `1px solid ${token.colorBorderSecondary}`,
             flexShrink: 0,
           }}
@@ -227,16 +409,10 @@ function AppletsSettingsTab() {
   }
 
   return (
-    <Flexbox style={{ padding: 24, maxWidth: 700, overflow: 'auto', height: '100%' }} gap={16}>
-      <Flexbox gap={4}>
-        <Flexbox horizontal align="center" gap={8}>
-          <Puzzle size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>{t('settings.applets.title')}</Title>
-        </Flexbox>
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          {t('settings.applets.description')}
-        </Text>
-      </Flexbox>
+    <Flexbox style={{ maxWidth: 700, padding: 24 }} gap={16}>
+      <Text type="secondary" style={{ fontSize: 13 }}>
+        {t('settings.applets.description')}
+      </Text>
 
       <Flexbox gap={10}>
         {applets.map((applet) => {
@@ -289,7 +465,7 @@ function AppletsSettingsTab() {
                     color={applet.status === 'active' ? 'success' : applet.status === 'error' ? 'error' : 'default'}
                     style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
                   >
-                    {applet.status}
+                    {t(`settings.applets.status.${applet.status}`, { defaultValue: applet.status })}
                   </Tag>
                   <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}>
                     v{applet.manifest.version}
@@ -329,7 +505,6 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
   const today = new Date();
   const startDate = new Date(today);
   startDate.setFullYear(startDate.getFullYear() - 1);
-  // Align to the start of the week (Sunday)
   startDate.setDate(startDate.getDate() - startDate.getDay());
 
   const totalDays = Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -359,7 +534,7 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
     const m = d.getMonth();
     if (m !== lastMonth) {
       months.push({
-        label: d.toLocaleDateString('en', { month: 'short' }),
+        label: d.toLocaleDateString(undefined, { month: 'short' }),
         col: w,
       });
       lastMonth = m;
@@ -397,7 +572,6 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
   return (
     <Flexbox gap={8}>
       <div style={{ position: 'relative', paddingTop: 16 }}>
-        {/* Month labels */}
         <div style={{ display: 'flex', gap: 0, marginBottom: 4, paddingLeft: 0, position: 'relative', height: 14 }}>
           {months.map((m) => (
             <span
@@ -413,7 +587,6 @@ function ActivityHeatmap({ activity }: { activity: { date: string; count: number
             </span>
           ))}
         </div>
-        {/* Grid */}
         <div
           style={{
             display: 'grid',
@@ -513,7 +686,6 @@ function RankList({
         {icon}
         <Text strong style={{ fontSize: 14 }}>{title}</Text>
       </Flexbox>
-      {/* Header */}
       <Flexbox horizontal justify="space-between" style={{ padding: '0 4px' }}>
         <Text type="secondary" style={{ fontSize: 11 }}>{labelHeader}</Text>
         <Text type="secondary" style={{ fontSize: 11 }}>{valueHeader}</Text>
@@ -572,7 +744,14 @@ function StatisticsTab() {
     );
   }
 
-  const { summary } = data;
+  const summary = data.summary ?? {
+    sessions: 0,
+    messages: 0,
+    total_words: 0,
+    agents: 0,
+    days_with_us: 0,
+    first_date: '',
+  };
 
   const summaryCards: { label: string; value: string | number; sub?: string; icon: React.ReactNode }[] = [
     {
@@ -598,11 +777,10 @@ function StatisticsTab() {
   ];
 
   return (
-    <Flexbox style={{ padding: 24, maxWidth: 900, overflow: 'auto', height: '100%' }} gap={20}>
-      {/* Header with days count */}
+    <Flexbox style={{ maxWidth: 900, padding: 24 }} gap={20}>
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" gap={8}>
-          <Text strong style={{ fontSize: 16 }}
+          <span style={{ fontSize: 16, fontWeight: 600 }}
             dangerouslySetInnerHTML={{
               __html: t('settings.statistics.daysWithUs', { days: summary.days_with_us })
                 .replace('<highlight>', `<span style="color: ${token.colorPrimary}; font-weight: 700; font-size: 20px">`)
@@ -617,7 +795,6 @@ function StatisticsTab() {
         </Text>
       </Flexbox>
 
-      {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         {summaryCards.map((card) => (
           <Flexbox
@@ -639,7 +816,6 @@ function StatisticsTab() {
         ))}
       </div>
 
-      {/* Activity heatmap */}
       <Flexbox
         gap={8}
         style={{
@@ -658,7 +834,6 @@ function StatisticsTab() {
         </div>
       </Flexbox>
 
-      {/* Rank panels */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         <RankList
           title={t('settings.statistics.modelRank')}
@@ -696,7 +871,7 @@ function GeneralTab() {
   }, [loadAgents]);
 
   return (
-    <Flexbox style={{ padding: 24, maxWidth: 700, overflow: 'auto', height: '100%' }} gap={24}>
+    <Flexbox style={{ maxWidth: 700, padding: 24 }} gap={24}>
       <Flexbox
         gap={16}
         style={{
@@ -801,19 +976,11 @@ function ToolsTab() {
     },
   ];
 
-  const sectionStyle = {
-    background: token.colorBgContainer,
-    borderRadius: 12,
-    padding: 24,
-    border: `1px solid ${token.colorBorderSecondary}`,
-  };
-
   const configuredCount = searchProviders.filter((p) => p.available).length;
 
   return (
-    <Flexbox style={{ padding: 24, maxWidth: 700, height: '100%', overflow: 'auto' }} gap={24}>
-      {/* Search Providers */}
-      <Flexbox gap={16} style={sectionStyle}>
+    <Flexbox style={{ maxWidth: 700, padding: 24 }} gap={24}>
+      <Flexbox gap={16}>
         <Flexbox horizontal align="center" gap={8}>
           <Globe size={18} style={{ color: token.colorPrimary }} />
           <Title level={5} style={{ margin: 0 }}>{t('settings.tools.searchEnginesTitle')}</Title>
@@ -869,8 +1036,7 @@ function ToolsTab() {
         )}
       </Flexbox>
 
-      {/* Tools List */}
-      <Flexbox gap={16} style={sectionStyle}>
+      <Flexbox gap={16}>
         <Flexbox horizontal align="center" gap={8}>
           <Wrench size={18} style={{ color: token.colorPrimary }} />
           <Title level={5} style={{ margin: 0 }}>{t('settings.tools.toolsTitle', { count: tools.length })}</Title>
@@ -918,7 +1084,6 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
     }).catch((e) => log.error('settings', 'Failed to load help', e));
   }, []);
 
-  // When highlightId changes, ensure the category containing it is expanded
   useEffect(() => {
     if (!highlightId || groups.length === 0) return;
     for (const group of groups) {
@@ -932,8 +1097,7 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
   }, [highlightId, groups]);
 
   return (
-    <Flexbox style={{ padding: 24, maxWidth: 800, overflow: 'auto', height: '100%' }} gap={20}>
-      {/* About card */}
+    <Flexbox style={{ maxWidth: 800, padding: 24 }} gap={20}>
       <Flexbox
         gap={8}
         style={{
@@ -953,7 +1117,6 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
         </Text>
       </Flexbox>
 
-      {/* Help sections */}
       <Collapse
         activeKey={activeKeys}
         onChange={(keys) => setActiveKeys(keys as string[])}
@@ -995,7 +1158,7 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
                     <Flexbox horizontal align="center" gap={6}>
                       <Text strong style={{ fontSize: 14 }}>{item.title}</Text>
                       {item.source === 'applet' && (
-                        <Tag color="orange" style={{ fontSize: 10 }}>Applet</Tag>
+                        <Tag color="orange" style={{ fontSize: 10 }}>{t('settings.help.appletTag')}</Tag>
                       )}
                     </Flexbox>
                     <Text type="secondary" style={{ fontSize: 13, lineHeight: '1.5' }}>
@@ -1025,7 +1188,6 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
         }))}
       />
 
-      {/* Applet extension note */}
       <Flexbox
         gap={8}
         style={{
@@ -1046,7 +1208,6 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
         </Text>
       </Flexbox>
 
-      {/* Danger zone: re-enter initialization */}
       <DangerZoneResetOnboarding />
     </Flexbox>
   );

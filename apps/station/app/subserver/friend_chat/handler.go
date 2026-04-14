@@ -2,6 +2,7 @@ package friend_chat
 
 import (
 	"context"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
@@ -20,11 +21,16 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fc-message-send", "/friend-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-sync", "/friend-chat/message/sync", server.POST, s.handleSyncMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-messages", "/friend-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-message-search", "/friend-chat/messages/search", server.GET, s.handleSearchMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-ack", "/friend-chat/message/ack", server.POST, s.handleAckMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-online", "/friend-chat/online", server.POST, s.handleOnline, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-offline", "/friend-chat/offline", server.POST, s.handleOffline, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-pending", "/friend-chat/pending", server.GET, s.handleGetPending, logIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("fc-stats", "/friend-chat/stats", server.GET, s.handleStats),
+		server.NewTypedHandler("fc-stats", "/friend-chat/stats", server.GET, s.handleStats, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-friend-request-send", "/friend-chat/friend-request/send", server.POST, s.handleSendFriendRequest, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-friend-request-accept", "/friend-chat/friend-request/accept", server.POST, s.handleAcceptFriendRequest, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-friend-request-reject", "/friend-chat/friend-request/reject", server.POST, s.handleRejectFriendRequest, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-friend-requests", "/friend-chat/friend-requests", server.GET, s.handleListFriendRequests, logIDWrapper, s.jwtWrapper),
 	}
 }
 
@@ -95,14 +101,24 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.SessionUlid == "" || req.ReceiverDid == "" || req.Content == "" {
-		return nil, server.BadRequest("session_ulid receiver_did content are required")
+	if req.SessionUlid == "" || req.ReceiverDid == "" {
+		return nil, server.BadRequest("session_ulid and receiver_did are required")
+	}
+	enc := req.GetEncryptedPayload()
+	hasEnc := len(enc) > 0
+	if req.Content == "" && len(req.Attachments) == 0 && !hasEnc {
+		return nil, server.BadRequest("content or attachments are required")
+	}
+	content := req.Content
+	if hasEnc && strings.TrimSpace(content) == "" {
+		content = "[Encrypted Message]"
 	}
 	msgType := int32(req.Type)
 	if msgType == 0 {
 		msgType = 1
 	}
-	message, err := s.service.SendMessageByActor(subject.ID, req.SessionUlid, req.ReceiverDid, msgType, req.Content, req.ReplyToUlid)
+	atts := friendAttachmentsFromProto(req.Attachments)
+	message, err := s.service.SendMessageByActor(subject.ID, req.SessionUlid, req.ReceiverDid, msgType, content, req.ReplyToUlid, atts, enc)
 	if err != nil {
 		if err == application.ErrSessionNotFound {
 			return nil, server.NotFound(err.Error())
@@ -117,29 +133,21 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 	relayStatus := "delivered"
 	if !isOnline {
 		relayStatus = "queued"
+		relayEnc := append([]byte(nil), message.EncryptedPayload...)
+		if len(relayEnc) == 0 {
+			relayEnc = []byte(message.Content)
+		}
 		s.pending[req.ReceiverDid] = append(s.pending[req.ReceiverDid], pendingMessage{
 			ULID:             message.ID,
 			SenderDID:        subject.ID,
 			SessionULID:      req.SessionUlid,
-			EncryptedPayload: []byte(req.Content),
+			EncryptedPayload: relayEnc,
 			CreatedAt:        message.CreatedAt.Unix(),
 		})
 	}
 	s.mu.Unlock()
 	return &chat.SendMessageResponse{
-		Message: &chat.FriendChatMessage{
-			Ulid:        message.ID,
-			SessionUlid: message.SessionID,
-			SenderDid:   message.SenderDID,
-			ReceiverDid: message.ReceiverDID,
-			Type:        chat.FriendMessageType(message.Type),
-			Content:     message.Content,
-			ReplyToUlid: message.ReplyToID,
-			Status:      chat.FriendMessageStatus(message.Status),
-			SentAt:      timestamppb.New(message.SentAt),
-			CreatedAt:   timestamppb.New(message.CreatedAt),
-			UpdatedAt:   timestamppb.New(message.UpdatedAt),
-		},
+		Message:     friendChatMessageFromDomain(message),
 		RelayStatus: relayStatus,
 	}, nil
 }
@@ -176,21 +184,42 @@ func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetMessages
 	}
 	out := make([]*chat.FriendChatMessage, 0, len(items))
 	for _, item := range items {
-		out = append(out, &chat.FriendChatMessage{
-			Ulid:        item.ID,
-			SessionUlid: item.SessionID,
-			SenderDid:   item.SenderDID,
-			ReceiverDid: item.ReceiverDID,
-			Type:        chat.FriendMessageType(item.Type),
-			Content:     item.Content,
-			ReplyToUlid: item.ReplyToID,
-			Status:      chat.FriendMessageStatus(item.Status),
-			SentAt:      timestamppb.New(item.SentAt),
-			CreatedAt:   timestamppb.New(item.CreatedAt),
-			UpdatedAt:   timestamppb.New(item.UpdatedAt),
-		})
+		out = append(out, friendChatMessageFromDomain(item))
 	}
 	return &chat.GetMessagesResponse{Messages: out, HasMore: hasMore, NextCursor: nextCursor}, nil
+}
+
+func (s *subServer) handleSearchMessages(ctx context.Context, req *chat.SearchFriendMessagesRequest) (*chat.SearchFriendMessagesResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if strings.TrimSpace(req.GetQuery()) == "" {
+		return nil, server.BadRequest("query is required")
+	}
+	limit := int(req.Limit)
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	offset := int(req.Offset)
+	if offset < 0 {
+		offset = 0
+	}
+	items, total, err := s.service.SearchMessagesByActor(subject.ID, req.GetQuery(), req.GetSessionUlid(), limit, offset)
+	if err != nil {
+		if err == application.ErrSessionNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		if err == application.ErrNotParticipant {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to search messages", err)
+	}
+	out := make([]*chat.FriendChatMessage, 0, len(items))
+	for _, item := range items {
+		out = append(out, friendChatMessageFromDomain(item))
+	}
+	return &chat.SearchFriendMessagesResponse{Messages: out, Total: int32(total)}, nil
 }
 
 func (s *subServer) handleAckMessage(ctx context.Context, req *chat.MessageAckRequest) (*chat.MessageAckResponse, error) {
@@ -235,7 +264,6 @@ func (s *subServer) handleSyncMessages(ctx context.Context, req *chat.SyncMessag
 			ReceiverDID: item.ReceiverDid,
 			Type:        msgType,
 			Content:     item.Content,
-			ReplyToID:   "",
 		}
 		resultSynced, resultFailed := s.service.SyncMessagesByActor(subject.ID, []domain.Message{in})
 		synced += resultSynced
@@ -322,4 +350,180 @@ func (s *subServer) handleStats(ctx context.Context, req *chat.GetStatsRequest) 
 		PendingMessages: pendingCount,
 		Status:          string(s.status),
 	}, nil
+}
+
+// ============================================================================
+// Friend Request Handlers
+// ============================================================================
+
+func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendFriendRequestRequest) (*chat.SendFriendRequestResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.ReceiverDid == "" {
+		return nil, server.BadRequest("receiver_did is required")
+	}
+
+	fr, err := s.service.SendFriendRequest(subject.ID, req.ReceiverDid, req.Message)
+	if err != nil {
+		if err == application.ErrAlreadyFriends {
+			return nil, server.BadRequest(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to send friend request", err)
+	}
+	return &chat.SendFriendRequestResponse{
+		Request: friendRequestToProto(fr),
+	}, nil
+}
+
+func (s *subServer) handleAcceptFriendRequest(ctx context.Context, req *chat.AcceptFriendRequestRequest) (*chat.AcceptFriendRequestResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.RequestId == "" {
+		return nil, server.BadRequest("request_id is required")
+	}
+
+	fr, session, err := s.service.AcceptFriendRequest(subject.ID, req.RequestId)
+	if err != nil {
+		if err == application.ErrRequestNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		if err == application.ErrNotRequestTarget {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to accept friend request", err)
+	}
+	resp := &chat.AcceptFriendRequestResponse{
+		Request: friendRequestToProto(*fr),
+	}
+	if session != nil {
+		resp.Session = &chat.FriendChatSession{
+			Ulid:            session.ID,
+			ParticipantADid: session.ParticipantADID,
+			ParticipantBDid: session.ParticipantBDID,
+			CreatedAt:       timestamppb.New(session.CreatedAt),
+			UpdatedAt:       timestamppb.New(session.UpdatedAt),
+		}
+	}
+	return resp, nil
+}
+
+func (s *subServer) handleRejectFriendRequest(ctx context.Context, req *chat.RejectFriendRequestRequest) (*chat.RejectFriendRequestResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.RequestId == "" {
+		return nil, server.BadRequest("request_id is required")
+	}
+
+	fr, err := s.service.RejectFriendRequest(subject.ID, req.RequestId)
+	if err != nil {
+		if err == application.ErrRequestNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		if err == application.ErrNotRequestTarget {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to reject friend request", err)
+	}
+	return &chat.RejectFriendRequestResponse{
+		Request: friendRequestToProto(*fr),
+	}, nil
+}
+
+func (s *subServer) handleListFriendRequests(ctx context.Context, req *chat.ListFriendRequestsRequest) (*chat.ListFriendRequestsResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+
+	limit := int(req.Limit)
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	offset := int(req.Offset)
+	if offset < 0 {
+		offset = 0
+	}
+
+	items, total, err := s.service.ListFriendRequests(subject.ID, int32(req.Status), limit, offset)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to list friend requests", err)
+	}
+	out := make([]*chat.FriendRequest, 0, len(items))
+	for _, item := range items {
+		out = append(out, friendRequestToProto(item))
+	}
+	return &chat.ListFriendRequestsResponse{Requests: out, Total: int32(total)}, nil
+}
+
+func friendChatMessageFromDomain(m domain.Message) *chat.FriendChatMessage {
+	return &chat.FriendChatMessage{
+		Ulid:             m.ID,
+		SessionUlid:      m.SessionID,
+		SenderDid:        m.SenderDID,
+		ReceiverDid:      m.ReceiverDID,
+		Type:             chat.FriendMessageType(m.Type),
+		Content:          m.Content,
+		EncryptedPayload: append([]byte(nil), m.EncryptedPayload...),
+		Attachments:      friendAttachmentsToProto(m.Attachments),
+		ReplyToUlid:      m.ReplyToID,
+		Status:           chat.FriendMessageStatus(m.Status),
+		SentAt:           timestamppb.New(m.SentAt),
+		CreatedAt:        timestamppb.New(m.CreatedAt),
+		UpdatedAt:        timestamppb.New(m.UpdatedAt),
+	}
+}
+
+func friendAttachmentsFromProto(in []*chat.FriendMessageAttachment) []domain.Attachment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]domain.Attachment, 0, len(in))
+	for _, a := range in {
+		if a == nil {
+			continue
+		}
+		out = append(out, domain.Attachment{
+			CID:          a.GetCid(),
+			Filename:     a.GetFilename(),
+			MimeType:     a.GetMimeType(),
+			Size:         a.GetSize(),
+			ThumbnailCID: a.GetThumbnailCid(),
+		})
+	}
+	return out
+}
+
+func friendAttachmentsToProto(in []domain.Attachment) []*chat.FriendMessageAttachment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*chat.FriendMessageAttachment, 0, len(in))
+	for _, a := range in {
+		out = append(out, &chat.FriendMessageAttachment{
+			Cid:          a.CID,
+			Filename:     a.Filename,
+			MimeType:     a.MimeType,
+			Size:         a.Size,
+			ThumbnailCid: a.ThumbnailCID,
+		})
+	}
+	return out
+}
+
+func friendRequestToProto(fr domain.FriendRequest) *chat.FriendRequest {
+	return &chat.FriendRequest{
+		Id:          fr.ID,
+		SenderId:    fr.SenderDID,
+		ReceiverId:  fr.ReceiverDID,
+		Status:      chat.FriendRequestStatus(fr.Status),
+		Message:     fr.Message,
+		CreatedAt:   timestamppb.New(fr.CreatedAt),
+		RespondedAt: timestamppb.New(fr.UpdatedAt),
+	}
 }

@@ -3,7 +3,7 @@
 ## 1. 文档目标
 
 - 明确 `station`、`desktop-rust`、`desktop-web`、`desktop-app` 四个运行单元的职责边界。
-- 统一 Desktop 开发、调试、发布时的运行关系，避免再把 `desktop-web` 误判成“纯前端静态页”。
+- 统一 Desktop 开发、调试、发布时的运行关系，避免再把 `desktop-web` 误判成"纯前端静态页"。
 - 给后续脚本拆分、运行模式治理、启动故障排查提供统一语义基线。
 
 ## 2. 背景与问题
@@ -77,7 +77,7 @@ Desktop 当前是一个多运行单元协同的系统，而不是单个 Tauri �
 
 关键判断：
 
-- `desktop-web` 不是“只要起 Vite 就能完整工作”的纯静态前端。
+- `desktop-web` 不是"只要起 Vite 就能完整工作"的纯静态前端。
 - 浏览器模式下，`desktop-web` 仍然要依赖 `desktop-rust`。
 
 ### 3.4 Desktop-App
@@ -162,6 +162,8 @@ station
 
 - `desktop-app`
 
+脚本：`dev-desktop-web.sh`
+
 ### 5.2 App 调试模式
 
 应启动：
@@ -174,7 +176,9 @@ station
 关键点：
 
 - `desktop-app` 只是把 `desktop-web` 放进原生窗口。
-- 不应再把 `desktop-app` 误当成“无需 `desktop-rust` 的完整模式”。
+- 不应再把 `desktop-app` 误当成"无需 `desktop-rust` 的完整模式"。
+
+脚本：`dev-desktop-app.sh`
 
 ### 5.3 生产打包模式
 
@@ -185,12 +189,72 @@ station
 - `desktop-rust` 作为本地应用层与命令执行层。
 - `station` 作为远端共享业务系统。
 
-## 6. 当前代码映射
+## 6. 开发脚本架构
 
-### 6.1 Desktop-Web -> Desktop-Rust
+### 6.1 核心原则
+
+**两个脚本各自独立完整，各自启动独立的 Rust BFF 进程。**
+
+- `dev-desktop-app.sh`：启动 App 端。profile=`desktop`，gateway=`:3030`，Vite=`:3210`。
+- `dev-desktop-web.sh`：启动 Web 端。profile=`desktop-web`，gateway=`:3031`，Vite=`:3211`。
+- 两者共享 `station`（多用户服务端），但 **不共享 desktop-rust 进程**。
+- 可以同时运行，登录不同账号，用于跨账号互通测试。
+
+开发者只需执行一个脚本就能得到完整可用的开发环境，不需要手动组合。
+
+### 6.2 实例隔离机制
+
+```text
+dev-desktop-app.sh                      dev-desktop-web.sh
+    │                                       │
+    │  PT_PROFILE=desktop                   │  PT_PROFILE=desktop-web
+    │  PT_GATEWAY_PORT=3030                 │  PT_GATEWAY_PORT=3031
+    │  Vite :3210                           │  Vite :3211
+    │                                       │
+    ▼                                       ▼
+Tauri instance A                       Tauri instance B
+  AppState A (session A)                 AppState B (session B)
+  storage: ~/peers-touch/desktop/        storage: ~/peers-touch/desktop-web/
+  gateway: 127.0.0.1:3030               gateway: 127.0.0.1:3031
+    │                                       │
+    └──────── Station (shared) :18080 ──────┘
+```
+
+隔离维度：
+
+| 维度 | App 端 | Web 端 | 说明 |
+|------|--------|--------|------|
+| Rust 进程 | 独立 | 独立 | 各自的 Tauri 实例 |
+| 内存 Session | 独立 | 独立 | 各自的 `AppState` |
+| 磁盘存储 | `~/desktop/` | `~/desktop-web/` | `PT_PROFILE` 控制 |
+| Gateway 端口 | `:3030` | `:3031` | `PT_GATEWAY_PORT` 控制 |
+| Vite 端口 | `:3210` | `:3211` | 脚本内 `--port` 控制 |
+| Station | **共享** | **共享** | 多用户服务端 |
+
+端口和 profile 是脚本内部协调的，对外界透明。前端通过 `VITE_GATEWAY_PORT` 环境变量自动感知所属的 Gateway。
+
+### 6.3 脚本文件清单
+
+| 脚本 | 职责 | 启动的运行单元 |
+|------|------|----------------|
+| `dev-desktop-app.sh` | App 开发模式 | station + desktop-rust(A) + desktop-web(Vite:3210) + desktop-app(Window) |
+| `dev-desktop-web.sh` | Web 开发模式 | station + desktop-rust(B) + desktop-web(Vite:3211 → Browser) |
+| `_ensure-station.sh` | 共享基础设施 | station（检测 → 复用 / 启动） |
+| `_ensure-desktop-rust.sh` | 共享基础设施 | desktop-rust via Tauri（按 port + profile 参数启动） |
+| `preview-desktop.sh` | 生产预览模式 | station + desktop-rust + desktop-app（从 dist/ 加载） |
+
+### 6.4 当前限制
+
+`desktop-rust` 尚未从 Tauri 进程中独立抽出。启动 Rust BFF = 启动 Tauri = 附带产生一个原生窗口。
+
+在 Web 模式下，窗口通过 `--config '{"app":{"windows":[{"visible":false}]}}'` 隐藏。
+
+## 7. 当前代码映射
+
+### 7.1 Desktop-Web -> Desktop-Rust
 
 - `apps/desktop/src/main.tsx`
-  - 浏览器开发态下把 `invoke` 转发到 `http://127.0.0.1:3030`
+  - 浏览器开发态下把 `invoke` 转发到 `http://127.0.0.1:{VITE_GATEWAY_PORT}`
 - `apps/desktop/src/i18n/index.ts`
   - 首屏启动时直接调用 `i18n_load_resources`
 
@@ -199,7 +263,7 @@ station
 - `desktop-web` 首屏启动就依赖 `desktop-rust`
 - `desktop-web` 不是可脱离 Rust 的纯前端
 
-### 6.2 Desktop-Rust -> Station
+### 7.2 Desktop-Rust -> Station
 
 - `apps/desktop/src-tauri/src/infrastructure/station_client.rs`
   - 统一封装 Rust 到 Station 的请求
@@ -211,7 +275,7 @@ station
 - `desktop-rust` 是本地命令层与远端业务层之间的桥
 - `station` 并不直接面对 `desktop-web`
 
-### 6.3 Desktop-App 承载关系
+### 7.3 Desktop-App 承载关系
 
 - `apps/desktop/src-tauri/src/main.rs`
   - 注册 Tauri commands
@@ -222,21 +286,18 @@ station
 - 现在 `desktop-rust` 还绑定在 Tauri `main.rs` 中
 - 当前代码基线下，`desktop-rust` 尚未完全抽成独立 headless 入口
 
-## 7. 当前架构缺口
+## 8. 当前架构缺口
 
-当前最核心的缺口不是前端页面，而是运行时拆分还不彻底：
+已解决：
 
-- `desktop-rust` 仍然主要挂在 Tauri 启动链内。
-- Web 模式需要的 `desktop-rust` 独立启动入口尚未完全收敛。
-- 启动脚本层面容易把“起 Web”“起 App”“起 Rust”混成一件事。
+- 脚本职责混乱 → 两个独立脚本 + `_ensure-desktop-rust.sh` 共享基础设施。
+- 双端 session 竞争 → 多实例隔离（`PT_PROFILE` + `PT_GATEWAY_PORT`）。
 
-因此后续治理顺序应是：
+剩余缺口：
 
-1. 先把 `desktop-rust` 的独立运行语义稳定下来。
-2. 再定义 `desktop-web` 与 `desktop-app` 的启动脚本职责。
-3. 最后再谈 Web/App 并行调试体验。
+- `desktop-rust` 仍然绑定在 Tauri 进程内。启动 Rust BFF = 启动 Tauri = 附带产生窗口（Web 模式下已通过 config 隐藏）。
 
-## 8. 决策规则
+## 9. 决策规则
 
 后续只要遇到 Desktop 相关运行问题，都先按下面三条判断：
 
@@ -246,7 +307,7 @@ station
 
 只有先回答完这三条，才能继续定位。
 
-## 9. 非目标
+## 10. 非目标
 
 本文不讨论：
 

@@ -22,7 +22,7 @@ interface Props {
 export function FindPeopleModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { loadSessions, selectSession } = useSocialChatStore();
+  const { sendFriendRequest } = useSocialChatStore();
 
   const [searchText, setSearchText] = useState('');
   const [results, setResults] = useState<{ id: string; username: string; displayName: string; avatar: string }[]>([]);
@@ -48,15 +48,11 @@ export function FindPeopleModal({ open, onClose }: Props) {
     }
   };
 
-  const handleAdd = async (username: string) => {
-    setAddingId(username);
+  const handleSendRequest = async (did: string) => {
+    setAddingId(did);
     try {
-      const resp = await api.friendChatCreateSession(username);
-      await loadSessions();
-      if (resp.session) {
-        selectSession(resp.session.ulid);
-      }
-      handleClose();
+      await sendFriendRequest(did, '');
+      toast.success(t('chat.social.findPeople.requestSent'));
     } catch (e: any) {
       toast.error(e?.message || t('chat.social.findPeople.addFailed'));
     } finally {
@@ -168,10 +164,10 @@ export function FindPeopleModal({ open, onClose }: Props) {
                 <Button
                   type="primary"
                   size="small"
-                  loading={addingId === r.username}
-                  onClick={() => handleAdd(r.username)}
+                  loading={addingId === r.id}
+                  onClick={() => handleSendRequest(r.id)}
                 >
-                  {t('chat.social.findPeople.add')}
+                  {t('chat.social.findPeople.sendRequest')}
                 </Button>
               </Flexbox>
             ))

@@ -1,8 +1,7 @@
 import { create } from 'zustand'
 import { EVENT, eventBus, onWindowOffline, onWindowOnline } from '../events'
-import { useAccountIdentityStore } from '../../store/accountIdentity'
-import { useOAuth2Store } from '../../store/oauth2'
 import { useSessionStore } from '../../store/session'
+import { useOAuth2Store } from '../../store/oauth2'
 import { api } from '../../services/desktop_api'
 import type {
   GlobalContextSnapshot,
@@ -91,35 +90,31 @@ function createInitialSnapshot(): GlobalContextSnapshot {
 
 function mapSnapshotFromStores(snapshot: GlobalContextSnapshot): GlobalContextSnapshot {
   const sessionState = useSessionStore.getState()
-  const accountState = useAccountIdentityStore.getState()
   const oauthState = useOAuth2Store.getState()
 
-  // Identity: SessionStore is the single source of truth for who is logged in.
-  // AccountIdentityStore provides enriched profile data as a fallback.
-  const active =
-    accountState.accounts.find((item) => item.id === accountState.activeAccountId) ||
-    accountState.accounts[0]
-
-  const identity = sessionState.currentUser
+  // Identity: SessionStore is the SOLE source of truth.
+  // No fallback to AccountIdentityStore — one session = one user.
+  const cu = sessionState.currentUser
+  const identity = cu
     ? {
-        userId: sessionState.currentUser.actorId,
-        displayName: sessionState.currentUser.name || active?.name || null,
-        provider: sessionState.currentUser.loginProvider || active?.provider || null,
-        email: sessionState.currentUser.email || active?.email || null,
-        avatarUrl: sessionState.currentUser.avatarUrl || active?.avatar_url || null,
-        profileUrl: active?.profile_url || null,
-        registerTime: active?.created_at || null,
-        lastLoginAt: active?.last_login_at || null,
+        userId: cu.actorId,
+        displayName: cu.name || null,
+        provider: cu.loginProvider || null,
+        email: cu.email || null,
+        avatarUrl: cu.avatarUrl || null,
+        profileUrl: null,
+        registerTime: null,
+        lastLoginAt: null,
       }
     : {
-        userId: active?.id || null,
-        displayName: active?.name || null,
-        provider: active?.provider || null,
-        email: active?.email || null,
-        avatarUrl: active?.avatar_url || null,
-        profileUrl: active?.profile_url || null,
-        registerTime: active?.created_at || null,
-        lastLoginAt: active?.last_login_at || null,
+        userId: null,
+        displayName: null,
+        provider: null,
+        email: null,
+        avatarUrl: null,
+        profileUrl: null,
+        registerTime: null,
+        lastLoginAt: null,
       }
 
   const connectedAccounts = oauthState.connections
@@ -136,10 +131,10 @@ function mapSnapshotFromStores(snapshot: GlobalContextSnapshot): GlobalContextSn
     ...snapshot,
     identity,
     session: {
-      loginStatus: sessionState.authenticated ? 'authenticated' : (active ? 'authenticated' : 'unauthenticated'),
-      authenticated: sessionState.authenticated || Boolean(active),
-      activeAccountId: accountState.activeAccountId || active?.id || null,
-      lastAuthAt: active?.last_login_at || null,
+      loginStatus: sessionState.authenticated ? 'authenticated' : 'unauthenticated',
+      authenticated: sessionState.authenticated,
+      activeAccountId: cu?.actorId || null,
+      lastAuthAt: null,
     },
     oauth: {
       connectedAccounts,
@@ -316,7 +311,6 @@ export const useGlobalContextStore = create<GlobalContextState>((set, get) => ({
       publishUpdate('authoritative')
     } catch {}
     await Promise.all([
-      useAccountIdentityStore.getState().load(),
       useOAuth2Store.getState().loadAll(),
     ])
     set((prev) => ({
@@ -391,7 +385,7 @@ export const useGlobalContextStore = create<GlobalContextState>((set, get) => ({
     })
   },
 
-  runPipeline: async (name, payload) => {
+  runPipeline: async (name, _payload) => {
     eventBus.publish(EVENT.GLOBAL_CONTEXT_PIPELINE_STARTED, {
       name,
       timestamp_ms: now(),
@@ -426,11 +420,6 @@ export const useGlobalContextStore = create<GlobalContextState>((set, get) => ({
         }))
         publishUpdate('identity/session/oauth')
         get().setTaskStatus('global_context.session_logout', 'completed')
-      } else if (name === 'identity_switch' && payload?.identitySwitch?.accountId) {
-        get().setTaskStatus('global_context.identity_switch', 'running')
-        await useAccountIdentityStore.getState().switchAccount(payload.identitySwitch.accountId)
-        await get().refreshFromSources()
-        get().setTaskStatus('global_context.identity_switch', 'completed')
       } else if (name === 'network_recovery') {
         get().setTaskStatus('global_context.network_recovery', 'running')
         set((prev) => ({

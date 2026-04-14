@@ -58,6 +58,17 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
     }
   }, [provider, startAuth, t]);
 
+  const handleModalCancel = useCallback(() => {
+    log.warn('OAuth2Modal', 'handleModalCancel called', { authState });
+    if (authState === 'success') {
+      log.warn('OAuth2Modal', '-> routing to onSuccess');
+      onSuccess();
+    } else {
+      log.warn('OAuth2Modal', '-> routing to onCancel');
+      onCancel();
+    }
+  }, [authState, onCancel, onSuccess]);
+
   if (!provider) return null;
 
   const renderContent = () => {
@@ -149,17 +160,6 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
         );
     }
   };
-
-  const handleModalCancel = useCallback(() => {
-    log.warn('OAuth2Modal', 'handleModalCancel called', { authState });
-    if (authState === 'success') {
-      log.warn('OAuth2Modal', '-> routing to onSuccess');
-      onSuccess();
-    } else {
-      log.warn('OAuth2Modal', '-> routing to onCancel');
-      onCancel();
-    }
-  }, [authState, onCancel, onSuccess]);
 
   return (
     <Modal

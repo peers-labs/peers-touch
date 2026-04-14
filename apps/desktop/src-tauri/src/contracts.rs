@@ -120,12 +120,39 @@ pub struct FriendChatListMessagesInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentInput {
+    pub cid: String,
+    pub filename: String,
+    pub mime_type: String,
+    pub size: i64,
+    pub thumbnail_cid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatSendInput {
     pub session_ulid: String,
     pub receiver_did: String,
     pub content: String,
+    /// Base64-encoded ciphertext when sending E2E encrypted messages (optional).
+    pub encrypted_payload: Option<String>,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
+    pub attachments: Option<Vec<AttachmentInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyExchangeUploadInput {
+    pub ik_pub: String,
+    pub spk_id: i32,
+    pub spk_pub: String,
+    pub spk_sig: String,
+    pub opk_ids: Vec<i32>,
+    pub opk_pubs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyExchangeFetchInput {
+    pub did: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +182,9 @@ pub struct GroupChatSendInput {
     pub reply_to_ulid: Option<String>,
     pub mentioned_dids: Option<Vec<String>>,
     pub mention_all: Option<bool>,
+    pub attachments: Option<Vec<AttachmentInput>>,
+    /// Optional base64 ciphertext envelope for E2E (group symmetric key); forwarded to Station JSON when set.
+    pub encrypted_payload: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,6 +214,17 @@ pub struct GroupChatSyncInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatLocalSearchInput {
     pub query: String,
+    pub limit: Option<u32>,
+}
+
+/// Unified local FTS search (friend + group), with optional scope and conversation filters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatSearchLocalInput {
+    pub query: String,
+    #[serde(default)]
+    pub scope: String,
+    pub conversation_id: Option<String>,
     pub limit: Option<u32>,
 }
 
@@ -483,6 +524,11 @@ pub struct AccountIdInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountSyncAvatarInput {
+    pub avatar_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountUpsertOAuthInput {
     pub provider: String,
     pub provider_user_id: String,
@@ -491,6 +537,20 @@ pub struct AccountUpsertOAuthInput {
     pub email: Option<String>,
     pub avatar_url: Option<String>,
     pub profile_url: Option<String>,
+}
+
+// ── PIN / multi-account contracts ──
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountSetPinInput {
+    pub account_id: String,
+    pub pin: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountUnlockInput {
+    pub account_id: String,
+    pub pin: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -818,8 +878,7 @@ pub struct ProviderModelToggleAllInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatSyncMessagesInput {
-    pub session_ulid: String,
-    pub messages_json: String,
+    pub messages: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -885,7 +944,9 @@ pub struct GroupUpdateNicknameInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupUpdateMySettingsInput {
     pub group_ulid: String,
-    pub settings_json: String,
+    pub is_muted: Option<bool>,
+    pub is_pinned: Option<bool>,
+    pub show_member_nickname: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -961,4 +1022,57 @@ pub struct GroupChatCreateGroupInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatLeaveGroupInput {
     pub group_ulid: String,
+}
+
+// --- Friend Request contracts ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequestSendInput {
+    pub receiver_did: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequestActionInput {
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequestListInput {
+    pub status: Option<i32>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+// --- Notification contracts ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationListInput {
+    pub category: Option<i32>,
+    pub status: Option<i32>,
+    pub cursor: Option<String>,
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationMarkReadInput {
+    pub notification_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationMarkAllReadInput {
+    pub category: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationDeleteInput {
+    pub notification_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationPreferenceUpdateInput {
+    pub category: i32,
+    pub enabled: bool,
+    pub push_enabled: bool,
+    pub sound_enabled: bool,
 }

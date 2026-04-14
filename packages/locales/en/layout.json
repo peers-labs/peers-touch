@@ -3,6 +3,7 @@
   "layout.nav.chat": "Chat",
   "layout.nav.agent": "Agent",
   "layout.nav.notes": "Notes",
+  "layout.nav.contacts": "Contacts",
   "layout.nav.settings": "Settings",
 
   "layout.online.tooltip": "{{count}} visitor(s) online in the last 5 minutes",

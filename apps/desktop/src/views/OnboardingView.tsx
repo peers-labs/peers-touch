@@ -222,6 +222,7 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
           <LoginPage
             onComplete={lifecycle.completeLogin}
             restoredUser={lifecycle.restoredUser}
+            knownAccounts={lifecycle.knownAccounts}
           />
         </div>
 

@@ -16,9 +16,6 @@ interface OAuth2Store {
   loadConnections: () => Promise<void>;
   loadAll: () => Promise<void>;
   startAuth: (id: string, environment?: string) => Promise<void>;
-  disconnect: (id: string) => Promise<void>;
-  refreshToken: (id: string) => Promise<void>;
-  reload: () => Promise<void>;
 }
 
 export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
@@ -112,20 +109,5 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
         void finish('oauth authorization timeout');
       }, 120000);
     });
-  },
-
-  disconnect: async (id) => {
-    await api.oauth2Disconnect(id);
-    await get().loadAll();
-  },
-
-  refreshToken: async (id) => {
-    await api.oauth2RefreshToken(id);
-    await get().loadAll();
-  },
-
-  reload: async () => {
-    await api.oauth2Reload();
-    await get().loadAll();
   },
 }));
