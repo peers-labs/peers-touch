@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input, Tag } from '@lobehub/ui';
-import { Switch, theme, Typography, Empty, Checkbox } from 'antd';
+import { Button, Tag } from '@lobehub/ui';
+import { Input, Switch, theme, Typography, Empty, Checkbox } from 'antd';
 import { RefreshCw, Download, Pause, Play, Search, FileText, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../services/desktop_api';
 import { log } from '../utils/logger';
+import { SettingsContainer } from './settings/SettingsLayout';
 
 const { Text, Title } = Typography;
 
@@ -271,7 +272,7 @@ export function LogsTab() {
   };
 
   return (
-    <Flexbox style={{ height: '100%', overflow: 'hidden', padding: 24 }} gap={16}>
+    <SettingsContainer fullHeight maxWidth={900} style={{ overflow: 'hidden' }}>
         <Flexbox horizontal justify="space-between" align="center">
             <Flexbox gap={4}>
                 <Flexbox horizontal align="center" gap={8}>
@@ -280,7 +281,7 @@ export function LogsTab() {
                 </Flexbox>
                 <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.logs.subtitle')}</Text>
             </Flexbox>
-            <Flexbox gap={8} horizontal align="center">
+            <Flexbox gap={8} horizontal align="center" style={{ height: 32 }}>
                  <Input 
                     size="small"
                     placeholder={t('provider.logs.filterPlaceholder')} 
@@ -294,12 +295,13 @@ export function LogsTab() {
                     size="small"
                     icon={paused ? <Play size={14} /> : <Pause size={14} />} 
                     onClick={() => setPaused(!paused)}
+                    style={{ height: 28 }}
                  >
                     {paused ? t('provider.logs.resume') : t('provider.logs.pause')}
                  </Button>
-                 <Button size="small" icon={<RefreshCw size={14} />} onClick={() => fetchLogs(true)}>{t('provider.logs.refresh')}</Button>
-                 <Button size="small" icon={<Download size={14} />} onClick={handleExport}>{t('provider.logs.exportVisible')}</Button>
-                 <Button size="small" icon={<Trash2 size={14} />} danger onClick={() => setEntries([])} />
+                 <Button size="small" icon={<RefreshCw size={14} />} onClick={() => fetchLogs(true)} style={{ height: 28 }}>{t('provider.logs.refresh')}</Button>
+                 <Button size="small" icon={<Download size={14} />} onClick={handleExport} style={{ height: 28 }}>{t('provider.logs.exportVisible')}</Button>
+                 <Button size="small" icon={<Trash2 size={14} />} danger onClick={() => setEntries([])} style={{ height: 28 }} />
             </Flexbox>
         </Flexbox>
 
@@ -380,6 +382,6 @@ export function LogsTab() {
                 </Flexbox>
              </Flexbox>
         </Flexbox>
-    </Flexbox>
+    </SettingsContainer>
   );
 }

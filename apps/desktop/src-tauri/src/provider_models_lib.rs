@@ -4,6 +4,13 @@ pub mod state;
 
 pub(crate) use interface::contracts;
 
+/// Minimal proto surface shared with `infrastructure/station_client.rs` (also used by the main binary).
+pub mod model {
+    pub mod common {
+        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.common.v1.rs"));
+    }
+}
+
 pub mod infrastructure {
     #[path = "i18n/mod.rs"]
     pub mod i18n;

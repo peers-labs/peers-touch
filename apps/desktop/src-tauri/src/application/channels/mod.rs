@@ -51,10 +51,11 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InvalidArgument, message, None)
 }
 
-fn internal_error() -> AppResult<StubPayload> {
+fn store_lock_error(e: impl std::fmt::Display) -> AppResult<StubPayload> {
+    tracing::error!(error = %e, "Failed to acquire channels store lock");
     AppResult::fail(
         ErrorCode::InternalError,
-        "error.channels.storeAccessFailed",
+        format!("Failed to access channels store: {}", e),
         None,
     )
 }
@@ -62,7 +63,7 @@ fn internal_error() -> AppResult<StubPayload> {
 pub fn channels_list() -> AppResult<StubPayload> {
     let guard = match channel_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let channels = guard
         .channels
@@ -79,12 +80,12 @@ pub fn channels_get(input: ChannelIdInput) -> AppResult<StubPayload> {
     }
     let guard = match channel_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(channel) = guard.channels.iter().find(|item| item.id == id) {
         return success_payload("channels_get", channel.data.clone());
     }
-    AppResult::fail(ErrorCode::NotFound, "error.channels.notFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Channel not found", None)
 }
 
 pub fn channels_create(input: ChannelCreateInput) -> AppResult<StubPayload> {
@@ -93,7 +94,7 @@ pub fn channels_create(input: ChannelCreateInput) -> AppResult<StubPayload> {
     }
     let mut guard = match channel_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let id = format!("channel-{}", guard.channels.len() + 1);
     let data = json!({
@@ -121,7 +122,7 @@ pub fn channels_update(input: ChannelUpdateInput) -> AppResult<StubPayload> {
     }
     let mut guard = match channel_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(channel) = guard.channels.iter_mut().find(|item| item.id == id) {
         if let Some(obj) = channel.data.as_object_mut() {
@@ -140,7 +141,7 @@ pub fn channels_update(input: ChannelUpdateInput) -> AppResult<StubPayload> {
         }
         return success_payload("channels_update", channel.data.clone());
     }
-    AppResult::fail(ErrorCode::NotFound, "error.channels.notFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Channel not found", None)
 }
 
 pub fn channels_delete(input: ChannelIdInput) -> AppResult<StubPayload> {
@@ -150,7 +151,7 @@ pub fn channels_delete(input: ChannelIdInput) -> AppResult<StubPayload> {
     }
     let mut guard = match channel_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let before = guard.channels.len();
     guard.channels.retain(|item| item.id != id);

@@ -277,7 +277,14 @@ fn station_request_json(
         .request(method, format!("{}{}", station_client::station_base_url(), path))
         .bearer_auth(token);
     if let Some(q) = query { req = req.query(q); }
-    if let Some(b) = body { req = req.json(&b); }
+    if let Some(b) = body {
+        req = req
+            .header("Content-Type", "application/json")
+            .json(&b);
+    } else {
+        req = req.header("Content-Type", "application/json");
+    }
+    req = req.header("Accept", "application/json");
 
     let response = req.send().map_err(|e| {
         to_json(AppResult::<StubPayload>::fail(
@@ -395,8 +402,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                     tracing::error!(error = %e, "Failed to load i18n resources");
                     to_json(AppResult::<crate::infrastructure::i18n::I18nResources>::fail(
                         ErrorCode::InternalError,
-                        "error.storage.readFailed",
-                        Some(json!({"detail": e})),
+                        format!("Failed to load i18n resources: {}", e),
+                        None,
                     ))
                 }
             }
@@ -416,7 +423,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             let items: Vec<Value> = resp.items.iter().map(|a| json!({
                 "id": a.id, "username": a.username, "displayName": a.display_name,
-                "email": a.email, "actorId": a.actor_id,
+                "email": a.email, "actorId": a.actor_id, "avatar": a.avatar,
             })).collect();
             to_json(to_stub("actor_search_actors", json!({"items": items, "total": resp.total})))
         }
@@ -1312,16 +1319,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "key_exchange_upload_bundle" => {
             let input = match parse_args::<KeyExchangeUploadInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            match station_request_json(Method::POST, "/key-exchange/keys/bundle", &token, None, Some(json!({
-                "ik_pub": input.ik_pub,
-                "spk_id": input.spk_id,
-                "spk_pub": input.spk_pub,
-                "spk_sig": input.spk_sig,
-                "opk_ids": input.opk_ids,
-                "opk_pubs": input.opk_pubs,
-            }))) {
-                Ok(data) => to_json(to_stub("key_exchange_upload_bundle", data)),
-                Err(e) => e,
+            let req = model::key_exchange::UploadKeyBundleRequest {
+                ik_pub: input.ik_pub,
+                spk_id: input.spk_id,
+                spk_pub: input.spk_pub,
+                spk_sig: input.spk_sig,
+                opk_ids: input.opk_ids,
+                opk_pubs: input.opk_pubs,
+            };
+            match station_client::request_proto::<
+                model::key_exchange::UploadKeyBundleRequest,
+                model::key_exchange::UploadKeyBundleResponse,
+            >(Method::POST, "/key-exchange/keys/bundle", &token, None, Some(&req)) {
+                Ok(_r) => to_json(to_stub("key_exchange_upload_bundle", json!({}))),
+                Err(e) => to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
             }
         }
         "key_exchange_fetch_bundle" => {
@@ -1330,10 +1341,22 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             if input.did.trim().is_empty() {
                 return to_json(AppResult::<StubPayload>::fail(ErrorCode::InvalidArgument, "did is required", None));
             }
-            let query = vec![("did", input.did)];
-            match station_request_json(Method::GET, "/key-exchange/keys/bundle", &token, Some(&query), None) {
-                Ok(data) => to_json(to_stub("key_exchange_fetch_bundle", data)),
-                Err(e) => e,
+            let req = model::key_exchange::FetchKeyBundleRequest { did: input.did };
+            match station_client::request_proto::<
+                model::key_exchange::FetchKeyBundleRequest,
+                model::key_exchange::FetchKeyBundleResponse,
+            >(Method::POST, "/key-exchange/keys/bundle/fetch", &token, None, Some(&req)) {
+                Ok(r) => to_json(to_stub("key_exchange_fetch_bundle", json!({
+                    "actor_did": r.actor_did,
+                    "ik_pub": r.ik_pub,
+                    "fingerprint": r.fingerprint,
+                    "spk_id": r.spk_id,
+                    "spk_pub": r.spk_pub,
+                    "spk_sig": r.spk_sig,
+                    "opk_id": r.opk_id,
+                    "opk_pub": r.opk_pub,
+                }))),
+                Err(e) => to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
             }
         }
         "friend_chat_local_search" => {
@@ -1401,6 +1424,49 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         }
         "friend_chat_sync_from_station_scoped" => {
             dispatch_friend_sync_from_station(args, state)
+        }
+        "friend_chat_send_friend_request" => {
+            let input = match parse_args::<FriendRequestSendInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(Method::POST, "/friend-chat/friend-request/send", &token, None, Some(json!({
+                "receiver_did": input.receiver_did,
+                "message": input.message.unwrap_or_default(),
+            }))) {
+                Ok(data) => to_json(to_stub("friend_chat_send_friend_request", data)),
+                Err(e) => e,
+            }
+        }
+        "friend_chat_accept_friend_request" => {
+            let input = match parse_args::<FriendRequestActionInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(Method::POST, "/friend-chat/friend-request/accept", &token, None, Some(json!({"request_id": input.request_id}))) {
+                Ok(data) => to_json(to_stub("friend_chat_accept_friend_request", data)),
+                Err(e) => e,
+            }
+        }
+        "friend_chat_reject_friend_request" => {
+            let input = match parse_args::<FriendRequestActionInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(Method::POST, "/friend-chat/friend-request/reject", &token, None, Some(json!({"request_id": input.request_id}))) {
+                Ok(data) => to_json(to_stub("friend_chat_reject_friend_request", data)),
+                Err(e) => e,
+            }
+        }
+        "friend_chat_list_friend_requests" => {
+            let input = match parse_args::<FriendRequestListInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let mut query: Vec<(&str, String)> = Vec::new();
+            if let Some(st) = input.status {
+                query.push(("status", st.to_string()));
+            }
+            let limit = input.limit.unwrap_or(20);
+            query.push(("limit", limit.to_string()));
+            let offset = input.offset.unwrap_or(0);
+            query.push(("offset", offset.to_string()));
+            match station_request_json(Method::GET, "/friend-chat/friend-requests", &token, Some(&query), None) {
+                Ok(data) => to_json(to_stub("friend_chat_list_friend_requests", data)),
+                Err(e) => e,
+            }
         }
 
         // =================================================================
@@ -1495,8 +1561,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_get_group" => {
             let input = match parse_args::<GroupUlidInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            let query = vec![("group_ulid", input.group_ulid)];
-            match station_request_json(Method::GET, "/group-chat/group", &token, Some(&query), None) {
+            match station_request_json(
+                Method::GET,
+                "/group-chat/info",
+                &token,
+                None,
+                Some(json!({ "group_ulid": input.group_ulid })),
+            ) {
                 Ok(data) => to_json(to_stub("group_chat_get_group", data)),
                 Err(e) => e,
             }
@@ -1504,10 +1575,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_update_group" => {
             let input = match parse_args::<GroupUpdateInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            match station_request_json(Method::POST, "/group-chat/group/update", &token, None, Some(json!({
-                "group_ulid": input.group_ulid, "name": input.name,
-                "description": input.description.unwrap_or_default(),
-            }))) {
+            match station_request_json(
+                Method::PUT,
+                "/group-chat/update",
+                &token,
+                None,
+                Some(json!({
+                    "group_ulid": input.group_ulid,
+                    "name": input.name,
+                    "description": input.description.unwrap_or_default(),
+                })),
+            ) {
                 Ok(data) => to_json(to_stub("group_chat_update_group", data)),
                 Err(e) => e,
             }
@@ -1515,8 +1593,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_invite_to_group" => {
             let input = match parse_args::<GroupInviteInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            match station_request_json(Method::POST, "/group-chat/group/invite", &token, None, Some(json!({
-                "group_ulid": input.group_ulid, "member_dids": input.member_dids,
+            match station_request_json(Method::POST, "/group-chat/invite", &token, None, Some(json!({
+                "group_ulid": input.group_ulid,
+                "invitee_dids": input.member_dids,
             }))) {
                 Ok(data) => to_json(to_stub("group_chat_invite_to_group", data)),
                 Err(e) => e,
@@ -1525,8 +1604,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_join_group" => {
             let input = match parse_args::<GroupJoinInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            match station_request_json(Method::POST, "/group-chat/group/join", &token, None, Some(json!({
-                "group_ulid": input.group_ulid, "invitation_ulid": input.invitation_ulid,
+            match station_request_json(Method::POST, "/group-chat/join", &token, None, Some(json!({
+                "group_ulid": input.group_ulid,
+                "invitation_ulid": input.invitation_ulid.unwrap_or_default(),
             }))) {
                 Ok(data) => to_json(to_stub("group_chat_join_group", data)),
                 Err(e) => e,
@@ -1547,12 +1627,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_get_members" => {
             let input = match parse_args::<GroupMembersInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            let query = vec![
-                ("group_ulid", input.group_ulid),
-                ("limit", input.limit.unwrap_or(100).to_string()),
-                ("offset", input.offset.unwrap_or(0).to_string()),
-            ];
-            match station_request_json(Method::GET, "/group-chat/group/members", &token, Some(&query), None) {
+            match station_request_json(
+                Method::GET,
+                "/group-chat/members",
+                &token,
+                None,
+                Some(json!({
+                    "group_ulid": input.group_ulid,
+                    "limit": input.limit.unwrap_or(100) as i32,
+                    "offset": input.offset.unwrap_or(0) as i32,
+                })),
+            ) {
                 Ok(data) => to_json(to_stub("group_chat_get_members", data)),
                 Err(e) => e,
             }
@@ -1560,8 +1645,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_remove_member" => {
             let input = match parse_args::<GroupRemoveMemberInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            match station_request_json(Method::POST, "/group-chat/group/remove-member", &token, None, Some(json!({
-                "group_ulid": input.group_ulid, "member_did": input.member_did,
+            match station_request_json(Method::POST, "/group-chat/member/remove", &token, None, Some(json!({
+                "group_ulid": input.group_ulid,
+                "actor_did": input.member_did,
             }))) {
                 Ok(data) => to_json(to_stub("group_chat_remove_member", data)),
                 Err(e) => e,
@@ -1590,12 +1676,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_search_messages" => {
             let input = match parse_args::<GroupSearchMessagesInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            let query = vec![
-                ("group_ulid", input.group_ulid),
-                ("query", input.query),
-                ("limit", input.limit.unwrap_or(50).to_string()),
-            ];
-            match station_request_json(Method::GET, "/group-chat/messages/search", &token, Some(&query), None) {
+            match station_request_json(
+                Method::GET,
+                "/group-chat/messages/search",
+                &token,
+                None,
+                Some(json!({
+                    "group_ulid": input.group_ulid,
+                    "query": input.query,
+                    "limit": input.limit.unwrap_or(50) as i32,
+                    "before_ulid": "",
+                })),
+            ) {
                 Ok(data) => to_json(to_stub("group_chat_search_messages", data)),
                 Err(e) => e,
             }
@@ -1603,9 +1695,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_update_nickname" => {
             let input = match parse_args::<GroupUpdateNicknameInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            match station_request_json(Method::POST, "/group-chat/group/nickname", &token, None, Some(json!({
-                "group_ulid": input.group_ulid, "nickname": input.nickname,
-            }))) {
+            match station_request_json(
+                Method::PUT,
+                "/group-chat/member/nickname",
+                &token,
+                None,
+                Some(json!({
+                    "group_ulid": input.group_ulid,
+                    "nickname": input.nickname,
+                })),
+            ) {
                 Ok(data) => to_json(to_stub("group_chat_update_nickname", data)),
                 Err(e) => e,
             }
@@ -1613,8 +1712,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_get_settings" => {
             let input = match parse_args::<GroupUlidInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            let query = vec![("group_ulid", input.group_ulid)];
-            match station_request_json(Method::GET, "/group-chat/group/settings", &token, Some(&query), None) {
+            match station_request_json(
+                Method::GET,
+                "/group-chat/my-settings",
+                &token,
+                None,
+                Some(json!({ "group_ulid": input.group_ulid })),
+            ) {
                 Ok(data) => to_json(to_stub("group_chat_get_settings", data)),
                 Err(e) => e,
             }
@@ -1626,7 +1730,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             if let Some(v) = input.is_muted { body["is_muted"] = json!(v); }
             if let Some(v) = input.is_pinned { body["is_pinned"] = json!(v); }
             if let Some(v) = input.show_member_nickname { body["show_member_nickname"] = json!(v); }
-            match station_request_json(Method::POST, "/group-chat/group/settings", &token, None, Some(body)) {
+            match station_request_json(Method::PUT, "/group-chat/my-settings", &token, None, Some(body)) {
                 Ok(data) => to_json(to_stub("group_chat_update_settings", data)),
                 Err(e) => e,
             }
@@ -1634,11 +1738,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "group_chat_get_offline_messages" => {
             let input = match parse_args::<GroupOfflineMessagesInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            let query = vec![
-                ("group_ulid", input.group_ulid),
-                ("limit", input.limit.unwrap_or(100).to_string()),
-            ];
-            match station_request_json(Method::GET, "/group-chat/offline-messages", &token, Some(&query), None) {
+            match station_request_json(
+                Method::GET,
+                "/group-chat/offline-messages",
+                &token,
+                None,
+                Some(json!({ "limit": input.limit.unwrap_or(100) as i32 })),
+            ) {
                 Ok(data) => to_json(to_stub("group_chat_get_offline_messages", data)),
                 Err(e) => e,
             }
@@ -1647,7 +1753,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             let input = match parse_args::<GroupAckOfflineInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
             match station_request_json(Method::POST, "/group-chat/offline-messages/ack", &token, None, Some(json!({
-                "group_ulid": input.group_ulid, "ulids": input.message_ulids,
+                "ulids": input.message_ulids,
             }))) {
                 Ok(data) => to_json(to_stub("group_chat_ack_offline_messages", data)),
                 Err(e) => e,
@@ -1725,6 +1831,87 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         }
         "group_chat_sync_from_station_scoped" => {
             dispatch_group_sync_from_station(args, state)
+        }
+
+        // =================================================================
+        // Notifications (state-dependent, station JSON API)
+        // =================================================================
+        "notification_list" => {
+            let input = match parse_args::<NotificationListInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let mut query: Vec<(&str, String)> = Vec::new();
+            if let Some(cat) = input.category {
+                query.push(("category", cat.to_string()));
+            }
+            if let Some(st) = input.status {
+                query.push(("status", st.to_string()));
+            }
+            if let Some(ref c) = input.cursor {
+                query.push(("cursor", c.clone()));
+            }
+            let limit = input.limit.unwrap_or(20);
+            query.push(("limit", limit.to_string()));
+            match station_request_json(Method::GET, "/notification/list", &token, Some(&query), None) {
+                Ok(data) => to_json(to_stub("notification_list", data)),
+                Err(e) => e,
+            }
+        }
+        "notification_unread_counts" => {
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(Method::GET, "/notification/unread-counts", &token, None, None) {
+                Ok(data) => to_json(to_stub("notification_unread_counts", data)),
+                Err(e) => e,
+            }
+        }
+        "notification_mark_read" => {
+            let input = match parse_args::<NotificationMarkReadInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(Method::POST, "/notification/mark-read", &token, None, Some(json!({"notification_ids": input.notification_ids}))) {
+                Ok(data) => to_json(to_stub("notification_mark_read", data)),
+                Err(e) => e,
+            }
+        }
+        "notification_mark_all_read" => {
+            let input = match parse_args::<NotificationMarkAllReadInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(Method::POST, "/notification/mark-all-read", &token, None, Some(json!({"category": input.category.unwrap_or(0)}))) {
+                Ok(data) => to_json(to_stub("notification_mark_all_read", data)),
+                Err(e) => e,
+            }
+        }
+        "notification_delete" => {
+            let input = match parse_args::<NotificationDeleteInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(Method::POST, "/notification/delete", &token, None, Some(json!({"notification_ids": input.notification_ids}))) {
+                Ok(data) => to_json(to_stub("notification_delete", data)),
+                Err(e) => e,
+            }
+        }
+        "notification_preferences" => {
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(Method::GET, "/notification/preferences", &token, None, None) {
+                Ok(data) => to_json(to_stub("notification_preferences", data)),
+                Err(e) => e,
+            }
+        }
+        "notification_preferences_update" => {
+            let input = match parse_args::<NotificationPreferenceUpdateInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            match station_request_json(
+                Method::POST,
+                "/notification/preferences/update",
+                &token,
+                None,
+                Some(json!({
+                    "category": input.category,
+                    "enabled": input.enabled,
+                    "push_enabled": input.push_enabled,
+                    "sound_enabled": input.sound_enabled,
+                })),
+            ) {
+                Ok(data) => to_json(to_stub("notification_preferences_update", data)),
+                Err(e) => e,
+            }
         }
 
         // =================================================================

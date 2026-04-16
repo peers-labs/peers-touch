@@ -17,6 +17,11 @@ message FriendChatSession {
   int32 unread_count_b = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+  // Enriched participant profiles (populated at query time)
+  string participant_a_display_name = 10;
+  string participant_a_avatar = 11;
+  string participant_b_display_name = 12;
+  string participant_b_avatar = 13;
 }
 
 message FriendChatMessage {

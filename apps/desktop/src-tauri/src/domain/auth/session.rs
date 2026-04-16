@@ -19,12 +19,12 @@ pub enum AuthDomainError {
 pub fn validate_login_input(account: &str, password: &str) -> Result<(), AuthDomainError> {
     if account.trim().is_empty() {
         return Err(AuthDomainError::InvalidArgument(
-            "error.auth.accountRequired".to_string(),
+            "Account is required".to_string(),
         ));
     }
     if password.trim().is_empty() {
         return Err(AuthDomainError::InvalidArgument(
-            "error.auth.passwordRequired".to_string(),
+            "Password is required".to_string(),
         ));
     }
     Ok(())
@@ -42,12 +42,12 @@ pub fn from_station_response(actor_id: String, token: String) -> AuthSession {
 pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     let token = token.trim();
     if token.is_empty() {
-        return Err(AuthDomainError::Unauthorized("error.auth.tokenMissing".to_string()));
+        return Err(AuthDomainError::Unauthorized("Token is missing".to_string()));
     }
 
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 || !token.starts_with("eyJ") {
-        return Err(AuthDomainError::Unauthorized("error.auth.tokenInvalid".to_string()));
+        return Err(AuthDomainError::Unauthorized("Token is invalid or expired".to_string()));
     }
 
     let actor_id = decode_jwt_subject(parts[1]).unwrap_or_default();

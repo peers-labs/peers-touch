@@ -12,6 +12,7 @@ import {
 import { api, type Channel } from '../services/desktop_api';
 import { resolveI18nValue } from '../i18n';
 import { LarkSimulateLoginModal } from './settings/LarkSimulateLoginModal';
+import { SettingsContainer } from './settings/SettingsLayout';
 import { useTranslation } from 'react-i18next';
 
 const { Text, Title } = Typography;
@@ -128,7 +129,7 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
   );
 
   return (
-    <Flexbox gap={16} style={{ padding: 16, height: '100%', overflow: 'auto' }}>
+    <SettingsContainer fullHeight>
       <Flexbox horizontal align="center" justify="space-between">
         <Flexbox>
           <Title level={5} style={{ margin: 0 }}>{t('provider.channels.title')}</Title>
@@ -231,6 +232,6 @@ export function ChannelsTab({ onNavigate }: ChannelsTabProps) {
         intent="bot"
         onSuccess={handleLarkBotSuccess}
       />
-    </Flexbox>
+    </SettingsContainer>
   );
 }

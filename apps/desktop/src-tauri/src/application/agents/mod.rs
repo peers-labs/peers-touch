@@ -52,11 +52,11 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InvalidArgument, message, None)
 }
 
-fn internal_error() -> AppResult<StubPayload> {
-    tracing::error!("Failed to acquire agents store lock");
+fn store_lock_error(e: impl std::fmt::Display) -> AppResult<StubPayload> {
+    tracing::error!(error = %e, "Failed to acquire agents store lock");
     AppResult::fail(
         ErrorCode::InternalError,
-        "error.agent.storeAccessFailed",
+        format!("Failed to access agents store: {}", e),
         None,
     )
 }
@@ -64,7 +64,7 @@ fn internal_error() -> AppResult<StubPayload> {
 pub fn agents_list() -> AppResult<StubPayload> {
     let guard = match agent_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let agents = guard
         .agents
@@ -81,18 +81,18 @@ pub fn agents_get(input: AgentIdInput) -> AppResult<StubPayload> {
     }
     let guard = match agent_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(agent) = guard.agents.iter().find(|item| item.id == input.id) {
         return success_payload("agents_get", agent.data.clone());
     }
-    AppResult::fail(ErrorCode::NotFound, "error.agent.notFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Agent not found", None)
 }
 
 pub fn agents_create(input: AgentCreateInput) -> AppResult<StubPayload> {
     let mut guard = match agent_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let id = format!("agent-{}", guard.agents.len() + 1);
     tracing::info!(command = "agents_create", agent_id = %id, "Creating agent");
@@ -114,7 +114,7 @@ pub fn agents_update(input: AgentUpdateInput) -> AppResult<StubPayload> {
     }
     let mut guard = match agent_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(agent) = guard.agents.iter_mut().find(|item| item.id == input.id) {
         let mut data = input.data;
@@ -124,7 +124,7 @@ pub fn agents_update(input: AgentUpdateInput) -> AppResult<StubPayload> {
         agent.data = data.clone();
         return success_payload("agents_update", data);
     }
-    AppResult::fail(ErrorCode::NotFound, "error.agent.notFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Agent not found", None)
 }
 
 pub fn agents_delete(input: AgentIdInput) -> AppResult<StubPayload> {
@@ -134,7 +134,7 @@ pub fn agents_delete(input: AgentIdInput) -> AppResult<StubPayload> {
     }
     let mut guard = match agent_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let before = guard.agents.len();
     guard.agents.retain(|item| item.id != input.id);
@@ -150,7 +150,7 @@ pub fn agents_duplicate(input: AgentDuplicateInput) -> AppResult<StubPayload> {
     }
     let mut guard = match agent_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(agent) = guard.agents.iter().find(|item| item.id == input.id) {
         let id = format!("agent-{}", guard.agents.len() + 1);
@@ -165,7 +165,7 @@ pub fn agents_duplicate(input: AgentDuplicateInput) -> AppResult<StubPayload> {
         });
         return success_payload("agents_duplicate", data);
     }
-    AppResult::fail(ErrorCode::NotFound, "error.agent.notFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Agent not found", None)
 }
 
 pub fn agents_search(input: AgentSearchInput) -> AppResult<StubPayload> {
@@ -174,7 +174,7 @@ pub fn agents_search(input: AgentSearchInput) -> AppResult<StubPayload> {
     }
     let guard = match agent_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let q = input.q.to_lowercase();
     let agents = guard
@@ -200,7 +200,7 @@ pub fn agents_list_sessions(input: AgentIdInput) -> AppResult<StubPayload> {
     }
     let guard = match agent_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let agent_name = match guard.agents.iter().find(|item| item.id == input.id) {
         Some(agent) => agent
@@ -209,7 +209,7 @@ pub fn agents_list_sessions(input: AgentIdInput) -> AppResult<StubPayload> {
             .and_then(Value::as_str)
             .unwrap_or("assistant")
             .to_string(),
-        None => return AppResult::fail(ErrorCode::NotFound, "error.agent.notFound", None),
+        None => return AppResult::fail(ErrorCode::NotFound, "Agent not found", None),
     };
     drop(guard);
     let sessions = crate::application::chat::list_conversations_by_agent(&agent_name);

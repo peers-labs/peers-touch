@@ -110,6 +110,23 @@ export interface RustCommandResult<T = Record<string, any>> {
 
 const QUIET_COMMANDS = new Set(['logs_tail', 'frontend_log', 'visitor_heartbeat']);
 
+const SESSION_REVOKED_PREFIX = 'SESSION_REVOKED:';
+
+type SessionRevokedListener = () => void;
+let _sessionRevokedListener: SessionRevokedListener | null = null;
+
+/** Register a global listener for session revocation (called once from App). */
+export function onSessionRevoked(listener: SessionRevokedListener): () => void {
+  _sessionRevokedListener = listener;
+  return () => { _sessionRevokedListener = null; };
+}
+
+function checkSessionRevoked(errorMessage?: string): void {
+  if (errorMessage && errorMessage.includes(SESSION_REVOKED_PREFIX) && _sessionRevokedListener) {
+    _sessionRevokedListener();
+  }
+}
+
 async function invokeRustCommand<TInput, TData>(
   command: string,
   input?: TInput,
@@ -125,18 +142,21 @@ async function invokeRustCommand<TInput, TData>(
     const elapsed = Date.now() - start;
     if (!result.ok) {
       log.warn('api', `← ${command} FAIL (${elapsed}ms)`, { error: result.error?.message });
+      checkSessionRevoked(result.error?.message);
     } else if (!quiet) {
       log.info('api', `← ${command} OK (${elapsed}ms)`);
     }
     return result;
   } catch (error) {
     const elapsed = Date.now() - start;
-    log.error('api', `← ${command} ERROR (${elapsed}ms)`, { error: error instanceof Error ? error.message : String(error) });
+    const msg = error instanceof Error ? error.message : String(error);
+    log.error('api', `← ${command} ERROR (${elapsed}ms)`, { error: msg });
+    checkSessionRevoked(msg);
     return {
       ok: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : String(error),
+        message: msg,
       },
     };
   }

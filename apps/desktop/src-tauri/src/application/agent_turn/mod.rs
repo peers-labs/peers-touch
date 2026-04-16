@@ -1,3 +1,9 @@
+// `ExecuteTurnRequest` / `ExecuteTurnResponse` exist in `model::agent`, but Station's
+// `HandleExecuteTurn` binds JSON to ad-hoc Go structs (not generated protos) and the JSON
+// payload includes fields not present on the proto (identity, platform, workspace_root, …).
+// `TypedHandler` protobuf mode requires `proto.Message` request types. Keep JSON until the
+// subserver handler and proto definitions are aligned with the desktop contract.
+// TODO(agent): align `agent.proto` + Station `HandleExecuteTurn` with the full turn payload, then use `request_proto`.
 use crate::contracts::{AgentExecuteTurnInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -51,22 +57,23 @@ pub fn agent_execute_turn(input: AgentExecuteTurnInput, state: &AppState) -> App
             tracing::error!(command = "agent_execute_turn", error = %err, "Turn execution failed");
             AppResult::fail(
                 ErrorCode::InternalError,
-                "error.agent.turnFailed",
-                Some(json!({ "detail": err })),
+                format!("Failed to execute agent turn: {}", err),
+                None,
             )
         }
     }
 }
 
 fn token_from_state(state: &AppState) -> Result<String, AppResult<StubPayload>> {
-    let guard = state.session.lock().map_err(|_| {
-        AppResult::fail(ErrorCode::InternalError, "error.auth.sessionLockFailed", None)
+    let guard = state.session.lock().map_err(|e| {
+        tracing::error!(error = %e, "Failed to access session state");
+        AppResult::fail(ErrorCode::InternalError, "Failed to access session state", None)
     })?;
     let token = guard.token.clone().unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "error.auth.authenticationRequired",
+            "Authentication required — please log in",
             None,
         ));
     }

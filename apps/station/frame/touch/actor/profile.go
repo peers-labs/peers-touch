@@ -9,6 +9,7 @@ import (
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
@@ -254,4 +255,109 @@ func updateProfileInternal(c context.Context, rds *gorm.DB, actor *db.Actor, req
 	}
 
 	return nil
+}
+
+// WebProfileToActorProfileProto maps a web ProfileResponse to the domain ActorProfile proto
+// so Touch SuccessResponse can pack protobuf Any for desktop clients.
+func WebProfileToActorProfileProto(p *ProfileResponse) *modelpb.ActorProfile {
+	if p == nil {
+		return nil
+	}
+	links := make([]*modelpb.UserLink, 0, len(p.Links))
+	for i := range p.Links {
+		links = append(links, &modelpb.UserLink{
+			Label: p.Links[i].Label,
+			Url:   p.Links[i].URL,
+		})
+	}
+	return &modelpb.ActorProfile{
+		Id:                        p.ID,
+		DisplayName:               p.DisplayName,
+		Username:                  p.Username,
+		Note:                      p.Note,
+		Avatar:                    p.Avatar,
+		Header:                    p.Header,
+		Region:                    p.Region,
+		Timezone:                  p.Timezone,
+		Tags:                      p.Tags,
+		Links:                     links,
+		Url:                       p.URL,
+		PeersTouch:                &modelpb.PeersTouchInfo{NetworkId: p.PeersTouch.NetworkID},
+		Acct:                      p.Acct,
+		Locked:                    p.Locked,
+		CreatedAt:                 p.CreatedAt.Format(time.RFC3339),
+		FollowersCount:            p.FollowersCount,
+		FollowingCount:            p.FollowingCount,
+		StatusesCount:             p.StatusesCount,
+		DefaultVisibility:         p.DefaultVisibility,
+		ManuallyApprovesFollowers: p.ManuallyApprovesFollowers,
+		MessagePermission:         p.MessagePermission,
+		AutoExpireDays:            int32(p.AutoExpireDays),
+	}
+}
+
+// UpdateProfileRequestFromProto converts a protobuf update payload to the internal
+// UpdateProfileRequest used by persistence (optional pointer semantics preserved).
+func UpdateProfileRequestFromProto(req *modelpb.UpdateProfileRequest) UpdateProfileRequest {
+	if req == nil {
+		return UpdateProfileRequest{}
+	}
+	out := UpdateProfileRequest{}
+	if req.DisplayName != nil {
+		s := *req.DisplayName
+		out.DisplayName = &s
+	}
+	if req.Note != nil {
+		s := *req.Note
+		out.Note = &s
+	}
+	if req.Avatar != nil {
+		s := *req.Avatar
+		out.Avatar = &s
+	}
+	if req.Header != nil {
+		s := *req.Header
+		out.Header = &s
+	}
+	if req.Region != nil {
+		s := *req.Region
+		out.Region = &s
+	}
+	if req.Timezone != nil {
+		s := *req.Timezone
+		out.Timezone = &s
+	}
+	if len(req.Tags) > 0 {
+		t := append([]string(nil), req.Tags...)
+		out.Tags = &t
+	}
+	if len(req.Links) > 0 {
+		al := make([]UserLink, 0, len(req.Links))
+		for _, l := range req.Links {
+			if l == nil {
+				continue
+			}
+			al = append(al, UserLink{Label: l.GetLabel(), URL: l.GetUrl()})
+		}
+		if len(al) > 0 {
+			out.Links = &al
+		}
+	}
+	if req.DefaultVisibility != nil {
+		s := *req.DefaultVisibility
+		out.DefaultVisibility = &s
+	}
+	if req.ManuallyApprovesFollowers != nil {
+		b := *req.ManuallyApprovesFollowers
+		out.ManuallyApprovesFollowers = &b
+	}
+	if req.MessagePermission != nil {
+		s := *req.MessagePermission
+		out.MessagePermission = &s
+	}
+	if req.AutoExpireDays != nil {
+		n := int(*req.AutoExpireDays)
+		out.AutoExpireDays = &n
+	}
+	return out
 }

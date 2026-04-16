@@ -3,14 +3,19 @@
 //   replaced 501 stub with actual ExecuteTurn call and response mapping.
 // 2026-04-11 — Phase 4: added ToolRegistryService dependency for populating
 //   AvailableTools from the registered tool names.
+// 2026-04-15 — Use generated model.ExecuteTurnRequest / model.ExecuteTurnResponse;
+//   map domain turn into model.Turn (proto JSON uses camelCase: finalResponse, turnId, …).
 
 package handler
 
 import (
 	"context"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type TurnHandlers struct {
@@ -22,64 +27,79 @@ func NewTurnHandlers(turnService *service.TurnService, toolRegistry *service.Too
 	return &TurnHandlers{turnService: turnService, toolRegistry: toolRegistry}
 }
 
-type ExecuteTurnRequest struct {
-	ConversationID string `json:"conversation_id"`
-	AgentID        string `json:"agent_id"`
-	UserInput      string `json:"user_input"`
-	Stream         bool   `json:"stream"`
-
-	Provider          string `json:"provider,omitempty"`
-	Model             string `json:"model,omitempty"`
-	Identity          string `json:"identity,omitempty"`
-	AgentConfigPrompt string `json:"agent_config_prompt,omitempty"`
-	Platform          string `json:"platform,omitempty"`
-	WorkspaceRoot     string `json:"workspace_root,omitempty"`
-	ContextWindowSize int    `json:"context_window_size,omitempty"`
-	MaxRetries        int    `json:"max_retries,omitempty"`
-}
-
-type ExecuteTurnResponse struct {
-	TurnID         string `json:"turn_id"`
-	Response       string `json:"response"`
-	ToolIterations int    `json:"tool_iterations"`
-	Status         string `json:"status"`
-}
-
-func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *ExecuteTurnRequest) (*ExecuteTurnResponse, error) {
-
-	if req.ConversationID == "" || req.AgentID == "" || req.UserInput == "" {
+func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.ExecuteTurnRequest) (*model.ExecuteTurnResponse, error) {
+	if req.GetConversationId() == "" || req.GetAgentId() == "" || req.GetUserInput() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400,
 			"conversation_id, agent_id, and user_input are required", nil))
 	}
 
-	contextWindowSize := req.ContextWindowSize
+	contextWindowSize := int(req.GetContextWindowSize())
 	if contextWindowSize <= 0 {
 		contextWindowSize = 128000
 	}
 
-	config := &service.TurnConfig{
-		AgentID:           req.AgentID,
-		ConversationID:    req.ConversationID,
-		Identity:          req.Identity,
-		AgentConfigPrompt: req.AgentConfigPrompt,
-		Platform:          req.Platform,
-		AvailableTools:    h.toolRegistry.ToolNames(),
-		ContextWindowSize: contextWindowSize,
-		MaxRetries:        req.MaxRetries,
-		Provider:          req.Provider,
-		Model:             req.Model,
-		WorkspaceRoot:     req.WorkspaceRoot,
+	maxRetries := int(req.GetMaxRetries())
+	if maxRetries <= 0 {
+		maxRetries = 3
 	}
 
-	turn, err := h.turnService.ExecuteTurn(ctx, config, req.UserInput)
+	config := &service.TurnConfig{
+		AgentID:           req.GetAgentId(),
+		ConversationID:    req.GetConversationId(),
+		Identity:          req.GetIdentity(),
+		AgentConfigPrompt: req.GetAgentConfigPrompt(),
+		Platform:          req.GetPlatform(),
+		AvailableTools:    h.toolRegistry.ToolNames(),
+		ContextWindowSize: contextWindowSize,
+		MaxRetries:        maxRetries,
+		Provider:          req.GetProvider(),
+		Model:             req.GetModel(),
+		WorkspaceRoot:     req.GetWorkspaceRoot(),
+	}
+
+	turn, err := h.turnService.ExecuteTurn(ctx, config, req.GetUserInput())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
 
-	return &ExecuteTurnResponse{
-		TurnID:         turn.TurnID,
-		Response:       turn.FinalResponse,
-		ToolIterations: turn.ToolIterations,
-		Status:         string(turn.Status),
+	return &model.ExecuteTurnResponse{
+		Turn: domainTurnToProto(turn),
 	}, nil
+}
+
+func domainTurnToProto(t *domain.Turn) *model.Turn {
+	if t == nil {
+		return nil
+	}
+	out := &model.Turn{
+		TurnId:         t.TurnID,
+		ConversationId: t.ConversationID,
+		AgentId:        t.AgentID,
+		UserInput:      t.UserInput,
+		FinalResponse:  t.FinalResponse,
+		ToolIterations: int32(t.ToolIterations),
+		Status:         domainTurnStatusToProto(t.Status),
+	}
+	if !t.StartedAt.IsZero() {
+		out.StartedAt = timestamppb.New(t.StartedAt)
+	}
+	if t.EndedAt != nil && !t.EndedAt.IsZero() {
+		out.EndedAt = timestamppb.New(*t.EndedAt)
+	}
+	return out
+}
+
+func domainTurnStatusToProto(s domain.TurnStatus) model.TurnStatus {
+	switch s {
+	case domain.TurnStatusRunning:
+		return model.TurnStatus_TURN_STATUS_RUNNING
+	case domain.TurnStatusCompleted:
+		return model.TurnStatus_TURN_STATUS_COMPLETED
+	case domain.TurnStatusFailed:
+		return model.TurnStatus_TURN_STATUS_FAILED
+	case domain.TurnStatusInterrupted:
+		return model.TurnStatus_TURN_STATUS_INTERRUPTED
+	default:
+		return model.TurnStatus_TURN_STATUS_UNSPECIFIED
+	}
 }

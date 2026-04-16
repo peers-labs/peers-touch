@@ -1,5 +1,0 @@
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-cd "$PROJECT_ROOT/client/common/peers_touch_base" || exit 1
-exec dart run protoc_plugin:protoc-gen-dart "$@"

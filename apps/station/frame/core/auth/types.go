@@ -1,6 +1,10 @@
 package auth
 
-import "time"
+import (
+	"context"
+	"sync"
+	"time"
+)
 
 type Method string
 
@@ -14,12 +18,41 @@ type Credentials struct {
 	Scheme     string
 	Token      string
 	SubjectID  string
+	SessionID  string
 	Attributes map[string]string
 }
 
 type Subject struct {
 	ID         string
+	SessionID  string
 	Attributes map[string]string
+}
+
+// SessionValidator checks whether a session is still valid (not revoked/expired).
+// Implement this with the session store to enforce single-session per device.
+type SessionValidator interface {
+	CheckSessionValid(ctx context.Context, sessionID string) (bool, string)
+}
+
+var (
+	globalSessionValidator SessionValidator
+	svMu                   sync.RWMutex
+)
+
+// SetGlobalSessionValidator registers the application-wide SessionValidator.
+// Call this during initialization (e.g. after session store is ready).
+// All RequireJWT middlewares will automatically use it.
+func SetGlobalSessionValidator(sv SessionValidator) {
+	svMu.Lock()
+	defer svMu.Unlock()
+	globalSessionValidator = sv
+}
+
+// GetGlobalSessionValidator returns the registered SessionValidator, or nil.
+func GetGlobalSessionValidator() SessionValidator {
+	svMu.RLock()
+	defer svMu.RUnlock()
+	return globalSessionValidator
 }
 
 type Token struct {
