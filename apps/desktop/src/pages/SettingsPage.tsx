@@ -24,8 +24,9 @@ import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
+import { SettingsContainer, SettingsSection, SettingsItemCard } from '../components/settings/SettingsLayout';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface SettingsPageProps {
   activeTab?: string;
@@ -409,7 +410,7 @@ function AppletsSettingsTab() {
   }
 
   return (
-    <Flexbox style={{ maxWidth: 700, padding: 24 }} gap={16}>
+    <SettingsContainer>
       <Text type="secondary" style={{ fontSize: 13 }}>
         {t('settings.applets.description')}
       </Text>
@@ -492,7 +493,7 @@ function AppletsSettingsTab() {
           <Text type="secondary">{t('settings.applets.noApplets')}</Text>
         </Flexbox>
       )}
-    </Flexbox>
+    </SettingsContainer>
   );
 }
 
@@ -777,7 +778,7 @@ function StatisticsTab() {
   ];
 
   return (
-    <Flexbox style={{ maxWidth: 900, padding: 24 }} gap={20}>
+    <SettingsContainer fullHeight maxWidth={900}>
       <Flexbox gap={4}>
         <Flexbox horizontal align="center" gap={8}>
           <span style={{ fontSize: 16, fontWeight: 600 }}
@@ -816,23 +817,15 @@ function StatisticsTab() {
         ))}
       </div>
 
-      <Flexbox
-        gap={8}
-        style={{
-          background: token.colorBgContainer,
-          borderRadius: 12,
-          padding: 20,
-          border: `1px solid ${token.colorBorderSecondary}`,
-        }}
+      <SettingsSection
+        icon={<ActivityIcon size={16} />}
+        title={t('settings.statistics.activityTitle')}
+        style={{ padding: 20 }}
       >
-        <Flexbox horizontal align="center" gap={8}>
-          <ActivityIcon size={16} style={{ color: token.colorPrimary }} />
-          <Text strong style={{ fontSize: 15 }}>{t('settings.statistics.activityTitle')}</Text>
-        </Flexbox>
         <div style={{ overflowX: 'auto' }}>
           <ActivityHeatmap activity={data.activity || []} />
         </div>
-      </Flexbox>
+      </SettingsSection>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         <RankList
@@ -857,13 +850,12 @@ function StatisticsTab() {
           valueHeader={t('settings.statistics.rankLabelMessages')}
         />
       </div>
-    </Flexbox>
+    </SettingsContainer>
   );
 }
 
 function GeneralTab() {
   const { agents, loadAgents } = useSettingsStore();
-  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
 
   useEffect(() => {
@@ -871,49 +863,28 @@ function GeneralTab() {
   }, [loadAgents]);
 
   return (
-    <Flexbox style={{ maxWidth: 700, padding: 24 }} gap={24}>
-      <Flexbox
-        gap={16}
-        style={{
-          background: token.colorBgContainer,
-          borderRadius: 12,
-          padding: 24,
-          border: `1px solid ${token.colorBorderSecondary}`,
-        }}
+    <SettingsContainer>
+      <SettingsSection
+        icon={<Globe size={18} />}
+        title={t('settings.general.languageTitle')}
+        subtitle={t('settings.general.languageDescription')}
+        extra={<LanguageSwitcher />}
       >
-        <Flexbox horizontal align="center" justify="space-between">
-          <Flexbox horizontal align="center" gap={8}>
-            <Globe size={18} style={{ color: token.colorPrimary }} />
-            <Title level={5} style={{ margin: 0 }}>{t('settings.general.languageTitle')}</Title>
-          </Flexbox>
-          <LanguageSwitcher />
-        </Flexbox>
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          {t('settings.general.languageDescription')}
-        </Text>
-      </Flexbox>
+        {/* Language section content managed by LanguageSwitcher in extra slot */}
+        <></>
+      </SettingsSection>
 
-      <Flexbox
-        gap={16}
-        style={{
-          background: token.colorBgContainer,
-          borderRadius: 12,
-          padding: 24,
-          border: `1px solid ${token.colorBorderSecondary}`,
-        }}
+      <SettingsSection
+        icon={<Bot size={18} />}
+        title={t('settings.general.agentsTitle')}
       >
-        <Flexbox horizontal align="center" gap={8}>
-          <Bot size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>{t('settings.general.agentsTitle')}</Title>
-        </Flexbox>
-
         {agents.length === 0 ? (
           <Text type="secondary">{t('settings.general.noAgents')}</Text>
         ) : (
           agents.map((agent) => <AgentCard key={agent.name} agent={agent} />)
         )}
-      </Flexbox>
-    </Flexbox>
+      </SettingsSection>
+    </SettingsContainer>
   );
 }
 
@@ -979,69 +950,62 @@ function ToolsTab() {
   const configuredCount = searchProviders.filter((p) => p.available).length;
 
   return (
-    <Flexbox style={{ maxWidth: 700, padding: 24 }} gap={24}>
-      <Flexbox gap={16}>
-        <Flexbox horizontal align="center" gap={8}>
-          <Globe size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>{t('settings.tools.searchEnginesTitle')}</Title>
+    <SettingsContainer>
+      <SettingsSection
+        icon={<Globe size={18} />}
+        title={t('settings.tools.searchEnginesTitle')}
+        subtitle={t('settings.tools.searchEnginesDescription')}
+        extra={
           <Tag color={configuredCount > 0 ? 'success' : 'default'}>
             {t('settings.tools.searchEnginesConfigured', { configured: configuredCount, total: searchProviders.length })}
           </Tag>
-        </Flexbox>
-
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          {t('settings.tools.searchEnginesDescription')}
-        </Text>
-
+        }
+      >
         {loadingSP ? (
           <Spin size="small" />
         ) : (
           <Flexbox gap={8}>
             {searchProviders.map((p) => (
-              <Flexbox
+              <SettingsItemCard
                 key={p.name}
-                horizontal
-                align="center"
-                justify="space-between"
                 style={{
-                  padding: '8px 12px',
-                  borderRadius: 8,
                   border: `1px solid ${p.available ? token.colorSuccessBorder : token.colorBorderSecondary}`,
-                  background: p.available ? token.colorSuccessBg : token.colorFillQuaternary,
+                  background: p.available ? token.colorSuccessBg : undefined,
                   opacity: p.available ? 1 : 0.6,
+                  padding: '8px 12px',
                 }}
               >
-                <Flexbox horizontal align="center" gap={8}>
-                  <Text strong style={{ fontSize: 13, textTransform: 'capitalize' }}>{p.name}</Text>
-                  {p.available ? (
-                    <Tag color="success" style={{ margin: 0 }}>{t('settings.tools.searchActive')}</Tag>
-                  ) : (
-                    <Tag style={{ margin: 0 }}>{t('settings.tools.searchNotConfigured')}</Tag>
-                  )}
+                <Flexbox horizontal align="center" justify="space-between">
+                  <Flexbox horizontal align="center" gap={8}>
+                    <Text strong style={{ fontSize: 13, textTransform: 'capitalize' }}>{p.name}</Text>
+                    {p.available ? (
+                      <Tag color="success" style={{ margin: 0 }}>{t('settings.tools.searchActive')}</Tag>
+                    ) : (
+                      <Tag style={{ margin: 0 }}>{t('settings.tools.searchNotConfigured')}</Tag>
+                    )}
+                  </Flexbox>
+                  <Flexbox horizontal align="center" gap={8}>
+                    {p.available && (
+                      <Button
+                        size="small"
+                        type={searchPrimary === p.name ? 'primary' : 'default'}
+                        onClick={() => handleSetPrimary(p.name)}
+                      >
+                        {searchPrimary === p.name ? t('settings.tools.primaryLabel') : t('settings.tools.setPrimary')}
+                      </Button>
+                    )}
+                  </Flexbox>
                 </Flexbox>
-                <Flexbox horizontal align="center" gap={8}>
-                  {p.available && (
-                    <Button
-                      size="small"
-                      type={searchPrimary === p.name ? 'primary' : 'default'}
-                      onClick={() => handleSetPrimary(p.name)}
-                    >
-                      {searchPrimary === p.name ? t('settings.tools.primaryLabel') : t('settings.tools.setPrimary')}
-                    </Button>
-                  )}
-                </Flexbox>
-              </Flexbox>
+              </SettingsItemCard>
             ))}
           </Flexbox>
         )}
-      </Flexbox>
+      </SettingsSection>
 
-      <Flexbox gap={16}>
-        <Flexbox horizontal align="center" gap={8}>
-          <Wrench size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>{t('settings.tools.toolsTitle', { count: tools.length })}</Title>
-        </Flexbox>
-
+      <SettingsSection
+        icon={<Wrench size={18} />}
+        title={t('settings.tools.toolsTitle', { count: tools.length })}
+      >
         <Table
           dataSource={tools}
           columns={toolColumns}
@@ -1051,8 +1015,8 @@ function ToolsTab() {
           style={{ borderRadius: 8, overflow: 'hidden' }}
           onRow={(record) => ({ 'data-item-id': record.name } as React.HTMLAttributes<HTMLElement>)}
         />
-      </Flexbox>
-    </Flexbox>
+      </SettingsSection>
+    </SettingsContainer>
   );
 }
 
@@ -1097,25 +1061,17 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
   }, [highlightId, groups]);
 
   return (
-    <Flexbox style={{ maxWidth: 800, padding: 24 }} gap={20}>
-      <Flexbox
-        gap={8}
-        style={{
-          background: 'linear-gradient(135deg, #667eea15, #764ba215)',
-          borderRadius: 12,
-          padding: 20,
-          border: `1px solid ${token.colorBorderSecondary}`,
-        }}
+    <SettingsContainer maxWidth={800}>
+      <SettingsSection
+        icon={<Sparkles size={18} />}
+        title={t('settings.help.aboutTitle')}
+        subtitle={t('settings.help.aboutDescription')}
+        extra={<Tag style={{ fontSize: 11 }}>{t('settings.help.aboutTag')}</Tag>}
+        style={{ background: 'linear-gradient(135deg, #667eea15, #764ba215)' }}
       >
-        <Flexbox horizontal align="center" gap={8}>
-          <Sparkles size={18} style={{ color: token.colorPrimary }} />
-          <Title level={5} style={{ margin: 0 }}>{t('settings.help.aboutTitle')}</Title>
-          <Tag style={{ fontSize: 11 }}>{t('settings.help.aboutTag')}</Tag>
-        </Flexbox>
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          {t('settings.help.aboutDescription')}
-        </Text>
-      </Flexbox>
+        {/* About section — content is in subtitle */}
+        <></>
+      </SettingsSection>
 
       <Collapse
         activeKey={activeKeys}
@@ -1209,7 +1165,7 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
       </Flexbox>
 
       <DangerZoneResetOnboarding />
-    </Flexbox>
+    </SettingsContainer>
   );
 }
 

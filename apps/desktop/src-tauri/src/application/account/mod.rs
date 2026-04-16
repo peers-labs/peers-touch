@@ -80,7 +80,7 @@ pub fn account_switch(input: AccountIdInput) -> AppResult<StubPayload> {
     }
     let mut state = try_cmd!(auth_identity::read_state().map_err(internal_error));
     if !state.accounts.iter().any(|item| item.id == input.id) {
-        return AppResult::fail(ErrorCode::NotFound, "error.account.notFound", None);
+        return AppResult::fail(ErrorCode::NotFound, "Account not found", None);
     }
     state.active_account_id = Some(input.id);
     try_cmd!(auth_identity::write_state(&state).map_err(internal_error));
@@ -151,13 +151,19 @@ pub fn account_unlock(input: AccountUnlockInput) -> AppResult<StubPayload> {
         ),
         Err(PinVerifyError::WrongPin { attempts_remaining }) => AppResult::fail(
             ErrorCode::Unauthorized,
-            "error.pin.wrongPin",
-            Some(json!({ "attempts_remaining": attempts_remaining })),
+            format!(
+                "Incorrect PIN entered ({} attempt(s) remaining)",
+                attempts_remaining
+            ),
+            None,
         ),
         Err(PinVerifyError::LockedOut { remaining_secs }) => AppResult::fail(
             ErrorCode::Forbidden,
-            "error.pin.lockedOut",
-            Some(json!({ "remaining_secs": remaining_secs })),
+            format!(
+                "Account locked: too many failed PIN attempts (try again in {} seconds)",
+                remaining_secs
+            ),
+            None,
         ),
         Err(PinVerifyError::Internal(msg)) => internal_error(msg),
     }

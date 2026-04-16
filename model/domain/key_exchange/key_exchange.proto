@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package peers_touch.model.key_exchange.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model;model";
+
+// X3DH key bundle upload — base64-encoded public keys.
+message UploadKeyBundleRequest {
+  string ik_pub   = 1;
+  int32  spk_id   = 2;
+  string spk_pub  = 3;
+  string spk_sig  = 4;
+  repeated int32  opk_ids  = 5;
+  repeated string opk_pubs = 6;
+}
+
+message UploadKeyBundleResponse {}
+
+// Fetch another actor's key bundle by DID.
+message FetchKeyBundleRequest {
+  string did = 1;
+}
+
+message FetchKeyBundleResponse {
+  string actor_did    = 1;
+  string ik_pub       = 2;
+  string fingerprint  = 3;
+  int32  spk_id       = 4;
+  string spk_pub      = 5;
+  string spk_sig      = 6;
+  int32  opk_id       = 7;
+  string opk_pub      = 8;
+}
+
+// Replenish one-time prekeys.
+message ReplenishOpksRequest {
+  repeated int32  opk_ids  = 1;
+  repeated string opk_pubs = 2;
+}
+
+message ReplenishOpksResponse {}
+
+// Count remaining one-time prekeys.
+message OpkCountRequest {}
+
+message OpkCountResponse {
+  int64 count = 1;
+}

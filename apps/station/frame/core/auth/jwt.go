@@ -15,6 +15,7 @@ type jwtProvider struct {
 
 type jwtClaims struct {
 	SubjectID string `json:"subject_id"`
+	SessionID string `json:"session_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -48,13 +49,17 @@ func (p *jwtProvider) Method() Method { return MethodJWT }
 func (p *jwtProvider) Authenticate(ctx context.Context, cred Credentials) (*Subject, *Token, error) {
 	now := time.Now()
 	exp := now.Add(p.accessTTL)
-	claims := jwtClaims{SubjectID: cred.SubjectID, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(exp)}}
+	claims := jwtClaims{
+		SubjectID:        cred.SubjectID,
+		SessionID:        cred.SessionID,
+		RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(exp)},
+	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	s, err := t.SignedString(p.secret)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &Subject{ID: cred.SubjectID, Attributes: cred.Attributes}, &Token{Value: s, ExpiresAt: exp, Type: "Bearer"}, nil
+	return &Subject{ID: cred.SubjectID, SessionID: cred.SessionID, Attributes: cred.Attributes}, &Token{Value: s, ExpiresAt: exp, Type: "Bearer"}, nil
 }
 
 func (p *jwtProvider) Validate(ctx context.Context, token string) (*Subject, error) {
@@ -73,7 +78,7 @@ func (p *jwtProvider) Validate(ctx context.Context, token string) (*Subject, err
 	if !ok || !tok.Valid {
 		return nil, err
 	}
-	return &Subject{ID: c.SubjectID, Attributes: map[string]string{}}, nil
+	return &Subject{ID: c.SubjectID, SessionID: c.SessionID, Attributes: map[string]string{}}, nil
 }
 
 func (p *jwtProvider) Revoke(ctx context.Context, token string) error { return nil }

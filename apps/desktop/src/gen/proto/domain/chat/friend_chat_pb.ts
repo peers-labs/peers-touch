@@ -62,6 +62,26 @@ export type FriendChatSession = Message<"peers_touch.model.chat.v1.FriendChatSes
    * @generated from field: google.protobuf.Timestamp updated_at = 9;
    */
   updatedAt?: Timestamp;
+
+  /**
+   * @generated from field: string participant_a_display_name = 10;
+   */
+  participantADisplayName: string;
+
+  /**
+   * @generated from field: string participant_a_avatar = 11;
+   */
+  participantAAvatar: string;
+
+  /**
+   * @generated from field: string participant_b_display_name = 12;
+   */
+  participantBDisplayName: string;
+
+  /**
+   * @generated from field: string participant_b_avatar = 13;
+   */
+  participantBAvatar: string;
 };
 
 /**

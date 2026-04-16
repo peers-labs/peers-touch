@@ -71,6 +71,11 @@ message FriendRequest {
   FriendRequestStatus status = 5;
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp responded_at = 7;
+  // Enriched participant profile (populated at query time)
+  string sender_display_name = 8;
+  string sender_avatar = 9;
+  string receiver_display_name = 10;
+  string receiver_avatar = 11;
 }
 
 // 会话类型

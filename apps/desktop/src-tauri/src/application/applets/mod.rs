@@ -28,11 +28,14 @@ fn current_access_context(state: &AppState) -> Result<AccessContext, AppResult<S
         Ok(session) => Ok(AccessContext {
             actor_id: session.actor_id.clone(),
         }),
-        Err(_) => Err(AppResult::fail(
-            ErrorCode::InternalError,
-            "error.auth.sessionLockFailed",
-            None,
-        )),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire session lock");
+            Err(AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to access session state: {}", e),
+                None,
+            ))
+        }
     }
 }
 
@@ -56,11 +59,11 @@ fn ensure_allowed(
     );
     Err(AppResult::fail(
         ErrorCode::Forbidden,
-        "error.applets.capabilityDenied",
-        Some(serde_json::json!({
-            "requestId": request_id,
-            "capability": capability
-        })),
+        format!(
+            "Applet capability denied: {} is not allowed for this session",
+            capability
+        ),
+        None,
     ))
 }
 
@@ -117,11 +120,8 @@ fn invoke_gateway(
             );
             return AppResult::fail(
                 ErrorCode::NotImplemented,
-                "error.applets.unsupportedCommand",
-                Some(serde_json::json!({
-                    "requestId": request_id,
-                    "command": command
-                })),
+                format!("Unsupported applet gateway command: {}", command),
+                None,
             );
         }
     };

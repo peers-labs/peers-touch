@@ -29,9 +29,39 @@ if [[ "${1:-}" == "--clean" ]]; then
   shift
 fi
 
+# Auto-detect IDE from terminal environment variables injected by the host IDE.
+detect_ide() {
+  # Trae: sets TERM_PRODUCT=Trae, TRAE_BRAND_NAME, or has "trae" in paths
+  if [[ "${TERM_PRODUCT:-}" == *[Tt]rae* ]]; then
+    echo "trae"; return
+  fi
+  if [[ -n "${TRAE_BRAND_NAME:-}" ]]; then
+    echo "trae"; return
+  fi
+  if [[ "${VSCODE_EXTENSIONS_PATH:-}" == *trae* ]]; then
+    echo "trae"; return
+  fi
+  # Cursor: sets CURSOR_TRACE_ID or has "cursor" in related paths
+  if [[ -n "${CURSOR_TRACE_ID:-}" ]]; then
+    echo "cursor"; return
+  fi
+  if [[ "${TERM_PRODUCT:-}" == *[Cc]ursor* ]]; then
+    echo "cursor"; return
+  fi
+  if [[ "${VSCODE_EXTENSIONS_PATH:-}" == *cursor* ]]; then
+    echo "cursor"; return
+  fi
+  echo ""
+}
+
 IDE_NAME="${1:-}"
 if [[ -z "$IDE_NAME" ]]; then
-  die "Usage: $0 [--clean] <trae|cursor>"
+  IDE_NAME="$(detect_ide)"
+  if [[ -n "$IDE_NAME" ]]; then
+    info "Auto-detected IDE: $IDE_NAME"
+  else
+    die "Could not auto-detect IDE. Usage: $0 [--clean] <trae|cursor>"
+  fi
 fi
 
 if [[ "$IDE_NAME" != "trae" && "$IDE_NAME" != "cursor" ]]; then

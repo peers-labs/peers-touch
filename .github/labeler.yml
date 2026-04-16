@@ -1,0 +1,62 @@
+# Auto-labeler configuration for GitHub Actions
+# See: https://github.com/actions/labeler
+
+# Platform labels
+station:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'apps/station/**'
+
+desktop:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'apps/desktop/**'
+
+mobile:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'apps/mobile/**'
+
+android:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'apps/mobile/android/**'
+
+ios:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'apps/mobile/ios/**'
+
+# Domain labels
+proto:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'model/domain/**'
+
+applets:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'packages/applets/**'
+          - 'packages/applet-sdk/**'
+
+# Infra labels
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+
+tooling:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tooling/**'
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '**/*.md'
+
+oauth2:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'apps/oauth2-client/**'

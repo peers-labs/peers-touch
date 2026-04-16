@@ -102,9 +102,9 @@ pub fn chat_list_conversations() -> AppResult<StubPayload> {
     tracing::info!(command = "chat_list_conversations", "Listing conversations");
     let guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let mut conversations: Vec<_> = guard.conversations.values().cloned().collect();
@@ -145,9 +145,9 @@ pub fn chat_list_messages(input: ChatListMessagesInput) -> AppResult<StubPayload
     let agent_id = chat::extract_agent_id(&conversation_id);
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let now = chat::now_ms();
@@ -229,9 +229,9 @@ pub fn chat_send_message(input: ChatSendMessageInput) -> AppResult<StubPayload> 
     let timestamp_ms = chat::now_ms();
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let unread_count = {
@@ -283,14 +283,14 @@ pub fn chat_mark_read(input: ChatMarkReadInput) -> AppResult<StubPayload> {
 
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let messages = match guard.messages.get_mut(&conversation_id) {
         Some(messages) => messages,
-        None => return AppResult::fail(ErrorCode::NotFound, "error.chat.conversationNotFound", None),
+        None => return AppResult::fail(ErrorCode::NotFound, "Conversation not found", None),
     };
     let mut found = false;
     for message in messages.iter_mut() {
@@ -300,7 +300,7 @@ pub fn chat_mark_read(input: ChatMarkReadInput) -> AppResult<StubPayload> {
         }
     }
     if !found {
-        return AppResult::fail(ErrorCode::NotFound, "error.chat.messageNotFound", None);
+        return AppResult::fail(ErrorCode::NotFound, "Message not found", None);
     }
     let unread_count = messages.iter().filter(|item| !item.read).count() as u32;
     if let Some(conversation) = guard.conversations.get_mut(&conversation_id) {
@@ -329,9 +329,9 @@ pub fn chat_delete_conversation(input: ChatConversationInput) -> AppResult<StubP
     };
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     guard.conversations.remove(&conversation_id);
@@ -355,9 +355,9 @@ pub fn chat_rename_conversation(input: ChatRenameConversationInput) -> AppResult
     let agent_id = chat::extract_agent_id(&conversation_id);
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let now = chat::now_ms();
@@ -377,14 +377,14 @@ pub fn chat_duplicate_conversation(input: ChatConversationInput) -> AppResult<St
     };
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let source_conversation = match guard.conversations.get(&source_id).cloned() {
         Some(conversation) => conversation,
-        None => return AppResult::fail(ErrorCode::NotFound, "error.chat.conversationNotFound", None),
+        None => return AppResult::fail(ErrorCode::NotFound, "Conversation not found", None),
     };
     let now = chat::now_ms();
     let duplicated_id = format!("{}-copy-{}", source_id, now);
@@ -424,9 +424,9 @@ pub fn chat_smart_rename_conversation(input: ChatConversationInput) -> AppResult
     let agent_id = chat::extract_agent_id(&conversation_id);
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let now = chat::now_ms();
@@ -462,9 +462,9 @@ pub fn chat_set_conversation_model(input: ChatSetConversationModelInput) -> AppR
     let agent_id = chat::extract_agent_id(&conversation_id);
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let now = chat::now_ms();
@@ -488,9 +488,9 @@ pub fn chat_delete_message(input: ChatMessageInput) -> AppResult<StubPayload> {
     }
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let target = guard
@@ -518,7 +518,7 @@ pub fn chat_delete_message(input: ChatMessageInput) -> AppResult<StubPayload> {
             json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
         );
     }
-    AppResult::fail(ErrorCode::NotFound, "error.chat.messageNotFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Message not found", None)
 }
 
 pub fn chat_update_message(input: ChatUpdateMessageInput) -> AppResult<StubPayload> {
@@ -532,9 +532,9 @@ pub fn chat_update_message(input: ChatUpdateMessageInput) -> AppResult<StubPaylo
     };
     let mut guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
-            return internal_error("failed to access chat store");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
         }
     };
     let target = guard
@@ -563,7 +563,7 @@ pub fn chat_update_message(input: ChatUpdateMessageInput) -> AppResult<StubPaylo
             json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
         );
     }
-    AppResult::fail(ErrorCode::NotFound, "error.chat.messageNotFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Message not found", None)
 }
 
 pub fn chat_stop(input: ChatConversationInput) -> AppResult<StubPayload> {
@@ -599,16 +599,16 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
         provider_id
     };
     if provider_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.provider.providerIdRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Provider ID is required", None);
     }
     let provider_data = match provider_state::with_provider_store(None, |store| {
         store.providers.iter().find(|p| p.id == provider_id).cloned()
     }) {
         Ok(Some(provider)) => provider,
-        _ => return AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
+        _ => return AppResult::fail(ErrorCode::NotFound, "Provider not found", None),
     };
     if !provider_data.enabled {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.provider.disabled", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Provider is disabled", None);
     }
     let api_key = serde_json::from_str::<serde_json::Value>(&provider_data.key_vaults)
         .ok()
@@ -617,7 +617,7 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
     let config: serde_json::Value = serde_json::from_str(&provider_data.config_json).unwrap_or_default();
     let base_url = config.get("base_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
     if base_url.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.provider.baseUrlRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Provider base URL is required", None);
     }
     let provider_protocol = config.get("protocol").and_then(|v| v.as_str()).map(String::from);
     let model_id = input.model.as_deref().unwrap_or("").trim().to_string();
@@ -627,7 +627,7 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
         model_id
     };
     if model_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.provider.modelRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Model is required", None);
     }
     let model_record = provider_data.models.iter().find(|m| m.id == model_id);
     let effective_protocol = provider_remote::resolve_model_protocol(
@@ -640,9 +640,9 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
             let agent_id = chat::extract_agent_id(&session_id);
             let mut guard = match chat_store().lock() {
                 Ok(guard) => guard,
-                Err(_) => {
-                    tracing::error!("Failed to acquire chat store lock");
-                    return internal_error("failed to access chat store");
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to acquire chat store lock");
+                    return internal_error(&format!("Failed to access chat store: {}", e));
                 }
             };
             let now = chat::now_ms();
@@ -700,8 +700,8 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
             tracing::error!(command = "chat_completion_once", session_id = %session_id, model = %model_id, error = %err, "Completion failed");
             AppResult::fail(
                 ErrorCode::InternalError,
-                "error.chat.completionFailed",
-                Some(json!({ "provider_id": provider_id, "model": model_id })),
+                format!("Chat completion failed: {}", err),
+                None,
             )
         }
     }
@@ -710,8 +710,8 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
 pub fn list_conversations_by_agent(agent_name: &str) -> Vec<serde_json::Value> {
     let guard = match chat_store().lock() {
         Ok(guard) => guard,
-        Err(_) => {
-            tracing::error!("Failed to acquire chat store lock");
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
             return vec![];
         }
     };

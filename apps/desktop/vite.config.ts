@@ -16,7 +16,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: process.env.VITE_STATION_PROXY_TARGET || 'http://127.0.0.1:18080',
+        target: process.env.PEERS_STATION_URL || 'http://127.0.0.1:18080',
         changeOrigin: true,
       },
     },

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api, type MCPServerItem, type MCPServerRecord } from '../services/desktop_api';
+import { SettingsContainer } from './settings/SettingsLayout';
 
 const { Text, Title } = Typography;
 
@@ -70,7 +71,7 @@ export function MCPTab() {
   };
 
   return (
-    <Flexbox style={{ padding: 24, height: '100%', overflow: 'auto' }} gap={24}>
+    <SettingsContainer fullHeight>
       <Flexbox horizontal justify="space-between" align="center">
         <Flexbox>
           <Title level={5} style={{ margin: 0 }}>{t('provider.mcp.title')}</Title>
@@ -123,7 +124,7 @@ export function MCPTab() {
           onClose={() => { setDetailName(null); loadServers(); }}
         />
       )}
-    </Flexbox>
+    </SettingsContainer>
   );
 }
 
