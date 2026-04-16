@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -45,15 +46,15 @@ const (
 type AssertionType string
 
 const (
-	AssertExists    AssertionType = "exists"
-	AssertNotEmpty  AssertionType = "not_empty"
-	AssertContains  AssertionType = "contains"
-	AssertEquals    AssertionType = "equals"
-	AssertGTE       AssertionType = "gte"
-	AssertLTE       AssertionType = "lte"
-	AssertBlocked   AssertionType = "blocked"
-	AssertNoError   AssertionType = "no_error"
-	AssertTrending  AssertionType = "trending" // direction: "up" or "down"
+	AssertExists   AssertionType = "exists"
+	AssertNotEmpty AssertionType = "not_empty"
+	AssertContains AssertionType = "contains"
+	AssertEquals   AssertionType = "equals"
+	AssertGTE      AssertionType = "gte"
+	AssertLTE      AssertionType = "lte"
+	AssertBlocked  AssertionType = "blocked"
+	AssertNoError  AssertionType = "no_error"
+	AssertTrending AssertionType = "trending" // direction: "up" or "down"
 )
 
 type Assertion struct {
@@ -99,7 +100,7 @@ type ScenarioResult struct {
 	Tier             DogfoodTier       `json:"tier"`
 	Passed           bool              `json:"passed"`
 	StepResults      []StepResult      `json:"step_results"`
-	AssertionResults []AssertionResult  `json:"assertion_results"`
+	AssertionResults []AssertionResult `json:"assertion_results"`
 	TotalDuration    time.Duration     `json:"total_duration"`
 	ExecutedAt       time.Time         `json:"executed_at"`
 }
@@ -120,9 +121,9 @@ type DogfoodReport struct {
 // ---------------------------------------------------------------------------
 
 type DogfoodService struct {
-	memoryService  *MemoryService
-	skillService   *SkillService
-	growthMetrics  *GrowthMetricsService
+	memoryService *MemoryService
+	skillService  *SkillService
+	growthMetrics *GrowthMetricsService
 }
 
 func NewDogfoodService(
@@ -131,9 +132,9 @@ func NewDogfoodService(
 	growthMetrics *GrowthMetricsService,
 ) *DogfoodService {
 	return &DogfoodService{
-		memoryService:  memorySvc,
-		skillService:   skillSvc,
-		growthMetrics:  growthMetrics,
+		memoryService: memorySvc,
+		skillService:  skillSvc,
+		growthMetrics: growthMetrics,
 	}
 }
 
@@ -286,7 +287,7 @@ func (s *DogfoodService) executeStep(ctx context.Context, agentID string, step S
 		if desc == "" {
 			desc = "Dogfood test skill"
 		}
-		_, err := s.skillService.CreateSkill(ctx, agentID, name, desc, "Test skill content", "", "builtin")
+		_, _, err := s.skillService.CreateSkill(ctx, agentID, name, desc, "Test skill content", domain.TrustLevelBuiltin)
 		if err != nil {
 			output["error"] = err.Error()
 			return output, err

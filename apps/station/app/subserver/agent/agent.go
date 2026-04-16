@@ -161,15 +161,16 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper),
 
-		server.NewTypedHandler("agent-memory-list", "/agent/memory/list", server.GET, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
+		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).
+		server.NewTypedHandler("agent-memory-list", "/agent/memory/list", server.POST, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-memory-snapshot", "/agent/memory/snapshot", server.GET, memoryHandlers.HandleGetSnapshot, logIDWrapper, jwtWrapper),
 
-		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.GET, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.POST, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-get", "/agent/skill/get", server.GET, skillHandlers.HandleGetSkill, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-install", "/agent/skill/install", server.POST, skillHandlers.HandleInstallSkill, logIDWrapper, jwtWrapper),
 
 		// Growth Dashboard endpoints.
-		server.NewTypedHandler("agent-growth-snapshot", "/agent/growth/snapshot", server.GET, growthHandlers.HandleGetGrowthSnapshot, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-growth-snapshot", "/agent/growth/snapshot", server.POST, growthHandlers.HandleGetGrowthSnapshot, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-audit", "/agent/growth/audit", server.GET, growthHandlers.HandleGetAuditLog, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-feedback", "/agent/growth/feedback", server.POST, growthHandlers.HandleRecordFeedback, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-memory-rollback", "/agent/growth/memory/rollback", server.POST, growthHandlers.HandleMemoryRollback, logIDWrapper, jwtWrapper),

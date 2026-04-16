@@ -48,3 +48,16 @@ message OAuthBridgeRequest {
   string ts               = 7;  // RFC3339 timestamp for HMAC
   string sig              = 8;  // HMAC-SHA256 hex signature
 }
+
+message OAuthBridgeResponse {
+  string session_id   = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  string token_type   = 4;
+  string expires_at   = 5;
+  string actor_id     = 6;
+  int64  actor_id_num = 7;
+  string username     = 8;
+  string display_name = 9;
+  string email        = 10;
+}

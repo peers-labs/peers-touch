@@ -79,9 +79,25 @@ func (s *subServer) handleGetSessions(ctx context.Context, req *chat.GetSessions
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list sessions", err)
 	}
+
+	sessionActorIDs := make(map[string]struct{})
+	for _, item := range items {
+		if item.ParticipantADID != "" {
+			sessionActorIDs[item.ParticipantADID] = struct{}{}
+		}
+		if item.ParticipantBDID != "" {
+			sessionActorIDs[item.ParticipantBDID] = struct{}{}
+		}
+	}
+	idSlice := make([]string, 0, len(sessionActorIDs))
+	for id := range sessionActorIDs {
+		idSlice = append(idSlice, id)
+	}
+	profiles := s.repo.BatchLoadActorSummaries(idSlice)
+
 	out := make([]*chat.FriendChatSession, 0, len(items))
 	for _, item := range items {
-		out = append(out, &chat.FriendChatSession{
+		sess := &chat.FriendChatSession{
 			Ulid:            item.ID,
 			ParticipantADid: item.ParticipantADID,
 			ParticipantBDid: item.ParticipantBDID,
@@ -91,7 +107,16 @@ func (s *subServer) handleGetSessions(ctx context.Context, req *chat.GetSessions
 			UnreadCountB:    item.UnreadCountB,
 			CreatedAt:       timestamppb.New(item.CreatedAt),
 			UpdatedAt:       timestamppb.New(item.UpdatedAt),
-		})
+		}
+		if p, ok := profiles[item.ParticipantADID]; ok {
+			sess.ParticipantADisplayName = p.DisplayName
+			sess.ParticipantAAvatar = p.Avatar
+		}
+		if p, ok := profiles[item.ParticipantBDID]; ok {
+			sess.ParticipantBDisplayName = p.DisplayName
+			sess.ParticipantBAvatar = p.Avatar
+		}
+		out = append(out, sess)
 	}
 	return &chat.GetSessionsResponse{Sessions: out, Total: int32(total)}, nil
 }
@@ -372,8 +397,18 @@ func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendF
 		}
 		return nil, server.InternalErrorWithCause("failed to send friend request", err)
 	}
+	profiles := s.repo.BatchLoadActorSummaries([]string{fr.SenderDID, fr.ReceiverDID})
+	proto := friendRequestToProto(fr)
+	if p, ok := profiles[fr.SenderDID]; ok {
+		proto.SenderDisplayName = p.DisplayName
+		proto.SenderAvatar = p.Avatar
+	}
+	if p, ok := profiles[fr.ReceiverDID]; ok {
+		proto.ReceiverDisplayName = p.DisplayName
+		proto.ReceiverAvatar = p.Avatar
+	}
 	return &chat.SendFriendRequestResponse{
-		Request: friendRequestToProto(fr),
+		Request: proto,
 	}, nil
 }
 
@@ -454,11 +489,41 @@ func (s *subServer) handleListFriendRequests(ctx context.Context, req *chat.List
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list friend requests", err)
 	}
+
+	actorIDs := collectUniqueActorIDs(items)
+	profiles := s.repo.BatchLoadActorSummaries(actorIDs)
+
 	out := make([]*chat.FriendRequest, 0, len(items))
 	for _, item := range items {
-		out = append(out, friendRequestToProto(item))
+		fr := friendRequestToProto(item)
+		if p, ok := profiles[item.SenderDID]; ok {
+			fr.SenderDisplayName = p.DisplayName
+			fr.SenderAvatar = p.Avatar
+		}
+		if p, ok := profiles[item.ReceiverDID]; ok {
+			fr.ReceiverDisplayName = p.DisplayName
+			fr.ReceiverAvatar = p.Avatar
+		}
+		out = append(out, fr)
 	}
 	return &chat.ListFriendRequestsResponse{Requests: out, Total: int32(total)}, nil
+}
+
+func collectUniqueActorIDs(items []domain.FriendRequest) []string {
+	seen := make(map[string]struct{})
+	for _, item := range items {
+		if item.SenderDID != "" {
+			seen[item.SenderDID] = struct{}{}
+		}
+		if item.ReceiverDID != "" {
+			seen[item.ReceiverDID] = struct{}{}
+		}
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func friendChatMessageFromDomain(m domain.Message) *chat.FriendChatMessage {

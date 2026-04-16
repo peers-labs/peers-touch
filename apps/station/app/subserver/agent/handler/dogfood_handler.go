@@ -1,10 +1,11 @@
 package handler
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 type DogfoodHandlers struct {
@@ -20,16 +21,9 @@ type dogfoodRunRequest struct {
 	Tiers   []int  `json:"tiers"`
 }
 
-func (h *DogfoodHandlers) HandleRunDogfood(w http.ResponseWriter, r *http.Request) {
-	var req dogfoodRunRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
+func (h *DogfoodHandlers) HandleRunDogfood(ctx context.Context, req *dogfoodRunRequest) (*service.DogfoodReport, error) {
 	if req.AgentID == "" {
-		writeError(w, http.StatusBadRequest, "agent_id is required")
-		return
+		return nil, server.NewHandlerError(http.StatusBadRequest, "agent_id is required")
 	}
 
 	tiers := make([]service.DogfoodTier, len(req.Tiers))
@@ -46,18 +40,10 @@ func (h *DogfoodHandlers) HandleRunDogfood(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	report, err := h.dogfoodService.RunScenarios(r.Context(), req.AgentID, tiers)
+	report, err := h.dogfoodService.RunScenarios(ctx, req.AgentID, tiers)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, server.NewHandlerErrorWithCause(http.StatusInternalServerError, err.Error(), err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(report)
-}
-
-func writeError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	return report, nil
 }

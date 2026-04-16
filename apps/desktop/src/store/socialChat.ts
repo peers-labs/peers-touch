@@ -14,6 +14,10 @@ interface FriendRequestData {
   message: string;
   createdAt: string;
   respondedAt: string;
+  senderDisplayName: string;
+  senderAvatar: string;
+  receiverDisplayName: string;
+  receiverAvatar: string;
 }
 
 export interface MessagePreview {
@@ -26,6 +30,7 @@ export interface UnifiedConversation {
   type: 'friend' | 'group';
   ulid: string;
   name: string;
+  avatar: string;
   lastActivity: Date;
   unread: number;
   preview?: MessagePreview;
@@ -139,10 +144,14 @@ function friendUnreadForViewer(s: FriendChatSession, viewerDid: string | null): 
 
 function peerDisplayName(s: FriendChatSession, viewerDid: string | null): string {
   if (viewerDid) {
-    if (s.participantADid === viewerDid) return s.participantBDid || s.participantADid;
-    if (s.participantBDid === viewerDid) return s.participantADid || s.participantBDid;
+    if (s.participantADid === viewerDid) {
+      return (s as any).participantBDisplayName || s.participantBDid || s.participantADid;
+    }
+    if (s.participantBDid === viewerDid) {
+      return (s as any).participantADisplayName || s.participantADid || s.participantBDid;
+    }
   }
-  return s.participantBDid || s.participantADid || '';
+  return (s as any).participantBDisplayName || s.participantBDid || s.participantADid || '';
 }
 
 /** When profile has no id yet, infer own DID as the only participant common to all sessions (needs 2+ distinct peers). */
@@ -236,7 +245,29 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     set({ loading: true });
     try {
       const data = await api.friendChatListSessions();
-      const list = (data?.sessions || []) as FriendChatSession[];
+      const raw = (data?.sessions || []) as Record<string, any>[];
+      const list = raw.map((r) => {
+        const s = r as FriendChatSession;
+        if (!s.participantADisplayName && r.participant_a_display_name) {
+          (s as any).participantADisplayName = r.participant_a_display_name;
+        }
+        if (!s.participantAAvatar && r.participant_a_avatar) {
+          (s as any).participantAAvatar = r.participant_a_avatar;
+        }
+        if (!s.participantBDisplayName && r.participant_b_display_name) {
+          (s as any).participantBDisplayName = r.participant_b_display_name;
+        }
+        if (!s.participantBAvatar && r.participant_b_avatar) {
+          (s as any).participantBAvatar = r.participant_b_avatar;
+        }
+        if (!s.participantADid && r.participant_a_did) {
+          s.participantADid = r.participant_a_did;
+        }
+        if (!s.participantBDid && r.participant_b_did) {
+          s.participantBDid = r.participant_b_did;
+        }
+        return s;
+      });
       const derivedDid = deriveCurrentUserDidFromSessions(list);
       set((state) => ({
         sessions: list,
@@ -440,16 +471,25 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
   loadFriendRequests: async (status, limit, offset) => {
     try {
-      const data = await api.friendChatListFriendRequests(status, limit, offset);
+      // status omitted or 0: all statuses; backend returns both sent and received rows.
+      const data = await api.friendChatListFriendRequests(
+        status === undefined ? undefined : status,
+        limit ?? 200,
+        offset ?? 0,
+      );
       const raw = data?.requests || [];
-      const requests: FriendRequestData[] = raw.map((r) => ({
-        id: r.id,
-        senderId: r.senderId,
-        receiverId: r.receiverId,
-        status: r.status,
-        message: r.message,
-        createdAt: r.createdAt,
-        respondedAt: r.respondedAt ?? '',
+      const requests: FriendRequestData[] = raw.map((r: Record<string, any>) => ({
+        id: r.id ?? r.Id ?? '',
+        senderId: r.senderId ?? r.sender_id ?? r.senderDid ?? r.sender_did ?? '',
+        receiverId: r.receiverId ?? r.receiver_id ?? r.receiverDid ?? r.receiver_did ?? '',
+        status: r.status ?? 0,
+        message: r.message ?? '',
+        createdAt: r.createdAt ?? r.created_at ?? '',
+        respondedAt: r.respondedAt ?? r.responded_at ?? '',
+        senderDisplayName: r.senderDisplayName ?? r.sender_display_name ?? '',
+        senderAvatar: r.senderAvatar ?? r.sender_avatar ?? '',
+        receiverDisplayName: r.receiverDisplayName ?? r.receiver_display_name ?? '',
+        receiverAvatar: r.receiverAvatar ?? r.receiver_avatar ?? '',
       }));
       set({ friendRequests: requests });
     } catch (error) {
@@ -572,10 +612,15 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     const out: UnifiedConversation[] = [];
 
     for (const s of state.sessions) {
+      const sa = s as any;
+      const peerAv = did
+        ? (s.participantADid === did ? sa.participantBAvatar : sa.participantAAvatar)
+        : (sa.participantBAvatar || sa.participantAAvatar || '');
       out.push({
         type: 'friend',
         ulid: s.ulid,
         name: peerDisplayName(s, did) || 'Friend',
+        avatar: peerAv || '',
         lastActivity: activityFromSession(s),
         unread: friendUnreadForViewer(s, did),
         preview: state.lastPreviews[s.ulid],
@@ -588,6 +633,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         type: 'group',
         ulid: g.ulid,
         name: g.name || 'Group',
+        avatar: '',
         lastActivity: activityFromGroup(g),
         unread: state.groupUnreadCounts[g.ulid] ?? 0,
         preview: state.lastPreviews[g.ulid],

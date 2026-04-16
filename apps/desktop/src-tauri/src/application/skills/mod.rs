@@ -98,10 +98,11 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InvalidArgument, message, None)
 }
 
-fn internal_error() -> AppResult<StubPayload> {
+fn store_lock_error(e: impl std::fmt::Display) -> AppResult<StubPayload> {
+    tracing::error!(error = %e, "Failed to acquire skills store lock");
     AppResult::fail(
         ErrorCode::InternalError,
-        "error.skills.storeAccessFailed",
+        format!("Failed to access skills store: {}", e),
         None,
     )
 }
@@ -109,7 +110,7 @@ fn internal_error() -> AppResult<StubPayload> {
 pub fn skills_list(input: SkillsListInput) -> AppResult<StubPayload> {
     let guard = match skill_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let source = input.source.unwrap_or_else(|| "all".to_string());
     let skills = guard
@@ -139,7 +140,7 @@ pub fn skills_search(input: SkillsSearchInput) -> AppResult<StubPayload> {
     }
     let guard = match skill_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let limit = input.limit.unwrap_or(20) as usize;
     let skills = guard
@@ -161,12 +162,12 @@ pub fn skills_get(input: SkillIdInput) -> AppResult<StubPayload> {
     }
     let guard = match skill_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(skill) = guard.skills.iter().find(|item| item.id == id) {
         return success_payload("skills_get", skill.detail_json());
     }
-    AppResult::fail(ErrorCode::NotFound, "error.skills.notFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Skill not found", None)
 }
 
 pub fn skills_get_builtin(input: BuiltinSkillIdInput) -> AppResult<StubPayload> {
@@ -195,7 +196,7 @@ pub fn skills_create(input: SkillCreateInput) -> AppResult<StubPayload> {
     }
     let mut guard = match skill_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let id = format!("skill-{}", guard.skills.len() + 1);
     let identifier = name.to_lowercase().replace(' ', "-");
@@ -228,7 +229,7 @@ pub fn skills_update(input: SkillUpdateInput) -> AppResult<StubPayload> {
     }
     let mut guard = match skill_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(skill) = guard.skills.iter_mut().find(|item| item.id == id) {
         if let Some(name) = input.name {
@@ -248,7 +249,7 @@ pub fn skills_update(input: SkillUpdateInput) -> AppResult<StubPayload> {
         skill.updated_at = "2026-03-24T00:00:00.000Z".to_string();
         return success_payload("skills_update", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "error.skills.notFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Skill not found", None)
 }
 
 pub fn skills_delete(input: SkillIdInput) -> AppResult<StubPayload> {
@@ -258,7 +259,7 @@ pub fn skills_delete(input: SkillIdInput) -> AppResult<StubPayload> {
     }
     let mut guard = match skill_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let before = guard.skills.len();
     guard.skills.retain(|item| item.id != id);
@@ -271,11 +272,11 @@ pub fn skills_delete(input: SkillIdInput) -> AppResult<StubPayload> {
 pub fn skills_toggle(input: SkillToggleInput) -> AppResult<StubPayload> {
     let mut guard = match skill_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(skill) = guard.skills.iter_mut().find(|item| item.id == input.id) {
         skill.enabled = input.enabled;
         return success_payload("skills_toggle", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "error.skills.notFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Skill not found", None)
 }

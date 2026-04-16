@@ -332,6 +332,28 @@ export type FriendRequest = Message<"peers_touch.model.chat.v1.FriendRequest"> &
    * @generated from field: google.protobuf.Timestamp responded_at = 7;
    */
   respondedAt?: Timestamp;
+
+  /**
+   * Enriched participant profile (populated at query time)
+   *
+   * @generated from field: string sender_display_name = 8;
+   */
+  senderDisplayName: string;
+
+  /**
+   * @generated from field: string sender_avatar = 9;
+   */
+  senderAvatar: string;
+
+  /**
+   * @generated from field: string receiver_display_name = 10;
+   */
+  receiverDisplayName: string;
+
+  /**
+   * @generated from field: string receiver_avatar = 11;
+   */
+  receiverAvatar: string;
 };
 
 /**
