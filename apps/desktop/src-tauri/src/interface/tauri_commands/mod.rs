@@ -40,8 +40,8 @@ use crate::contracts::CONTRACT_VERSION;
 pub fn not_implemented(command: &str) -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::NotImplemented,
-        "error.command.notImplemented",
-        Some(serde_json::json!({ "command": command })),
+        format!("This command is not yet implemented: {}", command),
+        None,
     )
 }
 

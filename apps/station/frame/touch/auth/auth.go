@@ -29,6 +29,8 @@ func InitSessionManager(ctx context.Context) {
 	}
 
 	sessionManager = session.NewManager(dbStore, DefaultSessionDuration)
+
+	coreauth.SetGlobalSessionValidator(sessionManager)
 }
 
 func SessionManager() *session.Manager {
@@ -159,15 +161,6 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 // IssueTokenAndSession creates a JWT token + session for an already-authenticated Actor.
 // extraData is merged into session.Data (e.g. {"auth_method": "oauth_bridge"}).
 func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAgent, deviceType string, extraData map[string]interface{}) (*SessionLoginResult, error) {
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
-		SubjectID:  fmt.Sprintf("%d", actor.ID),
-		Attributes: map[string]string{"email": actor.Email},
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	sessionID, err := generateSessionID()
 	if err != nil {
 		return nil, err
@@ -175,6 +168,16 @@ func IssueTokenAndSession(ctx context.Context, actor *db.Actor, clientIP, userAg
 
 	if deviceType == "" {
 		deviceType = "desktop"
+	}
+
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
+		SubjectID:  fmt.Sprintf("%d", actor.ID),
+		SessionID:  sessionID,
+		Attributes: map[string]string{"email": actor.Email},
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	data := map[string]interface{}{"device_type": deviceType}

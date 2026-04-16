@@ -1,0 +1,104 @@
+# Automated release workflow for Peers-Touch
+# Triggers on push to main with version tags
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get previous tag
+        id: prev_tag
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "tag=$PREV_TAG" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prevTag = '${{ steps.prev_tag.outputs.tag }}';
+            const currentTag = context.ref.replace('refs/tags/', '');
+
+            // Get commits between tags
+            const range = prevTag ? `${prevTag}..${currentTag}` : currentTag;
+            const { execSync } = require('child_process');
+            const log = execSync(`git log ${range} --pretty=format:"%s (%h)" --reverse`).toString();
+
+            const types = {
+              feat:     { en: 'New Features', cn: '新功能', items: [] },
+              fix:      { en: 'Bug Fixes', cn: '缺陷修复', items: [] },
+              perf:     { en: 'Performance', cn: '性能优化', items: [] },
+              refactor: { en: 'Refactoring', cn: '重构', items: [] },
+              docs:     { en: 'Documentation', cn: '文档', items: [] },
+              ci:       { en: 'CI/CD', cn: 'CI/CD', items: [] },
+              test:     { en: 'Tests', cn: '测试', items: [] },
+              chore:    { en: 'Maintenance', cn: '维护', items: [] },
+              build:    { en: 'Build', cn: '构建', items: [] },
+              style:    { en: 'Style', cn: '代码风格', items: [] },
+              revert:   { en: 'Reverts', cn: '回退', items: [] },
+            };
+            const breaking = [];
+            const other = [];
+
+            for (const line of log.split('\n').filter(Boolean)) {
+              const match = line.match(/^(\w+)(?:\(([^)]*)\))?: (.+)$/);
+              if (match) {
+                const [, type, scope, rest] = match;
+                const entry = scope ? `**${scope}**: ${rest}` : rest;
+                if (types[type]) {
+                  types[type].items.push(entry);
+                } else {
+                  other.push(entry);
+                }
+                if (line.includes('BREAKING CHANGE') || line.startsWith('!')) {
+                  breaking.push(entry);
+                }
+              } else {
+                other.push(line);
+              }
+            }
+
+            let notes = `# ${currentTag}\n\n`;
+
+            if (breaking.length) {
+              notes += `## ⚠ Breaking Changes / 破坏性变更\n\n`;
+              breaking.forEach(b => notes += `- ${b}\n`);
+              notes += '\n';
+            }
+
+            for (const [, val] of Object.entries(types)) {
+              if (val.items.length) {
+                notes += `### ${val.en} / ${val.cn}\n\n`;
+                val.items.forEach(i => notes += `- ${i}\n`);
+                notes += '\n';
+              }
+            }
+
+            if (other.length) {
+              notes += `### Other / 其它\n\n`;
+              other.forEach(o => notes += `- ${o}\n`);
+              notes += '\n';
+            }
+
+            core.setOutput('notes', notes);
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.notes }}
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

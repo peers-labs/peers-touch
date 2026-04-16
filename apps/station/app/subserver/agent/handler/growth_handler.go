@@ -11,9 +11,11 @@ package handler
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
@@ -78,60 +80,33 @@ func clampOffset(offset int) int {
 // 1. HandleGetGrowthSnapshot — GET /agent/growth/snapshot
 // ===========================================================================
 
-type GetGrowthSnapshotRequest struct {
-	AgentID string `json:"agent_id"`
-}
-
-// GetGrowthSnapshotResponse mirrors the service-level GrowthSnapshot with
-// JSON tags for the REST API surface.
-type GetGrowthSnapshotResponse struct {
-	AgentID           string  `json:"agent_id"`
-	TotalMemories     int     `json:"total_memories"`
-	TotalSkills       int     `json:"total_skills"`
-	TotalReviews      int     `json:"total_reviews"`
-	TotalTurns        int     `json:"total_turns"`
-	PositiveFeedback  int     `json:"positive_feedback"`
-	NegativeFeedback  int     `json:"negative_feedback"`
-	FeedbackRatio     float64 `json:"feedback_ratio"`
-	ErrorRate         float64 `json:"error_rate"`
-	RetryRate         float64 `json:"retry_rate"`
-	ReviewSuccessRate float64 `json:"review_success_rate"`
-	MemoryGrowthRate  float64 `json:"memory_growth_rate"`
-	SkillGrowthRate   float64 `json:"skill_growth_rate"`
-	QualityTrend      float64 `json:"quality_trend"`
-	GrowthScore       float64 `json:"growth_score"`
-	GrowthVerdict     string  `json:"growth_verdict"`
-	WindowStart       string  `json:"window_start"`
-	WindowEnd         string  `json:"window_end"`
-}
-
 // HandleGetGrowthSnapshot returns a comprehensive growth snapshot for an agent.
-func (h *GrowthHandlers) HandleGetGrowthSnapshot(ctx context.Context, req *GetGrowthSnapshotRequest) (*GetGrowthSnapshotResponse, error) {
-	if req.AgentID == "" {
+func (h *GrowthHandlers) HandleGetGrowthSnapshot(ctx context.Context, req *model.GetGrowthSnapshotRequest) (*model.GetGrowthSnapshotResponse, error) {
+	if req.GetAgentId() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "agent_id is required", nil))
 	}
 
-	snapshot, err := h.growthMetrics.GetGrowthSnapshot(ctx, req.AgentID)
+	snapshot, err := h.growthMetrics.GetGrowthSnapshot(ctx, req.GetAgentId())
 	if err != nil {
-		logger.Errorf(ctx, "HandleGetGrowthSnapshot failed: agent_id=%s err=%v", req.AgentID, err)
+		logger.Errorf(ctx, "HandleGetGrowthSnapshot failed: agent_id=%s err=%v", req.GetAgentId(), err)
 		return nil, toHandlerError(err)
 	}
 
-	return &GetGrowthSnapshotResponse{
-		AgentID:           snapshot.AgentID,
-		TotalMemories:     snapshot.TotalMemories,
-		TotalSkills:       snapshot.TotalSkills,
-		TotalReviews:      snapshot.TotalReviews,
-		TotalTurns:        snapshot.TotalTurns,
-		PositiveFeedback:  snapshot.PositiveFeedback,
-		NegativeFeedback:  snapshot.NegativeFeedback,
+	return &model.GetGrowthSnapshotResponse{
+		AgentId:           snapshot.AgentID,
+		TotalMemories:     int32(snapshot.TotalMemories),
+		TotalSkills:       int32(snapshot.TotalSkills),
+		TotalReviews:      int32(snapshot.TotalReviews),
+		TotalTurns:        int64(snapshot.TotalTurns),
+		PositiveFeedback:  int32(snapshot.PositiveFeedback),
+		NegativeFeedback:  int32(snapshot.NegativeFeedback),
 		FeedbackRatio:     snapshot.FeedbackRatio,
 		ErrorRate:         snapshot.ErrorRate,
 		RetryRate:         snapshot.RetryRate,
 		ReviewSuccessRate: snapshot.ReviewSuccessRate,
 		MemoryGrowthRate:  snapshot.MemoryGrowthRate,
 		SkillGrowthRate:   snapshot.SkillGrowthRate,
-		QualityTrend:      snapshot.QualityTrend,
+		QualityTrend:      strconv.FormatFloat(snapshot.QualityTrend, 'f', -1, 64),
 		GrowthScore:       snapshot.GrowthScore,
 		GrowthVerdict:     snapshot.GrowthVerdict,
 		WindowStart:       snapshot.WindowStart.Format("2006-01-02T15:04:05Z"),
@@ -143,6 +118,7 @@ func (h *GrowthHandlers) HandleGetGrowthSnapshot(ctx context.Context, req *GetGr
 // 2. HandleGetAuditLog — GET /agent/growth/audit
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when growth audit types exist in agent.proto.
 type GetAuditLogRequest struct {
 	AgentID string `json:"agent_id"`
 	Limit   int    `json:"limit"`
@@ -205,32 +181,20 @@ func (h *GrowthHandlers) HandleGetAuditLog(ctx context.Context, req *GetAuditLog
 // 3. HandleRecordFeedback — POST /agent/growth/feedback
 // ===========================================================================
 
-type RecordFeedbackRequest struct {
-	AgentID        string  `json:"agent_id"`
-	TurnID         string  `json:"turn_id"`
-	ConversationID string  `json:"conversation_id"`
-	Signal         string  `json:"signal"`
-	Comment        *string `json:"comment"`
-}
-
-type RecordFeedbackResponse struct {
-	ID string `json:"id"`
-}
-
 // HandleRecordFeedback records explicit user feedback on a turn.
-func (h *GrowthHandlers) HandleRecordFeedback(ctx context.Context, req *RecordFeedbackRequest) (*RecordFeedbackResponse, error) {
-	if req.AgentID == "" {
+func (h *GrowthHandlers) HandleRecordFeedback(ctx context.Context, req *model.RecordFeedbackRequest) (*model.RecordFeedbackResponse, error) {
+	if req.GetAgentId() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "agent_id is required", nil))
 	}
-	if req.TurnID == "" {
+	if req.GetTurnId() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "turn_id is required", nil))
 	}
-	if req.ConversationID == "" {
+	if req.GetConversationId() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "conversation_id is required", nil))
 	}
 
 	// Validate the feedback signal value.
-	signal := domain.FeedbackSignal(req.Signal)
+	signal := domain.FeedbackSignal(req.GetSignal())
 	if !signal.IsValid() {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400,
 			"signal must be \"positive\" or \"negative\"", nil))
@@ -238,13 +202,13 @@ func (h *GrowthHandlers) HandleRecordFeedback(ctx context.Context, req *RecordFe
 
 	// RecordFeedback is fire-and-forget; errors are logged inside the service.
 	// We generate an acknowledgement ID for the caller.
-	h.growthMetrics.RecordFeedback(ctx, req.AgentID, req.TurnID, req.ConversationID, req.Signal, req.Comment)
+	h.growthMetrics.RecordFeedback(ctx, req.GetAgentId(), req.GetTurnId(), req.GetConversationId(), req.GetSignal(), req.Comment)
 
 	logger.Infof(ctx, "HandleRecordFeedback accepted: agent_id=%s turn_id=%s signal=%s",
-		req.AgentID, req.TurnID, req.Signal)
+		req.GetAgentId(), req.GetTurnId(), req.GetSignal())
 
-	return &RecordFeedbackResponse{
-		ID: req.TurnID,
+	return &model.RecordFeedbackResponse{
+		Id: req.GetTurnId(),
 	}, nil
 }
 
@@ -252,6 +216,7 @@ func (h *GrowthHandlers) HandleRecordFeedback(ctx context.Context, req *RecordFe
 // 4. HandleMemoryRollback — POST /agent/growth/memory/rollback
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when growth memory rollback is modeled in agent.proto.
 type MemoryRollbackRequest struct {
 	AgentID    string `json:"agent_id"`
 	SnapshotID string `json:"snapshot_id"`
@@ -283,6 +248,7 @@ func (h *GrowthHandlers) HandleMemoryRollback(ctx context.Context, req *MemoryRo
 // 5. HandleListMemorySnapshots — GET /agent/growth/memory/snapshots
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when list memory snapshots API is in agent.proto.
 type ListMemorySnapshotsRequest struct {
 	AgentID string `json:"agent_id"`
 	Limit   int    `json:"limit"`
@@ -337,6 +303,7 @@ func (h *GrowthHandlers) HandleListMemorySnapshots(ctx context.Context, req *Lis
 // 6. HandleDeleteMemory — POST /agent/growth/memory/delete
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when growth delete memory is in agent.proto.
 type DeleteMemoryRequest struct {
 	AgentID  string `json:"agent_id"`
 	MemoryID string `json:"memory_id"`
@@ -368,6 +335,7 @@ func (h *GrowthHandlers) HandleDeleteMemory(ctx context.Context, req *DeleteMemo
 // 7. HandleFreezeMemory — POST /agent/growth/memory/freeze
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when growth freeze memory is in agent.proto.
 type FreezeMemoryRequest struct {
 	AgentID  string `json:"agent_id"`
 	MemoryID string `json:"memory_id"`
@@ -401,6 +369,7 @@ func (h *GrowthHandlers) HandleFreezeMemory(ctx context.Context, req *FreezeMemo
 // 8. HandleSkillRollback — POST /agent/growth/skill/rollback
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when growth skill rollback is in agent.proto.
 type SkillRollbackRequest struct {
 	AgentID       string `json:"agent_id"`
 	SkillID       string `json:"skill_id"`
@@ -436,6 +405,7 @@ func (h *GrowthHandlers) HandleSkillRollback(ctx context.Context, req *SkillRoll
 // 9. HandleListSkillVersions — GET /agent/growth/skill/versions
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when growth skill versions list is in agent.proto.
 type ListSkillVersionsRequest struct {
 	AgentID string `json:"agent_id"`
 	SkillID string `json:"skill_id"`
@@ -499,6 +469,7 @@ func (h *GrowthHandlers) HandleListSkillVersions(ctx context.Context, req *ListS
 // 10. HandleToggleSkill — POST /agent/growth/skill/toggle
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when growth skill toggle is in agent.proto.
 type ToggleSkillRequest struct {
 	AgentID string `json:"agent_id"`
 	SkillID string `json:"skill_id"`
@@ -533,6 +504,7 @@ func (h *GrowthHandlers) HandleToggleSkill(ctx context.Context, req *ToggleSkill
 // 11. HandleGetFeedbackHistory — GET /agent/growth/feedback/history
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when feedback history API is in agent.proto.
 type GetFeedbackHistoryRequest struct {
 	AgentID string `json:"agent_id"`
 	Limit   int    `json:"limit"`
@@ -592,6 +564,7 @@ func (h *GrowthHandlers) HandleGetFeedbackHistory(ctx context.Context, req *GetF
 // 12. HandleGetDiagnostic — GET /agent/growth/diagnostic
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when growth diagnostic API is in agent.proto.
 type GetDiagnosticRequest struct {
 	AgentID string `json:"agent_id"`
 }
@@ -663,6 +636,7 @@ func (h *GrowthHandlers) HandleGetDiagnostic(ctx context.Context, req *GetDiagno
 // 13. HandleClearSuspectedItem — POST /agent/growth/diagnostic/clear
 // ===========================================================================
 
+// TODO(agent): replace with generated proto messages when growth diagnostic clear is in agent.proto.
 type ClearSuspectedItemRequest struct {
 	AgentID string `json:"agent_id"`
 	ItemID  string `json:"item_id"`

@@ -19,7 +19,7 @@
 可选环境变量：
 
 ```bash
-export VITE_STATION_PROXY_TARGET=http://127.0.0.1:18080
+export PEERS_STATION_URL=http://127.0.0.1:18080
 export STATION_HEALTHCHECK_URL=http://127.0.0.1:18080/api/oauth/providers
 export VITE_PORT=3000
 ```

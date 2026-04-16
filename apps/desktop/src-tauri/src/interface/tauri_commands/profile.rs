@@ -62,7 +62,7 @@ pub fn pick_image_file() -> AppResult<StubPayload> {
                 status: path_str,
             })
         }
-        None => AppResult::fail(ErrorCode::InvalidArgument, "error.profile.noFileSelected", None),
+        None => AppResult::fail(ErrorCode::InvalidArgument, "No file selected for upload", None),
     }
 }
 
@@ -75,6 +75,13 @@ pub fn account_sync_avatar(input: AccountSyncAvatarInput) -> AppResult<StubPaylo
             command: "account_sync_avatar".to_string(),
             status: "synced".to_string(),
         }),
-        Err(_e) => AppResult::fail(ErrorCode::InternalError, "error.profile.avatarSyncFailed", None),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to sync avatar to local identity");
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to sync avatar to station: {}", e),
+                None,
+            )
+        }
     }
 }

@@ -13,6 +13,7 @@ import { Alert, toast } from '@lobehub/ui';
 import { Typography, theme } from 'antd';
 import { api, type ModelServiceConfig, type ModelRef, type AvailableModel } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
+import { SettingsContainer } from './settings/SettingsLayout';
 import { useTranslation } from 'react-i18next';
 
 const { Title, Text } = Typography;
@@ -74,11 +75,13 @@ export function ModelServiceTab() {
   const noModels = models.length === 0;
 
   return (
-    <Flexbox gap={0} style={{ padding: '16px 24px', height: '100%', overflow: 'auto' }}>
-      <Title level={5} style={{ margin: '0 0 4px' }}>{t('provider.modelService.title')}</Title>
-      <Text type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
-        {t('provider.modelService.desc')}
-      </Text>
+    <SettingsContainer fullHeight>
+      <Flexbox gap={0}>
+        <Title level={5} style={{ margin: '0 0 4px' }}>{t('provider.modelService.title')}</Title>
+        <Text type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
+          {t('provider.modelService.desc')}
+        </Text>
+      </Flexbox>
 
       {noModels && (
         <Alert
@@ -143,6 +146,6 @@ export function ModelServiceTab() {
           );
         })}
       </Flexbox>
-    </Flexbox>
+    </SettingsContainer>
   );
 }

@@ -100,22 +100,24 @@ fn apply_side_effect(
     match side_effect(key) {
         SettingSideEffect::None => Ok(()),
         SettingSideEffect::ThemeChanged => {
-            let mut guard = state.settings.lock().map_err(|_| {
+            let mut guard = state.settings.lock().map_err(|e| {
+                tracing::error!(error = %e, "Failed to acquire settings lock for theme side effect");
                 AppResult::fail(
                     ErrorCode::InternalError,
-                    "error.settings.sideEffectFailed",
-                    Some(json!({ "command": "settings", "key": "theme", "reason": "settings_lock_failed" })),
+                    format!("Failed to apply theme setting: {}", e),
+                    None,
                 )
             })?;
             guard.theme = value.as_str().map(|raw| raw.to_string());
             Ok(())
         }
         SettingSideEffect::LocaleChanged => {
-            let mut guard = state.settings.lock().map_err(|_| {
+            let mut guard = state.settings.lock().map_err(|e| {
+                tracing::error!(error = %e, "Failed to acquire settings lock for locale side effect");
                 AppResult::fail(
                     ErrorCode::InternalError,
-                    "error.settings.sideEffectFailed",
-                    Some(json!({ "command": "settings", "key": "locale", "reason": "settings_lock_failed" })),
+                    format!("Failed to apply locale setting: {}", e),
+                    None,
                 )
             })?;
             guard.locale = value.as_str().map(|raw| raw.to_string());
@@ -134,31 +136,46 @@ fn invalid_value(command: &str, message: String) -> AppResult<StubPayload> {
 
 fn storage_error_to_result(command: &str, error: StorageError) -> AppResult<StubPayload> {
     match error {
-        StorageError::ResolveFailed(message) => AppResult::fail(
-            ErrorCode::InternalError,
-            "error.settings.storageResolveFailed",
-            Some(json!({ "command": command, "reason": "resolve_failed", "source": message })),
-        ),
-        StorageError::ReadFailed(message) => AppResult::fail(
-            ErrorCode::InternalError,
-            "error.settings.storageReadFailed",
-            Some(json!({ "command": command, "reason": "read_failed", "source": message })),
-        ),
-        StorageError::WriteFailed(message) => AppResult::fail(
-            ErrorCode::Conflict,
-            "error.settings.storageWriteFailed",
-            Some(json!({ "command": command, "reason": "write_failed", "source": message })),
-        ),
-        StorageError::KeyError(key_error) => AppResult::fail(
-            ErrorCode::InternalError,
-            "error.settings.keyProviderError",
-            Some(json!({
-                "command": command,
-                "reason": "key_error",
-                "code": key_error.code.to_string(),
-                "ref": key_error.key_ref_hash,
-                "source": key_error.message
-            })),
-        ),
+        StorageError::ResolveFailed(message) => {
+            tracing::error!(command, %message, "Failed to resolve settings storage path");
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to resolve settings storage path: {}", message),
+                None,
+            )
+        }
+        StorageError::ReadFailed(message) => {
+            tracing::error!(command, %message, "Failed to read settings storage");
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to read settings storage: {}", message),
+                None,
+            )
+        }
+        StorageError::WriteFailed(message) => {
+            tracing::error!(command, %message, "Failed to write settings storage");
+            AppResult::fail(
+                ErrorCode::Conflict,
+                format!("Failed to write settings storage: {}", message),
+                None,
+            )
+        }
+        StorageError::KeyError(key_error) => {
+            tracing::error!(
+                command,
+                code = %key_error.code,
+                key_ref_hash = %key_error.key_ref_hash,
+                message = %key_error.message,
+                "Settings key provider error"
+            );
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!(
+                    "Settings key provider error (code {}): {}",
+                    key_error.code, key_error.message
+                ),
+                None,
+            )
+        }
     }
 }
