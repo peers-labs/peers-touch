@@ -1198,6 +1198,7 @@ function DangerZoneResetOnboarding() {
         try {
           await api.resetOnboarding();
           message.success(t('settings.danger.resetSuccess'));
+          window.location.hash = '';
           window.location.reload();
         } catch (e) {
           message.error(e instanceof Error ? e.message : t('settings.danger.resetFailed'));
