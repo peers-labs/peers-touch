@@ -36,7 +36,9 @@ peers-touch/
 │   └── oauth2-client/
 ├── model/domain/          # Proto definitions (single source of truth)
 ├── packages/              # applet-sdk, applets, locales
-├── tooling/scripts/       # Build & dev scripts
+├── tooling/
+│   ├── scripts/           # Build & dev scripts
+│   └── skills/            # Dev skills for AI agents (github-pr, github-commit, etc.)
 └── docs/
     ├── README.md          # Docs entry: how to find the right source documents
     ├── .agent/            # Agent entry docs: navigation, hard constraints, verification
@@ -139,7 +141,19 @@ Never log tokens, passwords, secret keys, or PII. Error logs must include contex
 
 ---
 
-## 8. Error Handling (Universal)
+## 8. Project Freshness / 项目新鲜度维护
+
+### Directory README Maintenance / 目录 README 维护
+
+> **When modifying files in a directory, always check if the directory has a README.md and whether it needs updating.**
+
+- If a directory contains a `README.md`, any significant changes to files in that directory should be reflected in the README.
+- This includes: new files, deleted files, renamed files, changed APIs, updated conventions.
+- Keeping READMEs up-to-date ensures documentation stays synchronized with code.
+
+---
+
+## 9. Error Handling (Universal)
 
 1. Never silently swallow errors.
 2. Error messages must include context (operation name, key params, root cause).
@@ -152,7 +166,7 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 
 ---
 
-## 9. Verification Commands
+## 10. Verification Commands
 
 | Platform | Commands |
 |----------|----------|
@@ -167,7 +181,7 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 
 ---
 
-## 10. Commit Rules
+## 11. Commit Rules
 
 - Verify `.gitignore` coverage before every commit.
 - Scan for leaked secrets: `git diff --cached | grep -iE '(secret|password|token|api_key|private_key)'`
@@ -175,7 +189,7 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 
 ---
 
-## 11. Platform-Specific Rules
+## 12. Platform-Specific Rules
 
 > **Load the relevant `.agent` file first when working on a specific platform.**
 > Then follow its links to the actual architecture/platform/specification source documents.
