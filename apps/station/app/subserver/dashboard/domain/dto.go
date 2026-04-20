@@ -59,6 +59,7 @@ type DashboardSessionInfo struct {
 // PublicKey, and ActivityPub endpoint URIs that must never leave the server.
 type ActorSummary struct {
 	ID                uint64    `json:"id"`
+	DID               string    `json:"did"`
 	PreferredUsername  string    `json:"preferred_username"`
 	Name              string    `json:"name"`
 	Email             string    `json:"email"`
@@ -85,6 +86,7 @@ type ActorListResult struct {
 // ActorDetail contains enriched information about a single actor.
 type ActorDetail struct {
 	ID               uint64     `json:"id"`
+	DID              string     `json:"did"`
 	PreferredUsername string     `json:"preferred_username"`
 	Name             string     `json:"name"`
 	Email            string     `json:"email"`

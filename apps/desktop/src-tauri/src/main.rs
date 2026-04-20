@@ -12,7 +12,7 @@ mod state;
 
 use std::sync::Arc;
 use tauri::Manager;
-use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, i18n, mcp, memory, model_config, models, notebook, notification, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
+use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, ice, i18n, mcp, memory, model_config, models, notebook, notification, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
 
 fn main() {
     let ctx = bootstrap::run();
@@ -264,6 +264,17 @@ fn main() {
             friend_chat::friend_chat_get_key_version_scoped,
             friend_chat::friend_chat_rotate_key_scoped,
             friend_chat::friend_chat_sync_from_station_scoped,
+            ice::ice_get_servers,
+            ice::ice_peer_register,
+            ice::ice_peer_unregister,
+            ice::ice_session_new,
+            ice::ice_session_get,
+            ice::ice_session_offer_post,
+            ice::ice_session_offer_get,
+            ice::ice_session_answer_post,
+            ice::ice_session_answer_get,
+            ice::ice_session_candidate_post,
+            ice::ice_session_candidates_get,
             friend_chat::friend_chat_send_friend_request,
             friend_chat::friend_chat_accept_friend_request,
             friend_chat::friend_chat_reject_friend_request,
