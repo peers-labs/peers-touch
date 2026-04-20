@@ -18,8 +18,8 @@ pub fn i18n_load_resources(state: State<Arc<AppState>>) -> AppResult<I18nResourc
             tracing::error!(error = %e, "Failed to load i18n resources");
             AppResult::fail(
                 ErrorCode::InternalError,
-                "error.storage.readFailed",
-                Some(serde_json::json!({ "detail": e })),
+                format!("Failed to read i18n resources from storage: {}", e),
+                None,
             )
         }
     }

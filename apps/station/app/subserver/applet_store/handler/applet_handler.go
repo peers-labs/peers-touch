@@ -28,7 +28,15 @@ func (h *AppletHandlers) HandleListApplets(ctx context.Context, req *model.ListA
 		offset = 0
 	}
 
-	applets, err := h.service.GenerateMockApplets()
+	// For demo environments, seed mock applets on first run.
+	// Production callers should have real rows already.
+	_, err := h.service.GenerateMockApplets()
+	if err != nil {
+		logger.Error(ctx, "Failed to ensure mock applets", "error", err)
+		return nil, err
+	}
+
+	applets, err := h.service.ListApplets(limit, offset)
 	if err != nil {
 		logger.Error(ctx, "Failed to list applets", "error", err)
 		return nil, err

@@ -139,11 +139,11 @@ func (s *GrowthDiagnosticService) AttributeNegativeFeedback(
 
 	memoryCount := 0
 
-	if trace.MemorySnapshotHash != "" {
+	if trace.MemorySnapshotHash != nil && *trace.MemorySnapshotHash != "" {
 		// Find the snapshot closest to this turn's start time.
 		var snapshot persistence.MemorySnapshot
 		snapshotErr := db.WithContext(ctx).
-			Where("agent_id = ? AND created_at <= ?", agentID, turn.CreatedAt).
+			Where("agent_id = ? AND created_at <= ?", agentID, turn.StartedAt).
 			Order("created_at DESC").
 			First(&snapshot).Error
 
@@ -329,10 +329,10 @@ func (s *GrowthDiagnosticService) AdjustMemoryTrustPositive(
 		return
 	}
 
-	if trace.MemorySnapshotHash != "" {
+	if trace.MemorySnapshotHash != nil && *trace.MemorySnapshotHash != "" {
 		var snapshot persistence.MemorySnapshot
 		snapshotErr := db.WithContext(ctx).
-			Where("agent_id = ? AND created_at <= ?", agentID, turn.CreatedAt).
+			Where("agent_id = ? AND created_at <= ?", agentID, turn.StartedAt).
 			Order("created_at DESC").
 			First(&snapshot).Error
 

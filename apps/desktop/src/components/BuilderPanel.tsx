@@ -195,6 +195,7 @@ export function BuilderPanel({
         setLoading(false);
         abortRef.current = null;
       },
+      undefined,
       modelOverride,
       selectedProviderId || undefined,
     );

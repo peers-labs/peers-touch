@@ -43,7 +43,12 @@ function detectLanguage(availableCodes: string[]): string {
 }
 
 export async function initI18n() {
-  const result = await invoke<RustCommandResult<I18nResources>>('i18n_load_resources');
+  const result = await Promise.race([
+    invoke<RustCommandResult<I18nResources>>('i18n_load_resources'),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('i18n_load_resources timed out after 10s')), 10_000)
+    ),
+  ]);
 
   if (!result.ok || !result.data) {
     log.error('i18n', 'Failed to load resources from Tauri', result.error);

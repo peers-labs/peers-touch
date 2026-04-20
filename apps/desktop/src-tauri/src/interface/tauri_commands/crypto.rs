@@ -48,7 +48,7 @@ fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
 #[tauri::command]
 pub fn chat_search_local(input: ChatSearchLocalInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.queryRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Search query is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let limit = input.limit.unwrap_or(30).clamp(1, 200) as usize;
@@ -70,8 +70,8 @@ pub fn chat_search_local(input: ChatSearchLocalInput, state: State<'_, Arc<AppSt
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.chat.localSearchFailed",
-                Some(json!({ "reason": reason })),
+                format!("Failed to search local messages: {}", reason),
+                None,
             );
         }
     };
@@ -85,7 +85,7 @@ pub fn crypto_generate_identity(state: State<'_, Arc<AppState>>) -> AppResult<St
         _ => {
             return AppResult::fail(
                 ErrorCode::Unauthorized,
-                "error.auth.authenticationRequired",
+                "Authentication required — please log in",
                 None,
             );
         }
@@ -95,8 +95,8 @@ pub fn crypto_generate_identity(state: State<'_, Arc<AppState>>) -> AppResult<St
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.identityFailed",
-                Some(json!({ "reason": reason })),
+                format!("Identity operation failed: {}", reason),
+                None,
             );
         }
     };
@@ -118,7 +118,7 @@ pub fn crypto_get_fingerprint(state: State<'_, Arc<AppState>>) -> AppResult<Stub
         _ => {
             return AppResult::fail(
                 ErrorCode::Unauthorized,
-                "error.auth.authenticationRequired",
+                "Authentication required — please log in",
                 None,
             );
         }
@@ -126,13 +126,13 @@ pub fn crypto_get_fingerprint(state: State<'_, Arc<AppState>>) -> AppResult<Stub
     let kp = match crypto::load_identity_key(actor_id.as_str()) {
         Ok(Some(k)) => k,
         Ok(None) => {
-            return AppResult::fail(ErrorCode::NotFound, "error.crypto.identityNotFound", None);
+            return AppResult::fail(ErrorCode::NotFound, "No crypto identity found", None);
         }
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.identityFailed",
-                Some(json!({ "reason": reason })),
+                format!("Identity operation failed: {}", reason),
+                None,
             );
         }
     };
@@ -147,7 +147,7 @@ pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>) -> AppResult<StubP
         _ => {
             return AppResult::fail(
                 ErrorCode::Unauthorized,
-                "error.auth.authenticationRequired",
+                "Authentication required — please log in",
                 None,
             );
         }
@@ -158,8 +158,8 @@ pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>) -> AppResult<StubP
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.identityFailed",
-                Some(json!({ "reason": reason })),
+                format!("Identity operation failed: {}", reason),
+                None,
             );
         }
     };
@@ -177,8 +177,8 @@ pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>) -> AppResult<StubP
     ) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            "error.crypto.prekeyStoreFailed",
-            Some(json!({ "reason": reason })),
+            format!("Failed to store signed pre-key: {}", reason),
+            None,
         );
     }
 
@@ -195,8 +195,8 @@ pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>) -> AppResult<StubP
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.prekeyStoreFailed",
-                Some(json!({ "reason": reason })),
+                format!("Failed to store one-time pre-keys: {}", reason),
+                None,
             );
         }
     };
@@ -246,7 +246,7 @@ pub fn crypto_group_encrypt(
     state: State<'_, Arc<AppState>>,
 ) -> AppResult<StubPayload> {
     if group_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.groupChat.groupUlidRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Group ID is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let mut gk = match group_key_state_or_create(user_scope.as_str(), group_id.as_str()) {
@@ -254,8 +254,8 @@ pub fn crypto_group_encrypt(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.groupKeyFailed",
-                Some(json!({ "reason": reason })),
+                format!("Group key operation failed: {}", reason),
+                None,
             );
         }
     };
@@ -264,8 +264,8 @@ pub fn crypto_group_encrypt(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.encryptFailed",
-                Some(json!({ "reason": reason })),
+                format!("Encryption failed: {}", reason),
+                None,
             );
         }
     };
@@ -274,8 +274,8 @@ pub fn crypto_group_encrypt(
     {
         return AppResult::fail(
             ErrorCode::InternalError,
-            "error.crypto.groupKeySaveFailed",
-            Some(json!({ "reason": reason })),
+            format!("Failed to save group encryption key: {}", reason),
+            None,
         );
     }
     to_stub(
@@ -297,7 +297,7 @@ pub fn crypto_group_decrypt(
     state: State<'_, Arc<AppState>>,
 ) -> AppResult<StubPayload> {
     if group_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.groupChat.groupUlidRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Group ID is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let row = match local_chat_store::load_group_key(user_scope.as_str(), group_id.as_str()) {
@@ -305,16 +305,16 @@ pub fn crypto_group_decrypt(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.groupKeyFailed",
-                Some(json!({ "reason": reason })),
+                format!("Group key operation failed: {}", reason),
+                None,
             );
         }
     };
     let Some((k, _e, _c)) = row else {
-        return AppResult::fail(ErrorCode::NotFound, "error.crypto.groupKeyNotFound", None);
+        return AppResult::fail(ErrorCode::NotFound, "Group encryption key not found", None);
     };
     if k.len() != 32 {
-        return AppResult::fail(ErrorCode::InternalError, "error.crypto.groupKeyInvalid", None);
+        return AppResult::fail(ErrorCode::InternalError, "Stored group encryption key data is invalid", None);
     }
     let mut key = [0u8; 32];
     key.copy_from_slice(&k[..32]);
@@ -323,8 +323,8 @@ pub fn crypto_group_decrypt(
         Err(e) => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
-                "error.crypto.invalidBase64",
-                Some(json!({ "field": "ciphertext", "reason": e.to_string() })),
+                format!("Invalid base64 ciphertext: {}", e),
+                None,
             );
         }
     };
@@ -344,8 +344,8 @@ pub fn crypto_group_decrypt(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.decryptFailed",
-                Some(json!({ "reason": reason })),
+                format!("Decryption failed: {}", reason),
+                None,
             );
         }
     };
@@ -354,8 +354,8 @@ pub fn crypto_group_decrypt(
         Err(e) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.plaintextUtf8",
-                Some(json!({ "reason": e.to_string() })),
+                format!("Decrypted plaintext is not valid UTF-8: {}", e),
+                None,
             );
         }
     };
@@ -365,7 +365,7 @@ pub fn crypto_group_decrypt(
 #[tauri::command]
 pub fn crypto_group_rotate_key(group_id: String, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     if group_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.groupChat.groupUlidRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Group ID is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let mut gk = match local_chat_store::load_group_key(user_scope.as_str(), group_id.as_str()) {
@@ -390,20 +390,20 @@ pub fn crypto_group_rotate_key(group_id: String, state: State<'_, Arc<AppState>>
             ) {
                 return AppResult::fail(
                     ErrorCode::InternalError,
-                    "error.crypto.groupKeySaveFailed",
-                    Some(json!({ "reason": reason })),
+                    format!("Failed to save group encryption key: {}", reason),
+                    None,
                 );
             }
             return to_stub("crypto_group_rotate_key", json!({ "epoch": s.epoch }));
         }
         Ok(Some(_)) => {
-            return AppResult::fail(ErrorCode::InternalError, "error.crypto.groupKeyInvalid", None);
+            return AppResult::fail(ErrorCode::InternalError, "Stored group encryption key data is invalid", None);
         }
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.groupKeyFailed",
-                Some(json!({ "reason": reason })),
+                format!("Group key operation failed: {}", reason),
+                None,
             );
         }
     };
@@ -413,8 +413,8 @@ pub fn crypto_group_rotate_key(group_id: String, state: State<'_, Arc<AppState>>
     {
         return AppResult::fail(
             ErrorCode::InternalError,
-            "error.crypto.groupKeySaveFailed",
-            Some(json!({ "reason": reason })),
+            format!("Failed to save group encryption key: {}", reason),
+            None,
         );
     }
     to_stub("crypto_group_rotate_key", json!({ "epoch": gk.epoch }))
@@ -441,14 +441,18 @@ pub fn crypto_init_session(
     state: State<'_, Arc<AppState>>,
 ) -> AppResult<StubPayload> {
     if session_id.trim().is_empty() || peer_did.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.crypto.sessionIdRequired", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Session ID and peer DID are required",
+            None,
+        );
     }
     let actor_id = match actor_id_from_state(&state) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
                 ErrorCode::Unauthorized,
-                "error.auth.authenticationRequired",
+                "Authentication required — please log in",
                 None,
             );
         }
@@ -459,8 +463,8 @@ pub fn crypto_init_session(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.identityFailed",
-                Some(json!({ "reason": reason })),
+                format!("Identity operation failed: {}", reason),
+                None,
             );
         }
     };
@@ -470,8 +474,8 @@ pub fn crypto_init_session(
         Err(e) => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
-                "error.crypto.invalidKey",
-                Some(json!({ "reason": e })),
+                format!("Invalid peer identity key: {}", e),
+                None,
             );
         }
     };
@@ -480,8 +484,8 @@ pub fn crypto_init_session(
         Err(e) => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
-                "error.crypto.invalidKey",
-                Some(json!({ "reason": e })),
+                format!("Invalid peer signed pre-key: {}", e),
+                None,
             );
         }
     };
@@ -490,8 +494,8 @@ pub fn crypto_init_session(
         Err(e) => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
-                "error.crypto.invalidBase64",
-                Some(json!({ "field": "peer_spk_sig", "reason": e.to_string() })),
+                format!("Invalid base64 for peer_spk_sig: {}", e),
+                None,
             );
         }
     };
@@ -501,8 +505,8 @@ pub fn crypto_init_session(
             Err(e) => {
                 return AppResult::fail(
                     ErrorCode::InvalidArgument,
-                    "error.crypto.invalidKey",
-                    Some(json!({ "reason": e })),
+                    format!("Invalid peer one-time pre-key: {}", e),
+                    None,
                 );
             }
         },
@@ -521,8 +525,8 @@ pub fn crypto_init_session(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.x3dhFailed",
-                Some(json!({ "reason": reason })),
+                format!("X3DH key agreement failed: {}", reason),
+                None,
             );
         }
     };
@@ -538,8 +542,8 @@ pub fn crypto_init_session(
     if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &session.to_state()) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            "error.crypto.sessionSaveFailed",
-            Some(json!({ "reason": reason })),
+            format!("Failed to save crypto session: {}", reason),
+            None,
         );
     }
 
@@ -560,7 +564,7 @@ pub fn crypto_encrypt_message(
     state: State<'_, Arc<AppState>>,
 ) -> AppResult<StubPayload> {
     if session_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.crypto.sessionIdRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let st = match local_chat_store::load_crypto_session(user_scope.as_str(), session_id.as_str()) {
@@ -568,16 +572,16 @@ pub fn crypto_encrypt_message(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.sessionLoadFailed",
-                Some(json!({ "reason": reason })),
+                format!("Failed to load crypto session: {}", reason),
+                None,
             );
         }
     };
     let Some(mut st) = st else {
-        return AppResult::fail(ErrorCode::NotFound, "error.crypto.sessionNotFound", None);
+        return AppResult::fail(ErrorCode::NotFound, "Crypto session not found", None);
     };
     if st.peer_did != peer_did {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.crypto.peerMismatch", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Session peer does not match", None);
     }
     let mut session = CryptoSession::from_state(&st);
     let enc = match session.encrypt(plaintext.as_bytes()) {
@@ -585,8 +589,8 @@ pub fn crypto_encrypt_message(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.encryptFailed",
-                Some(json!({ "reason": reason })),
+                format!("Encryption failed: {}", reason),
+                None,
             );
         }
     };
@@ -594,8 +598,8 @@ pub fn crypto_encrypt_message(
     if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &st) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            "error.crypto.sessionSaveFailed",
-            Some(json!({ "reason": reason })),
+            format!("Failed to save crypto session: {}", reason),
+            None,
         );
     }
 
@@ -620,7 +624,7 @@ pub fn crypto_decrypt_message(
 ) -> AppResult<StubPayload> {
     let _ = ephemeral_key;
     if session_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.crypto.sessionIdRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let st = match local_chat_store::load_crypto_session(user_scope.as_str(), session_id.as_str()) {
@@ -628,24 +632,24 @@ pub fn crypto_decrypt_message(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.sessionLoadFailed",
-                Some(json!({ "reason": reason })),
+                format!("Failed to load crypto session: {}", reason),
+                None,
             );
         }
     };
     let Some(mut st) = st else {
-        return AppResult::fail(ErrorCode::NotFound, "error.crypto.sessionNotFound", None);
+        return AppResult::fail(ErrorCode::NotFound, "Crypto session not found", None);
     };
     if st.peer_did != peer_did {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.crypto.peerMismatch", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "Session peer does not match", None);
     }
     let ct_raw = match B64.decode(ciphertext.trim()) {
         Ok(b) => b,
         Err(e) => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
-                "error.crypto.invalidBase64",
-                Some(json!({ "field": "ciphertext", "reason": e.to_string() })),
+                format!("Invalid base64 ciphertext: {}", e),
+                None,
             );
         }
     };
@@ -661,8 +665,8 @@ pub fn crypto_decrypt_message(
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.decryptFailed",
-                Some(json!({ "reason": reason })),
+                format!("Decryption failed: {}", reason),
+                None,
             );
         }
     };
@@ -670,8 +674,8 @@ pub fn crypto_decrypt_message(
     if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &st) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            "error.crypto.sessionSaveFailed",
-            Some(json!({ "reason": reason })),
+            format!("Failed to save crypto session: {}", reason),
+            None,
         );
     }
     let text = match String::from_utf8(plain) {
@@ -679,8 +683,8 @@ pub fn crypto_decrypt_message(
         Err(e) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.crypto.plaintextUtf8",
-                Some(json!({ "reason": e.to_string() })),
+                format!("Decrypted plaintext is not valid UTF-8: {}", e),
+                None,
             );
         }
     };

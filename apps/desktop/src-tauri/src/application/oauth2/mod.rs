@@ -2,6 +2,7 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::auth_identity;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
+use crate::model::oauth::{OAuthBridgeRequest, OAuthBridgeResponse};
 use crate::contracts::{
     OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
     OAuthLoopbackStartInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
@@ -177,30 +178,23 @@ fn save_oauth_callback(input: OAuthCallbackInput, ts: Option<String>, sig: Optio
     // Bridge the OAuth identity to Station via oauth-bridge API.
     // On success, persist the returned JWT so the app can load it later
     // via `ensure_station_session`.
-    let bridge_body = json!({
-        "provider": provider_id,
-        "provider_user_id": input.provider_user_id,
-        "email": email,
-        "username": user_name,
-        "display_name": display_name_value,
-        "avatar_url": avatar_url,
-        "ts": ts.clone().unwrap_or_default(),
-        "sig": sig.clone().unwrap_or_default(),
-    });
-    match station_client::post_json_no_auth("/actor/oauth-bridge", bridge_body) {
-        Ok(resp) => {
-            if let Some(data) = resp.get("data") {
-                let token = data
-                    .pointer("/tokens/access_token")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let actor_id = data
-                    .pointer("/actor/id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                if !token.is_empty() {
-                    let _ = save_station_session(actor_id, token);
-                }
+    let bridge_req = OAuthBridgeRequest {
+        provider: provider_id.to_string(),
+        provider_user_id: input.provider_user_id.clone(),
+        email,
+        username: user_name,
+        display_name: display_name_value,
+        avatar_url,
+        ts: ts.clone().unwrap_or_default(),
+        sig: sig.clone().unwrap_or_default(),
+    };
+    match station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
+        "/actor/oauth-bridge",
+        &bridge_req,
+    ) {
+        Ok(bridge) => {
+            if !bridge.access_token.is_empty() {
+                let _ = save_station_session(&bridge.actor_id, &bridge.access_token);
             }
         }
         Err(e) => {
@@ -261,35 +255,28 @@ pub fn try_bridge_from_connections() -> Option<(String, String)> {
     let map = read_connections().ok()?;
     let conn = map.values().find(|c| c.status == "active")?;
 
-    let bridge_body = json!({
-        "provider": conn.provider_id,
-        "provider_user_id": conn.user_id,
-        "email": conn.email,
-        "username": conn.user_name,
-        "display_name": conn.user_name,
-        "avatar_url": conn.avatar_url,
-    });
+    let bridge_req = OAuthBridgeRequest {
+        provider: conn.provider_id.clone(),
+        provider_user_id: conn.user_id.clone(),
+        email: conn.email.clone(),
+        username: conn.user_name.clone(),
+        display_name: conn.user_name.clone(),
+        avatar_url: conn.avatar_url.clone(),
+        ts: String::new(),
+        sig: String::new(),
+    };
 
-    let resp = station_client::post_json_no_auth("/actor/oauth-bridge", bridge_body).ok()?;
-    let data = resp.get("data")?;
-
-    let token = data
-        .pointer("/tokens/access_token")
-        .or_else(|| data.pointer("/tokens/token"))
-        .and_then(|v| v.as_str())?
-        .to_string();
-    if token.is_empty() {
+    let bridge = station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
+        "/actor/oauth-bridge",
+        &bridge_req,
+    )
+    .ok()?;
+    if bridge.access_token.is_empty() {
         return None;
     }
 
-    let actor_id = data
-        .pointer("/actor/id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
-
-    let _ = save_station_session(&actor_id, &token);
-    Some((actor_id, token))
+    let _ = save_station_session(&bridge.actor_id, &bridge.access_token);
+    Some((bridge.actor_id, bridge.access_token))
 }
 
 fn invalid_argument(message: &str) -> AppResult<StubPayload> {

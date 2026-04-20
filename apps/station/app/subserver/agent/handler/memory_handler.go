@@ -1,15 +1,19 @@
 // Changelog:
 // 2026-04-11 — Wired MemoryHandlers to MemoryService: replaced 501 stubs with
 //   real service calls for HandleListMemories and HandleGetSnapshot.
+// 2026-04-15 — Request/response types from generated model (memory.pb.go).
 
 package handler
 
 import (
 	"context"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // MemoryHandlers exposes HTTP handlers for the memory subsystem.
@@ -22,77 +26,77 @@ func NewMemoryHandlers(memoryService *service.MemoryService) *MemoryHandlers {
 	return &MemoryHandlers{memoryService: memoryService}
 }
 
-// -- Request / Response types ------------------------------------------------
-
-type ListMemoriesRequest struct {
-	AgentID string `json:"agent_id"`
-	Target  string `json:"target"`
-}
-
-type MemoryItemResponse struct {
-	MemoryID  string `json:"memory_id"`
-	Content   string `json:"content"`
-	Target    string `json:"target"`
-	CreatedAt string `json:"created_at"`
-}
-
-type ListMemoriesResponse struct {
-	Items []MemoryItemResponse `json:"items"`
-}
-
-type GetSnapshotRequest struct {
-	AgentID string `json:"agent_id"`
-}
-
-type GetSnapshotResponse struct {
-	MemoryContent string `json:"memory_content"`
-	UserContent   string `json:"user_content"`
-}
-
-// -- Handlers ----------------------------------------------------------------
-
 // HandleListMemories retrieves all memory entries for a given agent and target.
-func (h *MemoryHandlers) HandleListMemories(ctx context.Context, req *ListMemoriesRequest) (*ListMemoriesResponse, error) {
-	if req.AgentID == "" {
+func (h *MemoryHandlers) HandleListMemories(ctx context.Context, req *model.ListMemoriesRequest) (*model.ListMemoriesResponse, error) {
+	if req.GetAgentId() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "agent_id is required", nil))
 	}
 
-	items, err := h.memoryService.List(ctx, req.AgentID, req.Target)
+	items, err := h.memoryService.List(ctx, req.GetAgentId(), req.GetTarget())
 	if err != nil {
 		logger.Errorf(ctx, "HandleListMemories failed: agent_id=%s, target=%s, err=%v",
-			req.AgentID, req.Target, err)
+			req.GetAgentId(), req.GetTarget(), err)
 		return nil, toHandlerError(err)
 	}
 
-	resp := &ListMemoriesResponse{
-		Items: make([]MemoryItemResponse, 0, len(items)),
+	resp := &model.ListMemoriesResponse{
+		Items: make([]*model.MemoryItem, 0, len(items)),
 	}
-	for _, item := range items {
-		resp.Items = append(resp.Items, MemoryItemResponse{
-			MemoryID:  item.MemoryID,
-			Content:   item.Content,
-			Target:    item.Target,
-			CreatedAt: item.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		})
+	for i := range items {
+		resp.Items = append(resp.Items, memoryItemToProto(&items[i]))
 	}
 
 	return resp, nil
 }
 
 // HandleGetSnapshot builds a frozen memory snapshot for prompt injection.
-func (h *MemoryHandlers) HandleGetSnapshot(ctx context.Context, req *GetSnapshotRequest) (*GetSnapshotResponse, error) {
-	if req.AgentID == "" {
+func (h *MemoryHandlers) HandleGetSnapshot(ctx context.Context, req *model.GetMemorySnapshotRequest) (*model.GetMemorySnapshotResponse, error) {
+	if req.GetAgentId() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "agent_id is required", nil))
 	}
 
-	snapshot, err := h.memoryService.BuildSnapshot(ctx, req.AgentID)
+	snapshot, err := h.memoryService.BuildSnapshot(ctx, req.GetAgentId())
 	if err != nil {
-		logger.Errorf(ctx, "HandleGetSnapshot failed: agent_id=%s, err=%v", req.AgentID, err)
+		logger.Errorf(ctx, "HandleGetSnapshot failed: agent_id=%s, err=%v", req.GetAgentId(), err)
 		return nil, toHandlerError(err)
 	}
 
-	return &GetSnapshotResponse{
-		MemoryContent: snapshot.MemoryContent,
-		UserContent:   snapshot.UserContent,
+	return &model.GetMemorySnapshotResponse{
+		Snapshot: memorySnapshotToProto(snapshot),
 	}, nil
+}
+
+func memoryItemToProto(item *domain.MemoryItem) *model.MemoryItem {
+	if item == nil {
+		return nil
+	}
+	mi := &model.MemoryItem{
+		MemoryId:     item.MemoryID,
+		AgentId:      item.AgentID,
+		Target:       item.Target,
+		Content:      item.Content,
+		SourceTurnId: item.SourceTurnID,
+	}
+	if !item.CreatedAt.IsZero() {
+		mi.CreatedAt = timestamppb.New(item.CreatedAt)
+	}
+	if !item.UpdatedAt.IsZero() {
+		mi.UpdatedAt = timestamppb.New(item.UpdatedAt)
+	}
+	return mi
+}
+
+func memorySnapshotToProto(s *domain.MemorySnapshot) *model.MemorySnapshot {
+	if s == nil {
+		return nil
+	}
+	out := &model.MemorySnapshot{
+		AgentId:       s.AgentID,
+		MemoryContent: s.MemoryContent,
+		UserContent:   s.UserContent,
+	}
+	if !s.CapturedAt.IsZero() {
+		out.CapturedAt = timestamppb.New(s.CapturedAt)
+	}
+	return out
 }

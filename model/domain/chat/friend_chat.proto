@@ -17,6 +17,11 @@ message FriendChatSession {
   int32 unread_count_b = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+  // Enriched participant profiles (populated at query time)
+  string participant_a_display_name = 10;
+  string participant_a_avatar = 11;
+  string participant_b_display_name = 12;
+  string participant_b_avatar = 13;
 }
 
 message FriendChatMessage {
@@ -107,6 +112,9 @@ message SendMessageRequest {
   repeated FriendMessageAttachment attachments = 5;
   string reply_to_ulid = 6;
   bytes encrypted_payload = 7;
+  // Client-generated ULID for idempotency across direct + relay paths.
+  // When set, Station should persist this ULID instead of generating a new one.
+  string client_ulid = 8;
 }
 
 message SendMessageResponse {
@@ -184,6 +192,10 @@ message SyncMessageItem {
   FriendMessageType type = 4;
   string content = 5;
   google.protobuf.Timestamp sent_at = 6;
+  // Optional E2E ciphertext. When set, content may be a non-secret placeholder.
+  bytes encrypted_payload = 7;
+  repeated FriendMessageAttachment attachments = 8;
+  string reply_to_ulid = 9;
 }
 
 message SyncMessagesRequest {

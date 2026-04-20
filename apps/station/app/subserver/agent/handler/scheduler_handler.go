@@ -1,11 +1,13 @@
 package handler
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 type SchedulerHandlers struct {
@@ -16,86 +18,80 @@ func NewSchedulerHandlers(svc *service.SchedulerService) *SchedulerHandlers {
 	return &SchedulerHandlers{schedulerService: svc}
 }
 
-type schedulerStartRequest struct {
-	AgentID          string `json:"agent_id"`
-	ReviewIntervalM  int    `json:"review_interval_minutes"`
-	DogfoodIntervalM int    `json:"dogfood_interval_minutes"`
-}
-
-type schedulerAddJobRequest struct {
-	Kind       string `json:"kind"`
-	AgentID    string `json:"agent_id"`
-	IntervalM  int    `json:"interval_minutes"`
-}
-
-func (h *SchedulerHandlers) HandleStart(w http.ResponseWriter, r *http.Request) {
-	var req schedulerStartRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
+func (h *SchedulerHandlers) HandleStart(ctx context.Context, req *model.SchedulerStartRequest) (*model.SchedulerStartResponse, error) {
+	if req.GetAgentId() == "" {
+		return nil, server.NewHandlerError(http.StatusBadRequest, "agent_id is required")
 	}
 
-	if req.AgentID == "" {
-		writeError(w, http.StatusBadRequest, "agent_id is required")
-		return
+	configs := service.DefaultSchedulerConfigs(req.GetAgentId())
+
+	if req.GetReviewIntervalMinutes() > 0 {
+		configs[0].Interval = time.Duration(req.GetReviewIntervalMinutes()) * time.Minute
+	}
+	if req.GetDogfoodIntervalMinutes() > 0 {
+		configs[1].Interval = time.Duration(req.GetDogfoodIntervalMinutes()) * time.Minute
 	}
 
-	configs := service.DefaultSchedulerConfigs(req.AgentID)
+	h.schedulerService.Start(ctx, configs)
 
-	if req.ReviewIntervalM > 0 {
-		configs[0].Interval = time.Duration(req.ReviewIntervalM) * time.Minute
-	}
-	if req.DogfoodIntervalM > 0 {
-		configs[1].Interval = time.Duration(req.DogfoodIntervalM) * time.Minute
-	}
-
-	h.schedulerService.Start(r.Context(), configs)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "message": "scheduler started"})
+	return &model.SchedulerStartResponse{Ok: true, Message: "scheduler started"}, nil
 }
 
-func (h *SchedulerHandlers) HandleStop(w http.ResponseWriter, r *http.Request) {
-	h.schedulerService.Stop(r.Context())
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "message": "scheduler stopped"})
+func (h *SchedulerHandlers) HandleStop(ctx context.Context, _ *model.SchedulerStopRequest) (*model.SchedulerStopResponse, error) {
+	h.schedulerService.Stop(ctx)
+	return &model.SchedulerStopResponse{Ok: true, Message: "scheduler stopped"}, nil
 }
 
-func (h *SchedulerHandlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
-	status := h.schedulerService.Status()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+func (h *SchedulerHandlers) HandleStatus(ctx context.Context, _ *model.SchedulerStatusRequest) (*model.SchedulerStatusResponse, error) {
+	st := h.schedulerService.Status()
+	return schedulerStatusToProto(st), nil
 }
 
-func (h *SchedulerHandlers) HandleAddJob(w http.ResponseWriter, r *http.Request) {
-	var req schedulerAddJobRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	if req.AgentID == "" || req.Kind == "" {
-		writeError(w, http.StatusBadRequest, "agent_id and kind are required")
-		return
+func (h *SchedulerHandlers) HandleAddJob(ctx context.Context, req *model.SchedulerAddJobRequest) (*model.SchedulerAddJobResponse, error) {
+	if req.GetAgentId() == "" || req.GetKind() == "" {
+		return nil, server.NewHandlerError(http.StatusBadRequest, "agent_id and kind are required")
 	}
 
 	interval := 60 * time.Minute
-	if req.IntervalM > 0 {
-		interval = time.Duration(req.IntervalM) * time.Minute
+	if req.GetIntervalMinutes() > 0 {
+		interval = time.Duration(req.GetIntervalMinutes()) * time.Minute
 	}
 
 	cfg := service.ScheduledJobConfig{
-		Kind:     service.ScheduledJobKind(req.Kind),
-		AgentID:  req.AgentID,
+		Kind:     service.ScheduledJobKind(req.GetKind()),
+		AgentID:  req.GetAgentId(),
 		Interval: interval,
 		Enabled:  true,
 	}
 
-	if err := h.schedulerService.AddJob(r.Context(), cfg); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
+	if err := h.schedulerService.AddJob(ctx, cfg); err != nil {
+		return nil, server.NewHandlerErrorWithCause(http.StatusConflict, err.Error(), err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+	return &model.SchedulerAddJobResponse{Ok: true}, nil
+}
+
+func schedulerStatusToProto(st service.SchedulerStatus) *model.SchedulerStatusResponse {
+	resp := &model.SchedulerStatusResponse{
+		Running:    st.Running,
+		ActiveJobs: int32(len(st.Jobs)),
+	}
+	for _, j := range st.Jobs {
+		if d, err := time.ParseDuration(j.Interval); err == nil {
+			mins := int32(d / time.Minute)
+			if mins < 1 {
+				mins = 1
+			}
+			switch j.Kind {
+			case service.JobKindReview:
+				resp.ReviewIntervalMinutes = mins
+			case service.JobKindDogfood:
+				resp.DogfoodIntervalMinutes = mins
+			}
+		}
+		if j.AgentID != "" {
+			resp.AgentId = j.AgentID
+		}
+	}
+	return resp
 }

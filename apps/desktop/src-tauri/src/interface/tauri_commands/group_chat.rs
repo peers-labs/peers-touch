@@ -21,13 +21,13 @@ use tauri::State;
 
 fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<StubPayload>> {
     let guard = state.session.lock().map_err(|_| {
-        AppResult::fail(ErrorCode::InternalError, "error.auth.sessionLockFailed", None)
+        AppResult::fail(ErrorCode::InternalError, "failed to access session state", None)
     })?;
     let token = guard.token.clone().unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "error.auth.authenticationRequired",
+            "authentication required",
             None,
         ));
     }
@@ -51,7 +51,7 @@ fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, 
     let client = match Client::builder().build() {
         Ok(client) => client,
         Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "error.station.httpClientFailed", Some(json!({"reason": error.to_string()}))));
+            return Err(AppResult::fail(ErrorCode::InternalError, "failed to create http client", Some(json!({"reason": error.to_string()}))));
         }
     };
     let mut req = client
@@ -66,7 +66,7 @@ fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, 
     let response = match req.send() {
         Ok(response) => response,
         Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "error.station.requestFailed", Some(json!({"reason": error.to_string()}))));
+            return Err(AppResult::fail(ErrorCode::InternalError, "station request failed", Some(json!({"reason": error.to_string()}))));
         }
     };
     if !response.status().is_success() {
@@ -78,13 +78,13 @@ fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, 
             409 => ErrorCode::Conflict,
             _ => ErrorCode::InternalError,
         };
-        return Err(AppResult::fail(code, "error.station.requestFailed", Some(json!({"status": response.status().as_u16()}))));
+        return Err(AppResult::fail(code, "station request failed", Some(json!({"status": response.status().as_u16()}))));
     }
     match response.json::<Value>() {
         Ok(data) => Ok(data),
         Err(error) => Err(AppResult::fail(
             ErrorCode::InternalError,
-            "error.station.invalidResponse",
+            "invalid station response",
             Some(json!({"reason": error.to_string()})),
         )),
     }
@@ -167,7 +167,7 @@ pub fn group_chat_list_messages(input: GroupChatListMessagesInput, state: State<
         Err(error) => return error,
     };
     if input.group_ulid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.groupChat.groupUlidRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
     }
     let mut query = vec![
         ("group_ulid", input.group_ulid),
@@ -191,26 +191,19 @@ pub fn group_chat_send_message(input: GroupChatSendInput, state: State<'_, Arc<A
         Ok(token) => token,
         Err(error) => return error,
     };
-    let mut body = json!({
-        "group_ulid": input.group_ulid,
-        "content": input.content,
-        "type": input.r#type.unwrap_or(1),
-        "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
-        "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
-        "mention_all": input.mention_all.unwrap_or(false),
-        "attachments": input.attachments.unwrap_or_default(),
-    });
-    if let Some(ref ep) = input.encrypted_payload {
-        if !ep.trim().is_empty() {
-            body["encrypted_payload"] = json!(ep);
-        }
-    }
     let data = match request_json(
         Method::POST,
         "/group-chat/message/send",
         &token,
         None,
-        Some(body),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "content": input.content,
+            "type": input.r#type.unwrap_or(1),
+            "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
+            "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
+            "mention_all": input.mention_all.unwrap_or(false),
+        })),
     ) {
         Ok(data) => data,
         Err(error) => return error,
@@ -259,7 +252,7 @@ pub fn group_chat_mark_read(input: GroupChatMarkReadInput, state: State<'_, Arc<
 #[tauri::command]
 pub fn group_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.queryRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "query is required", None);
     }
     let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
     let items = match chat_storage::search_group_messages("__default__", input.query.as_str(), limit) {
@@ -267,7 +260,7 @@ pub fn group_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPay
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.chat.localSearchFailed",
+                "local search failed",
                 Some(json!({ "reason": reason })),
             );
         }
@@ -278,7 +271,7 @@ pub fn group_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPay
 #[tauri::command]
 pub fn group_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.queryRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "query is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
@@ -287,7 +280,7 @@ pub fn group_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.chat.localSearchFailed",
+                "local search failed",
                 Some(json!({ "reason": reason })),
             );
         }
@@ -299,10 +292,10 @@ pub fn group_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<
 pub fn group_chat_set_cursor_scoped(input: ChatScopeCursorSetInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let user_scope = user_scope_from_state(&state);
     if input.scope.trim().is_empty() || input.cursor.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.scopeAndCursorRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "scope and cursor are required", None);
     }
     if let Err(reason) = chat_storage::set_scope_cursor(user_scope.as_str(), input.scope.as_str(), input.cursor.as_str()) {
-        return AppResult::fail(ErrorCode::InternalError, "error.chat.setCursorFailed", Some(json!({"reason": reason})));
+        return AppResult::fail(ErrorCode::InternalError, "set cursor failed", Some(json!({"reason": reason})));
     }
     to_stub("group_chat_set_cursor_scoped", json!({"ok": true}))
 }
@@ -311,12 +304,12 @@ pub fn group_chat_set_cursor_scoped(input: ChatScopeCursorSetInput, state: State
 pub fn group_chat_get_cursor_scoped(input: ChatScopeCursorGetInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let user_scope = user_scope_from_state(&state);
     if input.scope.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.scopeRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "scope is required", None);
     }
     let cursor = match chat_storage::get_scope_cursor(user_scope.as_str(), input.scope.as_str()) {
         Ok(cursor) => cursor,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "error.chat.getCursorFailed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "get cursor failed", Some(json!({"reason": reason})));
         }
     };
     to_stub("group_chat_get_cursor_scoped", json!({"cursor": cursor}))
@@ -328,7 +321,7 @@ pub fn group_chat_get_key_version_scoped(state: State<'_, Arc<AppState>>) -> App
     let key_version = match chat_storage::get_chat_key_version(user_scope.as_str()) {
         Ok(version) => version,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "error.chat.getKeyVersionFailed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "get key version failed", Some(json!({"reason": reason})));
         }
     };
     to_stub("group_chat_get_key_version_scoped", json!({"key_version": key_version}))
@@ -337,13 +330,13 @@ pub fn group_chat_get_key_version_scoped(state: State<'_, Arc<AppState>>) -> App
 #[tauri::command]
 pub fn group_chat_rotate_key_scoped(input: ChatKeyRotateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     if input.next_version <= 0 {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.nextVersionPositive", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "next_version must be positive", None);
     }
     let user_scope = user_scope_from_state(&state);
     let key_version = match chat_storage::rotate_chat_key(user_scope.as_str(), input.next_version) {
         Ok(version) => version,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "error.chat.rotateKeyFailed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "rotate key failed", Some(json!({"reason": reason})));
         }
     };
     to_stub("group_chat_rotate_key_scoped", json!({"key_version": key_version}))
@@ -356,14 +349,14 @@ pub fn group_chat_sync_from_station_scoped(input: GroupChatSyncInput, state: Sta
         Err(error) => return error,
     };
     if input.group_ulid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.groupChat.groupUlidRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let scope_key = format!("group:{}", input.group_ulid);
     let cursor = match chat_storage::get_scope_cursor(user_scope.as_str(), scope_key.as_str()) {
         Ok(cursor) => cursor,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "error.chat.getCursorFailed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "get cursor failed", Some(json!({"reason": reason})));
         }
     };
     let page_limit = input.limit.unwrap_or(100);
@@ -430,7 +423,7 @@ pub fn group_chat_create_group(input: GroupChatCreateGroupInput, state: State<'_
         Method::POST, "/group-chat/create", &token, None, Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.groupChat.createGroupFailed", None),
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
     };
 
     let group_json = match resp.group {
@@ -462,7 +455,7 @@ pub fn group_chat_leave_group(input: GroupChatLeaveGroupInput, state: State<'_, 
         Method::POST, "/group-chat/leave", &token, None, Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.groupChat.leaveGroupFailed", None),
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
     };
 
     to_stub("group_chat_leave_group", json!({ "success": resp.success }))
@@ -481,7 +474,7 @@ pub fn group_chat_get_group(input: GroupUlidInput, state: State<'_, Arc<AppState
     };
 
     let query = vec![("group_ulid", input.group_ulid)];
-    let data = match request_json(Method::GET, "/group-chat/info", &token, Some(&query), None) {
+    let data = match request_json(Method::GET, "/group-chat/group", &token, Some(&query), None) {
         Ok(data) => data,
         Err(error) => return error,
     };
@@ -498,8 +491,8 @@ pub fn group_chat_update_group(input: GroupUpdateInput, state: State<'_, Arc<App
     };
 
     let data = match request_json(
-        Method::PUT,
-        "/group-chat/update",
+        Method::POST,
+        "/group-chat/group/update",
         &token,
         None,
         Some(json!({
@@ -525,12 +518,12 @@ pub fn group_chat_invite_to_group(input: GroupInviteInput, state: State<'_, Arc<
 
     let data = match request_json(
         Method::POST,
-        "/group-chat/invite",
+        "/group-chat/group/invite",
         &token,
         None,
         Some(json!({
             "group_ulid": input.group_ulid,
-            "invitee_dids": input.member_dids,
+            "member_dids": input.member_dids,
         })),
     ) {
         Ok(data) => data,
@@ -550,7 +543,7 @@ pub fn group_chat_join_group(input: GroupJoinInput, state: State<'_, Arc<AppStat
 
     let data = match request_json(
         Method::POST,
-        "/group-chat/join",
+        "/group-chat/group/join",
         &token,
         None,
         Some(json!({
@@ -579,7 +572,7 @@ pub fn group_chat_get_members(input: GroupMembersInput, state: State<'_, Arc<App
         ("offset", input.offset.unwrap_or(0).to_string()),
     ];
 
-    let data = match request_json(Method::GET, "/group-chat/members", &token, Some(&query), None) {
+    let data = match request_json(Method::GET, "/group-chat/group/members", &token, Some(&query), None) {
         Ok(data) => data,
         Err(error) => return error,
     };
@@ -597,12 +590,12 @@ pub fn group_chat_remove_member(input: GroupRemoveMemberInput, state: State<'_, 
 
     let data = match request_json(
         Method::POST,
-        "/group-chat/member/remove",
+        "/group-chat/group/remove-member",
         &token,
         None,
         Some(json!({
             "group_ulid": input.group_ulid,
-            "actor_did": input.member_did,
+            "member_did": input.member_did,
         })),
     ) {
         Ok(data) => data,
@@ -693,8 +686,8 @@ pub fn group_chat_update_nickname(input: GroupUpdateNicknameInput, state: State<
     };
 
     let data = match request_json(
-        Method::PUT,
-        "/group-chat/member/nickname",
+        Method::POST,
+        "/group-chat/group/nickname",
         &token,
         None,
         Some(json!({
@@ -719,7 +712,7 @@ pub fn group_chat_get_settings(input: GroupUlidInput, state: State<'_, Arc<AppSt
 
     let query = vec![("group_ulid", input.group_ulid)];
 
-    let data = match request_json(Method::GET, "/group-chat/my-settings", &token, Some(&query), None) {
+    let data = match request_json(Method::GET, "/group-chat/group/settings", &token, Some(&query), None) {
         Ok(data) => data,
         Err(error) => return error,
     };
@@ -735,23 +728,17 @@ pub fn group_chat_update_settings(input: GroupUpdateMySettingsInput, state: Stat
         Err(error) => return error,
     };
 
-    let mut body = json!({ "group_ulid": input.group_ulid });
-    if let Some(v) = input.is_muted {
-        body["is_muted"] = json!(v);
-    }
-    if let Some(v) = input.is_pinned {
-        body["is_pinned"] = json!(v);
-    }
-    if let Some(v) = input.show_member_nickname {
-        body["show_member_nickname"] = json!(v);
-    }
-
     let data = match request_json(
-        Method::PUT,
-        "/group-chat/my-settings",
+        Method::POST,
+        "/group-chat/group/settings",
         &token,
         None,
-        Some(body),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "is_muted": input.is_muted,
+            "is_pinned": input.is_pinned,
+            "show_member_nickname": input.show_member_nickname,
+        })),
     ) {
         Ok(data) => data,
         Err(error) => return error,
@@ -769,6 +756,7 @@ pub fn group_chat_get_offline_messages(input: GroupOfflineMessagesInput, state: 
     };
 
     let query = vec![
+        ("group_ulid", input.group_ulid),
         ("limit", input.limit.unwrap_or(100).to_string()),
     ];
 
@@ -794,7 +782,8 @@ pub fn group_chat_ack_offline_messages(input: GroupAckOfflineInput, state: State
         &token,
         None,
         Some(json!({
-            "ulids": input.message_ulids,
+            "group_ulid": input.group_ulid,
+            "message_ulids": input.message_ulids,
         })),
     ) {
         Ok(data) => data,

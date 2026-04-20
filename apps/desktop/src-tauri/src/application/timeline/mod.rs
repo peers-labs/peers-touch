@@ -22,12 +22,11 @@ pub fn timeline_like(input: TimelineActionInput) -> AppResult<StubPayload> {
     match timeline_store::like(&input.post_id) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
-            "error.timeline.likeRolledBack",
-            Some(serde_json::json!({
-                "command": "timeline_like",
-                "postId": outcome.post_id,
-                "rolledBack": true
-            })),
+            format!(
+                "Timeline like was rolled back for post {} (command: timeline_like)",
+                outcome.post_id
+            ),
+            None,
         ),
         Ok(outcome) => AppResult::success(StubPayload {
             command: "timeline_like".to_string(),
@@ -42,12 +41,11 @@ pub fn timeline_comment(input: TimelineActionInput) -> AppResult<StubPayload> {
     match timeline_store::comment(&input.post_id, &content) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
-            "error.timeline.commentRolledBack",
-            Some(serde_json::json!({
-                "command": "timeline_comment",
-                "postId": outcome.post_id,
-                "rolledBack": true
-            })),
+            format!(
+                "Timeline comment was rolled back for post {} (command: timeline_comment)",
+                outcome.post_id
+            ),
+            None,
         ),
         Ok(outcome) => AppResult::success(StubPayload {
             command: "timeline_comment".to_string(),
@@ -61,12 +59,11 @@ pub fn timeline_repost(input: TimelineActionInput) -> AppResult<StubPayload> {
     match timeline_store::repost(&input.post_id, input.content.as_deref()) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
-            "error.timeline.repostRolledBack",
-            Some(serde_json::json!({
-                "command": "timeline_repost",
-                "postId": outcome.post_id,
-                "rolledBack": true
-            })),
+            format!(
+                "Timeline repost was rolled back for post {} (command: timeline_repost)",
+                outcome.post_id
+            ),
+            None,
         ),
         Ok(outcome) => AppResult::success(StubPayload {
             command: "timeline_repost".to_string(),
@@ -78,25 +75,37 @@ pub fn timeline_repost(input: TimelineActionInput) -> AppResult<StubPayload> {
 
 fn map_error(command: &str, error: TimelineError) -> AppResult<StubPayload> {
     match error {
-        TimelineError::InvalidArgument(message) => AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "error.timeline.invalidArgument",
-            Some(serde_json::json!({ "command": command, "detail": message })),
-        ),
-        TimelineError::NotFound(message) => AppResult::fail(
-            ErrorCode::NotFound,
-            "error.timeline.notFound",
-            Some(serde_json::json!({ "command": command, "detail": message })),
-        ),
-        TimelineError::Conflict(message) => AppResult::fail(
-            ErrorCode::Conflict,
-            "error.timeline.conflict",
-            Some(serde_json::json!({ "command": command, "detail": message })),
-        ),
-        TimelineError::Internal(message) => AppResult::fail(
-            ErrorCode::InternalError,
-            "error.timeline.internal",
-            Some(serde_json::json!({ "command": command, "detail": message })),
-        ),
+        TimelineError::InvalidArgument(message) => {
+            tracing::error!(command = %command, error = %message, "Timeline invalid argument");
+            AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid argument: {} (command: {})", message, command),
+                None,
+            )
+        }
+        TimelineError::NotFound(message) => {
+            tracing::error!(command = %command, error = %message, "Timeline item not found");
+            AppResult::fail(
+                ErrorCode::NotFound,
+                format!("Not found: {} (command: {})", message, command),
+                None,
+            )
+        }
+        TimelineError::Conflict(message) => {
+            tracing::error!(command = %command, error = %message, "Timeline conflict");
+            AppResult::fail(
+                ErrorCode::Conflict,
+                format!("Conflict: {} (command: {})", message, command),
+                None,
+            )
+        }
+        TimelineError::Internal(message) => {
+            tracing::error!(command = %command, error = %message, "Timeline internal error");
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Internal error: {} (command: {})", message, command),
+                None,
+            )
+        }
     }
 }

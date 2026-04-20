@@ -12,7 +12,7 @@ mod state;
 
 use std::sync::Arc;
 use tauri::Manager;
-use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, i18n, mcp, memory, model_config, models, notebook, notification, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
+use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, ice, i18n, mcp, memory, model_config, models, notebook, notification, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
 
 fn main() {
     let ctx = bootstrap::run();
@@ -219,9 +219,6 @@ fn main() {
             account::account_get_active,
             account::account_switch,
             account::account_upsert_oauth,
-            account::account_set_pin,
-            account::account_unlock,
-            account::account_list_restorable,
             memory::memory_list,
             memory::memory_get,
             memory::memory_delete,
@@ -245,25 +242,24 @@ fn main() {
             friend_chat::friend_chat_go_offline,
             friend_chat::friend_chat_get_pending,
             friend_chat::friend_chat_get_stats,
-            friend_chat::key_exchange_upload_bundle,
-            friend_chat::key_exchange_fetch_bundle,
             friend_chat::friend_chat_local_search,
             friend_chat::friend_chat_local_search_scoped,
-            crypto::chat_search_local,
-            crypto::crypto_generate_identity,
-            crypto::crypto_get_fingerprint,
-            crypto::crypto_get_key_bundle,
-            crypto::crypto_encrypt_message,
-            crypto::crypto_decrypt_message,
-            crypto::crypto_init_session,
-            crypto::crypto_group_encrypt,
-            crypto::crypto_group_decrypt,
-            crypto::crypto_group_rotate_key,
             friend_chat::friend_chat_set_cursor_scoped,
             friend_chat::friend_chat_get_cursor_scoped,
             friend_chat::friend_chat_get_key_version_scoped,
             friend_chat::friend_chat_rotate_key_scoped,
             friend_chat::friend_chat_sync_from_station_scoped,
+            ice::ice_get_servers,
+            ice::ice_peer_register,
+            ice::ice_peer_unregister,
+            ice::ice_session_new,
+            ice::ice_session_get,
+            ice::ice_session_offer_post,
+            ice::ice_session_offer_get,
+            ice::ice_session_answer_post,
+            ice::ice_session_answer_get,
+            ice::ice_session_candidate_post,
+            ice::ice_session_candidates_get,
             friend_chat::friend_chat_send_friend_request,
             friend_chat::friend_chat_accept_friend_request,
             friend_chat::friend_chat_reject_friend_request,
@@ -304,14 +300,7 @@ fn main() {
             agent_scheduler::agent_scheduler_start,
             agent_scheduler::agent_scheduler_stop,
             agent_scheduler::agent_scheduler_status,
-            agent_scheduler::agent_scheduler_add_job,
-            notification::notification_list,
-            notification::notification_unread_counts,
-            notification::notification_mark_read,
-            notification::notification_mark_all_read,
-            notification::notification_delete,
-            notification::notification_preferences,
-            notification::notification_preferences_update
+            agent_scheduler::agent_scheduler_add_job
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
