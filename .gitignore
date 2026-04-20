@@ -25,6 +25,10 @@ dist/
 *.so
 *.dylib
 
+# Station dashboard SPA is embedded via go:embed; keep dist tracked.
+!apps/station/app/subserver/dashboard/web/dist/
+!apps/station/app/subserver/dashboard/web/dist/**
+
 # Logs
 *.log
 logs/
