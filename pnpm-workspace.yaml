@@ -1,5 +1,6 @@
 packages:
   - apps/desktop
+  - apps/station/app/subserver/dashboard/web
   - packages/model
   - packages/sdk/ts
   - packages/ui/desktop
