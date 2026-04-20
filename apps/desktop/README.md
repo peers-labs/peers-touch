@@ -105,6 +105,12 @@ Applet Bundle (/applets-dist) → AppletManager → LynxContainer/LynxHost → B
 - `LynxHost` is the desktop Lynx host element used for rendering and load/error event binding.
 - `Bridge V2` uses `peers-touch.applet.bridge.v2` protocol for host capability invocation.
 
+### Friend Chat Runtime Notes
+- Friend chat now relies on `src/services/desktop_api.ts` + `src-tauri/src/interface/tauri_commands/` as the single Desktop bridge layer.
+- Frontend errors are forwarded to `frontend_log`, so `LogsTab` should show `Error.message` and `stack` instead of opaque `{}` payloads.
+- WebRTC/TURN/signaling access is bridged through `src-tauri/src/interface/tauri_commands/ice.rs`; Station must expose `/api/v1/turn/*` and `/api/v1/ice/*`.
+- Background friend-chat sync currently uses Station incremental sync as the baseline receive path; direct P2P transport is additive, not a replacement for persistence.
+
 ### Legacy Applet Upgrade Checklist
 - [ ] Set `manifestVersion` to `2` in `applet.json`.
 - [ ] Add `load.type` as `lynx` and set `load.entry` to the applet entry file.
