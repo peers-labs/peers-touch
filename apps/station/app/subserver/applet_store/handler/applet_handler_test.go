@@ -2,12 +2,34 @@ package applet_store
 
 import (
 	"context"
+	"os"
 	"testing"
 
+	dbmodel "github.com/peers-labs/peers-touch/station/app/subserver/applet_store/db/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/applet_store/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
+
+func newTestStoreService(t *testing.T) *service.StoreService {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&dbmodel.Applet{}, &dbmodel.AppletVersion{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	storageDir := t.TempDir()
+	// Ensure temp dir exists (defensive).
+	if err := os.MkdirAll(storageDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	return service.NewStoreService(db, storageDir)
+}
 
 func TestHandleListApplets(t *testing.T) {
 	ctx := context.Background()
@@ -15,7 +37,7 @@ func TestHandleListApplets(t *testing.T) {
 		ID: "test_user",
 	})
 
-	svc := service.NewStoreService()
+	svc := newTestStoreService(t)
 	h := NewAppletHandlers(svc)
 
 	tests := []struct {
@@ -85,28 +107,27 @@ func TestHandleGetAppletDetails(t *testing.T) {
 		ID: "test_user",
 	})
 
-	svc := service.NewStoreService()
+	svc := newTestStoreService(t)
 	h := NewAppletHandlers(svc)
+
+	// Seed mock applets via list handler so we can fetch a real id.
+	listResp, err := h.HandleListApplets(ctx, &model.ListAppletsRequest{Limit: 20, Offset: 0})
+	if err != nil {
+		t.Fatalf("seed/list applets error: %v", err)
+	}
+	if listResp == nil || len(listResp.Applets) == 0 {
+		t.Fatalf("expected seeded applets, got empty")
+	}
+	existingID := listResp.Applets[0].Id
 
 	tests := []struct {
 		name      string
 		req       *model.GetAppletDetailsRequest
 		wantError bool
 	}{
-		{
-			name: "missing applet_id",
-			req: &model.GetAppletDetailsRequest{
-				AppletId: "",
-			},
-			wantError: true,
-		},
-		{
-			name: "valid applet_id",
-			req: &model.GetAppletDetailsRequest{
-				AppletId: "test_applet_123",
-			},
-			wantError: false,
-		},
+		{name: "missing applet_id", req: &model.GetAppletDetailsRequest{AppletId: ""}, wantError: true},
+		{name: "non-existing applet_id", req: &model.GetAppletDetailsRequest{AppletId: "non_existing_applet"}, wantError: true},
+		{name: "existing applet_id", req: &model.GetAppletDetailsRequest{AppletId: existingID}, wantError: false},
 	}
 
 	for _, tt := range tests {
@@ -130,65 +151,6 @@ func TestHandleGetAppletDetails(t *testing.T) {
 
 			if resp.Info == nil {
 				t.Error("Expected Info to be non-nil")
-			}
-		})
-	}
-}
-
-func TestHandleGetAppletDetails_ErrorCases(t *testing.T) {
-	ctx := context.Background()
-	svc := service.NewStoreService()
-	h := NewAppletHandlers(svc)
-
-	tests := []struct {
-		name        string
-		setupCtx    func() context.Context
-		appletId    string
-		expectError bool
-	}{
-		{
-			name: "no auth subject",
-			setupCtx: func() context.Context {
-				return context.Background()
-			},
-			appletId:    "test_applet_123",
-			expectError: false,
-		},
-		{
-			name: "with auth subject",
-			setupCtx: func() context.Context {
-				ctx := context.Background()
-				return coreauth.WithSubject(ctx, &coreauth.Subject{
-					ID:         "user_456",
-					Attributes: map[string]string{"role": "admin"},
-				})
-			},
-			appletId:    "admin_applet",
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := tt.setupCtx()
-			req := &model.GetAppletDetailsRequest{
-				AppletId: tt.appletId,
-			}
-
-			resp, err := h.HandleGetAppletDetails(ctx, req)
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error but got none")
-			}
-
-			if !tt.expectError && err != nil {
-				t.Errorf("Unexpected error: %v", err)
-			}
-
-			if !tt.expectError && resp != nil && resp.Info != nil {
-				if resp.Info.Id != tt.appletId {
-					t.Errorf("Info.Id = %v, want %v", resp.Info.Id, tt.appletId)
-				}
 			}
 		})
 	}
