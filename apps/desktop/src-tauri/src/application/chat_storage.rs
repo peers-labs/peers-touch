@@ -402,6 +402,9 @@ fn sync_message_item_from_value(v: &Value, default_session_ulid: &str) -> Result
         r#type,
         content,
         sent_at: json_to_optional_timestamp(v, &["sentAt", "sent_at"]),
+        encrypted_payload: Vec::new(),
+        attachments: Vec::new(),
+        reply_to_ulid: String::new(),
     })
 }
 
@@ -547,6 +550,7 @@ pub fn send_friend_message(token: &str, session_ulid: &str, receiver_did: &str, 
         attachments: Vec::new(),
         reply_to_ulid: reply_to_ulid.to_string(),
         encrypted_payload: Vec::new(),
+        client_ulid: String::new(),
     };
     let resp = station_client::request_proto::<model::chat::SendMessageRequest, model::chat::SendMessageResponse>(
         Method::POST,

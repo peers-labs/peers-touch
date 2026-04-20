@@ -376,6 +376,9 @@ fn value_to_sync_message_item(v: &Value) -> Option<model::chat::SyncMessageItem>
         r#type: json_i32(v, &["type"]).unwrap_or(0),
         content: json_str(v, &["content"]).unwrap_or_default(),
         sent_at: json_to_optional_timestamp(v, &["sentAt", "sent_at"]),
+        encrypted_payload: Vec::new(),
+        attachments: Vec::new(),
+        reply_to_ulid: String::new(),
     })
 }
 
@@ -518,6 +521,7 @@ pub fn friend_chat_send_message(input: FriendChatSendInput, state: State<'_, Arc
         attachments: map_attachments(&input.attachments.unwrap_or_default()),
         reply_to_ulid: input.reply_to_ulid.unwrap_or_default(),
         encrypted_payload,
+        client_ulid: input.client_ulid.unwrap_or_default(),
     };
 
     let resp = match station_client::request_proto::<model::chat::SendMessageRequest, model::chat::SendMessageResponse>(

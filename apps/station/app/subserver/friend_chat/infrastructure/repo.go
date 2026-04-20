@@ -246,8 +246,23 @@ func (r *GormRepo) ListSessions(actorDID string, limit, offset int) ([]domain.Se
 
 func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error) {
 	now := time.Now()
+	messageULID := strings.TrimSpace(message.ID)
+	if messageULID == "" {
+		messageULID = fmt.Sprintf("fcm-%d", now.UnixNano())
+	} else {
+		var existing MessageModel
+		if err := r.db.Where("ulid = ?", messageULID).First(&existing).Error; err == nil {
+			out := toDomainMessage(existing)
+			if atts, loadErr := r.LoadAttachments(existing.ULID); loadErr == nil {
+				out.Attachments = atts
+			}
+			return out, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.Message{}, err
+		}
+	}
 	record := MessageModel{
-		ULID:             fmt.Sprintf("fcm-%d", now.UnixNano()),
+		ULID:             messageULID,
 		SessionULID:      message.SessionID,
 		SenderDID:        message.SenderDID,
 		ReceiverDID:      message.ReceiverDID,
