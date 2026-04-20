@@ -20,6 +20,7 @@ photos-directory
 *.key
 
 # Go build artifacts
+main
 *.exe
 *.dll
 *.so

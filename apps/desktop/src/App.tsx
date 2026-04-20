@@ -1,6 +1,6 @@
 import { type ComponentType, useEffect, useRef, useCallback } from 'react';
 import { Modal } from 'antd';
-import { useAppLifecycle } from './hooks/useAppLifecycle';
+import { useAppLifecycle, clearWarmResume } from './hooks/useAppLifecycle';
 import { OnboardingView } from './views/OnboardingView';
 import { ReadyView } from './views/ReadyView';
 import { onSessionRevoked } from './services/desktop_api';
@@ -27,6 +27,7 @@ function App() {
     handledRef.current = true;
 
     useSessionStore.getState().logout().catch(() => {});
+    clearWarmResume();
 
     Modal.warning({
       title: 'Session Ended',

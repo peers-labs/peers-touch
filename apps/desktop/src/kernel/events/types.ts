@@ -3,6 +3,7 @@ import { EVENT } from './catalog';
 
 export interface EventPayloadMap {
   [EVENT.AUTH_IDENTITY_CHANGED]: void;
+  [EVENT.AUTH_SESSION_REVOKED]: void;
   [EVENT.OAUTH_CONNECTIONS_CHANGED]: void;
   [EVENT.NAVIGATION_REQUESTED]: ParsedDeepLink | { resource: 'settings'; id?: string };
   [EVENT.AGENT_BUILDER_STREAM_ENDED]: void;

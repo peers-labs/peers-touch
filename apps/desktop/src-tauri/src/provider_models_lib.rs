@@ -2,14 +2,18 @@ pub mod error;
 #[path = "state/mod.rs"]
 pub mod state;
 
-pub(crate) use interface::contracts;
-
-/// Minimal proto surface shared with `infrastructure/station_client.rs` (also used by the main binary).
+// Minimal model re-export so station_client.rs can resolve `crate::model::common::PeersResponse`
+// in the lib crate context. The full model tree lives in the binary crate (main.rs).
 pub mod model {
     pub mod common {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.common.v1.rs"));
+        pub mod v1 {
+            include!(concat!(env!("OUT_DIR"), "/peers_touch.model.common.v1.rs"));
+        }
+        pub use v1::*;
     }
 }
+
+pub(crate) use interface::contracts;
 
 pub mod infrastructure {
     #[path = "i18n/mod.rs"]

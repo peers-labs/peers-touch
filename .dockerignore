@@ -1,0 +1,20 @@
+# Only send what the Dockerfile actually needs to the build context.
+# Station Dockerfile needs: apps/station/{app,frame}, tooling/docker/entrypoint.sh
+
+# Exclude everything we don't need
+.git
+apps/desktop
+apps/mobile
+apps/oauth2-client
+packages
+model
+docs
+tooling/scripts
+**/node_modules
+apps/station/frame/example
+apps/station/app/peers-touch-station
+apps/station/app/peers-touch-app
+apps/station/app/app
+apps/station/app/coverage.*
+apps/station/app/test_scripts
+apps/station/app/data
