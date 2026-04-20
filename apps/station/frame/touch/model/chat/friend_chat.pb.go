@@ -781,8 +781,11 @@ type SendMessageRequest struct {
 	Attachments      []*FriendMessageAttachment `protobuf:"bytes,5,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	ReplyToUlid      string                     `protobuf:"bytes,6,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
 	EncryptedPayload []byte                     `protobuf:"bytes,7,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Client-generated ULID for idempotency across direct + relay paths.
+	// When set, Station should persist this ULID instead of generating a new one.
+	ClientUlid    string `protobuf:"bytes,8,opt,name=client_ulid,json=clientUlid,proto3" json:"client_ulid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SendMessageRequest) Reset() {
@@ -862,6 +865,13 @@ func (x *SendMessageRequest) GetEncryptedPayload() []byte {
 		return x.EncryptedPayload
 	}
 	return nil
+}
+
+func (x *SendMessageRequest) GetClientUlid() string {
+	if x != nil {
+		return x.ClientUlid
+	}
+	return ""
 }
 
 type SendMessageResponse struct {
@@ -1558,15 +1568,19 @@ func (x *RelayMessageResponse) GetForwardedTo() string {
 
 // SyncMessages: batch sync pending messages to server (POST /friend-chat/message/sync).
 type SyncMessageItem struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ulid          string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
-	SessionUlid   string                 `protobuf:"bytes,2,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
-	ReceiverDid   string                 `protobuf:"bytes,3,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
-	Type          FriendMessageType      `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.chat.v1.FriendMessageType" json:"type,omitempty"`
-	Content       string                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
-	SentAt        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Ulid        string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
+	SessionUlid string                 `protobuf:"bytes,2,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	ReceiverDid string                 `protobuf:"bytes,3,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
+	Type        FriendMessageType      `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.chat.v1.FriendMessageType" json:"type,omitempty"`
+	Content     string                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
+	SentAt      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
+	// Optional E2E ciphertext. When set, content may be a non-secret placeholder.
+	EncryptedPayload []byte                     `protobuf:"bytes,7,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
+	Attachments      []*FriendMessageAttachment `protobuf:"bytes,8,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	ReplyToUlid      string                     `protobuf:"bytes,9,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SyncMessageItem) Reset() {
@@ -1639,6 +1653,27 @@ func (x *SyncMessageItem) GetSentAt() *timestamppb.Timestamp {
 		return x.SentAt
 	}
 	return nil
+}
+
+func (x *SyncMessageItem) GetEncryptedPayload() []byte {
+	if x != nil {
+		return x.EncryptedPayload
+	}
+	return nil
+}
+
+func (x *SyncMessageItem) GetAttachments() []*FriendMessageAttachment {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
+}
+
+func (x *SyncMessageItem) GetReplyToUlid() string {
+	if x != nil {
+		return x.ReplyToUlid
+	}
+	return ""
 }
 
 type SyncMessagesRequest struct {
@@ -2640,7 +2675,7 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xdd\x02\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xfe\x02\n" +
 	"\x12SendMessageRequest\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12!\n" +
 	"\freceiver_did\x18\x02 \x01(\tR\vreceiverDid\x12@\n" +
@@ -2648,7 +2683,9 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12T\n" +
 	"\vattachments\x18\x05 \x03(\v22.peers_touch.model.chat.v1.FriendMessageAttachmentR\vattachments\x12\"\n" +
 	"\rreply_to_ulid\x18\x06 \x01(\tR\vreplyToUlid\x12+\n" +
-	"\x11encrypted_payload\x18\a \x01(\fR\x10encryptedPayload\"\x80\x01\n" +
+	"\x11encrypted_payload\x18\a \x01(\fR\x10encryptedPayload\x12\x1f\n" +
+	"\vclient_ulid\x18\b \x01(\tR\n" +
+	"clientUlid\"\x80\x01\n" +
 	"\x13SendMessageResponse\x12F\n" +
 	"\amessage\x18\x01 \x01(\v2,.peers_touch.model.chat.v1.FriendChatMessageR\amessage\x12!\n" +
 	"\frelay_status\x18\x02 \x01(\tR\vrelayStatus\"n\n" +
@@ -2691,14 +2728,17 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x14RelayMessageResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12=\n" +
 	"\fdelivered_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\vdeliveredAt\x12!\n" +
-	"\fforwarded_to\x18\x03 \x01(\tR\vforwardedTo\"\xfc\x01\n" +
+	"\fforwarded_to\x18\x03 \x01(\tR\vforwardedTo\"\xa3\x03\n" +
 	"\x0fSyncMessageItem\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12!\n" +
 	"\fsession_ulid\x18\x02 \x01(\tR\vsessionUlid\x12!\n" +
 	"\freceiver_did\x18\x03 \x01(\tR\vreceiverDid\x12@\n" +
 	"\x04type\x18\x04 \x01(\x0e2,.peers_touch.model.chat.v1.FriendMessageTypeR\x04type\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\tR\acontent\x123\n" +
-	"\asent_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\"]\n" +
+	"\asent_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12+\n" +
+	"\x11encrypted_payload\x18\a \x01(\fR\x10encryptedPayload\x12T\n" +
+	"\vattachments\x18\b \x03(\v22.peers_touch.model.chat.v1.FriendMessageAttachmentR\vattachments\x12\"\n" +
+	"\rreply_to_ulid\x18\t \x01(\tR\vreplyToUlid\"]\n" +
 	"\x13SyncMessagesRequest\x12F\n" +
 	"\bmessages\x18\x01 \x03(\v2*.peers_touch.model.chat.v1.SyncMessageItemR\bmessages\"F\n" +
 	"\x14SyncMessagesResponse\x12\x16\n" +
@@ -2861,19 +2901,20 @@ var file_domain_chat_friend_chat_proto_depIdxs = []int32{
 	42, // 24: peers_touch.model.chat.v1.RelayMessageResponse.delivered_at:type_name -> google.protobuf.Timestamp
 	0,  // 25: peers_touch.model.chat.v1.SyncMessageItem.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
 	42, // 26: peers_touch.model.chat.v1.SyncMessageItem.sent_at:type_name -> google.protobuf.Timestamp
-	22, // 27: peers_touch.model.chat.v1.SyncMessagesRequest.messages:type_name -> peers_touch.model.chat.v1.SyncMessageItem
-	30, // 28: peers_touch.model.chat.v1.GetPendingResponse.messages:type_name -> peers_touch.model.chat.v1.PendingMessageInfo
-	43, // 29: peers_touch.model.chat.v1.SendFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
-	43, // 30: peers_touch.model.chat.v1.AcceptFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
-	3,  // 31: peers_touch.model.chat.v1.AcceptFriendRequestResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
-	43, // 32: peers_touch.model.chat.v1.RejectFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
-	44, // 33: peers_touch.model.chat.v1.ListFriendRequestsRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
-	43, // 34: peers_touch.model.chat.v1.ListFriendRequestsResponse.requests:type_name -> peers_touch.model.chat.v1.FriendRequest
-	35, // [35:35] is the sub-list for method output_type
-	35, // [35:35] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	5,  // 27: peers_touch.model.chat.v1.SyncMessageItem.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
+	22, // 28: peers_touch.model.chat.v1.SyncMessagesRequest.messages:type_name -> peers_touch.model.chat.v1.SyncMessageItem
+	30, // 29: peers_touch.model.chat.v1.GetPendingResponse.messages:type_name -> peers_touch.model.chat.v1.PendingMessageInfo
+	43, // 30: peers_touch.model.chat.v1.SendFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
+	43, // 31: peers_touch.model.chat.v1.AcceptFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
+	3,  // 32: peers_touch.model.chat.v1.AcceptFriendRequestResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
+	43, // 33: peers_touch.model.chat.v1.RejectFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
+	44, // 34: peers_touch.model.chat.v1.ListFriendRequestsRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
+	43, // 35: peers_touch.model.chat.v1.ListFriendRequestsResponse.requests:type_name -> peers_touch.model.chat.v1.FriendRequest
+	36, // [36:36] is the sub-list for method output_type
+	36, // [36:36] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_friend_chat_proto_init() }
