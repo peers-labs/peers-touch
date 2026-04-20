@@ -29,6 +29,9 @@ func Lifecycle() []option.Option {
 
 func onStoreReady(ctx context.Context, rds *gorm.DB) {
 	auth.InitSessionManager(ctx)
+	// Actor online/offline is derived from heartbeats. Ensure the watchdog runs so
+	// stale online states are eventually marked offline even if clients crash.
+	actor.InitStatusManager(ctx)
 }
 
 func onAfterStart() error {

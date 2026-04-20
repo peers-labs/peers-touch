@@ -2,14 +2,15 @@
 // Peers actors from the dashboard admin perspective.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — list, detail, password reset,
-//   session management with enriched actor details.
-// - 2026-04-10: Refactored from flat actors_service.go into DDD application layer.
+//   - 2026-04-10: Initial implementation — list, detail, password reset,
+//     session management with enriched actor details.
+//   - 2026-04-10: Refactored from flat actors_service.go into DDD application layer.
 package application
 
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
@@ -67,26 +68,32 @@ func (s *ActorService) GetActorDetail(ctx context.Context, actorID uint64) (*dom
 // enrichActorDetail populates counts and status for a single actor row.
 func (s *ActorService) enrichActorDetail(ctx context.Context, a touchdb.Actor) domain.ActorDetail {
 	detail := domain.ActorDetail{
-		ID:               a.ID,
-		DID:              a.PTID,
+		ID:                a.ID,
+		DID:               a.PTID,
 		PreferredUsername: a.PreferredUsername,
-		Name:             a.Name,
-		Email:            a.Email,
-		Summary:          a.Summary,
-		AvatarURL:        a.Icon,
-		CreatedAt:        a.CreatedAt,
+		Name:              a.Name,
+		Email:             a.Email,
+		Summary:           a.Summary,
+		AvatarURL:         a.Icon,
+		CreatedAt:         a.CreatedAt,
 	}
 
 	// Resolve online status
 	actorStatus, err := s.actorRepo.GetActorStatus(ctx, a.ID)
 	if err == nil {
-		switch actorStatus.Status {
-		case touchdb.ActorStatusOnline:
-			detail.Status = "online"
-		case touchdb.ActorStatusAway:
-			detail.Status = "away"
-		default:
+		// Dashboard must treat "online" as bounded by heartbeat TTL; otherwise a
+		// single login can leave a permanent online flag if watchdog isn't running.
+		if actorStatus.LastHeartbeat.IsZero() || time.Since(actorStatus.LastHeartbeat) > 5*time.Minute {
 			detail.Status = "offline"
+		} else {
+			switch actorStatus.Status {
+			case touchdb.ActorStatusOnline:
+				detail.Status = "online"
+			case touchdb.ActorStatusAway:
+				detail.Status = "away"
+			default:
+				detail.Status = "offline"
+			}
 		}
 	} else {
 		detail.Status = "offline"
