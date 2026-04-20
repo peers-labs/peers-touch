@@ -5,6 +5,7 @@ import { api, type ChatAttachmentInput } from '../services/desktop_api';
 import { FriendMessageStatus, type FriendChatSession, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { Group, GroupMessage, GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
 import { log } from '../utils/logger';
+import { friendChatP2p } from '../modules/p2p/friendChatP2p';
 
 interface FriendRequestData {
   id: string;
@@ -55,6 +56,8 @@ interface SocialChatState {
   activeSessionUlid: string | null;
   activeGroupUlid: string | null;
   messages: Record<string, (FriendChatMessage | GroupMessage)[]>;
+  messageHasMore: Record<string, boolean>;
+  messageLoadingMore: Record<string, boolean>;
   groupMembers: Record<string, GroupMember[]>;
   loading: boolean;
   showDetail: boolean;
@@ -75,6 +78,8 @@ interface SocialChatState {
   ownFingerprint: string | null;
   /** sessionUlid → whether E2E is active for that conversation (future key-exchange wiring). */
   sessionEncrypted: Record<string, boolean>;
+  friendP2pStatus: Record<string, { state: string; detail?: string }>;
+  setFriendP2pStatus: (sessionUlid: string, state: string, detail?: string) => void;
 
   loadSessions: () => Promise<void>;
   loadGroups: () => Promise<void>;
@@ -82,6 +87,7 @@ interface SocialChatState {
   selectSession: (ulid: string) => void;
   selectGroup: (ulid: string) => void;
   loadMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
+  loadOlderMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
   sendFriendMessage: (
     sessionUlid: string,
     receiverDid: string,
@@ -170,6 +176,12 @@ function deriveCurrentUserDidFromSessions(sessions: FriendChatSession[]): string
   return [...common][0] ?? null;
 }
 
+function createClientMessageUlid(): string {
+  const ts = Date.now().toString(36).toUpperCase();
+  const rand = Math.random().toString(36).slice(2, 12).toUpperCase();
+  return `fcmc-${ts}-${rand}`;
+}
+
 export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   sessions: [],
   groups: [],
@@ -177,6 +189,8 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   activeSessionUlid: null,
   activeGroupUlid: null,
   messages: {},
+  messageHasMore: {},
+  messageLoadingMore: {},
   groupMembers: {},
   loading: false,
   showDetail: false,
@@ -193,6 +207,14 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   encryptionEnabled: false,
   ownFingerprint: null,
   sessionEncrypted: {},
+  friendP2pStatus: {},
+  setFriendP2pStatus: (sessionUlid, state, detail) =>
+    set((prev) => ({
+      friendP2pStatus: {
+        ...prev.friendP2pStatus,
+        [sessionUlid]: { state, ...(detail ? { detail } : {}) },
+      },
+    })),
 
   initEncryption: async () => {
     try {
@@ -311,7 +333,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
           }
         }
       }
-      let data: { messages?: unknown[] };
+      let data: { messages?: unknown[]; hasMore?: boolean; has_more?: boolean };
       if (activeTab === 'friend') {
         data = await api.friendChatListMessages(ulid);
       } else {
@@ -320,6 +342,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       const msgs = data?.messages || [];
       set((state) => ({
         messages: { ...state.messages, [ulid]: msgs as (FriendChatMessage | GroupMessage)[] },
+        messageHasMore: {
+          ...state.messageHasMore,
+          [ulid]: Boolean(data?.hasMore ?? data?.has_more),
+        },
         loading: false,
       }));
     } catch (error) {
@@ -329,11 +355,48 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     }
   },
 
+  loadOlderMessages: async (ulid, kind) => {
+    const activeKind = kind ?? get().activeTab;
+    const current = get().messages[ulid] || [];
+    if (current.length === 0 || get().messageLoadingMore[ulid]) return;
+    const oldest = current[0]?.ulid;
+    if (!oldest) return;
+    set((state) => ({
+      messageLoadingMore: { ...state.messageLoadingMore, [ulid]: true },
+    }));
+    try {
+      let data: { messages?: unknown[]; hasMore?: boolean; has_more?: boolean };
+      if (activeKind === 'friend') {
+        data = await api.friendChatListMessages(ulid, oldest, 50);
+      } else {
+        data = await api.groupChatListMessages(ulid, oldest, 50);
+      }
+      const older = (data?.messages || []) as (FriendChatMessage | GroupMessage)[];
+      const dedup = older.filter((msg) => !current.some((item) => item.ulid === msg.ulid));
+      set((state) => ({
+        messages: { ...state.messages, [ulid]: [...dedup, ...(state.messages[ulid] || [])] },
+        messageHasMore: {
+          ...state.messageHasMore,
+          [ulid]: Boolean(data?.hasMore ?? data?.has_more),
+        },
+        messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
+      }));
+    } catch (error) {
+      log.error('socialChat', 'loadOlderMessages failed', error);
+      set((state) => ({
+        messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
+      }));
+      throw error;
+    }
+  },
+
   sendFriendMessage: async (sessionUlid, receiverDid, content, type, replyToUlid, attachments) => {
     try {
       const { sessionEncrypted, encryptionEnabled } = get();
       let encryptedPayload: string | undefined;
       let sendContent = content;
+      const clientUlid = createClientMessageUlid();
+      const myDid = get().currentUserDid ?? '';
 
       if (encryptionEnabled && sessionEncrypted[sessionUlid]) {
         try {
@@ -350,7 +413,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         }
       }
 
-      await api.friendChatSendMessage(
+      const resp = await api.friendChatSendMessage(
         sessionUlid,
         receiverDid,
         sendContent,
@@ -358,7 +421,13 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         replyToUlid,
         attachments,
         encryptedPayload,
+        clientUlid,
       );
+      const messageUlid = (resp as any)?.message?.ulid || clientUlid;
+      if (myDid && receiverDid && messageUlid) {
+        // Best-effort: direct channel only sends a hint; persistence stays on Station.
+        friendChatP2p.sendMessageHint(myDid, receiverDid, sessionUlid, messageUlid);
+      }
       await get().loadMessages(sessionUlid, 'friend');
       const did = get().currentUserDid ?? '';
       set((state) => ({

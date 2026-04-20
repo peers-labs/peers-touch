@@ -131,19 +131,24 @@ export function ChatMessageArea() {
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid, messages, loading,
-    sessions, groups, loadMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
+    sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage,
   } = useSocialChatStore();
+  const messageHasMore = useSocialChatStore((s) => s.messageHasMore);
+  const messageLoadingMore = useSocialChatStore((s) => s.messageLoadingMore);
   const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
   const scrollToMessageUlid = useSocialChatStore((s) => s.scrollToMessageUlid);
   const setScrollToMessageUlid = useSocialChatStore((s) => s.setScrollToMessageUlid);
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
+  const friendP2pStatus = useSocialChatStore((s) => s.friendP2pStatus);
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
   const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
@@ -168,6 +173,23 @@ export function ChatMessageArea() {
     return g ? t('chat.social.detail.membersCount', { count: g.memberCount }) : '';
   })();
 
+  const p2pBadge = (() => {
+    if (activeTab !== 'friend' || !activeUlid) return null;
+    const s = friendP2pStatus[activeUlid];
+    if (!s) return null;
+    const label = s.state === 'connected' ? 'Direct' : s.state === 'connecting' ? 'Connecting' : s.state === 'failed' ? 'Fallback' : '';
+    if (!label) return null;
+    const color = s.state === 'connected' ? token.colorSuccess : s.state === 'connecting' ? token.colorWarning : token.colorTextQuaternary;
+    const tip = s.detail ? `${label}: ${s.detail}` : label;
+    return (
+      <Tooltip title={tip}>
+        <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 6, background: token.colorFillTertiary, color }}>
+          {label}
+        </span>
+      </Tooltip>
+    );
+  })();
+
   useEffect(() => {
     if (activeUlid) {
       loadMessages(activeUlid);
@@ -175,6 +197,13 @@ export function ChatMessageArea() {
   }, [activeUlid, loadMessages]);
 
   useEffect(() => {
+    if (prependRestoreRef.current && scrollContainerRef.current) {
+      const { previousHeight } = prependRestoreRef.current;
+      const container = scrollContainerRef.current;
+      container.scrollTop = container.scrollHeight - previousHeight;
+      prependRestoreRef.current = null;
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages.length]);
 
@@ -193,6 +222,19 @@ export function ChatMessageArea() {
     });
     return () => cancelAnimationFrame(raf);
   }, [scrollToMessageUlid, activeUlid, currentMessages, setScrollToMessageUlid]);
+
+  const handleScroll = async () => {
+    if (!activeUlid || !scrollContainerRef.current) return;
+    if (!messageHasMore[activeUlid] || messageLoadingMore[activeUlid]) return;
+    const container = scrollContainerRef.current;
+    if (container.scrollTop > 40) return;
+    prependRestoreRef.current = { previousHeight: container.scrollHeight };
+    try {
+      await loadOlderMessages(activeUlid, activeTab === 'friend' ? 'friend' : 'group');
+    } catch {
+      prependRestoreRef.current = null;
+    }
+  };
 
   const handleSend = async () => {
     if (!inputValue.trim() || !activeUlid) return;
@@ -320,6 +362,7 @@ export function ChatMessageArea() {
               <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
               <Text type="secondary" style={{ fontSize: 12 }}>{subtitle}</Text>
             </Flexbox>
+            {p2pBadge}
             {encryptionEnabled && (
               <Tooltip title={t('chat.social.encryption.enabled')}>
                 <Lock size={14} style={{ color: token.colorSuccess, marginLeft: 4 }} />
@@ -346,7 +389,18 @@ export function ChatMessageArea() {
         </Flexbox>
       </Flexbox>
 
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '16px 20px' }} gap={12}>
+      <Flexbox
+        flex={1}
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        style={{ overflow: 'auto', padding: '16px 20px' }}
+        gap={12}
+      >
+        {activeUlid && messageLoadingMore[activeUlid] && (
+          <Flexbox align="center" justify="center" style={{ paddingBottom: 8 }}>
+            <Spin size="small" />
+          </Flexbox>
+        )}
         {loading && currentMessages.length === 0 ? (
           <Flexbox align="center" justify="center" flex={1}>
             <Spin />
