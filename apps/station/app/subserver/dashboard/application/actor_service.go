@@ -68,7 +68,8 @@ func (s *ActorService) GetActorDetail(ctx context.Context, actorID uint64) (*dom
 // enrichActorDetail populates counts and status for a single actor row.
 func (s *ActorService) enrichActorDetail(ctx context.Context, a touchdb.Actor) domain.ActorDetail {
 	detail := domain.ActorDetail{
-		ID:                a.ID,
+		ID:               a.ID,
+		DID:              a.PTID,
 		PreferredUsername: a.PreferredUsername,
 		Name:              a.Name,
 		Email:             a.Email,
