@@ -201,7 +201,13 @@ func (r *actorQueryRepository) CountActorsSince(ctx context.Context, since time.
 
 func (r *actorQueryRepository) CountOnlineActors(ctx context.Context) (int64, error) {
 	var c int64
-	err := r.db.WithContext(ctx).Model(&touchdb.ActorStatus{}).Where("status = ?", touchdb.ActorStatusOnline).Count(&c).Error
+	// Online status must be bounded by heartbeat TTL; otherwise stale rows can be
+	// counted as "online" indefinitely (e.g. client crashed without logout).
+	heartbeatThreshold := time.Now().Add(-5 * time.Minute)
+	err := r.db.WithContext(ctx).
+		Model(&touchdb.ActorStatus{}).
+		Where("status = ? AND last_heartbeat > ?", touchdb.ActorStatusOnline, heartbeatThreshold).
+		Count(&c).Error
 	return c, err
 }
 
