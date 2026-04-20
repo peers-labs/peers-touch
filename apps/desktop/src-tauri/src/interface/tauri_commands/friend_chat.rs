@@ -138,6 +138,77 @@ fn filter_incremental_messages(payload: &Value, cursor: Option<&str>) -> (Value,
     (filtered_payload, synced_count, latest)
 }
 
+fn json_str(v: &Value, keys: &[&str]) -> Option<String> {
+    for k in keys {
+        if let Some(s) = v.get(*k).and_then(|x| x.as_str()) {
+            return Some(s.to_string());
+        }
+    }
+    None
+}
+
+fn json_i32(v: &Value, keys: &[&str]) -> Option<i32> {
+    for k in keys {
+        if let Some(n) = v.get(*k).and_then(|x| x.as_i64()) {
+            return Some(n as i32);
+        }
+    }
+    None
+}
+
+fn millis_to_timestamp(ms: i64) -> prost_types::Timestamp {
+    prost_types::Timestamp {
+        seconds: ms / 1000,
+        nanos: ((ms % 1000) * 1_000_000) as i32,
+    }
+}
+
+fn json_to_optional_timestamp(v: &Value, keys: &[&str]) -> Option<prost_types::Timestamp> {
+    let ms = keys.iter().find_map(|k| v.get(*k).and_then(|x| x.as_i64()))?;
+    Some(millis_to_timestamp(ms))
+}
+
+fn value_to_sync_message_item(v: &Value) -> Option<model::chat::SyncMessageItem> {
+    Some(model::chat::SyncMessageItem {
+        ulid: json_str(v, &["ulid"])?,
+        session_ulid: json_str(v, &["sessionUlid", "session_ulid"])?,
+        receiver_did: json_str(v, &["receiverDid", "receiver_did"])?,
+        r#type: json_i32(v, &["type"]).unwrap_or(0),
+        content: json_str(v, &["content"]).unwrap_or_default(),
+        sent_at: json_to_optional_timestamp(v, &["sentAt", "sent_at"]),
+        encrypted_payload: Vec::new(),
+        attachments: Vec::new(),
+        reply_to_ulid: String::new(),
+    })
+}
+
+fn map_attachments(inputs: &[AttachmentInput]) -> Vec<model::chat::FriendMessageAttachment> {
+    inputs
+        .iter()
+        .map(|a| model::chat::FriendMessageAttachment {
+            cid: a.cid.clone(),
+            filename: a.filename.clone(),
+            mime_type: a.mime_type.clone(),
+            size: a.size,
+            thumbnail_cid: a.thumbnail_cid.clone().unwrap_or_default(),
+        })
+        .collect()
+}
+
+fn next_cursor_from_payload(data: &Value) -> Option<String> {
+    data.get("nextCursor")
+        .or_else(|| data.get("next_cursor"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+fn has_more_from_payload(data: &Value) -> bool {
+    data.get("hasMore")
+        .or_else(|| data.get("has_more"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
 #[tauri::command]
 pub fn friend_chat_list_sessions(input: FriendChatListInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
@@ -208,18 +279,33 @@ pub fn friend_chat_send_message(input: FriendChatSendInput, state: State<'_, Arc
         Ok(token) => token,
         Err(error) => return error,
     };
+    let attachments = input.attachments.clone().unwrap_or_default();
+    let mut body = json!({
+        "session_ulid": input.session_ulid,
+        "receiver_did": input.receiver_did,
+        "content": input.content,
+        "type": input.r#type.unwrap_or(1),
+        "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
+        "attachments": attachments,
+    });
+    if let Some(b64) = input.encrypted_payload.as_ref() {
+        let t = b64.trim();
+        if !t.is_empty() {
+            body["encrypted_payload"] = json!(t);
+        }
+    }
+    if let Some(id) = input.client_ulid.as_ref() {
+        let t = id.trim();
+        if !t.is_empty() {
+            body["client_ulid"] = json!(t);
+        }
+    }
     let data = match request_json(
         Method::POST,
         "/friend-chat/message/send",
         &token,
         None,
-        Some(json!({
-            "session_ulid": input.session_ulid,
-            "receiver_did": input.receiver_did,
-            "content": input.content,
-            "type": input.r#type.unwrap_or(1),
-            "reply_to_ulid": input.reply_to_ulid.unwrap_or_default()
-        })),
+        Some(body),
     ) {
         Ok(data) => data,
         Err(error) => return error,
