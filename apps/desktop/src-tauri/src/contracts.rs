@@ -135,6 +135,8 @@ pub struct FriendChatSendInput {
     pub content: String,
     /// Base64-encoded ciphertext when sending E2E encrypted messages (optional).
     pub encrypted_payload: Option<String>,
+    /// Client-generated idempotency key. Shared by direct + relay send attempts.
+    pub client_ulid: Option<String>,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
     pub attachments: Option<Vec<AttachmentInput>>,
