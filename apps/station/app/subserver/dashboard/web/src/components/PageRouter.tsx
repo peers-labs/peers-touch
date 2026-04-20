@@ -18,6 +18,7 @@ import StoragePage from '../pages/StoragePage';
 import SecurityPage from '../pages/SecurityPage';
 import SystemPage from '../pages/SystemPage';
 import LogsPage from '../pages/LogsPage';
+import TransportPage from '../pages/TransportPage';
 
 interface Props {
   page: Page;
@@ -35,6 +36,7 @@ export default function PageRouter({ page }: Props) {
     case PAGES.SECURITY:   return <SecurityPage />;
     case PAGES.SYSTEM:     return <SystemPage />;
     case PAGES.LOGS:       return <LogsPage />;
+    case PAGES.TRANSPORT:  return <TransportPage />;
     default:               return <OverviewPage />;
   }
 }
