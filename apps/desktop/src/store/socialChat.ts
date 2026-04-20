@@ -442,37 +442,12 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     }
   },
 
-  sendGroupMessage: async (groupUlid, content, type, replyToUlid, attachments) => {
+  sendGroupMessage: async (groupUlid, content, type, replyToUlid, _attachments) => {
     try {
-      const { encryptionEnabled } = get();
-      let encryptedPayload: string | undefined;
-      let sendContent = content;
+      const sendContent = content;
 
-      if (encryptionEnabled) {
-        try {
-          const enc = await api.cryptoGroupEncrypt(groupUlid, content);
-          const envelope = JSON.stringify({
-            c: enc.ciphertext,
-            e: enc.epoch,
-            n: enc.counter,
-          });
-          encryptedPayload = btoa(envelope);
-          sendContent = '[Encrypted Message]';
-        } catch {
-          // Encryption not available for this group, send plaintext
-        }
-      }
-
-      await api.groupChatSendMessage(
-        groupUlid,
-        sendContent,
-        type,
-        replyToUlid,
-        undefined,
-        undefined,
-        attachments,
-        encryptedPayload,
-      );
+      // Group chat currently uses Station as the sole transport; attachments are not wired through the desktop bridge yet.
+      await api.groupChatSendMessage(groupUlid, sendContent, type, replyToUlid);
       await get().loadMessages(groupUlid, 'group');
       const did = get().currentUserDid ?? '';
       set((state) => ({
