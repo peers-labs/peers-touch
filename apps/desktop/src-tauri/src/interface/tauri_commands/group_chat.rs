@@ -1,36 +1,33 @@
 use std::sync::Arc;
-
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-
+use crate::error::{AppResult, ErrorCode};
 use crate::application::chat_storage;
+use crate::infrastructure::station_client;
+use crate::infrastructure::storage::resolve_user_scope;
 use crate::contracts::{
-    AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, GroupChatListInput,
+    ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, GroupChatListInput,
     GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSendInput, GroupChatUnreadInput, StubPayload,
     GroupChatSyncInput, GroupChatCreateGroupInput, GroupChatLeaveGroupInput,
-    GroupAckOfflineInput, GroupInviteInput, GroupJoinInput,
+    GroupAckOfflineInput, GroupCreateInput, GroupInviteInput, GroupJoinInput,
     GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
     GroupRemoveMemberInput, GroupSearchMessagesInput, GroupUlidInput,
     GroupUpdateInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
 };
-use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
-use crate::infrastructure::storage::resolve_user_scope;
 use crate::model;
 use crate::state::AppState;
+use reqwest::blocking::Client;
 use reqwest::Method;
 use serde_json::{json, Value};
 use tauri::State;
 
 fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<StubPayload>> {
     let guard = state.session.lock().map_err(|_| {
-        tracing::error!("Failed to acquire session lock");
-        AppResult::fail(ErrorCode::InternalError, "Failed to access session state", None)
+        AppResult::fail(ErrorCode::InternalError, "failed to access session state", None)
     })?;
     let token = guard.token.clone().unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "Authentication required — please log in",
+            "authentication required",
             None,
         ));
     }
@@ -50,19 +47,47 @@ fn user_scope_from_state(state: &State<'_, Arc<AppState>>) -> String {
     resolve_user_scope(actor_id.as_deref())
 }
 
-/// Maps `station_client::request_proto` string errors to the standard Tauri `AppResult` shape.
-fn fail_station_request(reason: String) -> AppResult<StubPayload> {
-    let code = if reason.starts_with("SESSION_REVOKED:") {
-        ErrorCode::Unauthorized
-    } else {
-        ErrorCode::InternalError
+fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, String)]>, body: Option<Value>) -> Result<Value, AppResult<StubPayload>> {
+    let client = match Client::builder().build() {
+        Ok(client) => client,
+        Err(error) => {
+            return Err(AppResult::fail(ErrorCode::InternalError, "failed to create http client", Some(json!({"reason": error.to_string()}))));
+        }
     };
-    tracing::error!(reason = %reason, "Station request failed");
-    AppResult::fail(
-        code,
-        format!("Station request failed: {}", reason),
-        None,
-    )
+    let mut req = client
+        .request(method, format!("{}{}", station_client::station_base_url(), path))
+        .bearer_auth(token);
+    if let Some(query) = query {
+        req = req.query(query);
+    }
+    if let Some(body) = body {
+        req = req.json(&body);
+    }
+    let response = match req.send() {
+        Ok(response) => response,
+        Err(error) => {
+            return Err(AppResult::fail(ErrorCode::InternalError, "station request failed", Some(json!({"reason": error.to_string()}))));
+        }
+    };
+    if !response.status().is_success() {
+        let code = match response.status().as_u16() {
+            400 => ErrorCode::InvalidArgument,
+            401 => ErrorCode::Unauthorized,
+            403 => ErrorCode::Forbidden,
+            404 => ErrorCode::NotFound,
+            409 => ErrorCode::Conflict,
+            _ => ErrorCode::InternalError,
+        };
+        return Err(AppResult::fail(code, "station request failed", Some(json!({"status": response.status().as_u16()}))));
+    }
+    match response.json::<Value>() {
+        Ok(data) => Ok(data),
+        Err(error) => Err(AppResult::fail(
+            ErrorCode::InternalError,
+            "invalid station response",
+            Some(json!({"reason": error.to_string()})),
+        )),
+    }
 }
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -72,238 +97,50 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     })
 }
 
-fn ts_millis(ts: &Option<prost_types::Timestamp>) -> Value {
-    match ts {
-        Some(t) => Value::Number((t.seconds * 1000 + (t.nanos as i64) / 1_000_000).into()),
-        None => Value::Null,
-    }
-}
-
-fn ts_millis_i64(ts: &Option<prost_types::Timestamp>) -> i64 {
-    match ts {
-        Some(t) => t.seconds * 1000 + (t.nanos as i64) / 1_000_000,
-        None => 0,
-    }
-}
-
-fn bytes_to_b64(bytes: &[u8]) -> String {
-    if bytes.is_empty() {
-        String::new()
-    } else {
-        B64.encode(bytes)
-    }
-}
-
-fn map_group_attachments(inputs: &[AttachmentInput]) -> Vec<model::chat::GroupMessageAttachment> {
-    inputs
-        .iter()
-        .map(|a| model::chat::GroupMessageAttachment {
-            cid: a.cid.clone(),
-            filename: a.filename.clone(),
-            mime_type: a.mime_type.clone(),
-            size: a.size,
-            thumbnail_cid: a.thumbnail_cid.clone().unwrap_or_default(),
-        })
-        .collect()
-}
-
-fn group_message_attachment_to_json(a: &model::chat::GroupMessageAttachment) -> Value {
-    json!({
-        "cid": a.cid,
-        "filename": a.filename,
-        "mimeType": a.mime_type,
-        "size": a.size,
-        "thumbnailCid": a.thumbnail_cid,
-    })
-}
-
-fn group_message_to_json(m: &model::chat::GroupMessage) -> Value {
-    json!({
-        "ulid": m.ulid,
-        "groupUlid": m.group_ulid,
-        "senderDid": m.sender_did,
-        "type": m.r#type,
-        "content": m.content,
-        "attachments": m.attachments.iter().map(group_message_attachment_to_json).collect::<Vec<_>>(),
-        "replyToUlid": m.reply_to_ulid,
-        "mentionedDids": m.mentioned_dids,
-        "mentionAll": m.mention_all,
-        "sentAt": ts_millis(&m.sent_at),
-        "createdAt": ts_millis(&m.created_at),
-        "updatedAt": ts_millis(&m.updated_at),
-        "deleted": m.deleted,
-        "encryptedPayload": bytes_to_b64(&m.encrypted_payload),
-    })
-}
-
-/// Shape expected by `chat_storage::ingest_group_messages` (snake_case + numeric `sent_at`).
-fn group_message_to_ingest_json(m: &model::chat::GroupMessage) -> Value {
-    json!({
-        "group_ulid": m.group_ulid,
-        "ulid": m.ulid,
-        "sender_did": m.sender_did,
-        "content": m.content,
-        "sent_at": ts_millis_i64(&m.sent_at),
-    })
-}
-
-fn group_to_json(g: &model::chat::Group) -> Value {
-    let settings: Vec<Value> = g
-        .settings
-        .iter()
-        .map(|(k, v)| json!({ "key": k, "value": v }))
-        .collect();
-    json!({
-        "ulid": g.ulid,
-        "name": g.name,
-        "description": g.description,
-        "avatarCid": g.avatar_cid,
-        "ownerDid": g.owner_did,
-        "type": g.r#type,
-        "visibility": g.visibility,
-        "memberCount": g.member_count,
-        "maxMembers": g.max_members,
-        "muted": g.muted,
-        "settings": settings,
-        "createdAt": ts_millis(&g.created_at),
-        "updatedAt": ts_millis(&g.updated_at),
-    })
-}
-
-fn group_member_to_json(m: &model::chat::GroupMember) -> Value {
-    json!({
-        "groupUlid": m.group_ulid,
-        "actorDid": m.actor_did,
-        "role": m.role,
-        "nickname": m.nickname,
-        "muted": m.muted,
-        "mutedUntil": ts_millis(&m.muted_until),
-        "joinedAt": ts_millis(&m.joined_at),
-        "invitedBy": m.invited_by,
-    })
-}
-
-fn group_invitation_to_json(i: &model::chat::GroupInvitation) -> Value {
-    json!({
-        "ulid": i.ulid,
-        "groupUlid": i.group_ulid,
-        "inviterDid": i.inviter_did,
-        "inviteeDid": i.invitee_did,
-        "status": i.status,
-        "expireAt": ts_millis(&i.expire_at),
-        "createdAt": ts_millis(&i.created_at),
-    })
-}
-
-fn group_offline_message_to_json(o: &model::chat::GroupOfflineMessage) -> Value {
-    json!({
-        "ulid": o.ulid,
-        "groupUlid": o.group_ulid,
-        "receiverDid": o.receiver_did,
-        "messageUlid": o.message_ulid,
-        "status": o.status,
-        "expireAt": ts_millis(&o.expire_at),
-        "deliveredAt": ts_millis(&o.delivered_at),
-        "createdAt": ts_millis(&o.created_at),
-    })
-}
-
-fn list_groups_response_to_json(resp: &model::chat::ListGroupsResponse) -> Value {
-    json!({
-        "groups": resp.groups.iter().map(group_to_json).collect::<Vec<_>>(),
-        "total": resp.total,
-    })
-}
-
-fn get_group_response_to_json(resp: &model::chat::GetGroupResponse) -> Value {
-    json!({
-        "group": resp.group.as_ref().map(group_to_json),
-        "myMembership": resp.my_membership.as_ref().map(group_member_to_json),
-    })
-}
-
-fn get_group_messages_response_to_json(resp: &model::chat::GetGroupMessagesResponse) -> Value {
-    json!({
-        "messages": resp.messages.iter().map(group_message_to_json).collect::<Vec<_>>(),
-        "hasMore": resp.has_more,
-        "nextCursor": resp.next_cursor,
-    })
-}
-
-fn get_group_messages_ingest_value(resp: &model::chat::GetGroupMessagesResponse) -> Value {
-    json!({
-        "messages": resp.messages.iter().map(group_message_to_ingest_json).collect::<Vec<_>>(),
-    })
-}
-
-fn send_group_message_response_to_json(resp: &model::chat::SendGroupMessageResponse) -> Value {
-    json!({
-        "message": resp.message.as_ref().map(group_message_to_json),
-    })
-}
-
-fn send_group_message_ingest_value(resp: &model::chat::SendGroupMessageResponse) -> Value {
-    match &resp.message {
-        Some(m) => json!({ "message": group_message_to_ingest_json(m) }),
-        None => json!({}),
-    }
-}
-
-fn search_group_messages_response_to_json(resp: &model::chat::SearchGroupMessagesResponse) -> Value {
-    json!({
-        "messages": resp.messages.iter().map(group_message_to_json).collect::<Vec<_>>(),
-        "hasMore": resp.has_more,
-    })
-}
-
-fn get_group_settings_response_to_json(resp: &model::chat::GetGroupSettingsResponse) -> Value {
-    json!({
-        "isMuted": resp.is_muted,
-        "isPinned": resp.is_pinned,
-        "myNickname": resp.my_nickname,
-        "showMemberNickname": resp.show_member_nickname,
-    })
-}
-
-fn extract_latest_ulid_from_messages(messages: &[model::chat::GroupMessage]) -> Option<String> {
-    messages
-        .iter()
-        .filter_map(|m| {
-            let u = m.ulid.trim();
-            if u.is_empty() {
-                None
-            } else {
-                Some(u.to_string())
+fn extract_latest_ulid(payload: &Value) -> Option<String> {
+    let messages = payload.get("messages")?.as_array()?;
+    for item in messages {
+        if let Some(ulid) = item.get("ulid").and_then(|v| v.as_str()) {
+            if !ulid.trim().is_empty() {
+                return Some(ulid.to_string());
             }
-        })
-        .max()
+        }
+    }
+    None
 }
 
-fn filter_incremental_group_messages(
-    messages: Vec<model::chat::GroupMessage>,
-    cursor: Option<&str>,
-) -> (Vec<model::chat::GroupMessage>, usize, Option<String>) {
-    let mut out = Vec::new();
+fn filter_incremental_messages(payload: &Value, cursor: Option<&str>) -> (Value, usize, Option<String>) {
+    let mut filtered_payload = payload.clone();
     let mut synced_count = 0usize;
     let mut latest: Option<String> = None;
-    for m in messages {
-        let ulid = m.ulid.trim().to_string();
-        if ulid.is_empty() {
-            continue;
-        }
-        let should_keep = match cursor {
-            Some(c) if !c.trim().is_empty() => ulid.as_str() > c,
-            _ => true,
-        };
-        if should_keep {
-            synced_count += 1;
-            if latest.as_ref().map(|v| ulid.as_str() > v.as_str()).unwrap_or(true) {
-                latest = Some(ulid.clone());
+    if let Some(messages) = payload.get("messages").and_then(|v| v.as_array()) {
+        let mut out = Vec::new();
+        for item in messages {
+            let ulid = item
+                .get("ulid")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            if ulid.is_empty() {
+                continue;
             }
-            out.push(m);
+            let should_keep = match cursor {
+                Some(c) if !c.trim().is_empty() => ulid.as_str() > c,
+                _ => true,
+            };
+            if should_keep {
+                synced_count += 1;
+                if latest.as_ref().map(|v| ulid.as_str() > v.as_str()).unwrap_or(true) {
+                    latest = Some(ulid.clone());
+                }
+                out.push(item.clone());
+            }
+        }
+        if let Some(obj) = filtered_payload.as_object_mut() {
+            obj.insert("messages".to_string(), Value::Array(out));
         }
     }
-    (out, synced_count, latest)
+    (filtered_payload, synced_count, latest)
 }
 
 #[tauri::command]
@@ -312,21 +149,15 @@ pub fn group_chat_list_groups(input: GroupChatListInput, state: State<'_, Arc<Ap
         Ok(token) => token,
         Err(error) => return error,
     };
-    let req = model::chat::ListGroupsRequest {
-        limit: input.limit.unwrap_or(50) as i32,
-        offset: input.offset.unwrap_or(0) as i32,
+    let query = vec![
+        ("limit", input.limit.unwrap_or(50).to_string()),
+        ("offset", input.offset.unwrap_or(0).to_string()),
+    ];
+    let data = match request_json(Method::GET, "/group-chat/list", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
-    let resp = match station_client::request_proto::<model::chat::ListGroupsRequest, model::chat::ListGroupsResponse>(
-        Method::GET,
-        "/group-chat/list",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("group_chat_list_groups", list_groups_response_to_json(&resp))
+    to_stub("group_chat_list_groups", data)
 }
 
 #[tauri::command]
@@ -336,26 +167,22 @@ pub fn group_chat_list_messages(input: GroupChatListMessagesInput, state: State<
         Err(error) => return error,
     };
     if input.group_ulid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Group ULID is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
     }
-    let req = model::chat::GetGroupMessagesRequest {
-        group_ulid: input.group_ulid,
-        before_ulid: input.before_ulid.unwrap_or_default(),
-        limit: input.limit.unwrap_or(50) as i32,
-    };
-    let resp = match station_client::request_proto::<model::chat::GetGroupMessagesRequest, model::chat::GetGroupMessagesResponse>(
-        Method::GET,
-        "/group-chat/messages",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+    let mut query = vec![
+        ("group_ulid", input.group_ulid),
+        ("limit", input.limit.unwrap_or(50).to_string()),
+    ];
+    if let Some(before) = input.before_ulid {
+        query.push(("before_ulid", before));
+    }
+    let data = match request_json(Method::GET, "/group-chat/messages", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
     let user_scope = user_scope_from_state(&state);
-    let _ = chat_storage::ingest_group_messages(user_scope.as_str(), &get_group_messages_ingest_value(&resp));
-    to_stub("group_chat_list_messages", get_group_messages_response_to_json(&resp))
+    let _ = chat_storage::ingest_group_messages(user_scope.as_str(), &data);
+    to_stub("group_chat_list_messages", data)
 }
 
 #[tauri::command]
@@ -364,48 +191,26 @@ pub fn group_chat_send_message(input: GroupChatSendInput, state: State<'_, Arc<A
         Ok(token) => token,
         Err(error) => return error,
     };
-
-    let mut encrypted_payload = Vec::new();
-    if let Some(ref b64) = input.encrypted_payload {
-        let t = b64.trim();
-        if !t.is_empty() {
-            encrypted_payload = match B64.decode(t.as_bytes()) {
-                Ok(b) => b,
-                Err(e) => {
-                    return AppResult::fail(
-                        ErrorCode::InvalidArgument,
-                        format!("Invalid encrypted_payload: {}", e),
-                        None,
-                    );
-                }
-            };
-        }
-    }
-
-    let req = model::chat::SendGroupMessageRequest {
-        group_ulid: input.group_ulid,
-        r#type: input.r#type.unwrap_or(1),
-        content: input.content,
-        attachments: map_group_attachments(&input.attachments.unwrap_or_default()),
-        reply_to_ulid: input.reply_to_ulid.unwrap_or_default(),
-        mentioned_dids: input.mentioned_dids.unwrap_or_default(),
-        mention_all: input.mention_all.unwrap_or(false),
-        encrypted_payload,
-    };
-
-    let resp = match station_client::request_proto::<model::chat::SendGroupMessageRequest, model::chat::SendGroupMessageResponse>(
+    let data = match request_json(
         Method::POST,
         "/group-chat/message/send",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "content": input.content,
+            "type": input.r#type.unwrap_or(1),
+            "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
+            "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
+            "mention_all": input.mention_all.unwrap_or(false),
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
     let user_scope = user_scope_from_state(&state);
-    let _ = chat_storage::ingest_group_messages(user_scope.as_str(), &send_group_message_ingest_value(&resp));
-    to_stub("group_chat_send_message", send_group_message_response_to_json(&resp))
+    let _ = chat_storage::ingest_group_messages(user_scope.as_str(), &data);
+    to_stub("group_chat_send_message", data)
 }
 
 #[tauri::command]
@@ -414,23 +219,15 @@ pub fn group_chat_unread_count(input: GroupChatUnreadInput, state: State<'_, Arc
         Ok(token) => token,
         Err(error) => return error,
     };
-    let req = model::chat::GetUnreadCountRequest {
-        group_ulid: input.group_ulid.unwrap_or_default(),
+    let mut query = Vec::new();
+    if let Some(group_ulid) = input.group_ulid {
+        query.push(("group_ulid", group_ulid));
+    }
+    let data = match request_json(Method::GET, "/group-chat/unread-count", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
-    let resp = match station_client::request_proto::<model::chat::GetUnreadCountRequest, model::chat::GetUnreadCountResponse>(
-        Method::GET,
-        "/group-chat/unread-count",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub(
-        "group_chat_unread_count",
-        json!({ "unreadCount": resp.unread_count, "unread_count": resp.unread_count }),
-    )
+    to_stub("group_chat_unread_count", data)
 }
 
 #[tauri::command]
@@ -439,27 +236,23 @@ pub fn group_chat_mark_read(input: GroupChatMarkReadInput, state: State<'_, Arc<
         Ok(token) => token,
         Err(error) => return error,
     };
-    let req = model::chat::MarkGroupReadRequest {
-        group_ulid: input.group_ulid,
-        up_to_ulid: String::new(),
-    };
-    let resp = match station_client::request_proto::<model::chat::MarkGroupReadRequest, model::chat::MarkGroupReadResponse>(
+    let data = match request_json(
         Method::POST,
         "/group-chat/mark-read",
         &token,
         None,
-        Some(&req),
+        Some(json!({"group_ulid": input.group_ulid})),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
-    to_stub("group_chat_mark_read", json!({ "success": resp.success }))
+    to_stub("group_chat_mark_read", data)
 }
 
 #[tauri::command]
 pub fn group_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Search query is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "query is required", None);
     }
     let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
     let items = match chat_storage::search_group_messages("__default__", input.query.as_str(), limit) {
@@ -467,8 +260,8 @@ pub fn group_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPay
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                format!("Local search failed: {}", reason),
-                None,
+                "local search failed",
+                Some(json!({ "reason": reason })),
             );
         }
     };
@@ -478,7 +271,7 @@ pub fn group_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPay
 #[tauri::command]
 pub fn group_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Search query is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "query is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
@@ -487,8 +280,8 @@ pub fn group_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                format!("Local search failed: {}", reason),
-                None,
+                "local search failed",
+                Some(json!({ "reason": reason })),
             );
         }
     };
@@ -502,11 +295,7 @@ pub fn group_chat_set_cursor_scoped(input: ChatScopeCursorSetInput, state: State
         return AppResult::fail(ErrorCode::InvalidArgument, "scope and cursor are required", None);
     }
     if let Err(reason) = chat_storage::set_scope_cursor(user_scope.as_str(), input.scope.as_str(), input.cursor.as_str()) {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to set cursor: {}", reason),
-            None,
-        );
+        return AppResult::fail(ErrorCode::InternalError, "set cursor failed", Some(json!({"reason": reason})));
     }
     to_stub("group_chat_set_cursor_scoped", json!({"ok": true}))
 }
@@ -520,11 +309,7 @@ pub fn group_chat_get_cursor_scoped(input: ChatScopeCursorGetInput, state: State
     let cursor = match chat_storage::get_scope_cursor(user_scope.as_str(), input.scope.as_str()) {
         Ok(cursor) => cursor,
         Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to get cursor: {}", reason),
-                None,
-            );
+            return AppResult::fail(ErrorCode::InternalError, "get cursor failed", Some(json!({"reason": reason})));
         }
     };
     to_stub("group_chat_get_cursor_scoped", json!({"cursor": cursor}))
@@ -536,11 +321,7 @@ pub fn group_chat_get_key_version_scoped(state: State<'_, Arc<AppState>>) -> App
     let key_version = match chat_storage::get_chat_key_version(user_scope.as_str()) {
         Ok(version) => version,
         Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to get key version: {}", reason),
-                None,
-            );
+            return AppResult::fail(ErrorCode::InternalError, "get key version failed", Some(json!({"reason": reason})));
         }
     };
     to_stub("group_chat_get_key_version_scoped", json!({"key_version": key_version}))
@@ -555,11 +336,7 @@ pub fn group_chat_rotate_key_scoped(input: ChatKeyRotateInput, state: State<'_, 
     let key_version = match chat_storage::rotate_chat_key(user_scope.as_str(), input.next_version) {
         Ok(version) => version,
         Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to rotate key: {}", reason),
-                None,
-            );
+            return AppResult::fail(ErrorCode::InternalError, "rotate key failed", Some(json!({"reason": reason})));
         }
     };
     to_stub("group_chat_rotate_key_scoped", json!({"key_version": key_version}))
@@ -572,18 +349,14 @@ pub fn group_chat_sync_from_station_scoped(input: GroupChatSyncInput, state: Sta
         Err(error) => return error,
     };
     if input.group_ulid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Group ULID is required", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let scope_key = format!("group:{}", input.group_ulid);
     let cursor = match chat_storage::get_scope_cursor(user_scope.as_str(), scope_key.as_str()) {
         Ok(cursor) => cursor,
         Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to get cursor: {}", reason),
-                None,
-            );
+            return AppResult::fail(ErrorCode::InternalError, "get cursor failed", Some(json!({"reason": reason})));
         }
     };
     let page_limit = input.limit.unwrap_or(100);
@@ -592,51 +365,32 @@ pub fn group_chat_sync_from_station_scoped(input: GroupChatSyncInput, state: Sta
     let mut total_synced = 0usize;
     let mut pages_fetched = 0u32;
     for _ in 0..max_pages {
-        let before_ulid = match &current_cursor {
-            Some(existing) if !existing.trim().is_empty() => format!("since:{existing}"),
-            _ => String::new(),
-        };
-        let req = model::chat::GetGroupMessagesRequest {
-            group_ulid: input.group_ulid.clone(),
-            before_ulid,
-            limit: page_limit as i32,
-        };
-        let data = match station_client::request_proto::<model::chat::GetGroupMessagesRequest, model::chat::GetGroupMessagesResponse>(
-            Method::GET,
-            "/group-chat/messages",
-            &token,
-            None,
-            Some(&req),
-        ) {
-            Ok(r) => r,
-            Err(e) => return fail_station_request(e),
+        let mut query = vec![
+            ("group_ulid", input.group_ulid.clone()),
+            ("limit", page_limit.to_string()),
+        ];
+        if let Some(ref existing) = current_cursor {
+            if !existing.trim().is_empty() {
+                query.push(("before_ulid", format!("since:{existing}")));
+            }
+        }
+        let data = match request_json(Method::GET, "/group-chat/messages", &token, Some(&query), None) {
+            Ok(data) => data,
+            Err(error) => return error,
         };
         pages_fetched += 1;
-        let (filtered_msgs, synced_count, latest) =
-            filter_incremental_group_messages(data.messages.clone(), current_cursor.as_deref());
-        let incremental = model::chat::GetGroupMessagesResponse {
-            messages: filtered_msgs,
-            has_more: data.has_more,
-            next_cursor: data.next_cursor.clone(),
-        };
-        let incremental_payload = get_group_messages_ingest_value(&incremental);
+        let (incremental_payload, synced_count, latest) = filter_incremental_messages(&data, current_cursor.as_deref());
         let _ = chat_storage::ingest_group_messages(user_scope.as_str(), &incremental_payload);
         total_synced += synced_count;
-        let server_cursor = {
-            let nc = data.next_cursor.trim();
-            if nc.is_empty() {
-                None
-            } else {
-                Some(nc.to_string())
-            }
-        };
-        let fallback_latest = extract_latest_ulid_from_messages(&data.messages);
+        let server_cursor = data.get("next_cursor").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
+        let fallback_latest = extract_latest_ulid(&data);
         let next = server_cursor.or(latest).or(fallback_latest);
         if let Some(ref new_cursor) = next {
             let _ = chat_storage::set_scope_cursor(user_scope.as_str(), scope_key.as_str(), new_cursor.as_str());
             current_cursor = Some(new_cursor.clone());
         }
-        if !data.has_more {
+        let has_more = data.get("has_more").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !has_more {
             break;
         }
     }
@@ -669,11 +423,17 @@ pub fn group_chat_create_group(input: GroupChatCreateGroupInput, state: State<'_
         Method::POST, "/group-chat/create", &token, None, Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
     };
 
     let group_json = match resp.group {
-        Some(ref g) => group_to_json(g),
+        Some(g) => json!({
+            "ulid": g.ulid,
+            "name": g.name,
+            "description": g.description,
+            "owner_did": g.owner_did,
+            "type": g.r#type,
+        }),
         None => json!(null),
     };
 
@@ -695,14 +455,14 @@ pub fn group_chat_leave_group(input: GroupChatLeaveGroupInput, state: State<'_, 
         Method::POST, "/group-chat/leave", &token, None, Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
     };
 
     to_stub("group_chat_leave_group", json!({ "success": resp.success }))
 }
 
 // ---------------------------------------------------------------------------
-// Stub commands - registered in main.rs, backed by station protobuf API
+// Stub commands - registered in main.rs, backed by station JSON API
 // ---------------------------------------------------------------------------
 
 /// Get a single group's detail by its ULID.
@@ -713,21 +473,13 @@ pub fn group_chat_get_group(input: GroupUlidInput, state: State<'_, Arc<AppState
         Err(error) => return error,
     };
 
-    let req = model::chat::GetGroupRequest {
-        group_ulid: input.group_ulid,
-    };
-    let resp = match station_client::request_proto::<model::chat::GetGroupRequest, model::chat::GetGroupResponse>(
-        Method::GET,
-        "/group-chat/info",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+    let query = vec![("group_ulid", input.group_ulid)];
+    let data = match request_json(Method::GET, "/group-chat/group", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub("group_chat_get_group", get_group_response_to_json(&resp))
+    to_stub("group_chat_get_group", data)
 }
 
 /// Update a group's name / description.
@@ -738,28 +490,21 @@ pub fn group_chat_update_group(input: GroupUpdateInput, state: State<'_, Arc<App
         Err(error) => return error,
     };
 
-    let req = model::chat::UpdateGroupRequest {
-        group_ulid: input.group_ulid,
-        name: Some(input.name),
-        description: Some(input.description.unwrap_or_default()),
-        ..Default::default()
-    };
-
-    let resp = match station_client::request_proto::<model::chat::UpdateGroupRequest, model::chat::UpdateGroupResponse>(
-        Method::PUT,
-        "/group-chat/update",
+    let data = match request_json(
+        Method::POST,
+        "/group-chat/group/update",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "name": input.name,
+            "description": input.description.unwrap_or_default(),
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    let data = match resp.group {
-        Some(ref g) => json!({ "group": group_to_json(g) }),
-        None => json!({ "group": null }),
-    };
     to_stub("group_chat_update_group", data)
 }
 
@@ -771,28 +516,21 @@ pub fn group_chat_invite_to_group(input: GroupInviteInput, state: State<'_, Arc<
         Err(error) => return error,
     };
 
-    let req = model::chat::InviteToGroupRequest {
-        group_ulid: input.group_ulid,
-        invitee_dids: input.member_dids,
-    };
-
-    let resp = match station_client::request_proto::<model::chat::InviteToGroupRequest, model::chat::InviteToGroupResponse>(
+    let data = match request_json(
         Method::POST,
-        "/group-chat/invite",
+        "/group-chat/group/invite",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "member_dids": input.member_dids,
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub(
-        "group_chat_invite_to_group",
-        json!({
-            "invitations": resp.invitations.iter().map(group_invitation_to_json).collect::<Vec<_>>(),
-        }),
-    )
+    to_stub("group_chat_invite_to_group", data)
 }
 
 /// Join a group (optionally via invitation).
@@ -803,28 +541,21 @@ pub fn group_chat_join_group(input: GroupJoinInput, state: State<'_, Arc<AppStat
         Err(error) => return error,
     };
 
-    let req = model::chat::JoinGroupRequest {
-        group_ulid: input.group_ulid,
-        invitation_ulid: input.invitation_ulid.unwrap_or_default(),
-    };
-
-    let resp = match station_client::request_proto::<model::chat::JoinGroupRequest, model::chat::JoinGroupResponse>(
+    let data = match request_json(
         Method::POST,
-        "/group-chat/join",
+        "/group-chat/group/join",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "invitation_ulid": input.invitation_ulid,
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub(
-        "group_chat_join_group",
-        json!({
-            "membership": resp.membership.as_ref().map(group_member_to_json),
-        }),
-    )
+    to_stub("group_chat_join_group", data)
 }
 
 /// List members of a group.
@@ -835,30 +566,18 @@ pub fn group_chat_get_members(input: GroupMembersInput, state: State<'_, Arc<App
         Err(error) => return error,
     };
 
-    let req = model::chat::GetGroupMembersRequest {
-        group_ulid: input.group_ulid,
-        limit: input.limit.unwrap_or(100) as i32,
-        offset: input.offset.unwrap_or(0) as i32,
+    let query = vec![
+        ("group_ulid", input.group_ulid),
+        ("limit", input.limit.unwrap_or(100).to_string()),
+        ("offset", input.offset.unwrap_or(0).to_string()),
+    ];
+
+    let data = match request_json(Method::GET, "/group-chat/group/members", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    let resp = match station_client::request_proto::<model::chat::GetGroupMembersRequest, model::chat::GetGroupMembersResponse>(
-        Method::GET,
-        "/group-chat/members",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
-    };
-
-    to_stub(
-        "group_chat_get_members",
-        json!({
-            "members": resp.members.iter().map(group_member_to_json).collect::<Vec<_>>(),
-            "total": resp.total,
-        }),
-    )
+    to_stub("group_chat_get_members", data)
 }
 
 /// Remove a member from a group.
@@ -869,23 +588,21 @@ pub fn group_chat_remove_member(input: GroupRemoveMemberInput, state: State<'_, 
         Err(error) => return error,
     };
 
-    let req = model::chat::RemoveMemberRequest {
-        group_ulid: input.group_ulid,
-        actor_did: input.member_did,
-    };
-
-    let resp = match station_client::request_proto::<model::chat::RemoveMemberRequest, model::chat::RemoveMemberResponse>(
+    let data = match request_json(
         Method::POST,
-        "/group-chat/member/remove",
+        "/group-chat/group/remove-member",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "member_did": input.member_did,
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub("group_chat_remove_member", json!({ "success": resp.success }))
+    to_stub("group_chat_remove_member", data)
 }
 
 /// Recall (withdraw) a message in a group.
@@ -896,23 +613,21 @@ pub fn group_chat_recall_message(input: GroupMessageActionInput, state: State<'_
         Err(error) => return error,
     };
 
-    let req = model::chat::RecallGroupMessageRequest {
-        group_ulid: input.group_ulid,
-        message_ulid: input.message_ulid,
-    };
-
-    let resp = match station_client::request_proto::<model::chat::RecallGroupMessageRequest, model::chat::RecallGroupMessageResponse>(
+    let data = match request_json(
         Method::POST,
         "/group-chat/message/recall",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "message_ulid": input.message_ulid,
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub("group_chat_recall_message", json!({ "success": resp.success }))
+    to_stub("group_chat_recall_message", data)
 }
 
 /// Delete a message in a group.
@@ -923,23 +638,21 @@ pub fn group_chat_delete_message(input: GroupMessageActionInput, state: State<'_
         Err(error) => return error,
     };
 
-    let req = model::chat::DeleteGroupMessageRequest {
-        group_ulid: input.group_ulid,
-        message_ulid: input.message_ulid,
-    };
-
-    let resp = match station_client::request_proto::<model::chat::DeleteGroupMessageRequest, model::chat::DeleteGroupMessageResponse>(
+    let data = match request_json(
         Method::POST,
         "/group-chat/message/delete",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "message_ulid": input.message_ulid,
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub("group_chat_delete_message", json!({ "success": resp.success }))
+    to_stub("group_chat_delete_message", data)
 }
 
 /// Search messages within a group.
@@ -950,25 +663,18 @@ pub fn group_chat_search_messages(input: GroupSearchMessagesInput, state: State<
         Err(error) => return error,
     };
 
-    let req = model::chat::SearchGroupMessagesRequest {
-        group_ulid: input.group_ulid,
-        query: input.query,
-        limit: input.limit.unwrap_or(50) as i32,
-        before_ulid: String::new(),
+    let query = vec![
+        ("group_ulid", input.group_ulid),
+        ("query", input.query),
+        ("limit", input.limit.unwrap_or(50).to_string()),
+    ];
+
+    let data = match request_json(Method::GET, "/group-chat/messages/search", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    let resp = match station_client::request_proto::<model::chat::SearchGroupMessagesRequest, model::chat::SearchGroupMessagesResponse>(
-        Method::GET,
-        "/group-chat/messages/search",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
-    };
-
-    to_stub("group_chat_search_messages", search_group_messages_response_to_json(&resp))
+    to_stub("group_chat_search_messages", data)
 }
 
 /// Update the current user's nickname in a group.
@@ -979,28 +685,21 @@ pub fn group_chat_update_nickname(input: GroupUpdateNicknameInput, state: State<
         Err(error) => return error,
     };
 
-    let req = model::chat::UpdateMyNicknameRequest {
-        group_ulid: input.group_ulid,
-        nickname: input.nickname,
-    };
-
-    let resp = match station_client::request_proto::<model::chat::UpdateMyNicknameRequest, model::chat::UpdateMyNicknameResponse>(
-        Method::PUT,
-        "/group-chat/member/nickname",
+    let data = match request_json(
+        Method::POST,
+        "/group-chat/group/nickname",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "nickname": input.nickname,
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub(
-        "group_chat_update_nickname",
-        json!({
-            "member": resp.member.as_ref().map(group_member_to_json),
-        }),
-    )
+    to_stub("group_chat_update_nickname", data)
 }
 
 /// Get the current user's settings for a group.
@@ -1011,22 +710,14 @@ pub fn group_chat_get_settings(input: GroupUlidInput, state: State<'_, Arc<AppSt
         Err(error) => return error,
     };
 
-    let req = model::chat::GetGroupSettingsRequest {
-        group_ulid: input.group_ulid,
+    let query = vec![("group_ulid", input.group_ulid)];
+
+    let data = match request_json(Method::GET, "/group-chat/group/settings", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    let resp = match station_client::request_proto::<model::chat::GetGroupSettingsRequest, model::chat::GetGroupSettingsResponse>(
-        Method::GET,
-        "/group-chat/my-settings",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
-    };
-
-    to_stub("group_chat_get_settings", get_group_settings_response_to_json(&resp))
+    to_stub("group_chat_get_settings", data)
 }
 
 /// Update the current user's settings for a group.
@@ -1037,25 +728,23 @@ pub fn group_chat_update_settings(input: GroupUpdateMySettingsInput, state: Stat
         Err(error) => return error,
     };
 
-    let req = model::chat::UpdateGroupSettingsRequest {
-        group_ulid: input.group_ulid,
-        is_muted: input.is_muted,
-        is_pinned: input.is_pinned,
-        show_member_nickname: input.show_member_nickname,
-    };
-
-    let resp = match station_client::request_proto::<model::chat::UpdateGroupSettingsRequest, model::chat::UpdateGroupSettingsResponse>(
-        Method::PUT,
-        "/group-chat/my-settings",
+    let data = match request_json(
+        Method::POST,
+        "/group-chat/group/settings",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "is_muted": input.is_muted,
+            "is_pinned": input.is_pinned,
+            "show_member_nickname": input.show_member_nickname,
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub("group_chat_update_settings", json!({ "success": resp.success }))
+    to_stub("group_chat_update_settings", data)
 }
 
 /// Retrieve offline messages for a group.
@@ -1066,29 +755,17 @@ pub fn group_chat_get_offline_messages(input: GroupOfflineMessagesInput, state: 
         Err(error) => return error,
     };
 
-    let GroupOfflineMessagesInput { limit, .. } = input;
+    let query = vec![
+        ("group_ulid", input.group_ulid),
+        ("limit", input.limit.unwrap_or(100).to_string()),
+    ];
 
-    let req = model::chat::GetOfflineMessagesRequest {
-        limit: limit.unwrap_or(100) as i32,
+    let data = match request_json(Method::GET, "/group-chat/offline-messages", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    let resp = match station_client::request_proto::<model::chat::GetOfflineMessagesRequest, model::chat::GetOfflineMessagesResponse>(
-        Method::GET,
-        "/group-chat/offline-messages",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
-    };
-
-    to_stub(
-        "group_chat_get_offline_messages",
-        json!({
-            "messages": resp.messages.iter().map(group_offline_message_to_json).collect::<Vec<_>>(),
-        }),
-    )
+    to_stub("group_chat_get_offline_messages", data)
 }
 
 /// Acknowledge (mark as received) offline messages for a group.
@@ -1099,24 +776,21 @@ pub fn group_chat_ack_offline_messages(input: GroupAckOfflineInput, state: State
         Err(error) => return error,
     };
 
-    let GroupAckOfflineInput { message_ulids, .. } = input;
-
-    let req = model::chat::AckOfflineMessagesRequest {
-        ulids: message_ulids,
-    };
-
-    let resp = match station_client::request_proto::<model::chat::AckOfflineMessagesRequest, model::chat::AckOfflineMessagesResponse>(
+    let data = match request_json(
         Method::POST,
         "/group-chat/offline-messages/ack",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "message_ulids": input.message_ulids,
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub("group_chat_ack_offline_messages", json!({ "success": resp.success }))
+    to_stub("group_chat_ack_offline_messages", data)
 }
 
 /// Get group-chat statistics (unread counts, member counts, etc.).
@@ -1127,24 +801,10 @@ pub fn group_chat_get_stats(state: State<'_, Arc<AppState>>) -> AppResult<StubPa
         Err(error) => return error,
     };
 
-    let resp = match station_client::request_proto::<(), model::chat::GetGroupStatsResponse>(
-        Method::GET,
-        "/group-chat/stats",
-        &token,
-        None,
-        None::<&()>,
-    ) {
-        Ok(r) => r,
-        Err(e) => return fail_station_request(e),
+    let data = match request_json(Method::GET, "/group-chat/stats", &token, None, None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    to_stub(
-        "group_chat_get_stats",
-        json!({
-            "totalGroups": resp.total_groups,
-            "totalMembers": resp.total_members,
-            "totalMessages": resp.total_messages,
-            "activeGroups": resp.active_groups,
-        }),
-    )
+    to_stub("group_chat_get_stats", data)
 }

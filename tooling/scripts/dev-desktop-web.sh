@@ -21,10 +21,9 @@ WEB_PORT="${WEB_PORT:-3211}"
 WEB_URL="http://localhost:$WEB_PORT"
 STATION_PORT="${STATION_PORT:-18080}"
 DASHBOARD_URL="http://localhost:${STATION_PORT}/dashboard/"
-VITE_PID_FILE="/tmp/peers-touch-desktop-vite-${PROFILE}.pid"
-
 source "$SCRIPT_DIR/_ensure-station.sh"
 source "$SCRIPT_DIR/_ensure-desktop-rust.sh"
+source "$SCRIPT_DIR/_ensure-desktop-vite.sh"
 
 if [[ ! -d "$DESKTOP_DIR" ]]; then
   echo "[ERROR] desktop app dir not found: $DESKTOP_DIR"
@@ -35,36 +34,7 @@ fi
 ensure_station_ready "$PROJECT_ROOT"
 
 # ── 2. Vite (frontend dev server) ────────────────────────────
-web_is_listening() {
-  lsof -tiTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1
-}
-
-VITE_PID=""
-if web_is_listening; then
-  echo "[INFO] Vite already running on $WEB_URL"
-else
-  echo "[INFO] Starting Vite..."
-  (cd "$DESKTOP_DIR" && VITE_GATEWAY_PORT="$GATEWAY_PORT" pnpm dev --port "$WEB_PORT") &
-  VITE_PID=$!
-  echo "$VITE_PID" > "$VITE_PID_FILE"
-
-  for _ in {1..60}; do
-    if ! ps -p "$VITE_PID" >/dev/null 2>&1; then
-      echo "[ERROR] Vite process exited unexpectedly"
-      exit 1
-    fi
-    if web_is_listening; then
-      echo "[INFO] Vite ready: $WEB_URL"
-      break
-    fi
-    sleep 1
-  done
-
-  if ! web_is_listening; then
-    echo "[ERROR] Vite did not start within 60s"
-    exit 1
-  fi
-fi
+ensure_desktop_vite_ready "$DESKTOP_DIR" "$WEB_PORT" "$GATEWAY_PORT" "$PROFILE"
 
 # ── 3. Desktop Rust BFF (headless — window hidden) ───────────
 cd "$DESKTOP_DIR"
@@ -98,10 +68,12 @@ cleanup() {
     kill "$VITE_PID" 2>/dev/null || true
   fi
   rm -f "$VITE_PID_FILE"
+  rm -f "${VITE_META_FILE:-}"
   if [[ -n "${TAURI_PID:-}" ]] && ps -p "$TAURI_PID" >/dev/null 2>&1; then
     kill "$TAURI_PID" 2>/dev/null || true
   fi
   rm -f "$DESKTOP_RUST_PID_FILE"
+  rm -f "${DESKTOP_RUST_META_FILE:-}"
 }
 trap cleanup EXIT INT TERM
 
