@@ -28,6 +28,15 @@ function touchActivity(): void {
   }
 }
 
+/** Clear warm-resume marker so next reload lands on onboarding. */
+export function clearWarmResume(): void {
+  try {
+    localStorage.removeItem(WARM_RESUME_KEY);
+  } catch {
+    // noop
+  }
+}
+
 function accountToSessionUser(account: AccountIdentity): SessionUser {
   return {
     name: account.name || account.provider_user_id || 'User',
@@ -86,11 +95,19 @@ export function useAppLifecycle(): AppLifecycle {
       if (warm && authenticated && currentUser) {
         touchActivity();
         setState('ready');
+      } else if (warm) {
+        // Warm resume failed — session expired or missing, fall back to onboarding
+        clearWarmResume();
+        setState('onboarding');
       }
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const completeLogin = useCallback(() => {
+    // Guard: never enter ready state without a valid authenticated session
+    const { authenticated } = useSessionStore.getState();
+    if (!authenticated) return;
+
     touchActivity();
     useOAuth2Store.getState().loadAll().catch(() => {});
     setState('ready');

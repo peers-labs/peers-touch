@@ -2,6 +2,7 @@ use crate::domain::auth::session::{validate_login_input, from_station_response, 
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::infrastructure::station_client;
+use crate::model::actor::ActorProfile;
 use crate::application::oauth2 as application_oauth2;
 use crate::contracts::{AuthLoginInput, AuthSessionPayload, AuthValidateTokenInput};
 use crate::state::{AppState, SessionState};
@@ -18,12 +19,12 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     let body = json!({ "email": input.account, "password": input.password });
     let resp = match station_client::post_json_no_auth("/actor/login", body) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::Unauthorized, "error.auth.loginFailed", Some(json!({ "detail": e.to_string() }))),
+        Err(e) => return AppResult::fail(ErrorCode::Unauthorized, format!("Login failed: {}", e), None),
     };
 
     let data = match resp.get("data") {
         Some(d) => d,
-        None => return AppResult::fail(ErrorCode::Unauthorized, "error.auth.unexpectedResponse", None),
+        None => return AppResult::fail(ErrorCode::Unauthorized, "Login failed: unexpected response from station", None),
     };
 
     let token = data
@@ -32,7 +33,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
         .unwrap_or_default()
         .to_string();
     if token.is_empty() {
-        return AppResult::fail(ErrorCode::Unauthorized, "error.auth.noToken", None);
+        return AppResult::fail(ErrorCode::Unauthorized, "Login failed: no token in response", None);
     }
 
     // Extract actor identity from the station response
@@ -63,17 +64,15 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
 
     // Station login response may not include avatar; fetch from profile API.
     let avatar = if avatar.is_empty() && !token.is_empty() {
-        station_client::request_json(
-            reqwest::Method::GET, "/actor/profile", &token, None, None,
+        station_client::request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            &token,
+            None,
         )
         .ok()
-        .and_then(|r| {
-            r.pointer("/data/icon")
-                .or_else(|| r.pointer("/data/avatar"))
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-        })
+        .map(|p| p.avatar)
+        .filter(|s| !s.is_empty())
         .unwrap_or(avatar)
     } else {
         avatar
@@ -237,8 +236,8 @@ fn read_session(state: &AppState) -> Result<SessionState, AppResult<AuthSessionP
     let guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "error.auth.sessionLockFailed",
-            Some(json!({ "reason": "session_lock_failed" })),
+            "Failed to access session state",
+            None,
         )
     })?;
     Ok(SessionState {
@@ -254,8 +253,8 @@ fn write_session(
     let mut guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "error.auth.sessionLockFailed",
-            Some(json!({ "reason": "session_lock_failed" })),
+            "Failed to access session state",
+            None,
         )
     })?;
     guard.actor_id = Some(session.actor_id.clone());
@@ -267,8 +266,8 @@ fn clear_session(state: &AppState) -> Result<(), AppResult<AuthSessionPayload>> 
     let mut guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "error.auth.sessionLockFailed",
-            Some(json!({ "reason": "session_lock_failed" })),
+            "Failed to access session state",
+            None,
         )
     })?;
     guard.actor_id = None;
@@ -288,8 +287,8 @@ fn persist_session(session: &AuthSession) -> Result<(), AppResult<AuthSessionPay
         fs::create_dir_all(parent).map_err(|_| {
             AppResult::fail(
                 ErrorCode::InternalError,
-                "error.auth.sessionPersistFailed",
-                Some(json!({ "reason": "session_directory_create_failed" })),
+                "Failed to persist session: could not create directory",
+                None,
             )
         })?;
     }
@@ -300,15 +299,15 @@ fn persist_session(session: &AuthSession) -> Result<(), AppResult<AuthSessionPay
     .map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "error.auth.sessionPersistFailed",
-            Some(json!({ "reason": "session_serialize_failed" })),
+            "Failed to persist session: serialization error",
+            None,
         )
     })?;
     storage::write_string_atomic(&file_path, &payload).map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "error.auth.sessionPersistFailed",
-            Some(json!({ "reason": "session_write_failed" })),
+            "Failed to persist session: write error",
+            None,
         )
     })
 }
@@ -331,8 +330,8 @@ fn clear_persisted_session() -> Result<(), AppResult<AuthSessionPayload>> {
     fs::remove_file(file_path).map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
-            "error.auth.sessionClearFailed",
-            Some(json!({ "reason": "session_remove_failed" })),
+            "Failed to clear session",
+            None,
         )
     })
 }
@@ -399,8 +398,8 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         None => {
             return AppResult::fail(
                 ErrorCode::NotFound,
-                "error.auth.sessionNotFound",
-                Some(json!({ "command": "ensure_station_session", "reason": "session_missing" })),
+                "No station session found to restore",
+                None,
             )
         }
     };

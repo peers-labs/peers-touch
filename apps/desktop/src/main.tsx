@@ -36,6 +36,17 @@ if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
   };
 }
 
+declare global {
+  interface Window {
+    __PT_BOOT_READY__?: () => void;
+    __PT_BOOT_ERROR__?: (detail: string) => void;
+    __PT_BOOT_STATUS__?: (text: string) => void;
+  }
+}
+
+// Report: module script started executing
+window.__PT_BOOT_STATUS__?.('Initializing…');
+
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) { return { error }; }
@@ -64,8 +75,10 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 
 async function bootstrap() {
+  window.__PT_BOOT_STATUS__?.('Loading language packs…');
   const i18n = await initI18n();
 
+  window.__PT_BOOT_STATUS__?.('Rendering UI…');
   const path = window.location.pathname;
   const shareMatch = path.match(/^\/share\/s\/([A-Za-z0-9]+)$/);
 
@@ -89,4 +102,8 @@ async function bootstrap() {
 bootstrap().catch((err) => {
   const msg = err instanceof Error ? err.message : String(err);
   log.error('app', 'Bootstrap failed', { error: msg, stack: err?.stack });
+  // Surface the error in the boot fallback UI immediately — don't wait for 30s timeout
+  if (typeof window.__PT_BOOT_ERROR__ === 'function') {
+    window.__PT_BOOT_ERROR__('Bootstrap failed:\n' + msg + (err?.stack ? '\n\n' + err.stack : ''));
+  }
 });

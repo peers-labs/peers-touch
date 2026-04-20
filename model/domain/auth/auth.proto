@@ -10,6 +10,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 message LoginRequest {
   string email = 1;
   string password = 2;
+  string device_type = 3;
 }
 
 message AuthTokens {
@@ -17,11 +18,20 @@ message AuthTokens {
   string access_token = 2;
   string refresh_token = 3;
   string token_type = 4;
-  google.protobuf.Timestamp expires_at = 5;
+  string expires_at = 5;
 }
 
-message LoginData {
+// Actor identity returned in login/oauth-bridge responses.
+message AuthActorInfo {
+  string id = 1;
+  int64  actor_id = 2;
+  string username = 3;
+  string display_name = 4;
+  string email = 5;
+}
+
+message LoginResponse {
   AuthTokens tokens = 1;
   string session_id = 2;
-  google.protobuf.Any actor = 3;
+  AuthActorInfo actor = 3;
 }

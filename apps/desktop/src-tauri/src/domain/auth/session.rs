@@ -19,12 +19,12 @@ pub enum AuthDomainError {
 pub fn validate_login_input(account: &str, password: &str) -> Result<(), AuthDomainError> {
     if account.trim().is_empty() {
         return Err(AuthDomainError::InvalidArgument(
-            "error.auth.accountRequired".to_string(),
+            "Account is required".to_string(),
         ));
     }
     if password.trim().is_empty() {
         return Err(AuthDomainError::InvalidArgument(
-            "error.auth.passwordRequired".to_string(),
+            "Password is required".to_string(),
         ));
     }
     Ok(())
@@ -42,20 +42,29 @@ pub fn from_station_response(actor_id: String, token: String) -> AuthSession {
 pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     let token = token.trim();
     if token.is_empty() {
-        return Err(AuthDomainError::Unauthorized("error.auth.tokenMissing".to_string()));
+        return Err(AuthDomainError::Unauthorized("Token is missing".to_string()));
     }
 
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 || !token.starts_with("eyJ") {
-        return Err(AuthDomainError::Unauthorized("error.auth.tokenInvalid".to_string()));
+        return Err(AuthDomainError::Unauthorized("Token is invalid or expired".to_string()));
     }
 
+    // Best-effort local validation:
+    // - Decode subject for display/identity wiring
+    // - If `exp` exists, enforce expiry so we don't offer "Continue" on an expired session.
     let actor_id = decode_jwt_subject(parts[1]).unwrap_or_default();
+    if let Some(exp) = decode_jwt_exp(parts[1]) {
+        let now = now_epoch_seconds();
+        if exp <= now {
+            return Err(AuthDomainError::Unauthorized("Token is invalid or expired".to_string()));
+        }
+    }
 
     Ok(AuthSession {
         actor_id,
         token: token.to_string(),
-        expires_at: now_epoch_seconds() + TOKEN_TTL_SECONDS,
+        expires_at: decode_jwt_exp(parts[1]).unwrap_or_else(|| now_epoch_seconds() + TOKEN_TTL_SECONDS),
     })
 }
 
@@ -71,6 +80,17 @@ fn decode_jwt_subject(payload_b64: &str) -> Option<String> {
         .or_else(|| v.get("sub"))
         .and_then(|s| s.as_str())
         .map(|s| s.to_string())
+}
+
+fn decode_jwt_exp(payload_b64: &str) -> Option<u64> {
+    let mut b64 = payload_b64.replace('-', "+").replace('_', "/");
+    let pad = (4 - b64.len() % 4) % 4;
+    b64.extend(std::iter::repeat('=').take(pad));
+
+    let decoded = base64_decode(&b64)?;
+    let text = String::from_utf8(decoded).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v.get("exp").and_then(|e| e.as_u64())
 }
 
 fn base64_decode(input: &str) -> Option<Vec<u8>> {

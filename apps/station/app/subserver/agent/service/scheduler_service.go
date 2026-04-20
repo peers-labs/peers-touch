@@ -35,9 +35,9 @@ type ScheduledJobConfig struct {
 
 // SchedulerStatus is returned by the status endpoint.
 type SchedulerStatus struct {
-	Running   bool                `json:"running"`
-	Jobs      []ScheduledJobInfo  `json:"jobs"`
-	StartedAt *time.Time          `json:"started_at,omitempty"`
+	Running   bool               `json:"running"`
+	Jobs      []ScheduledJobInfo `json:"jobs"`
+	StartedAt *time.Time         `json:"started_at,omitempty"`
 }
 
 // ScheduledJobInfo is a snapshot of a running job's state.
@@ -61,10 +61,10 @@ type ScheduledJobInfo struct {
 type SchedulerService struct {
 	mu sync.Mutex
 
-	reviewService   *ReviewService
-	dogfoodService  *DogfoodService
-	memoryService   *MemoryService
-	growthMetrics   *GrowthMetricsService
+	reviewService  *ReviewService
+	dogfoodService *DogfoodService
+	memoryService  *MemoryService
+	growthMetrics  *GrowthMetricsService
 
 	running   bool
 	startedAt *time.Time
@@ -158,12 +158,12 @@ func (s *SchedulerService) Status() SchedulerStatus {
 	}
 	for _, j := range s.jobs {
 		info := ScheduledJobInfo{
-			Kind:     j.config.Kind,
-			AgentID:  j.config.AgentID,
-			Enabled:  j.config.Enabled,
-			Interval: j.config.Interval.String(),
+			Kind:      j.config.Kind,
+			AgentID:   j.config.AgentID,
+			Enabled:   j.config.Enabled,
+			Interval:  j.config.Interval.String(),
 			LastRunAt: j.lastRunAt,
-			RunCount: j.runCount,
+			RunCount:  j.runCount,
 		}
 		if j.lastErr != "" {
 			info.LastStatus = "error: " + j.lastErr
@@ -420,19 +420,19 @@ func (s *SchedulerService) persistJobRun(ctx context.Context, j *scheduledJob, r
 	}
 
 	now := time.Now()
+	details := fmt.Sprintf("interval=%s run=#%d", j.config.Interval, j.runCount)
+	if errMsg != nil {
+		details += " error=" + *errMsg
+	}
 	record := &persistence.GrowthEvent{
 		ID:        generateID("sched"),
 		AgentID:   j.config.AgentID,
 		EventType: fmt.Sprintf("scheduler_%s", j.config.Kind),
 		Category:  "scheduler",
-		TurnID:    fmt.Sprintf("run_%d", j.runCount),
-		Detail:    fmt.Sprintf("interval=%s run=#%d", j.config.Interval, j.runCount),
+		Target:    fmt.Sprintf("run_%d", j.runCount),
+		Details:   details,
 		Outcome:   status,
 		CreatedAt: now,
-	}
-
-	if errMsg != nil {
-		record.Detail += " error=" + *errMsg
 	}
 
 	db.WithContext(ctx).Create(record)

@@ -24,6 +24,7 @@ import {
   type SkillListItem,
   type SkillZipValidation,
 } from '../services/desktop_api';
+import { SettingsContainer } from './settings/SettingsLayout';
 const { Text, Title, Paragraph } = Typography;
 
 export function SkillsTab() {
@@ -105,7 +106,7 @@ export function SkillsTab() {
   }, [builtins, query]);
 
   return (
-    <Flexbox style={{ padding: 24, height: '100%', overflow: 'auto' }} gap={24}>
+    <SettingsContainer fullHeight>
       <Flexbox horizontal justify="space-between" align="center">
         <Title level={5} style={{ margin: 0 }}>{t('provider.skills.title')}</Title>
         <Flexbox horizontal gap={8}>
@@ -235,7 +236,7 @@ export function SkillsTab() {
           onClose={() => { setDetail(null); loadSkills(); }}
         />
       )}
-    </Flexbox>
+    </SettingsContainer>
   );
 }
 

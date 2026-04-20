@@ -6,7 +6,7 @@ ensure_station_ready() {
   local station_dir="$project_root/apps/station/app"
   local station_pid_file="/tmp/peers-touch-station.pid"
   local station_log_file="/tmp/peers-touch-station.log"
-  local station_target="${VITE_STATION_PROXY_TARGET:-http://127.0.0.1:18080}"
+  local station_target="${PEERS_STATION_URL:-http://127.0.0.1:18080}"
   local station_check_url="${STATION_HEALTHCHECK_URL:-$station_target/api/oauth/providers}"
 
   station_is_ready() {

@@ -26,6 +26,7 @@ import { Button } from '@lobehub/ui';
 import { api, type AccountProfile, type AccountProfileLink } from '../../services/desktop_api';
 import { useAccountIdentityStore } from '../../store/accountIdentity';
 import { useTranslation } from 'react-i18next';
+import { SettingsContainer, SettingsSection } from './SettingsLayout';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -131,21 +132,6 @@ async function pickImageFile(): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <Flexbox gap={2}>
-      <Title level={5} style={{ margin: 0 }}>
-        {title}
-      </Title>
-      {subtitle ? (
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {subtitle}
-        </Text>
-      ) : null}
-    </Flexbox>
-  );
 }
 
 function EditableAvatar({
@@ -528,26 +514,17 @@ export function AccountTab() {
   }
 
   return (
-    <Flexbox gap={20} style={{ maxWidth: 700 }}>
+    <SettingsContainer maxWidth={700}>
       {saving && (
         <Text type="secondary" style={{ fontSize: 11, textAlign: 'right' }}>
           {t('provider.account.autoSaving', { defaultValue: 'Saving...' })}
         </Text>
       )}
       {/* ── Section 1: Identity Overview ── */}
-      <Flexbox
-        gap={16}
-        style={{
-          padding: 20,
-          borderRadius: 16,
-          background: token.colorBgContainer,
-          border: `1px solid ${token.colorBorderSecondary}`,
-        }}
+      <SettingsSection
+        title={t('provider.account.identity.title')}
+        subtitle={t('provider.account.identity.subtitle')}
       >
-        <SectionTitle
-          title={t('provider.account.identity.title')}
-          subtitle={t('provider.account.identity.subtitle')}
-        />
 
         <EditableHeaderBanner
           src={profile.header || undefined}
@@ -593,22 +570,13 @@ export function AccountTab() {
           <IdentityField label={t('provider.account.identity.preferredUsername')} value={profile.username} prefix="@" copiable t={t} />
           <IdentityField label={t('provider.account.identity.ptid')} value={profile.peers_touch.network_id} copiable t={t} />
         </Flexbox>
-      </Flexbox>
-
+      </SettingsSection>
       {/* ── Section 2: Public Profile (editable, auto-save) ── */}
-      <Flexbox
-        gap={18}
-        style={{
-          padding: 20,
-          borderRadius: 16,
-          background: token.colorBgContainer,
-          border: `1px solid ${token.colorBorderSecondary}`,
-        }}
+      <SettingsSection
+        title={t('provider.account.profile.title')}
+        subtitle={t('provider.account.profile.subtitle')}
+        style={{ gap: 18 }}
       >
-        <SectionTitle
-          title={t('provider.account.profile.title')}
-          subtitle={t('provider.account.profile.subtitle')}
-        />
 
         <Flexbox gap={6}>
           <Text strong style={{ fontSize: 13 }}>
@@ -750,8 +718,8 @@ export function AccountTab() {
             </Flexbox>
           ))}
         </Flexbox>
-      </Flexbox>
+      </SettingsSection>
 
-    </Flexbox>
+    </SettingsContainer>
   );
 }
