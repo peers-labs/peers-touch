@@ -3,7 +3,7 @@ import { Flexbox } from 'react-layout-kit';
 import {
   Card, Statistic, Progress, Table, Tag, Badge, Button,
   Empty, Spin, Typography, Space, Switch, message, theme,
-  InputNumber, Divider,
+  InputNumber,
 } from 'antd';
 import {
   TrendingUp, TrendingDown, Minus, Brain, BookOpen,
@@ -50,7 +50,7 @@ function TrustBar({ score }: { score: number }) {
 }
 
 export function AgentGrowthTab({ agentId }: AgentGrowthTabProps) {
-  const { token: themeToken } = theme.useToken();
+  theme.useToken();
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<GrowthSnapshot | null>(null);
   const [memories, setMemories] = useState<MemoryItem[]>([]);

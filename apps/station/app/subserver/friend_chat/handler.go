@@ -143,7 +143,7 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 		msgType = 1
 	}
 	atts := friendAttachmentsFromProto(req.Attachments)
-	message, err := s.service.SendMessageByActor(subject.ID, req.SessionUlid, req.ReceiverDid, msgType, content, req.ReplyToUlid, atts, enc)
+	message, err := s.service.SendMessageByActor(subject.ID, req.SessionUlid, req.ReceiverDid, msgType, content, req.ReplyToUlid, atts, enc, req.GetClientUlid())
 	if err != nil {
 		if err == application.ErrSessionNotFound {
 			return nil, server.NotFound(err.Error())
