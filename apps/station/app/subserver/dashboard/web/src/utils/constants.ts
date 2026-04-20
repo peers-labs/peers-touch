@@ -13,6 +13,7 @@ export const PAGES = {
   SECURITY: 'security',
   SYSTEM: 'system',
   LOGS: 'logs',
+  TRANSPORT: 'transport',
 } as const;
 
 export type Page = typeof PAGES[keyof typeof PAGES];

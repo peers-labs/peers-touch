@@ -6,6 +6,7 @@ import client from './client';
 
 export interface ActorDetail {
   id: number;
+  did: string;
   preferred_username: string;
   name: string;
   email: string;
