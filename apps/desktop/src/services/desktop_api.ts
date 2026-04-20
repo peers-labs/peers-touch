@@ -211,6 +211,33 @@ async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   throw new Error(response.error?.message || `${command} failed`);
 }
 
+async function invokeAppResultStub<TOut>(command: string, payload?: Record<string, unknown>): Promise<TOut> {
+  const quiet = QUIET_COMMANDS.has(command);
+  const start = Date.now();
+  if (!quiet) {
+    log.info('api', `→ ${command}`, payload != null ? { req: payload } : undefined);
+  }
+  try {
+    const result = payload === undefined
+      ? await invoke<RustCommandResult<TauriStubPayload>>(command)
+      : await invoke<RustCommandResult<TauriStubPayload>>(command, payload);
+    const elapsed = Date.now() - start;
+    if (!result.ok || !result.data) {
+      log.warn('api', `← ${command} FAIL (${elapsed}ms)`, { error: result.error?.message });
+      const err = new Error(result.error?.message || `${command} failed`);
+      throw err;
+    }
+    if (!quiet) {
+      log.info('api', `← ${command} OK (${elapsed}ms)`);
+    }
+    return parseJSONSafe(result.data.status) as TOut;
+  } catch (error) {
+    const elapsed = Date.now() - start;
+    log.error('api', `← ${command} ERROR (${elapsed}ms)`, { error: error instanceof Error ? error.message : String(error) });
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
 function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
   const url = new URL(urlText);
   const provider = url.searchParams.get('provider') || '';
@@ -872,6 +899,18 @@ export interface AccountIdentity {
   profile_url: string;
   created_at: string;
   last_login_at: string;
+  has_pin: boolean;
+  has_session: boolean;
+}
+
+export interface AccountSetPinInput {
+  account_id: string;
+  pin: string;
+}
+
+export interface AccountUnlockInput {
+  account_id: string;
+  pin: string;
 }
 
 export interface SearchProviderInfo {
@@ -1670,6 +1709,15 @@ export interface FriendChatSyncInput {
   max_pages?: number;
 }
 
+export interface ChatSearchLocalResultRow {
+  scope: string;
+  conversation_id: string;
+  message_id: string;
+  sender_did: string;
+  content: string;
+  sent_at: number;
+}
+
 export interface GroupChatSyncInput {
   group_ulid: string;
   limit?: number;
@@ -2067,6 +2115,18 @@ export const api = {
 
   accountUpsertOAuth: (input: AccountUpsertOAuthInput) =>
     invokeRustDataFromStatus<AccountUpsertOAuthInput, { ok: boolean; active_account_id: string }>('account_upsert_oauth', input),
+
+  accountSetPin: (accountId: string, pin: string) =>
+    invokeRustDataFromStatus<AccountSetPinInput, { ok: boolean }>('account_set_pin', {
+      account_id: accountId,
+      pin,
+    }),
+
+  accountUnlock: (accountId: string, pin: string) =>
+    invokeAuthCommand<AccountUnlockInput>('account_unlock', {
+      account_id: accountId,
+      pin,
+    }),
 
   // Notebook / Documents
   listDocuments: (topicId: string) =>
@@ -2623,8 +2683,30 @@ export const api = {
   friendChatListMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) =>
     invokeRustProto('friend_chat_list_messages', GetMessagesResponseSchema, { session_ulid: sessionUlid, before_ulid: beforeUlid, limit }),
 
-  friendChatSendMessage: (sessionUlid: string, receiverDid: string, content: string, type?: number, replyToUlid?: string) =>
-    invokeRustProto('friend_chat_send_message', SendMessageResponseSchema, { session_ulid: sessionUlid, receiver_did: receiverDid, content, type, reply_to_ulid: replyToUlid }),
+  friendChatSendMessage: (
+    sessionUlid: string,
+    receiverDid: string,
+    content: string,
+    type?: number,
+    replyToUlid?: string,
+    attachments?: ChatAttachmentInput[],
+    encryptedPayload?: string,
+    clientUlid?: string,
+  ) =>
+    invokeRustProto('friend_chat_send_message', SendMessageResponseSchema, {
+      session_ulid: sessionUlid,
+      receiver_did: receiverDid,
+      content,
+      type,
+      reply_to_ulid: replyToUlid,
+      attachments,
+      ...(encryptedPayload != null && encryptedPayload !== ''
+        ? { encrypted_payload: encryptedPayload }
+        : {}),
+      ...(clientUlid != null && clientUlid !== ''
+        ? { client_ulid: clientUlid }
+        : {}),
+    }),
 
   friendChatAckMessages: (ulids: string[], status: number) =>
     invokeRustProto('friend_chat_ack_messages', MessageAckResponseSchema, { ulids, status }),
@@ -2633,6 +2715,23 @@ export const api = {
     invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
       'friend_chat_local_search_scoped', { query, limit },
     ).then(r => r.messages || []),
+
+  /** Unified local message search (SQLCipher FTS5) — friend + group, optional scope and conversation filters. */
+  chatSearchLocal: async (
+    query: string,
+    scope?: string,
+    conversationId?: string,
+    limit?: number,
+  ): Promise<{ results: ChatSearchLocalResultRow[] }> =>
+    invokeRustDataFromStatus<
+      { query: string; scope?: string; conversation_id?: string; limit?: number },
+      { results: ChatSearchLocalResultRow[] }
+    >('chat_search_local', {
+      query,
+      scope: scope ?? '',
+      conversation_id: conversationId,
+      limit: limit ?? 30,
+    }),
 
   friendChatSync: (sessionUlid: string, limit?: number, maxPages?: number) =>
     invokeRustDataFromStatus<FriendChatSyncInput, { synced_count: number; pages_fetched: number }>(
@@ -2729,6 +2828,201 @@ export const api = {
 
   groupChatGetStats: () =>
     invokeRustProto('group_chat_get_stats', GetGroupStatsResponseSchema),
+
+  // ── Crypto (local E2E; flat Tauri args) ──
+
+  cryptoGenerateIdentity: () =>
+    invokeAppResultStub<{ fingerprint: string; public_key: string }>('crypto_generate_identity'),
+
+  cryptoGetFingerprint: () =>
+    invokeAppResultStub<{ fingerprint: string }>('crypto_get_fingerprint'),
+
+  cryptoGetKeyBundle: () =>
+    invokeAppResultStub<CryptoKeyBundlePayload>('crypto_get_key_bundle'),
+
+  cryptoInitSession: (
+    sessionId: string,
+    peerDid: string,
+    peerIkPub: string,
+    peerSpkPub: string,
+    peerSpkSig: string,
+    peerOpkPub?: string,
+  ) =>
+    invokeAppResultStub<{ ephemeral_key: string; established: boolean }>('crypto_init_session', {
+      session_id: sessionId,
+      peer_did: peerDid,
+      peer_ik_pub: peerIkPub,
+      peer_spk_pub: peerSpkPub,
+      peer_spk_sig: peerSpkSig,
+      ...(peerOpkPub != null && peerOpkPub !== '' ? { peer_opk_pub: peerOpkPub } : {}),
+    }),
+
+  cryptoEncryptMessage: (sessionId: string, peerDid: string, plaintext: string) =>
+    invokeAppResultStub<{ ciphertext: string; counter: number; ephemeral_key?: string }>('crypto_encrypt_message', {
+      session_id: sessionId,
+      peer_did: peerDid,
+      plaintext,
+    }),
+
+  cryptoDecryptMessage: (
+    sessionId: string,
+    peerDid: string,
+    ciphertext: string,
+    counter: number,
+    ephemeralKey?: string,
+  ) =>
+    invokeAppResultStub<{ plaintext: string }>('crypto_decrypt_message', {
+      session_id: sessionId,
+      peer_did: peerDid,
+      ciphertext,
+      counter,
+      ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeral_key: ephemeralKey } : {}),
+    }),
+
+  cryptoGroupEncrypt: (groupId: string, plaintext: string) =>
+    invokeAppResultStub<{ ciphertext: string; epoch: number; counter: number }>('crypto_group_encrypt', {
+      group_id: groupId,
+      plaintext,
+    }),
+
+  cryptoGroupDecrypt: (groupId: string, ciphertext: string, epoch: number, counter: number) =>
+    invokeAppResultStub<{ plaintext: string }>('crypto_group_decrypt', {
+      group_id: groupId,
+      ciphertext,
+      epoch,
+      counter,
+    }),
+
+  cryptoGroupRotateKey: (groupId: string) =>
+    invokeAppResultStub<{ epoch: number }>('crypto_group_rotate_key', {
+      group_id: groupId,
+    }),
+
+  keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
+    invokeRustDataFromStatus<CryptoKeyBundlePayload, Record<string, unknown>>(
+      'key_exchange_upload_bundle',
+      bundle,
+    ),
+
+  keyExchangeFetchBundle: (did: string) =>
+    invokeRustDataFromStatus<{ did: string }, KeyExchangeBundleResponse>(
+      'key_exchange_fetch_bundle',
+      { did },
+    ),
+
+  // ── ICE / Signaling (WebRTC) ──
+
+  iceGetServers: () =>
+    invokeRustDataFromStatus<void, IceServersResponse>('ice_get_servers'),
+
+  icePeerRegister: (id: string, role?: string, addrs?: string[]) =>
+    invokeRustDataFromStatus<{ id: string; role?: string; addrs?: string[] }, IcePeerInfo>(
+      'ice_peer_register', { id, role, addrs },
+    ),
+
+  icePeerUnregister: (id: string) =>
+    invokeRustDataFromStatus<{ id: string }, Record<string, unknown>>(
+      'ice_peer_unregister', { id },
+    ),
+
+  iceSessionNew: (a: string, b: string) =>
+    invokeRustDataFromStatus<{ a: string; b: string }, IceSession>(
+      'ice_session_new', { a, b },
+    ),
+
+  iceSessionGet: (id: string) =>
+    invokeRustDataFromStatus<{ id: string }, IceSession>(
+      'ice_session_get', { id },
+    ),
+
+  iceSessionOfferPost: (id: string, sdp: string) =>
+    invokeRustDataFromStatus<{ id: string; sdp: string }, Record<string, unknown>>(
+      'ice_session_offer_post', { id, sdp },
+    ),
+
+  iceSessionOfferGet: (id: string) =>
+    invokeRustDataFromStatus<{ id: string }, { sdp?: string }>(
+      'ice_session_offer_get', { id },
+    ),
+
+  iceSessionAnswerPost: (id: string, sdp: string) =>
+    invokeRustDataFromStatus<{ id: string; sdp: string }, Record<string, unknown>>(
+      'ice_session_answer_post', { id, sdp },
+    ),
+
+  iceSessionAnswerGet: (id: string) =>
+    invokeRustDataFromStatus<{ id: string }, { sdp?: string }>(
+      'ice_session_answer_get', { id },
+    ),
+
+  iceSessionCandidatePost: (id: string, candidate: string, mid?: string, mline?: number, from?: string) =>
+    invokeRustDataFromStatus<{ id: string; candidate: string; mid?: string; mline?: number; from?: string }, Record<string, unknown>>(
+      'ice_session_candidate_post', { id, candidate, mid, mline, from },
+    ),
+
+  iceSessionCandidatesGet: (id: string) =>
+    invokeRustDataFromStatus<{ id: string }, { candidates?: Array<{ candidate: string; mid?: string; mline?: number; from?: string }> }>(
+      'ice_session_candidates_get', { id },
+    ),
+
+  // ── Friend Request ──
+
+  friendChatSendFriendRequest: (receiverDid: string, message?: string) =>
+    invokeRustDataFromStatus<{ receiver_did: string; message?: string }, { request: FriendRequestData }>(
+      'friend_chat_send_friend_request', { receiver_did: receiverDid, message },
+    ),
+
+  friendChatAcceptFriendRequest: (requestId: string) =>
+    invokeRustDataFromStatus<{ request_id: string }, { request: FriendRequestData; session?: FriendChatSessionData }>(
+      'friend_chat_accept_friend_request', { request_id: requestId },
+    ),
+
+  friendChatRejectFriendRequest: (requestId: string) =>
+    invokeRustDataFromStatus<{ request_id: string }, { request: FriendRequestData }>(
+      'friend_chat_reject_friend_request', { request_id: requestId },
+    ),
+
+  friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
+    invokeRustDataFromStatus<{ status?: number; limit?: number; offset?: number }, { requests: FriendRequestData[]; total: number }>(
+      'friend_chat_list_friend_requests', { status, limit, offset },
+    ),
+
+  // ── Notification ──
+
+  notificationList: (category?: number, status?: number, cursor?: string, limit?: number) =>
+    invokeRustDataFromStatus<NotificationListInput, NotificationListResponse>(
+      'notification_list', { category, status, cursor, limit },
+    ),
+
+  notificationUnreadCounts: () =>
+    invokeRustDataFromStatus<void, NotificationUnreadCountsResponse>(
+      'notification_unread_counts',
+    ),
+
+  notificationMarkRead: (notificationIds: string[]) =>
+    invokeRustDataFromStatus<{ notification_ids: string[] }, { updatedCount: number }>(
+      'notification_mark_read', { notification_ids: notificationIds },
+    ),
+
+  notificationMarkAllRead: (category?: number) =>
+    invokeRustDataFromStatus<{ category?: number }, { updatedCount: number }>(
+      'notification_mark_all_read', { category },
+    ),
+
+  notificationDelete: (notificationIds: string[]) =>
+    invokeRustDataFromStatus<{ notification_ids: string[] }, { deletedCount: number }>(
+      'notification_delete', { notification_ids: notificationIds },
+    ),
+
+  notificationPreferences: () =>
+    invokeRustDataFromStatus<void, { preferences: NotificationPreferenceData[] }>(
+      'notification_preferences',
+    ),
+
+  notificationPreferencesUpdate: (category: number, enabled: boolean, pushEnabled: boolean, soundEnabled: boolean) =>
+    invokeRustDataFromStatus<{ category: number; enabled: boolean; push_enabled: boolean; sound_enabled: boolean }, { preference: NotificationPreferenceData }>(
+      'notification_preferences_update', { category, enabled, push_enabled: pushEnabled, sound_enabled: soundEnabled },
+    ),
 };
 
 export interface ConfigFieldMeta {
@@ -2751,6 +3045,117 @@ export interface UploadResult {
   size: number;
   data_url: string;
   url: string;
+}
+
+export interface IceServersResponse {
+  ice_servers: Array<{ urls: string[]; username?: string; credential?: string }>;
+  ttl?: number;
+}
+
+export interface IcePeerInfo {
+  id: string;
+  role?: string;
+  addrs?: string[];
+  updated_at?: number;
+}
+
+export interface IceSession {
+  id: string;
+  a: string;
+  b: string;
+  created_at?: number;
+}
+
+/** Payload for friend/group chat send; field names match Station JSON and Rust `AttachmentInput`. */
+export type ChatAttachmentInput = {
+  cid: string;
+  filename: string;
+  mime_type: string;
+  size: number;
+  thumbnail_cid?: string;
+};
+
+export interface CryptoKeyBundlePayload {
+  ik_pub: string;
+  spk_id: number;
+  spk_pub: string;
+  spk_sig: string;
+  opk_ids: number[];
+  opk_pubs: string[];
+}
+
+export interface KeyExchangeBundleResponse {
+  actor_did: string;
+  ik_pub: string;
+  fingerprint: string;
+  spk_id: number;
+  spk_pub: string;
+  spk_sig: string;
+  opk_id?: number;
+  opk_pub?: string;
+}
+
+export interface FriendRequestData {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  status: number;
+  message: string;
+  createdAt: string;
+  respondedAt?: string;
+}
+
+export interface FriendChatSessionData {
+  ulid: string;
+  participantADid: string;
+  participantBDid: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationData {
+  id: string;
+  recipientId: string;
+  actorId: string;
+  type: number;
+  category: number;
+  status: number;
+  targetType: string;
+  targetId: string;
+  title: string;
+  body: string;
+  metadata: Record<string, string>;
+  groupKey: string;
+  createdAt: string;
+  readAt?: string;
+}
+
+export interface NotificationListInput {
+  category?: number;
+  status?: number;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface NotificationListResponse {
+  notifications: NotificationData[];
+  nextCursor: string;
+  totalCount: number;
+  unreadCount: number;
+}
+
+export interface NotificationUnreadCountsResponse {
+  total: number;
+  byCategory: Record<number, number>;
+}
+
+export interface NotificationPreferenceData {
+  actorId: string;
+  category: number;
+  enabled: boolean;
+  pushEnabled: boolean;
+  soundEnabled: boolean;
+  updatedAt: string;
 }
 
 export interface StreamEvent {
