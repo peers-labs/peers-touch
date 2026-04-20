@@ -1,0 +1,67 @@
+# Peers-Touch Docker Compose
+# Usage: make docker-station | make docker-station REMOTE=dev-box
+#
+# Profiles:
+#   station  — Station service only
+#   relay    — Relay Station service only
+#   infra    — PostgreSQL (use when remote doesn't have PG already)
+#
+# Network modes:
+#   bridge (default) — isolated network, use with infra profile
+#   host             — share host network, use when PG already runs on host
+#     Set NETWORK_MODE=host in .env.<remote> to enable
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────
+  # Only starts with `infra` profile. Skip when remote already has PG.
+  postgres:
+    image: postgres:16-alpine
+    container_name: peers-pg
+    profiles: [infra]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-peers}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peers}
+      POSTGRES_DB: ${POSTGRES_DB:-peers_touch}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-peers}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Station (standard) ─────────────────────────────────────
+  station:
+    build:
+      context: ../..
+      dockerfile: tooling/docker/station.Dockerfile
+    container_name: peers-station
+    profiles: [station]
+    network_mode: ${NETWORK_MODE:-bridge}
+    environment:
+      PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
+      PEERS_DB_DSN: ${PEERS_DB_DSN:-}
+    ports:
+      - "${STATION_PORT:-18080}:18080"
+    restart: unless-stopped
+
+  # ── Relay Station ──────────────────────────────────────────
+  relay:
+    build:
+      context: ../..
+      dockerfile: tooling/docker/station.Dockerfile
+    container_name: peers-relay
+    profiles: [relay]
+    network_mode: ${NETWORK_MODE:-bridge}
+    environment:
+      PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
+      PEERS_DB_DSN: ${PEERS_DB_DSN:-}
+    ports:
+      - "${RELAY_STATION_PORT:-18081}:18080"
+    restart: unless-stopped
+
+volumes:
+  pg_data:

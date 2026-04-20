@@ -32,6 +32,9 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+
+# Dev workflow sessions (local only)
+.dev-workflow/
 /client/common/peers_touch_ai_proxy_client/lib/src/example/ai_provider_debug.yml
 /model/env.bat
 ./mastodon
@@ -53,5 +56,8 @@ station/app/peers-touch-station
 apps/station/app/peers-touch-app
 apps/station/app/peers-touch-station
 apps/station/app/app
+apps/station/app/main
+apps/station/frame/example/**/server
 external
+release-to-dev-box.sh
 apps/mobile/android/gradle/wrapper/gradle-wrapper.jar

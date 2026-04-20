@@ -16,8 +16,7 @@ fn build_error_for_status(status: u16, path: &str, body: &str) -> String {
 }
 
 pub(crate) fn station_base_url() -> String {
-    std::env::var("PT_STATION_URL")
-        .or_else(|_| std::env::var("STATION_URL"))
+    std::env::var("PEERS_STATION_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:18080".to_string())
         .trim_end_matches('/')
         .to_string()
