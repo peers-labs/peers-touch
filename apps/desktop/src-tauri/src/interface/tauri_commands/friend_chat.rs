@@ -4,10 +4,12 @@ use crate::application::chat_storage;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::resolve_user_scope;
 use crate::contracts::{
-    ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, FriendChatAckInput, FriendChatCreateSessionInput, FriendChatListInput,
-    FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput, FriendChatSendInput,
+    AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, FriendChatAckInput, FriendChatCreateSessionInput, FriendChatListInput,
+    FriendChatListFriendRequestsInput, FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
+    FriendChatAcceptFriendRequestInput, FriendChatRejectFriendRequestInput,
     FriendChatSyncInput, FriendChatSyncMessagesInput, StubPayload,
 };
+use crate::model::chat as model_chat;
 use crate::state::AppState;
 use reqwest::blocking::Client;
 use reqwest::Method;
@@ -168,8 +170,8 @@ fn json_to_optional_timestamp(v: &Value, keys: &[&str]) -> Option<prost_types::T
     Some(millis_to_timestamp(ms))
 }
 
-fn value_to_sync_message_item(v: &Value) -> Option<model::chat::SyncMessageItem> {
-    Some(model::chat::SyncMessageItem {
+fn value_to_sync_message_item(v: &Value) -> Option<model_chat::SyncMessageItem> {
+    Some(model_chat::SyncMessageItem {
         ulid: json_str(v, &["ulid"])?,
         session_ulid: json_str(v, &["sessionUlid", "session_ulid"])?,
         receiver_did: json_str(v, &["receiverDid", "receiver_did"])?,
@@ -182,10 +184,10 @@ fn value_to_sync_message_item(v: &Value) -> Option<model::chat::SyncMessageItem>
     })
 }
 
-fn map_attachments(inputs: &[AttachmentInput]) -> Vec<model::chat::FriendMessageAttachment> {
+fn map_attachments(inputs: &[AttachmentInput]) -> Vec<model_chat::FriendMessageAttachment> {
     inputs
         .iter()
-        .map(|a| model::chat::FriendMessageAttachment {
+        .map(|a| model_chat::FriendMessageAttachment {
             cid: a.cid.clone(),
             filename: a.filename.clone(),
             mime_type: a.mime_type.clone(),
@@ -595,4 +597,98 @@ pub fn friend_chat_get_stats(state: State<'_, Arc<AppState>>) -> AppResult<StubP
     };
 
     to_stub("friend_chat_get_stats", data)
+}
+
+// ---------------------------------------------------------------------------
+// Friend Requests (Station-backed)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn friend_chat_send_friend_request(input: FriendChatSendFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.receiver_did.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "receiver_did is required", None);
+    }
+    let message = input.message.unwrap_or_default();
+    let data = match request_json(
+        Method::POST,
+        "/friend-chat/friend-request/send",
+        &token,
+        None,
+        Some(json!({
+            "receiver_did": input.receiver_did,
+            "message": message,
+        })),
+    ) {
+        Ok(data) => data,
+        Err(error) => return error,
+    };
+    to_stub("friend_chat_send_friend_request", data)
+}
+
+#[tauri::command]
+pub fn friend_chat_accept_friend_request(input: FriendChatAcceptFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.request_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
+    }
+    let data = match request_json(
+        Method::POST,
+        "/friend-chat/friend-request/accept",
+        &token,
+        None,
+        Some(json!({ "request_id": input.request_id })),
+    ) {
+        Ok(data) => data,
+        Err(error) => return error,
+    };
+    to_stub("friend_chat_accept_friend_request", data)
+}
+
+#[tauri::command]
+pub fn friend_chat_reject_friend_request(input: FriendChatRejectFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.request_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
+    }
+    let data = match request_json(
+        Method::POST,
+        "/friend-chat/friend-request/reject",
+        &token,
+        None,
+        Some(json!({ "request_id": input.request_id })),
+    ) {
+        Ok(data) => data,
+        Err(error) => return error,
+    };
+    to_stub("friend_chat_reject_friend_request", data)
+}
+
+#[tauri::command]
+pub fn friend_chat_list_friend_requests(input: FriendChatListFriendRequestsInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    let mut query = Vec::new();
+    if let Some(status) = input.status {
+        query.push(("status", status.to_string()));
+    }
+    query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
+    query.push(("offset", input.offset.unwrap_or(0).to_string()));
+
+    let data = match request_json(Method::GET, "/friend-chat/friend-requests", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
+    };
+    to_stub("friend_chat_list_friend_requests", data)
 }
