@@ -192,3 +192,8 @@ func (m *Manager) CheckValid(ctx context.Context, sessionID string) (bool, strin
 	}
 	return true, ""
 }
+
+// CheckSessionValid satisfies coreauth.SessionValidator, delegates to CheckValid.
+func (m *Manager) CheckSessionValid(ctx context.Context, sessionID string) (bool, string) {
+	return m.CheckValid(ctx, sessionID)
+}

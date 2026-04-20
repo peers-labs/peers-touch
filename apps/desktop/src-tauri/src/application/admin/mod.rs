@@ -12,11 +12,14 @@ fn current_access_context(state: &AppState) -> Result<AccessContext, AppResult<S
             actor_id: session.actor_id.clone(),
             token: session.token.clone(),
         }),
-        Err(_) => Err(AppResult::fail(
-            ErrorCode::InternalError,
-            "error.auth.sessionLockFailed",
-            None,
-        )),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire session lock");
+            Err(AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to access session state: {}", e),
+                None,
+            ))
+        }
     }
 }
 
@@ -36,8 +39,8 @@ fn ensure_admin(
     );
     Err(AppResult::fail(
         ErrorCode::Forbidden,
-        "error.admin.capabilityRequired",
-        Some(serde_json::json!({ "requestId": request_id })),
+        "Admin capability required",
+        None,
     ))
 }
 
@@ -83,8 +86,8 @@ pub fn admin_network_probe(
         );
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "error.admin.invalidProbeTarget",
-            Some(serde_json::json!({ "requestId": request_id, "detail": message })),
+            format!("Invalid admin probe target: {}", message),
+            None,
         );
     }
     emit_audit(
@@ -120,8 +123,8 @@ pub fn admin_execute_action(
         );
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "error.admin.invalidAction",
-            Some(serde_json::json!({ "requestId": request_id, "detail": message })),
+            format!("Invalid admin action: {}", message),
+            None,
         );
     }
     emit_audit(

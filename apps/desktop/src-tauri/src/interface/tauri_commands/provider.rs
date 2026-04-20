@@ -9,9 +9,10 @@ use tauri::State;
 
 fn resolve_scope_from_state(state: &State<'_, Arc<AppState>>) -> Result<Option<String>, AppResult<StubPayload>> {
     let guard = state.session.lock().map_err(|_| {
+        tracing::error!("Failed to acquire session lock");
         AppResult::fail(
             ErrorCode::InternalError,
-            "error.auth.sessionLockFailed",
+            "Failed to access session state",
             None,
         )
     })?;

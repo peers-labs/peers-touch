@@ -135,9 +135,34 @@ pub struct FriendChatSendInput {
     pub content: String,
     /// Base64-encoded ciphertext when sending E2E encrypted messages (optional).
     pub encrypted_payload: Option<String>,
+    /// Client-generated idempotency key. Shared by direct + relay send attempts.
+    pub client_ulid: Option<String>,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
     pub attachments: Option<Vec<AttachmentInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatSendFriendRequestInput {
+    pub receiver_did: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatAcceptFriendRequestInput {
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatRejectFriendRequestInput {
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatListFriendRequestsInput {
+    pub status: Option<i32>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -61,10 +61,11 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InvalidArgument, message, None)
 }
 
-fn internal_error() -> AppResult<StubPayload> {
+fn store_lock_error(e: impl std::fmt::Display) -> AppResult<StubPayload> {
+    tracing::error!(error = %e, "Failed to acquire cron store lock");
     AppResult::fail(
         ErrorCode::InternalError,
-        "error.cron.storeAccessFailed",
+        format!("Failed to access cron store: {}", e),
         None,
     )
 }
@@ -79,7 +80,7 @@ pub fn cron_status() -> AppResult<StubPayload> {
 pub fn cron_list_jobs() -> AppResult<StubPayload> {
     let guard = match cron_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let jobs = guard
         .jobs
@@ -98,7 +99,7 @@ pub fn cron_list_jobs() -> AppResult<StubPayload> {
 pub fn cron_create_job(input: CronCreateInput) -> AppResult<StubPayload> {
     let mut guard = match cron_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let id = format!("cron-{}", guard.jobs.len() + 1);
     let mut data = input.data;
@@ -123,7 +124,7 @@ pub fn cron_update_job(input: CronUpdateInput) -> AppResult<StubPayload> {
     }
     let mut guard = match cron_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(item) = guard.jobs.iter_mut().find(|item| item.id == id) {
         item.enabled = input
@@ -139,7 +140,7 @@ pub fn cron_update_job(input: CronUpdateInput) -> AppResult<StubPayload> {
         }
         return success_payload("cron_update_job", json!({ "job": data }));
     }
-    AppResult::fail(ErrorCode::NotFound, "error.cron.jobNotFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Cron job not found", None)
 }
 
 pub fn cron_delete_job(input: CronIdInput) -> AppResult<StubPayload> {
@@ -149,7 +150,7 @@ pub fn cron_delete_job(input: CronIdInput) -> AppResult<StubPayload> {
     }
     let mut guard = match cron_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let before = guard.jobs.len();
     guard.jobs.retain(|item| item.id != id);
@@ -166,13 +167,13 @@ pub fn cron_toggle_job(input: CronToggleInput) -> AppResult<StubPayload> {
     }
     let mut guard = match cron_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(item) = guard.jobs.iter_mut().find(|item| item.id == id) {
         item.enabled = input.enabled;
         return success_payload("cron_toggle_job", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "error.cron.jobNotFound", None)
+    AppResult::fail(ErrorCode::NotFound, "Cron job not found", None)
 }
 
 pub fn cron_run_job(input: CronIdInput) -> AppResult<StubPayload> {

@@ -66,6 +66,9 @@ const (
 	// Dashboard admin sessions
 	routeDashboardSessions      = "/dashboard/api/dashboard-sessions"
 	routeDashboardRevokeSession = "/dashboard/api/dashboard-sessions/:sid/revoke"
+
+	// Chat debug (admin-only)
+	routeFriendChatStats = "/dashboard/api/chat/friend/stats"
 )
 
 // ---------------------------------------------------------------------------
@@ -144,7 +147,30 @@ func (h *dashboardHandler) handlers() []server.Handler {
 			server.HertzHandlerFunc(h.handleDashboardSessions)),
 		server.NewHTTPHandler("dashboard-admin-revoke-session", routeDashboardRevokeSession, server.POST,
 			server.HertzHandlerFunc(h.handleRevokeDashboardSession)),
+
+		// -- Chat debug --
+		server.NewHTTPHandler("dashboard-friend-chat-stats", routeFriendChatStats, server.GET,
+			server.HertzHandlerFunc(h.handleFriendChatStats)),
 	}
+}
+
+// handleFriendChatStats — GET /dashboard/api/chat/friend/stats
+func (h *dashboardHandler) handleFriendChatStats(c context.Context, ctx *app.RequestContext) {
+	claims := h.requireAuth(c, ctx)
+	if claims == nil {
+		return
+	}
+	if h.sub.chatDebugSvc == nil {
+		jsonError(ctx, http.StatusServiceUnavailable, "chat debug service unavailable")
+		return
+	}
+	stats, err := h.sub.chatDebugSvc.FriendChatStats(c)
+	if err != nil {
+		log.Errorf(c, "[dashboard] friend chat stats error: %v", err)
+		jsonError(ctx, http.StatusInternalServerError, "failed to load friend chat stats")
+		return
+	}
+	jsonOK(ctx, stats)
 }
 
 // ===========================================================================

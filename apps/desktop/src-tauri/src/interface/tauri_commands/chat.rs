@@ -71,10 +71,13 @@ pub fn chat_stop(input: ChatConversationInput) -> AppResult<StubPayload> {
 pub async fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload> {
     match tauri::async_runtime::spawn_blocking(move || application_chat::chat_completion_once(input)).await {
         Ok(result) => result,
-        Err(_) => AppResult::fail(
-            crate::error::ErrorCode::InternalError,
-            "error.chat.completionFailed",
-            None,
-        ),
+        Err(e) => {
+            tracing::error!(error = %e, "chat_completion_once task failed");
+            AppResult::fail(
+                crate::error::ErrorCode::InternalError,
+                format!("Chat completion failed: {}", e),
+                None,
+            )
+        }
     }
 }

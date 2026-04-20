@@ -35,6 +35,7 @@ interface NavItem {
  */
 const NAV_ITEMS: NavItem[] = [
   { key: PAGES.OVERVIEW,    icon: <LayoutDashboard size={20} />, label: 'Overview' },
+  { key: PAGES.TRANSPORT,   icon: <Network size={20} />,         label: 'Transport' },
   { key: PAGES.ACTORS,      icon: <Users size={20} />,           label: 'Actors' },
   { key: PAGES.SESSIONS,    icon: <Key size={20} />,             label: 'Sessions' },
   { key: PAGES.NODES,       icon: <Network size={20} />,         label: 'Nodes' },

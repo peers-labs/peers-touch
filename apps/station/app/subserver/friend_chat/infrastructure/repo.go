@@ -246,8 +246,23 @@ func (r *GormRepo) ListSessions(actorDID string, limit, offset int) ([]domain.Se
 
 func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error) {
 	now := time.Now()
+	messageULID := strings.TrimSpace(message.ID)
+	if messageULID == "" {
+		messageULID = fmt.Sprintf("fcm-%d", now.UnixNano())
+	} else {
+		var existing MessageModel
+		if err := r.db.Where("ulid = ?", messageULID).First(&existing).Error; err == nil {
+			out := toDomainMessage(existing)
+			if atts, loadErr := r.LoadAttachments(existing.ULID); loadErr == nil {
+				out.Attachments = atts
+			}
+			return out, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.Message{}, err
+		}
+	}
 	record := MessageModel{
-		ULID:             fmt.Sprintf("fcm-%d", now.UnixNano()),
+		ULID:             messageULID,
 		SessionULID:      message.SessionID,
 		SenderDID:        message.SenderDID,
 		ReceiverDID:      message.ReceiverDID,
@@ -553,7 +568,8 @@ func (r *GormRepo) RejectFriendRequest(requestID string) (*domain.FriendRequest,
 }
 
 func (r *GormRepo) ListFriendRequests(actorDID string, status int32, limit, offset int) ([]domain.FriendRequest, int, error) {
-	query := r.db.Model(&FriendRequestModel{}).Where("receiver_did = ?", actorDID)
+	// Include both incoming and outgoing requests so the client can show Received vs Sent.
+	query := r.db.Model(&FriendRequestModel{}).Where("(receiver_did = ? OR sender_did = ?)", actorDID, actorDID)
 	if status > 0 {
 		query = query.Where("status = ?", status)
 	}
@@ -570,6 +586,37 @@ func (r *GormRepo) ListFriendRequests(actorDID string, status int32, limit, offs
 		out = append(out, toDomainFriendRequest(item))
 	}
 	return out, int(total), nil
+}
+
+// ActorSummary holds the minimal profile fields needed for enrichment.
+type ActorSummary struct {
+	ID          uint64
+	DisplayName string
+	Avatar      string
+}
+
+// BatchLoadActorSummaries looks up display name + avatar for a set of actor IDs.
+// IDs are numeric strings (strconv'd actor primary keys).
+func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]ActorSummary {
+	result := make(map[string]ActorSummary, len(ids))
+	if len(ids) == 0 {
+		return result
+	}
+	type row struct {
+		ID   uint64 `gorm:"column:id"`
+		Name string `gorm:"column:name"`
+		Icon string `gorm:"column:icon"`
+	}
+	var rows []row
+	r.db.Table("touch_actors").Select("id, name, icon").Where("id IN ?", ids).Find(&rows)
+	for _, r := range rows {
+		result[fmt.Sprintf("%d", r.ID)] = ActorSummary{
+			ID:          r.ID,
+			DisplayName: r.Name,
+			Avatar:      r.Icon,
+		}
+	}
+	return result
 }
 
 func (r *GormRepo) DispatchOutbox(limit int) (int64, error) {

@@ -14,6 +14,7 @@ pub(crate) fn push_provider_config(scope: Option<&str>, token: &str) -> Result<(
         "revision": override_data.revision,
     });
 
+    // TODO(ai_chat): No matching Station subserver route for `/ai-chat/provider/sync`; keep JSON until implemented.
     station_client::request_json(
         Method::POST,
         "/ai-chat/provider/sync",
@@ -26,6 +27,7 @@ pub(crate) fn push_provider_config(scope: Option<&str>, token: &str) -> Result<(
 }
 
 pub(crate) fn pull_provider_config(scope: Option<&str>, token: &str) -> Result<(), String> {
+    // TODO(ai_chat): No matching Station handler for `/ai-chat/providers`; keep JSON until implemented.
     let remote = station_client::request_json(
         Method::GET,
         "/ai-chat/providers",

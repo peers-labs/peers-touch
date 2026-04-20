@@ -26,6 +26,7 @@ import {
   api,
   type ConfigFieldMeta,
 } from '../../services/desktop_api';
+import { SettingsContainer, SettingsSection } from './SettingsLayout';
 import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
@@ -169,20 +170,20 @@ export function MemorySettingsTab() {
   const noEmbeddingAvailable = embeddingOptions.length === 0;
 
   return (
-    <Flexbox gap={16} style={{ padding: 24, height: '100%', overflow: 'auto', maxWidth: 640 }}>
-        <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 4 }}>
-          <Flexbox horizontal align="center" gap={8}>
-            <Database size={16} style={{ color: token.colorPrimary }} />
-            <Text strong style={{ fontSize: 15 }}>{t('provider.memory.memory')}</Text>
-            {hasAnyCustom(memoryData) && <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('provider.memory.customized')}</Tag>}
-          </Flexbox>
+    <SettingsContainer fullHeight>
+      <SettingsSection
+        icon={<Database size={16} style={{ color: token.colorPrimary }} />}
+        title={t('provider.memory.memory')}
+        extra={
           <Flexbox horizontal gap={6} align="center">
+            {hasAnyCustom(memoryData) && <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{t('provider.memory.customized')}</Tag>}
             {hasAnyCustom(memoryData) && (
               <Button size="small" icon={<RotateCcw size={14} />} onClick={handleResetSection} loading={saving}>{t('provider.memory.reset')}</Button>
             )}
             <Button size="small" type="primary" icon={<Check size={14} />} onClick={handleSaveMemory} loading={saving}>{t('provider.memory.save')}</Button>
           </Flexbox>
-        </Flexbox>
+        }
+      >
 
         <Form form={memoryForm} layout="vertical" size="small">
           <Form.Item name="enabled" valuePropName="checked" label={
@@ -298,6 +299,7 @@ export function MemorySettingsTab() {
       <Text type="secondary" style={{ fontSize: 12 }}>
         {t('provider.memory.restartNote')}
       </Text>
-    </Flexbox>
+      </SettingsSection>
+    </SettingsContainer>
   );
 }
