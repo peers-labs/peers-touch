@@ -25,8 +25,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 )
 
@@ -148,13 +148,18 @@ func ActorSignup(c context.Context, ctx *app.RequestContext) {
 }
 
 func ActorLogin(c context.Context, ctx *app.RequestContext) {
-	var params model.ActorLoginParams
-	if err := ctx.Bind(&params); err != nil {
+	var loginReq model.LoginRequest
+	if err := ctx.Bind(&loginReq); err != nil {
 		log.Warnf(c, "Login bound params failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, err.Error())
 		return
 	}
 
+	params := model.ActorLoginParams{
+		Email:      loginReq.GetEmail(),
+		Password:   loginReq.GetPassword(),
+		DeviceType: loginReq.GetDeviceType(),
+	}
 	if err := params.Check(); err != nil {
 		log.Warnf(c, "Login checked params failed: %v", err)
 		FailedResponse(c, ctx, err)
@@ -201,26 +206,25 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 		}
 	}
 
-	// Build response with actor as a plain map to avoid proto Any serialization issues.
-	// The actor_id is critical for P2P signaling — it's the numeric DID.
-	response := map[string]interface{}{
-		"tokens": map[string]interface{}{
-			"token":         result.AccessToken,
-			"access_token":  result.AccessToken,
-			"refresh_token": result.RefreshToken,
-			"token_type":    result.TokenType,
-			"expires_at":    result.ExpiresAt,
+	expiresAt := result.ExpiresAt.Format(time.RFC3339)
+	loginResp := &model.LoginResponse{
+		Tokens: &model.AuthTokens{
+			Token:        result.AccessToken,
+			AccessToken:  result.AccessToken,
+			RefreshToken: result.RefreshToken,
+			TokenType:    result.TokenType,
+			ExpiresAt:    expiresAt,
 		},
-		"session_id": result.SessionID,
-		"actor": map[string]interface{}{
-			"id":           toString(result.User["id"]),
-			"actor_id":     actorIdNum, // Critical: numeric ID for P2P signaling
-			"username":     toString(result.User["name"]),
-			"display_name": toString(result.User["display_name"]),
-			"email":        toString(result.User["email"]),
+		SessionId: result.SessionID,
+		Actor: &model.AuthActorInfo{
+			Id:          toString(result.User["id"]),
+			ActorId:     int64(actorIdNum),
+			Username:    toString(result.User["name"]),
+			DisplayName: toString(result.User["display_name"]),
+			Email:       toString(result.User["email"]),
 		},
 	}
-	SuccessResponse(c, ctx, "Login successful", response)
+	SuccessResponse(c, ctx, "Login successful", loginResp)
 }
 
 func ActorLogout(c context.Context, ctx *app.RequestContext) {
@@ -309,7 +313,7 @@ func GetActorProfile(c context.Context, ctx *app.RequestContext) {
 		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(c, ctx, "Actor profile retrieved", resp)
+	SuccessResponse(c, ctx, "Actor profile retrieved", actor.WebProfileToActorProfileProto(resp))
 }
 
 func PublicProfile(c context.Context, ctx *app.RequestContext) {
@@ -385,12 +389,22 @@ func GetActorBasicInfo(c context.Context, ctx *app.RequestContext) {
 }
 
 func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
-	var params actor.UpdateProfileRequest
-	if err := ctx.Bind(&params); err != nil {
-		log.Warnf(c, "Update profile bound params failed: %v", err)
-		ctx.JSON(http.StatusBadRequest, err.Error())
-		return
+	var protoReq model.UpdateProfileRequest
+	ct := string(ctx.Request.Header.ContentType())
+	if strings.Contains(ct, model.ContentTypeProtobuf) {
+		if err := proto.Unmarshal(ctx.Request.Body(), &protoReq); err != nil {
+			log.Warnf(c, "Update profile proto unmarshal failed: %v", err)
+			ctx.JSON(http.StatusBadRequest, err.Error())
+			return
+		}
+	} else {
+		if err := ctx.Bind(&protoReq); err != nil {
+			log.Warnf(c, "Update profile bound params failed: %v", err)
+			ctx.JSON(http.StatusBadRequest, err.Error())
+			return
+		}
 	}
+	params := actor.UpdateProfileRequestFromProto(&protoReq)
 
 	actorID, err := resolveActorID(c, ctx)
 	if err != nil {
@@ -425,14 +439,14 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 	}
 
 	// Map to proto ActorList with relationship status
-	items := make([]*modelpb.Actor, 0, len(actors))
+	items := make([]*model.Actor, 0, len(actors))
 	for _, a := range actors {
 		isFollowing := false
 		if currentActorID > 0 {
 			isFollowing, _ = actor.IsFollowing(c, currentActorID, a.ID)
 		}
 
-		items = append(items, &modelpb.Actor{
+		items = append(items, &model.Actor{
 			Id:          strconv.FormatUint(a.ID, 10),
 			Username:    a.PreferredUsername,
 			DisplayName: a.Name,
@@ -444,7 +458,7 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 			IsFollowing: isFollowing,
 		})
 	}
-	SuccessResponse(c, ctx, "Actor list", &modelpb.ActorList{Items: items, Total: int64(len(items))})
+	SuccessResponse(c, ctx, "Actor list", &model.ActorList{Items: items, Total: int64(len(items))})
 }
 
 // SearchActors searches local actors by query (fuzzy match on username and display name).
@@ -472,9 +486,9 @@ func SearchActors(c context.Context, ctx *app.RequestContext) {
 	}
 
 	// Map to proto ActorList
-	items := make([]*modelpb.Actor, 0, len(actors))
+	items := make([]*model.Actor, 0, len(actors))
 	for _, a := range actors {
-		items = append(items, &modelpb.Actor{
+		items = append(items, &model.Actor{
 			Id:          a.ID,
 			Username:    a.Username,
 			DisplayName: a.DisplayName,
@@ -484,7 +498,7 @@ func SearchActors(c context.Context, ctx *app.RequestContext) {
 			Endpoints:   a.Endpoints,
 		})
 	}
-	SuccessResponse(c, ctx, "Search results", &modelpb.ActorList{Items: items, Total: int64(len(items))})
+	SuccessResponse(c, ctx, "Search results", &model.ActorList{Items: items, Total: int64(len(items))})
 }
 
 // ---------------------------------------------------------------------------

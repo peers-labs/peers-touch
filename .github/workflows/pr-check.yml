@@ -1,0 +1,104 @@
+# PR quality checks for Peers-Touch
+name: PR Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # Auto-label based on changed files
+  labeler:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          repo-token: "${{ secrets.GITHUB_TOKEN }}"
+          configuration-path: .github/labeler.yml
+
+  # Validate PR title follows Conventional Commits
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            test
+            chore
+            ci
+            perf
+            style
+            build
+            revert
+          scopes: |
+            station
+            desktop
+            mobile
+            android
+            ios
+            proto
+            model
+            applet-sdk
+            applets
+            locales
+            tooling
+            ci
+            deps
+            oauth2
+          requireScope: false
+          subjectPattern: ^[a-z].+[^.]$
+          subjectPatternError: |
+            PR title subject must:
+            - Start with lowercase letter
+            - Not end with a period
+            - Follow format: <type>(<scope>): <subject>
+
+  # Validate commit messages in the PR
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --save-dev @commitlint/cli @commitlint/config-conventional
+      - run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+
+  # Check PR description is not empty
+  pr-description:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR description
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            const sections = ['Summary', 'Changes', 'Type', 'Test Plan'];
+            const missing = sections.filter(s => {
+              const regex = new RegExp(`## ${s}`, 'i');
+              return !regex.test(body);
+            });
+
+            if (missing.length > 0) {
+              core.setFailed(
+                `PR description is missing required sections: ${missing.join(', ')}. ` +
+                `Please use the PR template.`
+              );
+            }
+
+            // Check that at least one Type checkbox is checked
+            const typeChecked = /- \[x\] `\w+`/.test(body);
+            if (!typeChecked) {
+              core.setFailed('Please check at least one Type in the PR description.');
+            }

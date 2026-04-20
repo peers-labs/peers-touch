@@ -49,6 +49,7 @@ type subServer struct {
 	authSvc     *application.AuthService
 	overviewSvc *application.OverviewService
 	actorsSvc   *application.ActorService
+	chatDebugSvc *application.ChatDebugService
 
 	// Infrastructure repositories (DDD infrastructure layer)
 	auditRepo infrastructure.AuditRepository
@@ -135,6 +136,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.authSvc = application.NewAuthService(adminRepo, sessionRepo, auditRepo, jwtSecret, sessionTTL)
 	s.overviewSvc = application.NewOverviewService(actorQueryRepo, auditRepo, nil)
 	s.actorsSvc = application.NewActorService(actorQueryRepo)
+	s.chatDebugSvc = application.NewChatDebugService(rds)
 
 	// Try to resolve registry from the global default
 	s.registry = registry.GetDefaultRegistry()

@@ -80,6 +80,16 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     loadAll();
   }, [loadAll]);
 
+  // Guard: if welcome_back is reached without a valid session, redirect to login form
+  useEffect(() => {
+    if (loginState === 'welcome_back') {
+      const { authenticated } = useSessionStore.getState();
+      if (!authenticated) {
+        setLoginState('logged_out');
+      }
+    }
+  }, [loginState]);
+
   const oauth2AccountProviders = useMemo(
     () => providers.filter(p => p.id === 'github' || p.id === 'google'),
     [providers],
@@ -189,8 +199,14 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
       setLoginState('pin_entry');
       setTimeout(() => pinInputRefs.current[0]?.focus(), 50);
     } else {
-      // No PIN set — for accounts without PIN, try direct restore
-      setLoginState('welcome_back');
+      // No PIN — only show welcome_back if session is actually authenticated
+      const { authenticated } = useSessionStore.getState();
+      if (authenticated) {
+        setLoginState('welcome_back');
+      } else {
+        // Session expired or invalid — go to login form directly
+        setLoginState('logged_out');
+      }
     }
   }, []);
 

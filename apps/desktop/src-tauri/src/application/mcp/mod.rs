@@ -70,14 +70,19 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InvalidArgument, message, None)
 }
 
-fn internal_error() -> AppResult<StubPayload> {
-    AppResult::fail(ErrorCode::InternalError, "error.mcp.storeAccessFailed", None)
+fn store_lock_error(e: impl std::fmt::Display) -> AppResult<StubPayload> {
+    tracing::error!(error = %e, "Failed to acquire MCP store lock");
+    AppResult::fail(
+        ErrorCode::InternalError,
+        format!("Failed to access MCP store: {}", e),
+        None,
+    )
 }
 
 pub fn mcp_list_servers() -> AppResult<StubPayload> {
     let guard = match mcp_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let servers = guard
         .servers
@@ -107,7 +112,7 @@ pub fn mcp_get_server(input: McpNameInput) -> AppResult<StubPayload> {
     }
     let guard = match mcp_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(item) = guard.servers.iter().find(|item| item.name == name) {
         let mut data = item.data.clone();
@@ -116,7 +121,7 @@ pub fn mcp_get_server(input: McpNameInput) -> AppResult<StubPayload> {
         }
         return success_payload("mcp_get_server", data);
     }
-    AppResult::fail(ErrorCode::NotFound, "error.mcp.serverNotFound", None)
+    AppResult::fail(ErrorCode::NotFound, "MCP server not found", None)
 }
 
 pub fn mcp_create_server(input: McpCreateInput) -> AppResult<StubPayload> {
@@ -132,7 +137,7 @@ pub fn mcp_create_server(input: McpCreateInput) -> AppResult<StubPayload> {
     }
     let mut guard = match mcp_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     guard.servers.push(McpServerRecord {
         name: name.clone(),
@@ -153,7 +158,7 @@ pub fn mcp_update_server(input: McpUpdateInput) -> AppResult<StubPayload> {
     }
     let mut guard = match mcp_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(item) = guard.servers.iter_mut().find(|item| item.name == name) {
         item.enabled = input
@@ -164,7 +169,7 @@ pub fn mcp_update_server(input: McpUpdateInput) -> AppResult<StubPayload> {
         item.data = input.data;
         return success_payload("mcp_update_server", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "error.mcp.serverNotFound", None)
+    AppResult::fail(ErrorCode::NotFound, "MCP server not found", None)
 }
 
 pub fn mcp_delete_server(input: McpNameInput) -> AppResult<StubPayload> {
@@ -174,7 +179,7 @@ pub fn mcp_delete_server(input: McpNameInput) -> AppResult<StubPayload> {
     }
     let mut guard = match mcp_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     let before = guard.servers.len();
     guard.servers.retain(|item| item.name != name);
@@ -191,13 +196,13 @@ pub fn mcp_toggle_server(input: McpToggleInput) -> AppResult<StubPayload> {
     }
     let mut guard = match mcp_store().lock() {
         Ok(guard) => guard,
-        Err(_) => return internal_error(),
+        Err(e) => return store_lock_error(e),
     };
     if let Some(item) = guard.servers.iter_mut().find(|item| item.name == name) {
         item.enabled = input.enabled;
         return success_payload("mcp_toggle_server", json!({ "ok": true }));
     }
-    AppResult::fail(ErrorCode::NotFound, "error.mcp.serverNotFound", None)
+    AppResult::fail(ErrorCode::NotFound, "MCP server not found", None)
 }
 
 pub fn mcp_test_server(input: McpNameInput) -> AppResult<StubPayload> {

@@ -113,6 +113,7 @@ func (s *OverviewService) GetRecentActors(ctx context.Context, limit int) ([]dom
 	for _, a := range actors {
 		summaries = append(summaries, domain.ActorSummary{
 			ID:               a.ID,
+			DID:              a.PTID,
 			PreferredUsername: a.PreferredUsername,
 			Name:             a.Name,
 			Email:            a.Email,

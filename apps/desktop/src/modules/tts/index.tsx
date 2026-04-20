@@ -6,6 +6,7 @@ import { Form, Select, Slider, Switch, Typography, theme } from 'antd';
 import { Volume2 } from 'lucide-react';
 import { registerModule } from '../registry';
 import { api, type TTSVoice, type UserPreferences } from '../../services/desktop_api';
+import { SettingsContainer } from '../../components/settings/SettingsLayout';
 
 const { Title, Text } = Typography;
 
@@ -108,7 +109,7 @@ function TTSSettings() {
   })();
 
   return (
-    <Flexbox style={{ padding: 24, maxWidth: 560, overflow: 'auto', height: '100%' }} gap={24}>
+    <SettingsContainer fullHeight>
       <Form
         form={form}
         layout="vertical"
@@ -163,7 +164,7 @@ function TTSSettings() {
           <Switch />
         </Form.Item>
       </Form>
-    </Flexbox>
+    </SettingsContainer>
   );
 }
 

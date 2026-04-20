@@ -19,9 +19,10 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 }
 
 fn internal_error() -> AppResult<StubPayload> {
+    tracing::error!("Failed to acquire provider store lock");
     AppResult::fail(
         ErrorCode::InternalError,
-        "error.provider.storeAccessFailed",
+        "Failed to access provider store",
         None,
     )
 }
@@ -175,12 +176,13 @@ pub fn model_add(scope: Option<&str>, input: ProviderModelAddInput) -> AppResult
     }) {
         Ok(Ok(model_id)) => {
             if persist_provider_store(scope).is_err() {
+                tracing::error!("Failed to persist provider store after model add");
                 return internal_error();
             }
             success_payload("model_add", json!({ "ok": true, "model_id": model_id }))
         }
-        Ok(Err(ErrorCode::Conflict)) => AppResult::fail(ErrorCode::Conflict, "error.models.alreadyExists", None),
-        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
+        Ok(Err(ErrorCode::Conflict)) => AppResult::fail(ErrorCode::Conflict, "Model already exists", None),
+        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "Provider not found", None),
         Err(_) => internal_error(),
     }
 }
@@ -207,12 +209,13 @@ pub fn model_update(scope: Option<&str>, input: ProviderModelUpdateInput) -> App
     }) {
         Ok(Ok(())) => {
             if persist_provider_store(scope).is_err() {
+                tracing::error!("Failed to persist provider store after model update");
                 return internal_error();
             }
             success_payload("model_update", json!({ "ok": true }))
         }
-        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "error.models.notFound", None),
-        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
+        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "Model not found", None),
+        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "Provider not found", None),
         Err(_) => internal_error(),
     }
 }
@@ -247,12 +250,13 @@ pub fn model_delete(scope: Option<&str>, input: ProviderModelDeleteInput) -> App
     }) {
         Ok(Ok(())) => {
             if persist_provider_store(scope).is_err() {
+                tracing::error!("Failed to persist provider store after model delete");
                 return internal_error();
             }
             success_payload("model_delete", json!({ "ok": true }))
         }
-        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "error.models.notFound", None),
-        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
+        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "Model not found", None),
+        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "Provider not found", None),
         Err(_) => internal_error(),
     }
 }
@@ -273,7 +277,7 @@ pub fn model_fetch_remote(scope: Option<&str>, input: ProviderModelFetchInput) -
         Err(_) => return internal_error(),
     };
     let Some(provider) = provider else {
-        return AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None);
+        return AppResult::fail(ErrorCode::NotFound, "Provider not found", None);
     };
     let input_api_key = input
         .data
@@ -337,12 +341,13 @@ pub fn model_toggle(scope: Option<&str>, input: ProviderModelToggleInput) -> App
     }) {
         Ok(Ok(())) => {
             if persist_provider_store(scope).is_err() {
+                tracing::error!("Failed to persist provider store after model toggle");
                 return internal_error();
             }
             success_payload("model_toggle", json!({ "ok": true }))
         }
-        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "error.models.notFound", None),
-        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
+        Ok(Err("model")) => AppResult::fail(ErrorCode::NotFound, "Model not found", None),
+        Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "Provider not found", None),
         Err(_) => internal_error(),
     }
 }
@@ -368,11 +373,12 @@ pub fn model_toggle_all(scope: Option<&str>, input: ProviderModelToggleAllInput)
     }) {
         Ok(Ok(())) => {
             if persist_provider_store(scope).is_err() {
+                tracing::error!("Failed to persist provider store after model toggle all");
                 return internal_error();
             }
             success_payload("model_toggle_all", json!({ "ok": true }))
         }
-        Ok(Err(())) => AppResult::fail(ErrorCode::NotFound, "error.provider.notFound", None),
+        Ok(Err(())) => AppResult::fail(ErrorCode::NotFound, "Provider not found", None),
         Err(_) => internal_error(),
     }
 }

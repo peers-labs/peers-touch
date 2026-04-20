@@ -156,9 +156,10 @@ pub fn open_external_url(input: ExternalUrlInput) -> AppResult<StubPayload> {
     };
 
     if let Err(err) = command.spawn() {
+        tracing::error!(error = %err, "Failed to spawn command to open external URL");
         return AppResult::fail(
             ErrorCode::InternalError,
-            "error.system.openUrlFailed",
+            format!("Failed to open URL: {}", err),
             None,
         );
     }
@@ -210,18 +211,20 @@ pub fn onboarding_reset() -> AppResult<StubPayload> {
         let path = match file {
             Ok(v) => v,
             Err(err) => {
+                tracing::error!(error = %err, "Failed to resolve onboarding reset file path");
                 return AppResult::fail(
                     ErrorCode::InternalError,
-                    "error.system.resetPathResolveFailed",
+                    format!("Failed to resolve reset file path: {}", err),
                     None,
                 )
             }
         };
         if path.exists() {
             if let Err(err) = fs::remove_file(&path) {
+                tracing::error!(error = %err, path = %path.display(), "Failed to remove onboarding reset file");
                 return AppResult::fail(
                     ErrorCode::InternalError,
-                    "error.system.resetFileClearFailed",
+                    format!("Failed to clear reset file: {}", err),
                     None,
                 );
             }
@@ -292,7 +295,14 @@ pub fn logs_tail(input: LogsTailInput) -> AppResult<StubPayload> {
 
     let log_dir = match storage::app_file_path("desktop", StorageKind::Logs, &[]) {
         Ok(p) => p,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.system.logsDirResolveFailed", None),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to resolve logs directory path");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to resolve logs directory: {}", e),
+                None,
+            );
+        }
     };
 
     let mut log_files: Vec<_> = fs::read_dir(&log_dir)
@@ -441,7 +451,14 @@ pub fn visitor_online() -> AppResult<StubPayload> {
 pub fn context_snapshot_get(input: Option<ContextSnapshotGetInput>) -> AppResult<StubPayload> {
     let mut snapshot = match global_context_state().lock() {
         Ok(v) => v.clone(),
-        Err(_) => return AppResult::fail(ErrorCode::InternalError, "error.system.contextLockFailed", None),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire global context lock");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to access application context: {}", e),
+                None,
+            );
+        }
     };
     if let Ok(account_state) = auth_identity::read_state() {
         let active = match account_state.active_account_id {
@@ -494,7 +511,14 @@ pub fn context_action_dispatch(input: ContextActionDispatchInput) -> AppResult<S
     }
     let mut state = match global_context_state().lock() {
         Ok(v) => v,
-        Err(_) => return AppResult::fail(ErrorCode::InternalError, "error.system.contextLockFailed", None),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire global context lock");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to access application context: {}", e),
+                None,
+            );
+        }
     };
     let payload = input.payload.unwrap_or_else(|| json!({}));
     if input.action == "set_runtime_state" {
@@ -519,15 +543,16 @@ pub fn context_action_dispatch(input: ContextActionDispatchInput) -> AppResult<S
             }
         }
     } else {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "error.system.unsupportedAction",
-            None,
-        );
+        return AppResult::fail(ErrorCode::InvalidArgument, "Unsupported system action", None);
     }
     state["meta"]["updatedAt"] = json!(now_ms());
     if let Err(err) = persist_global_context_state(&state) {
-        return AppResult::fail(ErrorCode::InternalError, "error.system.contextPersistFailed", None);
+        tracing::error!(error = %err, "Failed to persist global application context");
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to persist application context: {}", err),
+            None,
+        );
     }
     success_payload(
         "context_action_dispatch",
@@ -542,7 +567,14 @@ pub fn context_action_dispatch(input: ContextActionDispatchInput) -> AppResult<S
 pub fn context_capabilities() -> AppResult<StubPayload> {
     let state = match global_context_state().lock() {
         Ok(v) => v,
-        Err(_) => return AppResult::fail(ErrorCode::InternalError, "error.system.contextLockFailed", None),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire global context lock");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to access application context: {}", e),
+                None,
+            );
+        }
     };
     success_payload(
         "context_capabilities",
@@ -556,7 +588,14 @@ pub fn context_capabilities() -> AppResult<StubPayload> {
 pub fn context_health() -> AppResult<StubPayload> {
     let state = match global_context_state().lock() {
         Ok(v) => v,
-        Err(_) => return AppResult::fail(ErrorCode::InternalError, "error.system.contextLockFailed", None),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire global context lock");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to access application context: {}", e),
+                None,
+            );
+        }
     };
     let app_state = state["runtime"]["appState"].as_str().unwrap_or("unknown");
     let network_online = state["network"]["online"].as_bool().unwrap_or(true);

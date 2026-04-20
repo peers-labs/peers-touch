@@ -4,13 +4,12 @@ use crate::application::chat_storage;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::resolve_user_scope;
 use crate::contracts::{
-    ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput,
-    FriendChatAckInput, FriendChatCreateSessionInput, FriendChatListInput,
-    FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput, FriendChatSendInput,
-    FriendChatSyncInput, FriendChatSyncMessagesInput, KeyExchangeFetchInput, KeyExchangeUploadInput,
-    FriendRequestSendInput, FriendRequestActionInput, FriendRequestListInput,
-    StubPayload,
+    AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, FriendChatAckInput, FriendChatCreateSessionInput, FriendChatListInput,
+    FriendChatListFriendRequestsInput, FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
+    FriendChatAcceptFriendRequestInput, FriendChatRejectFriendRequestInput,
+    FriendChatSyncInput, FriendChatSyncMessagesInput, StubPayload,
 };
+use crate::model::chat as model_chat;
 use crate::state::AppState;
 use reqwest::blocking::Client;
 use reqwest::Method;
@@ -19,13 +18,13 @@ use tauri::State;
 
 fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<StubPayload>> {
     let guard = state.session.lock().map_err(|_| {
-        AppResult::fail(ErrorCode::InternalError, "error.auth.sessionLockFailed", None)
+        AppResult::fail(ErrorCode::InternalError, "failed to access session state", None)
     })?;
     let token = guard.token.clone().unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "error.auth.authenticationRequired",
+            "authentication required",
             None,
         ));
     }
@@ -49,7 +48,7 @@ fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, 
     let client = match Client::builder().build() {
         Ok(client) => client,
         Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "error.station.httpClientFailed", Some(json!({"reason": error.to_string()}))));
+            return Err(AppResult::fail(ErrorCode::InternalError, "failed to create http client", Some(json!({"reason": error.to_string()}))));
         }
     };
     let mut req = client
@@ -64,7 +63,7 @@ fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, 
     let response = match req.send() {
         Ok(response) => response,
         Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "error.station.requestFailed", Some(json!({"reason": error.to_string()}))));
+            return Err(AppResult::fail(ErrorCode::InternalError, "station request failed", Some(json!({"reason": error.to_string()}))));
         }
     };
     if !response.status().is_success() {
@@ -76,13 +75,13 @@ fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, 
             409 => ErrorCode::Conflict,
             _ => ErrorCode::InternalError,
         };
-        return Err(AppResult::fail(code, "error.station.requestFailed", Some(json!({"status": response.status().as_u16()}))));
+        return Err(AppResult::fail(code, "station request failed", Some(json!({"status": response.status().as_u16()}))));
     }
     match response.json::<Value>() {
         Ok(data) => Ok(data),
         Err(error) => Err(AppResult::fail(
             ErrorCode::InternalError,
-            "error.station.invalidResponse",
+            "invalid station response",
             Some(json!({"reason": error.to_string()})),
         )),
     }
@@ -141,6 +140,77 @@ fn filter_incremental_messages(payload: &Value, cursor: Option<&str>) -> (Value,
     (filtered_payload, synced_count, latest)
 }
 
+fn json_str(v: &Value, keys: &[&str]) -> Option<String> {
+    for k in keys {
+        if let Some(s) = v.get(*k).and_then(|x| x.as_str()) {
+            return Some(s.to_string());
+        }
+    }
+    None
+}
+
+fn json_i32(v: &Value, keys: &[&str]) -> Option<i32> {
+    for k in keys {
+        if let Some(n) = v.get(*k).and_then(|x| x.as_i64()) {
+            return Some(n as i32);
+        }
+    }
+    None
+}
+
+fn millis_to_timestamp(ms: i64) -> prost_types::Timestamp {
+    prost_types::Timestamp {
+        seconds: ms / 1000,
+        nanos: ((ms % 1000) * 1_000_000) as i32,
+    }
+}
+
+fn json_to_optional_timestamp(v: &Value, keys: &[&str]) -> Option<prost_types::Timestamp> {
+    let ms = keys.iter().find_map(|k| v.get(*k).and_then(|x| x.as_i64()))?;
+    Some(millis_to_timestamp(ms))
+}
+
+fn value_to_sync_message_item(v: &Value) -> Option<model_chat::SyncMessageItem> {
+    Some(model_chat::SyncMessageItem {
+        ulid: json_str(v, &["ulid"])?,
+        session_ulid: json_str(v, &["sessionUlid", "session_ulid"])?,
+        receiver_did: json_str(v, &["receiverDid", "receiver_did"])?,
+        r#type: json_i32(v, &["type"]).unwrap_or(0),
+        content: json_str(v, &["content"]).unwrap_or_default(),
+        sent_at: json_to_optional_timestamp(v, &["sentAt", "sent_at"]),
+        encrypted_payload: Vec::new(),
+        attachments: Vec::new(),
+        reply_to_ulid: String::new(),
+    })
+}
+
+fn map_attachments(inputs: &[AttachmentInput]) -> Vec<model_chat::FriendMessageAttachment> {
+    inputs
+        .iter()
+        .map(|a| model_chat::FriendMessageAttachment {
+            cid: a.cid.clone(),
+            filename: a.filename.clone(),
+            mime_type: a.mime_type.clone(),
+            size: a.size,
+            thumbnail_cid: a.thumbnail_cid.clone().unwrap_or_default(),
+        })
+        .collect()
+}
+
+fn next_cursor_from_payload(data: &Value) -> Option<String> {
+    data.get("nextCursor")
+        .or_else(|| data.get("next_cursor"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+fn has_more_from_payload(data: &Value) -> bool {
+    data.get("hasMore")
+        .or_else(|| data.get("has_more"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
 #[tauri::command]
 pub fn friend_chat_list_sessions(input: FriendChatListInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
@@ -165,7 +235,7 @@ pub fn friend_chat_create_session(input: FriendChatCreateSessionInput, state: St
         Err(error) => return error,
     };
     if input.participant_did.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.friendChat.participantDidRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "participant_did is required", None);
     }
     let data = match request_json(
         Method::POST,
@@ -187,7 +257,7 @@ pub fn friend_chat_list_messages(input: FriendChatListMessagesInput, state: Stat
         Err(error) => return error,
     };
     if input.session_ulid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.friendChat.sessionUlidRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "session_ulid is required", None);
     }
     let mut query = vec![
         ("session_ulid", input.session_ulid),
@@ -211,20 +281,33 @@ pub fn friend_chat_send_message(input: FriendChatSendInput, state: State<'_, Arc
         Ok(token) => token,
         Err(error) => return error,
     };
+    let attachments = input.attachments.clone().unwrap_or_default();
+    let mut body = json!({
+        "session_ulid": input.session_ulid,
+        "receiver_did": input.receiver_did,
+        "content": input.content,
+        "type": input.r#type.unwrap_or(1),
+        "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
+        "attachments": attachments,
+    });
+    if let Some(b64) = input.encrypted_payload.as_ref() {
+        let t = b64.trim();
+        if !t.is_empty() {
+            body["encrypted_payload"] = json!(t);
+        }
+    }
+    if let Some(id) = input.client_ulid.as_ref() {
+        let t = id.trim();
+        if !t.is_empty() {
+            body["client_ulid"] = json!(t);
+        }
+    }
     let data = match request_json(
         Method::POST,
         "/friend-chat/message/send",
         &token,
         None,
-        Some(json!({
-            "session_ulid": input.session_ulid,
-            "receiver_did": input.receiver_did,
-            "content": input.content,
-            "encrypted_payload": input.encrypted_payload.unwrap_or_default(),
-            "type": input.r#type.unwrap_or(1),
-            "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
-            "attachments": input.attachments.unwrap_or_default(),
-        })),
+        Some(body),
     ) {
         Ok(data) => data,
         Err(error) => return error,
@@ -259,7 +342,7 @@ pub fn friend_chat_ack_messages(input: FriendChatAckInput, state: State<'_, Arc<
 #[tauri::command]
 pub fn friend_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.queryRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "query is required", None);
     }
     let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
     let items = match chat_storage::search_friend_messages("__default__", input.query.as_str(), limit) {
@@ -267,7 +350,7 @@ pub fn friend_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPa
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.chat.localSearchFailed",
+                "local search failed",
                 Some(json!({ "reason": reason })),
             );
         }
@@ -278,7 +361,7 @@ pub fn friend_chat_local_search(input: ChatLocalSearchInput) -> AppResult<StubPa
 #[tauri::command]
 pub fn friend_chat_local_search_scoped(input: ChatLocalSearchInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.queryRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "query is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
@@ -287,7 +370,7 @@ pub fn friend_chat_local_search_scoped(input: ChatLocalSearchInput, state: State
         Err(reason) => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "error.chat.localSearchFailed",
+                "local search failed",
                 Some(json!({ "reason": reason })),
             );
         }
@@ -299,10 +382,10 @@ pub fn friend_chat_local_search_scoped(input: ChatLocalSearchInput, state: State
 pub fn friend_chat_set_cursor_scoped(input: ChatScopeCursorSetInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let user_scope = user_scope_from_state(&state);
     if input.scope.trim().is_empty() || input.cursor.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.scopeAndCursorRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "scope and cursor are required", None);
     }
     if let Err(reason) = chat_storage::set_scope_cursor(user_scope.as_str(), input.scope.as_str(), input.cursor.as_str()) {
-        return AppResult::fail(ErrorCode::InternalError, "error.chat.setCursorFailed", Some(json!({"reason": reason})));
+        return AppResult::fail(ErrorCode::InternalError, "set cursor failed", Some(json!({"reason": reason})));
     }
     to_stub("friend_chat_set_cursor_scoped", json!({"ok": true}))
 }
@@ -311,12 +394,12 @@ pub fn friend_chat_set_cursor_scoped(input: ChatScopeCursorSetInput, state: Stat
 pub fn friend_chat_get_cursor_scoped(input: ChatScopeCursorGetInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let user_scope = user_scope_from_state(&state);
     if input.scope.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.scopeRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "scope is required", None);
     }
     let cursor = match chat_storage::get_scope_cursor(user_scope.as_str(), input.scope.as_str()) {
         Ok(cursor) => cursor,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "error.chat.getCursorFailed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "get cursor failed", Some(json!({"reason": reason})));
         }
     };
     to_stub("friend_chat_get_cursor_scoped", json!({"cursor": cursor}))
@@ -328,7 +411,7 @@ pub fn friend_chat_get_key_version_scoped(state: State<'_, Arc<AppState>>) -> Ap
     let key_version = match chat_storage::get_chat_key_version(user_scope.as_str()) {
         Ok(version) => version,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "error.chat.getKeyVersionFailed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "get key version failed", Some(json!({"reason": reason})));
         }
     };
     to_stub("friend_chat_get_key_version_scoped", json!({"key_version": key_version}))
@@ -337,13 +420,13 @@ pub fn friend_chat_get_key_version_scoped(state: State<'_, Arc<AppState>>) -> Ap
 #[tauri::command]
 pub fn friend_chat_rotate_key_scoped(input: ChatKeyRotateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     if input.next_version <= 0 {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.chat.nextVersionPositive", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "next_version must be positive", None);
     }
     let user_scope = user_scope_from_state(&state);
     let key_version = match chat_storage::rotate_chat_key(user_scope.as_str(), input.next_version) {
         Ok(version) => version,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "error.chat.rotateKeyFailed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "rotate key failed", Some(json!({"reason": reason})));
         }
     };
     to_stub("friend_chat_rotate_key_scoped", json!({"key_version": key_version}))
@@ -356,14 +439,14 @@ pub fn friend_chat_sync_from_station_scoped(input: FriendChatSyncInput, state: S
         Err(error) => return error,
     };
     if input.session_ulid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.friendChat.sessionUlidRequired", None);
+        return AppResult::fail(ErrorCode::InvalidArgument, "session_ulid is required", None);
     }
     let user_scope = user_scope_from_state(&state);
     let scope_key = format!("friend:{}", input.session_ulid);
     let cursor = match chat_storage::get_scope_cursor(user_scope.as_str(), scope_key.as_str()) {
         Ok(cursor) => cursor,
         Err(reason) => {
-            return AppResult::fail(ErrorCode::InternalError, "error.chat.getCursorFailed", Some(json!({"reason": reason})));
+            return AppResult::fail(ErrorCode::InternalError, "get cursor failed", Some(json!({"reason": reason})));
         }
     };
     let page_limit = input.limit.unwrap_or(100);
@@ -416,7 +499,7 @@ pub fn friend_chat_sync_from_station_scoped(input: FriendChatSyncInput, state: S
 // Stub commands - registered in main.rs, backed by station JSON API
 // ---------------------------------------------------------------------------
 
-/// Sync messages for a friend-chat session from station.
+/// Sync messages for a friend-chat session from station (JSON-based).
 #[tauri::command]
 pub fn friend_chat_sync_messages(input: FriendChatSyncMessagesInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
@@ -426,7 +509,7 @@ pub fn friend_chat_sync_messages(input: FriendChatSyncMessagesInput, state: Stat
 
     let data = match request_json(
         Method::POST,
-        "/friend-chat/message/sync",
+        "/friend-chat/messages/sync",
         &token,
         None,
         Some(json!({
@@ -516,75 +599,20 @@ pub fn friend_chat_get_stats(state: State<'_, Arc<AppState>>) -> AppResult<StubP
     to_stub("friend_chat_get_stats", data)
 }
 
-#[tauri::command]
-pub fn key_exchange_upload_bundle(
-    input: KeyExchangeUploadInput,
-    state: State<'_, Arc<AppState>>,
-) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    let data = match request_json(
-        Method::POST,
-        "/key-exchange/keys/bundle",
-        &token,
-        None,
-        Some(json!({
-            "ik_pub": input.ik_pub,
-            "spk_id": input.spk_id,
-            "spk_pub": input.spk_pub,
-            "spk_sig": input.spk_sig,
-            "opk_ids": input.opk_ids,
-            "opk_pubs": input.opk_pubs,
-        })),
-    ) {
-        Ok(data) => data,
-        Err(error) => return error,
-    };
-    to_stub("key_exchange_upload_bundle", data)
-}
+// ---------------------------------------------------------------------------
+// Friend Requests (Station-backed)
+// ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn key_exchange_fetch_bundle(
-    input: KeyExchangeFetchInput,
-    state: State<'_, Arc<AppState>>,
-) -> AppResult<StubPayload> {
+pub fn friend_chat_send_friend_request(input: FriendChatSendFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
-    if input.did.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "error.keyExchange.didRequired", None);
+    if input.receiver_did.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "receiver_did is required", None);
     }
-    let query = vec![("did", input.did)];
-    let data = match request_json(
-        Method::GET,
-        "/key-exchange/keys/bundle",
-        &token,
-        Some(&query),
-        None,
-    ) {
-        Ok(data) => data,
-        Err(error) => return error,
-    };
-    to_stub("key_exchange_fetch_bundle", data)
-}
-
-// ============================================================================
-// Friend Request Commands
-// ============================================================================
-
-#[tauri::command]
-pub fn friend_chat_send_friend_request(
-    input: FriendRequestSendInput,
-    state: State<'_, Arc<AppState>>,
-) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
+    let message = input.message.unwrap_or_default();
     let data = match request_json(
         Method::POST,
         "/friend-chat/friend-request/send",
@@ -592,26 +620,24 @@ pub fn friend_chat_send_friend_request(
         None,
         Some(json!({
             "receiver_did": input.receiver_did,
-            "message": input.message.unwrap_or_default(),
+            "message": message,
         })),
     ) {
-        Ok(d) => d,
-        Err(e) => return e,
+        Ok(data) => data,
+        Err(error) => return error,
     };
-
     to_stub("friend_chat_send_friend_request", data)
 }
 
 #[tauri::command]
-pub fn friend_chat_accept_friend_request(
-    input: FriendRequestActionInput,
-    state: State<'_, Arc<AppState>>,
-) -> AppResult<StubPayload> {
+pub fn friend_chat_accept_friend_request(input: FriendChatAcceptFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
-        Ok(t) => t,
-        Err(e) => return e,
+        Ok(token) => token,
+        Err(error) => return error,
     };
-
+    if input.request_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
+    }
     let data = match request_json(
         Method::POST,
         "/friend-chat/friend-request/accept",
@@ -619,23 +645,21 @@ pub fn friend_chat_accept_friend_request(
         None,
         Some(json!({ "request_id": input.request_id })),
     ) {
-        Ok(d) => d,
-        Err(e) => return e,
+        Ok(data) => data,
+        Err(error) => return error,
     };
-
     to_stub("friend_chat_accept_friend_request", data)
 }
 
 #[tauri::command]
-pub fn friend_chat_reject_friend_request(
-    input: FriendRequestActionInput,
-    state: State<'_, Arc<AppState>>,
-) -> AppResult<StubPayload> {
+pub fn friend_chat_reject_friend_request(input: FriendChatRejectFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
-        Ok(t) => t,
-        Err(e) => return e,
+        Ok(token) => token,
+        Err(error) => return error,
     };
-
+    if input.request_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
+    }
     let data = match request_json(
         Method::POST,
         "/friend-chat/friend-request/reject",
@@ -643,42 +667,28 @@ pub fn friend_chat_reject_friend_request(
         None,
         Some(json!({ "request_id": input.request_id })),
     ) {
-        Ok(d) => d,
-        Err(e) => return e,
+        Ok(data) => data,
+        Err(error) => return error,
     };
-
     to_stub("friend_chat_reject_friend_request", data)
 }
 
 #[tauri::command]
-pub fn friend_chat_list_friend_requests(
-    input: FriendRequestListInput,
-    state: State<'_, Arc<AppState>>,
-) -> AppResult<StubPayload> {
+pub fn friend_chat_list_friend_requests(input: FriendChatListFriendRequestsInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let token = match token_from_state(&state) {
-        Ok(t) => t,
-        Err(e) => return e,
+        Ok(token) => token,
+        Err(error) => return error,
     };
-
-    let mut query: Vec<(&str, String)> = Vec::new();
-    if let Some(st) = input.status {
-        query.push(("status", st.to_string()));
+    let mut query = Vec::new();
+    if let Some(status) = input.status {
+        query.push(("status", status.to_string()));
     }
-    let limit = input.limit.unwrap_or(20);
-    query.push(("limit", limit.to_string()));
-    let offset = input.offset.unwrap_or(0);
-    query.push(("offset", offset.to_string()));
+    query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
+    query.push(("offset", input.offset.unwrap_or(0).to_string()));
 
-    let data = match request_json(
-        Method::GET,
-        "/friend-chat/friend-requests",
-        &token,
-        Some(&query.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>()),
-        None,
-    ) {
-        Ok(d) => d,
-        Err(e) => return e,
+    let data = match request_json(Method::GET, "/friend-chat/friend-requests", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
-
     to_stub("friend_chat_list_friend_requests", data)
 }

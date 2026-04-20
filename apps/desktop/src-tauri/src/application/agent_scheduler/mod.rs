@@ -1,6 +1,7 @@
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
+use crate::model;
 use crate::state::AppState;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -20,25 +21,58 @@ pub struct SchedulerAddJobInput {
     pub interval_minutes: Option<i32>,
 }
 
+fn scheduler_start_response_to_json(r: &model::agent::SchedulerStartResponse) -> serde_json::Value {
+    json!({
+        "ok": r.ok,
+        "message": r.message,
+    })
+}
+
+fn scheduler_stop_response_to_json(r: &model::agent::SchedulerStopResponse) -> serde_json::Value {
+    json!({
+        "ok": r.ok,
+        "message": r.message,
+    })
+}
+
+fn scheduler_status_response_to_json(r: &model::agent::SchedulerStatusResponse) -> serde_json::Value {
+    json!({
+        "running": r.running,
+        "agentId": r.agent_id,
+        "reviewIntervalMinutes": r.review_interval_minutes,
+        "dogfoodIntervalMinutes": r.dogfood_interval_minutes,
+        "activeJobs": r.active_jobs,
+    })
+}
+
+fn scheduler_add_job_response_to_json(r: &model::agent::SchedulerAddJobResponse) -> serde_json::Value {
+    json!({
+        "ok": r.ok,
+    })
+}
+
 pub fn agent_scheduler_start(input: SchedulerStartInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
+    let token = match token_from_state(state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
 
-    let body = json!({
-        "agent_id": input.agent_id,
-        "review_interval_minutes": input.review_interval_minutes.unwrap_or(120),
-        "dogfood_interval_minutes": input.dogfood_interval_minutes.unwrap_or(360),
-    });
+    let req = model::agent::SchedulerStartRequest {
+        agent_id: input.agent_id,
+        review_interval_minutes: input.review_interval_minutes.unwrap_or(120),
+        dogfood_interval_minutes: input.dogfood_interval_minutes.unwrap_or(360),
+    };
 
-    match station_client::request_json(
+    match station_client::request_proto::<model::agent::SchedulerStartRequest, model::agent::SchedulerStartResponse>(
         Method::POST,
         "/agent/scheduler/start",
         &token,
         None,
-        Some(body),
+        Some(&req),
     ) {
-        Ok(result) => {
-            let status = serde_json::to_string(&result)
-                .unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+        Ok(resp) => {
+            let status = serde_json::to_string(&scheduler_start_response_to_json(&resp))
+                .unwrap_or_else(|_| r#"{"ok":false}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_scheduler_start".to_string(),
                 status,
@@ -48,26 +82,30 @@ pub fn agent_scheduler_start(input: SchedulerStartInput, state: &AppState) -> Ap
             tracing::error!(command = "agent_scheduler_start", error = %err);
             AppResult::fail(
                 ErrorCode::InternalError,
-                "error.agent.schedulerStartFailed",
-                Some(json!({ "detail": err })),
+                format!("Failed to start agent scheduler: {}", err),
+                None,
             )
         }
     }
 }
 
 pub fn agent_scheduler_stop(state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
+    let token = match token_from_state(state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
 
-    match station_client::request_json(
+    let req = model::agent::SchedulerStopRequest {};
+    match station_client::request_proto::<model::agent::SchedulerStopRequest, model::agent::SchedulerStopResponse>(
         Method::POST,
         "/agent/scheduler/stop",
         &token,
         None,
-        Some(json!({})),
+        Some(&req),
     ) {
-        Ok(result) => {
-            let status = serde_json::to_string(&result)
-                .unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+        Ok(resp) => {
+            let status = serde_json::to_string(&scheduler_stop_response_to_json(&resp))
+                .unwrap_or_else(|_| r#"{"ok":false}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_scheduler_stop".to_string(),
                 status,
@@ -77,25 +115,28 @@ pub fn agent_scheduler_stop(state: &AppState) -> AppResult<StubPayload> {
             tracing::error!(command = "agent_scheduler_stop", error = %err);
             AppResult::fail(
                 ErrorCode::InternalError,
-                "error.agent.schedulerStopFailed",
-                Some(json!({ "detail": err })),
+                format!("Failed to stop agent scheduler: {}", err),
+                None,
             )
         }
     }
 }
 
 pub fn agent_scheduler_status(state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
+    let token = match token_from_state(state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
 
-    match station_client::request_json(
+    match station_client::request_proto::<model::agent::SchedulerStatusRequest, model::agent::SchedulerStatusResponse>(
         Method::GET,
         "/agent/scheduler/status",
         &token,
         None,
         None,
     ) {
-        Ok(result) => {
-            let status = serde_json::to_string(&result)
+        Ok(resp) => {
+            let status = serde_json::to_string(&scheduler_status_response_to_json(&resp))
                 .unwrap_or_else(|_| r#"{"running":false}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_scheduler_status".to_string(),
@@ -106,32 +147,35 @@ pub fn agent_scheduler_status(state: &AppState) -> AppResult<StubPayload> {
             tracing::error!(command = "agent_scheduler_status", error = %err);
             AppResult::fail(
                 ErrorCode::InternalError,
-                "error.agent.schedulerStatusFailed",
-                Some(json!({ "detail": err })),
+                format!("Failed to get agent scheduler status: {}", err),
+                None,
             )
         }
     }
 }
 
 pub fn agent_scheduler_add_job(input: SchedulerAddJobInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e, };
+    let token = match token_from_state(state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
 
-    let body = json!({
-        "kind": input.kind,
-        "agent_id": input.agent_id,
-        "interval_minutes": input.interval_minutes.unwrap_or(60),
-    });
+    let req = model::agent::SchedulerAddJobRequest {
+        kind: input.kind,
+        agent_id: input.agent_id,
+        interval_minutes: input.interval_minutes.unwrap_or(60),
+    };
 
-    match station_client::request_json(
+    match station_client::request_proto::<model::agent::SchedulerAddJobRequest, model::agent::SchedulerAddJobResponse>(
         Method::POST,
         "/agent/scheduler/add-job",
         &token,
         None,
-        Some(body),
+        Some(&req),
     ) {
-        Ok(result) => {
-            let status = serde_json::to_string(&result)
-                .unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+        Ok(resp) => {
+            let status = serde_json::to_string(&scheduler_add_job_response_to_json(&resp))
+                .unwrap_or_else(|_| r#"{"ok":false}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_scheduler_add_job".to_string(),
                 status,
@@ -141,22 +185,23 @@ pub fn agent_scheduler_add_job(input: SchedulerAddJobInput, state: &AppState) ->
             tracing::error!(command = "agent_scheduler_add_job", error = %err);
             AppResult::fail(
                 ErrorCode::InternalError,
-                "error.agent.schedulerAddJobFailed",
-                Some(json!({ "detail": err })),
+                format!("Failed to add agent scheduler job: {}", err),
+                None,
             )
         }
     }
 }
 
 fn token_from_state(state: &AppState) -> Result<String, AppResult<StubPayload>> {
-    let guard = state.session.lock().map_err(|_| {
-        AppResult::fail(ErrorCode::InternalError, "error.auth.sessionLockFailed", None)
+    let guard = state.session.lock().map_err(|e| {
+        tracing::error!(error = %e, "Failed to access session state");
+        AppResult::fail(ErrorCode::InternalError, "Failed to access session state", None)
     })?;
     let token = guard.token.clone().unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "error.auth.authenticationRequired",
+            "Authentication required — please log in",
             None,
         ));
     }

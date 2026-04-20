@@ -219,21 +219,34 @@ export function ChatSessionList() {
                   }}
                 >
                   <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <Flexbox
-                      align="center"
-                      justify="center"
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        background: avatarBg,
-                        color: avatarColor,
-                        fontSize: 14,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {getInitial(name)}
-                    </Flexbox>
+                    {c.avatar ? (
+                      <img
+                        src={c.avatar}
+                        alt={name}
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 18,
+                          objectFit: 'cover',
+                        }}
+                      />
+                    ) : (
+                      <Flexbox
+                        align="center"
+                        justify="center"
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 18,
+                          background: avatarBg,
+                          color: avatarColor,
+                          fontSize: 14,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {getInitial(name)}
+                      </Flexbox>
+                    )}
                   </div>
 
                   <Flexbox flex={1} style={{ minWidth: 0 }}>

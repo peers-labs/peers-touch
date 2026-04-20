@@ -12,15 +12,25 @@ type contextKey string
 
 const SubjectContextKey contextKey = "auth_subject"
 
-func RequireJWT(p coreauth.Provider) func(context.Context, *app.RequestContext) {
+// RequireJWT validates the Bearer JWT and optionally checks the embedded session
+// against the session store. If sv is nil, only JWT signature validation is performed.
+func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(context.Context, *app.RequestContext) {
+	var sessValidator coreauth.SessionValidator
+	if len(sv) > 0 {
+		sessValidator = sv[0]
+	}
+
 	return func(c context.Context, ctx *app.RequestContext) {
+		if sessValidator == nil {
+			sessValidator = coreauth.GetGlobalSessionValidator()
+		}
 		h := string(ctx.GetHeader("Authorization"))
 		logger.Debugf(c, "[RequireJWT] Authorization header: %s", h)
 
 		if len(h) < 7 || h[:7] != "Bearer " {
 			logger.Warnf(c, "[RequireJWT] Missing or invalid Bearer token format")
 			ctx.SetStatusCode(401)
-			ctx.JSON(401, map[string]string{"error": "Valid JWT token required"})
+			ctx.JSON(401, map[string]interface{}{"error": "Valid JWT token required", "code": "auth_required"})
 			ctx.Abort()
 			return
 		}
@@ -31,11 +41,27 @@ func RequireJWT(p coreauth.Provider) func(context.Context, *app.RequestContext) 
 		if err != nil {
 			logger.Warnf(c, "[RequireJWT] Token validation failed: %v", err)
 			ctx.SetStatusCode(401)
-			ctx.JSON(401, map[string]string{"error": "Invalid or expired token"})
+			ctx.JSON(401, map[string]interface{}{"error": "Invalid or expired token", "code": "token_invalid"})
 			ctx.Abort()
 			return
 		}
-		logger.Infof(c, "[RequireJWT] Token valid, subject: %s", subject.ID)
+
+		if sessValidator != nil && subject.SessionID != "" {
+			valid, reason := sessValidator.CheckSessionValid(c, subject.SessionID)
+			if !valid {
+				logger.Warnf(c, "[RequireJWT] Session %s rejected: %s (user=%s)", subject.SessionID, reason, subject.ID)
+				ctx.SetStatusCode(401)
+				ctx.JSON(401, map[string]interface{}{
+					"error": "Session has been revoked",
+					"code":  "session_revoked",
+					"reason": reason,
+				})
+				ctx.Abort()
+				return
+			}
+		}
+
+		logger.Infof(c, "[RequireJWT] Token valid, subject: %s, session: %s", subject.ID, subject.SessionID)
 		ctx.Set(string(SubjectContextKey), subject)
 	}
 }

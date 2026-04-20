@@ -90,28 +90,24 @@
         var moduleScripts = document.querySelectorAll('script[type="module"]');
         logBoot('module scripts found: ' + moduleScripts.length);
 
-        // Progress: update status text as time passes
-        var progressSteps = [
-          { at: 2000, text: 'Connecting to backend…' },
-          { at: 5000, text: 'Loading language packs…' },
-          { at: 10000, text: 'Almost ready…' },
-          { at: 20000, text: 'Still loading (cold start may take a moment)…' },
-        ];
-        progressSteps.forEach(function(step) {
-          setTimeout(function() {
-            var root = document.getElementById('root');
-            if (root && root.childNodes.length === 0) {
-              setBootStatus(step.text);
-            }
-          }, step.at);
-        });
-
+        // Catch ALL uncaught errors (JS runtime errors, not just resource loads)
         window.addEventListener('error', function(e) {
           if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
             logBoot('RESOURCE LOAD ERROR: ' + (e.target.src || e.target.href));
             showBootError('A required resource failed to load:\n' + (e.target.src || e.target.href));
+          } else if (e.message) {
+            logBoot('JS ERROR: ' + e.message + ' at ' + (e.filename || '?') + ':' + (e.lineno || '?'));
+            showBootError('JavaScript error:\n' + e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''));
           }
         }, true);
+
+        // Catch unhandled promise rejections (module import failures, async errors)
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = e.reason;
+          var msg = (reason && reason.message) ? reason.message : String(reason);
+          logBoot('UNHANDLED REJECTION: ' + msg);
+          showBootError('Unhandled error:\n' + msg + (reason && reason.stack ? '\n' + reason.stack : ''));
+        });
 
         var bootTimer = setTimeout(function() {
           var root = document.getElementById('root');
@@ -135,6 +131,13 @@
           }
         };
 
+        // Allow bootstrap to report real progress
+        window.__PT_BOOT_STATUS__ = function(text) {
+          logBoot('status: ' + text);
+          setBootStatus(text);
+        };
+
+        window.__PT_BOOT_ERROR__ = showBootError;
         function showBootError(detail) {
           logBoot('showBootError: ' + detail);
           var spinner = document.getElementById('pt-boot-spinner');
@@ -149,6 +152,12 @@
       })();
     </script>
 
+    <script type="module">
+      // Canary: verify ES module execution works in this WebView
+      if (typeof window.__PT_BOOT_STATUS__ === 'function') {
+        window.__PT_BOOT_STATUS__('Module runtime OK, loading app…');
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

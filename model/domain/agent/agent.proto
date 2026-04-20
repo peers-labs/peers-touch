@@ -160,12 +160,102 @@ message ExecuteTurnRequest {
   string agent_id = 2;
   string user_input = 3;
   bool stream = 4;
-  optional string model_override = 5;
-  optional string provider_override = 6;
+  // JSON field names `model` / `provider` match desktop and HTTP clients (not model_override).
+  optional string model = 5;
+  optional string provider = 6;
+  optional string identity = 7;
+  optional string agent_config_prompt = 8;
+  optional string platform = 9;
+  optional string workspace_root = 10;
+  optional int32 context_window_size = 11;
+  optional int32 max_retries = 12;
 }
 
 message ExecuteTurnResponse {
   Turn turn = 1;
   TurnTrace trace = 2;
   AgentMessage response_message = 3;
+}
+
+// ============================================================================
+// Scheduler API
+// ============================================================================
+
+message SchedulerStartRequest {
+  string agent_id = 1;
+  int32 review_interval_minutes = 2;
+  int32 dogfood_interval_minutes = 3;
+}
+
+message SchedulerStartResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message SchedulerStopRequest {}
+
+message SchedulerStopResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message SchedulerStatusRequest {}
+
+message SchedulerStatusResponse {
+  bool running = 1;
+  string agent_id = 2;
+  int32 review_interval_minutes = 3;
+  int32 dogfood_interval_minutes = 4;
+  int32 active_jobs = 5;
+}
+
+message SchedulerAddJobRequest {
+  string kind = 1;
+  string agent_id = 2;
+  int32 interval_minutes = 3;
+}
+
+message SchedulerAddJobResponse {
+  bool ok = 1;
+}
+
+// ============================================================================
+// Growth API
+// ============================================================================
+
+message GetGrowthSnapshotRequest {
+  string agent_id = 1;
+}
+
+message GetGrowthSnapshotResponse {
+  string agent_id = 1;
+  int32 total_memories = 2;
+  int32 total_skills = 3;
+  int32 total_reviews = 4;
+  int64 total_turns = 5;
+  int32 positive_feedback = 6;
+  int32 negative_feedback = 7;
+  double feedback_ratio = 8;
+  double error_rate = 9;
+  double retry_rate = 10;
+  double review_success_rate = 11;
+  double memory_growth_rate = 12;
+  double skill_growth_rate = 13;
+  string quality_trend = 14;
+  double growth_score = 15;
+  string growth_verdict = 16;
+  string window_start = 17;
+  string window_end = 18;
+}
+
+message RecordFeedbackRequest {
+  string agent_id = 1;
+  string turn_id = 2;
+  string conversation_id = 3;
+  string signal = 4;
+  optional string comment = 5;
+}
+
+message RecordFeedbackResponse {
+  string id = 1;
 }

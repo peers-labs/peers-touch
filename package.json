@@ -10,6 +10,14 @@
     "desktop:dev": "pnpm --filter @peers-touch/app-desktop run dev",
     "desktop:build": "pnpm --filter @peers-touch/app-desktop run build",
     "applets:build": "node packages/applets/build.js",
-    "applets:dev": "node packages/applets/dev-sync.js"
+    "applets:dev": "node packages/applets/dev-sync.js",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "husky": "^9.1.7",
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^7.3.1"
   }
 }

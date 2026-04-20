@@ -10,13 +10,14 @@ use tauri::State;
 
 fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<StubPayload>> {
     let guard = state.session.lock().map_err(|_| {
-        AppResult::fail(ErrorCode::InternalError, "error.auth.sessionLockFailed", None)
+        tracing::error!("Failed to acquire session lock");
+        AppResult::fail(ErrorCode::InternalError, "Failed to access session state", None)
     })?;
     let token = guard.token.clone().unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "error.auth.authenticationRequired",
+            "Authentication required — please log in",
             None,
         ));
     }
@@ -41,7 +42,10 @@ pub fn actor_search_users(input: ActorSearchUsersInput, state: State<'_, Arc<App
         Method::GET, "/api/v1/social/users/search", &token, Some(&[("q", input.q.clone())]), None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.actor.searchFailed", None),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to search actors");
+            return AppResult::fail(ErrorCode::InternalError, format!("Failed to search actors: {}", e), None);
+        }
     };
 
     let items: Vec<serde_json::Value> = resp.items.iter().map(|a| {
@@ -69,7 +73,10 @@ pub fn actor_get_me(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
         Method::GET, "/api/v1/social/users/me", &token, None, None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, "error.actor.getMeFailed", None),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to get current user profile");
+            return AppResult::fail(ErrorCode::InternalError, format!("Failed to get profile: {}", e), None);
+        }
     };
 
     to_stub("actor_get_me", json!({
