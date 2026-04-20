@@ -60,8 +60,9 @@ func (s *Service) ListSessions(actorDID string, limit, offset int) ([]domain.Ses
 	return s.repo.ListSessions(actorDID, limit, offset)
 }
 
-func (s *Service) SendMessage(sessionID, senderDID, receiverDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte) (domain.Message, error) {
+func (s *Service) SendMessage(sessionID, senderDID, receiverDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte, clientULID string) (domain.Message, error) {
 	return s.repo.AppendMessage(domain.Message{
+		ID:               clientULID,
 		SessionID:        sessionID,
 		SenderDID:        senderDID,
 		ReceiverDID:      receiverDID,
@@ -82,7 +83,7 @@ func (s *Service) AckMessages(actorDID string, messageIDs []string, status int32
 	return s.repo.MarkRead(actorDID, messageIDs, status)
 }
 
-func (s *Service) SendMessageByActor(actorDID, sessionID, receiverDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte) (domain.Message, error) {
+func (s *Service) SendMessageByActor(actorDID, sessionID, receiverDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte, clientULID string) (domain.Message, error) {
 	session, err := s.repo.GetSession(sessionID)
 	if err != nil || session == nil {
 		return domain.Message{}, ErrSessionNotFound
@@ -97,7 +98,7 @@ func (s *Service) SendMessageByActor(actorDID, sessionID, receiverDID string, me
 	if receiverDID != expectedReceiver {
 		return domain.Message{}, ErrInvalidReceiver
 	}
-	return s.SendMessage(sessionID, actorDID, receiverDID, messageType, content, replyToID, attachments, encryptedPayload)
+	return s.SendMessage(sessionID, actorDID, receiverDID, messageType, content, replyToID, attachments, encryptedPayload, clientULID)
 }
 
 func (s *Service) ListMessagesByActor(actorDID, sessionID, beforeUlid string, limit int) ([]domain.Message, error) {
@@ -131,7 +132,7 @@ func (s *Service) SyncMessagesByActor(actorDID string, messages []domain.Message
 	synced := int32(0)
 	failed := make([]string, 0)
 	for _, item := range messages {
-		_, err := s.SendMessageByActor(actorDID, item.SessionID, item.ReceiverDID, item.Type, item.Content, item.ReplyToID, item.Attachments, item.EncryptedPayload)
+		_, err := s.SendMessageByActor(actorDID, item.SessionID, item.ReceiverDID, item.Type, item.Content, item.ReplyToID, item.Attachments, item.EncryptedPayload, item.ID)
 		if err != nil {
 			failed = append(failed, item.ID)
 			continue
