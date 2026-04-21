@@ -38,10 +38,13 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const { providers, connections, loadAll, startAuth } = useOAuth2Store();
   const { loginWithPassword } = useSessionStore();
 
+  // restoredUser is only set when the session has real identity data (actorId + name).
+  // If null, the user has no valid session — go directly to login form.
+  const hasValidRestoredUser = !!(restoredUser && restoredUser.name && restoredUser.name !== 'User');
   const hasMultipleAccounts = knownAccounts.length > 0;
   const initialState: LoginState = hasMultipleAccounts
     ? 'account_picker'
-    : restoredUser
+    : hasValidRestoredUser
       ? 'welcome_back'
       : 'logged_out';
 
@@ -96,8 +99,8 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   );
 
   const welcomeUser: SessionUser = useMemo(() => {
-    if (restoredUser) return restoredUser;
-    return { name: 'User', email: '' };
+    if (restoredUser && restoredUser.name) return restoredUser;
+    return { name: '', email: '' };
   }, [restoredUser]);
 
   const handleEmailLogin = useCallback(async (e?: React.FormEvent) => {
@@ -179,10 +182,11 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setAuthError('');
     if (hasMultipleAccounts) {
       setLoginState('account_picker');
-    } else {
+    } else if (hasValidRestoredUser) {
       setLoginState('welcome_back');
     }
-  }, [hasMultipleAccounts]);
+    // If neither — stay on logged_out, this button shouldn't be visible anyway
+  }, [hasMultipleAccounts, hasValidRestoredUser]);
 
   const handleNewAccountLogin = useCallback(() => {
     setLoginState('logged_out');
@@ -399,7 +403,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   };
 
   const panelOpen = !!connectProvider && loginState === 'logged_out';
-  const hasSignedInUser = !!restoredUser;
+  const hasSignedInUser = hasValidRestoredUser;
 
   useEffect(() => {
     if (!panelOpen) return;

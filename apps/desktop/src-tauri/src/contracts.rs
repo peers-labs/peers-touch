@@ -903,7 +903,8 @@ pub struct ProviderModelToggleAllInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatSyncMessagesInput {
-    pub messages: Vec<serde_json::Value>,
+    /// JSON stringified array of SyncMessageItem-like objects from the frontend.
+    pub messages_json: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

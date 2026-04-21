@@ -1,18 +1,116 @@
+use crate::error::{AppResult, ErrorCode};
 use crate::model::common::PeersResponse;
 use prost::Message;
 use reqwest::blocking::Client;
 use reqwest::Method;
+use serde::Serialize;
 use serde_json::Value;
+use std::fmt;
 
-/// Error prefix for session revocation. Frontend uses this to trigger auto-logout.
-pub const SESSION_REVOKED_PREFIX: &str = "SESSION_REVOKED:";
+#[derive(Debug, Clone)]
+pub enum StationClientErrorKind {
+    SessionRevoked,
+    HttpStatus(u16),
+    Network,
+    Decode,
+    InvalidResponse,
+}
 
-fn build_error_for_status(status: u16, path: &str, body: &str) -> String {
-    if status == 401 && body.contains("session_revoked") {
-        tracing::warn!(path = %path, "Session revoked by server (another login kicked this session)");
-        return format!("{} {}", SESSION_REVOKED_PREFIX, body);
+#[derive(Debug, Clone)]
+pub struct StationClientError {
+    pub kind: StationClientErrorKind,
+    pub message: String,
+    pub details: Option<Value>,
+}
+
+impl StationClientError {
+    fn new(kind: StationClientErrorKind, message: impl Into<String>, details: Option<Value>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            details,
+        }
     }
-    format!("station returned {} : {}", status, body)
+
+    pub fn session_revoked(body: &str) -> Self {
+        let details = session_revoked_details_from_text(body).unwrap_or_else(|| {
+            serde_json::json!({
+                "code": "session_revoked",
+                "reason": "unknown",
+                "raw": body,
+            })
+        });
+        Self::new(StationClientErrorKind::SessionRevoked, "session revoked", Some(details))
+    }
+
+    pub fn into_app_result<T: Serialize>(self, context: impl Into<String>) -> AppResult<T> {
+        match self.kind {
+            StationClientErrorKind::SessionRevoked => {
+                AppResult::fail(ErrorCode::Unauthorized, "session revoked", self.details)
+            }
+            StationClientErrorKind::HttpStatus(status) => {
+                let code = match status {
+                    400 => ErrorCode::InvalidArgument,
+                    401 => ErrorCode::Unauthorized,
+                    403 => ErrorCode::Forbidden,
+                    404 => ErrorCode::NotFound,
+                    409 => ErrorCode::Conflict,
+                    _ => ErrorCode::InternalError,
+                };
+                AppResult::fail(code, context.into(), self.details)
+            }
+            _ => AppResult::fail(ErrorCode::InternalError, context.into(), self.details),
+        }
+    }
+}
+
+impl fmt::Display for StationClientError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for StationClientError {}
+
+impl From<StationClientError> for String {
+    fn from(value: StationClientError) -> Self {
+        value.message
+    }
+}
+
+/// Best-effort extractor for Station session-revoked responses.
+///
+/// Station returns `401 {"code":"session_revoked","reason":"expired|kicked|..."}`.
+/// We normalize this into a compact JSON object for `details` so upper layers
+/// never need to parse raw strings.
+pub fn session_revoked_details_from_text(text: &str) -> Option<Value> {
+    let v: Value = serde_json::from_str(text).ok()?;
+    let code = v.get("code").and_then(|x| x.as_str())?;
+    if code != "session_revoked" {
+        return None;
+    }
+    let reason = v.get("reason").and_then(|x| x.as_str()).unwrap_or("unknown");
+    Some(serde_json::json!({
+        "code": "session_revoked",
+        "reason": reason,
+        "raw": text,
+    }))
+}
+
+fn build_error_for_status(status: u16, path: &str, body: &str) -> StationClientError {
+    if status == 401 && body.contains("session_revoked") {
+        let reason = serde_json::from_str::<Value>(body)
+            .ok()
+            .and_then(|v| v.get("reason").and_then(|x| x.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| "unknown".to_string());
+        tracing::warn!(path = %path, reason = %reason, "Session revoked by server");
+        return StationClientError::session_revoked(body);
+    }
+    StationClientError::new(
+        StationClientErrorKind::HttpStatus(status),
+        format!("station returned {} : {}", status, body),
+        Some(serde_json::json!({ "status": status, "body": body })),
+    )
 }
 
 pub(crate) fn station_base_url() -> String {
@@ -22,13 +120,17 @@ pub(crate) fn station_base_url() -> String {
         .to_string()
 }
 
-fn build_client() -> Result<Client, String> {
+fn build_client() -> Result<Client, StationClientError> {
     Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to create HTTP client");
-            format!("create http client failed: {}", e)
+            StationClientError::new(
+                StationClientErrorKind::Network,
+                format!("create http client failed: {}", e),
+                None,
+            )
         })
 }
 
@@ -36,7 +138,7 @@ fn build_client() -> Result<Client, String> {
 pub(crate) fn post_json_no_auth(
     path: &str,
     body: Value,
-) -> Result<Value, String> {
+) -> Result<Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
     tracing::info!(path = %path, "→ station (json, no-auth)");
 
@@ -52,7 +154,7 @@ pub(crate) fn post_json_no_auth(
         .map_err(|e| {
             let elapsed = start.elapsed().as_millis();
             tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-            format!("request failed: {}", e)
+            StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
         })?;
 
     let status = resp.status();
@@ -60,7 +162,7 @@ pub(crate) fn post_json_no_auth(
 
     let result: Value = resp.json().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
-        format!("decode json response failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Decode, format!("decode json response failed: {}", e), None)
     })?;
 
     if !status.is_success() {
@@ -69,7 +171,11 @@ pub(crate) fn post_json_no_auth(
             .and_then(|v| v.as_str())
             .unwrap_or("unknown error");
         tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station FAIL");
-        return Err(format!("station returned {}: {}", status.as_u16(), msg));
+        return Err(StationClientError::new(
+            StationClientErrorKind::HttpStatus(status.as_u16()),
+            format!("station returned {}: {}", status.as_u16(), msg),
+            Some(serde_json::json!({ "status": status.as_u16(), "body": result })),
+        ));
     }
 
     tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no-auth)");
@@ -77,13 +183,15 @@ pub(crate) fn post_json_no_auth(
 }
 
 /// Decode Touch `SuccessResponse` protobuf (`PeersResponse` with `google.protobuf.Any` data).
-fn decode_peers_envelope<Payload: Message + Default>(raw: &[u8]) -> Result<Payload, String> {
-    let peers = PeersResponse::decode(raw).map_err(|e| format!("decode PeersResponse: {}", e))?;
+fn decode_peers_envelope<Payload: Message + Default>(raw: &[u8]) -> Result<Payload, StationClientError> {
+    let peers = PeersResponse::decode(raw).map_err(|e| {
+        StationClientError::new(StationClientErrorKind::Decode, format!("decode PeersResponse: {}", e), None)
+    })?;
     let any = peers
         .data
-        .ok_or_else(|| "station response missing data envelope".to_string())?;
+        .ok_or_else(|| StationClientError::new(StationClientErrorKind::InvalidResponse, "station response missing data envelope", None))?;
     Payload::decode(any.value.as_slice())
-        .map_err(|e| format!("decode envelope payload: {}", e))
+        .map_err(|e| StationClientError::new(StationClientErrorKind::Decode, format!("decode envelope payload: {}", e), None))
 }
 
 /// Authenticated Touch frame call that returns a typed proto inside `PeersResponse`.
@@ -92,7 +200,7 @@ pub(crate) fn request_peers_proto_no_body<Payload: Message + Default>(
     path: &str,
     token: &str,
     query: Option<&[(&str, String)]>,
-) -> Result<Payload, String> {
+) -> Result<Payload, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
     tracing::info!(method = %method, path = %path, "→ station (peers proto)");
 
@@ -114,7 +222,7 @@ pub(crate) fn request_peers_proto_no_body<Payload: Message + Default>(
     let resp = req.send().map_err(|e| {
         let elapsed = start.elapsed().as_millis();
         tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-        format!("request failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
     })?;
 
     let status = resp.status();
@@ -129,7 +237,7 @@ pub(crate) fn request_peers_proto_no_body<Payload: Message + Default>(
 
     let bytes = resp.bytes().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station DECODE_ERROR");
-        format!("read body failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Decode, format!("read body failed: {}", e), None)
     })?;
 
     let resp_len = bytes.len();
@@ -153,7 +261,7 @@ pub(crate) fn request_peers_proto_no_payload<Req: Message>(
     token: &str,
     query: Option<&[(&str, String)]>,
     body: Option<&Req>,
-) -> Result<(), String> {
+) -> Result<(), StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
     let body_len = body.map(|b| b.encoded_len()).unwrap_or(0);
     tracing::info!(
@@ -188,7 +296,7 @@ pub(crate) fn request_peers_proto_no_payload<Req: Message>(
     let resp = req.send().map_err(|e| {
         let elapsed = start.elapsed().as_millis();
         tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-        format!("request failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
     })?;
 
     let status = resp.status();
@@ -203,11 +311,13 @@ pub(crate) fn request_peers_proto_no_payload<Req: Message>(
 
     let bytes = resp.bytes().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station DECODE_ERROR");
-        format!("read body failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Decode, format!("read body failed: {}", e), None)
     })?;
 
     let resp_len = bytes.len();
-    PeersResponse::decode(bytes.as_ref()).map_err(|e| format!("decode PeersResponse: {}", e))?;
+    PeersResponse::decode(bytes.as_ref()).map_err(|e| {
+        StationClientError::new(StationClientErrorKind::Decode, format!("decode PeersResponse: {}", e), None)
+    })?;
 
     tracing::info!(
         path = %path,
@@ -227,7 +337,7 @@ pub(crate) fn request_peers_proto<Req, Payload>(
     token: &str,
     query: Option<&[(&str, String)]>,
     body: Option<&Req>,
-) -> Result<Payload, String>
+) -> Result<Payload, StationClientError>
 where
     Req: Message,
     Payload: Message + Default,
@@ -266,7 +376,7 @@ where
     let resp = req.send().map_err(|e| {
         let elapsed = start.elapsed().as_millis();
         tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-        format!("request failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
     })?;
 
     let status = resp.status();
@@ -281,7 +391,7 @@ where
 
     let bytes = resp.bytes().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station DECODE_ERROR");
-        format!("read body failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Decode, format!("read body failed: {}", e), None)
     })?;
 
     let resp_len = bytes.len();
@@ -299,7 +409,7 @@ where
 }
 
 /// POST protobuf without auth (e.g. oauth-bridge). Expects `PeersResponse` wire format.
-pub(crate) fn post_peers_proto_no_auth<Req, Payload>(path: &str, body: &Req) -> Result<Payload, String>
+pub(crate) fn post_peers_proto_no_auth<Req, Payload>(path: &str, body: &Req) -> Result<Payload, StationClientError>
 where
     Req: Message,
     Payload: Message + Default,
@@ -320,7 +430,7 @@ where
         .map_err(|e| {
             let elapsed = start.elapsed().as_millis();
             tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-            format!("request failed: {}", e)
+            StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
         })?;
 
     let status = resp.status();
@@ -328,13 +438,17 @@ where
 
     let bytes = resp.bytes().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station DECODE_ERROR");
-        format!("read body failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Decode, format!("read body failed: {}", e), None)
     })?;
 
     if !status.is_success() {
         let msg = String::from_utf8_lossy(&bytes).to_string();
         tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station FAIL");
-        return Err(format!("station returned {}: {}", status.as_u16(), msg));
+        return Err(StationClientError::new(
+            StationClientErrorKind::HttpStatus(status.as_u16()),
+            format!("station returned {}: {}", status.as_u16(), msg),
+            Some(serde_json::json!({ "status": status.as_u16(), "body": msg })),
+        ));
     }
 
     tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (peers proto, no-auth)");
@@ -349,7 +463,7 @@ pub(crate) fn request_json(
     token: &str,
     query: Option<&[(&str, String)]>,
     body: Option<Value>,
-) -> Result<Value, String> {
+) -> Result<Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
     tracing::info!(method = %method, path = %path, "→ station (json)");
 
@@ -375,7 +489,7 @@ pub(crate) fn request_json(
     let resp = req.send().map_err(|e| {
         let elapsed = start.elapsed().as_millis();
         tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-        format!("request failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
     })?;
 
     let status = resp.status();
@@ -390,7 +504,7 @@ pub(crate) fn request_json(
 
     let result: Value = resp.json().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
-        format!("decode json response failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Decode, format!("decode json response failed: {}", e), None)
     })?;
 
     tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json)");
@@ -403,7 +517,7 @@ pub(crate) fn request_proto<Req, Resp>(
     token: &str,
     query: Option<&[(&str, String)]>,
     body: Option<&Req>,
-) -> Result<Resp, String>
+) -> Result<Resp, StationClientError>
 where
     Req: Message,
     Resp: Message + Default,
@@ -442,7 +556,7 @@ where
     let resp = req.send().map_err(|e| {
         let elapsed = start.elapsed().as_millis();
         tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-        format!("request failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
     })?;
 
     let status = resp.status();
@@ -457,13 +571,13 @@ where
 
     let bytes = resp.bytes().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station DECODE_ERROR");
-        format!("read body failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Decode, format!("read body failed: {}", e), None)
     })?;
 
     let resp_len = bytes.len();
     let result = Resp::decode(bytes.as_ref()).map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station PROTO_ERROR");
-        format!("decode proto response failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Decode, format!("decode proto response failed: {}", e), None)
     })?;
 
     tracing::info!(
@@ -482,7 +596,7 @@ pub(crate) fn upload_multipart(
     path: &str,
     token: &str,
     file_path: &str,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
     tracing::info!(path = %path, file = %file_path, "→ station (multipart upload)");
 
@@ -491,7 +605,7 @@ pub(crate) fn upload_multipart(
 
     let form = reqwest::blocking::multipart::Form::new()
         .file("file", file_path)
-        .map_err(|e| format!("failed to open file for upload: {}", e))?;
+        .map_err(|e| StationClientError::new(StationClientErrorKind::Network, format!("failed to open file for upload: {}", e), None))?;
 
     let resp = client
         .post(&url)
@@ -501,7 +615,7 @@ pub(crate) fn upload_multipart(
         .map_err(|e| {
             let elapsed = start.elapsed().as_millis();
             tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR (multipart)");
-            format!("upload request failed: {}", e)
+            StationClientError::new(StationClientErrorKind::Network, format!("upload request failed: {}", e), None)
         })?;
 
     let status = resp.status();
@@ -509,7 +623,7 @@ pub(crate) fn upload_multipart(
 
     let result: serde_json::Value = resp.json().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station JSON_ERROR (multipart)");
-        format!("decode json response failed: {}", e)
+        StationClientError::new(StationClientErrorKind::Decode, format!("decode json response failed: {}", e), None)
     })?;
 
     if !status.is_success() {
