@@ -14,6 +14,10 @@ use crate::state::AppState;
 use reqwest::Method;
 use serde_json::{json, Value};
 
+fn map_station_error(command: &str, verb: &str, err: station_client::StationClientError) -> AppResult<StubPayload> {
+    err.into_app_result(format!("{} failed to {}", command, verb))
+}
+
 // ── Station-backed profile operations ──
 //
 // `/actor/profile` uses Touch `SuccessResponse` with protobuf `ActorProfile` in `PeersResponse.data`.
@@ -32,11 +36,7 @@ pub fn profile_get(state: &AppState) -> AppResult<StubPayload> {
         Ok(p) => success_with_data("profile_get", actor_profile_to_value(&p)),
         Err(e) => {
             tracing::error!(error = %e, "Failed to fetch profile");
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to fetch profile: {}", e),
-                None,
-            )
+            map_station_error("profile_get", "fetch profile", e)
         }
     }
 }
@@ -63,20 +63,12 @@ pub fn profile_update(state: &AppState, input: ProfileUpdateInput) -> AppResult<
             Ok(p) => success_with_data("profile_update", actor_profile_to_value(&p)),
             Err(e) => {
                 tracing::error!(error = %e, "Failed to fetch profile after update");
-                AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("Failed to fetch profile: {}", e),
-                    None,
-                )
+                map_station_error("profile_update", "fetch profile", e)
             }
         },
         Err(e) => {
             tracing::error!(error = %e, "Failed to update profile");
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to update profile: {}", e),
-                None,
-            )
+            map_station_error("profile_update", "update profile", e)
         }
     }
 }
@@ -92,32 +84,38 @@ pub fn profile_upload_header_oss(state: &AppState, input: FileUploadInput) -> Ap
 }
 
 fn upload_and_set_profile_image(state: &AppState, file_path: &str, field: &str) -> AppResult<StubPayload> {
+    tracing::info!(file_path = %file_path, field = %field, "Starting profile image upload");
     let token = match token_from_state(state) {
         Ok(t) => t,
-        Err(e) => return e,
+        Err(e) => {
+            tracing::warn!(field = %field, "Profile image upload aborted: no valid session token");
+            return e;
+        }
     };
 
     // Step 1: Upload to OSS
+    tracing::info!(file_path = %file_path, "Uploading image to OSS");
     let oss_resp = match station_client::upload_multipart("/sub-oss/upload", &token, file_path) {
-        Ok(v) => v,
+        Ok(v) => {
+            tracing::info!("OSS upload succeeded");
+            v
+        }
         Err(e) => {
-            tracing::error!(error = %e, "Failed to upload profile image to storage");
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to upload profile image: {}", e),
-                None,
-            );
+            tracing::error!(error = %e, file_path = %file_path, "Failed to upload profile image to storage");
+            return e.into_app_result("Failed to upload profile image");
         }
     };
 
     let url = oss_resp.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
     if url.is_empty() {
+        tracing::error!(oss_response = ?oss_resp, "OSS returned empty URL");
         return AppResult::fail(
             ErrorCode::InternalError,
             "Upload succeeded but the storage service returned an empty URL",
             None,
         );
     }
+    tracing::info!(url = %url, field = %field, "OSS URL obtained, updating profile");
 
     // Resolve relative OSS URL to absolute for local identity sync
     let absolute_url = if url.starts_with('/') {
@@ -164,21 +162,13 @@ fn upload_and_set_profile_image(state: &AppState, file_path: &str, field: &str) 
                 ),
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to fetch profile after image upload");
-                    AppResult::fail(
-                        ErrorCode::InternalError,
-                        format!("Failed to fetch profile: {}", e),
-                        None,
-                    )
+                    map_station_error("profile_upload_image_oss", "fetch profile", e)
                 }
             }
         }
         Err(e) => {
             tracing::error!(error = %e, "Failed to update profile after image upload");
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to update profile: {}", e),
-                None,
-            )
+            map_station_error("profile_upload_image_oss", "update profile", e)
         }
     }
 }

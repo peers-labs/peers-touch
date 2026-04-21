@@ -48,21 +48,29 @@ pub fn profile_update_privacy(input: ProfilePrivacyInput) -> AppResult<StubPaylo
     application_profile::profile_update_privacy(input)
 }
 
+// 2026-04-21: Changed from sync rfd::FileDialog to async rfd::AsyncFileDialog.
+// The sync variant deadlocks on macOS under Tauri 2 because the command handler
+// blocks the main thread while NSOpenPanel also needs the main run-loop.
 #[tauri::command]
-pub fn pick_image_file() -> AppResult<StubPayload> {
-    let dialog = rfd::FileDialog::new()
+pub async fn pick_image_file() -> AppResult<StubPayload> {
+    tracing::info!("Opening file picker dialog for image selection");
+    let dialog = rfd::AsyncFileDialog::new()
         .set_title("Select Image")
         .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp"]);
 
-    match dialog.pick_file() {
-        Some(path) => {
-            let path_str = path.to_string_lossy().to_string();
+    match dialog.pick_file().await {
+        Some(handle) => {
+            let path_str = handle.path().to_string_lossy().to_string();
+            tracing::info!(path = %path_str, "Image file selected");
             AppResult::success(StubPayload {
                 command: "pick_image_file".to_string(),
                 status: path_str,
             })
         }
-        None => AppResult::fail(ErrorCode::InvalidArgument, "No file selected for upload", None),
+        None => {
+            tracing::warn!("Image file picker cancelled by user");
+            AppResult::fail(ErrorCode::InvalidArgument, "No file selected for upload", None)
+        }
     }
 }
 
