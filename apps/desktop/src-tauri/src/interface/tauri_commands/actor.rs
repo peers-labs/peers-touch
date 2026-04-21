@@ -44,7 +44,7 @@ pub fn actor_search_users(input: ActorSearchUsersInput, state: State<'_, Arc<App
         Ok(r) => r,
         Err(e) => {
             tracing::error!(error = %e, "Failed to search actors");
-            return AppResult::fail(ErrorCode::InternalError, format!("Failed to search actors: {}", e), None);
+            return e.into_app_result("Failed to search actors");
         }
     };
 
@@ -75,7 +75,7 @@ pub fn actor_get_me(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
         Ok(r) => r,
         Err(e) => {
             tracing::error!(error = %e, "Failed to get current user profile");
-            return AppResult::fail(ErrorCode::InternalError, format!("Failed to get profile: {}", e), None);
+            return e.into_app_result("Failed to get profile");
         }
     };
 
