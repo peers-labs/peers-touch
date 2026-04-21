@@ -8,7 +8,6 @@ export const PAGES = {
   SESSIONS: 'sessions',
   NODES: 'nodes',
   SUBSERVERS: 'subservers',
-  FEDERATION: 'federation',
   STORAGE: 'storage',
   SECURITY: 'security',
   SYSTEM: 'system',
