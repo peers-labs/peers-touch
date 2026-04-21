@@ -14,7 +14,6 @@ use crate::contracts::{
 };
 use crate::model;
 use crate::state::AppState;
-use reqwest::blocking::Client;
 use reqwest::Method;
 use serde_json::{json, Value};
 use tauri::State;
@@ -48,46 +47,8 @@ fn user_scope_from_state(state: &State<'_, Arc<AppState>>) -> String {
 }
 
 fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, String)]>, body: Option<Value>) -> Result<Value, AppResult<StubPayload>> {
-    let client = match Client::builder().build() {
-        Ok(client) => client,
-        Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "failed to create http client", Some(json!({"reason": error.to_string()}))));
-        }
-    };
-    let mut req = client
-        .request(method, format!("{}{}", station_client::station_base_url(), path))
-        .bearer_auth(token);
-    if let Some(query) = query {
-        req = req.query(query);
-    }
-    if let Some(body) = body {
-        req = req.json(&body);
-    }
-    let response = match req.send() {
-        Ok(response) => response,
-        Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "station request failed", Some(json!({"reason": error.to_string()}))));
-        }
-    };
-    if !response.status().is_success() {
-        let code = match response.status().as_u16() {
-            400 => ErrorCode::InvalidArgument,
-            401 => ErrorCode::Unauthorized,
-            403 => ErrorCode::Forbidden,
-            404 => ErrorCode::NotFound,
-            409 => ErrorCode::Conflict,
-            _ => ErrorCode::InternalError,
-        };
-        return Err(AppResult::fail(code, "station request failed", Some(json!({"status": response.status().as_u16()}))));
-    }
-    match response.json::<Value>() {
-        Ok(data) => Ok(data),
-        Err(error) => Err(AppResult::fail(
-            ErrorCode::InternalError,
-            "invalid station response",
-            Some(json!({"reason": error.to_string()})),
-        )),
-    }
+    station_client::request_json(method, path, token, query, body)
+        .map_err(|e| e.into_app_result("station request failed"))
 }
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
