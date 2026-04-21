@@ -42,20 +42,13 @@ type ActorQueryRepository interface {
 	CountFollows(ctx context.Context) (int64, error)
 	CountPostsSince(ctx context.Context, since time.Time) (int64, error)
 
-	// Peers actor sessions (global)
-	ListActivePeersSessions(ctx context.Context, limit int) ([]peerSessionRow, error)
-}
+	// Peers actor sessions (global): all currently-valid sessions joined with
+	// the owning actor's preferred_username/email for display.
+	ListActivePeersSessions(ctx context.Context, limit int) ([]domain.PeersSessionInfo, error)
 
-// peerSessionRow is the raw DB row for actor_sessions queries.
-type peerSessionRow struct {
-	SessionID    string    `gorm:"column:session_id" json:"session_id"`
-	UserID       uint64    `gorm:"column:user_id" json:"user_id"`
-	DeviceType   string    `gorm:"column:device_type" json:"device_type"`
-	IPAddress    string    `gorm:"column:ip_address" json:"ip_address"`
-	UserAgent    string    `gorm:"column:user_agent" json:"user_agent"`
-	CreatedAt    time.Time `gorm:"column:created_at" json:"created_at"`
-	ExpiresAt    time.Time `gorm:"column:expires_at" json:"expires_at"`
-	LastActiveAt time.Time `gorm:"column:last_active_at" json:"last_active_at"`
+	// Per-actor session counters used to enrich ActorDetail.
+	CountActiveSessionsByActor(ctx context.Context, actorID uint64) (int64, error)
+	LastLoginAtByActor(ctx context.Context, actorID uint64) (*time.Time, error)
 }
 
 // actorQueryRepository is the GORM-backed implementation.
@@ -201,7 +194,13 @@ func (r *actorQueryRepository) CountActorsSince(ctx context.Context, since time.
 
 func (r *actorQueryRepository) CountOnlineActors(ctx context.Context) (int64, error) {
 	var c int64
-	err := r.db.WithContext(ctx).Model(&touchdb.ActorStatus{}).Where("status = ?", touchdb.ActorStatusOnline).Count(&c).Error
+	// Online status must be bounded by heartbeat TTL; otherwise stale rows can be
+	// counted as "online" indefinitely (e.g. client crashed without logout).
+	heartbeatThreshold := time.Now().Add(-5 * time.Minute)
+	err := r.db.WithContext(ctx).
+		Model(&touchdb.ActorStatus{}).
+		Where("status = ? AND last_heartbeat > ?", touchdb.ActorStatusOnline, heartbeatThreshold).
+		Count(&c).Error
 	return c, err
 }
 
@@ -241,13 +240,84 @@ func (r *actorQueryRepository) CountPostsSince(ctx context.Context, since time.T
 	return c, err
 }
 
-func (r *actorQueryRepository) ListActivePeersSessions(ctx context.Context, limit int) ([]peerSessionRow, error) {
-	var sessions []peerSessionRow
+func (r *actorQueryRepository) ListActivePeersSessions(ctx context.Context, limit int) ([]domain.PeersSessionInfo, error) {
+	type row struct {
+		SessionID         string    `gorm:"column:session_id"`
+		UserID            uint64    `gorm:"column:user_id"`
+		PreferredUsername string    `gorm:"column:preferred_username"`
+		Email             string    `gorm:"column:email"`
+		DeviceType        string    `gorm:"column:device_type"`
+		IPAddress         string    `gorm:"column:ip_address"`
+		UserAgent         string    `gorm:"column:user_agent"`
+		CreatedAt         time.Time `gorm:"column:created_at"`
+		ExpiresAt         time.Time `gorm:"column:expires_at"`
+		LastActiveAt      time.Time `gorm:"column:last_active_at"`
+	}
+
+	if limit <= 0 {
+		limit = 100
+	}
+
+	var rows []row
 	now := time.Now()
-	err := r.db.WithContext(ctx).Table("actor_sessions").
-		Where("revoked = ? AND expires_at > ?", false, now).
-		Order("last_active_at DESC").
+	err := r.db.WithContext(ctx).
+		Table("actor_sessions AS s").
+		Select(`s.session_id, s.user_id, s.device_type, s.ip_address, s.user_agent,
+		         s.created_at, s.expires_at, s.last_active_at,
+		         a.preferred_username, COALESCE(s.email, a.email) AS email`).
+		Joins("LEFT JOIN touch_actor a ON a.id = s.user_id").
+		Where("s.revoked = ? AND s.expires_at > ?", false, now).
+		Order("s.last_active_at DESC").
 		Limit(limit).
-		Find(&sessions).Error
-	return sessions, err
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]domain.PeersSessionInfo, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, domain.PeersSessionInfo{
+			SessionID:         r.SessionID,
+			UserID:            r.UserID,
+			PreferredUsername: r.PreferredUsername,
+			Email:             r.Email,
+			DeviceType:        r.DeviceType,
+			IPAddress:         r.IPAddress,
+			UserAgent:         r.UserAgent,
+			CreatedAt:         r.CreatedAt,
+			ExpiresAt:         r.ExpiresAt,
+			LastActiveAt:      r.LastActiveAt,
+		})
+	}
+	return out, nil
+}
+
+// CountActiveSessionsByActor returns the number of non-revoked, unexpired
+// sessions for a single actor.
+func (r *actorQueryRepository) CountActiveSessionsByActor(ctx context.Context, actorID uint64) (int64, error) {
+	var c int64
+	now := time.Now()
+	err := r.db.WithContext(ctx).
+		Table("actor_sessions").
+		Where("user_id = ? AND revoked = ? AND expires_at > ?", actorID, false, now).
+		Count(&c).Error
+	return c, err
+}
+
+// LastLoginAtByActor returns the timestamp of the most recently created
+// session for the given actor (best available proxy for "last login").
+// Returns nil if the actor has never logged in.
+func (r *actorQueryRepository) LastLoginAtByActor(ctx context.Context, actorID uint64) (*time.Time, error) {
+	var row struct {
+		CreatedAt *time.Time `gorm:"column:created_at"`
+	}
+	err := r.db.WithContext(ctx).
+		Table("actor_sessions").
+		Select("MAX(created_at) AS created_at").
+		Where("user_id = ?", actorID).
+		Scan(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return row.CreatedAt, nil
 }

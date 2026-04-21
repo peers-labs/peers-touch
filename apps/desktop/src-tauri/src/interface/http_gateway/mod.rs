@@ -262,58 +262,16 @@ fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Value> {
 // Station HTTP helpers (mirrors group_chat.rs / friend_chat.rs)
 // -------------------------------------------------------------------------
 
+fn station_error_json(err: station_client::StationClientError, context: &str) -> Value {
+    to_json(err.into_app_result::<StubPayload>(context))
+}
+
 fn station_request_json(
     method: Method, path: &str, token: &str,
     query: Option<&[(&str, String)]>, body: Option<Value>,
 ) -> Result<Value, Value> {
-    let client = Client::builder().build().map_err(|e| {
-        to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError, "failed to create http client",
-            Some(json!({"reason": e.to_string()})),
-        ))
-    })?;
-
-    let mut req = client
-        .request(method, format!("{}{}", station_client::station_base_url(), path))
-        .bearer_auth(token);
-    if let Some(q) = query { req = req.query(q); }
-    if let Some(b) = body {
-        req = req
-            .header("Content-Type", "application/json")
-            .json(&b);
-    } else {
-        req = req.header("Content-Type", "application/json");
-    }
-    req = req.header("Accept", "application/json");
-
-    let response = req.send().map_err(|e| {
-        to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError, "station request failed",
-            Some(json!({"reason": e.to_string()})),
-        ))
-    })?;
-
-    if !response.status().is_success() {
-        let code = match response.status().as_u16() {
-            400 => ErrorCode::InvalidArgument,
-            401 => ErrorCode::Unauthorized,
-            403 => ErrorCode::Forbidden,
-            404 => ErrorCode::NotFound,
-            409 => ErrorCode::Conflict,
-            _   => ErrorCode::InternalError,
-        };
-        return Err(to_json(AppResult::<StubPayload>::fail(
-            code, "station request failed",
-            Some(json!({"status": response.status().as_u16()})),
-        )));
-    }
-
-    response.json::<Value>().map_err(|e| {
-        to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InternalError, "invalid station response",
-            Some(json!({"reason": e.to_string()})),
-        ))
-    })
+    station_client::request_json(method, path, token, query, body)
+        .map_err(|e| station_error_json(e, "station request failed"))
 }
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -419,7 +377,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Method::GET, "/api/v1/social/users/search", &token, Some(&[("q", input.q.clone())]), None::<&()>,
             ) {
                 Ok(r) => r,
-                Err(e) => return to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
+                Err(e) => return station_error_json(e, "Failed to search actors"),
             };
             let items: Vec<Value> = resp.items.iter().map(|a| json!({
                 "id": a.id, "username": a.username, "displayName": a.display_name,
@@ -434,7 +392,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Method::GET, "/api/v1/social/users/me", &token, None, None::<&()>,
             ) {
                 Ok(r) => r,
-                Err(e) => return to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
+                Err(e) => return station_error_json(e, "Failed to get current user profile"),
             };
             to_json(to_stub("actor_get_my_profile", json!({
                 "id": resp.id, "displayName": resp.display_name,
@@ -594,7 +552,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                         command: "account_sync_avatar".to_string(),
                         status: "synced".to_string(),
                     })),
-                    Err(e) => to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
+                    Err(e) => station_error_json(e, "Failed to sync avatar"),
                 }
             }
         }
@@ -1156,6 +1114,53 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             let input = match parse_args::<AccountUpsertOAuthInput>(args) { Ok(v) => v, Err(e) => return e };
             to_json(app_account::account_upsert_oauth(input))
         }
+        "account_set_pin" => {
+            let input = match parse_args::<AccountSetPinInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = state.session.lock().ok().and_then(|g| g.token.clone());
+            to_json(app_account::account_set_pin(input, token.as_deref()))
+        }
+        "account_unlock" => {
+            let input = match parse_args::<AccountUnlockInput>(args) { Ok(v) => v, Err(e) => return e };
+            let result = app_account::account_unlock(input.clone());
+            if !result.ok {
+                return serde_json::to_value(&result).unwrap_or(json!({"ok": false}));
+            }
+            // Parse token from the stub payload and write to AppState
+            let token = result.data.as_ref()
+                .and_then(|d| serde_json::from_str::<serde_json::Value>(&d.status).ok())
+                .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|s| s.to_string()));
+            if let Some(ref t) = token {
+                let actor_id = input.account_id.split_once(':').map(|(_, id)| id.to_string()).unwrap_or_else(|| input.account_id.clone());
+                let session = crate::domain::auth::session::from_station_response(actor_id, t.clone());
+                if let Ok(mut guard) = state.session.lock() {
+                    guard.actor_id = Some(session.actor_id.clone());
+                    guard.token = Some(session.token.clone());
+                }
+                let _ = crate::infrastructure::auth_identity::save_encrypted_session(&input.account_id, &input.pin, t);
+                let _ = app_account::account_switch(AccountIdInput { id: input.account_id.clone() });
+                let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
+                let (p_name, p_email, p_avatar, p_method) = match &profile {
+                    Some(p) => (
+                        Some(p.name.clone()).filter(|v| !v.is_empty()),
+                        Some(p.email.clone()).filter(|v| !v.is_empty()),
+                        Some(p.avatar_url.clone()).filter(|v| !v.is_empty()),
+                        Some(p.provider.clone()),
+                    ),
+                    None => (None, None, None, None),
+                };
+                return to_json(AppResult::success(crate::contracts::AuthSessionPayload {
+                    command: "account_unlock".to_string(),
+                    status: "authenticated".to_string(),
+                    actor_id: Some(session.actor_id),
+                    name: p_name,
+                    email: p_email,
+                    avatar_url: p_avatar,
+                    login_method: p_method,
+                }));
+            }
+            serde_json::to_value(&result).unwrap_or(json!({"ok": false}))
+        }
+        "account_list_restorable" => to_json(app_account::account_list_restorable()),
 
         // =================================================================
         // Memory (no state)
@@ -1277,7 +1282,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "friend_chat_sync_messages" => {
             let input = match parse_args::<FriendChatSyncMessagesInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
-            match station_request_json(Method::POST, "/friend-chat/message/sync", &token, None, Some(json!({"messages": input.messages}))) {
+            let values: Vec<Value> = match serde_json::from_str(input.messages_json.trim()) {
+                Ok(v) => v,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("Invalid messages_json: {}", e),
+                        None,
+                    ));
+                }
+            };
+            match station_request_json(Method::POST, "/friend-chat/message/sync", &token, None, Some(json!({"messages": values}))) {
                 Ok(data) => to_json(to_stub("friend_chat_sync_messages", data)),
                 Err(e) => e,
             }
@@ -1332,7 +1347,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 model::key_exchange::UploadKeyBundleResponse,
             >(Method::POST, "/key-exchange/keys/bundle", &token, None, Some(&req)) {
                 Ok(_r) => to_json(to_stub("key_exchange_upload_bundle", json!({}))),
-                Err(e) => to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
+                Err(e) => station_error_json(e, "Failed to upload key bundle"),
             }
         }
         "key_exchange_fetch_bundle" => {
@@ -1356,7 +1371,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                     "opk_id": r.opk_id,
                     "opk_pub": r.opk_pub,
                 }))),
-                Err(e) => to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
+                Err(e) => station_error_json(e, "Failed to fetch key bundle"),
             }
         }
         "friend_chat_local_search" => {
@@ -1550,7 +1565,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Method::POST, "/group-chat/create", &token, None, Some(&req),
             ) {
                 Ok(r) => r,
-                Err(e) => return to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
+                Err(e) => return station_error_json(e, "Failed to create group"),
             };
             let group_json = match resp.group {
                 Some(g) => json!({"ulid": g.ulid, "name": g.name, "description": g.description, "owner_did": g.owner_did, "type": g.r#type}),
@@ -1620,7 +1635,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Method::POST, "/group-chat/leave", &token, None, Some(&req),
             ) {
                 Ok(r) => r,
-                Err(e) => return to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
+                Err(e) => return station_error_json(e, "Failed to leave group"),
             };
             to_json(to_stub("group_chat_leave_group", json!({"success": resp.success})))
         }

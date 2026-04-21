@@ -110,13 +110,7 @@ pub fn notification_list(
         None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to list notifications: {}", e),
-                None,
-            );
-        }
+        Err(e) => return e.into_app_result("Failed to list notifications"),
     };
 
     let notifications: Vec<Value> = resp.notifications.iter().map(notification_to_value).collect();
@@ -146,13 +140,7 @@ pub fn notification_unread_counts(state: State<'_, Arc<AppState>>) -> AppResult<
         None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to get unread notification counts: {}", e),
-                None,
-            );
-        }
+        Err(e) => return e.into_app_result("Failed to get unread notification counts"),
     };
 
     let mut by_category = Map::with_capacity(resp.by_category.len());
@@ -189,13 +177,7 @@ pub fn notification_mark_read(
     >(Method::POST, "/notification/mark-read", &token, None, Some(&body))
     {
         Ok(r) => r,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to mark notifications as read: {}", e),
-                None,
-            );
-        }
+        Err(e) => return e.into_app_result("Failed to mark notifications as read"),
     };
 
     to_stub(
@@ -224,13 +206,7 @@ pub fn notification_mark_all_read(
     >(Method::POST, "/notification/mark-all-read", &token, None, Some(&body))
     {
         Ok(r) => r,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to mark all notifications as read: {}", e),
-                None,
-            );
-        }
+        Err(e) => return e.into_app_result("Failed to mark all notifications as read"),
     };
 
     to_stub(
@@ -259,13 +235,7 @@ pub fn notification_delete(
     >(Method::POST, "/notification/delete", &token, None, Some(&body))
     {
         Ok(r) => r,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to delete notifications: {}", e),
-                None,
-            );
-        }
+        Err(e) => return e.into_app_result("Failed to delete notifications"),
     };
 
     to_stub(
@@ -289,13 +259,7 @@ pub fn notification_preferences(state: State<'_, Arc<AppState>>) -> AppResult<St
         None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to load notification preferences: {}", e),
-                None,
-            );
-        }
+        Err(e) => return e.into_app_result("Failed to load notification preferences"),
     };
 
     let preferences: Vec<Value> = resp
@@ -333,13 +297,7 @@ pub fn notification_preferences_update(
     >(Method::POST, "/notification/preferences/update", &token, None, Some(&body))
     {
         Ok(r) => r,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to update notification preferences: {}", e),
-                None,
-            );
-        }
+        Err(e) => return e.into_app_result("Failed to update notification preferences"),
     };
 
     let preference = match &resp.preference {

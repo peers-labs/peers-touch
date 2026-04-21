@@ -3,9 +3,9 @@
 // carry no business logic themselves — that lives in the application layer.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — DashboardAdmin, DashboardSession,
-//   DashboardAuditLog aggregate roots with complete GORM mapping.
-// - 2026-04-10: Refactored from flat package to DDD domain layer.
+//   - 2026-04-10: Initial implementation — DashboardAdmin, DashboardSession,
+//     DashboardAuditLog aggregate roots with complete GORM mapping.
+//   - 2026-04-10: Refactored from flat package to DDD domain layer.
 package domain
 
 import (

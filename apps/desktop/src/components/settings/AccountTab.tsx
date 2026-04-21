@@ -5,6 +5,7 @@ import {
   Avatar,
   Empty,
   Input,
+  AutoComplete,
   Select,
   Spin,
   Tag,
@@ -163,10 +164,12 @@ function EditableAvatar({
       <Avatar
         src={src || undefined}
         size={size}
+        shape="square"
         style={{
           background: token.colorPrimaryBg,
           color: token.colorPrimary,
           border: `2px solid ${token.colorBorderSecondary}`,
+          borderRadius: 12,
           fontSize: size * 0.38,
           fontWeight: 700,
         }}
@@ -181,7 +184,7 @@ function EditableAvatar({
           right: 0,
           width: 24,
           height: 24,
-          borderRadius: '50%',
+          borderRadius: 6,
           background: token.colorPrimary,
           display: 'flex',
           alignItems: 'center',
@@ -201,7 +204,7 @@ function EditableAvatar({
         style={{
           position: 'absolute',
           inset: 0,
-          borderRadius: '50%',
+          borderRadius: 12,
           background: 'rgba(0,0,0,0.25)',
           opacity: 0,
           transition: 'opacity 0.2s',
@@ -401,18 +404,19 @@ export function AccountTab() {
     saveTimerRef.current = setTimeout(async () => {
       setSaving(true);
       try {
-        const result = normalizeProfile(
-          await api.profileUpdate({
-            note: nextProfile.note.trim(),
-            region: nextProfile.region.trim(),
-            timezone: nextProfile.timezone.trim(),
-            tags: nextProfile.tags.map((tg) => tg.trim()).filter(Boolean),
-            links: nextProfile.links
-              .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
-              .filter((l) => l.label || l.url),
-          }),
-        );
-        setProfile(result);
+        await api.profileUpdate({
+          display_name: nextProfile.display_name.trim(),
+          note: nextProfile.note.trim(),
+          region: nextProfile.region.trim(),
+          timezone: nextProfile.timezone.trim(),
+          tags: nextProfile.tags.map((tg) => tg.trim()).filter(Boolean),
+          links: nextProfile.links
+            .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
+            .filter((l) => l.label || l.url),
+        });
+        // Do not setProfile here — local state is already up-to-date.
+        // Overwriting with the server response causes controlled inputs
+        // to re-render and lose cursor position / focus (the "flicker" bug).
       } catch (error: any) {
         toast.error(error?.message || t('provider.account.failedToUpdate'));
       } finally {
@@ -514,7 +518,7 @@ export function AccountTab() {
   }
 
   return (
-    <SettingsContainer maxWidth={700}>
+    <SettingsContainer>
       {saving && (
         <Text type="secondary" style={{ fontSize: 11, textAlign: 'right' }}>
           {t('provider.account.autoSaving', { defaultValue: 'Saving...' })}
@@ -566,7 +570,6 @@ export function AccountTab() {
         </Flexbox>
 
         <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
-          <IdentityField label={t('provider.account.identity.name')} value={profile.display_name} t={t} />
           <IdentityField label={t('provider.account.identity.preferredUsername')} value={profile.username} prefix="@" copiable t={t} />
           <IdentityField label={t('provider.account.identity.ptid')} value={profile.peers_touch.network_id} copiable t={t} />
         </Flexbox>
@@ -577,6 +580,18 @@ export function AccountTab() {
         subtitle={t('provider.account.profile.subtitle')}
         style={{ gap: 18 }}
       >
+
+        <Flexbox gap={6}>
+          <Text strong style={{ fontSize: 13 }}>
+            {t('provider.account.identity.name')}
+          </Text>
+          <Input
+            value={profile.display_name}
+            onChange={(e) => onFieldChange('display_name', e.target.value)}
+            placeholder={t('provider.account.identity.name')}
+            maxLength={60}
+          />
+        </Flexbox>
 
         <Flexbox gap={6}>
           <Text strong style={{ fontSize: 13 }}>
@@ -622,16 +637,15 @@ export function AccountTab() {
                 {t('provider.account.profile.timezoneOptional')}
               </Text>
             </Flexbox>
-            <Select
+            <AutoComplete
               value={profile.timezone || undefined}
               onChange={(value) => onFieldChange('timezone', value || '')}
               options={timezoneOptions}
               placeholder={t('provider.account.profile.timezonePlaceholder')}
               allowClear
-              showSearch
               style={{ width: '100%' }}
               filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
               }
             />
           </Flexbox>

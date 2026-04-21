@@ -127,11 +127,7 @@ pub fn agent_growth_snapshot(input: AgentGrowthInput, state: &AppState) -> AppRe
         }
         Err(err) => {
             tracing::error!(command = "agent_growth_snapshot", error = %err);
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to get growth snapshot: {}", err),
-                None,
-            )
+            err.into_app_result("Failed to get growth snapshot")
         }
     }
 }
@@ -168,11 +164,7 @@ pub fn agent_memory_list(input: AgentMemoryListInput, state: &AppState) -> AppRe
         }
         Err(err) => {
             tracing::error!(command = "agent_memory_list", error = %err);
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to list agent memories: {}", err),
-                None,
-            )
+            err.into_app_result("Failed to list agent memories")
         }
     }
 }
@@ -209,11 +201,7 @@ pub fn agent_skill_list(input: AgentSkillListInput, state: &AppState) -> AppResu
         }
         Err(err) => {
             tracing::error!(command = "agent_skill_list", error = %err);
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to list agent skills: {}", err),
-                None,
-            )
+            err.into_app_result("Failed to list agent skills")
         }
     }
 }
@@ -248,11 +236,7 @@ pub fn agent_submit_feedback(input: AgentFeedbackInput, state: &AppState) -> App
         }
         Err(err) => {
             tracing::error!(command = "agent_submit_feedback", error = %err);
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to submit agent feedback: {}", err),
-                None,
-            )
+            err.into_app_result("Failed to submit agent feedback")
         }
     }
 }

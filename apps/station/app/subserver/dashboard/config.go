@@ -3,9 +3,9 @@
 // The dashboard admin system is completely separate from the Peers actor system.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — dashboard SubServer with auth,
-//   overview, actor management, admin CRUD, audit logging, and embedded SPA.
-// - 2026-04-10: Refactored to DDD architecture with application/domain/infrastructure layers.
+//   - 2026-04-10: Initial implementation — dashboard SubServer with auth,
+//     overview, actor management, admin CRUD, audit logging, and embedded SPA.
+//   - 2026-04-10: Refactored to DDD architecture with application/domain/infrastructure layers.
 package dashboard
 
 import (
