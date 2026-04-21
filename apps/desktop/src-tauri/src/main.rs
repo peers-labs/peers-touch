@@ -219,6 +219,9 @@ fn main() {
             account::account_get_active,
             account::account_switch,
             account::account_upsert_oauth,
+            account::account_set_pin,
+            account::account_unlock,
+            account::account_list_restorable,
             memory::memory_list,
             memory::memory_get,
             memory::memory_delete,
@@ -300,7 +303,14 @@ fn main() {
             agent_scheduler::agent_scheduler_start,
             agent_scheduler::agent_scheduler_stop,
             agent_scheduler::agent_scheduler_status,
-            agent_scheduler::agent_scheduler_add_job
+            agent_scheduler::agent_scheduler_add_job,
+            notification::notification_list,
+            notification::notification_unread_counts,
+            notification::notification_mark_read,
+            notification::notification_mark_all_read,
+            notification::notification_delete,
+            notification::notification_preferences,
+            notification::notification_preferences_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

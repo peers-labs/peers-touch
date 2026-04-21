@@ -1,9 +1,16 @@
 import type { ParsedDeepLink } from '../../utils/deeplink';
 import { EVENT } from './catalog';
 
+export type SessionRevokedReason = 'expired' | 'kicked' | 'not_found' | 'unknown';
+
+export interface SessionRevokedPayload {
+  reason: SessionRevokedReason;
+  raw?: string;
+}
+
 export interface EventPayloadMap {
   [EVENT.AUTH_IDENTITY_CHANGED]: void;
-  [EVENT.AUTH_SESSION_REVOKED]: void;
+  [EVENT.AUTH_SESSION_REVOKED]: SessionRevokedPayload;
   [EVENT.OAUTH_CONNECTIONS_CHANGED]: void;
   [EVENT.NAVIGATION_REQUESTED]: ParsedDeepLink | { resource: 'settings'; id?: string };
   [EVENT.AGENT_BUILDER_STREAM_ENDED]: void;
