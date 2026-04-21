@@ -2,16 +2,17 @@
 // the Station for the dashboard overview page.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — full statistics aggregation.
-// - 2026-04-10: Refactored from flat overview.go into DDD application layer.
-// - 2026-04-10: GetRecentActors now returns []domain.ActorSummary instead of
-//   raw touchdb.Actor to prevent leaking PasswordHash, PrivateKey, PublicKey.
-// - 2026-04-10: Removed fake/unsupported fields — sessions stats, storage stats,
-//   hardcoded version, empty node_name, nodes.online (was always == registered).
+//   - 2026-04-10: Initial implementation — full statistics aggregation.
+//   - 2026-04-10: Refactored from flat overview.go into DDD application layer.
+//   - 2026-04-10: GetRecentActors now returns []domain.ActorSummary instead of
+//     raw touchdb.Actor to prevent leaking PasswordHash, PrivateKey, PublicKey.
+//   - 2026-04-10: Removed fake/unsupported fields — sessions stats, storage stats,
+//     hardcoded version, empty node_name, nodes.online (was always == registered).
 package application
 
 import (
 	"context"
+	"os"
 	"runtime"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
+
+const bytesPerMB = uint64(1024 * 1024)
 
 // OverviewService collects runtime statistics for the dashboard overview page.
 type OverviewService struct {
@@ -91,10 +94,20 @@ func (s *OverviewService) GetOverview(ctx context.Context, subservers []server.S
 	stats.Social.PostsToday, _ = s.actorRepo.CountPostsSince(ctx, todayStart)
 
 	// -- System info (only real runtime data) --
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	hostname, _ := os.Hostname()
 	stats.System = domain.SystemInfo{
-		StartedAt:  startedAt,
-		GoVersion:  runtime.Version(),
-		ListenAddr: listenAddr,
+		StartedAt:    startedAt,
+		GoVersion:    runtime.Version(),
+		ListenAddr:   listenAddr,
+		Hostname:     hostname,
+		GoMaxProcs:   runtime.GOMAXPROCS(0),
+		NumCPU:       runtime.NumCPU(),
+		NumGoroutine: runtime.NumGoroutine(),
+		MemAllocMB:   ms.Alloc / bytesPerMB,
+		MemSysMB:     ms.Sys / bytesPerMB,
+		GCCount:      ms.NumGC,
 	}
 
 	return stats, nil
@@ -112,14 +125,14 @@ func (s *OverviewService) GetRecentActors(ctx context.Context, limit int) ([]dom
 	summaries := make([]domain.ActorSummary, 0, len(actors))
 	for _, a := range actors {
 		summaries = append(summaries, domain.ActorSummary{
-			ID:               a.ID,
-			DID:              a.PTID,
+			ID:                a.ID,
+			DID:               a.PTID,
 			PreferredUsername: a.PreferredUsername,
-			Name:             a.Name,
-			Email:            a.Email,
-			Summary:          a.Summary,
-			AvatarURL:        a.Icon,
-			CreatedAt:        a.CreatedAt,
+			Name:              a.Name,
+			Email:             a.Email,
+			Summary:           a.Summary,
+			AvatarURL:         a.Icon,
+			CreatedAt:         a.CreatedAt,
 		})
 	}
 

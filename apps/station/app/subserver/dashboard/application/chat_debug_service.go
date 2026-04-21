@@ -49,4 +49,3 @@ func (s *ChatDebugService) FriendChatStats(ctx context.Context) (FriendChatStats
 
 	return out, nil
 }
-
