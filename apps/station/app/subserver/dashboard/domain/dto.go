@@ -1,10 +1,10 @@
 // Package domain — Data Transfer Objects exchanged between layers.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — Login, Admin, Session, Actor DTOs.
-// - 2026-04-10: Refactored from flat model.go to DDD domain layer.
-// - 2026-04-10: Added ActorSummary DTO to prevent leaking sensitive fields
-//   (PasswordHash, PrivateKey, PublicKey) through the recent-actors API.
+//   - 2026-04-10: Initial implementation — Login, Admin, Session, Actor DTOs.
+//   - 2026-04-10: Refactored from flat model.go to DDD domain layer.
+//   - 2026-04-10: Added ActorSummary DTO to prevent leaking sensitive fields
+//     (PasswordHash, PrivateKey, PublicKey) through the recent-actors API.
 package domain
 
 import "time"
@@ -60,7 +60,7 @@ type DashboardSessionInfo struct {
 type ActorSummary struct {
 	ID                uint64    `json:"id"`
 	DID               string    `json:"did"`
-	PreferredUsername  string    `json:"preferred_username"`
+	PreferredUsername string    `json:"preferred_username"`
 	Name              string    `json:"name"`
 	Email             string    `json:"email"`
 	Summary           string    `json:"summary"`
@@ -85,20 +85,20 @@ type ActorListResult struct {
 
 // ActorDetail contains enriched information about a single actor.
 type ActorDetail struct {
-	ID               uint64     `json:"id"`
-	DID              string     `json:"did"`
+	ID                uint64     `json:"id"`
+	DID               string     `json:"did"`
 	PreferredUsername string     `json:"preferred_username"`
-	Name             string     `json:"name"`
-	Email            string     `json:"email"`
-	Summary          string     `json:"summary"`
-	AvatarURL        string     `json:"avatar_url"`
-	Status           string     `json:"status"`
-	CreatedAt        time.Time  `json:"created_at"`
-	LastLoginAt      *time.Time `json:"last_login_at,omitempty"`
-	PostCount        int64      `json:"post_count"`
-	FollowerCount    int64      `json:"follower_count"`
-	FollowingCount   int64      `json:"following_count"`
-	SessionCount     int64      `json:"session_count"`
+	Name              string     `json:"name"`
+	Email             string     `json:"email"`
+	Summary           string     `json:"summary"`
+	AvatarURL         string     `json:"avatar_url"`
+	Status            string     `json:"status"`
+	CreatedAt         time.Time  `json:"created_at"`
+	LastLoginAt       *time.Time `json:"last_login_at,omitempty"`
+	PostCount         int64      `json:"post_count"`
+	FollowerCount     int64      `json:"follower_count"`
+	FollowingCount    int64      `json:"following_count"`
+	SessionCount      int64      `json:"session_count"`
 }
 
 // ActorSessionInfo describes a single actor session.
@@ -112,6 +112,23 @@ type ActorSessionInfo struct {
 	LastActiveAt  time.Time `json:"last_active_at"`
 	Revoked       bool      `json:"revoked"`
 	RevokedReason string    `json:"revoked_reason,omitempty"`
+}
+
+// PeersSessionInfo is the global view of an active actor session, with the
+// owning actor resolved (preferred_username) for the dashboard Sessions page.
+// "PeersSession" terminology is used to disambiguate from DashboardSession
+// (admin) and ActorSessionInfo (per-actor drilldown view).
+type PeersSessionInfo struct {
+	SessionID         string    `json:"session_id"`
+	UserID            uint64    `json:"user_id"`
+	PreferredUsername string    `json:"preferred_username"`
+	Email             string    `json:"email"`
+	DeviceType        string    `json:"device_type"`
+	IPAddress         string    `json:"ip_address"`
+	UserAgent         string    `json:"user_agent"`
+	CreatedAt         time.Time `json:"created_at"`
+	ExpiresAt         time.Time `json:"expires_at"`
+	LastActiveAt      time.Time `json:"last_active_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +185,88 @@ type SocialStats struct {
 // SystemInfo holds runtime system information.
 // Only includes fields sourced from real runtime data.
 type SystemInfo struct {
-	StartedAt  time.Time `json:"started_at"`
-	GoVersion  string    `json:"go_version"`
-	ListenAddr string    `json:"listen_addr"`
+	StartedAt    time.Time `json:"started_at"`
+	GoVersion    string    `json:"go_version"`
+	ListenAddr   string    `json:"listen_addr"`
+	Hostname     string    `json:"hostname,omitempty"`
+	GoMaxProcs   int       `json:"go_max_procs,omitempty"`
+	NumCPU       int       `json:"num_cpu,omitempty"`
+	NumGoroutine int       `json:"num_goroutine,omitempty"`
+	MemAllocMB   uint64    `json:"mem_alloc_mb,omitempty"`
+	MemSysMB     uint64    `json:"mem_sys_mb,omitempty"`
+	GCCount      uint32    `json:"gc_count,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Storage DTOs (Storage page)
+// ---------------------------------------------------------------------------
+
+// StorageInfo bundles everything the Storage page needs.
+type StorageInfo struct {
+	Driver string              `json:"driver"`
+	Pool   *StoragePoolStats   `json:"pool,omitempty"`
+	Tables []StorageTableCount `json:"tables"`
+}
+
+// StoragePoolStats mirrors database/sql.DBStats with JSON-friendly names.
+type StoragePoolStats struct {
+	MaxOpenConnections int   `json:"max_open_connections"`
+	OpenConnections    int   `json:"open_connections"`
+	InUse              int   `json:"in_use"`
+	Idle               int   `json:"idle"`
+	WaitCount          int64 `json:"wait_count"`
+	WaitDurationMillis int64 `json:"wait_duration_ms"`
+	MaxIdleClosed      int64 `json:"max_idle_closed"`
+	MaxIdleTimeClosed  int64 `json:"max_idle_time_closed"`
+	MaxLifetimeClosed  int64 `json:"max_lifetime_closed"`
+}
+
+// ---------------------------------------------------------------------------
+// Nodes DTOs (Nodes page)
+// ---------------------------------------------------------------------------
+
+// NodesOverview is the full payload for GET /dashboard/api/nodes.
+type NodesOverview struct {
+	Persisted     []PersistedPeer        `json:"persisted"`
+	Registrations []RegistryRegistration `json:"registrations"`
+}
+
+// PersistedPeer is one row from the local touch_peer table joined with
+// its known addresses.
+type PersistedPeer struct {
+	ID        uint64            `json:"id"`
+	PeerID    string            `json:"peer_id"`
+	Name      string            `json:"name"`
+	Version   string            `json:"version"`
+	Addresses []PeerAddressInfo `json:"addresses"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+// PeerAddressInfo is a typed peer address (stun/turn-relay/http/...).
+type PeerAddressInfo struct {
+	Type string `json:"type"`
+	Addr string `json:"addr"`
+}
+
+// RegistryRegistration mirrors registry.Registration but as a JSON-safe
+// projection (timestamps as RFC3339 strings, metadata best-effort).
+type RegistryRegistration struct {
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Type       string            `json:"type"`
+	Namespaces []string          `json:"namespaces"`
+	Addresses  []string          `json:"addresses"`
+	TTLSeconds int64             `json:"ttl_seconds,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+// StorageTableCount carries the row count for a single physical table.
+// Rows == -1 means a query error occurred (Error contains the message);
+// callers should render this as a warning rather than as zero.
+type StorageTableCount struct {
+	Group string `json:"group"`
+	Table string `json:"table"`
+	Rows  int64  `json:"rows"`
+	Error string `json:"error,omitempty"`
 }

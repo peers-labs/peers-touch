@@ -2,9 +2,9 @@
 // No database or framework dependencies — only standard library and crypto.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — password hashing, JWT claims,
-//   local network detection, session ID generation.
-// - 2026-04-10: Refactored from flat auth.go to DDD domain layer.
+//   - 2026-04-10: Initial implementation — password hashing, JWT claims,
+//     local network detection, session ID generation.
+//   - 2026-04-10: Refactored from flat auth.go to DDD domain layer.
 package domain
 
 import (
