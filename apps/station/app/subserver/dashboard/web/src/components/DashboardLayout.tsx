@@ -11,7 +11,7 @@ import { theme, Tooltip, Dropdown, Avatar, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import {
-  LayoutDashboard, Users, Key, Globe, Server,
+  LayoutDashboard, Users, Key, Server,
   HardDrive, Shield, Monitor, FileText, LogOut,
   Settings, UserCircle, Network,
 } from 'lucide-react';
@@ -40,7 +40,6 @@ const NAV_ITEMS: NavItem[] = [
   { key: PAGES.SESSIONS,    icon: <Key size={20} />,             label: 'Sessions' },
   { key: PAGES.NODES,       icon: <Network size={20} />,         label: 'Nodes' },
   { key: PAGES.SUBSERVERS,  icon: <Server size={20} />,          label: 'Services' },
-  { key: PAGES.FEDERATION,  icon: <Globe size={20} />,           label: 'Federation' },
   { key: PAGES.STORAGE,     icon: <HardDrive size={20} />,       label: 'Storage' },
   { key: PAGES.SECURITY,    icon: <Shield size={20} />,          label: 'Security' },
   { key: PAGES.SYSTEM,      icon: <Monitor size={20} />,         label: 'System' },

@@ -13,7 +13,6 @@ import ActorsPage from '../pages/ActorsPage';
 import SessionsPage from '../pages/SessionsPage';
 import NodesPage from '../pages/NodesPage';
 import SubServersPage from '../pages/SubServersPage';
-import FederationPage from '../pages/FederationPage';
 import StoragePage from '../pages/StoragePage';
 import SecurityPage from '../pages/SecurityPage';
 import SystemPage from '../pages/SystemPage';
@@ -31,7 +30,6 @@ export default function PageRouter({ page }: Props) {
     case PAGES.SESSIONS:   return <SessionsPage />;
     case PAGES.NODES:      return <NodesPage />;
     case PAGES.SUBSERVERS: return <SubServersPage />;
-    case PAGES.FEDERATION: return <FederationPage />;
     case PAGES.STORAGE:    return <StoragePage />;
     case PAGES.SECURITY:   return <SecurityPage />;
     case PAGES.SYSTEM:     return <SystemPage />;

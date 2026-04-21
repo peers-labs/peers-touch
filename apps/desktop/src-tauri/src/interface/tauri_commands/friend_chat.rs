@@ -3,6 +3,7 @@ use crate::error::{AppResult, ErrorCode};
 use crate::application::chat_storage;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::resolve_user_scope;
+use crate::model;
 use crate::contracts::{
     AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, FriendChatAckInput, FriendChatCreateSessionInput, FriendChatListInput,
     FriendChatListFriendRequestsInput, FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
@@ -10,13 +11,29 @@ use crate::contracts::{
     FriendChatSyncInput, FriendChatSyncMessagesInput, StubPayload,
 };
 use crate::model::chat as model_chat;
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use prost::Message;
 use crate::state::AppState;
-use reqwest::blocking::Client;
 use reqwest::Method;
 use serde_json::{json, Value};
 use tauri::State;
 
 fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<StubPayload>> {
+    let guard = state.session.lock().map_err(|_| {
+        AppResult::fail(ErrorCode::InternalError, "failed to access session state", None)
+    })?;
+    let token = guard.token.clone().unwrap_or_default();
+    if token.trim().is_empty() {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        ));
+    }
+    Ok(token)
+}
+
+fn token_from_state_proto(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<Vec<u8>>> {
     let guard = state.session.lock().map_err(|_| {
         AppResult::fail(ErrorCode::InternalError, "failed to access session state", None)
     })?;
@@ -45,46 +62,8 @@ fn user_scope_from_state(state: &State<'_, Arc<AppState>>) -> String {
 }
 
 fn request_json(method: Method, path: &str, token: &str, query: Option<&[(&str, String)]>, body: Option<Value>) -> Result<Value, AppResult<StubPayload>> {
-    let client = match Client::builder().build() {
-        Ok(client) => client,
-        Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "failed to create http client", Some(json!({"reason": error.to_string()}))));
-        }
-    };
-    let mut req = client
-        .request(method, format!("{}{}", station_client::station_base_url(), path))
-        .bearer_auth(token);
-    if let Some(query) = query {
-        req = req.query(query);
-    }
-    if let Some(body) = body {
-        req = req.json(&body);
-    }
-    let response = match req.send() {
-        Ok(response) => response,
-        Err(error) => {
-            return Err(AppResult::fail(ErrorCode::InternalError, "station request failed", Some(json!({"reason": error.to_string()}))));
-        }
-    };
-    if !response.status().is_success() {
-        let code = match response.status().as_u16() {
-            400 => ErrorCode::InvalidArgument,
-            401 => ErrorCode::Unauthorized,
-            403 => ErrorCode::Forbidden,
-            404 => ErrorCode::NotFound,
-            409 => ErrorCode::Conflict,
-            _ => ErrorCode::InternalError,
-        };
-        return Err(AppResult::fail(code, "station request failed", Some(json!({"status": response.status().as_u16()}))));
-    }
-    match response.json::<Value>() {
-        Ok(data) => Ok(data),
-        Err(error) => Err(AppResult::fail(
-            ErrorCode::InternalError,
-            "invalid station response",
-            Some(json!({"reason": error.to_string()})),
-        )),
-    }
+    station_client::request_json(method, path, token, query, body)
+        .map_err(|e| e.into_app_result("station request failed"))
 }
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -92,6 +71,18 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
         command: command.to_string(),
         status: data.to_string(),
     })
+}
+
+fn fail_station_error_proto(err: &str) -> AppResult<Vec<u8>> {
+    AppResult::fail(ErrorCode::InternalError, err.to_string(), None)
+}
+
+fn fail_station_error_proto(err: station_client::StationClientError) -> AppResult<Vec<u8>> {
+    err.into_app_result("station request failed")
+}
+
+fn fail_station_error_stub(err: station_client::StationClientError) -> AppResult<StubPayload> {
+    err.into_app_result("station request failed")
 }
 
 fn extract_latest_ulid(payload: &Value) -> Option<String> {
@@ -212,8 +203,8 @@ fn has_more_from_payload(data: &Value) -> bool {
         .unwrap_or(false)
 }
 #[tauri::command]
-pub fn friend_chat_list_sessions(input: FriendChatListInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_list_sessions(input: FriendChatListInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
@@ -221,38 +212,47 @@ pub fn friend_chat_list_sessions(input: FriendChatListInput, state: State<'_, Ar
         ("limit", input.limit.unwrap_or(50).to_string()),
         ("offset", input.offset.unwrap_or(0).to_string()),
     ];
-    let data = match request_json(Method::GET, "/friend-chat/sessions", &token, Some(&query), None) {
-        Ok(data) => data,
-        Err(error) => return error,
+    let resp = match station_client::request_proto::<(), model::chat::GetSessionsResponse>(
+        Method::GET,
+        "/friend-chat/sessions",
+        &token,
+        Some(&query),
+        None::<&()>,
+    ) {
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
     };
-    to_stub("friend_chat_list_sessions", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]
-pub fn friend_chat_create_session(input: FriendChatCreateSessionInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_create_session(input: FriendChatCreateSessionInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
     if input.participant_did.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "participant_did is required", None);
     }
-    let data = match request_json(
+    let req = model::chat::CreateSessionRequest {
+        participant_did: input.participant_did,
+    };
+    let resp = match station_client::request_proto::<model::chat::CreateSessionRequest, model::chat::CreateSessionResponse>(
         Method::POST,
         "/friend-chat/session/create",
         &token,
         None,
-        Some(json!({ "participant_did": input.participant_did })),
+        Some(&req),
     ) {
-        Ok(data) => data,
-        Err(error) => return error,
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
     };
-    to_stub("friend_chat_create_session", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]
-pub fn friend_chat_list_messages(input: FriendChatListMessagesInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_list_messages(input: FriendChatListMessagesInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
@@ -266,77 +266,94 @@ pub fn friend_chat_list_messages(input: FriendChatListMessagesInput, state: Stat
     if let Some(before) = input.before_ulid {
         query.push(("before_ulid", before));
     }
-    let data = match request_json(Method::GET, "/friend-chat/messages", &token, Some(&query), None) {
-        Ok(data) => data,
-        Err(error) => return error,
+    let resp = match station_client::request_proto::<(), model::chat::GetMessagesResponse>(
+        Method::GET,
+        "/friend-chat/messages",
+        &token,
+        Some(&query),
+        None::<&()>,
+    ) {
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
     };
-    let user_scope = user_scope_from_state(&state);
-    let _ = chat_storage::ingest_friend_messages(user_scope.as_str(), &data);
-    to_stub("friend_chat_list_messages", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]
-pub fn friend_chat_send_message(input: FriendChatSendInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_send_message(input: FriendChatSendInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
-    let attachments = input.attachments.clone().unwrap_or_default();
-    let mut body = json!({
-        "session_ulid": input.session_ulid,
-        "receiver_did": input.receiver_did,
-        "content": input.content,
-        "type": input.r#type.unwrap_or(1),
-        "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
-        "attachments": attachments,
-    });
-    if let Some(b64) = input.encrypted_payload.as_ref() {
+    if input.session_ulid.trim().is_empty() || input.receiver_did.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "session_ulid and receiver_did are required", None);
+    }
+
+    let mut encrypted_payload: Vec<u8> = Vec::new();
+    if let Some(ref b64) = input.encrypted_payload {
         let t = b64.trim();
         if !t.is_empty() {
-            body["encrypted_payload"] = json!(t);
+            encrypted_payload = match B64.decode(t.as_bytes()) {
+                Ok(b) => b,
+                Err(e) => {
+                    return AppResult::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("Invalid encrypted_payload: {}", e),
+                        None,
+                    );
+                }
+            };
         }
     }
-    if let Some(id) = input.client_ulid.as_ref() {
-        let t = id.trim();
-        if !t.is_empty() {
-            body["client_ulid"] = json!(t);
-        }
-    }
-    let data = match request_json(
+
+    let req = model::chat::SendMessageRequest {
+        session_ulid: input.session_ulid,
+        receiver_did: input.receiver_did,
+        r#type: input.r#type.unwrap_or(1),
+        content: input.content,
+        attachments: map_attachments(&input.attachments.unwrap_or_default()),
+        reply_to_ulid: input.reply_to_ulid.unwrap_or_default(),
+        encrypted_payload,
+        client_ulid: input.client_ulid.unwrap_or_default(),
+    };
+
+    let resp = match station_client::request_proto::<model::chat::SendMessageRequest, model::chat::SendMessageResponse>(
         Method::POST,
         "/friend-chat/message/send",
         &token,
         None,
-        Some(body),
+        Some(&req),
     ) {
-        Ok(data) => data,
-        Err(error) => return error,
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
     };
-    let user_scope = user_scope_from_state(&state);
-    let _ = chat_storage::ingest_friend_messages(user_scope.as_str(), &data);
-    to_stub("friend_chat_send_message", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]
-pub fn friend_chat_ack_messages(input: FriendChatAckInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_ack_messages(input: FriendChatAckInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
-    let data = match request_json(
+    if input.ulids.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "ulids is required", None);
+    }
+    let req = model::chat::MessageAckRequest {
+        ulids: input.ulids,
+        status: input.status,
+    };
+    let resp = match station_client::request_proto::<model::chat::MessageAckRequest, model::chat::MessageAckResponse>(
         Method::POST,
         "/friend-chat/message/ack",
         &token,
         None,
-        Some(json!({
-            "ulids": input.ulids,
-            "status": input.status,
-        })),
+        Some(&req),
     ) {
-        Ok(data) => data,
-        Err(error) => return error,
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
     };
-    to_stub("friend_chat_ack_messages", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]
@@ -501,102 +518,140 @@ pub fn friend_chat_sync_from_station_scoped(input: FriendChatSyncInput, state: S
 
 /// Sync messages for a friend-chat session from station (JSON-based).
 #[tauri::command]
-pub fn friend_chat_sync_messages(input: FriendChatSyncMessagesInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_sync_messages(input: FriendChatSyncMessagesInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
 
-    let data = match request_json(
-        Method::POST,
-        "/friend-chat/messages/sync",
-        &token,
-        None,
-        Some(json!({
-            "messages": input.messages,
-        })),
-    ) {
-        Ok(data) => data,
-        Err(error) => return error,
+    let raw = input.messages_json.trim();
+    if raw.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "messages_json is required", None);
+    }
+    let values: Vec<Value> = match serde_json::from_str(raw) {
+        Ok(v) => v,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid messages_json: {}", e),
+                None,
+            );
+        }
     };
 
-    to_stub("friend_chat_sync_messages", data)
+    let mut items = Vec::new();
+    for v in &values {
+        if let Some(item) = value_to_sync_message_item(v) {
+            items.push(item);
+        }
+    }
+    if items.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "messages_json contains no valid items", None);
+    }
+
+    let req = model_chat::SyncMessagesRequest { messages: items };
+    let resp = match station_client::request_proto::<model_chat::SyncMessagesRequest, model_chat::SyncMessagesResponse>(
+        Method::POST,
+        "/friend-chat/message/sync",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
+    };
+    AppResult::success(resp.encode_to_vec())
 }
 
 /// Notify station that the user is online for friend-chat.
 #[tauri::command]
-pub fn friend_chat_go_online(input: FriendChatOnlineInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_go_online(input: FriendChatOnlineInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
 
-    let body = match &input.did {
-        Some(did) => json!({ "did": did }),
-        None => json!({}),
+    let req = model_chat::OnlineRequest {
+        did: input.did.unwrap_or_default(),
     };
-
-    let data = match request_json(Method::POST, "/friend-chat/online", &token, None, Some(body)) {
-        Ok(data) => data,
-        Err(error) => return error,
+    let resp = match station_client::request_proto::<model_chat::OnlineRequest, model_chat::OnlineResponse>(
+        Method::POST,
+        "/friend-chat/online",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
     };
-
-    to_stub("friend_chat_go_online", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 /// Notify station that the user is offline for friend-chat.
 #[tauri::command]
-pub fn friend_chat_go_offline(input: FriendChatOnlineInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_go_offline(input: FriendChatOnlineInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
 
-    let body = match &input.did {
-        Some(did) => json!({ "did": did }),
-        None => json!({}),
+    let req = model_chat::OnlineRequest {
+        did: input.did.unwrap_or_default(),
     };
-
-    let data = match request_json(Method::POST, "/friend-chat/offline", &token, None, Some(body)) {
-        Ok(data) => data,
-        Err(error) => return error,
+    let resp = match station_client::request_proto::<model_chat::OnlineRequest, model_chat::OnlineResponse>(
+        Method::POST,
+        "/friend-chat/offline",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
     };
-
-    to_stub("friend_chat_go_offline", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 /// Retrieve pending friend-chat messages from station.
 #[tauri::command]
-pub fn friend_chat_get_pending(input: FriendChatPendingInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_get_pending(input: FriendChatPendingInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
 
     let query = vec![("limit", input.limit.unwrap_or(50).to_string())];
-
-    let data = match request_json(Method::GET, "/friend-chat/pending", &token, Some(&query), None) {
-        Ok(data) => data,
-        Err(error) => return error,
+    let resp = match station_client::request_proto::<(), model_chat::GetPendingResponse>(
+        Method::GET,
+        "/friend-chat/pending",
+        &token,
+        Some(&query),
+        None::<&()>,
+    ) {
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
     };
-
-    to_stub("friend_chat_get_pending", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 /// Get friend-chat statistics (unread counts, etc.).
 #[tauri::command]
-pub fn friend_chat_get_stats(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_get_stats(state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
 
-    let data = match request_json(Method::GET, "/friend-chat/stats", &token, None, None) {
-        Ok(data) => data,
-        Err(error) => return error,
+    let resp = match station_client::request_proto::<(), model_chat::GetStatsResponse>(
+        Method::GET,
+        "/friend-chat/stats",
+        &token,
+        None,
+        None::<&()>,
+    ) {
+        Ok(r) => r,
+        Err(e) => return fail_station_error_proto(&e),
     };
-
-    to_stub("friend_chat_get_stats", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 // ---------------------------------------------------------------------------
@@ -604,78 +659,84 @@ pub fn friend_chat_get_stats(state: State<'_, Arc<AppState>>) -> AppResult<StubP
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn friend_chat_send_friend_request(input: FriendChatSendFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_send_friend_request(input: FriendChatSendFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
     if input.receiver_did.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "receiver_did is required", None);
     }
-    let message = input.message.unwrap_or_default();
-    let data = match request_json(
+    let req = model::chat::SendFriendRequestRequest {
+        receiver_did: input.receiver_did,
+        message: input.message.unwrap_or_default(),
+    };
+    let resp = match station_client::request_proto::<model::chat::SendFriendRequestRequest, model::chat::SendFriendRequestResponse>(
         Method::POST,
         "/friend-chat/friend-request/send",
         &token,
         None,
-        Some(json!({
-            "receiver_did": input.receiver_did,
-            "message": message,
-        })),
+        Some(&req),
     ) {
-        Ok(data) => data,
-        Err(error) => return error,
+        Ok(resp) => resp,
+        Err(error) => return fail_station_error_proto(&error),
     };
-    to_stub("friend_chat_send_friend_request", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]
-pub fn friend_chat_accept_friend_request(input: FriendChatAcceptFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_accept_friend_request(input: FriendChatAcceptFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
     if input.request_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
     }
-    let data = match request_json(
+    let req = model::chat::AcceptFriendRequestRequest {
+        request_id: input.request_id,
+    };
+    let resp = match station_client::request_proto::<model::chat::AcceptFriendRequestRequest, model::chat::AcceptFriendRequestResponse>(
         Method::POST,
         "/friend-chat/friend-request/accept",
         &token,
         None,
-        Some(json!({ "request_id": input.request_id })),
+        Some(&req),
     ) {
-        Ok(data) => data,
-        Err(error) => return error,
+        Ok(resp) => resp,
+        Err(error) => return fail_station_error_proto(&error),
     };
-    to_stub("friend_chat_accept_friend_request", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]
-pub fn friend_chat_reject_friend_request(input: FriendChatRejectFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_reject_friend_request(input: FriendChatRejectFriendRequestInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
     if input.request_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
     }
-    let data = match request_json(
+    let req = model::chat::RejectFriendRequestRequest {
+        request_id: input.request_id,
+    };
+    let resp = match station_client::request_proto::<model::chat::RejectFriendRequestRequest, model::chat::RejectFriendRequestResponse>(
         Method::POST,
         "/friend-chat/friend-request/reject",
         &token,
         None,
-        Some(json!({ "request_id": input.request_id })),
+        Some(&req),
     ) {
-        Ok(data) => data,
-        Err(error) => return error,
+        Ok(resp) => resp,
+        Err(error) => return fail_station_error_proto(&error),
     };
-    to_stub("friend_chat_reject_friend_request", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]
-pub fn friend_chat_list_friend_requests(input: FriendChatListFriendRequestsInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn friend_chat_list_friend_requests(input: FriendChatListFriendRequestsInput, state: State<'_, Arc<AppState>>) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state) {
         Ok(token) => token,
         Err(error) => return error,
     };
@@ -686,9 +747,15 @@ pub fn friend_chat_list_friend_requests(input: FriendChatListFriendRequestsInput
     query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
     query.push(("offset", input.offset.unwrap_or(0).to_string()));
 
-    let data = match request_json(Method::GET, "/friend-chat/friend-requests", &token, Some(&query), None) {
-        Ok(data) => data,
-        Err(error) => return error,
+    let resp = match station_client::request_proto::<(), model::chat::ListFriendRequestsResponse>(
+        Method::GET,
+        "/friend-chat/friend-requests",
+        &token,
+        Some(&query),
+        None::<&()>,
+    ) {
+        Ok(resp) => resp,
+        Err(error) => return fail_station_error_proto(&error),
     };
-    to_stub("friend_chat_list_friend_requests", data)
+    AppResult::success(resp.encode_to_vec())
 }

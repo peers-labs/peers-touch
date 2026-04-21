@@ -5,6 +5,7 @@ import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
+import type { SessionRevokedPayload } from '../kernel/events/types';
 import {
   GetSessionsResponseSchema,
   CreateSessionResponseSchema,
@@ -15,6 +16,10 @@ import {
   OnlineResponseSchema,
   GetPendingResponseSchema,
   GetStatsResponseSchema,
+  SendFriendRequestResponseSchema,
+  AcceptFriendRequestResponseSchema,
+  RejectFriendRequestResponseSchema,
+  ListFriendRequestsResponseSchema,
 } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   ListGroupsResponseSchema,
@@ -112,13 +117,28 @@ export interface RustCommandResult<T = Record<string, any>> {
 
 const QUIET_COMMANDS = new Set(['logs_tail', 'frontend_log', 'visitor_heartbeat']);
 
-const SESSION_REVOKED_PREFIX = 'SESSION_REVOKED:';
+function publishSessionRevoked(payload: SessionRevokedPayload) {
+  eventBus.publish(EVENT.AUTH_SESSION_REVOKED, payload);
+}
+
+function extractSessionRevoked(error?: RustCommandError): SessionRevokedPayload | null {
+  const details = error?.details as any;
+  // Prefer structured details when present.
+  const reasonFromDetails = typeof details?.reason === 'string' ? details.reason : undefined;
+  if (error?.code === 'UNAUTHORIZED' && typeof details?.code === 'string' && details.code === 'session_revoked') {
+    return {
+      reason: (reasonFromDetails as any) || 'unknown',
+      raw: typeof details?.raw === 'string' ? details.raw : undefined,
+    };
+  }
+  return null;
+}
 
 /**
  * Subscribe to session-revoked events.
  * Returns an unsubscribe function.
  */
-export function onSessionRevoked(handler: () => void): () => void {
+export function onSessionRevoked(handler: (payload: SessionRevokedPayload) => void): () => void {
   return eventBus.subscribe(EVENT.AUTH_SESSION_REVOKED, handler);
 }
 
@@ -137,21 +157,21 @@ async function invokeRustCommand<TInput, TData>(
     const elapsed = Date.now() - start;
     if (!result.ok) {
       log.warn('api', `← ${command} FAIL (${elapsed}ms)`, { error: result.error?.message });
-      if (result.error?.message?.startsWith(SESSION_REVOKED_PREFIX)) {
-        eventBus.publish(EVENT.AUTH_SESSION_REVOKED);
-      }
+      const revoked = extractSessionRevoked(result.error);
+      if (revoked) publishSessionRevoked(revoked);
     } else if (!quiet) {
       log.info('api', `← ${command} OK (${elapsed}ms)`);
     }
     return result;
   } catch (error) {
     const elapsed = Date.now() - start;
-    log.error('api', `← ${command} ERROR (${elapsed}ms)`, { error: error instanceof Error ? error.message : String(error) });
+    const msg = error instanceof Error ? error.message : String(error);
+    log.error('api', `← ${command} ERROR (${elapsed}ms)`, { error: msg });
     return {
       ok: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : String(error),
+        message: msg,
       },
     };
   }
@@ -1823,8 +1843,13 @@ export const api = {
   profileUploadHeaderOss: (input: FileUploadInput) =>
     invokeRustDataFromStatus<FileUploadInput, AccountProfile>('profile_upload_header_oss', input),
 
-  pickImageFile: () =>
-    invokeRustDataFromStatus<void, TauriStubPayload>('pick_image_file').then((r) => r.status),
+  pickImageFile: async (): Promise<string> => {
+    const response = await invokeRustCommand<void, TauriStubPayload>('pick_image_file');
+    if (response.ok && response.data?.status) {
+      return response.data.status;
+    }
+    throw new Error(response.error?.message || 'pick_image_file failed');
+  },
 
   accountSyncAvatar: (avatarUrl: string) =>
     invokeRustCommand<{ avatar_url: string }, TauriStubPayload>('account_sync_avatar', { avatar_url: avatarUrl }),
@@ -2968,24 +2993,16 @@ export const api = {
   // ── Friend Request ──
 
   friendChatSendFriendRequest: (receiverDid: string, message?: string) =>
-    invokeRustDataFromStatus<{ receiver_did: string; message?: string }, { request: FriendRequestData }>(
-      'friend_chat_send_friend_request', { receiver_did: receiverDid, message },
-    ),
+    invokeRustProto('friend_chat_send_friend_request', SendFriendRequestResponseSchema, { receiver_did: receiverDid, message }),
 
   friendChatAcceptFriendRequest: (requestId: string) =>
-    invokeRustDataFromStatus<{ request_id: string }, { request: FriendRequestData; session?: FriendChatSessionData }>(
-      'friend_chat_accept_friend_request', { request_id: requestId },
-    ),
+    invokeRustProto('friend_chat_accept_friend_request', AcceptFriendRequestResponseSchema, { request_id: requestId }),
 
   friendChatRejectFriendRequest: (requestId: string) =>
-    invokeRustDataFromStatus<{ request_id: string }, { request: FriendRequestData }>(
-      'friend_chat_reject_friend_request', { request_id: requestId },
-    ),
+    invokeRustProto('friend_chat_reject_friend_request', RejectFriendRequestResponseSchema, { request_id: requestId }),
 
   friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
-    invokeRustDataFromStatus<{ status?: number; limit?: number; offset?: number }, { requests: FriendRequestData[]; total: number }>(
-      'friend_chat_list_friend_requests', { status, limit, offset },
-    ),
+    invokeRustProto('friend_chat_list_friend_requests', ListFriendRequestsResponseSchema, { status, limit, offset }),
 
   // ── Notification ──
 
