@@ -2,12 +2,12 @@
 // Wires together domain, infrastructure, and application layers following DDD.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — SubServer with auth, overview,
-//   actor management services.
-// - 2026-04-10: Refactored to DDD architecture. Replaced hardcoded fallback
-//   JWT secret with random generation + warning.
-// - 2026-04-10: Fixed getSubservers() returning nil — now loads sibling
-//   subserver instances from server.GetOptions().SubserverInstances at Start.
+//   - 2026-04-10: Initial implementation — SubServer with auth, overview,
+//     actor management services.
+//   - 2026-04-10: Refactored to DDD architecture. Replaced hardcoded fallback
+//     JWT secret with random generation + warning.
+//   - 2026-04-10: Fixed getSubservers() returning nil — now loads sibling
+//     subserver instances from server.GetOptions().SubserverInstances at Start.
 package dashboard
 
 import (
@@ -46,10 +46,12 @@ type subServer struct {
 	db *gorm.DB
 
 	// Application services (DDD application layer)
-	authSvc     *application.AuthService
-	overviewSvc *application.OverviewService
-	actorsSvc   *application.ActorService
+	authSvc      *application.AuthService
+	overviewSvc  *application.OverviewService
+	actorsSvc    *application.ActorService
 	chatDebugSvc *application.ChatDebugService
+	storageSvc   *application.StorageService
+	nodesSvc     *application.NodesService
 
 	// Infrastructure repositories (DDD infrastructure layer)
 	auditRepo infrastructure.AuditRepository
@@ -130,6 +132,8 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	sessionRepo := infrastructure.NewSessionRepository(rds)
 	auditRepo := infrastructure.NewAuditRepository(rds)
 	actorQueryRepo := infrastructure.NewActorQueryRepository(rds)
+	storageRepo := infrastructure.NewStorageRepository(rds)
+	nodesRepo := infrastructure.NewNodesRepository(rds)
 
 	s.auditRepo = auditRepo
 
@@ -137,11 +141,14 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.overviewSvc = application.NewOverviewService(actorQueryRepo, auditRepo, nil)
 	s.actorsSvc = application.NewActorService(actorQueryRepo)
 	s.chatDebugSvc = application.NewChatDebugService(rds)
+	s.storageSvc = application.NewStorageService(storageRepo)
+	s.nodesSvc = application.NewNodesService(nodesRepo, nil)
 
 	// Try to resolve registry from the global default
 	s.registry = registry.GetDefaultRegistry()
 	if s.registry != nil {
 		s.overviewSvc.SetRegistry(s.registry)
+		s.nodesSvc.SetRegistry(s.registry)
 	}
 
 	// Bootstrap the super user if configured
@@ -180,6 +187,21 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 		}
 	}
 
+	// The default registry is often installed during Start of the
+	// peers-bootstrap subserver — re-resolve here so the dashboard sees it
+	// even when ordering put bootstrap after dashboard.Init.
+	if s.registry == nil {
+		s.registry = registry.GetDefaultRegistry()
+	}
+	if s.registry != nil {
+		if s.overviewSvc != nil {
+			s.overviewSvc.SetRegistry(s.registry)
+		}
+		if s.nodesSvc != nil {
+			s.nodesSvc.SetRegistry(s.registry)
+		}
+	}
+
 	log.Infof(ctx, "[dashboard] subserver started, discovered %d sibling subservers", len(s.subservers))
 	return nil
 }
@@ -197,7 +219,7 @@ func (s *subServer) Stop(ctx context.Context) error {
 // Subserver interface methods
 // ---------------------------------------------------------------------------
 
-func (s *subServer) Name() string              { return "dashboard" }
+func (s *subServer) Name() string               { return "dashboard" }
 func (s *subServer) Type() server.SubserverType { return server.SubserverTypeHTTP }
 func (s *subServer) Status() server.Status      { return s.status }
 
