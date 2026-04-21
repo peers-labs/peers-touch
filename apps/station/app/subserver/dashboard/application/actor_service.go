@@ -104,7 +104,21 @@ func (s *ActorService) enrichActorDetail(ctx context.Context, a touchdb.Actor) d
 	detail.FollowerCount, _ = s.actorRepo.CountFollowers(ctx, a.ID)
 	detail.FollowingCount, _ = s.actorRepo.CountFollowing(ctx, a.ID)
 
+	// Session-derived signals: we surface these from actor_sessions because
+	// touch_actor itself has no last_login or session counters.
+	detail.SessionCount, _ = s.actorRepo.CountActiveSessionsByActor(ctx, a.ID)
+	detail.LastLoginAt, _ = s.actorRepo.LastLoginAtByActor(ctx, a.ID)
+
 	return detail
+}
+
+// ListActivePeersSessions returns the global active session list for the
+// dashboard "Sessions" page (joined with the owning actor for display).
+func (s *ActorService) ListActivePeersSessions(ctx context.Context, limit int) ([]domain.PeersSessionInfo, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	return s.actorRepo.ListActivePeersSessions(ctx, limit)
 }
 
 // ResetActorPassword resets an actor's password (admin operation).

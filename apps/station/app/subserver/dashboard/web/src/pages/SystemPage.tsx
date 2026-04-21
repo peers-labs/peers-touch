@@ -32,6 +32,13 @@ interface SystemInfo {
   go_version: string;
   listen_addr: string;
   started_at: string;
+  hostname?: string;
+  go_max_procs?: number;
+  num_cpu?: number;
+  num_goroutine?: number;
+  mem_alloc_mb?: number;
+  mem_sys_mb?: number;
+  gc_count?: number;
 }
 
 interface SubServerItem {
@@ -126,12 +133,27 @@ export default function SystemPage() {
         </span>
       ),
       children: systemInfo ? (
-        <Descriptions column={1} bordered size="small">
+        <Descriptions column={2} bordered size="small">
           <Descriptions.Item label="Go Version">{systemInfo.go_version}</Descriptions.Item>
-          <Descriptions.Item label="Listen Address">
+          <Descriptions.Item label="Hostname">
+            {systemInfo.hostname || <Text type="secondary">—</Text>}
+          </Descriptions.Item>
+          <Descriptions.Item label="Listen Address" span={2}>
             <Text code>{systemInfo.listen_addr}</Text>
           </Descriptions.Item>
-          <Descriptions.Item label="Started At">{formatTime(systemInfo.started_at)}</Descriptions.Item>
+          <Descriptions.Item label="Started At" span={2}>
+            {formatTime(systemInfo.started_at)}
+          </Descriptions.Item>
+          <Descriptions.Item label="GOMAXPROCS">{systemInfo.go_max_procs ?? '—'}</Descriptions.Item>
+          <Descriptions.Item label="CPU Count">{systemInfo.num_cpu ?? '—'}</Descriptions.Item>
+          <Descriptions.Item label="Goroutines">{systemInfo.num_goroutine ?? '—'}</Descriptions.Item>
+          <Descriptions.Item label="GC Cycles">{systemInfo.gc_count ?? '—'}</Descriptions.Item>
+          <Descriptions.Item label="Mem Alloc">
+            {systemInfo.mem_alloc_mb !== undefined ? `${systemInfo.mem_alloc_mb} MB` : '—'}
+          </Descriptions.Item>
+          <Descriptions.Item label="Mem Sys">
+            {systemInfo.mem_sys_mb !== undefined ? `${systemInfo.mem_sys_mb} MB` : '—'}
+          </Descriptions.Item>
         </Descriptions>
       ) : (
         <Text type="secondary">System information unavailable</Text>
