@@ -2,9 +2,9 @@
 // from inside the compiled Go binary.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — embedded FS with MIME-aware serving,
-//   cache headers for assets, and SPA fallback to index.html.
-// - 2026-04-10: Refactored — added Change History header for DDD compliance.
+//   - 2026-04-10: Initial implementation — embedded FS with MIME-aware serving,
+//     cache headers for assets, and SPA fallback to index.html.
+//   - 2026-04-10: Refactored — added Change History header for DDD compliance.
 package dashboard
 
 import (
@@ -109,16 +109,16 @@ func serveEmbeddedFile(ctx *app.RequestContext, name string, longCache bool) {
 // mime.TypeByExtension may not know about on all platforms.
 func detectContentType(ext string) string {
 	types := map[string]string{
-		".html": "text/html; charset=utf-8",
-		".css":  "text/css; charset=utf-8",
-		".js":   "application/javascript; charset=utf-8",
-		".json": "application/json; charset=utf-8",
-		".svg":  "image/svg+xml",
-		".png":  "image/png",
-		".ico":  "image/x-icon",
-		".woff": "font/woff",
+		".html":  "text/html; charset=utf-8",
+		".css":   "text/css; charset=utf-8",
+		".js":    "application/javascript; charset=utf-8",
+		".json":  "application/json; charset=utf-8",
+		".svg":   "image/svg+xml",
+		".png":   "image/png",
+		".ico":   "image/x-icon",
+		".woff":  "font/woff",
 		".woff2": "font/woff2",
-		".map":  "application/json",
+		".map":   "application/json",
 	}
 	if ct, ok := types[ext]; ok {
 		return ct
