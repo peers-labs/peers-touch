@@ -43,6 +43,7 @@ function accountToSessionUser(account: AccountIdentity): SessionUser {
     name: account.name || account.provider_user_id || 'User',
     email: account.email || '',
     avatar: account.avatar_url || undefined,
+    avatarLocalPath: account.avatar_local_path || undefined,
     accountId: account.id,
     hasPin: account.has_pin,
     provider: account.provider,
@@ -125,6 +126,8 @@ export function useAppLifecycle(): AppLifecycle {
 
       if (warm && hasRealIdentity) {
         touchActivity();
+        // Background: sync user profile from Station (downloads avatar to local cache).
+        api.syncUserProfile().catch(() => {});
         setState('ready');
       } else if (warm) {
         // Warm resume failed — session expired or missing, fall back to onboarding
@@ -141,6 +144,9 @@ export function useAppLifecycle(): AppLifecycle {
 
     touchActivity();
     useOAuth2Store.getState().loadAll().catch(() => {});
+
+    // Background: sync user profile from Station (downloads avatar to local cache).
+    api.syncUserProfile().catch(() => {});
     setState('ready');
   }, []);
 

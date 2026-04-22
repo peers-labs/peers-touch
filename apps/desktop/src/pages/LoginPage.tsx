@@ -581,7 +581,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 height: 48,
                 borderRadius: 12,
                 marginBottom: 12,
-                boxShadow: `0 2px 12px rgba(0,0,0,0.08), 0 0 0 1px ${token.colorBorderSecondary}`,
+                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
               }}
             />
           )}
@@ -622,6 +622,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 >
                   <UserSquareAvatar
                     url={account.avatar}
+                    localPath={account.avatarLocalPath}
                     name={account.name}
                     size={40}
                     radius={20}
@@ -683,6 +684,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
           <div style={{ position: 'relative', marginBottom: 16, marginTop: 8 }}>
             <UserSquareAvatar
               url={selectedAccount.avatar}
+              localPath={selectedAccount.avatarLocalPath}
               name={selectedAccount.name}
               size={72}
               radius={36}
@@ -778,6 +780,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             />
             <UserSquareAvatar
               url={welcomeUser.avatar}
+              localPath={welcomeUser.avatarLocalPath}
               name={welcomeUser.name}
               size={88}
               radius={44}
@@ -876,6 +879,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
               <>
                 <UserSquareAvatar
                   url={welcomeUser.avatar}
+                  localPath={welcomeUser.avatarLocalPath}
                   name={welcomeUser.name}
                   size={24}
                   radius={12}
