@@ -337,7 +337,8 @@ fn clear_persisted_session() -> Result<(), AppResult<AuthSessionPayload>> {
 }
 
 fn persisted_session_file() -> PathBuf {
-    storage::app_file_path("desktop", StorageKind::Temp, &["auth", "session.json"]).unwrap_or_else(
+    // Use Data storage for persistence across reboots; Temp is cleared by the OS.
+    storage::app_file_path("desktop", StorageKind::Data, &["auth", "session.json"]).unwrap_or_else(
         |_| {
             std::env::temp_dir()
                 .join("peers-touch")

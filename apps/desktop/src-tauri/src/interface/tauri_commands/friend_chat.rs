@@ -73,12 +73,8 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     })
 }
 
-fn fail_station_error_proto(err: &str) -> AppResult<Vec<u8>> {
-    AppResult::fail(ErrorCode::InternalError, err.to_string(), None)
-}
-
-fn fail_station_error_proto(err: station_client::StationClientError) -> AppResult<Vec<u8>> {
-    err.into_app_result("station request failed")
+fn station_error_proto(err: station_client::StationClientError, context: &str) -> AppResult<Vec<u8>> {
+    err.into_app_result(context)
 }
 
 fn fail_station_error_stub(err: station_client::StationClientError) -> AppResult<StubPayload> {
@@ -220,7 +216,7 @@ pub fn friend_chat_list_sessions(input: FriendChatListInput, state: State<'_, Ar
         None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -245,7 +241,7 @@ pub fn friend_chat_create_session(input: FriendChatCreateSessionInput, state: St
         Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -274,7 +270,7 @@ pub fn friend_chat_list_messages(input: FriendChatListMessagesInput, state: Stat
         None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -325,7 +321,7 @@ pub fn friend_chat_send_message(input: FriendChatSendInput, state: State<'_, Arc
         Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -351,7 +347,7 @@ pub fn friend_chat_ack_messages(input: FriendChatAckInput, state: State<'_, Arc<
         Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -558,7 +554,7 @@ pub fn friend_chat_sync_messages(input: FriendChatSyncMessagesInput, state: Stat
         Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -582,7 +578,7 @@ pub fn friend_chat_go_online(input: FriendChatOnlineInput, state: State<'_, Arc<
         Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -606,7 +602,7 @@ pub fn friend_chat_go_offline(input: FriendChatOnlineInput, state: State<'_, Arc
         Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -628,7 +624,7 @@ pub fn friend_chat_get_pending(input: FriendChatPendingInput, state: State<'_, A
         None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -649,7 +645,7 @@ pub fn friend_chat_get_stats(state: State<'_, Arc<AppState>>) -> AppResult<Vec<u
         None::<&()>,
     ) {
         Ok(r) => r,
-        Err(e) => return fail_station_error_proto(&e),
+        Err(e) => return station_error_proto(e, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -679,7 +675,7 @@ pub fn friend_chat_send_friend_request(input: FriendChatSendFriendRequestInput, 
         Some(&req),
     ) {
         Ok(resp) => resp,
-        Err(error) => return fail_station_error_proto(&error),
+        Err(error) => return station_error_proto(error, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -704,7 +700,7 @@ pub fn friend_chat_accept_friend_request(input: FriendChatAcceptFriendRequestInp
         Some(&req),
     ) {
         Ok(resp) => resp,
-        Err(error) => return fail_station_error_proto(&error),
+        Err(error) => return station_error_proto(error, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -729,7 +725,7 @@ pub fn friend_chat_reject_friend_request(input: FriendChatRejectFriendRequestInp
         Some(&req),
     ) {
         Ok(resp) => resp,
-        Err(error) => return fail_station_error_proto(&error),
+        Err(error) => return station_error_proto(error, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }
@@ -755,7 +751,7 @@ pub fn friend_chat_list_friend_requests(input: FriendChatListFriendRequestsInput
         None::<&()>,
     ) {
         Ok(resp) => resp,
-        Err(error) => return fail_station_error_proto(&error),
+        Err(error) => return station_error_proto(error, "station request failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }

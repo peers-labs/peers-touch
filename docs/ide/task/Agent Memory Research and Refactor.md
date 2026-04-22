@@ -1,5 +1,9 @@
 # Agent Memory Research and Refactor
 
+> Historical task material only.
+> 不作为当前 Agent Memory 架构或实现真源。
+> 若与现状冲突，以 `docs/README.md`、`docs/architecture/`、`docs/global/coding-guide/` 及对应平台真源文档为准。
+
 > **Workspace:** /Users/bytedance/Documents/Projects/peers-touch/peers-touch
 
 ---
@@ -3346,4 +3350,3 @@ embedding 模型来源优先级：
 - **向量数据有 stale 机制**，模型变更时不丢数据、不出错
 
 你觉得这个方向对吗？确认后我更新到架构文档里。
-

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	authhttp "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	ossmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/oss"
@@ -80,7 +81,8 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := s.fileService.SaveFile(r.Context(), file, hdr)
 	if err != nil {
-		fmt.Printf("[OSS] SaveFile error: %v\n", err)
+		// Log error through the project's unified logger instead of fmt.Printf
+		logger.Errorf(r.Context(), "[handleUpload] SaveFile failed: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("save_failed: %v", err)})
 		return

@@ -52,7 +52,7 @@
 - 将 `UserProfilePopover.tsx` 中账号/OAuth 监听迁移到 `EVENT.AUTH_IDENTITY_CHANGED`。
 - 将 `MessageBubble.tsx`、`GlobalLayout.tsx`、`ChannelsPage.tsx` 的导航事件迁移到 `EVENT.NAVIGATION_REQUESTED`。
 - 为 `oauth2.ts` 与 `accountIdentity.ts` 增加统一发布入口，禁止重复派发同语义事件。
-- 保留兼容桥一个发布周期：旧事件名 -> 新常量事件名转发，再删除旧事件名。
+- 新产品阶段不保留兼容桥：旧事件名与字符串协议应直接删除，统一切到 `EVENT.*` 常量与结构化错误。
 
 ## 5. 业务层影响矩阵
 
@@ -148,6 +148,8 @@ globalContext.subscribe('orchestrator.pipeline_finished', (event) => {
 - Rust 查询接口已补齐：`context_capabilities`、`context_health`。
 - Rust Snapshot Store 已支持持久化恢复（`global_context.json`）。
 - `registerTime` 字段链路已接通：`AccountIdentity.created_at -> GlobalContext.identity.registerTime`。
+- `session_revoked` 已收敛为结构化认证错误：`station_client -> AppResult Unauthorized/details -> AUTH_SESSION_REVOKED -> session_logout`。
+- Desktop Web 已移除字符串兼容协议，`AUTH_SESSION_REVOKED` 仅由结构化 `RustCommandError.code/details` 触发。
 
 ### 8.2 待实现
 - Rust 侧 `context_events_subscribe`（实时订阅通道）尚未落地，当前以 snapshot + dispatch 为主。
