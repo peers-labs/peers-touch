@@ -2163,6 +2163,13 @@ export const api = {
       pin,
     }),
 
+  // Remove PIN protection from account — reuses AccountSetPinInput (same shape: account_id + pin)
+  accountRemovePin: (accountId: string, pin: string) =>
+    invokeRustDataFromStatus<AccountSetPinInput, { ok: boolean }>('account_remove_pin', {
+      account_id: accountId,
+      pin,
+    }),
+
   // Notebook / Documents
   listDocuments: (topicId: string) =>
     invokeRustDataFromStatus<TopicIdInput, { documents: NotebookDocument[] }>('notebook_list_documents', { topic_id: topicId }).then(r => r.documents),

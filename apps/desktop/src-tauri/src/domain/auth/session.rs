@@ -31,7 +31,13 @@ pub fn validate_login_input(account: &str, password: &str) -> Result<(), AuthDom
 }
 
 pub fn from_station_response(actor_id: String, token: String) -> AuthSession {
-    let expires_at = now_epoch_seconds() + TOKEN_TTL_SECONDS;
+    // Attempt to read `exp` from the JWT payload for accurate expiry tracking.
+    // Falls back to a default 1-hour TTL when the token has no `exp` claim.
+    let expires_at = token
+        .split('.')
+        .nth(1)
+        .and_then(decode_jwt_exp)
+        .unwrap_or_else(|| now_epoch_seconds() + TOKEN_TTL_SECONDS);
     AuthSession {
         actor_id,
         token,
