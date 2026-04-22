@@ -314,6 +314,46 @@ pub fn clear_account_session(account_id: &str) -> Result<(), String> {
     write_state(&state)
 }
 
+/// Remove PIN protection from an account after verifying the current PIN.
+/// Also clears any encrypted session since it can no longer be decrypted without a PIN.
+pub fn remove_account_pin(account_id: &str, pin: &str) -> Result<(), String> {
+    // First verify the PIN (updates failure counters on the state)
+    {
+        let mut state = read_state()?;
+        let account = state
+            .accounts
+            .iter_mut()
+            .find(|a| a.id == account_id)
+            .ok_or_else(|| format!("account not found: {account_id}"))?;
+
+        let protection = account
+            .pin_protection
+            .as_mut()
+            .ok_or_else(|| "no PIN set for this account".to_string())?;
+
+        pin_lock::verify_pin(pin, protection).map_err(|e| match e {
+            pin_lock::PinVerifyError::WrongPin { attempts_remaining } => {
+                format!("incorrect PIN ({attempts_remaining} attempts remaining)")
+            }
+            pin_lock::PinVerifyError::LockedOut { remaining_secs } => {
+                format!("account locked, retry in {remaining_secs}s")
+            }
+            pin_lock::PinVerifyError::Internal(msg) => msg,
+        })?;
+
+        // Persist updated failure counters (reset on success)
+        write_state(&state)?;
+    }
+
+    // Re-read and strip PIN + encrypted session
+    let mut state = read_state()?;
+    if let Some(account) = state.accounts.iter_mut().find(|a| a.id == account_id) {
+        account.pin_protection = None;
+        account.encrypted_session = None;
+    }
+    write_state(&state)
+}
+
 /// List all accounts that have a saved session (for the account picker).
 pub fn list_restorable_accounts() -> Result<Vec<AccountIdentity>, String> {
     let state = read_state()?;
