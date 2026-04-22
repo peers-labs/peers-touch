@@ -14,6 +14,11 @@
 
 - [global-context-kernel.md](./global-context-kernel.md)
 - [provider-model-target-architecture.md](./provider-model-target-architecture.md)
+- [execution-plans/global-context-kernel-migration.md](./execution-plans/global-context-kernel-migration.md)
+
+如果你要看 Desktop Web <-> Desktop Rust 的服务调用约束，请看规范层文档：
+
+- [service-api.md](../../global/coding-guide/desktop/service-api.md)
 
 如果你不确定先看哪份，请先回到总入口：
 
