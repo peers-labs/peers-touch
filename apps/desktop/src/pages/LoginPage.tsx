@@ -38,10 +38,13 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const { providers, connections, loadAll, startAuth } = useOAuth2Store();
   const { loginWithPassword } = useSessionStore();
 
+  // restoredUser is only set when the session has real identity data (actorId + name).
+  // If null, the user has no valid session — go directly to login form.
+  const hasValidRestoredUser = !!(restoredUser && restoredUser.name && restoredUser.name !== 'User');
   const hasMultipleAccounts = knownAccounts.length > 0;
   const initialState: LoginState = hasMultipleAccounts
     ? 'account_picker'
-    : restoredUser
+    : hasValidRestoredUser
       ? 'welcome_back'
       : 'logged_out';
 
@@ -80,14 +83,24 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     loadAll();
   }, [loadAll]);
 
+  // Guard: if welcome_back is reached without a valid session, redirect to login form
+  useEffect(() => {
+    if (loginState === 'welcome_back') {
+      const { authenticated } = useSessionStore.getState();
+      if (!authenticated) {
+        setLoginState('logged_out');
+      }
+    }
+  }, [loginState]);
+
   const oauth2AccountProviders = useMemo(
     () => providers.filter(p => p.id === 'github' || p.id === 'google'),
     [providers],
   );
 
   const welcomeUser: SessionUser = useMemo(() => {
-    if (restoredUser) return restoredUser;
-    return { name: 'User', email: '' };
+    if (restoredUser && restoredUser.name) return restoredUser;
+    return { name: '', email: '' };
   }, [restoredUser]);
 
   const handleEmailLogin = useCallback(async (e?: React.FormEvent) => {
@@ -169,10 +182,11 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setAuthError('');
     if (hasMultipleAccounts) {
       setLoginState('account_picker');
-    } else {
+    } else if (hasValidRestoredUser) {
       setLoginState('welcome_back');
     }
-  }, [hasMultipleAccounts]);
+    // If neither — stay on logged_out, this button shouldn't be visible anyway
+  }, [hasMultipleAccounts, hasValidRestoredUser]);
 
   const handleNewAccountLogin = useCallback(() => {
     setLoginState('logged_out');
@@ -189,8 +203,14 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
       setLoginState('pin_entry');
       setTimeout(() => pinInputRefs.current[0]?.focus(), 50);
     } else {
-      // No PIN set — for accounts without PIN, try direct restore
-      setLoginState('welcome_back');
+      // No PIN — only show welcome_back if session is actually authenticated
+      const { authenticated } = useSessionStore.getState();
+      if (authenticated) {
+        setLoginState('welcome_back');
+      } else {
+        // Session expired or invalid — go to login form directly
+        setLoginState('logged_out');
+      }
     }
   }, []);
 
@@ -383,7 +403,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   };
 
   const panelOpen = !!connectProvider && loginState === 'logged_out';
-  const hasSignedInUser = !!restoredUser;
+  const hasSignedInUser = hasValidRestoredUser;
 
   useEffect(() => {
     if (!panelOpen) return;

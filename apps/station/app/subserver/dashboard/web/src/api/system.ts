@@ -25,6 +25,8 @@ export interface AuditLog {
 export interface PeersSession {
   session_id: string;
   user_id: number;
+  preferred_username: string;
+  email: string;
   device_type: string;
   ip_address: string;
   user_agent: string;
