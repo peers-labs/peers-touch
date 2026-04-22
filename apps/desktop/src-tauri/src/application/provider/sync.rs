@@ -4,9 +4,19 @@ use serde_json::{json, Value};
 use super::state::{compute_scope_override, with_provider_store};
 use crate::infrastructure::station_client;
 
-pub(crate) fn push_provider_config(scope: Option<&str>, token: &str) -> Result<(), String> {
+type StationResult<T> = Result<T, station_client::StationClientError>;
+
+fn invalid_response_err(message: impl Into<String>) -> station_client::StationClientError {
+    station_client::StationClientError::new(
+        station_client::StationClientErrorKind::InvalidResponse,
+        message.into(),
+        None,
+    )
+}
+
+pub(crate) fn push_provider_config(scope: Option<&str>, token: &str) -> StationResult<()> {
     let override_data = with_provider_store(scope, |store| compute_scope_override(store))
-        .map_err(|_| "failed to access provider store".to_string())?;
+        .map_err(|_| invalid_response_err("failed to access provider store"))?;
 
     let body = json!({
         "providers": override_data.provider_overrides.iter().map(|p| p.to_json()).collect::<Vec<_>>(),
@@ -26,7 +36,7 @@ pub(crate) fn push_provider_config(scope: Option<&str>, token: &str) -> Result<(
     Ok(())
 }
 
-pub(crate) fn pull_provider_config(scope: Option<&str>, token: &str) -> Result<(), String> {
+pub(crate) fn pull_provider_config(scope: Option<&str>, token: &str) -> StationResult<()> {
     // TODO(ai_chat): No matching Station handler for `/ai-chat/providers`; keep JSON until implemented.
     let remote = station_client::request_json(
         Method::GET,
@@ -43,7 +53,7 @@ pub(crate) fn pull_provider_config(scope: Option<&str>, token: &str) -> Result<(
         let override_data = compute_scope_override(store);
         !override_data.provider_overrides.is_empty() || !override_data.tombstones.is_empty()
     })
-    .map_err(|_| "failed to access provider store".to_string())?;
+    .map_err(|_| invalid_response_err("failed to access provider store"))?;
 
     if has_local_override {
         return Ok(());
