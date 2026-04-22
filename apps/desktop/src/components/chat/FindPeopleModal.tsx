@@ -6,13 +6,9 @@ import { theme, Modal, Typography, message } from 'antd';
 import { Search } from 'lucide-react';
 import { api } from '../../services/desktop_api';
 import { useSocialChatStore } from '../../store/socialChat';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 
 const { Text } = Typography;
-
-function getInitial(name: string): string {
-  if (!name) return '?';
-  return name.charAt(0).toUpperCase();
-}
 
 interface Props {
   open: boolean;
@@ -127,36 +123,12 @@ export function FindPeopleModal({ open, onClose }: Props) {
                   borderRadius: 8,
                 }}
               >
-                {r.avatar ? (
-                  <img
-                    src={r.avatar}
-                    alt={r.displayName || r.username}
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      objectFit: 'cover',
-                      flexShrink: 0,
-                    }}
-                  />
-                ) : (
-                  <Flexbox
-                    align="center"
-                    justify="center"
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      background: token.colorFillSecondary,
-                      color: token.colorTextSecondary,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {getInitial(r.displayName || r.username)}
-                  </Flexbox>
-                )}
+                {/* Unified rounded-square avatar for consistent visual style */}
+                <UserSquareAvatar
+                  url={r.avatar}
+                  name={r.displayName || r.username}
+                  size={36}
+                />
                 <Flexbox flex={1} style={{ minWidth: 0 }}>
                   <Text ellipsis style={{ fontSize: 13 }}>{r.displayName || r.username}</Text>
                   <Text type="secondary" style={{ fontSize: 11 }}>@{r.username}</Text>

@@ -3,8 +3,6 @@ package social
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"net/url"
 	"strconv"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -12,7 +10,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"google.golang.org/protobuf/proto"
 )
 
 // Route constants
@@ -60,8 +57,8 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-get-relationships", routeSocialRelationship, server.POST, s.handleGetRelationships, cw, jw),
 		server.NewTypedHandler("social-get-followers", routeSocialFollowers, server.GET, s.handleGetFollowers, cw, jw),
 		server.NewTypedHandler("social-get-following", routeSocialFollowing, server.GET, s.handleGetFollowing, cw, jw),
-		server.NewSimpleHandler("social-search-users", routeSocialUserSearch, server.GET, s.handleSearchUsers, cw, jw),
-		server.NewSimpleHandler("social-get-me", routeSocialUserMe, server.GET, s.handleGetMe, cw, jw),
+		server.NewTypedHandler("social-search-users", routeSocialUserSearch, server.GET, s.handleSearchUsers, cw, jw),
+		server.NewTypedHandler("social-get-me", routeSocialUserMe, server.GET, s.handleGetMe, cw, jw),
 	}
 }
 
@@ -504,32 +501,24 @@ func (s *subServer) handleGetFollowing(ctx context.Context, req *model.GetFollow
 	}, nil
 }
 
-// --- User Handlers (SimpleHandler) ---
+// --- User Handlers ---
 
-func (s *subServer) handleSearchUsers(ctx context.Context, req server.Request, resp server.Response) error {
+func (s *subServer) handleSearchUsers(ctx context.Context, req *model.SearchUsersRequest) (*model.ActorList, error) {
 	userID, exists := getUserID(ctx)
 	if !exists {
-		return server.Unauthorized("authentication required")
+		return nil, server.Unauthorized("authentication required")
 	}
 
-	// Parse query parameter 'q' from URL path (includes ?query)
-	q := ""
-	if fullPath := req.Path(); fullPath != "" {
-		if parsed, err := url.Parse(fullPath); err == nil {
-			q = parsed.Query().Get("q")
-		}
-	}
-	if q == "" {
-		return server.BadRequest("query parameter 'q' is required")
+	if req.Q == "" {
+		return nil, server.BadRequest("query parameter 'q' is required")
 	}
 
-	actors, err := actor.SearchActors(ctx, q, userID)
+	actors, err := actor.SearchActors(ctx, req.Q, userID)
 	if err != nil {
-		logger.Error(ctx, "failed to search users", "error", err, "query", q)
-		return server.InternalErrorWithCause("failed to search users", err)
+		logger.Error(ctx, "failed to search users", "error", err, "query", req.Q)
+		return nil, server.InternalErrorWithCause("failed to search users", err)
 	}
 
-	// Convert db.Actor entities to proto Actor items
 	items := make([]*model.Actor, len(actors))
 	for i, a := range actors {
 		items[i] = &model.Actor{
@@ -542,48 +531,28 @@ func (s *subServer) handleSearchUsers(ctx context.Context, req server.Request, r
 		}
 	}
 
-	result := &model.ActorList{
+	return &model.ActorList{
 		Items: items,
 		Total: int64(len(items)),
-	}
-	data, err := proto.Marshal(result)
-	if err != nil {
-		logger.Error(ctx, "failed to marshal search response", "error", err)
-		return server.InternalErrorWithCause("marshal failed", err)
-	}
-
-	resp.SetHeader("Content-Type", "application/protobuf")
-	resp.WriteHeader(http.StatusOK)
-	resp.Write(data)
-	return nil
+	}, nil
 }
 
-func (s *subServer) handleGetMe(ctx context.Context, req server.Request, resp server.Response) error {
+func (s *subServer) handleGetMe(ctx context.Context, req *model.GetMeRequest) (*model.ActorProfile, error) {
 	userID, exists := getUserID(ctx)
 	if !exists {
-		return server.Unauthorized("authentication required")
+		return nil, server.Unauthorized("authentication required")
 	}
 
 	a, err := actor.GetActorByID(ctx, userID)
 	if err != nil {
 		logger.Error(ctx, "failed to get current user", "error", err, "userID", userID)
-		return server.InternalErrorWithCause("failed to get current user", err)
+		return nil, server.InternalErrorWithCause("failed to get current user", err)
 	}
 
-	result := &model.ActorProfile{
+	return &model.ActorProfile{
 		Id:          fmt.Sprintf("%d", a.ID),
 		DisplayName: a.Name,
 		Username:    a.PreferredUsername,
 		Avatar:      a.Icon,
-	}
-	data, err := proto.Marshal(result)
-	if err != nil {
-		logger.Error(ctx, "failed to marshal profile response", "error", err)
-		return server.InternalErrorWithCause("marshal failed", err)
-	}
-
-	resp.SetHeader("Content-Type", "application/protobuf")
-	resp.WriteHeader(http.StatusOK)
-	resp.Write(data)
-	return nil
+	}, nil
 }
