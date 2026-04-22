@@ -109,7 +109,13 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setLoading(true);
     try {
       await loginWithPassword(email.trim(), password);
-      setLoginState('set_pin');
+      // Skip PIN setup if the account already has a PIN configured
+      const active = await api.accountGetActive();
+      if (active?.has_pin) {
+        onComplete();
+      } else {
+        setLoginState('set_pin');
+      }
     } catch (err: any) {
       message.error(err.message || t('auth.login.failed'));
     } finally {
@@ -158,11 +164,21 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     }
   }, [connectProvider, startAuth]);
 
-  const handleAuthDone = useCallback(() => {
+  const handleAuthDone = useCallback(async () => {
     setConnectProvider(null);
     setAuthState('idle');
+    // Skip PIN setup if the account already has a PIN configured
+    try {
+      const active = await api.accountGetActive();
+      if (active?.has_pin) {
+        onComplete();
+        return;
+      }
+    } catch {
+      // Fall through to set_pin on error
+    }
     setLoginState('set_pin');
-  }, []);
+  }, [onComplete]);
 
   const handleSwitchAccount = useCallback(() => {
     setConnectProvider(null);
@@ -199,11 +215,12 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setSelectedAccount(account);
     setPinDigits(Array(PIN_LENGTH).fill(''));
     setPinError('');
-    if (account.hasPin) {
+    if (account.hasPin && account.hasSession) {
+      // PIN set + encrypted session available — unlock via PIN
       setLoginState('pin_entry');
       setTimeout(() => pinInputRefs.current[0]?.focus(), 50);
     } else {
-      // No PIN — only show welcome_back if session is actually authenticated
+      // Either no PIN, or PIN set but no saved session — need fresh login
       const { authenticated } = useSessionStore.getState();
       if (authenticated) {
         setLoginState('welcome_back');
@@ -581,7 +598,6 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 height: 48,
                 borderRadius: 12,
                 marginBottom: 12,
-                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
               }}
             />
           )}
@@ -828,7 +844,17 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
               style={{ flex: 1, height: 44, borderRadius: 12, fontWeight: 500 }}
               icon={<ArrowRight size={16} />}
               iconPosition="end"
-              onClick={() => {
+              onClick={async () => {
+                // Skip PIN setup if the account already has a PIN configured
+                try {
+                  const active = await api.accountGetActive();
+                  if (active?.has_pin) {
+                    onComplete();
+                    return;
+                  }
+                } catch {
+                  // Fall through to set_pin
+                }
                 setLoginState('set_pin');
               }}
             >
@@ -895,12 +921,11 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             src={BRANDING.logos.desktop}
             alt={BRANDING.appName}
             style={{
-              width: 64,
-              height: 64,
-              borderRadius: 16,
-              marginBottom: 16,
-              boxShadow: `0 2px 12px rgba(0,0,0,0.08), 0 0 0 1px ${token.colorBorderSecondary}`,
-            }}
+                width: 64,
+                height: 64,
+                borderRadius: 16,
+                marginBottom: 16,
+              }}
           />
         )}
 
