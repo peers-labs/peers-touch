@@ -19,6 +19,9 @@ pub struct AccountIdentity {
     pub name: String,
     pub email: String,
     pub avatar_url: String,
+    /// Local file path for cached avatar image (relative to storage root).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_local_path: Option<String>,
     pub profile_url: String,
     #[serde(default)]
     pub created_at: String,
@@ -96,6 +99,7 @@ pub fn upsert_oauth(
             name: name.to_string(),
             email: email.unwrap_or_default().to_string(),
             avatar_url: avatar_url.unwrap_or_default().to_string(),
+            avatar_local_path: None,
             profile_url: profile_url.unwrap_or_default().to_string(),
             created_at: created,
             last_login_at: now,
@@ -155,6 +159,7 @@ pub fn upsert_password(
             name: name.to_string(),
             email: email.to_string(),
             avatar_url: avatar_url.unwrap_or_default().to_string(),
+            avatar_local_path: None,
             profile_url: String::new(),
             created_at: now.clone(),
             last_login_at: now,
@@ -317,4 +322,124 @@ pub fn list_restorable_accounts() -> Result<Vec<AccountIdentity>, String> {
         .into_iter()
         .filter(|a| a.has_session)
         .collect())
+}
+
+// ---------------------------------------------------------------------------
+// Local avatar file management
+// ---------------------------------------------------------------------------
+
+/// Resolve the directory for locally cached avatar files.
+fn avatars_dir() -> Result<PathBuf, String> {
+    storage::app_file_path("desktop", StorageKind::Data, &["files", "avatars"])
+        .map_err(|err| format!("failed to resolve avatars dir: {err:?}"))
+}
+
+/// Download a remote avatar image to the local cache directory.
+/// Returns the absolute path of the cached file on success.
+pub fn download_avatar(remote_url: &str) -> Result<PathBuf, String> {
+    if remote_url.trim().is_empty() {
+        return Err("empty remote URL".to_string());
+    }
+
+    let dir = avatars_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| format!("failed to create avatars dir: {e}"))?;
+
+    let filename = crate::domain::user_profile::avatar_local_filename(remote_url);
+    let dest = dir.join(&filename);
+
+    // Skip download if file already exists and is non-empty.
+    if dest.exists() && dest.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+        return Ok(dest);
+    }
+
+    let response = reqwest::blocking::get(remote_url)
+        .map_err(|e| format!("avatar download failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("avatar download returned status {}", response.status()));
+    }
+
+    let bytes = response.bytes().map_err(|e| format!("failed to read avatar response: {e}"))?;
+    if bytes.is_empty() {
+        return Err("avatar download returned empty body".to_string());
+    }
+
+    fs::write(&dest, &bytes).map_err(|e| format!("failed to write avatar file: {e}"))?;
+    Ok(dest)
+}
+
+/// Update the avatar_local_path for the currently active account.
+pub fn update_active_avatar_local_path(local_path: &str) -> Result<(), String> {
+    let mut state = read_state()?;
+    if let Some(active_id) = &state.active_account_id {
+        if let Some(account) = state.accounts.iter_mut().find(|a| &a.id == active_id) {
+            account.avatar_local_path = Some(local_path.to_string());
+            write_state(&state)?;
+        }
+    }
+    Ok(())
+}
+
+/// Sync a user profile from Station: update metadata in identities.json and
+/// download avatar to local cache. Returns the local avatar path if successful.
+pub fn sync_profile_locally(
+    account_id: &str,
+    name: Option<&str>,
+    email: Option<&str>,
+    avatar_url: Option<&str>,
+    profile_url: Option<&str>,
+) -> Result<Option<String>, String> {
+    let mut state = read_state()?;
+    let account = state
+        .accounts
+        .iter_mut()
+        .find(|a| a.id == account_id)
+        .ok_or_else(|| format!("account not found: {account_id}"))?;
+
+    // Update metadata fields (only overwrite if new value is non-empty).
+    if let Some(n) = name.filter(|v| !v.is_empty()) {
+        account.name = n.to_string();
+    }
+    if let Some(e) = email.filter(|v| !v.is_empty()) {
+        account.email = e.to_string();
+    }
+    if let Some(p) = profile_url.filter(|v| !v.is_empty()) {
+        account.profile_url = p.to_string();
+    }
+
+    let mut local_path: Option<String> = None;
+
+    if let Some(url) = avatar_url.filter(|v| !v.is_empty()) {
+        account.avatar_url = url.to_string();
+
+        // Attempt to download avatar to local cache.
+        match download_avatar(url) {
+            Ok(path) => {
+                let path_str = path.to_string_lossy().to_string();
+                account.avatar_local_path = Some(path_str.clone());
+                local_path = Some(path_str);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, url = %url, "Failed to cache avatar locally, will use remote URL");
+                // Keep the remote URL, clear stale local path.
+                account.avatar_local_path = None;
+            }
+        }
+    }
+
+    write_state(&state)?;
+    Ok(local_path)
+}
+
+/// Get the local avatar path for a given account, if it exists and the file is present.
+pub fn get_avatar_local_path(account_id: &str) -> Option<String> {
+    let state = read_state().ok()?;
+    let account = state.accounts.iter().find(|a| a.id == account_id)?;
+    let path_str = account.avatar_local_path.as_ref()?;
+    let path = PathBuf::from(path_str);
+    if path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+        Some(path_str.clone())
+    } else {
+        None
+    }
 }
