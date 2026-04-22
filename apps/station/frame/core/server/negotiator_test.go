@@ -10,43 +10,42 @@ func TestContentNegotiator_GetRequestSerializer(t *testing.T) {
 	tests := []struct {
 		name        string
 		contentType string
-		wantProto   bool
-		wantJSON    bool
+		wantType    string // "proto", "protojson"
 	}{
 		{
-			name:        "application/json",
+			name:        "application/json → ProtoJSONSerializer",
 			contentType: "application/json",
-			wantJSON:    true,
+			wantType:    "protojson",
 		},
 		{
-			name:        "application/protobuf",
+			name:        "application/protobuf → ProtoSerializer",
 			contentType: "application/protobuf",
-			wantProto:   true,
+			wantType:    "proto",
 		},
 		{
-			name:        "application/x-protobuf",
+			name:        "application/x-protobuf → ProtoSerializer",
 			contentType: "application/x-protobuf",
-			wantProto:   true,
+			wantType:    "proto",
 		},
 		{
-			name:        "with charset",
+			name:        "JSON with charset → ProtoJSONSerializer",
 			contentType: "application/json; charset=utf-8",
-			wantJSON:    true,
+			wantType:    "protojson",
 		},
 		{
-			name:        "empty defaults to JSON",
+			name:        "empty defaults to ProtoJSONSerializer",
 			contentType: "",
-			wantJSON:    true,
+			wantType:    "protojson",
 		},
 		{
-			name:        "unknown defaults to JSON",
+			name:        "unknown defaults to ProtoJSONSerializer",
 			contentType: "application/xml",
-			wantJSON:    true,
+			wantType:    "protojson",
 		},
 		{
-			name:        "case insensitive",
+			name:        "case insensitive protobuf",
 			contentType: "APPLICATION/PROTOBUF",
-			wantProto:   true,
+			wantType:    "proto",
 		},
 	}
 
@@ -54,15 +53,14 @@ func TestContentNegotiator_GetRequestSerializer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			serializer := negotiator.GetRequestSerializer(tt.contentType)
 
-			if tt.wantProto {
+			switch tt.wantType {
+			case "proto":
 				if _, ok := serializer.(*ProtoSerializer); !ok {
 					t.Errorf("Expected ProtoSerializer for %q, got %T", tt.contentType, serializer)
 				}
-			}
-
-			if tt.wantJSON {
-				if _, ok := serializer.(*JSONSerializer); !ok {
-					t.Errorf("Expected JSONSerializer for %q, got %T", tt.contentType, serializer)
+			case "protojson":
+				if _, ok := serializer.(*ProtoJSONSerializer); !ok {
+					t.Errorf("Expected ProtoJSONSerializer for %q, got %T", tt.contentType, serializer)
 				}
 			}
 		})
@@ -73,27 +71,26 @@ func TestContentNegotiator_GetResponseSerializer(t *testing.T) {
 	negotiator := NewContentNegotiator()
 
 	tests := []struct {
-		name             string
-		contentType      string
-		responseType     Serializer
-		wantProto        bool
-		wantJSON         bool
+		name         string
+		contentType  string
+		responseType Serializer
+		wantType     string // "proto", "json", "protojson"
 	}{
 		{
-			name:        "Proto content type uses Proto",
+			name:        "Proto content type → ProtoSerializer",
 			contentType: "application/protobuf",
-			wantProto:   true,
+			wantType:    "proto",
 		},
 		{
-			name:         "JSON content type with Proto response type uses response type",
+			name:         "JSON content + proto response type → ProtoJSONSerializer",
 			contentType:  "application/json",
 			responseType: &ProtoSerializer{},
-			wantProto:    true,
+			wantType:     "protojson",
 		},
 		{
-			name:        "No content type and no response type defaults to JSON",
+			name:        "No content type and no response type → default JSONSerializer",
 			contentType: "",
-			wantJSON:    true,
+			wantType:    "json",
 		},
 	}
 
@@ -101,15 +98,18 @@ func TestContentNegotiator_GetResponseSerializer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			serializer := negotiator.GetResponseSerializer(tt.contentType, tt.responseType)
 
-			if tt.wantProto {
+			switch tt.wantType {
+			case "proto":
 				if _, ok := serializer.(*ProtoSerializer); !ok {
 					t.Errorf("Expected ProtoSerializer, got %T", serializer)
 				}
-			}
-
-			if tt.wantJSON {
+			case "json":
 				if _, ok := serializer.(*JSONSerializer); !ok {
 					t.Errorf("Expected JSONSerializer, got %T", serializer)
+				}
+			case "protojson":
+				if _, ok := serializer.(*ProtoJSONSerializer); !ok {
+					t.Errorf("Expected ProtoJSONSerializer, got %T", serializer)
 				}
 			}
 		})
