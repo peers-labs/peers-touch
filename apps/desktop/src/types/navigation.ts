@@ -26,6 +26,8 @@ export interface SessionUser {
   accountId?: string;
   /** Whether this account has a PIN set. */
   hasPin?: boolean;
+  /** Whether this account has a restorable session (encrypted or plaintext). */
+  hasSession?: boolean;
   /** Login provider (e.g. "password", "github"). */
   provider?: string;
 }

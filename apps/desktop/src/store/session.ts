@@ -21,6 +21,8 @@ interface SessionStore {
   loginWithOAuth: (providerId: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
+  /** Update avatar URL on the current user (called after upload or profile sync). */
+  updateAvatar: (avatarUrl: string) => void;
 }
 
 // ── Helpers ──
@@ -81,5 +83,14 @@ export const useSessionStore = create<SessionStore>((set) => ({
       // Best-effort: if the session is already expired/revoked, still clear local state.
     }
     set({ currentUser: null, authenticated: false });
+  },
+
+  updateAvatar: (avatarUrl: string) => {
+    set((state) => {
+      if (!state.currentUser) return state;
+      return {
+        currentUser: { ...state.currentUser, avatarUrl },
+      };
+    });
   },
 }));

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use crate::error::AppResult;
 use crate::contracts::{
-    AccountIdInput, AccountSetPinInput, AccountUnlockInput, AccountUpsertOAuthInput, StubPayload,
+    AccountIdInput, AccountSetPinInput, AccountUnlockInput, AccountRemovePinInput,
+    AccountUpsertOAuthInput, StubPayload,
     AuthSessionPayload,
 };
 use crate::state::AppState;
@@ -131,6 +132,12 @@ pub fn account_unlock(
 #[tauri::command]
 pub fn account_list_restorable() -> AppResult<StubPayload> {
     application_account::account_list_restorable()
+}
+
+/// Remove PIN protection from an account (requires current PIN for verification).
+#[tauri::command]
+pub fn account_remove_pin(input: AccountRemovePinInput) -> AppResult<StubPayload> {
+    application_account::account_remove_pin(input)
 }
 
 /// Extract actor_id from account_id format like "password:abc" or "github:123".
