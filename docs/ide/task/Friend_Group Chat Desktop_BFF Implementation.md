@@ -1,5 +1,9 @@
 # Friend/Group Chat Desktop/BFF Implementation
 
+> Historical task material only.
+> 不作为当前 Desktop Chat / Auth / BFF 实现真源。
+> 若与现状冲突，以 `docs/README.md`、`docs/client/desktop/global-context-kernel.md`、`docs/global/coding-guide/desktop/service-api.md`、`docs/architecture/boundaries/station-desktop-scope-boundary.md` 为准。
+
 > **Workspace:** <workspace-root>/peers-touch
 
 ---
@@ -17791,4 +17795,3 @@ docs/architecture/storage/unified-runtime-storage-architecture.md
   - 平台密钥库“真实后端细化”（当前是 keyring 骨架接入）
   - rekey/迁移失败策略与观测字段收口
   - 同步协议补 `has_more/next_cursor` 级联语义（目前已具备 since 增量主干）
-

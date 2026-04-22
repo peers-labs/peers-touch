@@ -77,6 +77,7 @@ fn main() {
             profile::pick_image_file,
             profile::profile_update_privacy,
             profile::account_sync_avatar,
+            profile::sync_user_profile,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,
