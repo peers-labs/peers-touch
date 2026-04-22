@@ -140,6 +140,7 @@
 
 - 属于工作过程材料
 - 不作为正式产品/架构真源
+- `docs/ide/task/` 中的任务调查、排障记录、迁移草稿可能随实现演进而过期；引用时必须回到 `architecture/`、`client/desktop/`、`global/coding-guide/` 交叉确认
 
 ---
 

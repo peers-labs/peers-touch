@@ -123,7 +123,6 @@ function publishSessionRevoked(payload: SessionRevokedPayload) {
 
 function extractSessionRevoked(error?: RustCommandError): SessionRevokedPayload | null {
   const details = error?.details as any;
-  // Prefer structured details when present.
   const reasonFromDetails = typeof details?.reason === 'string' ? details.reason : undefined;
   if (error?.code === 'UNAUTHORIZED' && typeof details?.code === 'string' && details.code === 'session_revoked') {
     return {
@@ -916,6 +915,7 @@ export interface AccountIdentity {
   name: string;
   email: string;
   avatar_url: string;
+  avatar_local_path?: string;
   profile_url: string;
   created_at: string;
   last_login_at: string;
@@ -1854,6 +1854,16 @@ export const api = {
   accountSyncAvatar: (avatarUrl: string) =>
     invokeRustCommand<{ avatar_url: string }, TauriStubPayload>('account_sync_avatar', { avatar_url: avatarUrl }),
 
+  syncUserProfile: () =>
+    invokeRustDataFromStatus<void, {
+      name: string;
+      email: string;
+      avatar_url: string;
+      avatar_local_path?: string;
+      profile_url: string;
+      synced: boolean;
+    }>('sync_user_profile'),
+
   profileUpdatePrivacy: (input: ProfilePrivacyInput) =>
     invokeRustCommand<ProfilePrivacyInput, TauriStubPayload>('profile_update_privacy', input),
 
@@ -2149,6 +2159,13 @@ export const api = {
 
   accountUnlock: (accountId: string, pin: string) =>
     invokeAuthCommand<AccountUnlockInput>('account_unlock', {
+      account_id: accountId,
+      pin,
+    }),
+
+  // Remove PIN protection from account — reuses AccountSetPinInput (same shape: account_id + pin)
+  accountRemovePin: (accountId: string, pin: string) =>
+    invokeRustDataFromStatus<AccountSetPinInput, { ok: boolean }>('account_remove_pin', {
       account_id: accountId,
       pin,
     }),

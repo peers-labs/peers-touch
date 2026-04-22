@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
+import { useSessionStore } from '../../store/session';
 import {
   Avatar,
   Empty,
@@ -384,6 +385,7 @@ export function AccountTab() {
       if (next.avatar) {
         api.accountSyncAvatar(next.avatar).catch(() => {});
         useAccountIdentityStore.getState().load();
+        useSessionStore.getState().updateAvatar(next.avatar);
       }
     } catch (error: any) {
       if (!silent) toast.error(error?.message || t('provider.account.failedToLoad'));
@@ -474,6 +476,7 @@ export function AccountTab() {
       if (next.avatar) {
         api.accountSyncAvatar(next.avatar).catch(() => {});
         useAccountIdentityStore.getState().load();
+        useSessionStore.getState().updateAvatar(next.avatar);
       }
 
       toast.success(t('provider.account.avatarHeader.avatarUpdated'));
