@@ -1,20 +1,22 @@
 // Package dashboard — HTTP handler layer. Translates HTTP requests into
-// application service calls and serialises responses as JSON.
+// application service calls and serialises responses via TypedHandler.
 //
 // Change History:
-//   - 2026-04-10: Initial implementation — 22+ endpoints covering auth,
-//     overview, actors, admins, audit, system, sessions.
+//   - 2026-04-10: Initial implementation — 28 endpoints covering auth,
+//     overview, actors, admins, audit, system, sessions, chat debug,
+//     storage, nodes. Used raw NewHTTPHandler + HertzHandlerFunc.
 //   - 2026-04-10: Refactored to depend on DDD application/domain layers
 //     instead of flat package types.
+//   - 2026-04-22: Migrated ALL 28 endpoints from NewHTTPHandler +
+//     HertzHandlerFunc to NewTypedHandler. Auth, path params, and query
+//     params now extracted via server.Wrapper (handler_middleware.go).
+//     Removed all Hertz imports from this file.
 package dashboard
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/cloudwego/hertz/pkg/app"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -83,195 +85,91 @@ type dashboardHandler struct {
 }
 
 // handlers returns the full list of HTTP handlers for the dashboard SubServer.
+// All API endpoints use NewTypedHandler with the dashboard auth/meta wrapper;
+// static file serving (embed.go) is registered separately and is NOT included.
 func (h *dashboardHandler) handlers() []server.Handler {
+	auth := h.authWrapper()
+	meta := h.metaWrapper() // no JWT required — used for login
+
 	return []server.Handler{
-		// -- Auth --
-		server.NewHTTPHandler("dashboard-login", routeLogin, server.POST,
-			server.HertzHandlerFunc(h.handleLogin)),
-		server.NewHTTPHandler("dashboard-logout", routeLogout, server.POST,
-			server.HertzHandlerFunc(h.handleLogout)),
-		server.NewHTTPHandler("dashboard-me", routeMe, server.GET,
-			server.HertzHandlerFunc(h.handleMe)),
-		server.NewHTTPHandler("dashboard-change-password", routeChangePassword, server.POST,
-			server.HertzHandlerFunc(h.handleChangePassword)),
+		// -- Auth (login uses metaWrapper because it has no JWT yet) --
+		server.NewTypedHandler("dashboard-login", routeLogin, server.POST,
+			h.handleLogin, meta),
+		server.NewTypedHandler("dashboard-logout", routeLogout, server.POST,
+			h.handleLogout, auth),
+		server.NewTypedHandler("dashboard-me", routeMe, server.GET,
+			h.handleMe, auth),
+		server.NewTypedHandler("dashboard-change-password", routeChangePassword, server.POST,
+			h.handleChangePassword, auth),
 
 		// -- Overview --
-		server.NewHTTPHandler("dashboard-overview-stats", routeOverviewStats, server.GET,
-			server.HertzHandlerFunc(h.handleOverviewStats)),
-		server.NewHTTPHandler("dashboard-overview-recent-actors", routeOverviewRecentActors, server.GET,
-			server.HertzHandlerFunc(h.handleRecentActors)),
-		server.NewHTTPHandler("dashboard-overview-recent-audit", routeOverviewRecentAudit, server.GET,
-			server.HertzHandlerFunc(h.handleRecentAuditLogs)),
+		server.NewTypedHandler("dashboard-overview-stats", routeOverviewStats, server.GET,
+			h.handleOverviewStats, auth),
+		server.NewTypedHandler("dashboard-overview-recent-actors", routeOverviewRecentActors, server.GET,
+			h.handleRecentActors, auth),
+		server.NewTypedHandler("dashboard-overview-recent-audit", routeOverviewRecentAudit, server.GET,
+			h.handleRecentAuditLogs, auth),
 
 		// -- Actors --
-		server.NewHTTPHandler("dashboard-list-actors", routeActors, server.GET,
-			server.HertzHandlerFunc(h.handleListActors)),
-		server.NewHTTPHandler("dashboard-get-actor", routeActorDetail, server.GET,
-			server.HertzHandlerFunc(h.handleGetActor)),
-		server.NewHTTPHandler("dashboard-actor-sessions", routeActorSessions, server.GET,
-			server.HertzHandlerFunc(h.handleGetActorSessions)),
-		server.NewHTTPHandler("dashboard-actor-reset-password", routeActorResetPassword, server.POST,
-			server.HertzHandlerFunc(h.handleResetActorPassword)),
-		server.NewHTTPHandler("dashboard-actor-revoke-session", routeActorRevokeSession, server.POST,
-			server.HertzHandlerFunc(h.handleRevokeActorSession)),
+		server.NewTypedHandler("dashboard-list-actors", routeActors, server.GET,
+			h.handleListActors, auth),
+		server.NewTypedHandler("dashboard-get-actor", routeActorDetail, server.GET,
+			h.handleGetActor, auth),
+		server.NewTypedHandler("dashboard-actor-sessions", routeActorSessions, server.GET,
+			h.handleGetActorSessions, auth),
+		server.NewTypedHandler("dashboard-actor-reset-password", routeActorResetPassword, server.POST,
+			h.handleResetActorPassword, auth),
+		server.NewTypedHandler("dashboard-actor-revoke-session", routeActorRevokeSession, server.POST,
+			h.handleRevokeActorSession, auth),
 
 		// -- Admins --
-		server.NewHTTPHandler("dashboard-create-admin", routeAdmins, server.POST,
-			server.HertzHandlerFunc(h.handleCreateAdmin)),
-		server.NewHTTPHandler("dashboard-list-admins", routeAdmins, server.GET,
-			server.HertzHandlerFunc(h.handleListAdmins)),
-		server.NewHTTPHandler("dashboard-disable-admin", routeAdminDisable, server.POST,
-			server.HertzHandlerFunc(h.handleDisableAdmin)),
-		server.NewHTTPHandler("dashboard-enable-admin", routeAdminEnable, server.POST,
-			server.HertzHandlerFunc(h.handleEnableAdmin)),
-		server.NewHTTPHandler("dashboard-delete-admin", routeAdminDelete, server.DELETE,
-			server.HertzHandlerFunc(h.handleDeleteAdmin)),
+		server.NewTypedHandler("dashboard-create-admin", routeAdmins, server.POST,
+			h.handleCreateAdmin, auth),
+		server.NewTypedHandler("dashboard-list-admins", routeAdmins, server.GET,
+			h.handleListAdmins, auth),
+		server.NewTypedHandler("dashboard-disable-admin", routeAdminDisable, server.POST,
+			h.handleDisableAdmin, auth),
+		server.NewTypedHandler("dashboard-enable-admin", routeAdminEnable, server.POST,
+			h.handleEnableAdmin, auth),
+		server.NewTypedHandler("dashboard-delete-admin", routeAdminDelete, server.DELETE,
+			h.handleDeleteAdmin, auth),
 
 		// -- Audit logs --
-		server.NewHTTPHandler("dashboard-audit-logs", routeAuditLogs, server.GET,
-			server.HertzHandlerFunc(h.handleAuditLogs)),
+		server.NewTypedHandler("dashboard-audit-logs", routeAuditLogs, server.GET,
+			h.handleAuditLogs, auth),
 
 		// -- System --
-		server.NewHTTPHandler("dashboard-system-info", routeSystemInfo, server.GET,
-			server.HertzHandlerFunc(h.handleSystemInfo)),
-		server.NewHTTPHandler("dashboard-system-routes", routeSystemRoutes, server.GET,
-			server.HertzHandlerFunc(h.handleSystemRoutes)),
-		server.NewHTTPHandler("dashboard-system-subservers", routeSystemSubservers, server.GET,
-			server.HertzHandlerFunc(h.handleSystemSubservers)),
+		server.NewTypedHandler("dashboard-system-info", routeSystemInfo, server.GET,
+			h.handleSystemInfo, auth),
+		server.NewTypedHandler("dashboard-system-routes", routeSystemRoutes, server.GET,
+			h.handleSystemRoutes, auth),
+		server.NewTypedHandler("dashboard-system-subservers", routeSystemSubservers, server.GET,
+			h.handleSystemSubservers, auth),
 
 		// -- Peers actor sessions --
-		server.NewHTTPHandler("dashboard-peers-sessions", routePeersSessions, server.GET,
-			server.HertzHandlerFunc(h.handleGetActivePeersSessions)),
-		server.NewHTTPHandler("dashboard-peers-revoke-session", routePeersRevokeSession, server.POST,
-			server.HertzHandlerFunc(h.handleRevokePeersSession)),
+		server.NewTypedHandler("dashboard-peers-sessions", routePeersSessions, server.GET,
+			h.handleGetActivePeersSessions, auth),
+		server.NewTypedHandler("dashboard-peers-revoke-session", routePeersRevokeSession, server.POST,
+			h.handleRevokePeersSession, auth),
 
 		// -- Dashboard admin sessions --
-		server.NewHTTPHandler("dashboard-admin-sessions", routeDashboardSessions, server.GET,
-			server.HertzHandlerFunc(h.handleDashboardSessions)),
-		server.NewHTTPHandler("dashboard-admin-revoke-session", routeDashboardRevokeSession, server.POST,
-			server.HertzHandlerFunc(h.handleRevokeDashboardSession)),
+		server.NewTypedHandler("dashboard-admin-sessions", routeDashboardSessions, server.GET,
+			h.handleDashboardSessions, auth),
+		server.NewTypedHandler("dashboard-admin-revoke-session", routeDashboardRevokeSession, server.POST,
+			h.handleRevokeDashboardSession, auth),
 
 		// -- Chat debug --
-		server.NewHTTPHandler("dashboard-friend-chat-stats", routeFriendChatStats, server.GET,
-			server.HertzHandlerFunc(h.handleFriendChatStats)),
+		server.NewTypedHandler("dashboard-friend-chat-stats", routeFriendChatStats, server.GET,
+			h.handleFriendChatStats, auth),
 
 		// -- Storage --
-		server.NewHTTPHandler("dashboard-storage-info", routeStorageInfo, server.GET,
-			server.HertzHandlerFunc(h.handleStorageInfo)),
+		server.NewTypedHandler("dashboard-storage-info", routeStorageInfo, server.GET,
+			h.handleStorageInfo, auth),
 
 		// -- Nodes --
-		server.NewHTTPHandler("dashboard-nodes", routeNodes, server.GET,
-			server.HertzHandlerFunc(h.handleNodes)),
+		server.NewTypedHandler("dashboard-nodes", routeNodes, server.GET,
+			h.handleNodes, auth),
 	}
-}
-
-// handleStorageInfo — GET /dashboard/api/storage/info
-func (h *dashboardHandler) handleStorageInfo(c context.Context, ctx *app.RequestContext) {
-	if h.requireAuth(c, ctx) == nil {
-		return
-	}
-	if h.sub.storageSvc == nil {
-		jsonError(ctx, http.StatusServiceUnavailable, "storage service unavailable")
-		return
-	}
-	info, err := h.sub.storageSvc.GetStorageInfo(c)
-	if err != nil {
-		log.Errorf(c, "[dashboard] storage info error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to load storage info")
-		return
-	}
-	jsonOK(ctx, info)
-}
-
-// handleNodes — GET /dashboard/api/nodes
-func (h *dashboardHandler) handleNodes(c context.Context, ctx *app.RequestContext) {
-	if h.requireAuth(c, ctx) == nil {
-		return
-	}
-	if h.sub.nodesSvc == nil {
-		jsonError(ctx, http.StatusServiceUnavailable, "nodes service unavailable")
-		return
-	}
-	overview, err := h.sub.nodesSvc.GetNodesOverview(c)
-	if err != nil {
-		log.Errorf(c, "[dashboard] nodes overview error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to load nodes")
-		return
-	}
-	jsonOK(ctx, overview)
-}
-
-
-// handleFriendChatStats — GET /dashboard/api/chat/friend/stats
-func (h *dashboardHandler) handleFriendChatStats(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-	if h.sub.chatDebugSvc == nil {
-		jsonError(ctx, http.StatusServiceUnavailable, "chat debug service unavailable")
-		return
-	}
-	stats, err := h.sub.chatDebugSvc.FriendChatStats(c)
-	if err != nil {
-		log.Errorf(c, "[dashboard] friend chat stats error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to load friend chat stats")
-		return
-	}
-	jsonOK(ctx, stats)
-}
-
-// ===========================================================================
-// Helper: JSON response utilities
-// ===========================================================================
-
-func jsonOK(ctx *app.RequestContext, data interface{}) {
-	ctx.JSON(http.StatusOK, data)
-}
-
-func jsonCreated(ctx *app.RequestContext, data interface{}) {
-	ctx.JSON(http.StatusCreated, data)
-}
-
-func jsonError(ctx *app.RequestContext, status int, message string) {
-	ctx.JSON(status, map[string]interface{}{
-		"error": message,
-		"code":  status,
-	})
-}
-
-// ===========================================================================
-// Helper: extract IP and User-Agent from Hertz request context
-// ===========================================================================
-
-func clientIP(ctx *app.RequestContext) string {
-	return ctx.ClientIP()
-}
-
-func userAgent(ctx *app.RequestContext) string {
-	return string(ctx.UserAgent())
-}
-
-// ===========================================================================
-// Helper: requireAuth extracts and validates the Bearer token.
-// Returns the claims on success, or writes an error response and returns nil.
-// ===========================================================================
-
-func (h *dashboardHandler) requireAuth(c context.Context, ctx *app.RequestContext) *domain.DashboardClaims {
-	authHeader := string(ctx.GetHeader("Authorization"))
-	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-		jsonError(ctx, http.StatusUnauthorized, "missing or invalid authorization header")
-		return nil
-	}
-
-	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-	claims, err := h.sub.authSvc.ValidateToken(c, tokenStr)
-	if err != nil {
-		jsonError(ctx, http.StatusUnauthorized, "invalid or expired token")
-		return nil
-	}
-
-	return claims
 }
 
 // ===========================================================================
@@ -279,115 +177,81 @@ func (h *dashboardHandler) requireAuth(c context.Context, ctx *app.RequestContex
 // ===========================================================================
 
 // handleLogin — POST /dashboard/api/auth/login
-func (h *dashboardHandler) handleLogin(c context.Context, ctx *app.RequestContext) {
+// Uses metaWrapper (no auth) because login is the endpoint that issues tokens.
+func (h *dashboardHandler) handleLogin(ctx context.Context, req *domain.LoginRequest) (*domain.LoginResult, error) {
 	// Enforce local-only access if configured
 	cfg := GetConfig()
-	if cfg.Peers.Dashboard.LocalOnly && !domain.IsLocalRequest(clientIP(ctx)) {
-		jsonError(ctx, http.StatusForbidden, "dashboard access is restricted to local network")
-		return
-	}
-
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	if err := ctx.Bind(&req); err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid request body")
-		return
+	if cfg.Peers.Dashboard.LocalOnly && !domain.IsLocalRequest(getClientIP(ctx)) {
+		return nil, server.Forbidden("dashboard access is restricted to local network")
 	}
 
 	if req.Username == "" || req.Password == "" {
-		jsonError(ctx, http.StatusBadRequest, "username and password are required")
-		return
+		return nil, server.BadRequest("username and password are required")
 	}
 
-	result, err := h.sub.authSvc.Login(c, req.Username, req.Password, clientIP(ctx), userAgent(ctx))
+	result, err := h.sub.authSvc.Login(ctx, req.Username, req.Password, getClientIP(ctx), getUserAgent(ctx))
 	if err != nil {
 		switch err {
 		case domain.ErrInvalidCredentials:
-			jsonError(ctx, http.StatusUnauthorized, err.Error())
+			return nil, server.Unauthorized(err.Error())
 		case domain.ErrAdminDisabled:
-			jsonError(ctx, http.StatusForbidden, err.Error())
+			return nil, server.Forbidden(err.Error())
 		case domain.ErrSuperUserExpired:
-			jsonError(ctx, http.StatusForbidden, err.Error())
+			return nil, server.Forbidden(err.Error())
 		default:
-			log.Errorf(c, "[dashboard] login error: %v", err)
-			jsonError(ctx, http.StatusInternalServerError, "internal error")
+			log.Errorf(ctx, "[dashboard] login error: %v", err)
+			return nil, server.InternalError("internal error")
 		}
-		return
 	}
 
-	jsonOK(ctx, result)
+	return result, nil
 }
 
 // handleLogout — POST /dashboard/api/auth/logout
-func (h *dashboardHandler) handleLogout(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
+func (h *dashboardHandler) handleLogout(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	claims := getClaims(ctx)
+
+	if err := h.sub.authSvc.Logout(ctx, claims.SessionID, claims.AdminID, getClientIP(ctx), getUserAgent(ctx)); err != nil {
+		log.Errorf(ctx, "[dashboard] logout error: %v", err)
+		return nil, server.InternalError("logout failed")
 	}
 
-	if err := h.sub.authSvc.Logout(c, claims.SessionID, claims.AdminID, clientIP(ctx), userAgent(ctx)); err != nil {
-		log.Errorf(c, "[dashboard] logout error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "logout failed")
-		return
-	}
-
-	jsonOK(ctx, map[string]string{"message": "logged out"})
+	return &domain.MessageResponse{Message: "logged out"}, nil
 }
 
 // handleMe — GET /dashboard/api/auth/me
-func (h *dashboardHandler) handleMe(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+func (h *dashboardHandler) handleMe(ctx context.Context, _ *domain.EmptyRequest) (*domain.AdminInfo, error) {
+	claims := getClaims(ctx)
 
-	jsonOK(ctx, domain.AdminInfo{
+	return &domain.AdminInfo{
 		ID:          claims.AdminID,
 		Username:    claims.Username,
 		Role:        domain.AdminRole(claims.Role),
 		IsSuperUser: claims.Role == string(domain.AdminRoleSuper),
-	})
+	}, nil
 }
 
 // handleChangePassword — POST /dashboard/api/auth/change-password
-func (h *dashboardHandler) handleChangePassword(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	var req struct {
-		OldPassword string `json:"old_password"`
-		NewPassword string `json:"new_password"`
-	}
-	if err := ctx.Bind(&req); err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid request body")
-		return
-	}
+func (h *dashboardHandler) handleChangePassword(ctx context.Context, req *domain.ChangePasswordRequest) (*domain.MessageResponse, error) {
+	claims := getClaims(ctx)
 
 	if req.OldPassword == "" || req.NewPassword == "" {
-		jsonError(ctx, http.StatusBadRequest, "old_password and new_password are required")
-		return
+		return nil, server.BadRequest("old_password and new_password are required")
 	}
 
 	if len(req.NewPassword) < 8 {
-		jsonError(ctx, http.StatusBadRequest, "new password must be at least 8 characters")
-		return
+		return nil, server.BadRequest("new password must be at least 8 characters")
 	}
 
-	if err := h.sub.authSvc.ChangePassword(c, claims.AdminID, req.OldPassword, req.NewPassword, clientIP(ctx), userAgent(ctx)); err != nil {
+	if err := h.sub.authSvc.ChangePassword(ctx, claims.AdminID, req.OldPassword, req.NewPassword, getClientIP(ctx), getUserAgent(ctx)); err != nil {
 		if err == domain.ErrInvalidCredentials {
-			jsonError(ctx, http.StatusForbidden, "old password is incorrect")
-			return
+			return nil, server.Forbidden("old password is incorrect")
 		}
-		log.Errorf(c, "[dashboard] change password error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to change password")
-		return
+		log.Errorf(ctx, "[dashboard] change password error: %v", err)
+		return nil, server.InternalError("failed to change password")
 	}
 
-	jsonOK(ctx, map[string]string{"message": "password changed, please re-login"})
+	return &domain.MessageResponse{Message: "password changed, please re-login"}, nil
 }
 
 // ===========================================================================
@@ -395,196 +259,141 @@ func (h *dashboardHandler) handleChangePassword(c context.Context, ctx *app.Requ
 // ===========================================================================
 
 // handleOverviewStats — GET /dashboard/api/overview/stats
-func (h *dashboardHandler) handleOverviewStats(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	stats, err := h.sub.overviewSvc.GetOverview(c,
+func (h *dashboardHandler) handleOverviewStats(ctx context.Context, _ *domain.EmptyRequest) (*domain.OverviewStats, error) {
+	stats, err := h.sub.overviewSvc.GetOverview(ctx,
 		h.sub.getSubservers(),
 		h.sub.startedAt,
 		h.sub.listenAddr,
 	)
 	if err != nil {
-		log.Errorf(c, "[dashboard] overview stats error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to get overview stats")
-		return
+		log.Errorf(ctx, "[dashboard] overview stats error: %v", err)
+		return nil, server.InternalError("failed to get overview stats")
 	}
 
-	jsonOK(ctx, stats)
+	return stats, nil
 }
 
-// handleRecentActors — GET /dashboard/api/overview/recent-actors
-func (h *dashboardHandler) handleRecentActors(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+// handleRecentActors — GET /dashboard/api/overview/recent-actors?limit=10
+func (h *dashboardHandler) handleRecentActors(ctx context.Context, _ *domain.EmptyRequest) (*domain.RecentActorsResponse, error) {
+	limit := queryParamInt(ctx, "limit", 10)
 
-	limit := queryInt(ctx, "limit", 10)
-	actors, err := h.sub.overviewSvc.GetRecentActors(c, limit)
+	actors, err := h.sub.overviewSvc.GetRecentActors(ctx, limit)
 	if err != nil {
-		log.Errorf(c, "[dashboard] recent actors error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to get recent actors")
-		return
+		log.Errorf(ctx, "[dashboard] recent actors error: %v", err)
+		return nil, server.InternalError("failed to get recent actors")
 	}
 
-	jsonOK(ctx, map[string]interface{}{"items": actors})
+	return &domain.RecentActorsResponse{Items: actors}, nil
 }
 
-// handleRecentAuditLogs — GET /dashboard/api/overview/recent-audit-logs
-func (h *dashboardHandler) handleRecentAuditLogs(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+// handleRecentAuditLogs — GET /dashboard/api/overview/recent-audit-logs?limit=10
+func (h *dashboardHandler) handleRecentAuditLogs(ctx context.Context, _ *domain.EmptyRequest) (*domain.RecentAuditLogsResponse, error) {
+	limit := queryParamInt(ctx, "limit", 10)
 
-	limit := queryInt(ctx, "limit", 10)
-	logs, err := h.sub.overviewSvc.GetRecentAuditLogs(c, limit)
+	logs, err := h.sub.overviewSvc.GetRecentAuditLogs(ctx, limit)
 	if err != nil {
-		log.Errorf(c, "[dashboard] recent audit logs error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to get recent audit logs")
-		return
+		log.Errorf(ctx, "[dashboard] recent audit logs error: %v", err)
+		return nil, server.InternalError("failed to get recent audit logs")
 	}
 
-	jsonOK(ctx, map[string]interface{}{"items": logs})
+	return &domain.RecentAuditLogsResponse{Items: logs}, nil
 }
 
 // ===========================================================================
 // Actor handlers
 // ===========================================================================
 
-// handleListActors — GET /dashboard/api/actors
-func (h *dashboardHandler) handleListActors(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
+// handleListActors — GET /dashboard/api/actors?page=1&page_size=20&search=&status=
+func (h *dashboardHandler) handleListActors(ctx context.Context, _ *domain.EmptyRequest) (*domain.ActorListResult, error) {
 	query := domain.ActorListQuery{
-		Page:     queryInt(ctx, "page", 1),
-		PageSize: queryInt(ctx, "page_size", 20),
-		Search:   string(ctx.QueryArgs().Peek("search")),
-		Status:   string(ctx.QueryArgs().Peek("status")),
+		Page:     queryParamInt(ctx, "page", 1),
+		PageSize: queryParamInt(ctx, "page_size", 20),
+		Search:   queryParam(ctx, "search"),
+		Status:   queryParam(ctx, "status"),
 	}
 
-	result, err := h.sub.actorsSvc.ListActors(c, query)
+	result, err := h.sub.actorsSvc.ListActors(ctx, query)
 	if err != nil {
-		log.Errorf(c, "[dashboard] list actors error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to list actors")
-		return
+		log.Errorf(ctx, "[dashboard] list actors error: %v", err)
+		return nil, server.InternalError("failed to list actors")
 	}
 
-	jsonOK(ctx, result)
+	return result, nil
 }
 
 // handleGetActor — GET /dashboard/api/actors/:id
-func (h *dashboardHandler) handleGetActor(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	actorID, err := strconv.ParseUint(ctx.Param("id"), 10, 64)
+func (h *dashboardHandler) handleGetActor(ctx context.Context, _ *domain.EmptyRequest) (*domain.ActorDetail, error) {
+	actorID, err := parsePathParamUint64(ctx, "id")
 	if err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid actor id")
-		return
+		return nil, server.BadRequest("invalid actor id")
 	}
 
-	detail, err := h.sub.actorsSvc.GetActorDetail(c, actorID)
+	detail, err := h.sub.actorsSvc.GetActorDetail(ctx, actorID)
 	if err != nil {
-		jsonError(ctx, http.StatusNotFound, "actor not found")
-		return
+		return nil, server.NotFound("actor not found")
 	}
 
-	jsonOK(ctx, detail)
+	return detail, nil
 }
 
 // handleGetActorSessions — GET /dashboard/api/actors/:id/sessions
-func (h *dashboardHandler) handleGetActorSessions(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	actorID, err := strconv.ParseUint(ctx.Param("id"), 10, 64)
+func (h *dashboardHandler) handleGetActorSessions(ctx context.Context, _ *domain.EmptyRequest) (*domain.ActorSessionsResponse, error) {
+	actorID, err := parsePathParamUint64(ctx, "id")
 	if err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid actor id")
-		return
+		return nil, server.BadRequest("invalid actor id")
 	}
 
-	sessions, err := h.sub.actorsSvc.GetActorSessions(c, actorID)
+	sessions, err := h.sub.actorsSvc.GetActorSessions(ctx, actorID)
 	if err != nil {
-		log.Errorf(c, "[dashboard] actor sessions error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to get actor sessions")
-		return
+		log.Errorf(ctx, "[dashboard] actor sessions error: %v", err)
+		return nil, server.InternalError("failed to get actor sessions")
 	}
 
-	jsonOK(ctx, map[string]interface{}{"items": sessions})
+	return &domain.ActorSessionsResponse{Items: sessions}, nil
 }
 
 // handleResetActorPassword — POST /dashboard/api/actors/:id/reset-password
-func (h *dashboardHandler) handleResetActorPassword(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+func (h *dashboardHandler) handleResetActorPassword(ctx context.Context, req *domain.ResetPasswordRequest) (*domain.MessageResponse, error) {
+	claims := getClaims(ctx)
 
-	actorID, err := strconv.ParseUint(ctx.Param("id"), 10, 64)
+	actorID, err := parsePathParamUint64(ctx, "id")
 	if err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid actor id")
-		return
-	}
-
-	var req struct {
-		NewPassword string `json:"new_password"`
-	}
-	if err := ctx.Bind(&req); err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid request body")
-		return
+		return nil, server.BadRequest("invalid actor id")
 	}
 
 	if len(req.NewPassword) < 8 {
-		jsonError(ctx, http.StatusBadRequest, "password must be at least 8 characters")
-		return
+		return nil, server.BadRequest("password must be at least 8 characters")
 	}
 
-	if err := h.sub.actorsSvc.ResetActorPassword(c, actorID, req.NewPassword); err != nil {
-		log.Errorf(c, "[dashboard] reset actor password error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to reset password")
-		return
+	if err := h.sub.actorsSvc.ResetActorPassword(ctx, actorID, req.NewPassword); err != nil {
+		log.Errorf(ctx, "[dashboard] reset actor password error: %v", err)
+		return nil, server.InternalError("failed to reset password")
 	}
 
-	h.sub.authSvc.RecordAudit(c, claims.AdminID, claims.Username, "reset_actor_password", "actor",
-		"actor_id="+strconv.FormatUint(actorID, 10), clientIP(ctx), userAgent(ctx))
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "reset_actor_password", "actor",
+		"actor_id="+strconv.FormatUint(actorID, 10), getClientIP(ctx), getUserAgent(ctx))
 
-	jsonOK(ctx, map[string]string{"message": "password reset successfully"})
+	return &domain.MessageResponse{Message: "password reset successfully"}, nil
 }
 
 // handleRevokeActorSession — POST /dashboard/api/actors/:id/sessions/:sid/revoke
-func (h *dashboardHandler) handleRevokeActorSession(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+func (h *dashboardHandler) handleRevokeActorSession(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	claims := getClaims(ctx)
 
-	sid := ctx.Param("sid")
+	sid := pathParam(ctx, "sid")
 	if sid == "" {
-		jsonError(ctx, http.StatusBadRequest, "session id is required")
-		return
+		return nil, server.BadRequest("session id is required")
 	}
 
-	if err := h.sub.actorsSvc.RevokeActorSession(c, sid); err != nil {
-		log.Errorf(c, "[dashboard] revoke actor session error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to revoke session")
-		return
+	if err := h.sub.actorsSvc.RevokeActorSession(ctx, sid); err != nil {
+		log.Errorf(ctx, "[dashboard] revoke actor session error: %v", err)
+		return nil, server.InternalError("failed to revoke session")
 	}
 
-	h.sub.authSvc.RecordAudit(c, claims.AdminID, claims.Username, "revoke_actor_session", "session",
-		"session_id="+sid, clientIP(ctx), userAgent(ctx))
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "revoke_actor_session", "session",
+		"session_id="+sid, getClientIP(ctx), getUserAgent(ctx))
 
-	jsonOK(ctx, map[string]string{"message": "session revoked"})
+	return &domain.MessageResponse{Message: "session revoked"}, nil
 }
 
 // ===========================================================================
@@ -592,157 +401,120 @@ func (h *dashboardHandler) handleRevokeActorSession(c context.Context, ctx *app.
 // ===========================================================================
 
 // handleCreateAdmin — POST /dashboard/api/admins
-func (h *dashboardHandler) handleCreateAdmin(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	var req domain.CreateAdminRequest
-	if err := ctx.Bind(&req); err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid request body")
-		return
-	}
+// NOTE: The old handler returned HTTP 201 (Created). TypedHandler always
+// returns HTTP 200 on success. The frontend uses axios which treats all 2xx
+// as success, so this semantic change does not break the frontend.
+func (h *dashboardHandler) handleCreateAdmin(ctx context.Context, req *domain.CreateAdminRequest) (*domain.AdminInfo, error) {
+	claims := getClaims(ctx)
 
 	if req.Username == "" || req.Password == "" {
-		jsonError(ctx, http.StatusBadRequest, "username and password are required")
-		return
+		return nil, server.BadRequest("username and password are required")
 	}
 
 	if len(req.Password) < 8 {
-		jsonError(ctx, http.StatusBadRequest, "password must be at least 8 characters")
-		return
+		return nil, server.BadRequest("password must be at least 8 characters")
 	}
 
-	admin, err := h.sub.authSvc.CreateAdmin(c, req, claims.AdminID, clientIP(ctx), userAgent(ctx))
+	admin, err := h.sub.authSvc.CreateAdmin(ctx, *req, claims.AdminID, getClientIP(ctx), getUserAgent(ctx))
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "duplicate") {
-			jsonError(ctx, http.StatusConflict, "username already exists")
-			return
+			return nil, conflict("username already exists")
 		}
-		log.Errorf(c, "[dashboard] create admin error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to create admin")
-		return
+		log.Errorf(ctx, "[dashboard] create admin error: %v", err)
+		return nil, server.InternalError("failed to create admin")
 	}
 
-	jsonCreated(ctx, domain.AdminInfo{
+	return &domain.AdminInfo{
 		ID:          admin.ID,
 		Username:    admin.Username,
 		DisplayName: admin.DisplayName,
 		Role:        admin.Role,
 		IsSuperUser: admin.IsSuperUser,
-	})
+	}, nil
 }
 
 // handleListAdmins — GET /dashboard/api/admins
-func (h *dashboardHandler) handleListAdmins(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	admins, err := h.sub.authSvc.ListAdmins(c)
+func (h *dashboardHandler) handleListAdmins(ctx context.Context, _ *domain.EmptyRequest) (*domain.AdminListResponse, error) {
+	admins, err := h.sub.authSvc.ListAdmins(ctx)
 	if err != nil {
-		log.Errorf(c, "[dashboard] list admins error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to list admins")
-		return
+		log.Errorf(ctx, "[dashboard] list admins error: %v", err)
+		return nil, server.InternalError("failed to list admins")
 	}
 
-	jsonOK(ctx, map[string]interface{}{"items": admins})
+	return &domain.AdminListResponse{Items: admins}, nil
 }
 
 // handleDisableAdmin — POST /dashboard/api/admins/:id/disable
-func (h *dashboardHandler) handleDisableAdmin(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+func (h *dashboardHandler) handleDisableAdmin(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	claims := getClaims(ctx)
 
-	adminID, err := strconv.ParseUint(ctx.Param("id"), 10, 64)
+	adminID, err := parsePathParamUint64(ctx, "id")
 	if err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid admin id")
-		return
+		return nil, server.BadRequest("invalid admin id")
 	}
 
-	if err := h.sub.authSvc.DisableAdmin(c, adminID, claims.AdminID, clientIP(ctx), userAgent(ctx)); err != nil {
-		jsonError(ctx, http.StatusBadRequest, err.Error())
-		return
+	if err := h.sub.authSvc.DisableAdmin(ctx, adminID, claims.AdminID, getClientIP(ctx), getUserAgent(ctx)); err != nil {
+		return nil, server.BadRequest(err.Error())
 	}
 
-	jsonOK(ctx, map[string]string{"message": "admin disabled"})
+	return &domain.MessageResponse{Message: "admin disabled"}, nil
 }
 
 // handleEnableAdmin — POST /dashboard/api/admins/:id/enable
-func (h *dashboardHandler) handleEnableAdmin(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+func (h *dashboardHandler) handleEnableAdmin(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	claims := getClaims(ctx)
 
-	adminID, err := strconv.ParseUint(ctx.Param("id"), 10, 64)
+	adminID, err := parsePathParamUint64(ctx, "id")
 	if err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid admin id")
-		return
+		return nil, server.BadRequest("invalid admin id")
 	}
 
-	if err := h.sub.authSvc.EnableAdmin(c, adminID, claims.AdminID, clientIP(ctx), userAgent(ctx)); err != nil {
-		jsonError(ctx, http.StatusBadRequest, err.Error())
-		return
+	if err := h.sub.authSvc.EnableAdmin(ctx, adminID, claims.AdminID, getClientIP(ctx), getUserAgent(ctx)); err != nil {
+		return nil, server.BadRequest(err.Error())
 	}
 
-	jsonOK(ctx, map[string]string{"message": "admin enabled"})
+	return &domain.MessageResponse{Message: "admin enabled"}, nil
 }
 
 // handleDeleteAdmin — DELETE /dashboard/api/admins/:id
-func (h *dashboardHandler) handleDeleteAdmin(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+func (h *dashboardHandler) handleDeleteAdmin(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	claims := getClaims(ctx)
 
-	adminID, err := strconv.ParseUint(ctx.Param("id"), 10, 64)
+	adminID, err := parsePathParamUint64(ctx, "id")
 	if err != nil {
-		jsonError(ctx, http.StatusBadRequest, "invalid admin id")
-		return
+		return nil, server.BadRequest("invalid admin id")
 	}
 
-	if err := h.sub.authSvc.DeleteAdmin(c, adminID, claims.AdminID, clientIP(ctx), userAgent(ctx)); err != nil {
-		jsonError(ctx, http.StatusBadRequest, err.Error())
-		return
+	if err := h.sub.authSvc.DeleteAdmin(ctx, adminID, claims.AdminID, getClientIP(ctx), getUserAgent(ctx)); err != nil {
+		return nil, server.BadRequest(err.Error())
 	}
 
-	jsonOK(ctx, map[string]string{"message": "admin deleted"})
+	return &domain.MessageResponse{Message: "admin deleted"}, nil
 }
 
 // ===========================================================================
 // Audit log handlers
 // ===========================================================================
 
-// handleAuditLogs — GET /dashboard/api/audit-logs
-func (h *dashboardHandler) handleAuditLogs(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	page := queryInt(ctx, "page", 1)
-	pageSize := queryInt(ctx, "page_size", 20)
+// handleAuditLogs — GET /dashboard/api/audit-logs?page=1&page_size=20
+func (h *dashboardHandler) handleAuditLogs(ctx context.Context, _ *domain.EmptyRequest) (*domain.AuditLogsResponse, error) {
+	page := queryParamInt(ctx, "page", 1)
+	pageSize := queryParamInt(ctx, "page_size", 20)
 	if pageSize > 100 {
 		pageSize = 100
 	}
 
-	logs, total, err := h.sub.authSvc.GetAuditLogs(c, page, pageSize)
+	logs, total, err := h.sub.authSvc.GetAuditLogs(ctx, page, pageSize)
 	if err != nil {
-		log.Errorf(c, "[dashboard] audit logs error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to get audit logs")
-		return
+		log.Errorf(ctx, "[dashboard] audit logs error: %v", err)
+		return nil, server.InternalError("failed to get audit logs")
 	}
 
-	jsonOK(ctx, map[string]interface{}{
-		"items": logs,
-		"total": total,
-		"page":  page,
-	})
+	return &domain.AuditLogsResponse{
+		Items: logs,
+		Total: total,
+		Page:  page,
+	}, nil
 }
 
 // ===========================================================================
@@ -750,63 +522,43 @@ func (h *dashboardHandler) handleAuditLogs(c context.Context, ctx *app.RequestCo
 // ===========================================================================
 
 // handleSystemInfo — GET /dashboard/api/system/info
-func (h *dashboardHandler) handleSystemInfo(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	stats, err := h.sub.overviewSvc.GetOverview(c,
+func (h *dashboardHandler) handleSystemInfo(ctx context.Context, _ *domain.EmptyRequest) (*domain.SystemInfo, error) {
+	stats, err := h.sub.overviewSvc.GetOverview(ctx,
 		h.sub.getSubservers(),
 		h.sub.startedAt,
 		h.sub.listenAddr,
 	)
 	if err != nil {
-		log.Errorf(c, "[dashboard] system info error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to get system info")
-		return
+		log.Errorf(ctx, "[dashboard] system info error: %v", err)
+		return nil, server.InternalError("failed to get system info")
 	}
 
-	jsonOK(ctx, stats.System)
+	return &stats.System, nil
 }
 
 // handleSystemRoutes — GET /dashboard/api/system/routes
-func (h *dashboardHandler) handleSystemRoutes(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
+func (h *dashboardHandler) handleSystemRoutes(ctx context.Context, _ *domain.EmptyRequest) (*domain.RoutesResponse, error) {
 	handlers := server.GetOptions().Handlers
-	type routeInfo struct {
-		Name   string `json:"name"`
-		Path   string `json:"path"`
-		Method string `json:"method"`
-	}
 
-	routes := make([]routeInfo, 0, len(handlers))
+	routes := make([]domain.RouteInfo, 0, len(handlers))
 	for _, handler := range handlers {
-		routes = append(routes, routeInfo{
+		routes = append(routes, domain.RouteInfo{
 			Name:   handler.Name(),
 			Path:   handler.Path(),
 			Method: string(handler.Method()),
 		})
 	}
 
-	jsonOK(ctx, map[string]interface{}{
-		"count":  len(routes),
-		"routes": routes,
-	})
+	return &domain.RoutesResponse{
+		Count:  len(routes),
+		Routes: routes,
+	}, nil
 }
 
 // handleSystemSubservers — GET /dashboard/api/system/subservers
-func (h *dashboardHandler) handleSystemSubservers(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
+func (h *dashboardHandler) handleSystemSubservers(ctx context.Context, _ *domain.EmptyRequest) (*domain.SubserversResponse, error) {
 	subservers := h.sub.getSubservers()
+
 	items := make([]domain.SubServerInfo, 0, len(subservers))
 	for _, sub := range subservers {
 		items = append(items, domain.SubServerInfo{
@@ -816,71 +568,56 @@ func (h *dashboardHandler) handleSystemSubservers(c context.Context, ctx *app.Re
 		})
 	}
 
-	jsonOK(ctx, map[string]interface{}{
-		"count": len(items),
-		"items": items,
-	})
+	return &domain.SubserversResponse{
+		Count: len(items),
+		Items: items,
+	}, nil
 }
 
 // ===========================================================================
 // Peers session handlers (actor sessions, not dashboard admin sessions)
 // ===========================================================================
 
-// handleGetActivePeersSessions — GET /dashboard/api/sessions/active
+// handleGetActivePeersSessions — GET /dashboard/api/sessions/active?limit=100
 //
 // Returns ALL currently-active actor sessions across the station, joined
 // with the owning actor's preferred_username/email for display.
-//
-// Bug history: previously called actorsSvc.GetActorSessions(c, 0) which
-// translated to "WHERE user_id = 0" and silently returned an empty list,
-// making the Sessions page appear permanently empty.
-func (h *dashboardHandler) handleGetActivePeersSessions(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	limit := queryInt(ctx, "limit", 100)
+func (h *dashboardHandler) handleGetActivePeersSessions(ctx context.Context, _ *domain.EmptyRequest) (*domain.PeersSessionsResponse, error) {
+	limit := queryParamInt(ctx, "limit", 100)
 	if limit > 500 {
 		limit = 500
 	}
 
-	sessions, err := h.sub.actorsSvc.ListActivePeersSessions(c, limit)
+	sessions, err := h.sub.actorsSvc.ListActivePeersSessions(ctx, limit)
 	if err != nil {
-		log.Errorf(c, "[dashboard] get active peers sessions error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to get active sessions")
-		return
+		log.Errorf(ctx, "[dashboard] get active peers sessions error: %v", err)
+		return nil, server.InternalError("failed to get active sessions")
 	}
 
-	jsonOK(ctx, map[string]interface{}{
-		"count": len(sessions),
-		"items": sessions,
-	})
+	return &domain.PeersSessionsResponse{
+		Count: len(sessions),
+		Items: sessions,
+	}, nil
 }
 
 // handleRevokePeersSession — POST /dashboard/api/sessions/:sid/revoke
-func (h *dashboardHandler) handleRevokePeersSession(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+func (h *dashboardHandler) handleRevokePeersSession(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	claims := getClaims(ctx)
 
-	sid := ctx.Param("sid")
+	sid := pathParam(ctx, "sid")
 	if sid == "" {
-		jsonError(ctx, http.StatusBadRequest, "session id is required")
-		return
+		return nil, server.BadRequest("session id is required")
 	}
 
-	if err := h.sub.actorsSvc.RevokeActorSession(c, sid); err != nil {
-		log.Errorf(c, "[dashboard] revoke peers session error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to revoke session")
-		return
+	if err := h.sub.actorsSvc.RevokeActorSession(ctx, sid); err != nil {
+		log.Errorf(ctx, "[dashboard] revoke peers session error: %v", err)
+		return nil, server.InternalError("failed to revoke session")
 	}
 
-	h.sub.authSvc.RecordAudit(c, claims.AdminID, claims.Username, "revoke_peers_session", "session",
-		"session_id="+sid, clientIP(ctx), userAgent(ctx))
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "revoke_peers_session", "session",
+		"session_id="+sid, getClientIP(ctx), getUserAgent(ctx))
 
-	jsonOK(ctx, map[string]string{"message": "session revoked"})
+	return &domain.MessageResponse{Message: "session revoked"}, nil
 }
 
 // ===========================================================================
@@ -888,61 +625,99 @@ func (h *dashboardHandler) handleRevokePeersSession(c context.Context, ctx *app.
 // ===========================================================================
 
 // handleDashboardSessions — GET /dashboard/api/dashboard-sessions
-func (h *dashboardHandler) handleDashboardSessions(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
-
-	sessions, err := h.sub.authSvc.GetActiveSessions(c)
+func (h *dashboardHandler) handleDashboardSessions(ctx context.Context, _ *domain.EmptyRequest) (*domain.DashboardSessionsResponse, error) {
+	sessions, err := h.sub.authSvc.GetActiveSessions(ctx)
 	if err != nil {
-		log.Errorf(c, "[dashboard] get dashboard sessions error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to get dashboard sessions")
-		return
+		log.Errorf(ctx, "[dashboard] get dashboard sessions error: %v", err)
+		return nil, server.InternalError("failed to get dashboard sessions")
 	}
 
-	jsonOK(ctx, map[string]interface{}{
-		"count": len(sessions),
-		"items": sessions,
-	})
+	return &domain.DashboardSessionsResponse{
+		Count: len(sessions),
+		Items: sessions,
+	}, nil
 }
 
 // handleRevokeDashboardSession — POST /dashboard/api/dashboard-sessions/:sid/revoke
-func (h *dashboardHandler) handleRevokeDashboardSession(c context.Context, ctx *app.RequestContext) {
-	claims := h.requireAuth(c, ctx)
-	if claims == nil {
-		return
-	}
+func (h *dashboardHandler) handleRevokeDashboardSession(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	claims := getClaims(ctx)
 
-	sid := ctx.Param("sid")
+	sid := pathParam(ctx, "sid")
 	if sid == "" {
-		jsonError(ctx, http.StatusBadRequest, "session id is required")
-		return
+		return nil, server.BadRequest("session id is required")
 	}
 
-	if err := h.sub.authSvc.RevokeSession(c, sid, claims.AdminID, clientIP(ctx), userAgent(ctx)); err != nil {
-		log.Errorf(c, "[dashboard] revoke dashboard session error: %v", err)
-		jsonError(ctx, http.StatusInternalServerError, "failed to revoke session")
-		return
+	if err := h.sub.authSvc.RevokeSession(ctx, sid, claims.AdminID, getClientIP(ctx), getUserAgent(ctx)); err != nil {
+		log.Errorf(ctx, "[dashboard] revoke dashboard session error: %v", err)
+		return nil, server.InternalError("failed to revoke session")
 	}
 
-	jsonOK(ctx, map[string]string{"message": "dashboard session revoked"})
+	return &domain.MessageResponse{Message: "dashboard session revoked"}, nil
 }
 
 // ===========================================================================
-// Query parameter helpers
+// Chat debug handlers
 // ===========================================================================
 
-func queryInt(ctx *app.RequestContext, key string, defaultVal int) int {
-	raw := string(ctx.QueryArgs().Peek(key))
-	if raw == "" {
-		return defaultVal
+// handleFriendChatStats — GET /dashboard/api/chat/friend/stats
+func (h *dashboardHandler) handleFriendChatStats(ctx context.Context, _ *domain.EmptyRequest) (*domain.FriendChatStatsResponse, error) {
+	if h.sub.chatDebugSvc == nil {
+		return nil, serviceUnavailable("chat debug service unavailable")
 	}
 
-	val, err := strconv.Atoi(raw)
-	if err != nil || val < 1 {
-		return defaultVal
+	stats, err := h.sub.chatDebugSvc.FriendChatStats(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] friend chat stats error: %v", err)
+		return nil, server.InternalError("failed to load friend chat stats")
 	}
 
-	return val
+	return stats, nil
+}
+
+// ===========================================================================
+// Storage handlers
+// ===========================================================================
+
+// handleStorageInfo — GET /dashboard/api/storage/info
+func (h *dashboardHandler) handleStorageInfo(ctx context.Context, _ *domain.EmptyRequest) (*domain.StorageInfo, error) {
+	if h.sub.storageSvc == nil {
+		return nil, serviceUnavailable("storage service unavailable")
+	}
+
+	info, err := h.sub.storageSvc.GetStorageInfo(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] storage info error: %v", err)
+		return nil, server.InternalError("failed to load storage info")
+	}
+
+	return info, nil
+}
+
+// ===========================================================================
+// Nodes handlers
+// ===========================================================================
+
+// handleNodes — GET /dashboard/api/nodes
+func (h *dashboardHandler) handleNodes(ctx context.Context, _ *domain.EmptyRequest) (*domain.NodesOverview, error) {
+	if h.sub.nodesSvc == nil {
+		return nil, serviceUnavailable("nodes service unavailable")
+	}
+
+	overview, err := h.sub.nodesSvc.GetNodesOverview(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] nodes overview error: %v", err)
+		return nil, server.InternalError("failed to load nodes")
+	}
+
+	return overview, nil
+}
+
+// ===========================================================================
+// Path param parsing helpers
+// ===========================================================================
+
+// parsePathParamUint64 extracts a named path parameter and parses it as uint64.
+func parsePathParamUint64(ctx context.Context, name string) (uint64, error) {
+	raw := pathParam(ctx, name)
+	return strconv.ParseUint(raw, 10, 64)
 }

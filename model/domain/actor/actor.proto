@@ -75,3 +75,11 @@ message ActorList {
   repeated Actor items = 1;
   int64 total = 2;
 }
+
+// SearchUsersRequest carries query parameters for the user search endpoint.
+message SearchUsersRequest {
+  string q = 1;
+}
+
+// GetMeRequest is intentionally empty; the current user is identified via JWT auth context.
+message GetMeRequest {}
