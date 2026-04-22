@@ -1,5 +1,9 @@
 # Desktop+lynx
 
+> Historical task material only.
+> 不作为当前 Desktop 账号、OAuth 或多账号切换实现真源。
+> 若与现状冲突，以 `docs/README.md`、`docs/client/desktop/base.md`、`docs/client/desktop/global-context-kernel.md`、`docs/global/coding-guide/desktop/service-api.md` 为准。
+
 > **Workspace:** /Users/bytedance/Documents/Projects/peers-touch/peers-touch
 
 ---
@@ -3479,4 +3483,3 @@ try again 没有用
 - 不是你看错了，确实有逻辑遗漏；
 - 当前实现还没达到 `external/gdpa-agent-box` 那种“登录账号自动进左上角可选池”的完整同步语义。  
 先不改代码的话，根因就是上面这三点。
-

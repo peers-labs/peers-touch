@@ -9,6 +9,16 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use reqwest::Method;
 use serde_json::{json, Value};
 
+type StationResult<T> = Result<T, station_client::StationClientError>;
+
+fn invalid_response_err(message: impl Into<String>) -> station_client::StationClientError {
+    station_client::StationClientError::new(
+        station_client::StationClientErrorKind::InvalidResponse,
+        message.into(),
+        None,
+    )
+}
+
 fn ts_millis(ts: &Option<prost_types::Timestamp>) -> serde_json::Value {
     match ts {
         Some(t) => serde_json::Value::Number((t.seconds * 1000 + (t.nanos as i64) / 1_000_000).into()),
@@ -494,7 +504,7 @@ pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, Strin
     local_chat_store::rotate_chat_key(user_scope, next_version)
 }
 
-pub fn list_friend_sessions(token: &str, limit: u32, offset: u32) -> Result<Value, String> {
+pub fn list_friend_sessions(token: &str, limit: u32, offset: u32) -> StationResult<Value> {
     let query = vec![
         ("limit", limit.to_string()),
         ("offset", offset.to_string()),
@@ -509,7 +519,7 @@ pub fn list_friend_sessions(token: &str, limit: u32, offset: u32) -> Result<Valu
     Ok(get_sessions_response_to_value(&resp))
 }
 
-pub fn create_friend_session(token: &str, participant_did: &str) -> Result<Value, String> {
+pub fn create_friend_session(token: &str, participant_did: &str) -> StationResult<Value> {
     let req = model::chat::CreateSessionRequest {
         participant_did: participant_did.to_string(),
     };
@@ -523,7 +533,7 @@ pub fn create_friend_session(token: &str, participant_did: &str) -> Result<Value
     Ok(create_session_response_to_value(&resp))
 }
 
-pub fn list_friend_messages(token: &str, session_ulid: &str, limit: u32, before_ulid: Option<&str>) -> Result<Value, String> {
+pub fn list_friend_messages(token: &str, session_ulid: &str, limit: u32, before_ulid: Option<&str>) -> StationResult<Value> {
     let mut query = vec![
         ("session_ulid", session_ulid.to_string()),
         ("limit", limit.to_string()),
@@ -541,7 +551,7 @@ pub fn list_friend_messages(token: &str, session_ulid: &str, limit: u32, before_
     Ok(get_messages_response_to_value(&resp))
 }
 
-pub fn send_friend_message(token: &str, session_ulid: &str, receiver_did: &str, content: &str, msg_type: i32, reply_to_ulid: &str) -> Result<Value, String> {
+pub fn send_friend_message(token: &str, session_ulid: &str, receiver_did: &str, content: &str, msg_type: i32, reply_to_ulid: &str) -> StationResult<Value> {
     let req = model::chat::SendMessageRequest {
         session_ulid: session_ulid.to_string(),
         receiver_did: receiver_did.to_string(),
@@ -562,7 +572,7 @@ pub fn send_friend_message(token: &str, session_ulid: &str, receiver_did: &str, 
     Ok(send_message_response_to_value(&resp))
 }
 
-pub fn ack_friend_messages(token: &str, ulids: &[String], status: i32) -> Result<Value, String> {
+pub fn ack_friend_messages(token: &str, ulids: &[String], status: i32) -> StationResult<Value> {
     let req = model::chat::MessageAckRequest {
         ulids: ulids.to_vec(),
         status,
@@ -577,7 +587,7 @@ pub fn ack_friend_messages(token: &str, ulids: &[String], status: i32) -> Result
     Ok(json!({}))
 }
 
-pub fn list_groups(token: &str, limit: u32, offset: u32) -> Result<Value, String> {
+pub fn list_groups(token: &str, limit: u32, offset: u32) -> StationResult<Value> {
     let query = vec![
         ("limit", limit.to_string()),
         ("offset", offset.to_string()),
@@ -592,7 +602,7 @@ pub fn list_groups(token: &str, limit: u32, offset: u32) -> Result<Value, String
     Ok(list_groups_response_to_value(&resp))
 }
 
-pub fn list_group_messages(token: &str, group_ulid: &str, limit: u32, before_ulid: Option<&str>) -> Result<Value, String> {
+pub fn list_group_messages(token: &str, group_ulid: &str, limit: u32, before_ulid: Option<&str>) -> StationResult<Value> {
     let mut query = vec![
         ("group_ulid", group_ulid.to_string()),
         ("limit", limit.to_string()),
@@ -610,7 +620,7 @@ pub fn list_group_messages(token: &str, group_ulid: &str, limit: u32, before_uli
     Ok(get_group_messages_response_to_value(&resp))
 }
 
-pub fn send_group_message(token: &str, group_ulid: &str, content: &str, msg_type: i32, reply_to_ulid: &str, mentioned_dids: &[String], mention_all: bool) -> Result<Value, String> {
+pub fn send_group_message(token: &str, group_ulid: &str, content: &str, msg_type: i32, reply_to_ulid: &str, mentioned_dids: &[String], mention_all: bool) -> StationResult<Value> {
     let req = model::chat::SendGroupMessageRequest {
         group_ulid: group_ulid.to_string(),
         r#type: msg_type,
@@ -631,7 +641,7 @@ pub fn send_group_message(token: &str, group_ulid: &str, content: &str, msg_type
     Ok(send_group_message_response_to_value(&resp))
 }
 
-pub fn group_unread_count(token: &str, group_ulid: Option<&str>) -> Result<Value, String> {
+pub fn group_unread_count(token: &str, group_ulid: Option<&str>) -> StationResult<Value> {
     let mut query = Vec::new();
     if let Some(gid) = group_ulid {
         query.push(("group_ulid", gid.to_string()));
@@ -646,7 +656,7 @@ pub fn group_unread_count(token: &str, group_ulid: Option<&str>) -> Result<Value
     Ok(get_unread_count_response_to_value(&resp))
 }
 
-pub fn group_mark_read(token: &str, group_ulid: &str) -> Result<Value, String> {
+pub fn group_mark_read(token: &str, group_ulid: &str) -> StationResult<Value> {
     let req = model::chat::MarkGroupReadRequest {
         group_ulid: group_ulid.to_string(),
         up_to_ulid: String::new(),
@@ -707,9 +717,9 @@ pub fn filter_incremental_messages(payload: &Value, cursor: Option<&str>) -> (Va
     (filtered_payload, synced_count, latest)
 }
 
-pub fn sync_friend_from_station(token: &str, user_scope: &str, session_ulid: &str, page_limit: u32, max_pages: u32) -> Result<SyncResult, String> {
+pub fn sync_friend_from_station(token: &str, user_scope: &str, session_ulid: &str, page_limit: u32, max_pages: u32) -> StationResult<SyncResult> {
     let scope_key = format!("friend:{session_ulid}");
-    let cursor = get_scope_cursor(user_scope, &scope_key)?;
+    let cursor = get_scope_cursor(user_scope, &scope_key).map_err(invalid_response_err)?;
     let mut current_cursor = cursor.clone();
     let mut total_synced = 0usize;
     let mut pages_fetched = 0u32;
@@ -746,18 +756,22 @@ pub fn sync_friend_from_station(token: &str, user_scope: &str, session_ulid: &st
     })
 }
 
-pub fn sync_friend_messages(token: &str, session_ulid: &str, messages_json: &str) -> Result<Value, String> {
-    let body: Value = serde_json::from_str(messages_json).map_err(|e| format!("invalid json: {e}"))?;
+pub fn sync_friend_messages(token: &str, session_ulid: &str, messages_json: &str) -> StationResult<Value> {
+    let body: Value = serde_json::from_str(messages_json)
+        .map_err(|e| invalid_response_err(format!("invalid json: {e}")))?;
     let items_val = if let Some(a) = body.as_array() {
         a.clone()
     } else if let Some(a) = body.get("messages").and_then(|v| v.as_array()) {
         a.clone()
     } else {
-        return Err("expected JSON array of messages or { \"messages\": [...] }".to_string());
+        return Err(invalid_response_err("expected JSON array of messages or { \"messages\": [...] }"));
     };
     let mut items = Vec::with_capacity(items_val.len());
     for v in &items_val {
-        items.push(sync_message_item_from_value(v, session_ulid)?);
+        items.push(
+            sync_message_item_from_value(v, session_ulid)
+                .map_err(invalid_response_err)?,
+        );
     }
     let req = model::chat::SyncMessagesRequest { messages: items };
     let resp = station_client::request_proto::<model::chat::SyncMessagesRequest, model::chat::SyncMessagesResponse>(
@@ -770,7 +784,7 @@ pub fn sync_friend_messages(token: &str, session_ulid: &str, messages_json: &str
     Ok(sync_messages_response_to_value(&resp))
 }
 
-pub fn friend_chat_online(token: &str) -> Result<Value, String> {
+pub fn friend_chat_online(token: &str) -> StationResult<Value> {
     let req = model::chat::OnlineRequest {
         did: String::new(),
     };
@@ -784,7 +798,7 @@ pub fn friend_chat_online(token: &str) -> Result<Value, String> {
     Ok(online_response_to_value(&resp))
 }
 
-pub fn friend_chat_offline(token: &str) -> Result<Value, String> {
+pub fn friend_chat_offline(token: &str) -> StationResult<Value> {
     let req = model::chat::OnlineRequest {
         did: String::new(),
     };
@@ -798,7 +812,7 @@ pub fn friend_chat_offline(token: &str) -> Result<Value, String> {
     Ok(online_response_to_value(&resp))
 }
 
-pub fn friend_chat_pending(token: &str) -> Result<Value, String> {
+pub fn friend_chat_pending(token: &str) -> StationResult<Value> {
     let query = vec![("limit", "50".to_string())];
     let resp = station_client::request_proto::<(), model::chat::GetPendingResponse>(
         Method::GET,
@@ -810,7 +824,7 @@ pub fn friend_chat_pending(token: &str) -> Result<Value, String> {
     Ok(get_pending_response_to_value(&resp))
 }
 
-pub fn friend_chat_stats(token: &str) -> Result<Value, String> {
+pub fn friend_chat_stats(token: &str) -> StationResult<Value> {
     let resp = station_client::request_proto::<(), model::chat::GetStatsResponse>(
         Method::GET,
         "/friend-chat/stats",
@@ -821,7 +835,7 @@ pub fn friend_chat_stats(token: &str) -> Result<Value, String> {
     Ok(get_stats_response_to_value(&resp))
 }
 
-pub fn create_group(token: &str, name: &str, description: &str, member_dids: &[String]) -> Result<Value, String> {
+pub fn create_group(token: &str, name: &str, description: &str, member_dids: &[String]) -> StationResult<Value> {
     let req = model::chat::CreateGroupRequest {
         name: name.to_string(),
         description: description.to_string(),
@@ -840,7 +854,7 @@ pub fn create_group(token: &str, name: &str, description: &str, member_dids: &[S
     }))
 }
 
-pub fn group_info(token: &str, group_ulid: &str) -> Result<Value, String> {
+pub fn group_info(token: &str, group_ulid: &str) -> StationResult<Value> {
     let query = vec![("group_ulid", group_ulid.to_string())];
     let resp = station_client::request_proto::<(), model::chat::GetGroupResponse>(
         Method::GET,
@@ -852,7 +866,7 @@ pub fn group_info(token: &str, group_ulid: &str) -> Result<Value, String> {
     Ok(get_group_response_to_value(&resp))
 }
 
-pub fn update_group(token: &str, group_ulid: &str, name: &str, description: &str) -> Result<Value, String> {
+pub fn update_group(token: &str, group_ulid: &str, name: &str, description: &str) -> StationResult<Value> {
     let req = model::chat::UpdateGroupRequest {
         group_ulid: group_ulid.to_string(),
         name: Some(name.to_string()),
@@ -869,7 +883,7 @@ pub fn update_group(token: &str, group_ulid: &str, name: &str, description: &str
     Ok(update_group_response_to_value(&resp))
 }
 
-pub fn group_invite(token: &str, group_ulid: &str, member_dids: &[String]) -> Result<Value, String> {
+pub fn group_invite(token: &str, group_ulid: &str, member_dids: &[String]) -> StationResult<Value> {
     let req = model::chat::InviteToGroupRequest {
         group_ulid: group_ulid.to_string(),
         invitee_dids: member_dids.to_vec(),
@@ -884,7 +898,7 @@ pub fn group_invite(token: &str, group_ulid: &str, member_dids: &[String]) -> Re
     Ok(invite_to_group_response_to_value(&resp))
 }
 
-pub fn group_join(token: &str, group_ulid: &str) -> Result<Value, String> {
+pub fn group_join(token: &str, group_ulid: &str) -> StationResult<Value> {
     let req = model::chat::JoinGroupRequest {
         group_ulid: group_ulid.to_string(),
         invitation_ulid: String::new(),
@@ -899,7 +913,7 @@ pub fn group_join(token: &str, group_ulid: &str) -> Result<Value, String> {
     Ok(join_group_response_to_value(&resp))
 }
 
-pub fn group_leave(token: &str, group_ulid: &str) -> Result<Value, String> {
+pub fn group_leave(token: &str, group_ulid: &str) -> StationResult<Value> {
     let req = model::chat::LeaveGroupRequest {
         group_ulid: group_ulid.to_string(),
     };
@@ -913,7 +927,7 @@ pub fn group_leave(token: &str, group_ulid: &str) -> Result<Value, String> {
     Ok(leave_group_response_to_value(&resp))
 }
 
-pub fn group_members(token: &str, group_ulid: &str) -> Result<Value, String> {
+pub fn group_members(token: &str, group_ulid: &str) -> StationResult<Value> {
     let query = vec![("group_ulid", group_ulid.to_string())];
     let resp = station_client::request_proto::<(), model::chat::GetGroupMembersResponse>(
         Method::GET,
@@ -925,7 +939,7 @@ pub fn group_members(token: &str, group_ulid: &str) -> Result<Value, String> {
     Ok(get_group_members_response_to_value(&resp))
 }
 
-pub fn group_remove_member(token: &str, group_ulid: &str, member_did: &str) -> Result<Value, String> {
+pub fn group_remove_member(token: &str, group_ulid: &str, member_did: &str) -> StationResult<Value> {
     let req = model::chat::RemoveMemberRequest {
         group_ulid: group_ulid.to_string(),
         actor_did: member_did.to_string(),
@@ -940,7 +954,7 @@ pub fn group_remove_member(token: &str, group_ulid: &str, member_did: &str) -> R
     Ok(remove_member_response_to_value(&resp))
 }
 
-pub fn group_recall_message(token: &str, group_ulid: &str, message_ulid: &str) -> Result<Value, String> {
+pub fn group_recall_message(token: &str, group_ulid: &str, message_ulid: &str) -> StationResult<Value> {
     let req = model::chat::RecallGroupMessageRequest {
         group_ulid: group_ulid.to_string(),
         message_ulid: message_ulid.to_string(),
@@ -955,7 +969,7 @@ pub fn group_recall_message(token: &str, group_ulid: &str, message_ulid: &str) -
     Ok(recall_group_message_response_to_value(&resp))
 }
 
-pub fn group_delete_message(token: &str, group_ulid: &str, message_ulid: &str) -> Result<Value, String> {
+pub fn group_delete_message(token: &str, group_ulid: &str, message_ulid: &str) -> StationResult<Value> {
     let req = model::chat::DeleteGroupMessageRequest {
         group_ulid: group_ulid.to_string(),
         message_ulid: message_ulid.to_string(),
@@ -970,7 +984,7 @@ pub fn group_delete_message(token: &str, group_ulid: &str, message_ulid: &str) -
     Ok(delete_group_message_response_to_value(&resp))
 }
 
-pub fn group_search_messages(token: &str, group_ulid: &str, query: &str, limit: u32) -> Result<Value, String> {
+pub fn group_search_messages(token: &str, group_ulid: &str, query: &str, limit: u32) -> StationResult<Value> {
     let q = vec![
         ("group_ulid", group_ulid.to_string()),
         ("query", query.to_string()),
@@ -986,7 +1000,7 @@ pub fn group_search_messages(token: &str, group_ulid: &str, query: &str, limit: 
     Ok(search_group_messages_response_to_value(&resp))
 }
 
-pub fn group_update_nickname(token: &str, group_ulid: &str, nickname: &str) -> Result<Value, String> {
+pub fn group_update_nickname(token: &str, group_ulid: &str, nickname: &str) -> StationResult<Value> {
     let req = model::chat::UpdateMyNicknameRequest {
         group_ulid: group_ulid.to_string(),
         nickname: nickname.to_string(),
@@ -1001,7 +1015,7 @@ pub fn group_update_nickname(token: &str, group_ulid: &str, nickname: &str) -> R
     Ok(update_my_nickname_response_to_value(&resp))
 }
 
-pub fn group_get_my_settings(token: &str, group_ulid: &str) -> Result<Value, String> {
+pub fn group_get_my_settings(token: &str, group_ulid: &str) -> StationResult<Value> {
     let query = vec![("group_ulid", group_ulid.to_string())];
     let resp = station_client::request_proto::<(), model::chat::GetGroupSettingsResponse>(
         Method::GET,
@@ -1013,9 +1027,11 @@ pub fn group_get_my_settings(token: &str, group_ulid: &str) -> Result<Value, Str
     Ok(get_group_settings_response_to_value(&resp))
 }
 
-pub fn group_update_my_settings(token: &str, group_ulid: &str, settings_json: &str) -> Result<Value, String> {
-    let settings: Value = serde_json::from_str(settings_json).map_err(|e| format!("invalid json: {e}"))?;
-    let req = settings_to_update_request(group_ulid, &settings)?;
+pub fn group_update_my_settings(token: &str, group_ulid: &str, settings_json: &str) -> StationResult<Value> {
+    let settings: Value = serde_json::from_str(settings_json)
+        .map_err(|e| invalid_response_err(format!("invalid json: {e}")))?;
+    let req = settings_to_update_request(group_ulid, &settings)
+        .map_err(invalid_response_err)?;
     let resp = station_client::request_proto::<model::chat::UpdateGroupSettingsRequest, model::chat::UpdateGroupSettingsResponse>(
         Method::PUT,
         "/group-chat/my-settings",
@@ -1026,7 +1042,7 @@ pub fn group_update_my_settings(token: &str, group_ulid: &str, settings_json: &s
     Ok(update_group_settings_response_to_value(&resp))
 }
 
-pub fn group_offline_messages(token: &str, group_ulid: &str) -> Result<Value, String> {
+pub fn group_offline_messages(token: &str, group_ulid: &str) -> StationResult<Value> {
     let query = vec![("group_ulid", group_ulid.to_string())];
     let resp = station_client::request_proto::<(), model::chat::GetOfflineMessagesResponse>(
         Method::GET,
@@ -1038,7 +1054,7 @@ pub fn group_offline_messages(token: &str, group_ulid: &str) -> Result<Value, St
     Ok(get_offline_messages_response_to_value(&resp))
 }
 
-pub fn group_ack_offline(token: &str, _group_ulid: &str, message_ulids: &[String]) -> Result<Value, String> {
+pub fn group_ack_offline(token: &str, _group_ulid: &str, message_ulids: &[String]) -> StationResult<Value> {
     let req = model::chat::AckOfflineMessagesRequest {
         ulids: message_ulids.to_vec(),
     };
@@ -1052,7 +1068,7 @@ pub fn group_ack_offline(token: &str, _group_ulid: &str, message_ulids: &[String
     Ok(ack_offline_messages_response_to_value(&resp))
 }
 
-pub fn group_stats(token: &str) -> Result<Value, String> {
+pub fn group_stats(token: &str) -> StationResult<Value> {
     let resp = station_client::request_proto::<(), model::chat::GetGroupStatsResponse>(
         Method::GET,
         "/group-chat/stats",
@@ -1063,9 +1079,9 @@ pub fn group_stats(token: &str) -> Result<Value, String> {
     Ok(get_group_stats_response_to_value(&resp))
 }
 
-pub fn sync_group_from_station(token: &str, user_scope: &str, group_ulid: &str, page_limit: u32, max_pages: u32) -> Result<SyncResult, String> {
+pub fn sync_group_from_station(token: &str, user_scope: &str, group_ulid: &str, page_limit: u32, max_pages: u32) -> StationResult<SyncResult> {
     let scope_key = format!("group:{group_ulid}");
-    let cursor = get_scope_cursor(user_scope, &scope_key)?;
+    let cursor = get_scope_cursor(user_scope, &scope_key).map_err(invalid_response_err)?;
     let mut current_cursor = cursor.clone();
     let mut total_synced = 0usize;
     let mut pages_fetched = 0u32;
