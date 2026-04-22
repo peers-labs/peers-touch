@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Tag, Button, Empty, Typography, message } from 'antd';
+import { Table, Tag, Empty, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { Flexbox } from 'react-layout-kit';
 import PageHeader from '../components/PageHeader';
@@ -65,16 +65,6 @@ export default function SubServersPage() {
       key: 'status',
       width: 120,
       render: (v: string) => <StatusBadge status={v} />,
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 100,
-      render: () => (
-        <Button type="link" size="small" disabled>
-          View
-        </Button>
-      ),
     },
   ];
 

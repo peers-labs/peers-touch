@@ -3,9 +3,9 @@
 // infrastructure repositories.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — login, logout, token validation,
-//   admin CRUD, super-user bootstrap, password change, session management.
-// - 2026-04-10: Refactored from flat auth.go into DDD application layer.
+//   - 2026-04-10: Initial implementation — login, logout, token validation,
+//     admin CRUD, super-user bootstrap, password change, session management.
+//   - 2026-04-10: Refactored from flat auth.go into DDD application layer.
 package application
 
 import (

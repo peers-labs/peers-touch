@@ -55,11 +55,7 @@ pub fn agent_execute_turn(input: AgentExecuteTurnInput, state: &AppState) -> App
         }
         Err(err) => {
             tracing::error!(command = "agent_execute_turn", error = %err, "Turn execution failed");
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to execute agent turn: {}", err),
-                None,
-            )
+            err.into_app_result("Failed to execute agent turn")
         }
     }
 }

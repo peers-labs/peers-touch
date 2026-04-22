@@ -75,7 +75,11 @@ export const useSessionStore = create<SessionStore>((set) => ({
   },
 
   logout: async () => {
-    await api.authLogout();
+    try {
+      await api.authLogout();
+    } catch {
+      // Best-effort: if the session is already expired/revoked, still clear local state.
+    }
     set({ currentUser: null, authenticated: false });
   },
 }));

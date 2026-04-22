@@ -67,6 +67,19 @@ export default function SessionsPage() {
 
   const columns: ColumnsType<systemApi.PeersSession> = [
     {
+      title: 'Actor',
+      key: 'actor',
+      width: 200,
+      render: (_, r) => (
+        <Flexbox gap={2}>
+          <Text strong>{r.preferred_username || `#${r.user_id}`}</Text>
+          {r.email ? (
+            <Text type="secondary" style={{ fontSize: 12 }}>{r.email}</Text>
+          ) : null}
+        </Flexbox>
+      ),
+    },
+    {
       title: 'Session ID',
       dataIndex: 'session_id',
       key: 'session_id',
@@ -78,10 +91,10 @@ export default function SessionsPage() {
       ),
     },
     {
-      title: 'Device Type',
+      title: 'Device',
       dataIndex: 'device_type',
       key: 'device_type',
-      width: 120,
+      width: 100,
       render: (v: string) => (
         <Tag color={DEVICE_TYPE_COLOR[v?.toLowerCase()] || 'default'}>
           {v || 'unknown'}

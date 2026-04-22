@@ -125,8 +125,8 @@ clean_ide_dir() {
 
 # --- scoped rules mapping (bash 3.2 compatible) ---
 
-SCOPED_NAMES=("station-frame" "mobile-flutter")
-SCOPED_PATHS=("apps/station/frame" "apps/mobile/flutter")
+SCOPED_NAMES=("station-frame")
+SCOPED_PATHS=("apps/station/frame")
 
 # --- trae setup ---
 
