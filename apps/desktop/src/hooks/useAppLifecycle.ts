@@ -46,6 +46,7 @@ function accountToSessionUser(account: AccountIdentity): SessionUser {
     avatarLocalPath: account.avatar_local_path || undefined,
     accountId: account.id,
     hasPin: account.has_pin,
+    hasSession: account.has_session,
     provider: account.provider,
   };
 }
@@ -127,7 +128,11 @@ export function useAppLifecycle(): AppLifecycle {
       if (warm && hasRealIdentity) {
         touchActivity();
         // Background: sync user profile from Station (downloads avatar to local cache).
-        api.syncUserProfile().catch(() => {});
+        api.syncUserProfile().then((result) => {
+          if (result?.avatar_url) {
+            useSessionStore.getState().updateAvatar(result.avatar_url);
+          }
+        }).catch(() => {});
         setState('ready');
       } else if (warm) {
         // Warm resume failed — session expired or missing, fall back to onboarding
@@ -146,7 +151,12 @@ export function useAppLifecycle(): AppLifecycle {
     useOAuth2Store.getState().loadAll().catch(() => {});
 
     // Background: sync user profile from Station (downloads avatar to local cache).
-    api.syncUserProfile().catch(() => {});
+    // Update session store avatar so sidebar reflects the latest.
+    api.syncUserProfile().then((result) => {
+      if (result?.avatar_url) {
+        useSessionStore.getState().updateAvatar(result.avatar_url);
+      }
+    }).catch(() => {});
     setState('ready');
   }, []);
 

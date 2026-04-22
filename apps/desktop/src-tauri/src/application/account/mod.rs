@@ -1,6 +1,6 @@
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::auth_identity;
-use crate::contracts::{AccountIdInput, AccountSetPinInput, AccountUnlockInput, AccountUpsertOAuthInput, StubPayload};
+use crate::contracts::{AccountIdInput, AccountSetPinInput, AccountUnlockInput, AccountRemovePinInput, AccountUpsertOAuthInput, StubPayload};
 use crate::domain::pin_lock::PinVerifyError;
 use serde_json::json;
 
@@ -179,4 +179,19 @@ pub fn account_list_restorable() -> AppResult<StubPayload> {
             "accounts": accounts.iter().map(to_json).collect::<Vec<_>>(),
         }),
     )
+}
+
+/// Remove PIN protection from an account (requires current PIN verification).
+pub fn account_remove_pin(input: AccountRemovePinInput) -> AppResult<StubPayload> {
+    if input.account_id.trim().is_empty() {
+        return invalid_argument("account_id is required");
+    }
+    if input.pin.trim().is_empty() {
+        return invalid_argument("pin is required");
+    }
+    try_cmd!(
+        auth_identity::remove_account_pin(&input.account_id, &input.pin)
+            .map_err(internal_error)
+    );
+    success_payload("account_remove_pin", json!({ "ok": true }))
 }
