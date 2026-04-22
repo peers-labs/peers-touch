@@ -38,6 +38,7 @@ fn to_json(account: &auth_identity::AccountIdentity) -> serde_json::Value {
         "name": account.name,
         "email": account.email,
         "avatar_url": account.avatar_url,
+        "avatar_local_path": account.avatar_local_path,
         "profile_url": account.profile_url,
         "created_at": account.created_at,
         "last_login_at": account.last_login_at,
