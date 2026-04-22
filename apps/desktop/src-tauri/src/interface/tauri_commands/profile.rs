@@ -74,22 +74,35 @@ pub async fn pick_image_file() -> AppResult<StubPayload> {
     }
 }
 
-/// Sync avatar URL to local auth identity so the sidebar avatar stays up-to-date.
+/// Sync avatar URL to local auth identity and download to local cache.
 /// Called by frontend after profile avatar is loaded or changed on Station.
 #[tauri::command]
 pub fn account_sync_avatar(input: AccountSyncAvatarInput) -> AppResult<StubPayload> {
-    match crate::infrastructure::auth_identity::update_active_avatar(&input.avatar_url) {
-        Ok(()) => AppResult::success(StubPayload {
-            command: "account_sync_avatar".to_string(),
-            status: "synced".to_string(),
-        }),
+    match application_profile::sync_avatar_with_download(&input.avatar_url) {
+        Ok(local_path) => {
+            let status = match local_path {
+                Some(p) => format!("synced_local:{}", p),
+                None => "synced_remote_only".to_string(),
+            };
+            AppResult::success(StubPayload {
+                command: "account_sync_avatar".to_string(),
+                status,
+            })
+        }
         Err(e) => {
-            tracing::error!(error = %e, "Failed to sync avatar to local identity");
+            tracing::error!(error = %e, "Failed to sync avatar");
             AppResult::fail(
                 ErrorCode::InternalError,
-                format!("Failed to sync avatar to station: {}", e),
+                format!("Failed to sync avatar: {}", e),
                 None,
             )
         }
     }
+}
+
+/// Fetch profile from Station and sync all user data (metadata + avatar) to local storage.
+// 2026-04-21: New aggregated sync command for user profile local caching.
+#[tauri::command]
+pub fn sync_user_profile(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+    application_profile::sync_user_profile(state.inner())
 }
