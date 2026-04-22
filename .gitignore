@@ -53,5 +53,8 @@ station/app/peers-touch-station
 apps/station/app/peers-touch-app
 apps/station/app/peers-touch-station
 apps/station/app/app
+apps/station/app/main
+apps/station/frame/example/**/server
 external
+release-to-dev-box.sh
 apps/mobile/android/gradle/wrapper/gradle-wrapper.jar
