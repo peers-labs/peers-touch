@@ -54,6 +54,26 @@ interface RustCommandError {
 - 自动将 `input` 包装为 `{ input }` payload
 - 捕获所有异常，**永不抛错**，而是返回 `{ ok: false, error: {...} }`
 - 调用方需自行检查 `ok` 字段
+- 认证失效属于**全局语义**：若 Rust 返回 `error.code = UNAUTHORIZED` 且 `error.details.code = session_revoked`，`invokeRustCommand` 必须发布 `AUTH_SESSION_REVOKED`
+
+认证错误约束：
+
+```typescript
+interface RustCommandError {
+  code: RustErrorCode;
+  message: string;
+  details?: {
+    code?: string;      // e.g. "session_revoked"
+    reason?: string;    // "expired" | "kicked" | "not_found" | "unknown"
+    raw?: string;
+  };
+}
+```
+
+要求：
+- 前端只消费结构化 `code/details`，禁止解析 `SESSION_REVOKED:...` 等字符串前缀协议
+- `AUTH_SESSION_REVOKED` 由服务层统一发布，页面层不得各自实现“401 后退出登录”
+- `reason` 仅用于 UI 文案和审计，不改变退出登录的全局编排入口
 
 ```typescript
 const result = await invokeRustCommand<void, TauriStubPayload>('system_health');
@@ -113,6 +133,11 @@ interface TauriStubPayload {
 4. 失败时直接抛 Error
 
 这是 **90%+ API 方法使用的封装层**。调用方拿到的就是最终业务数据。
+
+例外：
+- Friend Chat / Group Chat / Notification / ICE 等 protobuf 命令应优先走 `invokeRustProto`
+- 只有返回 `TauriStubPayload.status` 的旧 stub 命令才允许走 `invokeRustDataFromStatus`
+- 新增 Desktop 命令时，如果 Station 返回 protobuf 或结构化错误，禁止再包一层字符串 `status`
 
 
 ## 运行时检测

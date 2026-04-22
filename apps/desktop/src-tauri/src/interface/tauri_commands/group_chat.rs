@@ -384,7 +384,7 @@ pub fn group_chat_create_group(input: GroupChatCreateGroupInput, state: State<'_
         Method::POST, "/group-chat/create", &token, None, Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
+        Err(e) => return e.into_app_result("station request failed"),
     };
 
     let group_json = match resp.group {
@@ -416,7 +416,7 @@ pub fn group_chat_leave_group(input: GroupChatLeaveGroupInput, state: State<'_, 
         Method::POST, "/group-chat/leave", &token, None, Some(&req),
     ) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::InternalError, &e, None),
+        Err(e) => return e.into_app_result("station request failed"),
     };
 
     to_stub("group_chat_leave_group", json!({ "success": resp.success }))
