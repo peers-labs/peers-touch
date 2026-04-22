@@ -9,8 +9,8 @@ pub mod applets;
 pub mod auth;
 pub mod channels;
 pub mod chat;
-pub mod crypto;
 pub mod cron;
+pub mod crypto;
 pub mod friend_chat;
 pub mod frontend_log;
 pub mod group_chat;
@@ -19,9 +19,9 @@ pub mod i18n;
 pub mod mcp;
 pub mod memory;
 pub mod model_config;
-pub mod notification;
 pub mod models;
 pub mod notebook;
+pub mod notification;
 pub mod oauth2;
 pub mod profile;
 pub mod provider;
@@ -41,8 +41,8 @@ use crate::contracts::CONTRACT_VERSION;
 pub fn not_implemented(command: &str) -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::NotImplemented,
-        format!("This command is not yet implemented: {}", command),
-        None,
+        "error.command.notImplemented",
+        Some(serde_json::json!({ "command": command })),
     )
 }
 

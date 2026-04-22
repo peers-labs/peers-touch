@@ -1,9 +1,10 @@
 import { type ComponentType, useEffect, useRef, useCallback } from 'react';
 import { Modal } from 'antd';
-import { useAppLifecycle } from './hooks/useAppLifecycle';
+import { useAppLifecycle, clearWarmResume } from './hooks/useAppLifecycle';
 import { OnboardingView } from './views/OnboardingView';
 import { ReadyView } from './views/ReadyView';
 import { onSessionRevoked } from './services/desktop_api';
+import type { SessionRevokedPayload } from './kernel/events/types';
 import { useSessionStore } from './store/session';
 import type { AppState, AppLifecycle } from './types/navigation';
 
@@ -22,19 +23,25 @@ function App() {
   const View = APP_VIEWS[lifecycle.state];
   const handledRef = useRef(false);
 
-  const handleSessionRevoked = useCallback(() => {
+  const handleSessionRevoked = useCallback((payload: SessionRevokedPayload) => {
     if (handledRef.current) return;
     handledRef.current = true;
 
     useSessionStore.getState().logout().catch(() => {});
+    clearWarmResume();
+
+    const reason = payload?.reason || 'unknown';
+    const title = reason === 'expired'
+      ? 'Session Expired'
+      : 'Session Ended';
+    const content = reason === 'expired'
+      ? 'Your session has expired. Please log in again.'
+      : 'Your session has been terminated. Please log in again.';
 
     Modal.warning({
-      title: 'Session Ended',
-      content: 'Your account has been logged in on another device. This session has been terminated.',
+      title,
+      content,
       okText: 'OK',
-      onOk: () => {
-        window.location.reload();
-      },
     });
   }, []);
 
